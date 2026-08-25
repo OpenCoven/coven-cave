@@ -4,7 +4,7 @@
 
 **Goal:** Add a compatibility-safe, SDK-consumable RFC 9180 `hpke-bound-v1` producer mechanism that atomically binds pairing-secret and bearer-bearing Client v1 requests and responses to one per-runtime Cave authority.
 
-**Architecture:** Keep the current Client v1 protocol byte-for-byte live by default: `COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE=off` continues publishing discovery v1 and serving the existing plaintext credential path. Explicit `advertise` and `enforce` modes publish discovery v2 with a per-boot X25519 HPKE public key; protected requests use HPKE Base mode, fixed binary AAD, replay reservation, and a fresh client response key, while Cave returns every successfully opened request through HPKE Auth mode so only the proved Cave runtime can produce an actionable response.
+**Architecture:** Keep the current Client v1 protocol byte-for-byte live by default: `COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE=off` continues publishing discovery v1 and serving the existing plaintext credential path. Explicit `advertise` and `enforce` modes publish discovery v2 with a per-boot X25519 HPKE public key; protected requests use HPKE Base mode, fixed binary AAD, atomic process-local replay reservation, and a fresh client response key, while Cave returns every successfully opened request through HPKE Auth mode so only the proved Cave runtime can produce an actionable response. An active-mode bootstrap failure is a distinct fail-closed unavailable state: Cave publishes no v2 record and every protected operation returns fixed 503 guidance without invoking the legacy plaintext callback.
 
 **Tech Stack:** TypeScript 6, Node.js 24 Web Crypto, Next.js 16 App Router, `@hpke/core@1.9.0`, `@hpke/dhkem-x25519@1.8.0`, RFC 9180 DHKEM(X25519, HKDF-SHA256) + HKDF-SHA256 + AES-256-GCM, RFC 8785 canonical JSON via the existing `canonicalize@3.0.0`, Node test runner, pnpm 10.
 
@@ -45,8 +45,20 @@ The following downgrade rules are mandatory:
 2. In `enforce`, a missing marker on a protected operation returns `426 incompatible_version` before reading `Authorization` or `X-Coven-Pairing-Secret`.
 3. A stale key ID requires rediscovery; Cave never tries another boot key.
 4. Only a successfully HPKE-authenticated response may cause a consumer to discard, revoke, or re-pair a credential. A plaintext pre-decryption error is transport guidance, never authenticated credential state.
+5. `advertise` or `enforce` with an unavailable boot key is not equivalent to `off`. Every protected operation returns `503 service_unavailable` with `details.reason: "authority_unavailable"` before any pairing-secret/bearer parser, store, rate limiter, read source, or legacy callback runs.
 
 Current behavior remains unchanged unless an operator explicitly selects `advertise` or `enforce`. No operation ID, capability, health field, pairing lifetime, bearer format, route, rate-limit budget, or administrator credential changes in this slice.
+
+## Runtime topology invariant
+
+This design is intentionally single-process. One standalone Node.js request-serving process owns exactly one active authority keypair, one runtime nonce, and one in-memory replay map for the discovery endpoint it publishes. JavaScript run-to-completion makes the synchronous replay reservation atomic only inside that process.
+
+A future multi-worker or load-balanced deployment must not reuse discovery v2 unchanged unless it provides one of these reviewed designs:
+
+1. one shared authority tuple plus a linearizable cross-worker `reserve(keyId, requestNonce)` operation whose success is committed before any protected callback; or
+2. a distinct endpoint and discovery record per worker, with routing that cannot send a request for one authority tuple to another worker.
+
+Until such a design has its own wire/runtime review, startup configuration must not enable active Client v1 authority mode across multiple request-serving workers. If the process cannot prove that it owns the published key and replay state, protected operations fail closed with `clientV1AuthorityUnavailableResponse()`; they never fall back to plaintext, even in `advertise`.
 
 ## Protected operation inventory and administrator scope
 
@@ -94,11 +106,11 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `src/lib/server/client-v1/authority-replay.ts`
   - In-memory, per-runtime replay reservation with injected time, fixed TTL, and fixed capacity.
 - `src/lib/server/client-v1/authority-replay.test.ts`
-  - Freshness, duplicate, expiry, capacity, and fail-closed behavior.
+  - Freshness, duplicate, expiry, 4096-request burst capacity, retry timing, and fail-closed behavior.
 - `src/lib/server/client-v1/authority-runtime.ts`
   - Mode dispatch, global boot-key consumption, protected-request wrapper, credential injection into a reconstructed `Request`, pre-auth error normalization, response encryption, and secret-safe diagnostics.
 - `src/lib/server/client-v1/authority-runtime.test.ts`
-  - Default-off compatibility, advertise dual-stack behavior, enforce downgrade rejection, ordering before secret/bearer stores, and encrypted response semantics.
+  - Default-off compatibility, active bootstrap-unavailable refusal, advertise dual-stack behavior, enforce downgrade rejection, atomic replay ordering before secret/bearer stores, concurrent duplicate behavior, and encrypted response semantics.
 - `src/lib/server/client-v1/testing/hpke-client.ts`
   - Test-only Base-mode request sender and Auth-mode response opener shared by route tests and the real-socket takeover harness.
   - Never exported from a production package surface.
@@ -135,7 +147,7 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `src/lib/server/client-v1/contract.test.ts`
   - Pin the authority manifest, operation metadata, vector-fixture filenames, and edge-safe import boundary.
 - `src/lib/server/client-v1/responses.ts`
-  - Add fixed pre-decryption authority error helpers while preserving every existing inner Client v1 response builder.
+  - Add fixed pre-decryption authority error helpers, including `clientV1AuthorityUnavailableResponse`, while preserving every existing inner Client v1 response builder.
 - `src/app/api/client/v1/pairing/requests/[id]/route.ts`
 - `src/app/api/client/v1/pairing/requests/[id]/exchange/route.ts`
 - `src/app/api/client/v1/familiars/route.ts`
@@ -457,7 +469,7 @@ Every encoded component is ASCII, and the tests refuse a `localeCompare` call in
 
 ### Info and AAD
 
-HPKE info is fixed and below the library’s 128-byte limit:
+HPKE info is fixed below 64 bytes, far below `@hpke/common@1.10.0`'s reviewed 65,536-byte `INFO_LENGTH_LIMIT`:
 
 ```text
 request info UTF-8:  OpenCoven/client-v1/hpke-bound-v1/request
@@ -530,6 +542,14 @@ const ciphertext = await sender.seal(responsePlaintext, responseAad);
 
 This is RFC 9180 Auth mode. The client opens it with its fresh response private key and the Cave public key from discovery as `senderPublicKey`. Never seal a response with the request context: sender and recipient sequence counters both begin at zero, so using one bidirectionally would reuse the AEAD key/nonce pair.
 
+The per-runtime X25519 keypair is deliberately reused across two HPKE roles: Base-mode recipient for requests and Auth-mode sender authentication for responses. RFC 9180 separates these uses in three independent ways:
+
+1. the HPKE key schedule context includes the mode byte, so request Base mode (`0x00`) and response Auth mode (`0x02`) derive different key schedules;
+2. request and response use distinct fixed `info` values and distinct AAD domain prefixes; and
+3. every request open and response seal constructs a new one-direction context with a fresh peer ephemeral/response-recipient key, so no AEAD context, sequence number, key, or nonce is reused.
+
+`@hpke/core` exposes the same X25519 `CryptoKeyPair` through `recipientKey` and `senderKey` for these RFC-defined roles; the repository does not serialize the private key or use it in a non-HPKE protocol. Tests must pin the Base/Auth mode and info separation and prove that a replacement Auth sender key is rejected. If a future suite or library release documents role-specific static keys as necessary, introduce separate discovery fields in a new wire version; do not silently reinterpret discovery v2.
+
 ### Encrypted response
 
 Inner plaintext:
@@ -592,22 +612,26 @@ Rules:
 1. `requestNonce` is 32 bytes from a cryptographically secure random generator.
 2. Accept `issuedAt >= now - 60_000` and `issuedAt <= now + 10_000`.
 3. After successful HPKE open and canonical payload validation, reserve `${keyId}:${requestNonce}` for 120 seconds.
-4. Reserve before calling pairing-secret parsing, pairing-store lookup/consume, bearer parsing, credential-store lookup, scope checks, or authenticated rate-limit charging.
-5. A duplicate is rejected even if the first handler returned an error.
-6. Purge expired reservations before checking capacity.
-7. At 4096 live entries, do not evict a live nonce; return a fail-closed capacity error.
+4. In JavaScript there must be no `await`, promise callback, logging hook, async metric, store access, or user callback between the resolved successful open and the synchronous `reserve(...)` call. Canonical payload validation completes inside the open helper before it resolves; the next runtime statement is `replay.reserve(...)`. Run-to-completion therefore lets only one concurrent continuation reserve an identical tuple.
+5. Reserve before calling pairing-secret parsing, pairing-store lookup/consume, bearer parsing, credential-store lookup, scope checks, authenticated rate-limit charging, or a read source.
+6. A duplicate is rejected even if the first handler returned an error.
+7. Purge expired reservations before checking capacity.
+8. At 4096 live entries, do not evict a live nonce; return a fail-closed capacity error with `retry-after` equal to `max(1, ceil((earliestExpiry - now) / 1000))`.
+
+The fixed capacity and TTL admit at most `4096 / 120 = 34.133...` successfully opened protected requests per second as a steady-state average in one process. An empty cache may accept a burst of 4096 unique requests at one instant; the 4097th receives an Auth-encrypted inner `503 service_unavailable` with `authority_replay_capacity` and, for a same-instant burst, `retry-after: 120`. The client preserves its credential and cursor, waits at least the authenticated `retry-after`, then seals a new request with a fresh nonce and current `issuedAt`; it never retries the rejected ciphertext/nonce. Paginated readers may retain already accepted pages, but the capacity-rejected page must not reach the bearer store, rate limiter, or read source and is resumed from the same cursor only with the fresh envelope.
 
 ### Error and trust matrix
 
 | Condition | Outer HTTP | Client v1 code | `details.reason` | Encrypted? | Consumer action |
 |---|---:|---|---|---|---|
+| Active `advertise`/`enforce` bootstrap is unavailable | 503 | `service_unavailable` | `authority_unavailable` | no | Preserve credentials; rediscover/back off; never retry plaintext |
 | Enforce mode, marker absent | 426 | `incompatible_version` | `hpke_binding_required` | no | Rediscover/upgrade; do not discard credential |
 | Key ID or runtime nonce is not this boot’s authority tuple | 409 | `conflict` | `authority_key_stale` | no | Rediscover once; do not send plaintext |
 | Instance ID is not the Cave installation currently answering | 409 | `conflict` | `authority_instance_stale` | no | Discard endpoint association and rediscover; do not send plaintext |
 | Timestamp stale or too far future | 409 | `conflict` | `authority_request_stale` | no | Retry once with a fresh nonce/time |
 | Missing field, malformed/noncanonical base64url, wrong length, oversized ciphertext, failed HPKE open, wrong method/path/body/AAD, noncanonical payload, duplicate plaintext credential header | 400 | `invalid_request` | `authority_invalid` | no | Treat as unauthenticated transport failure |
 | Replay after successful open | outer 200 | inner 409 `conflict` | `authority_replayed` | yes | Do not replay; generate a fresh request nonce |
-| Replay map at 4096 live entries | outer 200 | inner 503 `service_unavailable` | `authority_replay_capacity` | yes | Retry after a reservation expires |
+| Replay map at 4096 live entries | outer 200 | inner 503 `service_unavailable` | `authority_replay_capacity` | yes | Honor authenticated `retry-after`; retry the same logical operation with a fresh nonce/time |
 | Existing route success/error after successful open | outer 200 | unchanged inner code/status | unchanged | yes | Apply only after Auth-mode verification |
 | Cave cannot Auth-seal the response | 500 | `internal_error` | `authority_response_failed` | no | Treat as unauthenticated transport failure |
 
@@ -615,7 +639,7 @@ All pre-decryption diagnostics use fixed messages and reason enums. Logs may con
 
 ## Deterministic RFC 9180 vector
 
-Commit this exact vector in `src/lib/server/client-v1/hpke-bound-v1-vectors.json`, with its SHA-256 in the sibling `.sha256` file, and recompute it in `hpke-bound-v1.test.ts`. The main Client v1 contract fixture declares both filenames but does not embed/import the large vector, preserving the lightweight `contract.ts` → `proxy-helpers.ts` graph. The production path never supplies `ekm`; only the vector generator/test uses the library’s documented test-only deterministic `ekm` seam.
+Generate and commit the vector in `src/lib/server/client-v1/hpke-bound-v1-vectors.json`, with the SHA-256 of those exact LF-normalized bytes in the sibling `.sha256` file, and recompute both in `hpke-bound-v1.test.ts`. Those two committed files are the sole SDK/Chat cryptographic handoff source of truth. This prose snapshot is non-normative review evidence only: consumers must never copy vector values from the plan, a PR description, or rendered documentation. The main Client v1 contract fixture declares both filenames but does not embed/import the large vector, preserving the lightweight `contract.ts` → `proxy-helpers.ts` graph. The production path never supplies `ekm`; only the vector generator/test uses the library’s documented test-only deterministic `ekm` seam.
 
 ```json
 {
@@ -682,6 +706,21 @@ Mutation coverage must flip one input at a time and assert `open` rejects:
 - response `enc`;
 - response ciphertext;
 - response AAD.
+
+## Reviewed `@hpke/common` 1.10.0 hold-back audit
+
+Audit date: 2026-08-25. The implementation must preserve this exact resolution record in the dependency-policy test comments or the implementation PR:
+
+| Artifact | Reviewed fact |
+|---|---|
+| `@hpke/core@1.9.0` | Released 2026-03-08; declares `@hpke/common: ^1.10.0`; npm integrity `sha512-pFxWl1nNJeQCSUFs7+GAblHvXBCjn9EPN65vdKlYQil2aURaRxfGMO6vBKGqm1YHTKwiAxJQNEI70PbSowMP9Q==` |
+| `@hpke/dhkem-x25519@1.8.0` | Released 2026-03-08; declares `@hpke/common: ^1.10.0`; npm integrity `sha512-S1MWWkAfu+TFxySgv5+2P3O4Mx/jk7BsoplzQaA1s3sfUJVJ2UsZsSzSsMc+FXJumLXncoJFlO6mK6mDGspfmA==` |
+| selected `@hpke/common@1.10.0` | Released 2026-03-08 from hpke-js release commit `f9fbe3d5a6404f516df859e472c078c0d08e8057`; npm integrity `sha512-uVq9pTNERQ1GcFlHZzQx+a0ZMC81wQzkbNzJPEyR/l3AWM7fASd/qYN2Cnq6uL1NPEfwcD4lgOmfjjZfx2k2XA==`; MIT; Node `>=16.0.0` |
+| held-back `@hpke/common@1.10.1` | Released 2026-03-12 at tag commit `d56a674fd9c63e2c8176a6e2d68150707158926c`; npm integrity `sha512-moJwhmtLtuxiUzzNp1jpfBfx8yefKoO9D/RCR9dmwrnc7qjJqId1rEtQz+lSlU5cabX8daToMSx/7HayXOiaFw==` |
+
+The reviewed `1.10.0...1.10.1` comparison contains only the changelog/version bump, tests, and PR `#732` changing `INFO_LENGTH_LIMIT` from `65_536` to `268_435_456`; it does not change X25519, HKDF, AEAD, Base/Auth mode, or context construction. Client v1 request/response `info` values are fixed ASCII constants below 64 bytes, so the relaxation is not required for this protocol. Hold `@hpke/common` at `1.10.0` to prevent the two caret ranges from silently changing reviewed cryptographic transitive code.
+
+Resolution rule: a future upgrade must be an explicit dependency-review change that names the old/new npm integrities and upstream commits, reviews the full diff, updates the override/policy/lockfile together, regenerates the committed vector JSON and SHA, and runs the HPKE mutation tests, authority concurrency tests, build, sidecar closure, takeover proof, and production audit. If committed vector bytes or negative-test behavior change, stop the upgrade and require a protocol/security review rather than treating it as routine patch drift.
 
 ## Task 1: Pin and audit the HPKE dependencies
 
@@ -761,6 +800,8 @@ Run:
 ```bash
 pnpm view @hpke/core@1.9.0 license engines repository dist.integrity --json
 pnpm view @hpke/dhkem-x25519@1.8.0 license engines repository dist.integrity --json
+pnpm view @hpke/common@1.10.0 license engines repository dist.integrity --json
+pnpm view @hpke/common@1.10.1 license engines repository dist.integrity --json
 pnpm why @hpke/core @hpke/dhkem-x25519 @hpke/common
 pnpm audit --prod
 ```
@@ -771,7 +812,9 @@ Expected:
 - both support Node `>=16.0.0`, covering the repository’s Node 24 release engine;
 - both resolve from `github.com/dajiaji/hpke-js`;
 - the direct versions are exactly `1.9.0` and `1.8.0`;
-- `@hpke/common` resolves compatibly;
+- `@hpke/common` resolves exactly to overridden `1.10.0`, not caret-selected `1.10.1`;
+- all four npm integrity strings match the reviewed hold-back table above;
+- the implementation PR records that upstream `1.10.1` only relaxes `INFO_LENGTH_LIMIT` from `65_536` to `268_435_456`, which is irrelevant to the fixed sub-64-byte Client v1 `info` values;
 - `pnpm audit --prod` reports no unresolved advisory affecting the selected packages. If the repository has an unrelated existing advisory, record its package/advisory ID in the implementation PR and prove neither new package introduces it.
 
 - [ ] **Step 5: Run dependency policy**
@@ -1140,10 +1183,20 @@ Add an exported result that never returns the credential in an error:
 ```ts
 export type OpenedClientV1HpkeRequest = {
   authorization: ClientV1HpkeAuthorization;
-  responsePublicKey: CryptoKey;
   responsePublicKeyBytes: Uint8Array;
   binding: ClientV1HpkeBinding;
 };
+
+export async function openClientV1HpkeBoundRequest(input: {
+  suite: CipherSuite;
+  recipientKey: CryptoKey;
+  request: Request;
+  body: Uint8Array;
+  expectedKeyId: Uint8Array;
+  expectedRuntimeNonce: Uint8Array;
+  expectedInstanceId: string;
+  now: number;
+}): Promise<OpenedClientV1HpkeRequest>;
 ```
 
 The function must:
@@ -1159,8 +1212,28 @@ The function must:
 9. require exact keys `authorization`, `responsePublicKey`, `version`;
 10. require exact nested authorization keys;
 11. compare received UTF-8 bytes to `canonicalize(parsed)`;
-12. deserialize the 32-byte response public key;
+12. decode and length-check the 32-byte response public key without deserializing it yet;
 13. return the parsed values without logging them.
+
+After the one cryptographic await, keep the remainder synchronous:
+
+```ts
+const plaintext = await recipient.open(ciphertext, requestAad);
+const opened = validateOpenedClientV1HpkePlaintext({
+  plaintext: new Uint8Array(plaintext),
+  binding,
+});
+return opened;
+```
+
+`validateOpenedClientV1HpkePlaintext` performs bounds, UTF-8, JSON, exact-key, canonical-byte, authorization, and response-public-key byte validation without `await`. The caller’s first statement after this function resolves is the synchronous replay reservation shown in Task 4. Only after that reservation may the runtime await `suite.kem.deserializePublicKey(opened.responsePublicKeyBytes)`.
+
+```ts
+function validateOpenedClientV1HpkePlaintext(input: {
+  plaintext: Uint8Array;
+  binding: ClientV1HpkeBinding;
+}): OpenedClientV1HpkeRequest;
+```
 
 - [ ] **Step 6: Implement Auth-mode response seal**
 
@@ -1411,7 +1484,7 @@ node scripts/export-client-v1-hpke-vectors.mjs
 node scripts/export-client-v1-hpke-vectors.mjs --check
 ```
 
-In `hpke-bound-v1.test.ts`, read the committed JSON, call `createClientV1HpkeBoundV1Vector()`, and assert deep equality. Use `suite.kem.deriveKeyPair()` for the fixed IKMs and fixed `ekm` only inside the generator. Assert exact public key, key ID, response public key, info, AAD, plaintext, `enc`, ciphertext, and successful opens.
+In `hpke-bound-v1.test.ts`, read the committed JSON bytes, verify their LF normalization, call `createClientV1HpkeBoundV1Vector()`, render it with the exporter’s exact formatting, and assert byte equality. Recompute SHA-256 from those committed bytes and compare it to the trimmed sibling `.sha256` file. Use `suite.kem.deriveKeyPair()` for the fixed IKMs and fixed `ekm` only inside the generator. Assert exact public key, key ID, response public key, info, AAD, plaintext, `enc`, ciphertext, and successful opens. No test reads vector values from this plan; the committed JSON/SHA pair is normative.
 
 - [ ] **Step 9: Add negative mutations**
 
@@ -1420,6 +1493,8 @@ For every mutation listed under “Deterministic RFC 9180 vector,” clone only 
 - a replacement X25519 key cannot open the request;
 - a response Auth-encrypted by a replacement key cannot be opened when `senderPublicKey` is the discovered Cave key;
 - the request context is never reused for the response;
+- the request uses Base mode without `senderKey`, the response uses Auth mode with `senderKey`, and the request/response `info` bytes and AAD prefixes differ;
+- the same runtime private `CryptoKey` can complete the reviewed Base-recipient/Auth-sender round trip only through separate newly created contexts;
 - noncanonical JCS and duplicate JSON keys are refused;
 - 2049-byte request ciphertext is refused before HPKE;
 - malformed/oversized inputs never appear in thrown messages.
@@ -1547,7 +1622,46 @@ assert.deepEqual(
 );
 ```
 
-Fill 4096 distinct live entries and assert the 4097th returns `{ ok: false, reason: "capacity" }` without deleting an earlier reservation. Assert old/future timestamps return `"stale"` and do not consume capacity.
+Fill 4096 distinct live entries and assert the 4097th returns `{ ok: false, reason: "capacity", retryAfterSeconds: 120 }` without deleting an earlier reservation. Assert old/future timestamps return `"stale"` and do not consume capacity.
+
+Name the capacity case `a 4096-page burst is admitted and the next page receives exact retry timing` and use:
+
+```ts
+now = 10_000;
+for (let page = 0; page < 4_096; page += 1) {
+  assert.deepEqual(
+    replay.reserve({
+      keyId: "key-1",
+      requestNonce: `page-${page}`,
+      issuedAt: now,
+    }),
+    { ok: true },
+  );
+}
+assert.deepEqual(
+  replay.reserve({
+    keyId: "key-1",
+    requestNonce: "page-4096",
+    issuedAt: now,
+  }),
+  {
+    ok: false,
+    reason: "capacity",
+    retryAfterSeconds: 120,
+  },
+);
+now += 120_000;
+assert.deepEqual(
+  replay.reserve({
+    keyId: "key-1",
+    requestNonce: "page-4096-fresh-envelope",
+    issuedAt: now,
+  }),
+  { ok: true },
+);
+```
+
+The test represents unique protected page requests, not replayed ciphertext. It proves the first 4096 reservations remain live, the rejected page does not evict one, and pagination can resume only after expiry with a fresh nonce.
 
 - [ ] **Step 2: Run and verify replay tests fail**
 
@@ -1568,7 +1682,12 @@ Use one `Map<string, number>` where the value is the reservation expiry. Purge e
 ```ts
 export type ClientV1AuthorityReplayResult =
   | { ok: true }
-  | { ok: false; reason: "stale" | "replay" | "capacity" };
+  | { ok: false; reason: "stale" | "replay" }
+  | {
+    ok: false;
+    reason: "capacity";
+    retryAfterSeconds: number;
+  };
 
 export function createClientV1AuthorityReplayCache({
   now,
@@ -1604,7 +1723,18 @@ export function createClientV1AuthorityReplayCache({
         reservations.size
         >= CLIENT_V1_HPKE_FRESHNESS.replayCapacity
       ) {
-        return { ok: false, reason: "capacity" };
+        let earliestExpiry = Number.POSITIVE_INFINITY;
+        for (const expiresAt of reservations.values()) {
+          earliestExpiry = Math.min(earliestExpiry, expiresAt);
+        }
+        return {
+          ok: false,
+          reason: "capacity",
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil((earliestExpiry - current) / 1_000),
+          ),
+        };
       }
       reservations.set(
         key,
@@ -1626,16 +1756,58 @@ Create test boot material with `deriveKeyPair`, inject it into `createClientV1Ru
 
 1. default runtime mode is `off`;
 2. `off` calls the legacy callback with the original plaintext credential headers;
-3. `advertise` calls legacy callback when the marker is absent;
-4. `advertise` opens a valid bound request, injects only the expected internal credential header, strips the other credential header, and returns an Auth-mode outer 200;
-5. `advertise` never falls back when the marker is present but invalid;
-6. `enforce` rejects missing binding with 426 before invoking the callback;
-7. stale key/runtime nonce, stale instance ID, and stale timestamp reject before callback;
-8. replay reservation occurs before a spy pairing/bearer handler;
-9. the second nonce use returns an encrypted inner `authority_replayed`;
-10. capacity returns encrypted inner `authority_replay_capacity`;
-11. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying a bound marker returns fixed `authority_invalid`;
-12. errors and captured diagnostics contain neither test secret nor bearer.
+3. for both `advertise` and `enforce`, an `{ unavailable: true }` bootstrap returns the exact fixed plaintext 503 for every protected operation, regardless of marker presence, and invokes the callback zero times;
+4. that unavailable response has `error.code === "service_unavailable"`, `error.details.reason === "authority_unavailable"`, and `error.retryable === true`;
+5. `advertise` calls the legacy callback when the marker is absent only when boot material is available;
+6. `advertise` opens a valid bound request, injects only the expected internal credential header, strips the other credential header, and returns an Auth-mode outer 200;
+7. `advertise` never falls back when the marker is present but invalid;
+8. `enforce` rejects missing binding with 426 before invoking the callback;
+9. stale key/runtime nonce, stale instance ID, and stale timestamp reject before callback;
+10. replay reservation occurs before a spy pairing/bearer handler;
+11. two simultaneous `handle(...)` calls using clones of one identical valid envelope invoke the callback once, return one encrypted success, and return one encrypted inner `authority_replayed`;
+12. capacity returns encrypted inner `authority_replay_capacity` with the replay result’s exact `retry-after`;
+13. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying a bound marker returns fixed `authority_invalid`;
+14. errors and captured diagnostics contain neither test secret nor bearer.
+
+For the unavailable matrix, loop over `CLIENT_V1_OPERATION_DEFINITIONS.filter(({ binding }) => binding === "hpke-bound-v1")`, supply the matching plaintext credential header, and assert:
+
+```ts
+for (const marker of [undefined, CLIENT_V1_HPKE_MECHANISM]) {
+  const headers = new Headers(
+    operation.credential === "pairing-secret"
+      ? { [CLIENT_V1_PAIRING_SECRET_HEADER]: TEST_PAIRING_SECRET }
+      : { authorization: TEST_BEARER },
+  );
+  if (marker) {
+    headers.set(CLIENT_V1_HPKE_HEADERS.mechanism, marker);
+  }
+  const response = await authority.handle({
+    operation: operation.id,
+    request: new Request("http://127.0.0.1:3020/api/client/v1/projects", {
+      headers,
+    }),
+    invoke: async () => {
+      invocations += 1;
+      return new Response(null, { status: 204 });
+    },
+  });
+  assert.equal(response.status, 503);
+  assert.equal(invocations, 0);
+  assert.deepEqual(
+    await response.json(),
+    clientV1Error(
+      "service_unavailable",
+      "Client v1 HPKE authority is unavailable.",
+      {
+        details: { reason: "authority_unavailable" },
+        retryable: true,
+      },
+    ),
+  );
+}
+```
+
+Import the existing `clientV1Error` producer for this full-envelope comparison; do not compare only the status.
 
 - [ ] **Step 5: Run and verify authority-runtime tests fail**
 
@@ -1730,6 +1902,9 @@ const operation = clientV1Operation(input.operation);
 if (!operation || operation.binding !== "hpke-bound-v1") {
   return input.invoke(input.request);
 }
+if (unavailable) {
+  return clientV1AuthorityUnavailableResponse();
+}
 
 const marker = input.request.headers.get(CLIENT_V1_HPKE_HEADERS.mechanism);
 if (!marker) {
@@ -1750,20 +1925,36 @@ if (
 Then:
 
 1. read and bound the body;
-2. parse pre-open binding fields;
-3. compare the decoded key ID and runtime nonce to this boot in constant time;
-4. decode the supplied instance ID and compare it to `clientV1InstanceId()` before HPKE;
-5. check timestamp freshness without reserving;
-6. HPKE-open and validate the canonical request plaintext;
-7. verify credential kind equals `operation.credential`;
-8. reserve replay;
-9. on replay/capacity, construct the corresponding inner Client v1 error and Auth-seal it;
-10. because all seven current protected operations are bodyless, Auth-seal inner `400 invalid_request` with `details.reason: "authority_invalid"` if the authenticated body is non-empty;
-11. clone headers, delete all authority headers, set exactly one internal credential header;
-12. reconstruct `Request` with original URL, method, body bytes, signal, and safe headers;
-13. invoke the existing handler callback;
-14. Auth-seal its response;
-15. on response sealing failure, emit the fixed plaintext 500.
+2. call `openClientV1HpkeBoundRequest`, which parses pre-open binding fields, compares decoded key ID/runtime nonce to this boot in constant time, compares the supplied instance ID to `clientV1InstanceId()`, checks timestamp freshness without reserving, calculates AAD, HPKE-opens, and validates the canonical request plaintext;
+3. synchronously reserve replay as the immediately following statement, with no intervening `await`, promise, callback, log, metric, or store access:
+
+```ts
+const opened = await openClientV1HpkeBoundRequest({
+  suite: bootstrap.suite,
+  recipientKey: bootstrap.keyPair.privateKey,
+  request: input.request,
+  body,
+  expectedKeyId: bootstrap.keyId,
+  expectedRuntimeNonce: bootstrap.runtimeNonce,
+  expectedInstanceId: clientV1InstanceId(),
+  now: now(),
+});
+const reservation = replay.reserve({
+  keyId: opened.binding.keyId,
+  requestNonce: opened.binding.requestNonce,
+  issuedAt: opened.binding.issuedAt,
+});
+```
+
+4. after the synchronous reservation result exists, deserialize `opened.responsePublicKeyBytes`; this is the first permitted `await` after HPKE open;
+5. verify credential kind equals `operation.credential`;
+6. on replay/capacity, construct the corresponding inner Client v1 error and Auth-seal it;
+7. because all seven current protected operations are bodyless, Auth-seal inner `400 invalid_request` with `details.reason: "authority_invalid"` if the authenticated body is non-empty;
+8. clone headers, delete all authority headers, set exactly one internal credential header;
+9. reconstruct `Request` with original URL, method, body bytes, signal, and safe headers;
+10. invoke the existing handler callback;
+11. Auth-seal its response;
+12. on response sealing failure, emit the fixed plaintext 500.
 
 Use `timingSafeEqual` from `node:crypto` for raw key-ID bytes. Do not compare secret/bearer values in the wrapper.
 
@@ -1777,6 +1968,17 @@ export function clientV1AuthorityRequiredResponse(): Response {
     "incompatible_version",
     "HPKE authority binding is required.",
     { details: { reason: "hpke_binding_required" } },
+  );
+}
+
+export function clientV1AuthorityUnavailableResponse(): Response {
+  return clientV1ErrorResponse(
+    "service_unavailable",
+    "Client v1 HPKE authority is unavailable.",
+    {
+      details: { reason: "authority_unavailable" },
+      retryable: true,
+    },
   );
 }
 
@@ -1821,7 +2023,32 @@ export function clientV1AuthorityResponseFailure(): Response {
 }
 ```
 
-The encrypted replay/capacity errors use `clientV1ErrorResponse` before sealing.
+`clientV1ErrorResponse("service_unavailable", ...)` is pinned by the existing response map to HTTP 503. Construct the encrypted replay/capacity responses exactly before sealing:
+
+```ts
+const replayed = clientV1ErrorResponse(
+  "conflict",
+  "The authority request was already used.",
+  {
+    details: { reason: "authority_replayed" },
+    retryable: true,
+  },
+);
+
+const capacity = clientV1ErrorResponse(
+  "service_unavailable",
+  "The authority replay window is full.",
+  {
+    details: { reason: "authority_replay_capacity" },
+    headers: {
+      "retry-after": String(reservation.retryAfterSeconds),
+    },
+    retryable: true,
+  },
+);
+```
+
+Auth-seal either inner response with the opened request’s response key. Never expose the capacity `retry-after` as unauthenticated outer guidance.
 
 - [ ] **Step 9: Wire tests and run**
 
@@ -1975,6 +2202,8 @@ Read `server.ts` and assert:
 - `suite.kem.generateKeyPair()` is used;
 - only serialized public key/key ID/suite/mode enter JSON;
 - `globalThis.__covenCaveClientV1AuthorityBootstrap` receives the in-memory keypair;
+- a caught active-mode initialization failure stores `{ mode: requestedMode, unavailable: true }` and never rewrites the requested mode to `off`;
+- unavailable active bootstrap publishes no discovery record;
 - discovery v1 is emitted when mode is off;
 - discovery v2 is emitted for advertise/enforce;
 - publication remains inside listener readiness;
@@ -2090,7 +2319,7 @@ Do not change the filename or filesystem safeguards. Keep cleanup calling `remov
 
 - [ ] **Step 7: Define failure behavior**
 
-If active-mode key initialization fails, set an unavailable authority runtime marker, publish no discovery record, and use the existing loud “CLIENT V1 DISABLED” reporting path. Protected route wrappers must answer 503 rather than silently becoming `off`. Invalid mode configuration fails before `app.prepare()` with the exact allowed-value message.
+If active-mode key initialization fails, retain the requested `advertise` or `enforce` mode in `{ mode, unavailable: true }`, publish no discovery record, and use the existing loud “CLIENT V1 DISABLED” reporting path. This is never represented as `undefined` or `off`. `createClientV1AuthorityRuntimeFromGlobal` must build an unavailable active runtime whose protected-operation branch returns `clientV1AuthorityUnavailableResponse()` before marker inspection or legacy invocation. Health, pairing creation, and explicitly unprotected/admin operations retain their existing behavior; all seven `hpke-bound-v1` operations return the fixed plaintext 503 for both missing-marker plaintext requests and malformed/present-marker requests because no key exists to authenticate them. Invalid mode configuration fails before `app.prepare()` with the exact allowed-value message.
 
 - [ ] **Step 8: Extend release-smoke contract expectations**
 
@@ -2294,6 +2523,136 @@ Add at least one valid bound success and these failures to the relevant route su
 
 Use `createClientV1HpkeTestClient` from `src/lib/server/client-v1/testing/hpke-client.ts`; do not add it to a production package export.
 
+Add this local decoder to the exchange and projects route suites:
+
+```ts
+async function openBoundJson(
+  prepared: ClientV1HpkeTestClient,
+  response: Response,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("content-type"),
+    CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+  );
+  const inner = await prepared.open(response);
+  return {
+    status: inner.status,
+    body: JSON.parse(new TextDecoder().decode(inner.body)) as
+      Record<string, unknown>,
+  };
+}
+```
+
+In `pairing/requests/[id]/exchange/route.test.ts`, add `two identical concurrent bound exchanges issue one credential and encrypt one replay refusal`. Create one approved pairing, one enforce-mode runtime/handler, and one prepared `pairing.exchange` request with a fixed 32-byte request nonce. Preserve the exact same envelope by cloning it:
+
+```ts
+const originalIssue = runtime.credentialStore.issue.bind(
+  runtime.credentialStore,
+);
+let issueCalls = 0;
+runtime.credentialStore.issue = async (input) => {
+  issueCalls += 1;
+  return originalIssue(input);
+};
+
+const [leftResponse, rightResponse] = await Promise.all([
+  handler(prepared.request.clone(), context(pairing.id)),
+  handler(prepared.request.clone(), context(pairing.id)),
+]);
+const opened = await Promise.all([
+  openBoundJson(prepared, leftResponse),
+  openBoundJson(prepared, rightResponse),
+]);
+assert.deepEqual(
+  opened.map(({ status }) => status).sort((left, right) => left - right),
+  [200, 409],
+);
+const success = opened.find(({ status }) => status === 200)!;
+const replayed = opened.find(({ status }) => status === 409)!;
+assert.match(
+  (success.body as { data: { bearer: string } }).data.bearer,
+  /^[A-Za-z0-9_-]{43}$/u,
+);
+assert.deepEqual(
+  (replayed.body as {
+    error: {
+      code: string;
+      details: { reason: string };
+    };
+  }).error,
+  {
+    code: "conflict",
+    message: "The authority request was already used.",
+    details: { reason: "authority_replayed" },
+    retryable: true,
+  },
+);
+assert.equal(issueCalls, 1);
+assert.equal((await runtime.credentialStore.reload()).size, 1);
+```
+
+Both outer responses must be authenticated media-type 200 responses; ordering is intentionally nondeterministic. The exact replay message above is the fixed inner message used when constructing `clientV1ErrorResponse`.
+
+In `projects/route.test.ts`, add `two identical concurrent bound bearer reads run one source read and encrypt one replay refusal`. Wrap the existing store/source before creating the handler:
+
+```ts
+const originalFind = runtime.credentialStore.findByBearer.bind(
+  runtime.credentialStore,
+);
+let findCalls = 0;
+runtime.credentialStore.findByBearer = async (bearer) => {
+  findCalls += 1;
+  return originalFind(bearer);
+};
+const originalCharge = runtime.rateLimiter.consumeAuthenticated.bind(
+  runtime.rateLimiter,
+);
+let chargeCalls = 0;
+runtime.rateLimiter.consumeAuthenticated = (credentialId) => {
+  chargeCalls += 1;
+  return originalCharge(credentialId);
+};
+let sourceCalls = 0;
+const handler = createClientV1ProjectsGetHandler(
+  runtime,
+  sources({
+    listProjects: async () => {
+      sourceCalls += 1;
+      return REGISTRY;
+    },
+  }),
+);
+
+const [leftResponse, rightResponse] = await Promise.all([
+  handler(prepared.request.clone()),
+  handler(prepared.request.clone()),
+]);
+const opened = await Promise.all([
+  openBoundJson(prepared, leftResponse),
+  openBoundJson(prepared, rightResponse),
+]);
+assert.deepEqual(
+  opened.map(({ status }) => status).sort((left, right) => left - right),
+  [200, 409],
+);
+assert.equal(
+  opened.filter(({ status }) => status === 409).length,
+  1,
+);
+assert.equal(
+  ((opened.find(({ status }) => status === 409)!.body as {
+    error: { details: { reason: string } };
+  }).error.details.reason),
+  "authority_replayed",
+);
+assert.equal(findCalls, 1);
+assert.equal(chargeCalls, 1);
+assert.equal(sourceCalls, 1);
+```
+
+The prepared projects URL includes `?limit=1`, so this also pins bearer pagination concurrency: the accepted page runs once, the duplicate page does not read the credential/source or consume a second authenticated budget, and a client must continue from the returned cursor using a new envelope.
+
 - [ ] **Step 8: Prove secret-safe diagnostics**
 
 Capture `console.warn`/`console.error` around malformed ciphertext, wrong key, replay, and response-seal failure. Assert the joined output excludes:
@@ -2401,7 +2760,7 @@ assert.equal(
 );
 ```
 
-Assert the main fixture points to `hpke-bound-v1-vectors.json` and `hpke-bound-v1-vectors.sha256`. Independently read the committed vector JSON/digest, recompute with `createClientV1HpkeBoundV1Vector()`, and compare to the exact vector in this plan.
+Assert the main fixture points to `hpke-bound-v1-vectors.json` and `hpke-bound-v1-vectors.sha256`. Independently read the committed vector JSON/digest, recompute with `createClientV1HpkeBoundV1Vector()`, compare rendered bytes to the committed JSON, and compare the SHA-256 of those bytes to the committed digest. Do not read or compare vector values from this plan.
 
 - [ ] **Step 2: Run and verify contract tests fail**
 
@@ -2493,7 +2852,10 @@ Add normative sections to `docs/api/client-v1.md` covering:
 - canonical route and binary AAD;
 - JCS request/response plaintext types;
 - Base-mode request and Auth-mode response;
+- the reviewed single-runtime X25519 Base-recipient/Auth-sender reuse rationale, including RFC mode separation, distinct request/response `info`/AAD domains, and separate one-direction contexts;
 - 60-second age, 10-second future skew, 120-second replay TTL, 4096 cap;
+- the `4096 / 120 = 34.133...` requests/second sustained-capacity calculation, 4096-request burst behavior, authenticated capacity `retry-after`, and fresh-envelope pagination retry rule;
+- the single-process key/replay invariant and the requirement that future multi-worker operation use linearizable shared reservation or distinct unroutable authority endpoints;
 - all error/status/trust rules;
 - exact protected operation table;
 - admin exclusion;
@@ -2516,6 +2878,11 @@ Require literal presence of:
   "DHKEM(X25519, HKDF-SHA256)",
   "HKDF-SHA256",
   "AES-256-GCM",
+  "Base-mode recipient",
+  "Auth-mode sender",
+  "4096 / 120 = 34.133",
+  "single request-serving process",
+  "linearizable",
   "x-coven-client-v1-authority",
   "x-coven-client-v1-authority-key-id",
   "x-coven-client-v1-authority-instance",
@@ -2524,6 +2891,7 @@ Require literal presence of:
   "x-coven-client-v1-authority-issued-at",
   "x-coven-client-v1-authority-enc",
   "x-coven-client-v1-authority-ciphertext",
+  "authority_unavailable",
   "hpke_binding_required",
   "authority_key_stale",
   "authority_instance_stale",
@@ -2532,6 +2900,8 @@ Require literal presence of:
   "authority_replayed",
   "authority_replay_capacity",
   "authority_response_failed",
+  "hpke-bound-v1-vectors.json",
+  "hpke-bound-v1-vectors.sha256",
 ]
 ```
 
@@ -3334,16 +3704,17 @@ Handoff artifacts:
 
 1. exact Cave commit SHA;
 2. exact `src/lib/server/client-v1/contract-fixture.json`;
-3. exact `contract-fixture.sha256`;
+3. exact `src/lib/server/client-v1/contract-fixture.sha256`;
 4. exact `src/lib/server/client-v1/hpke-bound-v1-vectors.json`;
-5. exact `hpke-bound-v1-vectors.sha256`;
+5. exact `src/lib/server/client-v1/hpke-bound-v1-vectors.sha256`;
 6. suite IDs `32/1/2`;
-7. the deterministic vector in this plan;
-8. discovery-v2 schema;
-9. exact header map;
-10. canonical route, binary AAD, and JCS rules;
-11. error/trust matrix;
-12. protected operation list.
+7. discovery-v2 schema;
+8. exact header map;
+9. canonical route, binary AAD, and JCS rules;
+10. error/trust matrix;
+11. protected operation list.
+
+Artifacts 4 and 5 are the sole normative cryptographic vector handoff. The plan’s rendered vector block is review evidence only and must not be vendored, parsed, copied into tests, or used to resolve a mismatch. Any mismatch is resolved against the vector JSON bytes at the handed-off Cave commit and their committed SHA-256.
 
 SDK acceptance must demonstrate, against Cave `advertise` and `enforce` modes:
 
@@ -3352,11 +3723,13 @@ SDK acceptance must demonstrate, against Cave `advertise` and `enforce` modes:
 - Auth-mode responses verify against the discovery Cave key;
 - plaintext/replacement/forged responses cannot trigger credential deletion or re-pair;
 - stale key causes bounded rediscovery, never plaintext fallback;
+- bootstrap-unavailable 503 preserves credentials and never causes plaintext fallback;
+- authenticated replay-capacity 503 honors `retry-after` and retries the logical page/operation with a fresh nonce/time;
 - vendored fixture bytes and SHA equal the Cave artifacts exactly.
 
 ### Chat Rust adapter handoff requirements
 
-Chat receives the same immutable artifacts after SDK codec behavior is frozen. Its adapter must prove RFC 9180 suite parity, exact canonical encoding, response Auth verification, and secret-free diagnostics. Chat does not invent a second wire format, alternate suite, alternate key ID, or JSON-order convention.
+Chat receives the same immutable committed JSON/SHA artifacts after SDK codec behavior is frozen. Its adapter must prove RFC 9180 suite parity, exact canonical encoding, response Auth verification, and secret-free diagnostics. Chat does not use plan prose as vector truth and does not invent a second wire format, alternate suite, alternate key ID, or JSON-order convention.
 
 ### Later enforcement flip requirements
 
