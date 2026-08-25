@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { Popover, PopoverBody, PopoverItem, usePopoverInitialFocus } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { selectAll, toggleFamiliarSelection } from "@/lib/familiar-multiselect";
@@ -28,9 +28,10 @@ type Props = {
  * picker this replaces (`@/lib/familiar-multiselect`): plain click scopes to one
  * familiar, ⌘/Ctrl-click combines, empty = All.
  *
- * The frame's "+ combine" card opens a real listbox over the same set rather
- * than teaching a gesture — the ⌘-click path still works, but the popover makes
- * multi-select reachable by keyboard and by pointer users who never learn it.
+ * The frame's "+ combine" card opens a checkable menu over the same set rather
+ * than only teaching a gesture — the ⌘-click path still works, but the popover
+ * makes multi-select reachable by keyboard and by pointer users who never learn
+ * it.
  *
  * Not adopted from the frame: the sparkle burst that fires on select. It is
  * decoration on a filter that already announces itself through the card's
@@ -44,6 +45,10 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
   const [combineOpen, setCombineOpen] = useState(false);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
+  // The popover is portaled to the end of <body>, so without this a keyboard
+  // user who opens Combine keeps focus on the trigger and has to tab through
+  // the whole page to reach the options they just asked for.
+  usePopoverInitialFocus(combineOpen, ".rituals-fam-combine-panel");
 
   // Which edge fades and arrows are live is a measurement, not a guess: a strip
   // that already fits shows neither, and both update as the row scrolls or the
@@ -73,7 +78,12 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
   }, [measure, familiars.length]);
 
   const scrollBy = (direction: -1 | 1) => {
-    scrollRef.current?.scrollBy({ left: direction * 240, behavior: "smooth" });
+    // Smooth scrolling is enhancement, not meaning — honour the same preference
+    // the stylesheet does for the card transitions.
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    scrollRef.current?.scrollBy({ left: direction * 240, behavior: reduced ? "auto" : "smooth" });
   };
 
   const allSelected = selected.size === 0;
@@ -109,18 +119,23 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
         <Icon name="ph:caret-right" width={15} aria-hidden />
       </button>
 
+      {/* A GROUP of toggle buttons, not a listbox. The strip also carries the
+          "combine" action, which is not an option — a non-option child makes a
+          listbox structurally invalid and assistive tech may drop it. The
+          toggle-group shape is what the chip picker this replaces already used
+          (`FamiliarMultiSelect`), it is what a filter actually is, and
+          `aria-pressed` describes a multi-select honestly where a radio-ish
+          `aria-selected` does not. */}
       <div
         ref={scrollRef}
         onScroll={measure}
-        role="listbox"
+        role="group"
         aria-label="Filter crons by familiar"
-        aria-multiselectable
         className="rituals-fam-carousel__scroll"
       >
         <button
           type="button"
-          role="option"
-          aria-selected={allSelected}
+          aria-pressed={allSelected}
           className="rituals-fam-card focus-ring"
           onClick={() => onChange(selectAll())}
         >
@@ -145,8 +160,7 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
             <button
               key={familiar.id}
               type="button"
-              role="option"
-              aria-selected={active}
+              aria-pressed={active}
               aria-label={`${familiar.display_name} — ${count} cron${count === 1 ? "" : "s"}. Click to scope, ⌘-click to combine.`}
               className="rituals-fam-card focus-ring"
               onClick={(event) =>
@@ -180,7 +194,7 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
               ref={combineRef}
               type="button"
               className="rituals-fam-card rituals-fam-card--combine focus-ring"
-              aria-haspopup="listbox"
+              aria-haspopup="menu"
               aria-expanded={combineOpen}
               onClick={() => setCombineOpen((value) => !value)}
             >
@@ -203,8 +217,9 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
               placement="bottom-start"
               minWidth={200}
               ariaLabel="Combine familiars"
+              className="rituals-fam-combine-panel"
             >
-              <PopoverBody ariaLabel="Combine familiars">
+              <PopoverBody role="menu" ariaLabel="Combine familiars">
                 {familiars.map((familiar) => (
                   <PopoverItem
                     key={familiar.id}

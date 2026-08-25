@@ -629,10 +629,18 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     setStoredFamiliarFilter([...next].sort().join(","));
   }, [setStoredFamiliarFilter]);
 
+  // Everything that COUNTS crons reads this list, not `codexAutos`: a cron in
+  // the undo window is hidden from its row, so it must be absent from the header
+  // chips, the failing set and the carousel totals too. Otherwise deleting the
+  // last failing cron leaves an enabled "1 failing" toggle that filters to
+  // nothing. It is deliberately NOT narrowed by the familiar/search/failing
+  // filters — these chips describe the surface, not the filter.
+  const liveAutos = useMemo(() => codexAutos.filter((a) => !hiddenIds.has(a.id)), [codexAutos, hiddenIds]);
+
   // "Failing" means the newest run this app recorded ended in failure — the
   // header chip, its filter and the Active group's count all read this one set,
   // so they can never disagree. See cron-health.ts for why there is no "stale".
-  const failingIds = useMemo(() => failingCronIds(codexAutos, lastRunById), [codexAutos, lastRunById]);
+  const failingIds = useMemo(() => failingCronIds(liveAutos, lastRunById), [liveAutos, lastRunById]);
   const [failingOnly, setFailingOnly] = useState(false);
   // A filter with nothing left to match is a dead toggle: drop it the moment
   // the last failure clears, rather than showing an empty list with no cause.
@@ -660,11 +668,11 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // keeps reporting the whole picture while a scope is active.
   const cronCountByFamiliar = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const auto of codexAutos) {
+    for (const auto of liveAutos) {
       for (const id of auto.familiars) counts.set(id, (counts.get(id) ?? 0) + 1);
     }
     return counts;
-  }, [codexAutos]);
+  }, [liveAutos]);
 
   // Inbox tab: the FULL feed (every kind). `inboxVisible` is the search-filtered
   // flat list — the selection universe, so "select all" always means "all
@@ -766,12 +774,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // would be reporting the filter back at you instead of the crons.
   const summary = useMemo(() => {
     return {
-      active: codexAutos.filter((a) => a.status === "ACTIVE" && !hiddenIds.has(a.id)).length,
-      paused: codexAutos.filter((a) => a.status === "PAUSED" && !hiddenIds.has(a.id)).length,
+      active: liveAutos.filter((a) => a.status === "ACTIVE").length,
+      paused: liveAutos.filter((a) => a.status === "PAUSED").length,
       failing: failingIds.size,
       soonest: undefined as string | undefined,
     };
-  }, [codexAutos, failingIds.size, hiddenIds]);
+  }, [liveAutos, failingIds.size]);
 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
@@ -809,6 +817,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       value={{
         runAutomation: runCodexNow,
         togglePauseAutomation: toggleCodex,
+        busyId,
       }}
     >
     <section className="flex h-full [background:var(--bg-base)]!">
@@ -1234,15 +1243,18 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                   selected={familiarFilter}
                   onChange={updateFamiliarFilter}
                   countById={cronCountByFamiliar}
-                  totalCount={codexAutos.length}
+                  totalCount={liveAutos.length}
                 />
               )}
               <AutomationsPanel
                 active={codexActive}
                 paused={codexPaused}
-                // While the failing filter is on, every visible row is failing —
-                // repeating the count beside "ACTIVE · 2" says nothing.
-                failingCount={failingOnly ? 0 : summary.failing}
+                // Scoped to the rows actually rendered, unlike the header chip:
+                // "Active · 1  3 failing" would be counting failures that a
+                // familiar scope has already hidden. Suppressed entirely while
+                // the failing filter is on, where every visible row is failing
+                // and repeating the count says nothing.
+                failingCount={failingOnly ? 0 : codexActive.filter((a) => failingIds.has(a.id)).length}
                 selectedId={selectedAutomationId}
                 familiarsById={familiarsById}
                 lastRunById={lastRunById}

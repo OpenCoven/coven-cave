@@ -22,6 +22,11 @@ function relTime(iso: string | undefined | null): string {
 export type ScheduleActions = {
   runAutomation: (auto: CodexAutomation) => void;
   togglePauseAutomation: (auto: CodexAutomation) => void;
+  /** The automation with a mutation in flight, if any. Rows disable their own
+   *  actions against it so a double-click cannot submit the same run twice —
+   *  the second POST comes back 409. The detail panel already did this; the
+   *  rows did not, and they are the surface people actually click. */
+  busyId?: string | null;
 };
 export const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
 
@@ -52,8 +57,10 @@ export function RowActionButton({ icon, label, text, onClick, disabled }: { icon
 /**
  * Status glyph. Every state carries a distinct SHAPE as well as a tint, so the
  * row never encodes health by color alone (WCAG 1.4.1): a filled dot is
- * healthy, a pulsing dot is running, a warning triangle is failing, a dashed
- * ring is paused.
+ * healthy, a dot inside a ring is running, a warning triangle is failing, a
+ * dashed ring is paused. Running's pulse is an enhancement on top of that
+ * shape, never the thing that distinguishes it — `prefers-reduced-motion`
+ * removes the pulse and the states must still be told apart.
  */
 function CronStatusGlyph({ health }: { health: CronHealth }) {
   const label = cronHealthLabel(health);
@@ -80,6 +87,7 @@ function AutomationScheduleRow({
   const isActive = auto.status === "ACTIVE";
   const health = cronHealth(auto, lastRun);
   const actions = useContext(ScheduleActionsContext);
+  const busy = actions?.busyId === auto.id;
   const tag = auto.tags[0];
   return (
     <li
@@ -133,12 +141,13 @@ function AutomationScheduleRow({
         {actions && (
           <span className="rituals-cron-row__hover-actions">
             {isActive ? (
-              <RowActionButton icon="ph:play" label={`Run ${auto.name} now`} text="Run" onClick={() => actions.runAutomation(auto)} />
+              <RowActionButton icon="ph:play" label={`Run ${auto.name} now`} text="Run" disabled={busy} onClick={() => actions.runAutomation(auto)} />
             ) : null}
             <RowActionButton
               icon={isActive ? "ph:pause" : "ph:play"}
               label={`${isActive ? "Pause" : "Resume"} ${auto.name}`}
               text={isActive ? "Pause" : "Resume"}
+              disabled={busy}
               onClick={() => actions.togglePauseAutomation(auto)}
             />
             <RowActionButton
@@ -156,13 +165,14 @@ function AutomationScheduleRow({
           {actions ? (
             <>
               {isActive ? (
-                <PopoverItem icon="ph:play" onSelect={() => actions.runAutomation(auto)}>
+                <PopoverItem icon="ph:play" disabled={busy} onSelect={() => actions.runAutomation(auto)}>
                   Run now
                 </PopoverItem>
               ) : null}
               <PopoverSeparator />
               <PopoverItem
                 icon={isActive ? "ph:pause" : "ph:play"}
+                disabled={busy}
                 onSelect={() => actions.togglePauseAutomation(auto)}
               >
                 {isActive ? "Pause" : "Resume"}

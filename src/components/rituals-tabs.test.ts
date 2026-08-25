@@ -277,8 +277,23 @@ assert.match(
 );
 assert.match(
   automations,
-  /const failingIds = useMemo\(\(\) => failingCronIds\(codexAutos, lastRunById\)/,
+  /const failingIds = useMemo\(\(\) => failingCronIds\(liveAutos, lastRunById\)/,
   "the chip, its filter and the Active group's count all read one failing set",
+);
+assert.match(
+  automations,
+  /const liveAutos = useMemo\(\(\) => codexAutos\.filter\(\(a\) => !hiddenIds\.has\(a\.id\)\)/,
+  "every cron aggregate excludes the undo window's pending deletes, so a hidden row cannot still be counted",
+);
+assert.match(
+  automations,
+  /failingCount=\{failingOnly \? 0 : codexActive\.filter\(\(a\) => failingIds\.has\(a\.id\)\)\.length\}/,
+  "the Active group's failing count is scoped to the rows it annotates, unlike the global header chip",
+);
+assert.match(
+  automations,
+  /togglePauseAutomation: toggleCodex,\s*busyId,/,
+  "row actions see the in-flight mutation, so a double-click cannot submit the same run twice",
 );
 assert.match(
   automations,
@@ -318,8 +333,43 @@ assert.match(
 );
 assert.match(
   familiarCarousel,
-  /role="listbox"[\s\S]{0,160}aria-label="Filter crons by familiar"[\s\S]{0,40}aria-multiselectable/,
-  "the familiar carousel is a real multi-selectable listbox",
+  /role="group"[\s\S]{0,120}aria-label="Filter crons by familiar"/,
+  "the familiar carousel is a toggle GROUP, not a listbox — the strip also carries the non-option combine action",
+);
+assert.match(
+  familiarCarousel,
+  /aria-pressed=\{active\}/,
+  "each familiar card reports its own filter state, so a multi-select is not announced as a radio group",
+);
+assert.doesNotMatch(
+  familiarCarousel,
+  /role="option"|aria-multiselectable/,
+  "no half-listbox semantics survive the switch to the toggle-group pattern",
+);
+assert.match(
+  familiarCarousel,
+  /usePopoverInitialFocus\(combineOpen, "\.rituals-fam-combine-panel"\)/,
+  "the portaled combine popup takes focus, or a keyboard user tabs the whole page to reach it",
+);
+assert.match(
+  familiarCarousel,
+  /prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduced \? "auto" : "smooth"/,
+  "carousel nav scrolling honours reduced motion, not just the CSS transitions",
+);
+assert.match(
+  cronsStyles,
+  /@media \(prefers-reduced-motion: reduce\) \{[\s\S]{0,400}\.rituals-fam-card,/,
+  "the carousel's own transitions are covered by a reduced-motion override, not just the row glyph",
+);
+assert.match(
+  cronsStyles,
+  /\.rituals-cron-row__glyph--running \{(?=[^}]*border: 1\.5px solid var\(--accent-presence\))[^}]*\}/,
+  "running is a dot inside a RING: reduced motion strips the pulse, and hue alone would then be the only cue",
+);
+assert.match(
+  cronsStyles,
+  /@container \(max-width: 700px\) \{\s*\.rituals-cron-row__action-text \{\s*display: none;/,
+  "the action labels hide inside a max-width query — a bare default lost the ordering fight and hid them at every width",
 );
 assert.match(
   familiarCarousel,
@@ -328,8 +378,8 @@ assert.match(
 );
 assert.match(
   familiarCarousel,
-  /aria-haspopup="listbox"[\s\S]{0,1400}ariaLabel="Combine familiars"/,
-  "the combine card opens a keyboard-reachable listbox instead of only teaching the ⌘-click gesture",
+  /aria-haspopup="menu"[\s\S]{0,1400}ariaLabel="Combine familiars"/,
+  "the combine card opens a keyboard-reachable menu instead of only teaching the ⌘-click gesture — and the trigger promises what the shared Popover actually renders",
 );
 
 console.log("rituals-tabs.test.ts: ok");

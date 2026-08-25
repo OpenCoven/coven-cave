@@ -295,7 +295,7 @@
   transform: scale(1.05);
 }
 
-.rituals-fam-card[aria-selected="true"] {
+.rituals-fam-card[aria-pressed="true"] {
   border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 30%, transparent);
@@ -320,8 +320,10 @@
   height: 84px;
 }
 
-.rituals-fam-card__art img,
-.rituals-fam-card__art > span {
+/* Only the avatar image fills the art box. A bare `> span` also matched the
+   check badge and the combine card's plus wrapper, and — being more specific
+   than their own class rules — blew both up to fill the whole tile. */
+.rituals-fam-card__art > img {
   width: 100%;
   height: 100%;
   border-radius: 0;
@@ -512,11 +514,16 @@
   background: var(--color-success);
 }
 
+/* Running is a dot inside a RING, not just a tinted dot: the pulse is an
+   enhancement, and `prefers-reduced-motion` removes it. Without the ring the
+   two live states would then differ only by hue (WCAG 1.4.1). */
 .rituals-cron-row__glyph--running {
-  width: 9px;
-  height: 9px;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--accent-presence);
   border-radius: var(--radius-pill);
-  background: var(--accent-presence);
+  background:
+    radial-gradient(circle, var(--accent-presence) 0 2.5px, transparent 2.5px);
   animation: ritualsCronPulse 1.6s var(--ease-standard) infinite;
 }
 
@@ -693,15 +700,20 @@
   }
 }
 
+/* At 700px the action buttons gain their words, so the action track has to
+   grow with them: Run + Pause + Details + the overflow trigger do not fit the
+   icon-only 112px. 224px is MEASURED off the rendered cluster (53 + 65 + 69 +
+   22 plus its gaps = 215), not guessed — an earlier 208px still spilled the
+   buttons left over the schedule chip. */
 @container (min-width: 700px) {
-  .rituals-cron-row__action-text {
-    display: inline;
+  .rituals-crons-list {
+    --rituals-cron-tail: 96px 120px 224px;
   }
 }
 
 @container (min-width: 780px) {
   .rituals-crons-list {
-    --rituals-cron-tail: 74px 96px 120px 112px;
+    --rituals-cron-tail: 74px 96px 120px 224px;
   }
 
   .rituals-cron-row__avatars {
@@ -711,12 +723,35 @@
 
 @container (min-width: 900px) {
   .rituals-crons-list {
-    --rituals-cron-tail: 74px 112px 140px 112px;
+    --rituals-cron-tail: 74px 112px 140px 224px;
   }
 }
 
 /* Below 700px the action buttons keep their icons and shed their words — the
-   aria-label still carries the full action name. */
-.rituals-cron-row__action-text {
-  display: none;
+   aria-label still carries the full action name. Written as a max-width query
+   rather than a bare default + min-width override: those two have equal
+   specificity, so whichever came last won unconditionally, and the labels
+   never rendered at any width. */
+@container (max-width: 700px) {
+  .rituals-cron-row__action-text {
+    display: none;
+  }
+}
+
+/* Reduced motion: the row glyph is not the only thing that moves. The carousel
+   animates width, height, transform, opacity and padding, and its nav buttons
+   scroll smoothly — all of it is enhancement, none of it carries meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .rituals-fam-carousel__scroll,
+  .rituals-fam-card,
+  .rituals-fam-card__art,
+  .rituals-fam-card__meta,
+  .rituals-fam-carousel__nav,
+  .rituals-fam-carousel__fade {
+    transition: none;
+  }
+
+  .rituals-fam-card:hover {
+    transform: none;
+  }
 }
