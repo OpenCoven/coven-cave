@@ -28,11 +28,16 @@ const {
   listSavedLinks,
   listSavedLinkSummaries,
   MAX_LINKS_PER_SAVE,
+  MAX_SAVED_LINKS,
   removeSavedLink,
   reserveXArticleCandidates,
   saveResearchLinks,
   toSavedLinkSummary,
 } = await import("./research-links.ts");
+
+test("saved Research resources retain a 10,000-item searchable catalog", () => {
+  assert.equal(MAX_SAVED_LINKS, 10_000);
+});
 
 const STORE_PATH = () => process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
 const ARTICLE_URL = "https://x.com/OpenCoven/status/123456789";
