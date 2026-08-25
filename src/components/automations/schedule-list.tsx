@@ -13,7 +13,7 @@ import type { IconName } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor } from "@/lib/automations/run-status";
-import { cronHealth, cronHealthLabel, type CronHealth } from "@/lib/automations/cron-health";
+import { cronHealth, cronHealthLabel, cronRunVerb, type CronHealth } from "@/lib/automations/cron-health";
 
 function relTime(iso: string | undefined | null): string {
   return iso ? relativeTimeSigned(iso) : "—";
@@ -35,6 +35,12 @@ export const ScheduleActionsContext = createContext<ScheduleActions | null>(null
 // button (never nested), so a click can't also open the detail panel. It paints
 // on row hover/focus (see .rituals-cron-row__hover-actions) but stays in the tab
 // order, so a keyboard user never has to hover to reach it.
+//
+// The label promotes to --text-primary on hover/focus because that is exactly
+// when it needs to: the handoff spec's token table measures --text-secondary at
+// 4.3:1 over --bg-hover — below AA — and says "promote to primary on hover".
+// Tinting only the background made the text hardest to read at the one moment
+// the user is reaching for it.
 export function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconName; label: string; text: string; onClick: () => void; disabled?: boolean }) {
   return (
     <Button
@@ -44,7 +50,7 @@ export function RowActionButton({ icon, label, text, onClick, disabled }: { icon
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] [color:var(--text-secondary)]!"
+      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] [color:var(--text-secondary)]! hover:[color:var(--text-primary)]! focus-visible:[color:var(--text-primary)]!"
       leadingIcon={icon}
     >
       {/* Icon-only when the hosting pane runs narrow (e.g. the md split while a
@@ -125,7 +131,7 @@ function AutomationScheduleRow({
         style={lastRun ? { color: runStatusColor(lastRun.status, { quietSuccess: true }) } : undefined}
         title={lastRun?.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined}
       >
-        {lastRun ? `Run ${relTime(lastRun.startedAt)}` : "—"}
+        {lastRun ? `${cronRunVerb(health)} ${relTime(lastRun.startedAt)}` : "—"}
       </span>
 
       <span className="rituals-cron-row__sched">

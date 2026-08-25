@@ -312,6 +312,21 @@ assert.doesNotMatch(
 );
 assert.match(
   scheduleList,
+  /\$\{cronRunVerb\(health\)\} \$\{relTime\(lastRun\.startedAt\)\}/,
+  "the last-run cell reads verb + state — a bare \"Run <date>\" is the ambiguity the handoff spec files as a P1",
+);
+assert.doesNotMatch(
+  scheduleList,
+  /`Run \$\{relTime/,
+  "no bare Run-plus-timestamp survives: it never said whether it looked forward or back",
+);
+assert.match(
+  scheduleList,
+  /hover:\[color:var\(--text-primary\)\]!/,
+  "row action labels promote to primary on hover — --text-secondary is 4.3:1 over --bg-hover, below AA",
+);
+assert.match(
+  scheduleList,
   /rituals-cron-row__glyph--\$\{health\}/,
   "each health state gets its own glyph shape, so status is never color-only",
 );
