@@ -35,7 +35,10 @@ import {
   createChatProjectIndex,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
-import { deriveChatListProjectGroups } from "@/lib/chat-list-grouping";
+import {
+  deriveChatListProjectGroups,
+  withoutArchivedChatSessions,
+} from "@/lib/chat-list-grouping";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
@@ -301,12 +304,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   // The siderail never shows archived chats: even while the list's "Show
   // archived" toggle is on, rail groups build from an archive-free view.
-  const railSessions = useMemo(
-    () => mine.some((session) => session.archived_at)
-      ? mine.filter((session) => !session.archived_at)
-      : mine,
-    [mine],
-  );
+  const railSessions = useMemo(() => withoutArchivedChatSessions(mine), [mine]);
 
   // Search first, then status. The chip counts describe the SEARCHED set, so
   // pressing one chip never renumbers the others — the number under "Failed"

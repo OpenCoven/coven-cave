@@ -50,7 +50,7 @@ assert.match(
 // …but the rail builds from an archive-free view of the same rows.
 assert.match(
   chatList,
-  /const railSessions = useMemo\([\s\S]{0,180}?mine\.some\(\(session\) => session\.archived_at\)[\s\S]{0,120}?mine\.filter\(\(session\) => !session\.archived_at\)[\s\S]{0,80}?: mine/,
+  /const railSessions = useMemo\(\(\) => withoutArchivedChatSessions\(mine\), \[mine\]\)/,
   "the siderail's session source strips archived rows even while the toggle is on",
 );
 assert.match(

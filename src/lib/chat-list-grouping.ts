@@ -12,6 +12,22 @@ export type ChatListProjectGroups = {
   sidebarGroups: ChatProjectGroup[];
 };
 
+/** Strip archived rows in one pass while retaining identity when no work is needed. */
+export function withoutArchivedChatSessions(sessions: SessionRow[]): SessionRow[] {
+  let visible: SessionRow[] | null = null;
+
+  for (let index = 0; index < sessions.length; index += 1) {
+    const session = sessions[index];
+    if (session.archived_at) {
+      visible ??= sessions.slice(0, index);
+    } else if (visible) {
+      visible.push(session);
+    }
+  }
+
+  return visible ?? sessions;
+}
+
 /**
  * Build the filtered-list and stable-rail project groups together.
  *

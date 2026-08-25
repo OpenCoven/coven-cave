@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import { createChatProjectIndex, type CaveProject } from "./chat-projects.ts";
-import { deriveChatListProjectGroups } from "./chat-list-grouping.ts";
+import {
+  deriveChatListProjectGroups,
+  withoutArchivedChatSessions,
+} from "./chat-list-grouping.ts";
 import type { SessionRow } from "./types.ts";
 
 const projects: CaveProject[] = [
@@ -79,4 +82,13 @@ test("project overrides stay identical across the shared result", () => {
 
   assert.equal(result.grouped[0]?.projectRoot, "/work/two");
   assert.equal(result.sidebarGroups, result.grouped);
+});
+
+test("archive filtering preserves identity or copies once from the first archived row", () => {
+  const current = [session("one", "/work/one"), session("two", "/work/two")];
+  assert.equal(withoutArchivedChatSessions(current), current);
+
+  const archived = { ...current[1], archived_at: "2026-08-24T01:00:00.000Z" };
+  const filtered = withoutArchivedChatSessions([current[0], archived, session("three", "/work/two")]);
+  assert.deepEqual(filtered.map((row) => row.id), ["one", "three"]);
 });
