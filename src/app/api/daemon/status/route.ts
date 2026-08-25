@@ -19,7 +19,7 @@ import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server
 import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
-import { supportsSessionLaunchPolicy } from "@/lib/server/research-launch-policy";
+import { isOwnerLocalResearchDaemonTarget, supportsSessionLaunchPolicy } from "@/lib/server/research-launch-policy";
 import {
   daemonDiagnosticContextFromRequest,
   DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
