@@ -3,6 +3,7 @@ import {
   MAX_RESEARCH_TOPIC_MISSIONS,
   MAX_RESEARCH_TOPIC_SAVED_LINKS,
   MAX_RESEARCH_TOPIC_X_SOURCES,
+  MAX_RESEARCH_TOPIC_SESSIONS,
   recommendResearchTopics,
   researchTopicContextRevision,
 } from "../../../../lib/research-topic-recommendations.ts";
@@ -26,6 +27,7 @@ import { listSavedLinks } from "../../../../lib/server/research-links.ts";
 import { listSavedXSources, type SavedXSource } from "../../../../lib/server/x-sources.ts";
 import { hasXCapability } from "../../../../lib/server/x-access.ts";
 import { rejectNonLocalRequest } from "../../../../lib/server/api-security.ts";
+import type { SessionRow } from "../../../../lib/types.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,6 +38,7 @@ export type ResearchRecommendationsRouteDeps = {
   listSavedXSources: (familiarId: string) => Promise<readonly SavedXSource[]>;
   hasXResearchCapability: (familiarId: string) => Promise<boolean>;
   listVaultEntries: (familiarId: string) => Promise<readonly KnowledgeEntry[]>;
+  listSessions: (familiarId: string) => Promise<readonly SessionRow[]>;
   diagnostics?: AgenticDiagnosticSink;
 };
 
@@ -45,6 +48,14 @@ const productionDeps: ResearchRecommendationsRouteDeps = {
   listSavedXSources,
   hasXResearchCapability: (familiarId) => hasXCapability(familiarId, "research"),
   listVaultEntries: async (familiarId) => selectKnowledgeForFamiliar(await listKnowledgeEntries(), familiarId),
+  listSessions: async (familiarId) => {
+    const { computeSessionsList } = await import("../../../../lib/server/sessions-list.ts");
+    const result = await computeSessionsList(false, familiarId, false, {
+      sweepArchives: false,
+      enrichGit: false,
+    });
+    return result.payload.sessions;
+  },
 };
 
 function recordResearchDiagnostic(
@@ -74,6 +85,15 @@ function boundedMissions(values: readonly ResearchMission[]): ResearchMission[] 
   return [...values]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
     .slice(0, MAX_RESEARCH_TOPIC_MISSIONS);
+}
+
+function boundedSessions(values: readonly SessionRow[]): SessionRow[] {
+  return [...values]
+    .filter((session) => !session.generated)
+    .sort((left, right) =>
+      right.updated_at.localeCompare(left.updated_at) || left.id.localeCompare(right.id)
+    )
+    .slice(0, MAX_RESEARCH_TOPIC_SESSIONS);
 }
 
 /**
@@ -135,11 +155,12 @@ export function createResearchRecommendationsRoute(deps: ResearchRecommendations
       return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
     }
 
-    const [missions, savedLinks, xSources, vault] = await Promise.all([
+    const [missions, savedLinks, xSources, vault, sessions] = await Promise.all([
       deps.listMissions(),
       deps.listSavedLinks(),
       readSavedXSourcesIfGranted(deps, familiarId),
       readVaultWithOneRetry(deps.listVaultEntries, familiarId, deps.diagnostics),
+      deps.listSessions(familiarId),
     ]);
     if (req.signal.aborted) return cancelled(deps.diagnostics);
 
@@ -151,6 +172,7 @@ export function createResearchRecommendationsRoute(deps: ResearchRecommendations
       savedLinks: bounded(savedLinks, MAX_RESEARCH_TOPIC_SAVED_LINKS),
       xSources: bounded(xSources, MAX_RESEARCH_TOPIC_X_SOURCES),
       vaultEntries: vault.entries,
+      sessions: boundedSessions(sessions),
       reducedContext: vault.reducedContext,
     };
     const revision = researchTopicContextRevision(recommendationContext);
@@ -163,7 +185,8 @@ export function createResearchRecommendationsRoute(deps: ResearchRecommendations
             recommendationContext.missions.length
             + recommendationContext.savedLinks.length
             + recommendationContext.xSources.length
-            + recommendationContext.vaultEntries.length,
+            + recommendationContext.vaultEntries.length
+            + recommendationContext.sessions.length,
         },
       });
       return NextResponse.json({

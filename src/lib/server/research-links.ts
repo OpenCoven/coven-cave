@@ -44,7 +44,7 @@ import { xArticleContentSha256 } from "./x-article-content-sha.ts";
 
 export { MAX_LINKS_PER_SAVE };
 
-export const MAX_SAVED_LINKS = 500;
+export const MAX_SAVED_LINKS = 10_000;
 
 type UnknownRecord = Record<string, unknown>;
 

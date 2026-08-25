@@ -232,6 +232,15 @@ test("inherited Codex defaults require the active local daemon launch policy", (
   assert.match(composer, /\}, \[familiarId, daemonRunning\]\);/);
 });
 
+test("agentic topic recommendations are always available and include Coven sessions", () => {
+  assert.doesNotMatch(promptTab, /caveAgenticRecommendations/);
+  assert.doesNotMatch(promptTab, /agenticRecommendationsEnabled\s*\?/);
+  assert.match(
+    promptTab,
+    /Grounded in collective Coven sessions, current missions, saved sources, and relevant Vault evidence\./,
+  );
+});
+
 // ── Quick saves: selected resources are part of the launch contract ──────────
 
 test("quick saves are included in mission creation before the run starts", () => {
@@ -267,7 +276,7 @@ test("quick saves support search-scoped bulk selection without losing hidden pic
 test("agentic topic recommendations keep client and server evidence freshness separate", () => {
   // The shared lifecycle sees durable client-visible Desk state only. The
   // composer draft remains absent, so ordinary typing never starts a request.
-  assert.match(promptTab, /caveAgenticRecommendations\(\)/);
+  assert.doesNotMatch(promptTab, /caveAgenticRecommendations/);
   assert.match(promptTab, /useAgenticRecommendations<ResearchRecommendationClientContext>/);
   assert.match(promptTab, /buildResearchRecommendationContext/);
   assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_MISSIONS = 12/);
@@ -278,7 +287,7 @@ test("agentic topic recommendations keep client and server evidence freshness se
   assert.match(recommendationContext, /mission\.artifacts/);
   assert.match(recommendationContext, /const bounded = value\.slice\(0, MAX_REVISION_TEXT_CHARS\)/);
   assert.doesNotMatch(recommendationContext, /intent: mission\.intent/);
-  assert.match(promptTab, /enabled: agenticRecommendationsEnabled/);
+  assert.match(promptTab, /enabled: !research\.loading && !links\.loading/);
   // The backend's fingerprint is the bounded revision for server-only X and
   // Vault evidence. It must survive transport and gate every explicit action.
   assert.match(promptTab, /serverContextFingerprint: body\.contextFingerprint/);
