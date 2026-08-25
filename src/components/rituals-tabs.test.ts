@@ -250,15 +250,23 @@ assert.match(workspace, /if \(next === "flow"\) \{[\s\S]{0,600}?commitMode\("inb
 // Overview tab is "context only — unchanged by this spec", so what is pinned
 // here is the Crons chrome the redesign actually reshapes.
 const scheduleList = readFileSync(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8");
+// The Crons sheet is component-imported by automations-view.tsx so it ships
+// with the lazy AutomationsView chunk rather than the root CSS bundle.
+const cronsStyles = readFileSync(new URL("../styles/rituals-crons.css", import.meta.url), "utf8");
 const familiarCarousel = readFileSync(new URL("./automations/familiar-carousel.tsx", import.meta.url), "utf8");
 
+assert.match(
+  automations,
+  /import "@\/styles\/rituals-crons\.css"/,
+  "the Crons sheet is component-imported so it code-splits with the lazy surface",
+);
 assert.match(
   automations,
   /activeTab === "crons" \? " rituals-crons-header" : ""/,
   "the glass band layers onto the shared compact header for Crons only",
 );
 assert.match(
-  compactCalendarStyles,
+  cronsStyles,
   /\.rituals-crons-header\s*\{(?=[^}]*backdrop-filter:\s*blur\(var\(--glass-blur\)\)\s*saturate\(var\(--glass-saturate\)\))[^}]*\}/,
   "the glass header filters through the shared glass tokens, not hand-copied values",
 );
@@ -283,7 +291,7 @@ assert.match(
   "the failing filter hides the Paused group outright — a paused cron is off, not failing",
 );
 assert.doesNotMatch(
-  `${compactCalendarStyles}\n${readFileSync(new URL("../lib/automations/cron-health.ts", import.meta.url), "utf8")}`,
+  `${cronsStyles}\n${readFileSync(new URL("../lib/automations/cron-health.ts", import.meta.url), "utf8")}`,
   /rituals-cron-row__glyph--stale|CronHealth = [^;]*"stale"/,
   "no row claims a stale state: the run store only sees app-triggered runs, so staleness is not knowable (see cron-health.ts)",
 );
@@ -294,17 +302,17 @@ assert.match(
 );
 for (const health of ["healthy", "running", "failed", "paused"]) {
   assert.ok(
-    compactCalendarStyles.includes(`.rituals-cron-row__glyph--${health}`),
+    cronsStyles.includes(`.rituals-cron-row__glyph--${health}`),
     `the ${health} row glyph has a shape of its own`,
   );
 }
 assert.match(
-  compactCalendarStyles,
+  cronsStyles,
   /\.rituals-crons-list\s*\{\s*--rituals-cron-tail:\s*112px;/,
   "the measured column tail lives on the LIST, so the panel's own container query can reach it",
 );
 assert.match(
-  compactCalendarStyles,
+  cronsStyles,
   /@container \(min-width: 780px\) \{\s*\.rituals-crons-list \{[\s\S]{0,120}\.rituals-cron-row__avatars \{\s*display: flex;/,
   "familiars are the first column to drop as the list narrows under an open detail rail",
 );

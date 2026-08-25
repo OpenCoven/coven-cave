@@ -54,6 +54,11 @@ import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+// Component-imported, not added to the globals.css facade: this sheet then
+// ships with the dynamically-imported AutomationsView chunk instead of the
+// root bundle every route downloads (#3264 pattern). On the facade it put the
+// home first-load CSS 15 KB over BUNDLE_MAX_HOME_CSS_KB.
+import "@/styles/rituals-crons.css";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -840,12 +845,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                point the two readouts drop and only the failing toggle stays —
                it is the one that costs something to miss. */
             <div className="rituals-crons-chips">
-              <span className="rituals-crons-chip @max-[780px]:hidden">
+              <span className="rituals-crons-chip rituals-crons-chip--readout">
                 <span aria-hidden className="rituals-crons-chip__dot" />
                 {summary.active} active
               </span>
               {summary.paused > 0 && (
-                <span className="rituals-crons-chip rituals-crons-chip--paused @max-[780px]:hidden">
+                <span className="rituals-crons-chip rituals-crons-chip--paused rituals-crons-chip--readout">
                   <span aria-hidden className="rituals-crons-chip__dot rituals-crons-chip__dot--paused" />
                   {summary.paused} paused
                 </span>
@@ -902,7 +907,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                   </div>
                 ) : (
                   <>
-                    <div className="surface-compact-search @max-[700px]:hidden">
+                    <div className="surface-compact-search rituals-crons-search-field">
                       <SearchInput
                         value={query}
                         onValueChange={setQuery}
@@ -915,7 +920,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                       aria-label="Filter crons"
                       size="sm"
                       variant="ghost"
-                      className="@min-[700px]:hidden"
+                      className="rituals-crons-search-toggle"
                       leadingIcon="ph:magnifying-glass"
                       onClick={() => setSearchOpen(true)}
                     />
@@ -1235,7 +1240,9 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               <AutomationsPanel
                 active={codexActive}
                 paused={codexPaused}
-                failingCount={summary.failing}
+                // While the failing filter is on, every visible row is failing —
+                // repeating the count beside "ACTIVE · 2" says nothing.
+                failingCount={failingOnly ? 0 : summary.failing}
                 selectedId={selectedAutomationId}
                 familiarsById={familiarsById}
                 lastRunById={lastRunById}

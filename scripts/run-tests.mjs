@@ -944,6 +944,7 @@ export const SUITES = {
     "src/components/workspace-alias-modes.test.ts",
     "src/components/palette-canonical-names.test.ts",
     "src/lib/automations/automation-entry.test.ts",
+    "src/lib/automations/cron-health.test.ts",
     "src/lib/automations/list-input.test.ts",
     "src/lib/automations/run-status.test.ts",
     "src/lib/inbox-feed.test.ts",

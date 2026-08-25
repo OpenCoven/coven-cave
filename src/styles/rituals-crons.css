@@ -1,0 +1,722 @@
+/* Rituals · Crons tab — `Rituals Redesign.dc.html` (project "Coven Cave dark
+   theme specs").
+
+   Component-imported by automations-view.tsx rather than added to the
+   globals.css facade, so it ships with the dynamically-imported AutomationsView
+   chunk instead of the root bundle every route downloads (#3264 pattern, same
+   as the surface-research-*.css family). Added to the facade it put the home
+   first-load CSS 15 KB over BUNDLE_MAX_HOME_CSS_KB.
+
+   `Rituals Redesign.dc.html` (project "Coven Cave dark theme specs"). The frame
+   ships every value inline; everything here is on the type/space/radius scale
+   instead, so the drift ratchets stay flat. Where the frame's number sits
+   between two steps it snapped to the nearer one: its 9/9.5px eyebrows →
+   --text-2xs, 11.5px → --text-xs, 12.5px → --text-sm, and its 7/9/10/11/13/14px
+   paddings → --space-1..-4. The frame's palette IS our token set (its #9386d0
+   is --accent-presence), so no hex was copied.
+
+   Glass surface header. The frame draws it as a two-stop wash over a blurred,
+   saturated backdrop; --glass-blur/--glass-saturate own the filter so the band
+   matches every other glass surface across all 42 theme × mode combinations. */
+
+.rituals-crons-header {
+  position: relative;
+  z-index: 5;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--bg-elevated) 46%, transparent),
+    color-mix(in oklch, var(--bg-panel) 26%, transparent)
+  );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+/* The moon reads as a badge here rather than the bare glyph the Overview tab
+   uses — a bordered accent chip that anchors the left edge of the band. */
+.rituals-crons-badge {
+  display: grid;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--accent-presence);
+  place-items: center;
+}
+
+/* Status chips: N active · N paused · N failing. The failing chip is a real
+   filter toggle, so it is a button; the other two are readouts. */
+.rituals-crons-chips {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 1;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.rituals-crons-chip {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 45%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.rituals-crons-chip--paused {
+  color: var(--text-muted);
+}
+
+/* Responsive hiding lives here, not on a Tailwind `@max-[…]:hidden` utility.
+   `.ui-btn` and `.rituals-crons-chip` set `display` from a plain class, and a
+   component-imported sheet has no guaranteed order against the utility bundle,
+   so the utility silently lost and the chips/toggle never collapsed. Two
+   classes of specificity settles it regardless of order.
+
+   Below 780px the two readouts drop and the failing TOGGLE stays: it is the one
+   that costs something to miss. Below 700px the filter field collapses to its
+   magnifier so the CTA is never what wraps. */
+@container (max-width: 780px) {
+  .rituals-crons-chips .rituals-crons-chip--readout {
+    display: none;
+  }
+}
+
+@container (min-width: 700px) {
+  .surface-compact-actions .rituals-crons-search-toggle {
+    display: none;
+  }
+}
+
+@container (max-width: 700px) {
+  .surface-compact-actions .rituals-crons-search-field {
+    display: none;
+  }
+}
+
+.rituals-crons-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
+
+.rituals-crons-chip__dot--paused {
+  border: 1.5px dashed var(--border-strong);
+  background: none;
+  box-shadow: none;
+}
+
+.rituals-crons-chip--failing {
+  border-color: color-mix(in oklch, var(--color-danger) 45%, transparent);
+  color: var(--color-danger);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.rituals-crons-chip--failing:hover {
+  background: color-mix(in oklch, var(--color-danger) 20%, transparent);
+}
+
+.rituals-crons-chip--failing[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+}
+
+/* Status is never encoded by color alone (WCAG 1.4.1): each state also has its
+   own SHAPE — a warning TRIANGLE for failing, a filled dot for healthy, a
+   pulsing dot for running, a dashed ring for paused. */
+.rituals-crons-chip__triangle {
+  width: 0;
+  height: 0;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid var(--color-danger);
+  border-left: 4px solid transparent;
+}
+
+/* ── Familiar carousel (FamiliarPicker · carousel density) ─────────────────
+   Full-bleed strip that bleeds past the list gutter, so the cards run edge to
+   edge. Cards grow from a 124x56 resting size to 200x84 while the pointer is
+   anywhere in the row — one hover state for the whole strip, not per card, so
+   the row does not reflow under the cursor. */
+/* One gutter, named once. The carousel bleeds past it by exactly the amount the
+   list is inset, so the strip runs edge to edge without either value being
+   hand-copied into the other. */
+.rituals-crons-panel {
+  --rituals-crons-gutter: clamp(var(--space-3), 4vw, var(--space-6));
+
+  padding: var(--space-3) var(--rituals-crons-gutter) var(--space-8);
+}
+
+/* The strip reserves 76px and the open cards are 84px, so they float over the
+   first group head rather than shoving the whole list down every time the
+   pointer crosses the row. That only reads as deliberate if the raised cards
+   are unambiguously above it — hence the z-index, not just the stacking order
+   a positioned element happens to get. */
+.rituals-fam-carousel {
+  position: relative;
+  z-index: 1;
+  height: 76px;
+  margin: 0 calc(-1 * var(--rituals-crons-gutter, var(--space-6))) var(--space-3);
+}
+
+.rituals-fam-carousel--open {
+  z-index: 4;
+}
+
+.rituals-fam-carousel__scroll {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 var(--rituals-crons-gutter, var(--space-6));
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  transition: padding var(--duration-base) var(--ease-standard);
+  user-select: none;
+}
+
+.rituals-fam-carousel__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rituals-fam-carousel--open .rituals-fam-carousel__scroll {
+  padding-block: var(--space-2);
+}
+
+.rituals-fam-carousel__fade {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: var(--space-2);
+  width: 52px;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+.rituals-fam-carousel__fade--left {
+  left: 0;
+  background: linear-gradient(90deg, var(--bg-base) 15%, transparent);
+}
+
+.rituals-fam-carousel__fade--right {
+  right: 0;
+  background: linear-gradient(270deg, var(--bg-base) 15%, transparent);
+}
+
+.rituals-fam-carousel__nav {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin-top: calc(-1 * var(--space-4));
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-elevated) 85%, transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow:
+    0 4px 14px color-mix(in oklch, var(--shadow-color) 35%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  place-items: center;
+  transition:
+    opacity var(--duration-base) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.rituals-fam-carousel__nav:hover {
+  background: var(--bg-hover);
+}
+
+.rituals-fam-carousel__nav--prev {
+  left: var(--space-2);
+}
+
+.rituals-fam-carousel__nav--next {
+  right: var(--space-2);
+}
+
+.rituals-fam-carousel__nav[hidden],
+.rituals-fam-carousel__fade[hidden] {
+  display: none;
+}
+
+.rituals-fam-card {
+  position: relative;
+  display: flex;
+  width: 124px;
+  height: 56px;
+  flex: none;
+  align-items: stretch;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+  cursor: pointer;
+  overflow: hidden;
+  scroll-snap-align: start;
+  text-align: left;
+  transform-origin: center center;
+  transition:
+    width var(--duration-base) var(--ease-emphasized),
+    height var(--duration-base) var(--ease-emphasized),
+    transform var(--duration-base) var(--ease-standard),
+    box-shadow var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    background var(--duration-base) var(--ease-standard);
+}
+
+.rituals-fam-carousel--open .rituals-fam-card {
+  width: 200px;
+  height: 84px;
+}
+
+.rituals-fam-card:hover {
+  transform: scale(1.05);
+}
+
+.rituals-fam-card[aria-selected="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 30%, transparent);
+}
+
+.rituals-fam-card__art {
+  position: relative;
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  background: color-mix(in oklch, var(--accent-presence) 13%, var(--bg-raised));
+  overflow: hidden;
+  place-items: center;
+  transition:
+    width var(--duration-base) var(--ease-emphasized),
+    height var(--duration-base) var(--ease-emphasized);
+}
+
+.rituals-fam-carousel--open .rituals-fam-card__art {
+  width: 84px;
+  height: 84px;
+}
+
+.rituals-fam-card__art img,
+.rituals-fam-card__art > span {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+  object-position: center 22%;
+}
+
+.rituals-fam-card__check {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: grid;
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--bg-base);
+  border-radius: var(--radius-sm);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  place-items: center;
+}
+
+.rituals-fam-card__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+}
+
+.rituals-fam-card__name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Role + count only exist while the strip is open; they collapse to zero
+   height rather than unmounting so the card's growth stays one transition. */
+.rituals-fam-card__meta {
+  display: flex;
+  min-width: 0;
+  max-height: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height var(--duration-base) var(--ease-emphasized),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.rituals-fam-carousel--open .rituals-fam-card__meta {
+  max-height: 40px;
+  opacity: 1;
+}
+
+/* A role is free text ("Research familiar", "Memory / reflection"), so it has to
+   ellipsis inside the card rather than run under the next one. */
+.rituals-fam-card__role {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.rituals-fam-card__count {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-base) 60%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rituals-fam-card--combine {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: none;
+  color: var(--text-secondary);
+  transition:
+    color var(--duration-base) var(--ease-standard),
+    background var(--duration-base) var(--ease-standard);
+}
+
+.rituals-fam-card--combine:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  color: var(--text-primary);
+}
+
+.rituals-fam-card--combine .rituals-fam-card__art {
+  background: none;
+}
+
+.rituals-fam-card__plus {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  place-items: center;
+}
+
+/* ── Group heads + rows ────────────────────────────────────────────────────
+   ACTIVE · 13   1 failing  ────────────────────────────────────────────────── */
+.rituals-crons-group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 var(--space-1) var(--space-1);
+}
+
+.rituals-crons-group__title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.rituals-crons-group__failing {
+  flex: none;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.rituals-crons-group__rule {
+  flex: 1;
+  border-bottom: 1px solid var(--border-hairline);
+  transform: translateY(-4px);
+}
+
+.rituals-crons-list {
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+}
+
+/* The column set is MEASURED, not assumed: the row drops familiars, then the
+   last-run column, then the schedule chip as the list narrows, because this
+   pane also hosts a detail rail that halves its width. Widths come from the
+   container query below; the grid itself is one custom property so the head
+   and the rows can never disagree. */
+.rituals-cron-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 22px minmax(0, 1fr) var(--rituals-cron-tail);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.rituals-cron-row:hover,
+.rituals-cron-row:focus-within {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.rituals-cron-row[aria-current="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
+.rituals-cron-row__status {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+}
+
+.rituals-cron-row__glyph--healthy {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success);
+}
+
+.rituals-cron-row__glyph--running {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  animation: ritualsCronPulse 1.6s var(--ease-standard) infinite;
+}
+
+.rituals-cron-row__glyph--failed {
+  width: 0;
+  height: 0;
+  border-right: 5px solid transparent;
+  border-bottom: 9px solid var(--color-danger);
+  border-left: 5px solid transparent;
+}
+
+.rituals-cron-row__glyph--paused {
+  width: 9px;
+  height: 9px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+@keyframes ritualsCronPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+
+  55% {
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent-presence) 0%, transparent);
+  }
+}
+
+.rituals-cron-row__name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.rituals-cron-row__label {
+  overflow: hidden;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: var(--text-base);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rituals-cron-row--paused .rituals-cron-row__label {
+  color: var(--text-secondary);
+}
+
+.rituals-cron-row--paused .rituals-cron-row__label:hover {
+  color: var(--text-primary);
+}
+
+.rituals-cron-row__tag {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.rituals-cron-row__avatars {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rituals-cron-row__avatars > * {
+  margin-left: -6px;
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--bg-base);
+}
+
+.rituals-cron-row__last {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rituals-cron-row__sched {
+  display: inline-flex;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.rituals-cron-row__sched-chip {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rituals-cron-row--paused .rituals-cron-row__sched-chip {
+  border-style: dashed;
+  background: none;
+  color: var(--text-muted);
+}
+
+.rituals-cron-row__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+/* Row actions stay mounted (and reachable by keyboard) but only paint on
+   hover/focus, so a long list reads as names rather than as buttons. */
+.rituals-cron-row__hover-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.rituals-cron-row:hover .rituals-cron-row__hover-actions,
+.rituals-cron-row:focus-within .rituals-cron-row__hover-actions {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rituals-cron-row__glyph--running {
+    animation: none;
+  }
+}
+
+/* Column drops. Each threshold is the width at which the next column stops
+   fitting beside a full-length cron name — matching the frame's measured set
+   (familiars < 780, last run < 560, schedule < 430, action words < 700).
+   The custom property lives on the LIST, never on the panel: the panel is the
+   query container itself, and a @container rule only ever matches its
+   descendants — setting it there would silently never apply. */
+.rituals-crons-list {
+  --rituals-cron-tail: 112px;
+}
+
+.rituals-cron-row__avatars,
+.rituals-cron-row__last,
+.rituals-cron-row__sched {
+  display: none;
+}
+
+@container (min-width: 430px) {
+  .rituals-crons-list {
+    --rituals-cron-tail: 120px 112px;
+  }
+
+  .rituals-cron-row__sched {
+    display: inline-flex;
+  }
+}
+
+@container (min-width: 560px) {
+  .rituals-crons-list {
+    --rituals-cron-tail: 96px 120px 112px;
+  }
+
+  .rituals-cron-row__last {
+    display: block;
+  }
+}
+
+@container (min-width: 700px) {
+  .rituals-cron-row__action-text {
+    display: inline;
+  }
+}
+
+@container (min-width: 780px) {
+  .rituals-crons-list {
+    --rituals-cron-tail: 74px 96px 120px 112px;
+  }
+
+  .rituals-cron-row__avatars {
+    display: flex;
+  }
+}
+
+@container (min-width: 900px) {
+  .rituals-crons-list {
+    --rituals-cron-tail: 74px 112px 140px 112px;
+  }
+}
+
+/* Below 700px the action buttons keep their icons and shed their words — the
+   aria-label still carries the full action name. */
+.rituals-cron-row__action-text {
+  display: none;
+}

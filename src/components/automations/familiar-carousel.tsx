@@ -48,11 +48,18 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
   // Which edge fades and arrows are live is a measurement, not a guess: a strip
   // that already fits shows neither, and both update as the row scrolls or the
   // pane resizes under an opening detail rail.
+  //
+  // "At the start" is NOT scrollLeft === 0. The strip carries the list gutter as
+  // inline padding and its cards snap to `start`, so the browser settles the
+  // resting position at scrollLeft === padding-left — leaving a back-arrow
+  // painted over the first card with nothing behind it to scroll to. Measure the
+  // threshold off the real padding instead of assuming zero.
   const measure = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const max = el.scrollWidth - el.clientWidth;
-    setAtStart(el.scrollLeft <= 1);
+    const restingLeft = Number.parseFloat(getComputedStyle(el).paddingLeft) || 0;
+    setAtStart(el.scrollLeft <= restingLeft + 1);
     setAtEnd(max <= 1 || el.scrollLeft >= max - 1);
   }, []);
 
