@@ -1,6 +1,14 @@
 "use client";
 
 import "@/styles/calendar.css";
+import {
+  RUN_DENSITY_MAX_LEVEL,
+  clusterLabel,
+  clusterRunsByMinute,
+  runCountLabel,
+  runCountOn,
+  runDensityBands,
+} from "@/lib/calendar-run-density";
 
 import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -62,6 +70,15 @@ export type { CalendarDeadline } from "./calendar-view-primitives";
 
 
 // ─── Agenda view ──────────────────────────────────────────────────────────────
+
+/**
+ * Views that render projected cron runs.
+ *
+ * Membership is a promise that the view DRAWS them — the footer note and the
+ * "ritual runs" toggle both key off this, so adding a view here without a
+ * renderer makes the surface claim a projection it does not show.
+ */
+const PROJECTING_VIEWS = new Set<ViewMode>(["agenda", "day", "week", "month"]);
 
 function AgendaView({
   items,
@@ -264,6 +281,85 @@ function AgendaView({
 
 const MAX_ALLDAY_VISIBLE = 3;
 
+/**
+ * Per-day cron density for the Week view.
+ *
+ * Week uses a scrolling 24h TimeGrid, so it cannot pin a summary to the bottom
+ * of a day column the way the frame's simpler column list does. This is the
+ * same idea in this layout's terms: a fixed band, aligned to the day columns,
+ * that answers WHEN a day's load falls rather than listing it.
+ *
+ * Six four-hour bands rather than a per-run marker, deliberately. Seven columns
+ * of individual ticks is noise at this width, and the frame chose the strip for
+ * exactly that reason. Day view still draws each run individually, where there
+ * is room for it.
+ */
+function RunDensityStrip({
+  columns,
+  onOpenDay,
+}: {
+  columns: { date: Date; runs: readonly ProjectedCronRun[] }[];
+  onOpenDay?: (day: Date) => void;
+}) {
+  // Nothing projected anywhere in the week — draw no band at all rather than a
+  // row of empty axes, which would read as "measured zero" instead of "off".
+  if (!columns.some((c) => c.runs.length > 0)) return null;
+
+  return (
+    <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
+      <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
+        <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+          Ritual
+          <br />
+          runs
+        </span>
+      </div>
+      <div className="flex flex-1 min-w-[560px] divide-x divide-[var(--border-hairline)]">
+        {columns.map((col, i) => {
+          const bands = runDensityBands(col.runs, col.date);
+          const count = runCountOn(col.runs, col.date);
+          const label = runCountLabel(count, "ritual runs");
+          if (!label) return <div key={i} className="flex-1 min-w-[80px] p-1" />;
+          const Cell = onOpenDay ? "button" : "div";
+          return (
+            <div key={i} className="flex-1 min-w-[80px] p-1">
+              <Cell
+                {...(onOpenDay
+                  ? {
+                      type: "button" as const,
+                      onClick: () => onOpenDay(col.date),
+                      "aria-label": `${label} on ${fmtDateHeading(col.date)} — open day`,
+                    }
+                  : {})}
+                className={`cal-run-density ${onOpenDay ? "cal-run-density--action focus-ring" : ""}`}
+              >
+                <span className="cal-run-density__bands">
+                  {bands.map((b) => (
+                    <span
+                      key={b.startHour}
+                      role="img"
+                      aria-label={b.label}
+                      title={b.label}
+                      data-level={b.level}
+                      className="cal-run-density__band"
+                    />
+                  ))}
+                </span>
+                <span aria-hidden className="cal-run-density__axis">
+                  <span>00</span>
+                  <span>12</span>
+                  <span>20</span>
+                </span>
+                <span aria-hidden className="cal-run-density__label">{label}</span>
+              </Cell>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AllDayStrip({
   columns,
   onOpenItem,
@@ -445,7 +541,7 @@ function TimeGrid({
   onReschedule,
   maxLanes = WEEK_MAX_LANES,
 }: {
-  columns: { label: string; date: Date; items: InboxItem[] }[];
+  columns: { label: string; date: Date; items: InboxItem[]; projectedRuns?: readonly ProjectedCronRun[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
@@ -581,6 +677,30 @@ function TimeGrid({
                 style={{ top: h * HOUR_HEIGHT }}
               />
             ))}
+
+            {/* Projected cron runs — a forecast, not a scheduled item.
+                Drawn as instants rather than blocks because a cron fires at a
+                point in time and AutomationRunRecord records no duration; a
+                block would imply one. Outside the lane packer for the same
+                reason, so a forecast never displaces a real event. */}
+            {clusterRunsByMinute(col.projectedRuns ?? [], col.date).map((cluster) => {
+              const first = cluster.runs[0];
+              const names = cluster.runs.map((r) => r.name).join(", ");
+              return (
+                <div
+                  key={cluster.minutes}
+                  className="cal-run-mark"
+                  style={{ top: (cluster.minutes / 60) * HOUR_HEIGHT }}
+                >
+                  <span className="sr-only">
+                    {cluster.runs.length === 1 ? "Projected run" : `${cluster.runs.length} projected runs`},{" "}
+                    {names}, {fmtTime(first.atIso)}
+                  </span>
+                  <span aria-hidden className="cal-run-mark__tick" />
+                  <span aria-hidden className="cal-run-mark__label">{clusterLabel(cluster)}</span>
+                </div>
+              );
+            })}
 
             {/* Current time indicator (today's column only, once `now` resolves) */}
             {now && isSameDay(col.date, now) && (
@@ -744,6 +864,7 @@ function minutesToIso(day: Date, minutes: number): string {
 function DayView({
   items,
   deadlines,
+  projectedRuns,
   anchor,
   onAddEntry,
   onOpenItem,
@@ -752,6 +873,8 @@ function DayView({
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
+  /** Cron occurrences projected onto this day — see calendar-cron-projection. */
+  projectedRuns?: readonly ProjectedCronRun[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
@@ -787,11 +910,20 @@ function DayView({
   // `isToday` is derived inside TimeGrid from its own clock, so the 60s
   // now-tick never invalidates this memo (which would otherwise re-pack the
   // column every minute).
+  const dayRuns = useMemo(
+    () => (projectedRuns ?? []).filter((r) => {
+      const d = new Date(r.atIso);
+      return !Number.isNaN(d.getTime()) && isSameDay(d, anchor);
+    }),
+    [projectedRuns, anchor],
+  );
+
   const columns = useMemo(() => [{
     label: fmtDateHeading(anchor),
     date: anchor,
     items: timedItems,
-  }], [anchor, timedItems]);
+    projectedRuns: dayRuns,
+  }], [anchor, timedItems, dayRuns]);
 
   const rel = now ? relDayWord(anchor, now) : null;
 
@@ -834,6 +966,7 @@ function DayView({
 function WeekView({
   items,
   deadlines,
+  projectedRuns,
   anchor,
   onAddEntry,
   onOpenItem,
@@ -843,6 +976,8 @@ function WeekView({
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
+  /** Cron occurrences projected onto this week — see calendar-cron-projection. */
+  projectedRuns?: readonly ProjectedCronRun[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
@@ -885,6 +1020,11 @@ function WeekView({
       }),
     }));
   }, [items, days]);
+
+  const densityColumns = useMemo(
+    () => days.map((day) => ({ date: day, runs: projectedRuns ?? [] })),
+    [days, projectedRuns],
+  );
 
   const deadlineColumns = useMemo(() => {
     return days.map((day) => ({
@@ -946,6 +1086,10 @@ function WeekView({
       {allDayColumns.some((c) => c.items.length > 0) && (
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} onMore={onOpenDay} />
       )}
+      {/* Cron density — a forecast band, above the grid so it does not scroll
+          away from the columns it describes. Self-guards: renders nothing when
+          the week has no projected runs. */}
+      <RunDensityStrip columns={densityColumns} onOpenDay={onOpenDay} />
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
       </div>
@@ -958,6 +1102,7 @@ function WeekView({
 function MonthView({
   items,
   deadlines,
+  projectedRuns,
   anchor,
   onOpenItem,
   onDayClick,
@@ -966,6 +1111,8 @@ function MonthView({
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
+  /** Cron occurrences projected onto this grid — see calendar-cron-projection. */
+  projectedRuns?: readonly ProjectedCronRun[];
   anchor: Date;
   onOpenItem?: (item: InboxItem) => void;
   onDayClick?: (day: Date) => void;
@@ -1168,6 +1315,25 @@ function MonthView({
                         +{dayItems.length - 3} more
                       </button>
                     )}
+                    {/* Projected cron runs. A count, not a list — a month cell
+                        has no room for one row per run, and the bar is neutral
+                        because none of these have happened yet. */}
+                    {(() => {
+                      const runs = runCountOn(projectedRuns ?? [], day);
+                      const label = runCountLabel(runs);
+                      if (!label) return null;
+                      return (
+                        <span className="cal-month-runs" title={`${label} projected`}>
+                          <Icon name="ph:clock" width={10} height={10} aria-hidden />
+                          <span>{label}</span>
+                          <span
+                            aria-hidden
+                            className="cal-month-runs__bar"
+                            data-level={Math.min(runs, RUN_DENSITY_MAX_LEVEL)}
+                          />
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -1581,19 +1747,35 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // The window the current view actually shows, so a month view projects a
   // month and an agenda projects the fortnight it renders — projecting a fixed
   // span would either under-fill the month or over-compute the agenda.
-  // Agenda only, for now. Day/Week/Month do not draw projected runs yet, and a
-  // footer claiming "13 active crons project onto this calendar" over a view
-  // that renders none of them is the surface lying about itself — caught by
-  // driving it: the default view is Week, where the note appeared over zero
-  // rows. Extending the projection to the other three is cave-9f3i3 follow-up.
+  //
+  // Every view in PROJECTING_VIEWS must actually DRAW the runs. The guard is
+  // not tidiness: while it was absent, the footer read "13 active crons project
+  // onto this calendar" over a Week view rendering none of them, which is the
+  // surface lying about itself. Widen this only alongside a renderer.
   const projection: CronProjection = useMemo(() => {
-    if (!showRuns || effectiveView !== "agenda" || cronAutomations.length === 0) {
+    if (!showRuns || !PROJECTING_VIEWS.has(effectiveView) || cronAutomations.length === 0) {
       return { runs: [], projectedCount: 0, truncated: false };
     }
-    const start = startOfDay(anchor);
+    const start =
+      effectiveView === "month" ? startOfWeek(startOfMonth(anchor))
+      : effectiveView === "week" ? startOfWeek(anchor)
+      : startOfDay(anchor);
     const end = new Date(start);
-    end.setDate(end.getDate() + 14); // the fortnight the agenda renders
-    return projectCronRuns(cronAutomations, start.getTime(), end.getTime());
+    if (effectiveView === "day") end.setDate(end.getDate() + 1);
+    else if (effectiveView === "week") end.setDate(end.getDate() + 7);
+    // The month grid is 6 weeks from the start of the week containing the 1st,
+    // so it shows more than the month itself — project what is drawn, not what
+    // the month contains, or the trailing cells render empty.
+    else if (effectiveView === "month") end.setDate(end.getDate() + 42);
+    else end.setDate(end.getDate() + 14); // the fortnight the agenda renders
+    // projectCronRuns treats its window as INCLUSIVE of the end instant
+    // (walkWindow returns on `t > endMs`), while every end computed above is an
+    // exclusive midnight boundary. Without the -1 a cron firing at exactly
+    // 00:00 the next day joins this window: the per-day filters keep it from
+    // being drawn, but projectionSummary still counts its cron, so the footer
+    // overstates what the view shows — the exact dishonesty PROJECTING_VIEWS
+    // exists to prevent.
+    return projectCronRuns(cronAutomations, start.getTime(), end.getTime() - 1);
   }, [showRuns, cronAutomations, anchor, effectiveView]);
 
   const projectionNote = projectionSummary(projection);
@@ -1811,7 +1993,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
         {/* Only offered when there is something to project. A dead toggle
             teaches a reader to ignore part of the toolbar. */}
-        {effectiveView === "agenda" && cronAutomations.some((a) => a.status === "ACTIVE") ? (
+        {PROJECTING_VIEWS.has(effectiveView) && cronAutomations.some((a) => a.status === "ACTIVE") ? (
           <Button
             variant="ghost"
             size="sm"
@@ -1878,6 +2060,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           <DayView
             items={scopedItems}
             deadlines={scopedDeadlines}
+            projectedRuns={projection.runs}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onReschedule={onReschedule}
@@ -1888,6 +2071,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         {effectiveView === "week" && (
           <WeekView
             items={scopedItems}
+            projectedRuns={projection.runs}
             deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
@@ -1900,6 +2084,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         {effectiveView === "month" && (
           <MonthView
             items={scopedItems}
+            projectedRuns={projection.runs}
             deadlines={scopedDeadlines}
             anchor={anchor}
             onOpenItem={(item) => setSelectedItem(item)}

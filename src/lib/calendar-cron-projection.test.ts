@@ -135,3 +135,33 @@ describe("projection chrome contract", () => {
     assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false }), null);
   });
 });
+
+describe("window boundaries", () => {
+  // calendar-view computes each view's end as an EXCLUSIVE midnight (day +1,
+  // week +7, month +42) and subtracts a millisecond before calling this. That
+  // subtraction is only correct while the window here stays inclusive of
+  // `endMs`, so pin both halves of the contract: if walkWindow is ever changed
+  // to exclude the end instant, the -1 in calendar-view silently starts
+  // dropping a real 23:59:59.999 occurrence and this test says so.
+  const daily = [cron("c1", "FREQ=DAILY;BYHOUR=0;BYMINUTE=0")];
+  const dayStart = new Date(2026, 7, 25).getTime();
+  const nextMidnight = new Date(2026, 7, 26).getTime();
+
+  it("includes an occurrence landing exactly on endMs", () => {
+    const runs = projectCronRuns(daily, dayStart, nextMidnight).runs;
+    assert.equal(runs.length, 2, "today's midnight and the next one");
+  });
+
+  it("excludes the next midnight when the caller subtracts a millisecond", () => {
+    // This is exactly what calendar-view does, and why: without it the footer
+    // counts a cron whose only run in range belongs to the next view.
+    const runs = projectCronRuns(daily, dayStart, nextMidnight - 1).runs;
+    assert.equal(runs.length, 1);
+    assert.equal(new Date(runs[0].atIso).getDate(), 25);
+  });
+
+  it("still includes an occurrence at the very start of the window", () => {
+    const runs = projectCronRuns(daily, dayStart, nextMidnight - 1).runs;
+    assert.equal(new Date(runs[0].atIso).getTime(), dayStart);
+  });
+});

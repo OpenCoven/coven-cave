@@ -87,3 +87,139 @@
   cursor: pointer;
   font: inherit;
 }
+
+/* ── Projected cron runs ──────────────────────────────────────────────────────
+   A forecast, never a scheduled item. Everything here is deliberately quieter
+   than a real event: dashed rather than solid, no fill, and non-interactive —
+   the eye should be able to tell "this is going to happen" from "this is on
+   the calendar" without reading either. */
+
+/* Day/Week time grid: an instant, drawn as a tick across the column.
+   Not a block — a cron fires at a point in time and records no duration, so a
+   block would be inventing one. Sits under the now-line (z-10) so the live
+   clock is never obscured by a forecast. */
+.cal-run-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* A forecast is not a drop target and has nothing to open; letting it eat
+     pointer events would break drag-to-reschedule on the row underneath. */
+  pointer-events: none;
+}
+
+.cal-run-mark__tick {
+  flex: 1;
+  height: 0;
+  border-top: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.cal-run-mark__label {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--accent-presence) 82%, transparent);
+  font-size: var(--text-2xs);
+}
+
+/* Week view: per-day density strip. Six four-hour bands say WHEN a day's load
+   falls; the count alone (in the label) says how much. `data-level` is the run
+   count clamped in calendar-run-density, so height and fill live here rather
+   than being computed into inline styles. */
+.cal-run-density {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+  text-align: left;
+}
+
+.cal-run-density--action {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cal-run-density--action:hover {
+  background: var(--bg-hover);
+}
+
+.cal-run-density__bands {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  /* 2px, not --space-1: at six bands a 4px gap eats the columns it separates.
+     Same micro-mark family the earlier handoffs banked. */
+  gap: 2px;
+  height: var(--space-8);
+}
+
+.cal-run-density__band {
+  flex: 1;
+  border-radius: 2px;
+  /* Level 0 keeps a visible floor so the axis reads as an axis rather than a
+     gap — an absent band would misalign the hours either side of it.
+     The ramp is --space-1..-6: a density chart only needs its steps to be
+     even, and the frame's 4/9/14/19/24/29 is the same ramp off the scale. */
+  height: var(--space-1);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.cal-run-density__band[data-level="1"] { height: var(--space-2); background: color-mix(in oklch, var(--accent-presence) 38%, transparent); }
+.cal-run-density__band[data-level="2"] { height: var(--space-3); background: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
+.cal-run-density__band[data-level="3"] { height: var(--space-4); background: color-mix(in oklch, var(--accent-presence) 66%, transparent); }
+.cal-run-density__band[data-level="4"] { height: var(--space-5); background: color-mix(in oklch, var(--accent-presence) 80%, transparent); }
+.cal-run-density__band[data-level="5"] { height: var(--space-6); background: color-mix(in oklch, var(--accent-presence) 94%, transparent); }
+
+.cal-run-density__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-family: var(--font-jetbrains-mono);
+  font-size: var(--text-2xs);
+}
+
+.cal-run-density__label {
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+}
+
+/* Month view: a day cell has room for a count and nothing more. The bar is
+   deliberately neutral — these runs have not happened, so spending the warning
+   or danger colour here would claim an outcome the projection cannot know. */
+.cal-month-runs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: auto;
+  padding-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.cal-month-runs__bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  /* Width is stepped rather than computed per-count: the bar is 2px of
+     aria-hidden decoration and the label beside it already carries the exact
+     number, so a continuous width would buy nothing and cost an inline style
+     the design-system ratchet is right to refuse. */
+  width: 29%;
+}
+
+.cal-month-runs__bar[data-level="2"] { width: 36%; }
+.cal-month-runs__bar[data-level="3"] { width: 43%; }
+.cal-month-runs__bar[data-level="4"] { width: 50%; }
+.cal-month-runs__bar[data-level="5"] { width: 64%; }

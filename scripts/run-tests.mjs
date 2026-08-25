@@ -746,6 +746,7 @@ export const SUITES = {
     "src/components/calendar-agenda-redesign.test.ts",
     "src/lib/calendar-layout.test.ts",
     "src/lib/calendar-cron-projection.test.ts",
+    "src/lib/calendar-run-density.test.ts",
     "src/components/calendar-overflow-pill.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-gallery.test.ts",
