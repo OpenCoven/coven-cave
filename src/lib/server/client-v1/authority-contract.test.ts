@@ -21,7 +21,143 @@ const authorityContractSource = readFileSync(
   "utf8",
 );
 
-function runtimeModuleEdges(source: string): string[] {
+function isTypeOnlyImport(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause;
+  if (clause === undefined) {
+    return false;
+  }
+  if (clause.isTypeOnly) {
+    return true;
+  }
+  return (
+    clause.name === undefined
+    && clause.namedBindings !== undefined
+    && ts.isNamedImports(clause.namedBindings)
+    && clause.namedBindings.elements.length > 0
+    && clause.namedBindings.elements.every((specifier) => specifier.isTypeOnly)
+  );
+}
+
+function isTypeOnlyExport(node: ts.ExportDeclaration): boolean {
+  if (node.isTypeOnly) {
+    return true;
+  }
+  return (
+    node.exportClause !== undefined
+    && ts.isNamedExports(node.exportClause)
+    && node.exportClause.elements.length > 0
+    && node.exportClause.elements.every((specifier) => specifier.isTypeOnly)
+  );
+}
+
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+  return (
+    ts.canHaveModifiers(node)
+    && ts.getModifiers(node)?.some((modifier) => modifier.kind === kind) === true
+  );
+}
+
+function pureNumericExpression(node: ts.Expression): boolean {
+  if (ts.isNumericLiteral(node)) {
+    return true;
+  }
+  if (
+    ts.isParenthesizedExpression(node)
+    || (ts.isAsExpression(node) && ts.isConstTypeReference(node.type))
+  ) {
+    return pureNumericExpression(node.expression);
+  }
+  if (
+    ts.isPrefixUnaryExpression(node)
+    && (
+      node.operator === ts.SyntaxKind.PlusToken
+      || node.operator === ts.SyntaxKind.MinusToken
+    )
+  ) {
+    return pureNumericExpression(node.operand);
+  }
+  return (
+    ts.isBinaryExpression(node)
+    && node.operatorToken.kind === ts.SyntaxKind.AsteriskToken
+    && pureNumericExpression(node.left)
+    && pureNumericExpression(node.right)
+  );
+}
+
+function pureInitializerViolation(
+  node: ts.Expression,
+  sourceFile: ts.SourceFile,
+): string | undefined {
+  if (ts.isParenthesizedExpression(node)) {
+    return pureInitializerViolation(node.expression, sourceFile);
+  }
+  if (ts.isAsExpression(node)) {
+    if (!ts.isConstTypeReference(node.type)) {
+      return `only 'as const' assertions are approved: ${node.getText(sourceFile)}`;
+    }
+    return pureInitializerViolation(node.expression, sourceFile);
+  }
+  if (
+    ts.isStringLiteralLike(node)
+    || ts.isNumericLiteral(node)
+    || ts.isBigIntLiteral(node)
+    || node.kind === ts.SyntaxKind.TrueKeyword
+    || node.kind === ts.SyntaxKind.FalseKeyword
+    || node.kind === ts.SyntaxKind.NullKeyword
+  ) {
+    return undefined;
+  }
+  if (pureNumericExpression(node)) {
+    return undefined;
+  }
+  if (
+    ts.isCallExpression(node)
+    && node.questionDotToken === undefined
+    && node.typeArguments === undefined
+    && ts.isPropertyAccessExpression(node.expression)
+    && node.expression.questionDotToken === undefined
+    && ts.isIdentifier(node.expression.expression)
+    && node.expression.expression.text === "Object"
+    && node.expression.name.text === "freeze"
+    && node.arguments.length === 1
+  ) {
+    const argument = node.arguments[0];
+    if (
+      argument !== undefined
+      && ts.isAsExpression(argument)
+      && ts.isConstTypeReference(argument.type)
+      && (
+        ts.isObjectLiteralExpression(argument.expression)
+        || ts.isArrayLiteralExpression(argument.expression)
+      )
+    ) {
+      const aggregate = argument.expression;
+      const expressions = ts.isObjectLiteralExpression(aggregate)
+        ? aggregate.properties.map((property) => {
+            if (
+              !ts.isPropertyAssignment(property)
+              || ts.isComputedPropertyName(property.name)
+            ) {
+              return `frozen objects may contain only static property assignments: ${property.getText(sourceFile)}`;
+            }
+            return pureInitializerViolation(property.initializer, sourceFile);
+          })
+        : aggregate.elements.map((element) => {
+            if (ts.isSpreadElement(element) || ts.isOmittedExpression(element)) {
+              return `frozen arrays may contain only static elements: ${element.getText(sourceFile)}`;
+            }
+            return pureInitializerViolation(element, sourceFile);
+          });
+      return expressions.find((violation) => violation !== undefined);
+    }
+  }
+  if (ts.isObjectLiteralExpression(node) || ts.isArrayLiteralExpression(node)) {
+    return `exported aggregates must use the approved Object.freeze(... as const) construction: ${node.getText(sourceFile)}`;
+  }
+  return `unapproved runtime expression: ${node.getText(sourceFile)}`;
+}
+
+function authorityPurityViolations(source: string): string[] {
   const sourceFile = ts.createSourceFile(
     "authority-contract-fixture.ts",
     source,
@@ -29,34 +165,75 @@ function runtimeModuleEdges(source: string): string[] {
     true,
     ts.ScriptKind.TS,
   );
-  const edges: string[] = [];
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isImportDeclaration(node)
-      && (node.importClause === undefined || !node.importClause.isTypeOnly)
-    ) {
-      edges.push(node.getText(sourceFile));
-    } else if (ts.isImportEqualsDeclaration(node)) {
-      edges.push(node.getText(sourceFile));
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
-      edges.push(node.getText(sourceFile));
-    } else if (
-      ts.isCallExpression(node)
-      && node.expression.kind === ts.SyntaxKind.ImportKeyword
-    ) {
-      edges.push(node.getText(sourceFile));
+  const violations: string[] = [];
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      if (!isTypeOnlyImport(statement)) {
+        violations.push(`runtime import: ${statement.getText(sourceFile)}`);
+      }
+      continue;
     }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return edges;
+    if (ts.isImportEqualsDeclaration(statement)) {
+      if (!statement.isTypeOnly) {
+        violations.push(`runtime import-equals: ${statement.getText(sourceFile)}`);
+      }
+      continue;
+    }
+    if (ts.isExportDeclaration(statement)) {
+      if (!isTypeOnlyExport(statement)) {
+        violations.push(`runtime export declaration: ${statement.getText(sourceFile)}`);
+      }
+      continue;
+    }
+    if (
+      ts.isInterfaceDeclaration(statement)
+      || ts.isTypeAliasDeclaration(statement)
+      || hasModifier(statement, ts.SyntaxKind.DeclareKeyword)
+      || ts.isEmptyStatement(statement)
+    ) {
+      continue;
+    }
+    if (ts.isVariableStatement(statement)) {
+      if (
+        (statement.declarationList.flags & ts.NodeFlags.Const) === 0
+        || statement.declarationList.declarations.length === 0
+      ) {
+        violations.push(`only const declarations are approved: ${statement.getText(sourceFile)}`);
+        continue;
+      }
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name)) {
+          violations.push(`destructuring declarations are not approved: ${declaration.getText(sourceFile)}`);
+          continue;
+        }
+        if (declaration.name.text === "Object") {
+          violations.push("the approved Object.freeze global must not be shadowed");
+          continue;
+        }
+        if (declaration.initializer === undefined) {
+          violations.push(`runtime const declarations require a pure initializer: ${declaration.getText(sourceFile)}`);
+          continue;
+        }
+        const violation = pureInitializerViolation(
+          declaration.initializer,
+          sourceFile,
+        );
+        if (violation !== undefined) {
+          violations.push(violation);
+        }
+      }
+      continue;
+    }
+    violations.push(`unapproved top-level statement: ${statement.getText(sourceFile)}`);
+  }
+  return violations;
 }
 
-function assertNoRuntimeModuleEdges(source: string): void {
+function assertPureAuthorityContract(source: string): void {
   assert.deepEqual(
-    runtimeModuleEdges(source),
+    authorityPurityViolations(source),
     [],
-    "pure authority contract may use only `import type`; runtime imports and export-from declarations are forbidden",
+    "pure authority contract may use only type-only imports/exports; runtime imports and export-from declarations are forbidden; exported initializers must be static literals or approved Object.freeze(... as const) constructions",
   );
 }
 
@@ -142,7 +319,7 @@ test("pins the authority wire limits and replay freshness bounds", () => {
 });
 
 test("keeps the authority contract pure, edge-safe, and public-key-only", () => {
-  assertNoRuntimeModuleEdges(authorityContractSource);
+  assertPureAuthorityContract(authorityContractSource);
   assert.doesNotMatch(authorityContractSource, /@hpke/u);
   assert.doesNotMatch(authorityContractSource, /node:/u);
   assert.doesNotMatch(authorityContractSource, /\bBuffer\b/u);
@@ -156,27 +333,30 @@ test("keeps the authority contract pure, edge-safe, and public-key-only", () => 
     /\b(?:process|globalThis|console|fetch|setTimeout|setInterval|Date|performance)\b/u,
   );
 
-  const sourceWithoutApprovedFreezeCalls = authorityContractSource
-    .replace(/\/\*[\s\S]*?\*\//gu, "")
-    .replace(/\/\/.*$/gmu, "")
-    .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gu, "\"\"")
-    .replaceAll("Object.freeze", "");
-  assert.doesNotMatch(
-    sourceWithoutApprovedFreezeCalls,
-    /\b(?:new\s+)?[A-Za-z_$][\w$]*\s*\(/u,
-    "pure authority contract must not execute runtime calls",
-  );
 });
 
-test("rejects runtime module edges while permitting only import type", () => {
+test("permits type-only module edges and approved static exports", () => {
   assert.doesNotThrow(() => {
-    assertNoRuntimeModuleEdges(`
+    assertPureAuthorityContract(`
       import type { RuntimeShape } from "./runtime.ts";
+      import { type RuntimeMetadata } from "./metadata.ts";
+      export type { RuntimeShape };
+      export { type RemoteShape } from "./remote.ts";
+      export type * from "./types.ts";
       export type AuthorityShape = RuntimeShape;
       const example = "import './runtime.ts'";
+      export const mode = "off" as const;
+      export const modes = Object.freeze(["off", "enforce"] as const);
+      export const settings = Object.freeze({
+        mode: "off",
+        maximumBytes: 8 * 1024 * 1024,
+      } as const);
+      export interface AuthorityMetadata extends RuntimeMetadata {}
     `);
   });
+});
 
+test("rejects runtime module edges", () => {
   const mutations = [
     "import './runtime.ts';",
     "import {x} from './runtime.ts';",
@@ -187,8 +367,34 @@ test("rejects runtime module edges while permitting only import type", () => {
   ];
   for (const mutation of mutations) {
     assert.throws(
-      () => assertNoRuntimeModuleEdges(mutation),
+      () => assertPureAuthorityContract(mutation),
       /runtime imports and export-from declarations are forbidden/u,
+      mutation,
+    );
+  }
+});
+
+test("rejects runtime exported initializers and mutable aggregates", () => {
+  const mutations = [
+    'export const settings = (() => ({ mode: "off" }))();',
+    'export const settings = (function buildSettings() { return { mode: "off" }; })();',
+    "export const settings = makeSettings();",
+    "export const settings = new Map();",
+    'export const settings = await Promise.resolve("off");',
+    'export const settings = (function* settingsGenerator() { yield "off"; })();',
+    'export const settings = true ? "off" : "enforce";',
+    "export const settings = process.env.AUTHORITY_MODE;",
+    'export const settings = () => "off";',
+    'export const settings = { mode: "off" };',
+    'export const settings = ["off", "enforce"] as const;',
+    'export const settings = Object.freeze({ mode: "off" });',
+    'export const settings = Object.freeze({ nested: { mode: "off" } } as const);',
+    'export const settings = freeze({ mode: "off" } as const);',
+  ];
+  for (const mutation of mutations) {
+    assert.throws(
+      () => assertPureAuthorityContract(mutation),
+      /pure authority contract/u,
       mutation,
     );
   }
