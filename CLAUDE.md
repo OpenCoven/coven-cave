@@ -554,15 +554,16 @@ closed** on absent data. `=== false` would be the bug — it would treat a
 missing or malformed entry as "not disabled, therefore fine" and waive the
 exclusion silently. Don't tidy it in that direction.
 
-### The three-hour cooldown, and how to discharge it deliberately
+### The 15-minute cooldown, and how to discharge it deliberately
 
 A just-merged unit classifies `cooldown` — *"landed work remains inside the
-mandatory 3-hour cooldown"* — and the patrol will not retire it. Read what that
+mandatory 15-minute cooldown"* — and the patrol will not retire it. Read what that
 gate is before reaching past it: by the time it applies, the unit is **already**
 proven landed, clean, non-divergent and retained on a remote ref. It is not a
 correctness check. It is a *"let a concurrent session notice"* window, and the
 one risk it covers — somebody else still sitting in that directory — is the one
-thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991.
+thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991,
+and 15m since `cave-0pu26`.
 
 If you know the unit is idle, say so explicitly (`cave-jinkd`):
 
