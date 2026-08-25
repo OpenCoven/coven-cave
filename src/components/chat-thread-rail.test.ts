@@ -160,8 +160,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /function selectionForProjectRoot\([\s\S]*normalizeChatProjectRoot\(projectRoot\)[\s\S]*selectionKey\(group\.projectId, group\.projectRoot\)/,
-  "ChatRouter can map the active chat project root to the matching rail folder selection",
+  /function selectionForProjectRoot\([\s\S]*normalizeChatProjectRoot\(projectRoot\)[\s\S]*entry\.runtimeHost === normalizedHost[\s\S]*selectionKey\(group\.projectId, group\.projectRoot, group\.runtimeHost\)/,
+  "ChatRouter maps the active host and project root to the matching rail folder selection",
 );
 assert.match(
   chatRouter,
@@ -224,6 +224,16 @@ assert.match(
   source,
   /className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5/,
   "Project folder plus buttons should overlay at the right edge instead of reducing the label row width",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => onNewChat\(group\.projectRoot, group\.runtimeHost\)\}/,
+  "Project folder launches preserve the runtime host alongside the project root",
+);
+assert.match(
+  source,
+  /selectionKey\(group\.projectId, group\.projectRoot, group\.runtimeHost\)/,
+  "Project folder keys include the runtime host so equal paths on different machines stay distinct",
 );
 // Collapsed rail (SurfaceRail, 56px): project identity tiles remain, and
 // activating one re-expands the rail and opens that group.

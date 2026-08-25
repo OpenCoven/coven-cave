@@ -502,7 +502,10 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onOpenPreview?: (url: string) => void;
-  onProjectRootChange?: (projectRoot: string | null) => void;
+  onProjectRootChange?: (
+    projectRoot: string | null,
+    runtimeHost: string | null,
+  ) => void;
 };
 
 export type ChatViewHandle = {
@@ -2706,8 +2709,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSetupBannerDismissed(true);
   };
   useEffect(() => {
-    onProjectRootChange?.(activeProjectRoot || null);
-  }, [activeProjectRoot, onProjectRootChange]);
+    onProjectRootChange?.(
+      activeProjectRoot || null,
+      composerHostValue === LOCAL_HOST_ID ? null : composerHostValue,
+    );
+  }, [activeProjectRoot, composerHostValue, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });

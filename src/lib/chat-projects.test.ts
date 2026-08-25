@@ -221,6 +221,67 @@ assert.deepEqual(
   "duplicate worktree repo names should include the parent directory and order by recency",
 );
 
+// Linked worktrees can live anywhere, so path-shape heuristics are not enough.
+// The server's git-common-dir enrichment names the owning checkout and the
+// project rail nests the worktree chat beneath that registered project.
+{
+  const linked = {
+    ...session("linked-worktree", "/tmp/feature-a", "2026-06-08T00:00:00.000Z", "cody"),
+    git: {
+      isWorktree: true,
+      worktreeRoot: "/tmp/feature-a",
+      repositoryRoot: "/work/alpha",
+    },
+  };
+  const [linkedGroup] = deriveChatProjectGroups([linked], projects);
+  assert.equal(linkedGroup.projectId, "alpha");
+  assert.equal(linkedGroup.projectRoot, "/work/alpha");
+  assert.equal(linkedGroup.runtimeHost, null);
+  assert.deepEqual(linkedGroup.sessions.map((row) => row.id), ["linked-worktree"]);
+}
+
+// The same path on this machine and an SSH host is two project identities.
+// Remote roots do not borrow a local registry id, and multiple sessions on the
+// same remote host/root still coalesce normally.
+{
+  const local = session("local-alpha", "/work/alpha", "2026-06-08T00:00:00.000Z", "cody");
+  const remote = {
+    ...session("remote-alpha", "/work/alpha", "2026-06-09T00:00:00.000Z", "nova"),
+    runtime: "ssh:build-box:/work/alpha",
+  };
+  const remoteOlder = {
+    ...session("remote-alpha-old", "", "2026-06-07T00:00:00.000Z", "sage"),
+    runtime: "ssh:build-box:/work/alpha",
+  };
+  const hostGroups = deriveChatProjectGroups([local, remote, remoteOlder], projects);
+  assert.equal(hostGroups.length, 2);
+  assert.deepEqual(
+    hostGroups.map((entry) => ({
+      projectId: entry.projectId,
+      root: entry.projectRoot,
+      host: entry.runtimeHost,
+      name: entry.projectName,
+      sessions: entry.sessions.map((row) => row.id),
+    })),
+    [
+      {
+        projectId: null,
+        root: "/work/alpha",
+        host: "build-box",
+        name: "build-box/alpha",
+        sessions: ["remote-alpha", "remote-alpha-old"],
+      },
+      {
+        projectId: "alpha",
+        root: "/work/alpha",
+        host: null,
+        name: "Alpha",
+        sessions: ["local-alpha"],
+      },
+    ],
+  );
+}
+
 // Analytics-spawned discussion threads remain normal chat threads.
 {
   const analyticsThread = { ...session("analytics-1", "/work/alpha", "2026-06-09T00:00:00.000Z", "cody"), origin: "chat" as const };
