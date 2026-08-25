@@ -939,8 +939,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\{inlineComposer \? null : following \? composerNode : null\}/,
-  "The active-chat composer disappears while the reader is away from latest and returns when following resumes",
+  /\{inlineComposer \? null : showDockedComposer \? composerNode : null\}/,
+  "The active-chat composer uses the measured threshold and staged-input visibility policy",
 );
 assert.match(
   source,

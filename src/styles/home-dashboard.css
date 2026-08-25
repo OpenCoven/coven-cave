@@ -95,8 +95,9 @@
   container-type: size;
 }
 .home-dash__board-inner {
-  max-width: 860px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: var(--space-6) 0;
   display: flex;
   flex-direction: column;

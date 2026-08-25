@@ -121,10 +121,10 @@ assert.match(
   /proseContent=\{proseContent\}/,
   "Main Chat supplies ordered rich prose without replacing the default streaming path",
 );
-assert.match(
+assert.doesNotMatch(
   main,
-  /followUp\.suggestions\.length > 0[\s\S]*?<FollowUpCards paths=\{followUp\.suggestions\} onActivate=\{handleFollowUp\}/,
-  "ephemeral follow-up cards remain on their existing composer-owned action path",
+  /followUp\.suggestions|<FollowUpCards|<FollowUpTaskReview/,
+  "the composer no longer mounts the space-heavy recommendation band",
 );
 assert.match(
   main,

@@ -323,10 +323,11 @@ assert.match(
   "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
 );
 
-// The top suggested follow-up is visibly marked as the recommendation by the
-// shared typed-card component, so the most useful next step stands out.
+// The first reply suggestion remains available as a lightweight placeholder
+// and Tab-to-fill action without mounting the large recommendation band.
 assert.match(
   source,
-  /<FollowUpCards paths=\{followUp\.suggestions\} onActivate=\{handleFollowUp\} \/>/,
-  "the latest follow-up row uses the shared recommended-card treatment",
+  /recommendedNextPath[\s\S]*?setInput\(recommendedNextPath\.prompt\)/,
+  "the latest reply suggestion remains an editable keyboard shortcut",
 );
+assert.doesNotMatch(source, /<FollowUpCards|cave-chat-followups/, "the composer recommendation band stays removed");

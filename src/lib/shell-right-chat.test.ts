@@ -29,9 +29,9 @@ test("normalizes width fallback and clamping", () => {
 test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
   assert.equal(
     shouldAutoCollapseNavForRightChat({
-      viewportWidth: 1180,
+      viewportWidth: 1060,
       navWidth: 240,
-      rightChatWidth: 640,
+      rightChatWidth: 520,
     }),
     true,
   );
@@ -39,7 +39,7 @@ test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
     shouldAutoCollapseNavForRightChat({
       viewportWidth: 1440,
       navWidth: 240,
-      rightChatWidth: 640,
+      rightChatWidth: 520,
     }),
     false,
   );
@@ -47,7 +47,7 @@ test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
     shouldAutoCollapseNavForRightChat({
       viewportWidth: 1024,
       navWidth: 56,
-      rightChatWidth: 360,
+      rightChatWidth: 320,
     }),
     false,
   );
@@ -55,9 +55,9 @@ test("auto-collapses only when nav plus chat plus detail cannot fit", () => {
 
 test("accounts for an optional list pane when deciding whether to collapse nav", () => {
   const noListSurface = {
-    viewportWidth: 1210,
+    viewportWidth: 1100,
     navWidth: 240,
-    rightChatWidth: 360,
+    rightChatWidth: 320,
   };
 
   assert.equal(shouldAutoCollapseNavForRightChat(noListSurface), false);
