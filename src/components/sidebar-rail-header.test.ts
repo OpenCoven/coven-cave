@@ -193,23 +193,24 @@ for (const [label, rule] of [
 ]) {
   assert.match(rule, /border-radius: var\(--radius-control\);/, `the ${label} takes its radius from the token`);
   assert.doesNotMatch(rule, /border-radius:\s*\d+px/, `the ${label} does not hardcode a radius`);
-  // min-height, not height: the control has to grow with a longer label or a
-  // larger touch target rather than clipping. The value is the shared rail
-  // constant, so these two controls are also the same box as their own
-  // collapsed-rail squares and as the nav rows below (#4351).
-  assert.match(
-    rule,
-    /min-height: var\(--rail-control\);/,
-    `the ${label} shares the rail control height`,
-  );
   assert.doesNotMatch(rule, /\n\s*height:\s*\d+px/, `the ${label} does not pin a fixed height`);
 }
 
+assert.match(
+  scopeRule,
+  /min-height: calc\(var\(--rail-control\) \+ var\(--space-3\)\);/,
+  "the two-line scope trigger grows from the shared rail control token",
+);
+assert.match(
+  newRule,
+  /min-height: var\(--rail-control\);/,
+  "New chat shares the rail control height",
+);
 assert.match(newRule, /font-size: var\(--text-base\);/, "the New chat label uses the rail's base type size");
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__label \{[\s\S]*?font-size: var\(--text-sm\);/,
-  "the compact scope trigger uses the denser sidebar label size",
+  /\.sidebar-scope-selector__identity-copy strong \{[\s\S]*?font-size: var\(--text-sm\);/,
+  "the scope identities use the denser sidebar label size",
 );
 assert.match(
   scopeRule,
@@ -223,23 +224,23 @@ assert.match(
 );
 assert.match(
   scopeRule,
-  /width: fit-content;/,
-  "the scope selector remains content-sized instead of becoming another full-width row",
+  /width: 100%;/,
+  "the scope selector fills the available rail width",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__project \{[\s\S]*?width: var\(--rail-control\);[\s\S]*?border-right: 1px solid var\(--border-hairline\);/,
-  "the project segment keeps the rail icon column and a quiet divider",
+  /\.sidebar-scope-selector__project \{[\s\S]*?min-width: 0;[\s\S]*?border-right: 1px solid var\(--border-hairline\);/,
+  "the project segment shares the row and keeps a quiet divider",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__familiar \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\);[\s\S]*?box-shadow: inset 0 0 0 1px color-mix\(in oklch, var\(--accent-presence\) 40%, transparent\);/,
-  "the active familiar segment derives its selected tint and inset ring from one accent token",
+  /\.sidebar-scope-selector__familiar \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\);/,
+  "the active familiar segment derives its selected tint from one accent token",
 );
 assert.match(
   sidebarScopeSelector,
-  /sidebar-scope-selector__project[\s\S]*?ph:globe[\s\S]*?sidebar-scope-selector__familiar[\s\S]*?\{familiarLabel\}/,
-  "the trigger presents project first and the active familiar second",
+  /sidebar-scope-selector__project[\s\S]*?>Project<[\s\S]*?\{projectLabel\}[\s\S]*?sidebar-scope-selector__familiar[\s\S]*?>Familiar<[\s\S]*?\{familiarLabel\}/,
+  "the full-width trigger names project first and the active familiar second",
 );
 assert.match(
   sectionTabsCss,
@@ -455,8 +456,8 @@ assert.doesNotMatch(
 // ── Collapsed segmented control ─────────────────────────────────────────────
 assert.match(
   workspaceContextSwitcherCss,
-  /\.shell-nav--rail \.sidebar-scope-selector__project,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__label \{[\s\S]*?display: none;/,
-  "the collapsed rail hides the project segment and familiar label",
+  /\.shell-nav--rail \.sidebar-scope-selector__project,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__identity-copy,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__caret \{[\s\S]*?display: none;/,
+  "the collapsed rail hides the project segment, identity copy, and caret",
 );
 assert.doesNotMatch(
   workspaceContextSwitcherCss,

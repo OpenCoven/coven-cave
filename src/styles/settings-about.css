@@ -363,7 +363,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-flow: dense;
-  grid-auto-rows: minmax(7rem, auto);
+  grid-auto-rows: minmax(8rem, auto);
   gap: var(--space-2);
 }
 
@@ -396,7 +396,7 @@
     var(--accent-presence) 6%,
     var(--bg-panel)
   );
-  transform: translateY(calc(var(--space-1) / -2));
+  transform: translateY(calc(var(--space-1) * -1));
 }
 
 .settings-about-link-card__copy {
@@ -432,9 +432,9 @@
 }
 
 .settings-about-link-card--grimoire {
-  grid-column: span 2;
+  grid-column: span 3;
   grid-row: span 2;
-  min-height: 14rem;
+  min-height: 20rem;
   justify-content: flex-end;
 }
 
@@ -450,16 +450,52 @@
   pointer-events: none;
 }
 
+.settings-about-grimoire-art,
+.settings-about-github-art,
+.settings-about-link-card__art,
+.settings-about-podcast-art {
+  position: absolute;
+  inset: 0;
+  background-image: url("../../assets/brand/coven-discord-banner.png");
+  background-position: center;
+  background-size: cover;
+}
+
 .settings-about-grimoire-art {
+  background-position: center 48%;
+}
+
+.settings-about-grimoire-art::after,
+.settings-about-github-art::after,
+.settings-about-link-card__art::after,
+.settings-about-podcast-art::after {
   position: absolute;
   inset: 0;
   background:
     radial-gradient(
-      120% 90% at 78% 12%,
-      color-mix(in oklch, var(--accent-presence) 34%, transparent),
+      110% 100% at 76% 14%,
+      color-mix(in oklch, var(--accent-presence) 18%, transparent),
       transparent 62%
     ),
-    linear-gradient(155deg, var(--bg-raised), var(--bg-sunken) 70%);
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--bg-panel) 6%, transparent),
+      color-mix(in oklch, var(--bg-panel) 86%, transparent)
+    );
+  content: "";
+  pointer-events: none;
+}
+
+.settings-about-github-art {
+  display: grid;
+  place-items: center;
+  background-position: 28% 44%;
+}
+
+.settings-about-github-art > svg {
+  position: relative;
+  z-index: 1;
+  opacity: 0.82;
   color: var(--accent-presence);
 }
 
@@ -498,10 +534,18 @@
 }
 
 .settings-about-link-card--github {
-  grid-column: span 2;
+  grid-column: span 1;
+  grid-row: span 2;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
   gap: var(--space-2);
+  min-height: 20rem;
+}
+
+.settings-about-link-card--github > :not(.settings-about-github-art),
+.settings-about-link-card--podcast > :not(.settings-about-podcast-art) {
+  position: relative;
+  z-index: 1;
 }
 
 .settings-about-link-card__heading {
@@ -533,12 +577,30 @@
 }
 
 .settings-about-link-card--small {
+  min-height: 10rem;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-3);
 }
 
+.settings-about-link-card--docs .settings-about-link-card__art {
+  background-position: 32% 48%;
+}
+
+.settings-about-link-card--x .settings-about-link-card__art {
+  background-position: 68% 42%;
+}
+
+.settings-about-link-card--discord .settings-about-link-card__art {
+  background-image: url("../../assets/brand/coven-discord-banner-wordmark.png");
+  background-position: center;
+}
+
 .settings-about-link-card__glyph {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
   display: inline-flex;
   width: var(--space-8);
   height: var(--space-8);
@@ -547,43 +609,39 @@
   justify-content: center;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
+  color: var(--text-primary);
+}
+
+.settings-about-link-card--small .settings-about-link-card__copy {
+  position: relative;
+  z-index: 1;
 }
 
 .settings-about-link-card--podcast {
-  grid-column: span 3;
+  grid-column: span 2;
+  min-height: 10rem;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-3);
 }
 
-/* Sized to the copy beside it rather than to itself: at 4.5rem the art was the
-   tallest thing in the row and set the card's height on its own. */
 .settings-about-podcast-art {
+  background-position: center 52%;
+}
+
+.settings-about-podcast-art > span {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
   display: inline-flex;
-  width: 3rem;
-  height: 3rem;
-  align-self: center;
-  flex: none;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  border: 1px solid
-    color-mix(in oklch, var(--accent-presence) 34%, transparent);
-  border-radius: var(--radius-card);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in oklch, var(--accent-presence) 26%, transparent),
-      color-mix(in oklch, var(--accent-presence) 8%, var(--bg-sunken))
-    );
-  color: var(--accent-presence);
+  gap: var(--space-2);
 }
 
 .settings-about-podcast-art small {
-  color: var(--text-muted);
+  color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -681,7 +739,17 @@
   }
 
   .settings-about-link-card--podcast {
-    grid-column: span 1;
+    grid-column: span 2;
+  }
+
+  .settings-about-link-card--grimoire {
+    grid-column: span 2;
+  }
+
+  .settings-about-link-card--github {
+    grid-column: span 2;
+    grid-row: span 1;
+    min-height: 10rem;
   }
 }
 
@@ -707,6 +775,10 @@
 
   .settings-about-link-card--grimoire {
     grid-row: span 1;
+    min-height: 16rem;
+  }
+
+  .settings-about-link-card--github {
     min-height: 12rem;
   }
 
@@ -774,4 +846,5 @@
   .settings-about-sigil[data-pokes] {
     transform: none;
   }
+
 }

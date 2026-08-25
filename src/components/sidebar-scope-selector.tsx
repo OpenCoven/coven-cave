@@ -98,27 +98,39 @@ export function SidebarScopeSelector({
         title={scopeLabel}
         disabled={disabled}
       >
-        <span className="sidebar-scope-selector__project" aria-hidden>
-          {project ? (
-            <ProjectAvatar
-              name={project.name}
-              root={project.root}
-              color={project.color}
-              size="sm"
-            />
-          ) : (
-            <Icon name="ph:globe" width={14} />
-          )}
+        <span className="sidebar-scope-selector__project">
+          <span className="sidebar-scope-selector__identity-icon" aria-hidden>
+            {project ? (
+              <ProjectAvatar
+                name={project.name}
+                root={project.root}
+                color={project.color}
+                size="sm"
+              />
+            ) : (
+              <Icon name="ph:globe" width={14} />
+            )}
+          </span>
+          <span className="sidebar-scope-selector__identity-copy">
+            <small>Project</small>
+            <strong>{projectLabel}</strong>
+          </span>
         </span>
         <span className="sidebar-scope-selector__familiar">
-          <span className="sidebar-scope-selector__icon" aria-hidden>
+          <span className="sidebar-scope-selector__identity-icon" aria-hidden>
             {activeFamiliar && !multiScope ? (
               <FamiliarAvatar familiar={activeFamiliar} size="sm" />
             ) : (
               <Icon name="ph:sparkle" width={14} />
             )}
           </span>
-          <span className="sidebar-scope-selector__label">{familiarLabel}</span>
+          <span className="sidebar-scope-selector__identity-copy">
+            <small>Familiar</small>
+            <strong>{familiarLabel}</strong>
+          </span>
+        </span>
+        <span className="sidebar-scope-selector__caret" aria-hidden>
+          <Icon name="ph:caret-down" width={12} />
         </span>
       </button>
 
