@@ -50,12 +50,12 @@ assert.match(
 // …but the rail builds from an archive-free view of the same rows.
 assert.match(
   chatList,
-  /const railSessions = useMemo\(\(\) => mine\.filter\(\(s\) => !s\.archived_at\), \[mine\]\);/,
+  /const railSessions = useMemo\([\s\S]{0,180}?mine\.some\(\(session\) => session\.archived_at\)[\s\S]{0,120}?mine\.filter\(\(session\) => !session\.archived_at\)[\s\S]{0,80}?: mine/,
   "the siderail's session source strips archived rows even while the toggle is on",
 );
 assert.match(
   chatList,
-  /const sidebarGroups = useMemo\([\s\S]{0,160}?deriveChatProjectGroups\(\s*applyProjectOverrides\(railSessions, projectOverrides\),\s*projects,\s*projectIndex/,
+  /deriveChatListProjectGroups\(\s*filtered,\s*railSessions,\s*projects,\s*projectIndex,\s*projectOverrides/,
   "sidebar groups must derive from the archive-free railSessions view",
 );
 
