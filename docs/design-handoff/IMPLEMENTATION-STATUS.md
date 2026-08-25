@@ -96,6 +96,19 @@ surface it describes.
 These are specs, baselines and explorations — read them, don't build them:
 
 - `Agentic Core Spec.dc.html`, `Code Reading Spec Board.dc.html` — specs.
+- **`Scheduling Spec.dc.html`** (project *Coven Cave dark theme specs*) — the
+  implementation-ready spec BEHIND `Rituals Redesign.dc.html`, and the more
+  useful of the two to read first: a severity-rated audit table, the token
+  contrast table (computed WCAG ratios on composited values), and the rules the
+  frame is an expression of — one `ScheduleInput` + one `SchedulePlanPreview`
+  shared by reminders and crons, *create = centered modal / edit = drawer*,
+  initial focus on the describe bar when creating and Name when editing, and
+  "every schedule surface says what will happen and when it will next happen".
+  Skipping it cost real defects: the crons rebuild shipped the exact `Run Jul 9`
+  cell the spec files as a P1 ambiguity, and left row-action labels at
+  `--text-secondary` over `--bg-hover` (4.3:1) where the token table says
+  promote to primary. Both fixed by `cave-8b7fk`. Read it before touching
+  `cave-9f3i3` / `cave-84fp0` / `cave-dsm37` / `cave-cgfx2`.
 - `* - Current.dc.html` (Cave Chat, Daily Report, Coven Podcast, OpenCoven
   Landing, Memories - Current and Critique) — before-pictures.
 - `Chart Room - Astra / Proposal / Today`, `Dependencies - Directions`,

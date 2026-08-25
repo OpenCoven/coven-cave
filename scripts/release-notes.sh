@@ -144,8 +144,8 @@ fi
 if [ "$registry_guards_skipped" = "true" ]; then
   cat <<'PROVENANCE'
 This release was built on a manual run with `allow_unconfigured_registries`
-enabled, so the signed OpenCode and Grok compatibility-registry checks did not
-run. The build uses the built-in baseline schema parsers.
+enabled, so the signed OpenCode, Grok, and OpenClaw compatibility-registry
+checks did not run. The build uses the built-in baseline schema parsers.
 
 Releases published from a tag push cannot skip those checks.
 

@@ -309,12 +309,12 @@ assert.match(
 );
 assert.match(
   chatRouterSource,
-  /onNewChat=\{\(projectRoot, familiarId\) => \{[\s\S]{0,180}if \(onRequestNewChat\) \{[\s\S]{0,100}onRequestNewChat\(\);[\s\S]{0,100}return;/,
+  /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,180}if \(onRequestNewChat\) \{[\s\S]{0,100}onRequestNewChat\(\);[\s\S]{0,100}return;/,
   "ChatRouter gates list launches before mutating its local view",
 );
 assert.match(
   chatRouterSource,
-  /<ChatProjectSidebar[\s\S]{0,900}onNewChat=\{\(\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
+  /<ChatProjectSidebar[\s\S]{0,900}onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
   "the project-group sidebar cannot derive a new actor from historical sessions",
 );
 assert.match(

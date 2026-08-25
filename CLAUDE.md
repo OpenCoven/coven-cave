@@ -554,6 +554,40 @@ closed** on absent data. `=== false` would be the bug — it would treat a
 missing or malformed entry as "not disabled, therefore fine" and waive the
 exclusion silently. Don't tidy it in that direction.
 
+### The three-hour cooldown, and how to discharge it deliberately
+
+A just-merged unit classifies `cooldown` — *"landed work remains inside the
+mandatory 3-hour cooldown"* — and the patrol will not retire it. Read what that
+gate is before reaching past it: by the time it applies, the unit is **already**
+proven landed, clean, non-divergent and retained on a remote ref. It is not a
+correctness check. It is a *"let a concurrent session notice"* window, and the
+one risk it covers — somebody else still sitting in that directory — is the one
+thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991.
+
+If you know the unit is idle, say so explicitly (`cave-jinkd`):
+
+```bash
+pnpm beads:worktrees:apply --allow-unenforced-planes --allow-cooldown-override
+```
+
+The patrol prints that exact line for you whenever cooldown is the only thing
+left, so you never have to look it up — the same affordance the create gate
+gives for its budget exception.
+
+**What the flag can and cannot do.** `cooldownIsTheOnlyBlocker` answers
+admission by re-running the real classifier one cooldown into the future and
+requiring `retire-after-gate`; it never matches the `cooldown` lane string.
+That is the whole safety property: dirty, unlanded, divergent, `uncertain` and
+protected units classify identically at *any* clock, so the flag can only ever
+discharge elapsed time. A unit whose recency is unknowable stays `uncertain`
+rather than being treated as "wait a bit longer". Every overridden retirement
+is recorded as `admitted by --allow-cooldown-override` in the attempt log.
+
+⚠️ **`scripts/worktree-sweep.sh` must never pass it.** A cron job has nobody to
+assert that a worktree is idle, and that assertion is the entire basis of the
+flag. Do not lower `RETIREMENT_COOLDOWN_MS` to avoid typing it either — the
+constant also governs the unattended sweep.
+
 **So retirement is either the degraded apply above or hand-retirement — both
 are sanctioned, neither is a workaround.** For a unit the patrol already
 classified `cleanup-ready`, use the archive-tag route in the worktree-guard

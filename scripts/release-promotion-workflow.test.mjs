@@ -554,6 +554,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     "build: Require OpenCoven X app configuration",
     "build: Require signed OpenCode compatibility registry",
     "build: Require signed Grok compatibility registry",
+    "build: Require signed OpenClaw compatibility registry",
   ]) {
     assert.ok(
       gates.some((gate) => gate.label === required),
@@ -602,7 +603,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     );
   }
 
-  // Exactly two gates are waivable, only by the documented registry hatch, and
+  // Exactly three gates are waivable, only by the documented registry hatch, and
   // only on a dispatch. Anything else that goes quiet when every hatch input is
   // pulled is a gate that acquired an escape route nobody wrote down.
   const hatchedDispatch = releaseRun({
@@ -628,6 +629,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     waived,
     [
       "build: Require signed Grok compatibility registry",
+      "build: Require signed OpenClaw compatibility registry",
       "build: Require signed OpenCode compatibility registry",
     ],
     "a release gate gained an escape hatch — document it here deliberately, with the reason",

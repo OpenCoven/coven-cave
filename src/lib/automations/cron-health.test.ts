@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AutomationRunStatus } from "../automation-runs.ts";
 import type { CodexAutomation } from "../codex-automations-types.ts";
-import { cronHealth, cronHealthLabel, failingCronIds } from "./cron-health.ts";
+import { cronHealth, cronHealthLabel, cronRunVerb, failingCronIds } from "./cron-health.ts";
 
 function auto(id: string, status: CodexAutomation["status"] = "ACTIVE"): CodexAutomation {
   return {
@@ -73,5 +73,21 @@ describe("failingCronIds", () => {
 
   it("is empty when nothing has run", () => {
     assert.equal(failingCronIds([auto("a"), auto("b")], new Map()).size, 0);
+  });
+});
+
+describe("cronRunVerb", () => {
+  it("names the state instead of leaving a bare timestamp", () => {
+    // The handoff spec files "Run Jul 9" as a P1: ambiguous between last and
+    // next run, and red without saying why. Every verb here answers both.
+    assert.equal(cronRunVerb("failed"), "failed");
+    assert.equal(cronRunVerb("running"), "running");
+    assert.equal(cronRunVerb("healthy"), "ran");
+  });
+
+  it("uses the past tense for a paused cron's last recorded run", () => {
+    // A paused cron still has run history; the cell describes that run, not
+    // the pause.
+    assert.equal(cronRunVerb("paused"), "ran");
   });
 });
