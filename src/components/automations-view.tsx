@@ -798,6 +798,16 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     onRestore: selectTab,
   });
 
+  // The calendar's projection footer offers "manage crons →". The calendar is
+  // a slot inside this view and does not own the tabs, so it asks by event —
+  // the mirror of the week ribbon's sessionStorage handoff in the other
+  // direction.
+  useEffect(() => {
+    const openCrons = () => selectTab("crons");
+    window.addEventListener("cave:rituals:open-crons", openCrons);
+    return () => window.removeEventListener("cave:rituals:open-crons", openCrons);
+  });
+
   const openCalendarDay = (day: RitualDay) => {
     window.sessionStorage.setItem("cave:calendar:pending-open-date", day.key);
     selectTab("calendar");

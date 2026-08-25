@@ -14,3 +14,76 @@
   background: var(--backdrop-scrim);
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
 }
+
+/* Projected cron runs — `Rituals Redesign.dc.html` / `Scheduling Spec.dc.html`.
+   A forecast, not a record: these rows are quieter and dashed so a scheduled
+   run never reads like something that already happened. The spec's fix for
+   "agenda with 2 items = 80% void; crons invisible". */
+.cal-agenda-run {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cal-agenda-run__time {
+  flex: none;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-agenda-run__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-agenda-run__kind {
+  flex: none;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.cal-runs-toggle.is-on {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  color: var(--accent-presence);
+}
+
+/* The footer sentence: how much of this calendar is forecast, and the way back
+   to the surface that owns it. */
+.cal-projection-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cal-projection-note__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.cal-projection-note__link {
+  border: 0;
+  background: none;
+  color: var(--accent-presence);
+  cursor: pointer;
+  font: inherit;
+}

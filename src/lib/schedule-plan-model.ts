@@ -112,6 +112,47 @@ export function planCtaSuffix(plan: SchedulePlan): string | null {
  * reported as untranslatable rather than silently rendered as some nearby
  * schedule the user did not ask for.
  */
+/**
+ * An RRULE as a `Recurrence`, or null when it cannot be expressed as one.
+ *
+ * Extracted so every surface that has to understand a cron's schedule — the
+ * create dialog's plan preview, the calendar's projection — reads it through
+ * ONE definition. Two readers with their own RRULE handling is how a calendar
+ * ends up drawing a cadence the dialog never promised.
+ *
+ * Returns null rather than approximating: an exotic rule (`FREQ=SECONDLY`, a
+ * weekly rule with no day yet) is unrepresentable here, and guessing a nearby
+ * schedule would put fires on a calendar that will never happen.
+ */
+export function recurrenceFromRrule(rrule: string): Recurrence | null {
+  const trimmed = rrule.trim();
+  if (!trimmed) return null;
+
+  // `parseCodexRrule` answers an EMPTY `BYDAY=` with all seven days, which is a
+  // reasonable default for a stored rule but a lie for one being composed: a
+  // weekly schedule with no day picked yet would read as "every day", a cadence
+  // the user never chose. Catch the empty list before that substitution.
+  if (/FREQ=WEEKLY/i.test(trimmed) && /BYDAY=\s*(?:;|$)/i.test(trimmed)) return null;
+
+  const parsed = parseCodexRrule(trimmed);
+  const [rawHour, rawMinute] = parsed.time.split(":");
+  const hour = Number(rawHour);
+  const minute = Number(rawMinute);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+
+  if (parsed.mode === "daily") return { type: "daily", hour, minute };
+  if (parsed.mode === "weekly") {
+    const days = parsed.days
+      .map((day) => RRULE_DAY_ORDER.indexOf(day))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    // A weekly rule naming no day it can act on fires never.
+    if (days.length === 0) return null;
+    return { type: "weekly", days, hour, minute };
+  }
+  return null;
+}
+
 export function planFromRrule(
   rrule: string,
   now: Date = new Date(),
@@ -120,36 +161,17 @@ export function planFromRrule(
   const trimmed = rrule.trim();
   if (!trimmed) return { kind: "empty" };
 
-  // `parseCodexRrule` answers an EMPTY `BYDAY=` with all seven days, which is a
-  // reasonable default for a stored rule but a lie for one being composed: a
-  // weekly schedule with no day picked yet would preview as "every day", a
-  // cadence the user never chose. Catch the empty list before that substitution
-  // happens — the builder is mid-edit, not describing something real yet.
-  if (/FREQ=WEEKLY/i.test(trimmed) && /BYDAY=\s*(?:;|$)/i.test(trimmed)) {
-    return { kind: "unparsed", hint: "pick at least one day for a weekly schedule" };
+  const rec = recurrenceFromRrule(trimmed);
+  if (!rec) {
+    // The one distinction worth keeping in the UI: a weekly rule mid-edit is
+    // incomplete and fixable by picking a day; anything else is genuinely
+    // untranslatable, and saying so is more use than "invalid".
+    const midEdit = /FREQ=WEEKLY/i.test(trimmed) && /BYDAY=\s*(?:;|$)/i.test(trimmed);
+    return {
+      kind: "unparsed",
+      hint: midEdit ? "pick at least one day for a weekly schedule" : RRULE_HINT,
+    };
   }
-
-  const parsed = parseCodexRrule(trimmed);
-  const [rawHour, rawMinute] = parsed.time.split(":");
-  const hour = Number(rawHour);
-  const minute = Number(rawMinute);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
-    return { kind: "unparsed", hint: RRULE_HINT };
-  }
-
-  let rec: Recurrence | null = null;
-  if (parsed.mode === "daily") {
-    rec = { type: "daily", hour, minute };
-  } else if (parsed.mode === "weekly") {
-    const days = parsed.days
-      .map((day) => RRULE_DAY_ORDER.indexOf(day))
-      .filter((index) => index >= 0)
-      .sort((a, b) => a - b);
-    // A weekly rule naming no day it can act on fires never; saying "weekly"
-    // would be a preview that lies about a schedule that does nothing.
-    if (days.length > 0) rec = { type: "weekly", days, hour, minute };
-  }
-  if (!rec) return { kind: "unparsed", hint: RRULE_HINT };
 
   const sentence = describeRecurrence(rec, opts);
   if (!sentence) return { kind: "unparsed", hint: RRULE_HINT };
