@@ -319,6 +319,7 @@ const REPO_SCRIPT = {
     const prCache = fakePrCache({ "feat/thing": mergedPr("feat/thing") });
     const rows = await enrichSessionsWithGitContext([session("wt", root)], runner, prCache);
     assert.equal(rows[0].git.isWorktree, true);
+    assert.equal(rows[0].git.repositoryRoot, root);
     assert.deepEqual(rows[0].pullRequest, { ...mergedPr("feat/thing"), attribution: "branch" });
   }
 }

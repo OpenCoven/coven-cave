@@ -23,9 +23,15 @@ export const PROJECT_SIDEBAR_KEYS = {
   selected: "cave:chat:project-selected",
 } as const;
 
-export function selectionKey(projectId: string | null, projectRoot?: string | null): string {
+export function selectionKey(
+  projectId: string | null,
+  projectRoot?: string | null,
+  runtimeHost?: string | null,
+): string {
   if (projectId) return projectId;
+  if (projectRoot && runtimeHost) return `host:${runtimeHost}:root:${projectRoot}`;
   if (projectRoot) return `root:${projectRoot}`;
+  if (runtimeHost) return `host:${runtimeHost}:none`;
   return "none";
 }
 
@@ -34,7 +40,7 @@ export function projectSelectionKeys(groups: ChatProjectGroup[]): string[] {
     ...new Set(
       groups.flatMap((group) => [
         organizationExpansionKey(group.organization.key),
-        selectionKey(group.projectId, group.projectRoot),
+        selectionKey(group.projectId, group.projectRoot, group.runtimeHost),
       ]),
     ),
   ];
@@ -50,7 +56,7 @@ export function migrateOrganizationExpansionKeys(
     { targetKey: string; organizationKey: string }
   >(
     groups.map((group) => {
-      const targetKey = selectionKey(group.projectId, group.projectRoot);
+      const targetKey = selectionKey(group.projectId, group.projectRoot, group.runtimeHost);
       return [
         targetKey,
         {
@@ -111,7 +117,9 @@ export function applyProjectScope(
   selection: ProjectSelection,
 ): ChatProjectGroup[] {
   if (selection === "all") return groups;
-  const match = groups.find((g) => selectionKey(g.projectId, g.projectRoot) === selection);
+  const match = groups.find(
+    (g) => selectionKey(g.projectId, g.projectRoot, g.runtimeHost) === selection,
+  );
   return match ? [match] : [];
 }
 
@@ -122,7 +130,9 @@ export function normalizeSelection(
   groups: ChatProjectGroup[],
 ): ProjectSelection {
   if (selection === "all") return "all";
-  return groups.some((g) => selectionKey(g.projectId, g.projectRoot) === selection) ? selection : "all";
+  return groups.some(
+    (g) => selectionKey(g.projectId, g.projectRoot, g.runtimeHost) === selection,
+  ) ? selection : "all";
 }
 
 /** Group keys that should auto-expand after a sessions refresh (cave-mllp).
@@ -156,7 +166,7 @@ export function autoExpandKeysForNewSessions(args: {
 }): string[] {
   const keys: string[] = [];
   for (const group of args.groups) {
-    const key = selectionKey(group.projectId, group.projectRoot);
+    const key = selectionKey(group.projectId, group.projectRoot, group.runtimeHost);
     const fresh = group.sessions.filter((s) => !args.knownSessionIds.has(s.id));
     if (fresh.length === 0) continue;
     const hasRecentFresh = fresh.some((s) => {
