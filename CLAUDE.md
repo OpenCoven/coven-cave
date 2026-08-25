@@ -433,6 +433,27 @@ the `0.2.5` floor (prereleases are refused whatever their numbers), and the
 `COVEN_BIN` override. Read those four lines before doing anything else; a
 supported install is often already present further along the same PATH.
 
+⚠️ **`coven-version-unsupported` and `coven-version-did-not-run` are different
+failures with opposite remedies, and the paragraph above applies only to the
+first.** Conflating them cost a session ~40 minutes on 2026-08-24: a bare
+`coven-version-unavailable` (the old spelling, before `cave-a8uza`) sent it
+auditing three `coven` installs when the CLI was never the problem.
+
+- `coven-version-unsupported` — a binary was found, RAN, and reported a version
+  below the floor. Deterministic. Fix PATH or set `COVEN_BIN`.
+- `coven-version-did-not-run` — nothing executed: the spawn timed out or could
+  not start. **Transient. Retry.** The reason now says which, plus the elapsed
+  time and the binary it tried, so the two are no longer guesswork.
+
+The usual cause of the second is load, not configuration. `covenSpawnEnv()`
+learns the child's PATH by running `$SHELL -ilc 'echo $PATH'`, which sources the
+user's entire interactive profile — measured at 3.8s idle on a developer machine
+(already at that probe's own 4s budget) and 11.7s for the whole env build, with
+74s observed at load average 124. It is memoised only per process, so every
+fresh `beads:worktrees:*` invocation pays it again. `defaultRunCoven` now bounds
+that discovery with its own deadline so it cannot consume the whole budget
+before the spawn starts.
+
 The reason it was ever filed as "not reproducible" (`cave-6bb4m`, issue #4897)
 is worth knowing, because the shape recurs: `covenBin()` composed its
 priority-ordered search path with `{ ...env, PATH: value }`, which on Windows
