@@ -470,7 +470,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         and the reliable one — a live region that mounts already holding its
         text is not guaranteed to be spoken at all.
       */}
-      {actionError && (
+      {actionError && gate.kind !== "publish" && (
         <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
       )}
 
@@ -517,9 +517,9 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
                 type="button"
                 className="role-surface-chip role-surface-chip--accent focus-ring"
                 disabled={busy}
-                onClick={() => void publish()}
+                onClick={actionError ? () => void confirm() : () => void publish()}
               >
-                Publish to X
+                {actionError ? "Review again" : "Publish to X"}
               </button>
             </>
           )}
@@ -528,6 +528,9 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
             <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
             This exact text is confirmed. Publishing sends it once.
           </p>
+          {actionError && (
+            <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
+          )}
           <pre className="role-surface-content">{gate.confirmation.text}</pre>
           <p className="role-surface-hint">
             {gate.confirmation.account

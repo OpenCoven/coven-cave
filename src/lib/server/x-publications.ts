@@ -415,6 +415,7 @@ async function verifyConfirmationToken(input: {
   familiarId: string;
   publicationId: string;
   text: string;
+  recordUpdatedAt: string;
   accountId: string;
   provided: unknown;
   now: Date;
@@ -429,6 +430,12 @@ async function verifyConfirmationToken(input: {
     input.accountId,
   );
   if (!tokensMatch(expected, parsed.digest)) return "mismatch";
+  // A draft's updatedAt is the revision the confirmation was minted for.
+  // Publishing advances that revision before the network call, and a definite
+  // failure advances it again when the record returns to draft. Requiring the
+  // mint stamp to name the current revision makes a token one-time even when
+  // the outbound request is refused and the draft becomes retryable.
+  if (Date.parse(input.recordUpdatedAt) !== parsed.mintedAt) return "mismatch";
   const age = input.now.getTime() - parsed.mintedAt;
   // A negative age means the clock moved backwards between mint and publish.
   // Refusing is the fail-closed direction and costs one re-confirmation;
@@ -585,6 +592,7 @@ export async function publishXPublication(
       familiarId,
       publicationId: existing.id,
       text: existing.text,
+      recordUpdatedAt: existing.updatedAt,
       accountId: input.accountId ?? "",
       provided: input.confirmationToken,
       now: dispatchAt,
@@ -638,7 +646,12 @@ export async function publishXPublication(
         // record meanwhile, leave it exactly as found.
         if (current.status !== "uncertain" || current.dispatchedAt !== pending.dispatchedAt) return;
         const { dispatchedAt: _dispatchedAt, ...rest } = current;
-        file.publications[index] = { ...rest, status: "draft", updatedAt: now().toISOString() };
+        const failedAt = now().getTime();
+        const previousRevision = Date.parse(current.updatedAt);
+        // Always advance the revision, even when mint, dispatch, and refusal
+        // happen in the same millisecond or the wall clock moves backwards.
+        const updatedAt = new Date(Math.max(failedAt, previousRevision + 1)).toISOString();
+        file.publications[index] = { ...rest, status: "draft", updatedAt };
         await savePublicationsFile(familiarId, file);
       });
     }

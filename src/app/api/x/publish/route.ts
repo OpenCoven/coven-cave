@@ -148,7 +148,10 @@ export async function POST(req: Request) {
                 }
                 return createXPost(accessToken, text);
               }),
-            accountUsername: connectedUsername,
+            // Keep the receipt tied to the account that passed confirmation.
+            // Re-reading after the request returns could observe a reconnect
+            // and build the canonical URL with a different account's handle.
+            accountUsername: () => confirmedAccount?.username,
           },
         );
         return NextResponse.json({

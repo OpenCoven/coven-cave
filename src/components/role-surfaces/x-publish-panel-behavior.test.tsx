@@ -597,3 +597,30 @@ test("two rapid Publish clicks dispatch exactly one request", async () => {
   expect(publishCalls).toBe(1);
   expect(requests.filter((request) => request.body?.action === "publish")).toHaveLength(1);
 });
+
+test("an expired publish exposes a fresh-review action inside the modal", async () => {
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: [DRAFT] } };
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") {
+      return {
+        body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
+      };
+    }
+    return {
+      status: 400,
+      body: { ok: false, error: "This confirmation has expired. Review and confirm again." },
+    };
+  };
+  const renderer = await render();
+
+  await act(async () => textarea(renderer).props.onChange({ target: { value: "ship it" } }));
+  await act(async () => button(renderer, "Review this wording").props.onClick());
+  await act(async () => button(renderer, "Publish to X").props.onClick());
+
+  expect(panelText(renderer)).toContain("confirmation has expired");
+  expect(button(renderer, "Publish to X")).toBeUndefined();
+  expect(button(renderer, "Review again")).toBeTruthy();
+  await act(async () => button(renderer, "Review again").props.onClick());
+  expect(button(renderer, "Publish to X").props.disabled).toBe(false);
+});

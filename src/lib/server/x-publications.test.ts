@@ -215,7 +215,7 @@ test("an ambiguous write leaves the record uncertain and refuses to retry", asyn
   assert.equal(attempts.length, 1, "the second publish never reached the client");
 });
 
-test("a definite refusal returns the record to draft so it can be tried again", async () => {
+test("a definite refusal returns the record to draft but consumes its confirmation", async () => {
   const { publication, confirmationToken } = await draft("Refused once.");
   const attempts: string[] = [];
 
@@ -234,8 +234,26 @@ test("a definite refusal returns the record to draft so it can be tried again", 
   assert.equal(stored?.dispatchedAt, undefined);
 
   const sent: string[] = [];
+  await assert.rejects(
+    publishXPublication(
+      { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+      recordingSend(sent),
+    ),
+    (error: unknown) => error instanceof XApiError && error.code === "invalid-request",
+  );
+  assert.deepEqual(sent, [], "the consumed confirmation cannot dispatch again");
+
+  const reconfirmed = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    publicationId: publication.id,
+    text: publication.text,
+  });
   const ok = await publishXPublication(
-    { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+    {
+      familiarId: FAMILIAR,
+      publicationId: publication.id,
+      confirmationToken: reconfirmed.confirmationToken,
+    },
     recordingSend(sent),
   );
   assert.equal(ok.publication.status, "published");

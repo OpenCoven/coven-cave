@@ -257,3 +257,37 @@ test("changing the connected account after confirmation refuses the publish", as
   const stored = (await listXPublications("nova")).find((entry) => entry.id === publication.id);
   assert.equal(stored?.status, "draft");
 });
+
+test("the receipt keeps the confirmed account if the connection changes after dispatch", async () => {
+  const { publication, confirmationToken } = await draft("Approved for Nova Ops.");
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (!url.includes("/tweets")) throw new Error(`unexpected outbound request: ${url}`);
+    const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+    sentToX.push(String(body.text));
+    // Simulate a reconnect after X accepted the post but before the receipt is
+    // settled. The post still belongs to the account whose token made the call.
+    xCredentialService.replaceBundle({
+      accessToken: "other-access-token",
+      refreshToken: "other-refresh-token",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      scopes: ["tweet.read", "tweet.write", "users.read"],
+      account: { id: "99", username: "otherops", name: "Other Ops" },
+    });
+    return new Response(
+      JSON.stringify({ data: { id: POST_ID, text: body.text } }),
+      { status: 201, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof globalThis.fetch;
+
+  const response = await POST(publishRequest({
+    action: "publish",
+    familiarId: "nova",
+    publicationId: publication.id,
+    confirmationToken,
+  }));
+
+  assert.equal(response.status, 200);
+  const stored = (await listXPublications("nova")).find((entry) => entry.id === publication.id);
+  assert.equal(stored?.canonicalUrl, `https://x.com/novaops/status/${POST_ID}`);
+});
