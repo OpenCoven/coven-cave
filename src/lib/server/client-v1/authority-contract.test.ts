@@ -12,6 +12,7 @@ import {
   CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
   CLIENT_V1_HPKE_SUITE,
   type ClientV1AuthorityMode,
+  type ClientV1HpkeAuthority,
   type ClientV1OperationBinding,
   type ClientV1OperationCredential,
 } from "./authority-contract.ts";
@@ -255,6 +256,22 @@ export type ClientV1OperationCredentialIsExact = Assert<
 >;
 export type ClientV1OperationBindingIsExact = Assert<
   Equal<ClientV1OperationBinding, "none" | "hpke-bound-v1">
+>;
+export type ClientV1HpkeAuthorityIsExact = Assert<
+  Equal<
+    ClientV1HpkeAuthority,
+    {
+      mechanism: "hpke-bound-v1";
+      mode: "advertise" | "enforce";
+      keyId: string;
+      publicKey: string;
+      suite: {
+        kemId: 32;
+        kdfId: 1;
+        aeadId: 2;
+      };
+    }
+  >
 >;
 
 test("pins the Client v1 HPKE authority mechanism and modes", () => {

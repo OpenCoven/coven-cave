@@ -1378,6 +1378,7 @@ export const SUITES = {
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/ci-paths.test.mjs",
     "scripts/export-client-v1-contract.test.mjs",
+    "scripts/export-client-v1-hpke-vectors.test.mjs",
     "scripts/client-v1-doc-contract.test.mjs",
     "scripts/client-v1-settings-doc-contract.test.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
@@ -1423,6 +1424,7 @@ export const SUITES = {
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/authority-contract.test.ts",
+    "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
@@ -1935,6 +1937,7 @@ const STRIP_TYPES_MJS = new Set([
 export const SUITE_PREFLIGHTS = {
   api: [
     ["scripts/export-client-v1-contract.mjs", "--check"],
+    ["scripts/export-client-v1-hpke-vectors.mjs", "--check"],
   ],
 };
 

@@ -24,6 +24,18 @@ export type ClientV1OperationCredential =
 
 export type ClientV1OperationBinding = "none" | "hpke-bound-v1";
 
+export type ClientV1HpkeAuthority = {
+  mechanism: "hpke-bound-v1";
+  mode: "advertise" | "enforce";
+  keyId: string;
+  publicKey: string;
+  suite: {
+    kemId: 32;
+    kdfId: 1;
+    aeadId: 2;
+  };
+};
+
 export const CLIENT_V1_HPKE_SUITE = Object.freeze({
   kem: "DHKEM(X25519, HKDF-SHA256)",
   kemId: 32,
