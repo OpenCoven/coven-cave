@@ -9,6 +9,7 @@ const {
   calculateLifecycleBudgets,
   classifyLifecycleUnit,
   classifyWorktree,
+  cooldownIsTheOnlyBlocker,
   isDisposableIgnoredPath,
   normalizeAbsoluteWorktreePath,
   renderWorktreeLifecycleReport,
@@ -1294,3 +1295,76 @@ function legacyObservation(overrides = {}) {
 }
 
 console.log("worktree-lifecycle.test.ts: ok");
+
+// ── cooldownIsTheOnlyBlocker — the --allow-cooldown-override admission test ──
+// The property under test is NOT "does it spot the cooldown lane". It is that
+// the override can discharge elapsed time and NOTHING else.
+{
+  const landedInsideCooldown = observation({
+    metadata: metadata({ disposition: "pr" }),
+    mergedPr: { number: 90, headOid: "a".repeat(40), url: "https://example.test/90" },
+    updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS + 1,
+  });
+  assert.equal(
+    classifyLifecycleUnit(landedInsideCooldown, NOW).lane,
+    "cooldown",
+    "fixture really is waiting on the clock",
+  );
+  assert.equal(
+    cooldownIsTheOnlyBlocker(landedInsideCooldown, NOW),
+    true,
+    "landed, clean, non-divergent work waiting only on the clock is admissible",
+  );
+}
+
+{
+  const alreadyClear = observation({
+    metadata: metadata({ disposition: "pr" }),
+    mergedPr: { number: 91, headOid: "a".repeat(40), url: "https://example.test/91" },
+    updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS - 1,
+  });
+  assert.equal(classifyLifecycleUnit(alreadyClear, NOW).lane, "retire-after-gate");
+  assert.equal(
+    cooldownIsTheOnlyBlocker(alreadyClear, NOW),
+    false,
+    "a unit the gate already clears does not need the override, and must not claim to",
+  );
+}
+
+{
+  // The safety case: blocked for a REASON, not for time. Advancing the clock
+  // must not launder it into eligibility.
+  const heldForOwner = observation({
+    metadata: metadata({
+      disposition: "recovery",
+      reviewAfter: "2026-07-28T12:00:00Z",
+    }),
+    mergedPr: { number: 92, headOid: "a".repeat(40), url: "https://example.test/92" },
+    updatedAtMs: NOW - RETIREMENT_COOLDOWN_MS + 1,
+  });
+  assert.equal(
+    cooldownIsTheOnlyBlocker(heldForOwner, NOW),
+    false,
+    "a recovery unit stays refused at every clock — the override is not a general bypass",
+  );
+  assert.equal(
+    cooldownIsTheOnlyBlocker(heldForOwner, NOW + 10 * DAY),
+    false,
+    "and waiting ten days does not change that either",
+  );
+}
+
+{
+  // Fail-closed on unknowable recency: "uncertain" is not "wait a bit longer".
+  const noRecency = observation({
+    metadata: metadata({ disposition: "pr" }),
+    mergedPr: { number: 93, headOid: "a".repeat(40), url: "https://example.test/93" },
+    updatedAtMs: null,
+  });
+  assert.equal(classifyLifecycleUnit(noRecency, NOW).lane, "uncertain");
+  assert.equal(
+    cooldownIsTheOnlyBlocker(noRecency, NOW),
+    false,
+    "unknown recency is refused, never overridden — the clock cannot answer it",
+  );
+}

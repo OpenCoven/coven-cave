@@ -6,6 +6,7 @@ import {
   normalizeAbsoluteWorktreePath,
   type WorktreeLifecycleItem,
   type WorktreeRemoteRef,
+  cooldownIsTheOnlyBlocker,
 } from "../src/lib/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
@@ -151,11 +152,17 @@ export function retireLifecycleUnits({
   gateHandle,
   operations,
   maxRetire,
+  allowCooldownOverride = false,
+  nowMs = Date.now(),
 }: {
   items: WorktreeLifecycleItem[];
   gateHandle: RetirementGateHandle;
   operations: RetirementOperations;
   maxRetire?: string;
+  /** Operator assertion that the cooldown units are idle — see the flag's
+   *  documentation in worktree-lifecycle-patrol.ts. Never set by the sweep. */
+  allowCooldownOverride?: boolean;
+  nowMs?: number;
 }): RetirementReport {
   const report: RetirementReport = {
     retired: [],
@@ -166,8 +173,22 @@ export function retireLifecycleUnits({
   };
   const maxSuccessfulRetirements = parseMaxRetire(maxRetire);
   const attemptBudget = retirementAttemptBudget(maxSuccessfulRetirements);
+  // The override widens eligibility by exactly one lane, and only for units the
+  // gate itself would clear once the clock advances (cooldownIsTheOnlyBlocker
+  // re-runs the classifier rather than matching a lane string). Everything the
+  // gate refuses for a substantive reason stays refused.
+  // Keyed on the same identity beginAttempt reports, because `path` is null for
+  // a bare local ref with no worktree — which is exactly a unit this can admit.
+  const overriddenKey = (item: WorktreeLifecycleItem) => item.ref ?? item.head;
+  const overridden = new Set<string>();
   const eligible = [...items]
-    .filter((item) => item.lane === "retire-after-gate")
+    .filter((item) => {
+      if (item.lane === "retire-after-gate") return true;
+      if (!allowCooldownOverride) return false;
+      if (!cooldownIsTheOnlyBlocker(item, nowMs)) return false;
+      overridden.add(overriddenKey(item));
+      return true;
+    })
     .sort(compareRetirementCandidates);
 
   let gateFailed = false;
@@ -180,7 +201,7 @@ export function retireLifecycleUnits({
     index += 1
   ) {
     const item = eligible[index]!;
-    const attempt = beginAttempt(item);
+    const attempt = beginAttempt(item, overridden.has(overriddenKey(item)));
     const state: RetirementState = {
       destructiveMutation: false,
       worktreeRemoved: false,
@@ -820,7 +841,11 @@ function retirementSortKey(item: WorktreeLifecycleItem): string {
   return item.ref ?? item.branch ?? item.path ?? item.head;
 }
 
-function beginAttempt(item: WorktreeLifecycleItem): RetirementAttempt {
+/** `cooldownOverridden` marks a unit admitted by an operator assertion rather
+ *  than by the clock, so the attempt log says which retirements were waived
+ *  into. A destructive action taken on someone's say-so has to be legible
+ *  afterwards — the same reason every guard bypass in this repo is logged. */
+function beginAttempt(item: WorktreeLifecycleItem, cooldownOverridden = false): RetirementAttempt {
   return {
     ref: item.ref ?? item.head,
     oid: item.head,
@@ -828,7 +853,7 @@ function beginAttempt(item: WorktreeLifecycleItem): RetirementAttempt {
     worktreePostcondition: item.path === null ? "not-applicable" : "failed",
     localRefPostcondition: "not-attempted",
     outcome: "blocked",
-    reason: null,
+    reason: cooldownOverridden ? "admitted by --allow-cooldown-override" : null,
   };
 }
 

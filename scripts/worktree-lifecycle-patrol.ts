@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
+  cooldownIsTheOnlyBlocker,
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   acquireMaintenanceGate,
@@ -42,6 +43,18 @@ type Options = {
    * required — see assessMaintenancePlaneAdmission.
    */
   allowUnenforcedPlanes: boolean;
+  /**
+   * Operator assertion that the cooldown units are idle — nobody is working in
+   * them — so the "let a concurrent session notice" window can be discharged.
+   * It widens eligibility by exactly one lane, and only for units the gate
+   * itself clears once the clock advances (`cooldownIsTheOnlyBlocker` re-runs
+   * the classifier rather than matching a lane string), so it can never admit
+   * dirty, unlanded, divergent, uncertain or protected work.
+   *
+   * The scheduled sweep (scripts/worktree-sweep.sh) must never pass it: a cron
+   * job has nobody to make that assertion.
+   */
+  allowCooldownOverride: boolean;
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
@@ -151,6 +164,7 @@ export function parseArgs(argv: string[]): Options {
     apply: false,
     maxRetire: parseMaxRetire(undefined),
     allowUnenforcedPlanes: false,
+    allowCooldownOverride: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -171,6 +185,9 @@ export function parseArgs(argv: string[]): Options {
         break;
       case "--allow-unenforced-planes":
         options.allowUnenforcedPlanes = true;
+        break;
+      case "--allow-cooldown-override":
+        options.allowCooldownOverride = true;
         break;
       case "--max-retire": {
         const value = argv[++index];
@@ -572,8 +589,49 @@ function renderPatrolReport(
   if (malformedClaims) {
     lines.push(malformedClaims);
   }
+  const cooldownHint = renderCooldownOverrideHint(inventory.items, nowMs, false);
+  if (cooldownHint) {
+    lines.push("", cooldownHint);
+  }
   lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
   return lines.join("\n");
+}
+
+
+/**
+ * When the ONLY thing between a unit and retirement is the clock, print the
+ * exact rerun that admits it.
+ *
+ * The create gate learned this lesson first (`cave-no5nr`): a refusal that
+ * names a policy but not the command teaches sessions to reach for an
+ * unmanaged workaround. "Wait three hours" is the same shape — so say what to
+ * run instead, and let the operator decide whether the assertion it makes is
+ * true.
+ */
+function renderCooldownOverrideHint(
+  items: readonly PatrolItem[],
+  nowMs: number,
+  applying: boolean,
+): string | null {
+  const waiting = items.filter((item) => cooldownIsTheOnlyBlocker(item, nowMs));
+  if (waiting.length === 0) return null;
+  const names = waiting
+    .map((item) => `  - ${formatItemIdentity(item)}`)
+    .sort(compareText);
+  return [
+    `${waiting.length} unit(s) are retirable except for the cooldown:`,
+    ...names,
+    "",
+    "The cooldown is the 'let a concurrent session notice' window — the work is",
+    "already proven landed, clean and retained. If you know nobody is working in",
+    "them, discharge it explicitly:",
+    "",
+    `  pnpm beads:worktrees:apply --allow-unenforced-planes --allow-cooldown-override`,
+    "",
+    applying
+      ? "Every overridden retirement is recorded as such in the attempt log."
+      : "That runs --apply. Re-read the units above first.",
+  ].join("\n");
 }
 
 function compareText(left: string, right: string): number {
@@ -667,7 +725,9 @@ export function runRetirementApply(
     // (worktree-lifecycle-retirement.ts:161); anything else would reserve a
     // slot for work that cannot happen.
     const retirableAtGate = inventory.items.some(
-      (item) => item.lane === "retire-after-gate",
+      (item) =>
+        item.lane === "retire-after-gate" ||
+        (options.allowCooldownOverride && cooldownIsTheOnlyBlocker(item, options.nowMs)),
     );
     // Only reserve when there is more than one slot to divide. With
     // --max-retire 1 a reservation would not share the budget, it would just
@@ -702,6 +762,8 @@ export function runRetirementApply(
             gateHandle: acquired.handle,
             operations,
             maxRetire: String(gitLimit),
+            allowCooldownOverride: options.allowCooldownOverride,
+            nowMs: options.nowMs,
           })
         : {
             retired: [],
