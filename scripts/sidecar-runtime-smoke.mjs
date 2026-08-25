@@ -138,11 +138,13 @@ function attachOutput(child) {
 
 function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environment = {} }) {
   const baseUrl = `http://127.0.0.1:${port}`;
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE;
   const child = spawn(bundledNode, [sidecarServer], {
     cwd: sidecarRoot,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env,
+      ...childEnvironment,
       NODE_ENV: "production",
       HOSTNAME: "127.0.0.1",
       PORT: String(port),

@@ -12,6 +12,7 @@ const [
   windowsConfigSource,
   manifestSource,
   closureSource,
+  smokeSource,
   rustArchiveSource,
 ] = await Promise.all([
   readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8"),
@@ -19,6 +20,7 @@ const [
   readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8"),
+  readFile(new URL("./sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/src/sidecar_archive_manifest.rs", import.meta.url), "utf8"),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
@@ -48,6 +50,50 @@ assert.match(src, /PNPM_STAGE.*node_modules/, "final node_modules must come from
 assert.match(closureSource, /realpath\(source\)/, "dependency links must be resolved before copying");
 assert.match(closureSource, /sidecar dependency link escapes its allowed roots/, "dependency links must be confined");
 assert.match(closureSource, /sidecar runtime must not contain links/, "assembled runtime must reject surviving links");
+
+const launchSidecarSource = sourceSection(
+  smokeSource,
+  "function launchSidecar(",
+  "async function stopSidecar(",
+  "sidecar launch helper",
+);
+assert.match(
+  launchSidecarSource,
+  /const childEnvironment = \{ \.\.\.process\.env \};[\s\S]*delete childEnvironment\.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE;/,
+  "the packaged smoke must delete any inherited authority mode before launching its default child",
+);
+assert.ok(
+  launchSidecarSource.indexOf("delete childEnvironment.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE;")
+    < launchSidecarSource.indexOf("...environment"),
+  "an explicit per-launch authority mode must be applied only after the inherited parent mode is removed",
+);
+assert.doesNotMatch(
+  launchSidecarSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE\s*(?:=|:)\s*["']off["']/,
+  "the default smoke must test an unset authority mode rather than forcing off",
+);
+const defaultLaunchSource = sourceSection(
+  smokeSource,
+  "const firstPort = await reservePort();",
+  "  try {\n    const earlyExit = Promise.race([",
+  "default packaged sidecar launch",
+);
+assert.doesNotMatch(
+  defaultLaunchSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE/,
+  "the first packaged sidecar launch must leave authority mode unset",
+);
+const activeLaunchSource = sourceSection(
+  smokeSource,
+  "const secondPort = await reservePort();",
+  "    const secondEarlyExit",
+  "active packaged sidecar launch",
+);
+assert.match(
+  activeLaunchSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE:\s*"enforce"/,
+  "the later packaged sidecar launch must explicitly select enforce mode",
+);
 
 // Runtime size: assemble the union of Next's NFT traces and explicit dynamic
 // packages/data, never the standalone repository root or full prod install.
