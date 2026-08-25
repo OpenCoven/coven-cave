@@ -263,17 +263,17 @@ export function ResearchMissionComposer({
   const appliedRecommendedDraftRevision = useRef<number | null>(null);
 
   useEffect(() => {
-    // Only a familiar switch clears the latch and returns to defaults. A
-    // daemon status transition just re-evaluates availability, so an explicit
-    // runtime/model pick survives it.
-    if (loadedFamiliarIdRef.current !== familiarId) {
+    const familiarChanged = loadedFamiliarIdRef.current !== familiarId;
+    if (familiarChanged) {
       loadedFamiliarIdRef.current = familiarId;
       modelSelectionDirtyRef.current = false;
-      setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
-      setModel("");
     } else if (modelSelectionDirtyRef.current) {
       return;
     }
+    // A clean daemon transition must immediately restore the safe fallback
+    // before capability re-evaluation; an explicit user pick returns above.
+    setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+    setModel("");
     let cancelled = false;
     void (async () => {
       try {

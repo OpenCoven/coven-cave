@@ -215,7 +215,11 @@ test("inherited Codex defaults require the active local daemon launch policy", (
   assert.match(composer, /\/api\/daemon\/status\?scope=research-local/);
   assert.match(
     composer,
-    /modelSelectionDirtyRef\.current = false;\s*setHarness\(RESEARCH_RUNTIME_DEFAULT_HARNESS\);\s*setModel\(""\);/,
+    /const loadedFamiliarIdRef = useRef<string \| null>\(null\);/,
+  );
+  assert.match(
+    composer,
+    /const familiarChanged = loadedFamiliarIdRef\.current !== familiarId;[\s\S]*if \(familiarChanged\) \{[\s\S]*modelSelectionDirtyRef\.current = false;[\s\S]*\} else if \(modelSelectionDirtyRef\.current\) \{[\s\S]*return;[\s\S]*\}[\s\S]*setHarness\(RESEARCH_RUNTIME_DEFAULT_HARNESS\);[\s\S]*setModel\(""\);/,
   );
   assert.match(
     composer,
