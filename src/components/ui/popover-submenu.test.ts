@@ -16,12 +16,14 @@ test("flyout portals to document.body and reuses the ui-popover shell", () => {
   assert.match(src, /computeSubmenuPosition\(/, "positioning delegates to the pure helper");
 });
 
-test("trigger row exposes menu semantics and expansion state", () => {
+test("trigger row and flyout expose their configured popup semantics", () => {
+  assert.match(src, /panelRole = "menu"/, "ordinary submenus retain menu semantics by default");
   assert.match(
     src,
-    /ui-popover-item ui-popover-subtrigger[\s\S]*?role="menuitem"\s*aria-haspopup="menu"\s*aria-expanded=\{open\}/,
-    "subtrigger is a menuitem with aria-haspopup/aria-expanded",
+    /ui-popover-item ui-popover-subtrigger[\s\S]*?role="menuitem"\s*aria-haspopup=\{panelRole\}\s*aria-expanded=\{open\}/,
+    "subtrigger advertises the configured popup role and expansion state",
   );
+  assert.match(src, /className="ui-popover ui-popover-submenu"[\s\S]*?role=\{panelRole\}/, "flyout uses the same configured role");
   assert.match(src, /name="ph:caret-right"[\s\S]*?ui-popover-subtrigger__caret/, "trailing caret glyph");
 });
 
