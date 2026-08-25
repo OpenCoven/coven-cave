@@ -18,7 +18,7 @@
  * Deep link: `#grimoire:<kind>:<id>` selects a document on entry.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
@@ -29,7 +29,7 @@ import "@/styles/grimoire-launcher.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import type { Familiar } from "@/lib/types";
 import { familiarInScope } from "@/lib/familiar-multiselect";
-import { serializeMdDocument } from "@/lib/md-frontmatter";
+import { parseMdDocument, serializeMdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
 import {
   formatDate,
@@ -206,6 +206,9 @@ function KnowledgeMdEditor({
   onSaved,
   onCancel,
   onDirtyChange,
+  readerMode = false,
+  visualLifecycleQueueRef,
+  onDraftTitleChange,
 }: {
   /** null → creating a new entry. */
   entry: KnowledgeEntry | null;
@@ -213,6 +216,9 @@ function KnowledgeMdEditor({
   onCancel?: () => void;
   /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
   onDirtyChange?: (dirty: boolean) => void;
+  readerMode?: boolean;
+  visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
+  onDraftTitleChange?: (title: string | null) => void;
 }) {
   const initial = useMemo(
     () =>
@@ -247,10 +253,13 @@ function KnowledgeMdEditor({
     <MdEditor
       key={entry ? knowledgeDocKey(entry.id, entry.collection) : "new"}
       value={initial}
+      readerMode={readerMode}
+      visualLifecycleQueueRef={visualLifecycleQueueRef}
       sourceLabel="Stitches"
       onSave={save}
       onCancel={onCancel}
       onDirtyChange={onDirtyChange}
+      onChange={(raw) => onDraftTitleChange?.(parseMdDocument(raw).title)}
       // A new entry materializes on its first (manual) save, which re-keys and
       // remounts this editor; only autosave once it exists so typing isn't
       // interrupted mid-keystroke by that remount.
@@ -263,11 +272,15 @@ function JournalMdEditor({
   date,
   onSaved,
   onDirtyChange,
+  readerMode = false,
+  visualLifecycleQueueRef,
 }: {
   date: string;
   onSaved?: () => void;
   /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
   onDirtyChange?: (dirty: boolean) => void;
+  readerMode?: boolean;
+  visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
 }) {
   const dateTimePrefs = useDateTimePrefs();
   const [state, setState] = useState<{ reflection: string; reflectedBy: string | null } | null>(null);
@@ -348,6 +361,8 @@ function JournalMdEditor({
     <MdEditor
       key={date}
       value={state.reflection}
+      readerMode={readerMode}
+      visualLifecycleQueueRef={visualLifecycleQueueRef}
       showHeader={false}
       sourceLabel={`Journal · ${journalDayLabel(date, dateTimePrefs)}`}
       onSave={save}
@@ -619,23 +634,8 @@ function GrimoireDocLinks({
     return out;
   }, [markdown, docIndex]);
 
-  // A doc with no connections teaches the syntax instead of hiding the strip —
-  // [[wiki-links]] have no visible affordance in the editor, so this hint is
-  // where a user learns they exist. Waits for content to load (null) so it
-  // doesn't flash on every doc open.
   if (links.length === 0 && backlinks.length === 0) {
-    const loaded =
-      selection.kind === "knowledge" ||
-      (selection.kind === "memory" ? memFile.text !== null : journalMd !== null);
-    if (!loaded || markdown.trim().length === 0) return null;
-    return (
-      <div className="grimoire-doc-links shrink-0 border-t border-[var(--border-hairline)] px-3 py-2">
-        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          Tip: type <code className="rounded bg-[var(--bg-elevated)] px-1">[[a doc&apos;s title]]</code> anywhere in
-          the text to link documents — links show up here and weave the graph.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -823,6 +823,10 @@ export function GrimoireView({
   const evictedRef = useRef<GrimoireSelection | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [readerMode, setReaderMode] = useState(false);
+  const readerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const readerEditRef = useRef<HTMLButtonElement | null>(null);
+  const restoreReaderFocusRef = useRef(false);
   // Open tabs + the active one. A #grimoire: deep link wins over the restored
   // active tab and is merged into the restored tab set.
   const [storedSelectionKey, setStoredSelectionKey, preferencesHydrated] = useSurfacePreference(surfacePreferenceSpecs.grimoire.selected);
@@ -850,6 +854,19 @@ export function GrimoireView({
       : null;
     return { openTabs: stored.tabs, selection: active };
   });
+  const selectedKey = selection ? selectionKey(selection) : null;
+  // One queue per persistent tab: editors in separate tabs may coexist, while
+  // a given tab's Crepe teardown must finish before any replacement mounts.
+  const visualLifecycleQueuesRef = useRef(
+    new Map<string, MutableRefObject<Promise<void>>>(),
+  );
+  const visualLifecycleQueueFor = useCallback((key: string) => {
+    const existing = visualLifecycleQueuesRef.current.get(key);
+    if (existing) return existing;
+    const queue = { current: Promise.resolve() };
+    visualLifecycleQueuesRef.current.set(key, queue);
+    return queue;
+  }, []);
 
   useEffect(() => {
     if (!preferencesHydrated || deepLinkActiveRef.current || preferenceRestoreAppliedRef.current) return;
@@ -867,6 +884,7 @@ export function GrimoireView({
   // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
   // editor via onDirtyChange — they drive the tab dot and the close confirm.
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({});
+  const [draftTitles, setDraftTitles] = useState<Record<string, string | null>>({});
   const setTabDirty = useCallback((key: string, dirty: boolean) => {
     setDirtyTabs((prev) => {
       if (!!prev[key] === dirty) return prev;
@@ -961,6 +979,11 @@ export function GrimoireView({
 
   /** Swap one tab for another in place (e.g. a saved draft gaining its id). */
   const replaceTab = useCallback((fromKey: string, next: GrimoireSelection) => {
+    const nextKey = selectionKey(next);
+    const queue = visualLifecycleQueuesRef.current.get(fromKey);
+    if (queue && !visualLifecycleQueuesRef.current.has(nextKey)) {
+      visualLifecycleQueuesRef.current.set(nextKey, queue);
+    }
     setTabState((prev) => {
       let tabs = prev.openTabs.map((t) => (selectionKey(t) === fromKey ? next : t));
       // De-dupe if the target already had a tab.
@@ -1024,6 +1047,47 @@ export function GrimoireView({
   useEffect(() => {
     setDeleteError(null);
   }, [selection]);
+
+  const selectedKnowledgeEntry =
+    selection?.kind === "knowledge"
+      ? (knowledge ?? []).find((entry) => sameKnowledgeDoc(entry, selection)) ?? null
+      : null;
+  const readerEligible =
+    view === "docs" &&
+    selection !== null &&
+    selection.kind !== "knowledge-new" &&
+    selection.kind !== "stitch-new" &&
+    (selection.kind !== "knowledge" || selectedKnowledgeEntry !== null);
+
+  useEffect(() => {
+    if (!readerEligible && readerMode) setReaderMode(false);
+  }, [readerEligible, readerMode]);
+
+  const leaveReader = useCallback(() => {
+    restoreReaderFocusRef.current = true;
+    setReaderMode(false);
+  }, []);
+
+  useEffect(() => {
+    if (readerMode) readerEditRef.current?.focus();
+  }, [readerMode, selectedKey]);
+
+  useEffect(() => {
+    if (readerMode || !restoreReaderFocusRef.current) return;
+    restoreReaderFocusRef.current = false;
+    readerTriggerRef.current?.focus();
+  }, [readerMode]);
+
+  useEffect(() => {
+    if (!readerMode) return;
+    const exitReader = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      leaveReader();
+    };
+    window.addEventListener("keydown", exitReader);
+    return () => window.removeEventListener("keydown", exitReader);
+  }, [leaveReader, readerMode]);
 
   // Delete/trash the selected document. Memory files archive to the memory
   // trash (restorable via POST /api/memory/restore); knowledge entries and
@@ -1189,8 +1253,6 @@ export function GrimoireView({
   }, [q, visibleKnowledge.length, visibleMemory.length, announce]);
 
   const loading = knowledge === null || collections === null || memory === null || journal === null;
-  const selectedKey = selection ? selectionKey(selection) : null;
-
   // Roving focus for the open-document tab strip (←/→ between tabs, one tab
   // stop). The shared ui/tabs primitive has no per-tab close button, so the
   // strip stays hand-rolled — with the same tablist semantics.
@@ -1292,6 +1354,11 @@ export function GrimoireView({
     },
     [knowledge, dateTimePrefs],
   );
+  const readerTitle = selection
+    ? selection.kind === "knowledge" && selectedKey && Object.hasOwn(draftTitles, selectedKey)
+      ? draftTitles[selectedKey]?.trim() || "Untitled"
+      : tabTitle(selection)
+    : "";
 
   // (grimoire-audit cave-ezxb) The over-cap eviction in openDoc was silent — a
   // doc you had open just vanished. Announce it after the commit lands.
@@ -1305,12 +1372,15 @@ export function GrimoireView({
    *  inactive) so unsaved drafts survive switching tabs. */
   const renderTabDetail = (tab: GrimoireSelection) => {
     const key = selectionKey(tab);
+    const tabReaderMode = readerMode && key === selectedKey;
     if (tab.kind === "memory") {
       return (
         <MemoryMdEditor
           key={tab.path}
           path={tab.path}
           sourceLabel={compactPath(tab.path)}
+          readerMode={tabReaderMode}
+          visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
           onCancel={() => closeTab(key)}
           onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
@@ -1320,6 +1390,8 @@ export function GrimoireView({
       return (
         <JournalMdEditor
           date={tab.date}
+          readerMode={tabReaderMode}
+          visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
           onSaved={() => {
             invalidateGrimoireLanding();
             void load(true);
@@ -1347,10 +1419,10 @@ export function GrimoireView({
     const flags = entry ? knowledgeEntryFlags(entry) : [];
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {entry?.pins?.length ? (
+        {!tabReaderMode && entry?.pins?.length ? (
           <StitchProvenance pins={entry.pins} onOpenMemory={(path) => openDoc({ kind: "memory", path })} />
         ) : null}
-        {flags.length > 0 ? (
+        {!tabReaderMode && flags.length > 0 ? (
           <div className="shrink-0 border-y border-[color-mix(in_oklch,var(--color-warning)_34%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             <div className="mb-1 flex items-center gap-1 font-medium text-[var(--color-warning)]">
               <Icon name="ph:warning-circle" width={12} aria-hidden />
@@ -1366,6 +1438,13 @@ export function GrimoireView({
         <div className="min-h-0 flex-1">
           <KnowledgeMdEditor
             entry={entry}
+            readerMode={tabReaderMode}
+            visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
+            onDraftTitleChange={(title) => {
+              setDraftTitles((previous) => (
+                previous[key] === title ? previous : { ...previous, [key]: title }
+              ));
+            }}
             onSaved={(saved) => {
               replaceTab(key, { kind: "knowledge", id: saved.id, ...(saved.collection ? { collection: saved.collection } : {}) });
               invalidateGrimoireLanding();
@@ -1404,7 +1483,7 @@ export function GrimoireView({
           ref={tabStripRef}
           role="tablist"
           aria-label="Open documents"
-          className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1.5"
+          className={readerMode ? "hidden" : "flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1"}
         >
           {openTabs.map((tab, i) => {
             const key = selectionKey(tab);
@@ -1490,93 +1569,146 @@ export function GrimoireView({
     );
 
   return (
-    <div className="grimoire-view flex h-full min-h-0 flex-col @container/grimoire">
+    <div className={`grimoire-view flex h-full min-h-0 flex-col @container/grimoire${readerMode ? " grimoire-view--reader" : ""}`}>
       {/* Compact band: title left, the Library/Journal/
           Relations segmented tabs centered, contextual verbs right (the dashed
           "New stitch" control only makes sense in Library). */}
-      <header className="surface-compact-header grimoire-header">
-        <h1 className="surface-compact-title">Memories</h1>
-        <div role="group" aria-label="Memories view" className="grimoire-tabs">
+      {readerMode && selection ? (
+        <header className="grimoire-reader-header">
+          <h1 className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
+            {readerTitle}
+          </h1>
+          <span className="hidden text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:inline">
+            Esc to return
+          </span>
           <button
+            ref={readerEditRef}
             type="button"
-            aria-pressed={view === "docs"}
-            onClick={() => setView("docs")}
-            className="focus-ring grimoire-tab"
+            onClick={leaveReader}
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
-            Library
+            <Icon name="ph:pencil-simple" width={11} aria-hidden />
+            Edit
           </button>
-          <button
-            type="button"
-            aria-pressed={view === "journal"}
-            onClick={() => setView("journal")}
-            className="focus-ring grimoire-tab"
-          >
-            Journal
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "graph"}
-            onClick={() => setView("graph")}
-            className="focus-ring grimoire-tab"
-          >
-            Relations
-          </button>
-        </div>
-        <div className="surface-compact-actions">
-          {/* The landing owns Recall search. Once a document is open, this
-              compact field edits the same Library query without rendering a
-              second visible search. */}
-          {view === "docs" && openTabs.length > 0 ? (
-            <SearchInput
-              value={query}
-              onValueChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder="Search documents…"
-              aria-label="Search grimoire documents"
-              containerClassName="surface-compact-search"
-            />
-          ) : null}
-          {view === "docs" ? (
+        </header>
+      ) : (
+        <header className="surface-compact-header grimoire-header">
+          <h1 className="surface-compact-title">Memories</h1>
+          <div role="group" aria-label="Memories view" className="grimoire-tabs">
             <button
               type="button"
-              onClick={() => openStitchNew()}
-              className="focus-ring grimoire-newstitch"
+              aria-pressed={view === "docs"}
+              onClick={() => setView("docs")}
+              className="focus-ring grimoire-tab"
             >
-              <Icon name="ph:push-pin" width={11} aria-hidden />
-              New stitch
+              Library
             </button>
-          ) : null}
-          <OverflowMenu ariaLabel="More Memories actions">
-            <Link
-              href="/weaves"
-              role="menuitem"
-              className="ui-popover-item focus-ring"
+            <button
+              type="button"
+              aria-pressed={view === "journal"}
+              onClick={() => setView("journal")}
+              className="focus-ring grimoire-tab"
             >
-              <span>Weaves</span>
-            </Link>
-            {view === "docs" ? (
-              <>
-                <PopoverSeparator />
-                <PopoverItem onSelect={() => openDoc({ kind: "knowledge-new" })}>
-                  Blank entry
-                </PopoverItem>
-              </>
+              Journal
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "graph"}
+              onClick={() => setView("graph")}
+              className="focus-ring grimoire-tab"
+            >
+              Relations
+            </button>
+          </div>
+          <div className="surface-compact-actions">
+            {/* The landing owns Recall search. Once a document is open, this
+                compact field edits the same Library query without rendering a
+                second visible search. */}
+            {view === "docs" && openTabs.length > 0 ? (
+              <SearchInput
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Search documents…"
+                aria-label="Search grimoire documents"
+                containerClassName="surface-compact-search"
+              />
             ) : null}
-          </OverflowMenu>
-        </div>
-      </header>
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
-      <aside
-        className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
-          navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[300px]"
-        } ${
+            {readerEligible ? (
+              <button
+                ref={readerTriggerRef}
+                type="button"
+                onClick={() => setReaderMode(true)}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:book-open" width={11} aria-hidden />
+                Reader
+              </button>
+            ) : null}
+            {view === "docs" ? (
+              <button
+                type="button"
+                onClick={() => openStitchNew()}
+                className="focus-ring grimoire-newstitch"
+              >
+                <Icon name="ph:push-pin" width={11} aria-hidden />
+                New stitch
+              </button>
+            ) : null}
+            <OverflowMenu ariaLabel="More Memories actions">
+              <Link
+                href="/weaves"
+                role="menuitem"
+                className="ui-popover-item focus-ring"
+              >
+                <span>Weaves</span>
+              </Link>
+              {view === "docs" ? (
+                <>
+                  <PopoverSeparator />
+                  <PopoverItem icon="ph:push-pin" onSelect={() => openStitchNew()}>
+                    New stitch
+                  </PopoverItem>
+                  <PopoverItem onSelect={() => openDoc({ kind: "knowledge-new" })}>
+                    Blank entry
+                  </PopoverItem>
+                  {readerEligible ? (
+                    <>
+                      <PopoverSeparator />
+                      <PopoverItem
+                        icon="ph:trash"
+                        danger
+                        disabled={deleting}
+                        onSelect={() => void deleteSelection()}
+                      >
+                        {deleting
+                          ? selection.kind === "memory" ? "Moving…" : "Deleting…"
+                          : selection.kind === "memory" ? "Move to trash" : "Delete"}
+                      </PopoverItem>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </OverflowMenu>
+          </div>
+        </header>
+      )}
+      <div className={`grimoire-workspace flex min-h-0 flex-1${selection ? " grimoire-workspace--document" : ""}${readerMode ? " grimoire-workspace--reader" : ""}`}>
+        <aside
+          className={`grimoire-navigator h-full min-h-0 w-full flex-col border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
+            navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[264px]"
+          } ${
           // On a narrow container the rail and the main pane both go full-width,
           // so only one may show. Hide the rail when a doc is open OR the graph
           // is up — otherwise the rail wins the width and the graph is pushed
           // off-screen (Graph mode was dead on phones). Wide keeps both.
-          selection || view !== "docs" ? "hidden @min-[880px]/grimoire:flex" : ""
-        }`}
-      >
+            readerMode
+              ? "grimoire-navigator--reader"
+              : selection || view !== "docs"
+                ? "grimoire-navigator--detail"
+                : ""
+          }`}
+        >
         {/* Title, surface verbs, and the doc search all live in the compact
             band above — the rail is purely the grouped navigator now. Its own
             header row names the rail so the collapse toggle isn't a floating,
@@ -1827,7 +1959,7 @@ export function GrimoireView({
         )}
       </aside>
       <main
-        className={`h-full min-h-0 min-w-0 flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${
+        className={`grimoire-document-pane h-full min-h-0 min-w-0 flex-1 border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${
           selection || view !== "docs" ? "" : "hidden @min-[880px]/grimoire:block"
         }`}
       >
@@ -1872,13 +2004,8 @@ export function GrimoireView({
           </div>
         ) : selection ? (
           <div className="flex h-full min-h-0 flex-col">
-            <div
-              className={`flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 ${
-                selection.kind === "knowledge-new" || selection.kind === "stitch-new"
-                  ? "@min-[880px]/grimoire:hidden"
-                  : ""
-              }`}
-            >
+            {!readerMode ? (
+              <div className="grimoire-mobile-back shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1">
               <button
                 type="button"
                 onClick={() => setTabState((prev) => ({ ...prev, selection: null }))}
@@ -1889,25 +2016,13 @@ export function GrimoireView({
               </button>
               <span className="text-[length:var(--text-xs)] text-[var(--text-secondary)] @min-[880px]/grimoire:hidden">Documents</span>
               <span className="min-w-0 flex-1" />
-              {deleteError ? (
-                <span role="alert" className="min-w-0 truncate text-[length:var(--text-sm)] text-[var(--color-warning)]">
-                  {deleteError}
-                </span>
-              ) : null}
-              {selection.kind !== "knowledge-new" && selection.kind !== "stitch-new" ? (
-                <button
-                  type="button"
-                  onClick={() => void deleteSelection()}
-                  disabled={deleting}
-                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
-                >
-                  <Icon name="ph:trash" width={11} aria-hidden />
-                  {deleting
-                    ? selection.kind === "memory" ? "Moving…" : "Deleting…"
-                    : selection.kind === "memory" ? "Move to trash" : "Delete"}
-                </button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
+            {deleteError ? (
+              <div role="alert" className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
+                {deleteError}
+              </div>
+            ) : null}
             <div className="min-h-0 flex-1">{detail}</div>
           </div>
         ) : (

@@ -51,6 +51,7 @@ assert.match(entries, /aria-label="Delete journal entry"/, "JournalEntries rende
 // markdown mode / Cancel button); the draft mirrors back via onChange so the
 // header ✓ Save button stays live.
 assert.match(entries, /<MdEditor/, "Journal edit mode uses the shared MdEditor");
+assert.match(entries, /visualLifecycleQueueRef=\{visualLifecycleQueueRef\}/, "rapid journal edit remounts share a stable visual lifecycle queue");
 assert.match(entries, /showHeader=\{false\}/, "Journal reflections have no frontmatter header");
 assert.match(entries, /onChange=\{\(raw\) => setDraftReflection\(raw\)\}/, "MdEditor mirrors the draft for the header Save button");
 assert.match(entries, /onCancel=\{cancelEdit\}/, "MdEditor cancel exits journal edit mode");

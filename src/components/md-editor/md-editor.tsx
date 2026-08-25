@@ -23,7 +23,7 @@ import "@/styles/md-editor.css";
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Trailing debounce before an autosave fires once typing pauses. */
@@ -88,6 +88,11 @@ export type MdEditorProps = {
   /** Raw markdown document, frontmatter included. Captured as the baseline. */
   value: string;
   readOnly?: boolean;
+  /** Presentation-only mode that keeps the live draft mounted while removing
+   * editor chrome and forcing the visual renderer. */
+  readerMode?: boolean;
+  /** Stable parent-owned queue that serializes visual teardown across whole-editor remounts. */
+  visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
   /** Show the title/tags frontmatter header (off for e.g. journal bodies). */
   showHeader?: boolean;
   /** Footer source chip, e.g. "Coven native memory" or a compact path. */
@@ -113,6 +118,8 @@ export type MdEditorProps = {
 export function MdEditor({
   value,
   readOnly = false,
+  readerMode = false,
+  visualLifecycleQueueRef,
   showHeader = true,
   sourceLabel,
   onSave,
@@ -121,15 +128,22 @@ export function MdEditor({
   onDirtyChange,
   autoSave = false,
 }: MdEditorProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const scrollPositionRef = useRef(0);
   const [raw, setRaw] = useState(value);
   const [baseline, setBaseline] = useState(value);
   const [mode, setMode] = useState<MdEditorMode>(() => readMdEditorModePref());
+  const [metadataOpen, setMetadataOpen] = useState(() => {
+    const initial = parseMdDocument(value);
+    return !initial.title && initial.tags.length === 0 && !initial.body.trim();
+  });
   // Bumped when VISUAL mode needs a fresh Crepe mount (mode round-trips).
   const [visualEpoch, setVisualEpoch] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveFlare, setSaveFlare] = useState(false);
+  const [visualMountError, setVisualMountError] = useState<string | null>(null);
   // A 409-style concurrent-write conflict: the transport reported the document
   // changed underneath us. While set, the body shows the resolution panel.
   const [conflict, setConflict] = useState<MdEditorConflict | null>(null);
@@ -145,8 +159,39 @@ export function MdEditor({
   }, []);
 
   const doc = useMemo(() => parseMdDocument(raw), [raw]);
+  const renderedMode: MdEditorMode = readerMode ? "visual" : mode;
   const stats = useMemo(() => computeMdDocStats(doc.body), [doc.body]);
   const dirty = raw !== baseline;
+
+  const currentScrollViewport = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return null;
+    if (readerMode || mode === "visual") {
+      return root.querySelector<HTMLElement>("[data-md-editor-scroll]");
+    }
+    return root.querySelector<HTMLElement>(".cm-scroller");
+  }, [mode, readerMode]);
+
+  const restoreScrollPosition = useCallback(() => {
+    const viewport = currentScrollViewport();
+    if (!viewport) return;
+    const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    viewport.scrollTop = scrollPositionRef.current * maxScroll;
+  }, [currentScrollViewport]);
+
+  const captureScrollPosition = useCallback((viewport: HTMLElement) => {
+    if (viewport !== currentScrollViewport()) return;
+    const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    if (maxScroll > 0) scrollPositionRef.current = viewport.scrollTop / maxScroll;
+  }, [currentScrollViewport]);
+
+  useLayoutEffect(() => {
+    restoreScrollPosition();
+  }, [restoreScrollPosition]);
+
+  useEffect(() => {
+    setVisualMountError(null);
+  }, [readerMode, renderedMode, visualEpoch]);
 
   // Report dirty transitions through a ref so an unstable callback identity
   // never re-fires the effect.
@@ -201,7 +246,7 @@ export function MdEditor({
   }, []);
 
   const save = useCallback(async (source: "manual" | "auto" = "manual") => {
-    if (readOnly || saving) return;
+    if (readOnly || readerMode || saving) return;
     const snapshot = rawRef.current;
     setSaving(true);
     setSaveError(null);
@@ -230,7 +275,7 @@ export function MdEditor({
     } finally {
       setSaving(false);
     }
-  }, [onSave, readOnly, saving]);
+  }, [onSave, readOnly, readerMode, saving]);
 
   // ── Conflict resolution ──────────────────────────────────────────────────
   // Keep mine: overwrite the disk version with the draft (the transport
@@ -279,10 +324,10 @@ export function MdEditor({
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
-    if (!autoSave || readOnly || saving || conflict !== null || !dirty || !raw.trim()) return;
+    if (!autoSave || readOnly || readerMode || saving || conflict !== null || !dirty || !raw.trim()) return;
     const timer = window.setTimeout(() => void saveRef.current("auto"), AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [autoSave, readOnly, saving, conflict, dirty, raw]);
+  }, [autoSave, readOnly, readerMode, saving, conflict, dirty, raw]);
 
   const addTagsFromDraft = useCallback(() => {
     const additions = normalizeMdTags(tagDraft);
@@ -303,115 +348,150 @@ export function MdEditor({
 
   return (
     <div
-      className={`md-editor flex h-full min-h-0 flex-col${saveFlare ? " md-editor--reward" : ""}`}
+      ref={rootRef}
+      className={`md-editor flex h-full min-h-0 flex-col${readerMode ? " md-editor--reader" : ""}${saveFlare ? " md-editor--reward" : ""}`}
+      onScrollCapture={(event) => captureScrollPosition(event.target as HTMLElement)}
       onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        if (!readerMode && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
           void save();
         }
       }}
     >
-      <div className="md-editor__topbar flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5">
-        <div className="inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] font-mono text-[length:var(--text-2xs)] uppercase tracking-wide">
-          {(["visual", "markdown"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => switchMode(m)}
-              className={`focus-ring-inset px-2 py-1 transition-colors ${
-                mode === m
-                  ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-              }`}
-            >
-              {m === "visual" ? "Visual" : "Markdown"}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          {onCancel ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Cancel
-            </button>
-          ) : null}
-          {!readOnly ? (
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!dirty || saving}
-              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-elevated)] enabled:hover:text-[var(--text-primary)] disabled:opacity-50"
-            >
-              <Icon name="ph:floppy-disk-bold" width={12} aria-hidden />
-              {saving ? "Saving…" : "Save"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {showHeader && mode === "visual" ? (
-        <div className="md-editor__header shrink-0 space-y-1.5 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <div className="flex items-baseline gap-3">
-            <span className="w-8 shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">title</span>
-            <input
-              type="text"
-              value={doc.title ?? ""}
-              readOnly={readOnly}
-              placeholder="Untitled"
-              aria-label="Document title"
-              onChange={(e) => applyHeader({ title: e.target.value })}
-              className="focus-ring min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-md)] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="w-8 shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">tags</span>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-              {doc.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-0.5 rounded-full bg-[var(--accent-presence)]/12 px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence-soft)]"
+      {!readerMode ? (
+        <div className="md-editor__topbar flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-2 py-1">
+          <div className="flex min-w-0 items-center gap-1">
+            <div className="inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] font-mono text-[length:var(--text-2xs)] uppercase tracking-wide">
+              {(["visual", "markdown"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  onClick={() => switchMode(m)}
+                  className={`focus-ring-inset px-2 py-1 transition-colors ${
+                    mode === m
+                      ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                  }`}
                 >
-                  #{tag}
-                  {!readOnly ? (
-                    <button
-                      type="button"
-                      onClick={() => removeTag(tag)}
-                      aria-label={`Remove tag ${tag}`}
-                      className="focus-ring rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                    >
-                      <Icon name="ph:x" width={9} aria-hidden />
-                    </button>
-                  ) : null}
-                </span>
+                  {m === "visual" ? "Visual" : "Markdown"}
+                </button>
               ))}
-              {!readOnly ? (
-                <input
-                  type="text"
-                  value={tagDraft}
-                  placeholder={doc.tags.length === 0 ? "Add tags…" : "+"}
-                  aria-label="Add tag"
-                  onChange={(e) => setTagDraft(e.target.value)}
-                  onBlur={addTagsFromDraft}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === ",") {
-                      e.preventDefault();
-                      addTagsFromDraft();
-                    }
-                  }}
-                  className="focus-ring w-20 rounded-sm bg-transparent text-[length:var(--text-xs)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
-                />
-              ) : null}
+            </div>
+            {showHeader && mode === "visual" ? (
+              <button
+                type="button"
+                aria-expanded={metadataOpen}
+                onClick={() => setMetadataOpen((open) => !open)}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:tag" width={11} aria-hidden />
+                Metadata
+                <Icon name={metadataOpen ? "ph:caret-up" : "ph:caret-down"} width={9} aria-hidden />
+              </button>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            {onCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                Cancel
+              </button>
+            ) : null}
+            {!readOnly ? (
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={!dirty || saving}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-elevated)] enabled:hover:text-[var(--text-primary)] disabled:opacity-50"
+              >
+                <Icon name="ph:floppy-disk-bold" width={12} aria-hidden />
+                {saving ? "Saving…" : "Save"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {showHeader && renderedMode === "visual" && metadataOpen && !readerMode ? (
+        <div className="md-editor__header shrink-0 border-b border-[var(--border-hairline)] px-3 py-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <label className="flex min-w-48 flex-1 items-center gap-2">
+              <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">title</span>
+              <input
+                type="text"
+                value={doc.title ?? ""}
+                readOnly={readOnly}
+                placeholder="Untitled"
+                aria-label="Document title"
+                onChange={(e) => applyHeader({ title: e.target.value })}
+                className="focus-ring min-w-0 flex-1 rounded-sm bg-transparent text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              />
+            </label>
+            <div className="flex min-w-48 flex-1 items-center gap-2">
+              <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">tags</span>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                {doc.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-0.5 rounded-full bg-[var(--accent-presence)]/12 px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence-soft)]"
+                  >
+                    #{tag}
+                    {!readOnly ? (
+                      <button
+                        type="button"
+                        onClick={() => removeTag(tag)}
+                        aria-label={`Remove tag ${tag}`}
+                        className="focus-ring rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                      >
+                        <Icon name="ph:x" width={9} aria-hidden />
+                      </button>
+                    ) : null}
+                  </span>
+                ))}
+                {!readOnly ? (
+                  <input
+                    type="text"
+                    value={tagDraft}
+                    placeholder={doc.tags.length === 0 ? "Add tags…" : "+"}
+                    aria-label="Add tag"
+                    onChange={(e) => setTagDraft(e.target.value)}
+                    onBlur={addTagsFromDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        addTagsFromDraft();
+                      }
+                    }}
+                    className="focus-ring w-20 rounded-sm bg-transparent text-[length:var(--text-xs)] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                  />
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {conflict ? (
+      {readerMode && saveError ? (
+        <div role="alert" className="shrink-0 border-b border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
+          {saveError}
+        </div>
+      ) : null}
+
+      <div
+        data-md-editor-scroll
+        tabIndex={readerMode ? 0 : undefined}
+        aria-label={readerMode ? "Document reader" : undefined}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        {readerMode && conflict ? (
+          <div role="alert" className="m-3 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 p-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+            This document changed on disk. Return to Edit to resolve the conflict.
+          </div>
+        ) : conflict ? (
           <MdEditorConflictPanel
             mine={raw}
             theirs={conflict.currentText}
@@ -423,13 +503,20 @@ export function MdEditor({
               setConflict(null);
             }}
           />
-        ) : mode === "visual" ? (
+        ) : renderedMode === "visual" && visualMountError ? (
+          <div role="alert" className="m-3 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 p-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+            {visualMountError}
+          </div>
+        ) : renderedMode === "visual" ? (
           <MdEditorVisual
             key={visualEpoch}
             defaultValue={presentation.visibleBody}
-            readOnly={readOnly}
+            readOnly={readOnly || readerMode}
             onChange={onBodyChange}
-            onSave={() => void save()}
+            onSave={readerMode ? undefined : () => void save()}
+            onReady={restoreScrollPosition}
+            onError={setVisualMountError}
+            lifecycleQueueRef={visualLifecycleQueueRef}
           />
         ) : (
           <CodeEditor
@@ -440,38 +527,41 @@ export function MdEditor({
             }}
             onSave={() => void save()}
             onCancel={() => onCancel?.()}
+            onReady={restoreScrollPosition}
           />
         )}
       </div>
 
-      <div className="md-editor__footer flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {sourceLabel ? (
-            <span className="truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{sourceLabel}</span>
-          ) : null}
-          {saveError ? (
-            <span role="alert" className="inline-flex items-center gap-1 text-[var(--color-warning)]">
-              <Icon name="ph:warning-circle" width={11} aria-hidden />
-              {saveError}
-            </span>
-          ) : savedFlash ? (
-            // role=status: saves (incl. debounced autosaves) were visual-only —
-            // the flash is the sole confirmation, so SRs should hear it too.
-            <span role="status" className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
-              <Icon name="ph:check" width={11} aria-hidden />
-              Saved
-            </span>
-          ) : saving ? (
-            <span className="inline-flex items-center gap-1">
-              <Icon name="ph:floppy-disk-bold" width={11} aria-hidden />
-              Saving…
-            </span>
-          ) : dirty && !readOnly ? (
-            <span>{autoSave ? "Autosaving…" : "Unsaved changes"}</span>
-          ) : null}
+      {!readerMode ? (
+        <div className="md-editor__footer flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-2 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {sourceLabel ? (
+              <span className="truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{sourceLabel}</span>
+            ) : null}
+            {saveError ? (
+              <span role="alert" className="inline-flex items-center gap-1 text-[var(--color-warning)]">
+                <Icon name="ph:warning-circle" width={11} aria-hidden />
+                {saveError}
+              </span>
+            ) : savedFlash ? (
+              // role=status: saves (incl. debounced autosaves) were visual-only —
+              // the flash is the sole confirmation, so SRs should hear it too.
+              <span role="status" className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
+                <Icon name="ph:check" width={11} aria-hidden />
+                Saved
+              </span>
+            ) : saving ? (
+              <span className="inline-flex items-center gap-1">
+                <Icon name="ph:floppy-disk-bold" width={11} aria-hidden />
+                Saving…
+              </span>
+            ) : dirty && !readOnly ? (
+              <span>{autoSave ? "Autosaving…" : "Unsaved changes"}</span>
+            ) : null}
+          </div>
+          <span className="shrink-0 font-mono">{formatMdDocStats(stats)}</span>
         </div>
-        <span className="shrink-0 font-mono">{formatMdDocStats(stats)}</span>
-      </div>
+      ) : null}
     </div>
   );
 }

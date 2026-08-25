@@ -25,7 +25,20 @@ const KNOWLEDGE_ENTRY = {
   tags: ["release"],
   scope: "global",
   enabled: true,
-  body: "Stamp the version everywhere.",
+  body: [
+    "Stamp the version everywhere.",
+    "See [[Operations guide]] for the handoff.",
+    ...Array.from({ length: 80 }, (_, index) => `Release note ${index + 1}: verify the packaged artifact.`),
+  ].join("\n\n"),
+};
+
+const OPERATIONS_GUIDE = {
+  id: "operations-guide",
+  title: "Operations guide",
+  tags: ["operations"],
+  scope: "global",
+  enabled: true,
+  body: "Hand the release to the on-call operator.",
 };
 
 const MEMORY_ENTRY = {
@@ -38,7 +51,7 @@ const MEMORY_ENTRY = {
 
 const JOURNAL_DAY = "2026-07-01";
 
-async function gotoGrimoire(page: Page) {
+async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Pin the shared MdEditor to MARKDOWN (CodeMirror) mode — typing goes
@@ -52,9 +65,10 @@ async function gotoGrimoire(page: Page) {
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   await page.route("**/api/knowledge**", (route) => {
     if (route.request().method() === "POST") {
+      knowledgePosts.push(route.request().postDataJSON());
       return route.fulfill({ json: { ok: true, entry: { ...KNOWLEDGE_ENTRY } } });
     }
-    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY] } });
+    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE] } });
   });
   await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [MEMORY_ENTRY] } }));
   await page.route("**/api/memory/file**", (route) => {
@@ -98,7 +112,7 @@ async function gotoGrimoire(page: Page) {
   });
 
   await page.goto("/?mode=grimoire");
-  await page.waitForSelector(".grimoire-view", { timeout: 60_000 });
+  await page.waitForSelector(".grimoire-view", { timeout: readyTimeout });
 }
 
 /** The navigator rail. Row clicks scope here: with no open tabs the main pane
@@ -111,9 +125,11 @@ function rail(page: Page) {
 // PUT bodies captured by the memory-file mock, reset per test (the negative
 // case asserts none arrive while typing).
 let memoryPuts: Array<Record<string, unknown>> = [];
+let knowledgePosts: Array<Record<string, unknown>> = [];
 
 test.beforeEach(() => {
   memoryPuts = [];
+  knowledgePosts = [];
 });
 
 /** Click into the last CodeMirror line (the document body — below any
@@ -178,6 +194,72 @@ test.describe("grimoire autosave (desktop)", () => {
     const body = req.postDataJSON() as { id?: string; body?: string };
     expect(body.id).toBe(KNOWLEDGE_ENTRY.id);
     expect(body.body).toContain("Tag the release.");
+  });
+
+  test("Reader mode gives the active document the full canvas and returns with Escape", async ({ page }) => {
+    test.setTimeout(120_000);
+    await gotoGrimoire(page, 90_000);
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeVisible();
+    const titleLine = page.locator(".grimoire-view .cm-line").filter({ hasText: "title: Release checklist" });
+    await titleLine.click();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Shift+End");
+    await page.keyboard.type("title: Release readiness");
+    const markdownViewport = page.locator(".grimoire-view .cm-scroller");
+    await markdownViewport.evaluate((element) => {
+      element.scrollTop = (element.scrollHeight - element.clientHeight) * 0.6;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await page.getByRole("button", { name: "Reader", exact: true }).focus();
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator(".grimoire-view")).toHaveClass(/grimoire-view--reader/);
+    await expect(page.locator(".grimoire-view aside")).toBeHidden();
+    await expect(page.locator(".md-editor__topbar")).toHaveCount(0);
+    await expect(page.locator(".md-editor__footer")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Release readiness", exact: true })).toBeVisible();
+    await expect(page.locator(".grimoire-doc-links")).toContainText("Operations guide");
+    await expect(page.locator(".md-editor--reader .ProseMirror")).toHaveCount(1, { timeout: 30_000 });
+    const readerDocument = page.locator(".md-editor--reader .ProseMirror");
+    const readerViewport = page.getByLabel("Document reader");
+    await expect(readerDocument.getByText("Stamp the version everywhere.")).toBeVisible();
+    await expect(readerDocument).toHaveAttribute("contenteditable", "false");
+    await readerViewport.focus();
+    await page.keyboard.type(" Reader must not write this.");
+    await expect(readerDocument).not.toContainText("Reader must not write this.");
+    await page.locator(".md-editor-visual").dispatchEvent("keydown", { key: "s", metaKey: true });
+    await page.waitForTimeout(1_500);
+    expect(knowledgePosts).toHaveLength(0);
+    await expect.poll(() => page.locator("[data-md-editor-scroll]").evaluate((element) => {
+      const maxScroll = element.scrollHeight - element.clientHeight;
+      return maxScroll > 0 ? element.scrollTop / maxScroll : 0;
+    })).toBeGreaterThan(0.45);
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".grimoire-view")).not.toHaveClass(/grimoire-view--reader/);
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeFocused();
+    await expect(page.locator(".grimoire-view .cm-editor")).toBeVisible();
+    await expect.poll(() => markdownViewport.evaluate((element) => {
+      const maxScroll = element.scrollHeight - element.clientHeight;
+      return maxScroll > 0 ? element.scrollTop / maxScroll : 0;
+    })).toBeGreaterThan(0.45);
+    await typeInEditor(page, " Editable again.");
+    await expect.poll(() => knowledgePosts.length, { timeout: 10_000 }).toBe(1);
+
+    await page.getByRole("button", { name: "Reader", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".md-editor--reader .ProseMirror")).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator(".md-editor--reader .ProseMirror")).toContainText("Editable again.");
+    await page.getByRole("button", { name: "Operations guide", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Operations guide", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeFocused();
   });
 
   test("memory files never autosave — typing leaves the draft unsaved", async ({ page }) => {
