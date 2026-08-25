@@ -140,12 +140,14 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Tools surface while access and voice stay one click away.
+// one grouped Tools surface while voice stays one click away and functional
+// access control moves into Response options.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-mode-switch"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
-  "composer exposes the grouped Tools trigger at its edge while keeping Access and Voice direct in the command rail",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  "composer exposes grouped Tools at its edge and keeps only context plus direct send actions in the command rail",
 );
+assert.doesNotMatch(source, /className="cave-composer-mode-switch"/, "access mode is demoted into Response options");
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
 const composerActionsMenuBlock = composerActionsMenuMatch[0];

@@ -48,9 +48,10 @@ assert.match(
 );
 assert.match(
   controlRow,
-  /className="cave-composer-mode-switch"[\s\S]*?<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Voice call"[\s\S]*?aria-label="Send message"/,
-  "the control row should keep direct access modes, truthful context, Enhance, Voice, and Send in order",
+  /<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Voice call"[\s\S]*?aria-label="Send message"/,
+  "the control row should keep truthful context, Enhance, Voice, and Send in order",
 );
+assert.doesNotMatch(controlRow, /cave-composer-mode-switch/, "access mode belongs in the grouped Response options menu");
 assert.match(
   edgeActions,
   /<ComposerActionsMenu\s*\n\s*attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,

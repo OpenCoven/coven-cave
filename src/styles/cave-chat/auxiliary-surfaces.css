@@ -969,39 +969,54 @@
   color: var(--text-muted);
 }
 
-/* Full-height reopen rail on the chat surface's right edge — the reflection of
-   the left-side shell chrome beside Chat (WorkspaceSidebar is the contextual
-   primary nav in Chat; SidebarMinimal returns outside Chat):
-   icon over a vertical uppercase label ("Code"), reading top→bottom with the
-   glyph face to the right/outside (vertical-rl). An in-flow flex child (NOT
-   absolutely positioned): the rail reserves its own layout width so content
-   sits beside it, never underneath. Carries the same glass as the left panel. */
+/* Ultra-minimal Code pull tab. The full-height button remains an easy target
+   and an in-flow flex child, but reserves only 14px. Its centered tab is nearly
+   transparent at rest and reveals dark-grey glass on hover or keyboard focus. */
 .workspace-rail-reopen {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 9px;
-  flex: 0 0 32px;
-  width: 32px;
+  justify-content: center;
+  flex: 0 0 14px;
+  width: 14px;
   height: 100%;
-  padding: var(--space-3) 0;
+  padding: 0;
   border: 0;
-  border-left: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+}
+.workspace-rail-reopen__tab {
+  display: grid;
+  width: 10px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+  background: transparent;
+  color: color-mix(in oklch, var(--text-muted) 42%, transparent);
   transition:
+    width var(--duration-fast) var(--ease-decelerate),
     color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.workspace-rail-reopen:hover .workspace-rail-reopen__tab,
+.workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab {
+  width: 14px;
+  border-color: var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  color: var(--text-primary);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .workspace-rail-reopen { background: var(--bg-raised); }
+  .workspace-rail-reopen:hover .workspace-rail-reopen__tab,
+  .workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab { background: var(--bg-raised); }
   .voice-call-overlay__dialog { background: var(--bg-raised); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .workspace-rail-reopen {
+  .workspace-rail-reopen:hover .workspace-rail-reopen__tab,
+  .workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab {
     background: var(--bg-raised);
     backdrop-filter: none;
   }
@@ -1009,17 +1024,6 @@
     background: var(--bg-raised);
     backdrop-filter: none;
   }
-}
-.workspace-rail-reopen:hover {
-  color: var(--text-primary);
-  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
-}
-.workspace-rail-reopen__label {
-  writing-mode: vertical-rl;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 /* ── Chat Settings tab (chat surface → Settings scope) ───────────────────────

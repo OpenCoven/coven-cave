@@ -631,6 +631,7 @@ export const SUITES = {
     "src/components/chat-view-polish-header-composer.test.ts",
     "src/components/chat-view-polish-attachments-mentions.test.ts",
     "src/components/chat-view-polish-edit-review.test.ts",
+    "src/components/chat-continuation-controls.test.ts",
     "src/components/chat-composer-footer-band.test.ts",
     "src/components/chat-composer-command-capsule.test.ts",
     "src/components/task-link-picker.test.ts",
