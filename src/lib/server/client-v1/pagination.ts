@@ -26,29 +26,14 @@
  */
 
 import { CLIENT_V1_LIMITS, type ClientV1Cursor } from "./contract.ts";
+import {
+  CLIENT_V1_CURSOR_VERSION,
+  encodeClientV1Cursor,
+  type ClientV1PageKey,
+} from "./cursor-token.ts";
 
-/**
- * Version tag inside the encoded cursor.
- *
- * Present so a future change to the payload can be refused outright instead of
- * being misread: an unversioned token that gains a field decodes as a valid
- * token with a missing one, and the page it resumes is silently wrong.
- */
-export const CLIENT_V1_CURSOR_VERSION = 1;
-
-/**
- * The position a cursor resumes from.
- *
- * `sort` is whatever the resource orders by (an ISO timestamp for the recency
- * lists, an id for the alphabetical ones). `id` is the tiebreak that makes the
- * ordering total — without it two records sharing a sort key are unordered
- * relative to each other, and a page boundary that lands between them either
- * repeats both or skips both.
- */
-export type ClientV1PageKey = {
-  sort: string;
-  id: string;
-};
+export { CLIENT_V1_CURSOR_VERSION, encodeClientV1Cursor };
+export type { ClientV1PageKey };
 
 export type ClientV1PageResult<T> = {
   items: T[];
@@ -67,37 +52,6 @@ const POSITIVE_INTEGER_RE = /^[1-9][0-9]*$/;
 
 function cursorError(detail: string): Error {
   return new Error(`Client v1 cursor is not readable: ${detail}.`);
-}
-
-/**
- * Refuse to mint a token this module's own decoder would reject.
- *
- * Every page key is read out of a store that does not validate its own JSON —
- * a hand-edited `projects.json` row, a conversation file written by an older
- * Cave, a daemon roster field that changed type — so `sort` and `id` are only
- * strings by convention. `JSON.stringify` carries a number through happily and
- * drops an `undefined` key entirely, and `decodeClientV1Cursor` then answers
- * `invalid_request` ("its sort key is not a string") for a token *this server
- * wrote*. A client following `next` cannot advance and is told its own cursor
- * is malformed. Throwing here turns that into the route's `internal_error`,
- * which is at least true.
- */
-function assertMintableKey(key: ClientV1PageKey): void {
-  const sort: unknown = key.sort;
-  const id: unknown = key.id;
-  if (typeof sort !== "string" || typeof id !== "string" || id.length === 0) {
-    throw new Error(
-      "Client v1 cursor cannot be minted: a page key must be two strings with a non-empty id.",
-    );
-  }
-}
-
-export function encodeClientV1Cursor(key: ClientV1PageKey): string {
-  assertMintableKey(key);
-  return Buffer.from(
-    JSON.stringify({ v: CLIENT_V1_CURSOR_VERSION, s: key.sort, i: key.id }),
-    "utf8",
-  ).toString("base64url");
 }
 
 export function decodeClientV1Cursor(raw: unknown): ClientV1PageKey {
