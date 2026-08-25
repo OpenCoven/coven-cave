@@ -9,6 +9,18 @@ maintainer review and does not authorize implementation.
 - Bead: `cave-8i8q5`
 - Surfaces: Research Desk, Comms Operations, Familiar Studio
 
+**Post-ship reconciliation (cave-uajyn, 2026-08-24).** An acceptance audit
+(cave-1tu16) diffed the shipped publish path against this document and found
+five divergences. Two were genuine gaps and are now fixed in code: the
+confirmation view now uses the shared Modal and states the connected account
+and "No location will be added.", and the confirmation token now expires ten
+minutes after minting. Three are intentional departures this document is being
+updated to describe rather than to fix, with reasoning inline at each site
+below: the module/route surface (`### Modules`, `### Local API routes`), the
+confirmation token's shape (`### Approval and exact preview`), and the receipt
+storing full post text rather than a `textSha256` (`### Idempotency and
+receipts`). Full reasoning for all five is on the bead as a `bd note`.
+
 ## Objective
 
 Let a user connect one X account to Coven Cave, save and use X posts as
@@ -244,8 +256,26 @@ do not inject tokens or general X access into the familiar harness.
   successful and failed responses.
 - `src/lib/server/x-sources.ts` owns familiar-scoped saved source records and
   bounded content cache lifecycle.
-- `src/lib/server/x-publishes.ts` owns exact-preview tokens, write
-  coordination, idempotency, and durable publish receipts.
+- `src/lib/server/x-publications.ts` owns confirmation tokens, write
+  coordination, idempotency, and durable draft/publish records. **Shipped name
+  and shape, kept deliberately (cave-uajyn, 2026-08-24):** this document
+  originally sketched `x-publishes.ts` behind three routes, mirroring a
+  four-state `publishing|published|failed|uncertain` pipeline with separate
+  `requestId`/`draftId` fields and a distinct preview-token mint step. What
+  shipped instead is one module and one route with a `draft|publish|resolve`
+  action discriminator, over a `draft|uncertain|published|abandoned` record
+  that IS the draft and the receipt — there is no second file to keep in sync.
+  A rename to `x-publishes.ts` alone, without adopting the rest of that
+  pipeline, would be cosmetic: it would make the surface look spec-shaped
+  while its actual behavior stayed exactly as it is, which is worse than the
+  current honest mismatch. Adopting the full three-route/four-state pipeline
+  for real was assessed and rejected for this reconciliation: it is a
+  state-machine redesign, not a naming fix, its `requestId`/`draftId` split
+  buys nothing the unified draft record doesn't already give, and re-deriving
+  the "never accept replacement text at publish" guarantee across three routes
+  risks the exact regression this reconciliation exists to protect against,
+  for no behavioral gain. See `### Local API routes` and `### Approval and
+  exact preview` below for what shipped in its place.
 
 No server module exposes a raw X response outside the module that parses it.
 All outbound requests use an abort timeout and a strict response schema.
@@ -263,9 +293,19 @@ reader:
 - `GET /api/x/sources`
 - `POST /api/x/sources`
 - `DELETE /api/x/sources`
-- `GET /api/x/publishes`
-- `POST /api/x/publish-previews`
-- `POST /api/x/posts`
+- `GET /api/x/publish` — familiar's draft/uncertain/published/abandoned history.
+- `POST /api/x/publish` — `action: "draft" | "publish" | "resolve"`.
+  **Shipped shape, kept deliberately (cave-uajyn, 2026-08-24):** this document
+  originally specified three routes (`GET /api/x/publishes`,
+  `POST /api/x/publish-previews`, `POST /api/x/posts`) matching a
+  request-preview-then-post pipeline. The route that shipped folds drafting,
+  publishing, and manual resolution of an `uncertain` outcome into one
+  action-discriminated endpoint over one durable record per familiar. The
+  property that actually matters — `publish` can only ever send the text
+  already on that stored record, never anything the request body carries — is
+  what `### Approval and exact preview` below documents; the route count
+  around it is not load-bearing for that guarantee, and splitting it back into
+  three was rejected for the reasons given under `### Modules` above.
 
 The loopback OAuth callback is not a Next route because the desktop development
 origin is intentionally dynamic. It is protected by loopback binding, exact
@@ -406,71 +446,194 @@ immutable; the user duplicates it to create another post.
 
 ### Approval and exact preview
 
-The lifecycle is:
+Originally sketched lifecycle:
 
 ```text
 Draft → Request approval → Approved → Review for X
       → Publish to X → Publishing… → Published
 ```
 
-**Review for X** calls `POST /api/x/publish-previews` with the familiar ID,
-draft ID, and text. The server verifies the familiar grant and account scope,
-validates and freezes the exact text, and creates a random one-time preview
-token in memory. The token expires after 10 minutes.
+**Shipped lifecycle (cave-uajyn, 2026-08-24):** `draft -> confirm -> publish`,
+plus `resolve` as the only way out of `uncertain`. There is no separate
+"approved" state and no dedicated preview route -- "Request approval" and
+"Review for X" collapse into one `POST /api/x/publish` call with
+`action: "draft"`, which both saves the wording and mints the confirmation
+token in the same round trip. This is the same naming/route decision explained
+under `### Modules` above, applied to the state machine it drives.
+
+**Review this wording** (the shipped UI's name for minting a confirmation)
+sends the familiar ID and text to `action: "draft"`. The server verifies the
+familiar grant, validates the text, stores it, and returns a confirmation
+token. **Shipped token design, kept deliberately:** rather than a random,
+one-time, in-memory token pointing at a server-held frozen payload, the token
+is `<mintedAtMs>.<hmac>`, an HMAC-SHA256 over
+`familiarId|publicationId|mintedAt|accountId|text` keyed by a 32-byte secret generated
+once per install (`x-publications/.confirmation-key`, `0o600`). The token
+does not point at a copy of the text -- it authenticates the exact text
+*already stored on the record*, recomputed from disk at publish time. This
+was assessed against the random-token design on the properties that design
+was chosen for, not adopted as a shortcut:
+
+- **Unguessability** -- from the 32-byte per-install key, same as a random
+  token would give.
+- **Bound to exact wording** -- *stronger* than the random design: a random
+  token is an opaque handle the server must separately remember points at a
+  frozen payload, so the token and the text can drift if that bookkeeping ever
+  disagrees. A keyed digest recomputed from the live record cannot drift from
+  what it authenticates, because it does not point at the text -- it names it.
+- **One-time use** -- enforced by the record's own `draft -> uncertain` status
+  transition inside the cross-process file lock (`### Idempotency and
+  receipts` below), not a separate in-memory consumed-token set. This also
+  survives a process restart, which an in-memory map does not.
+- **Expiry** -- the one property genuinely absent in the code the audit
+  reviewed (cave-1tu16). Fixed in code rather than by amending the spec: the
+  token now embeds its own mint timestamp inside the MAC (so it cannot be
+  extended by rewriting the timestamp) and is refused as expired ten minutes
+  after minting, matching this document's original window exactly.
+
+The one property a random token has that this design does not, and does not
+try to: **replay resistance from unpredictability alone.** It does not need
+it. A stolen or logged token here is a proof that this *specific text, on
+this specific install, was minted for review*; reusing it would still only
+ever publish the one wording it was minted for, on the one install that holds
+the key, and only once, because the record it names can only leave `draft`
+once. There is no scenario in which a bearer benefits from the token being
+guessable versus derivable, because deriving it requires the same install
+secret a stolen random token would not require at all -- so the random
+design's edge here is theoretical, not load-bearing.
 
 The confirmation modal renders the server-returned exact text, the connected
 account, an advisory character count, and the statement **No location will be
 added.** It uses the shared Modal, focus trap, focus return, and visible focus
-ring.
+ring. The account identity is covered by the same confirmation HMAC as the
+wording; reconnecting a different account requires a fresh review instead of
+silently sending the approved text under a different identity.
 
-**Publish to X** sends only the preview token. The create-post route retrieves
-the frozen payload and never accepts replacement text with that request. It
+**Publish to X** sends only the confirmation token (plus the familiar and
+record IDs needed to look the record up -- never a `text` field the server
+would need to ignore). The publish route retrieves the frozen payload from the
+stored record and never accepts replacement text with that request: there is
+no code path from the parsed request body to the text handed to X, and
+`publishXPublication` has no `text` parameter for one to reach through. It
 sends only `text` to X's
 [create-post endpoint](https://docs.x.com/x-api/posts/create-post); it never
-sends geo, media, reply, quote, poll, or scheduling fields.
+sends geo, media, reply, quote, poll, or scheduling fields. This is the one
+property this reconciliation treats as non-negotiable regardless of any other
+divergence: see `src/app/api/x/publish-route-behavior.test.ts` for the
+behavioral tests that prove it by sending replacement text and reading what
+actually reached X, rather than scanning the route's source for the absence of
+a `body.text` read.
 
 The advisory count does not replace X's authoritative validation. Coven Cave
 does not reject a post solely from a naive JavaScript string length.
 
 ### Idempotency and receipts
 
-The server consumes a preview token once. An in-memory in-flight request map and
-durable request ID check prevent a double click from dispatching a second
-create-post call. A receipt is written as `publishing` before dispatch. On
-startup, any stale `publishing` receipt becomes `uncertain` rather than being
-replayed.
+Originally specified: the server consumes a preview token once; an in-memory
+in-flight request map and a durable `requestId` check prevent a double click
+from dispatching a second create-post call; a receipt is written as
+`publishing` before dispatch; a stale `publishing` receipt becomes `uncertain`
+on startup.
 
-Receipts are stored per familiar at:
+**Shipped mechanism, kept deliberately (cave-uajyn, 2026-08-24):** there is no
+separate in-flight map or `requestId`. The record itself is written to
+`uncertain` -- durably, under a cross-process file lock -- *before* the
+network call, and every concurrent or repeated `publish` call for that record
+reads that same status inside the same lock: a record already `uncertain` is
+refused outright (`ambiguous-write`), and one already `published` is answered
+with `alreadyPublished: true` rather than sent again. This gives the same
+"exactly once, and a stale in-flight write is never silently replayed"
+property the `requestId` design was for, without a second identifier to keep
+consistent with the record it describes -- there is only ever one write path
+into this file, and the file's own status is the durable claim on "is a write
+in flight." The UI-level half of "a double click dispatches one request" --
+absent as a test at audit time -- is now covered behaviorally: see
+`src/components/role-surfaces/x-publish-panel-behavior.test.tsx`'s "two rapid
+Publish clicks dispatch exactly one request", which also closes a real gap the
+audit's own framing undersold ("harmless" because the server reconciles it) --
+the client did not, until this reconciliation, actually refuse a reentrant
+dispatch itself.
+
+Records are stored per familiar at:
 
 ```text
-~/.coven/cave/x-publishes/<familiar-id>.json
+~/.coven/cave/x-publications/<familiar-id>.json
 ```
 
+**Shipped shape, kept deliberately:** the fields below diverge from the
+`XPublishReceipt` type this document originally specified.
+
 ```ts
-type XPublishReceipt = {
+type XPublication = {
   id: string;
   familiarId: string;
-  draftId: string;
-  requestId: string;
-  textSha256: string;
-  status: "publishing" | "published" | "failed" | "uncertain";
+  text: string;
+  status: "draft" | "uncertain" | "published" | "abandoned";
+  createdAt: string;
+  updatedAt: string;
+  dispatchedAt?: string;   // present exactly while status is "uncertain"
   postId?: string;
   canonicalUrl?: string;
-  attemptedAt: string;
   publishedAt?: string;
-  errorCategory?: string;
+  resolutionNote?: string; // how a human resolved an uncertain or abandoned draft
 };
 ```
 
-The receipt stores a text hash rather than another copy of the draft body. On
-success it records X's returned post ID and the canonical URL derived from the
-connected account. The room announces **Published** and exposes the receipt in
-recent sends.
+Two differences from the specified `XPublishReceipt`, each decided rather than
+merely inherited:
 
-If the request fails before dispatch, the draft stays approved and may be
-retried after repair. A deterministic X rejection records `failed`, keeps the
-draft approved, and requires a new preview after repair. If the connection
-closes, times out, or otherwise becomes ambiguous after dispatch, the receipt
+- **No `draftId`/`requestId` split.** One record IS the draft and the receipt
+  across its whole life -- there was never a second object for these to
+  reconcile against, so nothing needed a foreign key back to it.
+- **`status` is `draft | uncertain | published | abandoned`, not
+  `publishing | published | failed | uncertain`.** `publishing` does not exist
+  as an at-rest state because the record is written straight to `uncertain`
+  before dispatch (the crash-safety property `publishing` existed for is
+  covered by `uncertain` itself -- see the mechanism note above). A
+  deterministic X rejection is not persisted as `failed`: the record simply
+  returns to `draft`, because a definite refusal is safe to retry directly
+  without a fresh confirmation round trip, and `draft` already means "not yet
+  sent, editable, publishable." `abandoned` is reserved for a human explicitly
+  walking away from a `draft` or an `uncertain` attempt -- a stronger,
+  terminal claim than a transient `failed` would have been.
+
+**The record stores the full post `text`, not a `textSha256`
+(cave-uajyn, 2026-08-24; spec amendment, not a planned code change).** This
+document's data-minimization reasoning for hashing was written for saved
+*research* sources -- third-party content pulled from X, where retaining a
+permanent local copy of someone else's post is the specific thing
+`### Store complete X posts as permanent research snapshots` (Alternatives
+rejected) argues against. A publish record is different content under a
+different threat model: it is text the user in front of this install
+authored and explicitly asked to post publicly. Two concrete needs a hash
+cannot serve, both already load-bearing in the shipped room:
+
+- **The `uncertain` hold has to show what MIGHT have posted.** After a
+  dispatch whose outcome X never confirmed, the record can sit unresolved for
+  as long as it takes a human to go check X -- hours, potentially longer than
+  a session. `unresolvedSummary` (`src/lib/x-publish-composer.ts`) and the
+  panel's resolution UI render the literal wording so the person knows exactly
+  what to look for on X; a `textSha256` alone gives them nothing to compare
+  against what they see on the timeline.
+- **"Recent sends" needs to show what was posted.** This document's own
+  success criteria say the room "exposes the receipt in recent sends" -- the
+  shipped panel's published list renders each record's `text` next to its
+  post ID for exactly that. A hash-only receipt could not do this at all.
+
+Given the record already carries `text` for `draft` and `uncertain` -- states
+a hash cannot serve either, since drafting requires the literal wording to be
+editable and re-displayable -- adding a `textSha256` field once `published`
+would not reduce what is stored on disk; the same `text` field is still
+populated on the very same record for the two reasons above. It would be a
+second, redundant representation of information already present, not a
+minimization gain.
+
+If the request fails before dispatch, the draft stays a draft and may be
+retried directly. A deterministic X rejection returns the record to `draft`
+rather than persisting a separate `failed` status, and publishing it again
+needs a fresh confirmation only if the wording changed -- the record's
+existing `draft` text is already re-publishable as-is. If the connection
+closes, times out, or otherwise becomes ambiguous after dispatch, the record
 becomes `uncertain`. The UI tells the user to check X, and Coven Cave never
 retries that write automatically.
 

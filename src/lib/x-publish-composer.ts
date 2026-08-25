@@ -91,6 +91,17 @@ export type XComposerConfirmation = {
    */
   text: string;
   token: string;
+  /**
+   * The handle this post would go out as, read at the moment the wording was
+   * confirmed. `null` means no account answered — either nothing is connected
+   * or the read failed, and the confirmation view says so rather than showing
+   * a blank where an identity belongs.
+   *
+   * Captured WITH the confirmation rather than polled beside it, because it is
+   * part of what a person is being asked to approve: the same words posted as
+   * a different account are a different act.
+   */
+  account?: string | null;
 };
 
 export type XComposerGate =
