@@ -1723,7 +1723,7 @@ jobs:
       id-token: write
       attestations: write
     runs-on: ubuntu-24.04
-    if: ${{ success() && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    if: ${{ success() && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -1891,7 +1891,7 @@ jobs:
     # succeeded" rule for EVERY dependency, so rollback-readiness has to be
     # named explicitly or a failed rollback gate would still publish the
     # manifest that moves users forward.
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
