@@ -798,11 +798,17 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // Poll only while the run is unsettled. A finished run needs no polling, and
   // an unfollowed one needs none either — this is the whole reason the card
   // tracks `settled` rather than just a phase.
-  useEffect(() => {
-    if (!liveRunFor || !liveRun || liveRun.settled) return;
-    const id = window.setInterval(() => { void refreshRuns(liveRunFor); }, 2500);
-    return () => window.clearInterval(id);
-  }, [liveRunFor, liveRun?.settled, refreshRuns]);
+  //
+  // usePausablePoll rather than a raw interval: it stops while the tab is
+  // hidden and refreshes on return, so a run card left open in a background
+  // tab does not keep hitting /runs. `pausable-poll-discipline.test.ts` gates
+  // exactly this, and it was right to — the raw version polled regardless of
+  // visibility.
+  usePausablePoll(
+    () => { if (liveRunFor) void refreshRuns(liveRunFor); },
+    2500,
+    { enabled: Boolean(liveRunFor && liveRun && !liveRun.settled) },
+  );
 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
