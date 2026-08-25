@@ -257,7 +257,7 @@ test("encodes deterministic big-endian integers and length-prefixed frames", () 
   assert.throws(() => uint64be(Number.MAX_SAFE_INTEGER + 1));
 });
 
-test("canonicalizes query pairs by deterministic raw logical code-unit order", () => {
+test("canonicalizes query pairs by deterministic encoded wire order", () => {
   assert.equal(
     canonicalClientV1Route(
       new URL(
@@ -282,7 +282,35 @@ test("canonicalizes query pairs by deterministic raw logical code-unit order", (
     canonicalClientV1Route(
       new URL("http://127.0.0.1:3020/projects?%C3%A9=1&z=1"),
     ),
-    "/projects?z=1&%C3%A9=1",
+    "/projects?%C3%A9=1&z=1",
+  );
+  assert.equal(
+    canonicalClientV1Route(
+      new URL(
+        "http://127.0.0.1:3020/projects"
+        + "?z=plain"
+        + "&%C3%A9=unicode"
+        + "&%5B=bracket"
+        + "&dup=z"
+        + "&dup=%C3%A9"
+        + "&dup=space+value"
+        + "&dup=%21"
+        + "&dup=~"
+        + "&space+name=a+b"
+        + "&punct%21=%28%29",
+      ),
+    ),
+    "/projects"
+      + "?%5B=bracket"
+      + "&%C3%A9=unicode"
+      + "&dup=%21"
+      + "&dup=%C3%A9"
+      + "&dup=space%20value"
+      + "&dup=z"
+      + "&dup=~"
+      + "&punct%21=%28%29"
+      + "&space%20name=a%20b"
+      + "&z=plain",
   );
   assert.throws(
     () => canonicalClientV1Route(new URL("http://127.0.0.1:3020/api/%25")),
@@ -456,7 +484,7 @@ test("recomputes the normative vector bytes, digest, fields, and both RFC 9180 o
   const responsePlaintext = await responseContext.open(
     base64UrlDecode(vector.response.ciphertext, {
       minimum: 16,
-      maximum: CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes + 16,
+      maximum: CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes,
     }).bytes,
     base64UrlDecode(vector.response.aad, { minimum: 1, maximum: 4096 }).bytes,
   );
@@ -908,7 +936,7 @@ test("seals each response with a fresh Auth context and preserves only reviewed 
     await recipient.open(
       base64UrlDecode(envelope.ciphertext, {
         minimum: 16,
-        maximum: CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes * 2,
+        maximum: CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes,
       }).bytes,
       encodeClientV1HpkeAad("response", opened.binding),
     ),
@@ -938,6 +966,147 @@ test("seals each response with a fresh Auth context and preserves only reviewed 
         { headers: { "content-type": "application/json" } },
       ),
     }),
+  );
+});
+
+test("bounds the final canonical response plaintext and the test client at exact wire limits", async () => {
+  const fixture = await createRequestFixture();
+  const client = await createClientV1HpkeTestClient({
+    authority: {
+      mechanism: CLIENT_V1_HPKE_MECHANISM,
+      mode: "enforce",
+      keyId: fixture.binding.keyId,
+      publicKey: base64UrlEncode(fixture.recipientPublicKeyBytes),
+      suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+    },
+    instanceId: INSTANCE_ID,
+    runtimeNonce: fixture.binding.runtimeNonce,
+    operation: "pairing.exchange",
+    url: `${ORIGIN}${ROUTE}`,
+    method: "POST",
+    issuedAt: NOW,
+    requestNonce: REQUEST_NONCE,
+    authorization: {
+      kind: "pairing-secret",
+      value: base64UrlEncode(PAIRING_SECRET),
+    },
+    requestEkm: REQUEST_EKM_IKM,
+    responseRecipientIkm: RESPONSE_RECIPIENT_IKM,
+  });
+  const opened = await openClientV1HpkeBoundRequest({
+    suite: fixture.suite,
+    recipientKey: fixture.recipient.privateKey,
+    request: client.request,
+    body: new Uint8Array(),
+    expectedKeyId: fixture.binding.keyIdBytes,
+    expectedRuntimeNonce: RUNTIME_NONCE,
+    expectedInstanceId: INSTANCE_ID,
+    now: NOW,
+  });
+  const responsePublicKey = await fixture.suite.kem.deserializePublicKey(
+    opened.responsePublicKeyBytes,
+  );
+  const boundaryBody = new Uint8Array(6_291_349);
+  const boundaryResponse = await sealClientV1HpkeBoundResponse({
+    suite: fixture.suite,
+    senderKey: fixture.recipient.privateKey,
+    responsePublicKey,
+    binding: opened.binding,
+    response: new Response(boundaryBody, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+  const boundaryEnvelopeBytes = new Uint8Array(
+    await boundaryResponse.clone().arrayBuffer(),
+  );
+  assert.equal(
+    boundaryEnvelopeBytes.byteLength,
+    CLIENT_V1_HPKE_LIMITS.responseEnvelopeBytes,
+  );
+  const boundaryEnvelope = JSON.parse(UTF8_FATAL.decode(boundaryEnvelopeBytes));
+  const boundaryCiphertext = base64UrlDecode(boundaryEnvelope.ciphertext, {
+    minimum: 16,
+    maximum: CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes,
+  }).bytes;
+  assert.equal(
+    boundaryCiphertext.byteLength,
+    CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes,
+  );
+  const recipient = await fixture.suite.createRecipientContext({
+    recipientKey: fixture.responseRecipient.privateKey,
+    senderPublicKey: fixture.recipient.publicKey,
+    enc: base64UrlDecode(boundaryEnvelope.enc, {
+      minimum: 32,
+      maximum: 32,
+    }).bytes,
+    info: CLIENT_V1_HPKE_RESPONSE_INFO,
+  });
+  const boundaryPlaintext = new Uint8Array(
+    await recipient.open(
+      boundaryCiphertext,
+      encodeClientV1HpkeAad("response", opened.binding),
+    ),
+  );
+  assert.equal(
+    boundaryPlaintext.byteLength,
+    CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes,
+  );
+
+  const result = await client.open(boundaryResponse);
+  assert.equal(result.body.byteLength, boundaryBody.byteLength);
+
+  await assert.rejects(
+    sealClientV1HpkeBoundResponse({
+      suite: fixture.suite,
+      senderKey: fixture.recipient.privateKey,
+      responsePublicKey,
+      binding: opened.binding,
+      response: new Response(new Uint8Array(boundaryBody.byteLength + 1), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    }),
+    /response plaintext exceeds its limit/u,
+  );
+
+  await assert.rejects(
+    client.open(
+      new Response(
+        new Uint8Array(CLIENT_V1_HPKE_LIMITS.responseEnvelopeBytes + 1),
+        {
+          status: 200,
+          headers: { "content-type": CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE },
+        },
+      ),
+    ),
+    /authenticated HPKE response/u,
+  );
+
+  const oversizedCiphertext = base64UrlEncode(
+    new Uint8Array(CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes + 1),
+  );
+  const oversizedEnvelope = Response.json(
+    {
+      version: 1,
+      mechanism: CLIENT_V1_HPKE_MECHANISM,
+      keyId: client.binding.keyId,
+      requestNonce: client.binding.requestNonce,
+      enc: base64UrlEncode(new Uint8Array(32)),
+      ciphertext: oversizedCiphertext,
+    },
+    {
+      status: 200,
+      headers: { "content-type": CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE },
+    },
+  );
+  assert.equal(
+    (await oversizedEnvelope.clone().arrayBuffer()).byteLength,
+    CLIENT_V1_HPKE_LIMITS.responseEnvelopeBytes + 2,
+  );
+  await assert.rejects(
+    client.open(oversizedEnvelope),
+    /authenticated HPKE response/u,
   );
 });
 

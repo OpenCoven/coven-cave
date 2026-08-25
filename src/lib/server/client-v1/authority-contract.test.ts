@@ -322,6 +322,8 @@ test("pins the authority wire limits and replay freshness bounds", () => {
     requestCiphertextBytes: 2048,
     requestBodyBytes: 65536,
     responsePlaintextBytes: 8 * 1024 * 1024,
+    responseCiphertextBytes: (8 * 1024 * 1024) + 16,
+    responseEnvelopeBytes: 11_185_056,
     canonicalRouteBytes: 2048,
     instanceIdBytes: 256,
   });

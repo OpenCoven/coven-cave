@@ -66,6 +66,8 @@ export const CLIENT_V1_HPKE_LIMITS = Object.freeze({
   requestCiphertextBytes: 2048,
   requestBodyBytes: 65_536,
   responsePlaintextBytes: 8 * 1024 * 1024,
+  responseCiphertextBytes: 8_388_624,
+  responseEnvelopeBytes: 11_185_056,
   canonicalRouteBytes: 2_048,
   instanceIdBytes: 256,
 } as const);

@@ -167,15 +167,15 @@ export function canonicalClientV1Route(url: URL): string {
     throw new Error("Client v1 authority path is not canonical.");
   }
   const pairs = [...url.searchParams.entries()]
+    .map(([name, value]) => [
+      rfc3986Component(name),
+      rfc3986Component(value),
+    ] as const)
     .sort(([leftName, leftValue], [rightName, rightValue]) =>
       leftName === rightName
         ? asciiCompare(leftValue, rightValue)
         : asciiCompare(leftName, rightName),
-    )
-    .map(([name, value]) => [
-      rfc3986Component(name),
-      rfc3986Component(value),
-    ] as const);
+    );
   const query = pairs.map(([name, value]) => `${name}=${value}`).join("&");
   const route = query ? `${url.pathname}?${query}` : url.pathname;
   if (
@@ -573,13 +573,20 @@ export async function sealClientV1HpkeBoundResponse(input: {
   if (typeof canonical !== "string") {
     throw new Error("Client v1 HPKE response is not canonical JSON.");
   }
+  const plaintext = UTF8.encode(canonical);
+  if (
+    plaintext.byteLength
+    > CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes
+  ) {
+    throw new Error("Client v1 HPKE response plaintext exceeds its limit.");
+  }
   const sender = await input.suite.createSenderContext({
     recipientPublicKey: input.responsePublicKey,
     senderKey: input.senderKey,
     info: CLIENT_V1_HPKE_RESPONSE_INFO,
   });
   const ciphertext = await sender.seal(
-    UTF8.encode(canonical),
+    plaintext,
     encodeClientV1HpkeAad("response", input.binding),
   );
   const envelope: ClientV1HpkeBoundResponseEnvelope = {

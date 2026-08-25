@@ -465,7 +465,12 @@ export function canonicalClientV1Route(url: URL): string {
 }
 ```
 
-Every encoded component is ASCII, and the tests refuse a `localeCompare` call in `hpke-bound-v1.ts`.
+Every encoded component is ASCII. Normalize both components to their exact
+RFC 3986 wire strings before sorting, compare those encoded strings with
+`<`/`>` code-unit order, and render the already-encoded pairs directly without
+another encoding pass. Sorting decoded `URLSearchParams` values first is not
+equivalent for non-ASCII or percent-escaped punctuation. Tests include those
+adversarial cases and refuse a `localeCompare` call in `hpke-bound-v1.ts`.
 
 ### Info and AAD
 
@@ -569,8 +574,14 @@ export interface ClientV1HpkeBoundResponsePlaintext {
 
 - `body` is canonical unpadded base64url of the exact inner Client v1 response bytes.
 - Only `content-type` and optional `retry-after` cross the wrapper; no cookies, server headers, or arbitrary values are copied.
-- Bound response plaintext is limited to 8 MiB before HPKE overhead.
-- Encode the inner plaintext as RFC 8785 canonical JSON UTF-8.
+- Raw inner response streaming is independently capped at 8 MiB to prevent
+  memory abuse.
+- Encode the inner plaintext as RFC 8785 canonical JSON UTF-8, then require
+  those final bytes—including base64url body expansion and reviewed
+  headers—to be at most 8 MiB before creating the HPKE sender context.
+- AES-256-GCM adds only its fixed 16-byte tag, so bound response ciphertext is
+  at most 8,388,624 bytes. The fixed JSON envelope containing canonical
+  base64url ciphertext is at most 11,185,056 UTF-8 bytes.
 
 Outer response:
 
@@ -887,6 +898,8 @@ assert.deepEqual(CLIENT_V1_HPKE_LIMITS, {
   requestCiphertextBytes: 2048,
   requestBodyBytes: 65536,
   responsePlaintextBytes: 8 * 1024 * 1024,
+  responseCiphertextBytes: 8_388_624,
+  responseEnvelopeBytes: 11_185_056,
   canonicalRouteBytes: 2048,
   instanceIdBytes: 256,
 });
@@ -1116,9 +1129,25 @@ assert.equal(
   ),
   "/api/client/v1/projects?a=hello%20world&z=%21",
 );
+assert.equal(
+  canonicalClientV1Route(
+    new URL(
+      "http://127.0.0.1:3020/projects"
+      + "?z=plain&%C3%A9=unicode&%5B=bracket"
+      + "&dup=z&dup=%C3%A9&dup=space+value&dup=%21&dup=~"
+      + "&space+name=a+b&punct%21=%28%29",
+    ),
+  ),
+  "/projects"
+    + "?%5B=bracket&%C3%A9=unicode"
+    + "&dup=%21&dup=%C3%A9&dup=space%20value&dup=z&dup=~"
+    + "&punct%21=%28%29&space%20name=a%20b&z=plain",
+);
 ```
 
-Read the source and assert no `localeCompare`, manual X25519 arithmetic, manual HKDF, manual AES, or direct AEAD nonce construction exists.
+The adversarial case must fail any decoded-first implementation. Read the
+source and assert no `localeCompare`, manual X25519 arithmetic, manual HKDF,
+manual AES, or direct AEAD nonce construction exists.
 
 - [ ] **Step 2: Run and verify the new test fails**
 
@@ -1278,7 +1307,13 @@ function validateOpenedClientV1HpkePlaintext(input: {
 
 - [ ] **Step 6: Implement Auth-mode response seal**
 
-Accept the inner `Response`, read at most 8 MiB, retain only `content-type` and optional `retry-after`, build the canonical response plaintext, and create a new Auth-mode sender context with the Cave static private key.
+Accept the inner `Response`, stream at most 8 MiB of raw body bytes, retain only
+`content-type` and optional `retry-after`, and build the canonical response
+plaintext. Reject before `createSenderContext` or `seal` unless the final
+canonical UTF-8 bytes are at most `responsePlaintextBytes`; the limit applies
+after JCS, base64url, and header expansion, not to the raw body alone. Add an
+exact 8 MiB final-plaintext case and a case whose raw body is one byte larger
+and produces an 8 MiB + 1 canonical plaintext.
 
 ```ts
 export async function sealClientV1HpkeBoundResponse(input: {
@@ -1596,6 +1631,15 @@ export async function createClientV1HpkeTestClient(input: {
 ```
 
 It reuses the production canonical route/AAD helpers but implements the opposite HPKE roles: Base-mode request sender and Auth-mode response recipient. It defaults to fresh generated nonce/keys, accepts deterministic IKM/EKM only for tests, never logs credentials, and refuses every plaintext response.
+
+Before parsing JSON or decoding base64url, it streams at most
+`responseEnvelopeBytes`. It accepts ciphertext only through
+`responseCiphertextBytes`, exactly `responsePlaintextBytes + 16` for the fixed
+AES-GCM tag, and explicitly rejects a decrypted plaintext larger than
+`responsePlaintextBytes` before UTF-8 decoding or JSON parsing. Tests pin the
+exact envelope, ciphertext, and decrypted-plaintext boundary and reject a
+one-byte-oversized outer envelope and one-byte-oversized ciphertext with the
+fixed secret-free client error.
 
 - [ ] **Step 11: Wire and run**
 

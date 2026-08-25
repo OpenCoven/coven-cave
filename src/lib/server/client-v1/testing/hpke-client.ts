@@ -265,7 +265,7 @@ export async function createClientV1HpkeTestClient(input: {
         }
         const envelopeBytes = await readBounded(
           response,
-          CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes * 2,
+          CLIENT_V1_HPKE_LIMITS.responseEnvelopeBytes,
         );
         const envelope: unknown = JSON.parse(UTF8_FATAL.decode(envelopeBytes));
         if (
@@ -295,7 +295,7 @@ export async function createClientV1HpkeTestClient(input: {
         }).bytes;
         const responseCiphertext = base64UrlDecode(envelope.ciphertext, {
           minimum: 16,
-          maximum: CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes * 2,
+          maximum: CLIENT_V1_HPKE_LIMITS.responseCiphertextBytes,
         }).bytes;
         const recipient = await suite.createRecipientContext({
           recipientKey: responseRecipient.privateKey,
@@ -306,6 +306,12 @@ export async function createClientV1HpkeTestClient(input: {
         const plaintext = new Uint8Array(
           await recipient.open(responseCiphertext, responseAad),
         );
+        if (
+          plaintext.byteLength
+          > CLIENT_V1_HPKE_LIMITS.responsePlaintextBytes
+        ) {
+          throw new Error(RESPONSE_ERROR);
+        }
         const decoded = UTF8_FATAL.decode(plaintext);
         const parsed: unknown = JSON.parse(decoded);
         if (
