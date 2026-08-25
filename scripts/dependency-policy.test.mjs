@@ -45,6 +45,32 @@ assert.equal(
   "pnpm saveExact must keep future added dependencies pinned by default",
 );
 
+assert.equal(
+  packageJson.dependencies?.["@hpke/core"],
+  "1.9.0",
+  "@hpke/core must be a pinned production dependency",
+);
+assert.equal(
+  packageJson.dependencies?.["@hpke/dhkem-x25519"],
+  "1.8.0",
+  "@hpke/dhkem-x25519 must be a pinned production dependency",
+);
+assert.equal(
+  Object.hasOwn(packageJson.devDependencies ?? {}, "@hpke/core"),
+  false,
+  "@hpke/core must not be a development dependency",
+);
+assert.equal(
+  Object.hasOwn(packageJson.devDependencies ?? {}, "@hpke/dhkem-x25519"),
+  false,
+  "@hpke/dhkem-x25519 must not be a development dependency",
+);
+assert.equal(
+  packageJson.pnpm?.overrides?.["@hpke/common"],
+  "1.10.0",
+  "@hpke/common must resolve to the audited pinned version",
+);
+
 // --- sharp version-skew guard (Windows sidecar) ------------------------------
 // `next` hard-pins its own `sharp`; bumping our direct `sharp` dependency above
 // that pin makes two sharp versions coexist in the lockfile. The sidecar's
