@@ -924,7 +924,14 @@ export function GenerationConfigModal({
                       ? "Loading voices…"
                       : "Choose a voice"
                   }
+                  showCaret={false}
                   aria-describedby="research-studio-config-voice-help"
+                  aria-invalid={mediaConfigurationError ? true : undefined}
+                  aria-errormessage={
+                    mediaConfigurationError
+                      ? "research-studio-config-media-error"
+                      : undefined
+                  }
                   onChange={onMediaVoiceChange}
                 />
                 <span
@@ -1029,7 +1036,14 @@ export function GenerationConfigModal({
                     ]}
                     disabled={elevenLabsCatalogUnavailable}
                     placeholder="Same as host voice"
+                    showCaret={false}
                     aria-describedby="research-studio-config-guest-voice-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
                     onChange={onMediaGuestVoiceChange}
                   />
                 )}
@@ -1055,6 +1069,7 @@ export function GenerationConfigModal({
                     id="research-studio-config-delivery"
                     label="Delivery"
                     className="research-studio__select focus-ring"
+                    showCaret={false}
                     value={mediaDelivery}
                     aria-describedby="research-studio-config-delivery-help"
                     onChange={onMediaDeliveryChange}
@@ -1083,6 +1098,7 @@ export function GenerationConfigModal({
                     id="research-studio-config-model"
                     label="Render model"
                     className="research-studio__select focus-ring"
+                    showCaret={false}
                     value={mediaModel}
                     aria-describedby="research-studio-config-model-help"
                     onChange={onMediaModelChange}

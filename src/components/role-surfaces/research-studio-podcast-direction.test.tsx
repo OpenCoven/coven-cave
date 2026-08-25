@@ -178,6 +178,7 @@ describe("Studio podcast delivery controls", () => {
     const loading = renderConfig({
       elevenLabsCatalog: { status: "loading" },
     });
+
     expect(
       selectById(
         loading.renderer,
@@ -206,6 +207,27 @@ describe("Studio podcast delivery controls", () => {
         .findAllByType("button")
         .some((button) => textOf(button) === "Retry voices"),
     ).toBe(true);
+  });
+
+  test("associate invalid voice dropdowns with the media error", () => {
+    const { renderer } = renderConfig({
+      elevenLabsCatalog: {
+        status: "error",
+        message: "Voice catalog unavailable.",
+      },
+    });
+
+    for (const id of [
+      "research-studio-config-elevenlabs-voice",
+      "research-studio-config-guest-voice",
+    ]) {
+      const trigger = byId(renderer, id);
+      expect(trigger.props["aria-invalid"]).toBe(true);
+      expect(trigger.props["aria-errormessage"]).toBe(
+        "research-studio-config-media-error",
+      );
+      expect(selectById(renderer, id).props.showCaret).toBe(false);
+    }
   });
 
   test("appear for an ElevenLabs podcast", () => {
