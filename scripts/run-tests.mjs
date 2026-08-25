@@ -1382,6 +1382,7 @@ export const SUITES = {
     "scripts/client-v1-doc-contract.test.mjs",
     "scripts/client-v1-settings-doc-contract.test.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
+    "scripts/client-v1-authority-takeover.test.mjs",
     "scripts/client-v1-conformance.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
@@ -1925,6 +1926,8 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
+  // imports the TypeScript Client v1 HPKE test codec
+  "scripts/client-v1-authority-takeover.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
