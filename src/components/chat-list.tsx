@@ -33,10 +33,12 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   createChatProjectIndex,
-  deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
-import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import {
+  deriveChatListProjectGroups,
+  withoutArchivedChatSessions,
+} from "@/lib/chat-list-grouping";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
@@ -302,47 +304,42 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   // The siderail never shows archived chats: even while the list's "Show
   // archived" toggle is on, rail groups build from an archive-free view.
-  const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
+  const railSessions = useMemo(() => withoutArchivedChatSessions(mine), [mine]);
 
   // Search first, then status. The chip counts describe the SEARCHED set, so
   // pressing one chip never renumbers the others — the number under "Failed"
   // means "failed among what you searched for", not "failed among what is
   // already filtered to failed".
-  const searched = useMemo(() => filterChatListRows(mine, search, false), [mine, search]);
+  const searched = useMemo(
+    () => search.trim() ? filterChatListRows(mine, search, false) : mine,
+    [mine, search],
+  );
   const statusCounts = useMemo(() => countChatSessionStatuses(searched), [searched]);
   const kindCounts = useMemo(() => countChatSessionKinds(searched), [searched]);
-  const filtered = useMemo(
-    () => filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter),
-    [searched, statusFilter, kindFilter],
-  );
+  const filtered = useMemo(() => {
+    if (statusFilter === "all" && kindFilter === "all") return searched;
+    return filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter);
+  }, [searched, statusFilter, kindFilter]);
 
   const hasAny = mine.length > 0;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const projectIndex = useMemo(() => createChatProjectIndex(projects), [projects]);
-  const grouped = useMemo(() => {
-    return deriveChatProjectGroups(
-      applyProjectOverrides(filtered, projectOverrides),
-      projects,
-      projectIndex,
-      { sessionsNewestFirst: true },
-    );
-  }, [filtered, projects, projectOverrides, projectIndex]);
-
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The view-local selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a project selection must not scope the list there —
   // no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(
-    () => deriveChatProjectGroups(
-      applyProjectOverrides(railSessions, projectOverrides),
+  const { grouped, sidebarGroups } = useMemo(
+    () => deriveChatListProjectGroups(
+      filtered,
+      railSessions,
       projects,
       projectIndex,
-      { sessionsNewestFirst: true },
+      projectOverrides,
     ),
-    [railSessions, projects, projectOverrides, projectIndex],
+    [filtered, railSessions, projects, projectIndex, projectOverrides],
   );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
