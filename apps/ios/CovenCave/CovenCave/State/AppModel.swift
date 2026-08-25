@@ -4594,9 +4594,7 @@ final class AppModel {
         await refreshConnection()
         guard connectionConfigurationLeaseIsCurrent(configuredGeneration),
               connection != nil else { return nil }
-        if connection?.baseURL == conn.baseURL {
-            requestConnectionRecovery(.foreground)
-        }
+        requestConnectionRecovery(.foreground)
         return captureConnectionDispatchLease()
     }
 

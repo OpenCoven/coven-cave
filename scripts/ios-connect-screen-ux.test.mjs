@@ -112,8 +112,13 @@ assert.match(
 // --- Connected moment ----------------------------------------------------------
 assert.match(
   src,
-  /if result\.outcome == \.authorized, app\.connectionState == \.connected \{\s*Haptics\.success\(\)\s*\}/,
-  "an approved successful connect lands with success haptics",
+  /if result\.outcome == \.authorized,\s*result\.lease != nil,\s*app\.connectionState == \.connected \{\s*Haptics\.success\(\)\s*\}/,
+  "only an approved configuration that retained lease ownership lands with success haptics",
+);
+assert.equal(
+  [...src.matchAll(/result\.lease != nil,\s*app\.connectionState == \.connected/g)].length,
+  2,
+  "manual and credential-bearing paste/scan flows both suppress stale success haptics",
 );
 assert.equal(
   [...src.matchAll(/app\.stagePairingDestination\(pairingIntent\)/g)].length,

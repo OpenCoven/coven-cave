@@ -473,7 +473,9 @@ struct ConnectionView: View {
             } else {
                 app.cancelPairingDestination(matching: pairingIntent.id)
             }
-            if result.outcome == .authorized, app.connectionState == .connected {
+            if result.outcome == .authorized,
+               result.lease != nil,
+               app.connectionState == .connected {
                 Haptics.success()
             }
         }
@@ -509,7 +511,9 @@ struct ConnectionView: View {
                 } else {
                     app.cancelPairingDestination(matching: pairingIntent.id)
                 }
-                if result.outcome == .authorized, app.connectionState == .connected {
+                if result.outcome == .authorized,
+                   result.lease != nil,
+                   app.connectionState == .connected {
                     Haptics.success()
                 }
             }

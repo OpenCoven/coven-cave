@@ -108,6 +108,11 @@ assert.match(
 );
 assert.match(
   model,
+  /await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)[\s\S]{0,180}requestConnectionRecovery\(\.foreground\)[\s\S]{0,120}return captureConnectionDispatchLease\(\)/,
+  "a winning configure restarts supervised recovery even when discovery relocated its port",
+);
+assert.match(
+  model,
   /private func resetHostScopedStateForNewConnection\(\)[\s\S]*?serverSessions = \[\][\s\S]{0,180}sessionsError = nil[\s\S]{0,180}lastSessionsLoadedAt = nil[\s\S]*?operatorProfile = nil/,
   "pairing a different host must clear the previous host's sessions and operator identity before new loads can fail",
 );
