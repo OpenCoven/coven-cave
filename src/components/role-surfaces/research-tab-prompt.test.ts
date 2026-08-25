@@ -183,11 +183,32 @@ test("runtime changes reset model and model choices come from that runtime inven
   assert.match(composer, /inventoryProvenanceLabel/);
   assert.match(
     composer,
-    /onChange=\{\(next\) => \{\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
   );
   assert.match(composer, /<StandardSelect[\s\S]*?id="research-runtime-model"/);
   assert.match(composer, /options=\{modelOptions\}/);
   assert.doesNotMatch(composer, /id="research-runtime-model"\s*type="text"/);
+});
+
+test("Research Desk starts from the active familiar's shared agent model default", () => {
+  assert.match(
+    composer,
+    /fetch\(\s*`\/api\/chat\/model-state\?familiarId=\$\{encodeURIComponent\(familiarId\)\}`/,
+  );
+  assert.match(composer, /setHarness\(json\.state\.harness\)/);
+  assert.match(composer, /setModel\(json\.state\.effectiveModel\)/);
+  assert.match(
+    composer,
+    /if \(cancelled \|\| modelSelectionDirtyRef\.current \|\| !json\.ok \|\| !json\.state\) return;/,
+  );
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setModel\(next\);\s*\}\}/,
+  );
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+  );
 });
 
 // ── Quick saves: selected resources are part of the launch contract ──────────

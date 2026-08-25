@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
+import type { ChatModelState } from "@/lib/chat-model-state";
 import {
   defaultResearchPlan,
   inferResearchMissionMode,
@@ -235,11 +236,10 @@ export function ResearchMissionComposer({
   // live in `bounds`. Parsing on every keystroke made fields uncloseable:
   // clearing snapped to 1, so typing "5" produced "15".
   const [boundDrafts, setBoundDrafts] = useState<Partial<Record<BoundKey, string>>>({});
-  // Runtime is part of the plan, not a hidden inheritance from the familiar's
-  // Coven binding. Defaulting to copilot keeps Research runnable on a daemon
-  // that lacks the sessionLaunchPolicy capability, which the codex path needs.
+  // Copilot is the safe fallback until the familiar's shared model state loads.
   const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
   const [model, setModel] = useState("");
+  const modelSelectionDirtyRef = useRef(false);
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -258,6 +258,31 @@ export function ResearchMissionComposer({
   const [recsOpen, setRecsOpen] = useState(false);
   const [briefNote, setBriefNote] = useState<string | null>(null);
   const appliedRecommendedDraftRevision = useRef<number | null>(null);
+
+  useEffect(() => {
+    modelSelectionDirtyRef.current = false;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
+          { cache: "no-store" },
+        );
+        const json = (await response.json()) as {
+          ok?: boolean;
+          state?: ChatModelState;
+        };
+        if (cancelled || modelSelectionDirtyRef.current || !json.ok || !json.state) return;
+        setHarness(json.state.harness);
+        setModel(json.state.effectiveModel);
+      } catch {
+        // Keep the Research-safe fallback when agent model state is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [familiarId]);
 
   useEffect(() => {
     if (
@@ -969,6 +994,7 @@ export function ResearchMissionComposer({
               value={harness}
               className="research-bounds-select"
               onChange={(next) => {
+                modelSelectionDirtyRef.current = true;
                 setHarness(next);
                 setModel("");
               }}
@@ -988,7 +1014,10 @@ export function ResearchMissionComposer({
               )}`}
               value={model}
               className="research-bounds-select"
-              onChange={setModel}
+              onChange={(next) => {
+                modelSelectionDirtyRef.current = true;
+                setModel(next);
+              }}
               options={modelOptions}
             />
           </label>
