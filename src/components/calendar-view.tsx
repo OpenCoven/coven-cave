@@ -18,6 +18,14 @@ import { SnoozeMenu } from "@/components/snooze-menu";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
+import {
+  projectCronRuns,
+  projectionSummary,
+  type CronProjection,
+  type ProjectedCronRun,
+} from "@/lib/calendar-cron-projection";
+import type { CodexAutomation } from "@/lib/codex-automations-types";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
@@ -58,6 +66,7 @@ export type { CalendarDeadline } from "./calendar-view-primitives";
 function AgendaView({
   items,
   deadlines,
+  projectedRuns,
   anchor,
   onAddEntry,
   onOpenItem,
@@ -65,6 +74,8 @@ function AgendaView({
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
+  /** Cron occurrences projected onto this window — see calendar-cron-projection. */
+  projectedRuns?: readonly ProjectedCronRun[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
@@ -83,10 +94,10 @@ function AgendaView({
 
   // Group items by date, then filter / sort based on showPast.
   const groups = useMemo(() => {
-    const map = new Map<string, { date: Date; items: InboxItem[]; deadlines: CalendarDeadline[] }>();
+    const map = new Map<string, { date: Date; items: InboxItem[]; deadlines: CalendarDeadline[]; runs: ProjectedCronRun[] }>();
     const ensure = (d: Date) => {
       const key = startOfDay(d).toISOString();
-      if (!map.has(key)) map.set(key, { date: startOfDay(d), items: [], deadlines: [] });
+      if (!map.has(key)) map.set(key, { date: startOfDay(d), items: [], deadlines: [], runs: [] });
       return map.get(key)!;
     };
     for (const item of items) {
@@ -99,12 +110,20 @@ function AgendaView({
       if (!d) continue;
       ensure(d).deadlines.push(dl);
     }
+    // Projected cron runs join the same day buckets as items and deadlines —
+    // that is the point of the spec's fix: the agenda stops being 80% void
+    // because the crons that WILL fire are on it.
+    for (const run of projectedRuns ?? []) {
+      const d = new Date(run.atIso);
+      if (Number.isNaN(d.getTime())) continue;
+      ensure(d).runs.push(run);
+    }
     return Array.from(map.values())
       .filter((g) => showPast ? true : g.date >= startOfDay(anchor))
       // Always chronological: revealing past prepends older groups above
       // today instead of flipping the whole agenda to future-first.
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [items, deadlines, anchor, showPast]);
+  }, [items, deadlines, projectedRuns, anchor, showPast]);
 
   // The single soonest still-pending item — highlighted as "Next" so the agenda
   // answers "what's up next" without the user scanning for it.
@@ -177,8 +196,8 @@ function AgendaView({
           </Button>
         </div>
       ) : null}
-      {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
-        const total = groupItems.length + groupDeadlines.length;
+      {groups.map(({ date, items: groupItems, deadlines: groupDeadlines, runs: groupRuns }) => {
+        const total = groupItems.length + groupDeadlines.length + groupRuns.length;
         const isToday = !!now && isSameDay(date, now);
         const relWord = now ? relDayWord(date, now) : null;
         return (
@@ -215,6 +234,23 @@ function AgendaView({
                   now={now}
                   onClick={() => onOpenItem?.(item)}
                 />
+              ))}
+            {/* Projected cron runs, drawn as quieter dashed rows than real
+                items: they are a forecast of what the schedule WILL do, not
+                something that has happened, and the surface should not let the
+                two read alike. */}
+            {[...groupRuns]
+              .sort((a, b) => a.atIso.localeCompare(b.atIso))
+              .map((run) => (
+                <div
+                  key={`${run.automationId}-${run.atIso}`}
+                  className="cal-agenda-run"
+                  title={`${run.name} — scheduled run`}
+                >
+                  <span className="cal-agenda-run__time">{formatClock(run.atIso)}</span>
+                  <span className="cal-agenda-run__name">{run.name}</span>
+                  <span className="cal-agenda-run__kind">cron</span>
+                </div>
               ))}
           </div>
         </div>
@@ -1408,6 +1444,25 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const [deepLinkViewMode, setDeepLinkViewMode] = useState<ViewMode | null>(null);
   const [deepLinkAnchor, setDeepLinkAnchor] = useState<Date | null>(null);
   const viewMode = deepLinkViewMode ?? storedViewMode;
+  // Cron occurrences projected onto whatever window is on screen.
+  //
+  // Read from the SHARED `schedules:automations` resource the Rituals surface
+  // already warms rather than adding a fetch: this is the same data
+  // AutomationsView loads, and a second request would race it for no gain.
+  const [cronAutomations, setCronAutomations] = useState<CodexAutomation[]>([]);
+  const [showRuns, setShowRuns] = useState(true);
+  useEffect(() => {
+    let live = true;
+    void readSurfaceResource<{ ok?: boolean; automations?: CodexAutomation[] }>("schedules:automations")
+      .then((result) => {
+        if (!live) return;
+        const next = result.data?.automations ?? [];
+        setCronAutomations((prev) => (prev.length === next.length && prev.every((a, i) => a.id === next[i]?.id && a.rrule === next[i]?.rrule && a.status === next[i]?.status) ? prev : next));
+      })
+      .catch(() => { /* the calendar still works without a projection */ });
+    return () => { live = false; };
+  }, []);
+
   const fallbackAnchorRef = useRef(new Date());
   const anchor = useMemo(() => {
     if (deepLinkAnchor) return deepLinkAnchor;
@@ -1522,6 +1577,26 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         .filter((it) => it.status !== "dismissed"),
     [items, inScope],
   );
+
+  // The window the current view actually shows, so a month view projects a
+  // month and an agenda projects the fortnight it renders — projecting a fixed
+  // span would either under-fill the month or over-compute the agenda.
+  // Agenda only, for now. Day/Week/Month do not draw projected runs yet, and a
+  // footer claiming "13 active crons project onto this calendar" over a view
+  // that renders none of them is the surface lying about itself — caught by
+  // driving it: the default view is Week, where the note appeared over zero
+  // rows. Extending the projection to the other three is cave-9f3i3 follow-up.
+  const projection: CronProjection = useMemo(() => {
+    if (!showRuns || effectiveView !== "agenda" || cronAutomations.length === 0) {
+      return { runs: [], projectedCount: 0, truncated: false };
+    }
+    const start = startOfDay(anchor);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 14); // the fortnight the agenda renders
+    return projectCronRuns(cronAutomations, start.getTime(), end.getTime());
+  }, [showRuns, cronAutomations, anchor, effectiveView]);
+
+  const projectionNote = projectionSummary(projection);
 
   // Pending count for the header pill (computed once, not twice inline).
   const pendingCount = useMemo(
@@ -1734,6 +1809,21 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           className="calendar-view-switcher hidden max-w-full shrink-0 lg:flex"
         />
 
+        {/* Only offered when there is something to project. A dead toggle
+            teaches a reader to ignore part of the toolbar. */}
+        {effectiveView === "agenda" && cronAutomations.some((a) => a.status === "ACTIVE") ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={showRuns}
+            title="Project cron occurrences onto the calendar"
+            onClick={() => setShowRuns((v) => !v)}
+            className={`calendar-toolbar-button shrink-0 cal-runs-toggle${showRuns ? " is-on" : ""}`}
+          >
+            ritual runs
+          </Button>
+        ) : null}
+
         {onAddEntry ? (
           <Button
             variant="primary"
@@ -1770,10 +1860,14 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         aria-labelledby={`calendar-view-tab-${viewMode}`}
         className="flex flex-1 flex-col overflow-hidden"
       >
+        {/* The frame's footer: the calendar says how many crons reach it, and
+            offers the way back to the surface that owns them. Rendered only
+            when something projects — see projectionSummary. */}
         {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
             deadlines={scopedDeadlines}
+            projectedRuns={projection.runs}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onOpenItem={(item) => setSelectedItem(item)}
@@ -1815,6 +1909,28 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           />
         )}
       </div>
+      {/* The frame's footer sentence. It answers the two questions a projected
+          calendar raises — how much of this is forecast, and where do I go to
+          change it — and renders only when something actually projects, so an
+          empty calendar is not given a line about zero crons. */}
+      {projectionNote ? (
+        <div className="cal-projection-note">
+          <span aria-hidden className="cal-projection-note__dot" />
+          <span>{projectionNote}</span>
+          <button
+            type="button"
+            className="cal-projection-note__link focus-ring"
+            onClick={() => {
+              // The Crons tab lives in AutomationsView, which owns this slot;
+              // the same event/sessionStorage handoff the week ribbon already
+              // uses in the opposite direction.
+              window.dispatchEvent(new CustomEvent("cave:rituals:open-crons"));
+            }}
+          >
+            manage crons →
+          </button>
+        </div>
+      ) : null}
       {/* Keyboard hints moved to the canonical ⌘/ Shortcuts sheet (§8 chrome
           diet — a permanently visible footer bar was chrome documenting
           chrome). The single-key bindings themselves are unchanged. */}
