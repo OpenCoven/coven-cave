@@ -211,6 +211,27 @@ test("Research Desk starts from the active familiar's shared agent model default
   );
 });
 
+test("inherited Codex defaults require the active local daemon launch policy", () => {
+  assert.match(composer, /\/api\/daemon\/status\?scope=research-local/);
+  assert.match(
+    composer,
+    /const loadedFamiliarIdRef = useRef<string \| null>\(null\);/,
+  );
+  assert.match(
+    composer,
+    /const familiarChanged = loadedFamiliarIdRef\.current !== familiarId;[\s\S]*if \(familiarChanged\) \{[\s\S]*modelSelectionDirtyRef\.current = false;[\s\S]*\} else if \(modelSelectionDirtyRef\.current\) \{[\s\S]*return;[\s\S]*\}[\s\S]*setHarness\(RESEARCH_RUNTIME_DEFAULT_HARNESS\);[\s\S]*setModel\(""\);/,
+  );
+  assert.match(
+    composer,
+    /json\.state\.harness === "codex"[\s\S]*researchStatus\?\.research\?\.sessionLaunchPolicy !== true[\s\S]*return;/,
+  );
+  assert.match(
+    composer,
+    /Promise\.all\(\[[\s\S]*api\/chat\/model-state[\s\S]*api\/daemon\/status\?scope=research-local/,
+  );
+  assert.match(composer, /\}, \[familiarId, daemonRunning\]\);/);
+});
+
 // ── Quick saves: selected resources are part of the launch contract ──────────
 
 test("quick saves are included in mission creation before the run starts", () => {

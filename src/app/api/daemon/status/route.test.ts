@@ -54,6 +54,12 @@ assert.match(
 
 assert.match(
   source,
+  /scope === "research-local"[\s\S]*localDaemonTarget\(\)[\s\S]*isOwnerLocalResearchDaemonTarget\(target\)[\s\S]*supportsSessionLaunchPolicy\(health\)[\s\S]*sessionLaunchPolicy/,
+  "Research capability checks should probe the owner-local daemon rather than the configured hub target",
+);
+
+assert.match(
+  source,
   /executorStatusesForConfig\(config\)/,
   "daemon status should check configured executor node availability from Cave config",
 );

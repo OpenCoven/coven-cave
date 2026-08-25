@@ -240,6 +240,9 @@ export function ResearchMissionComposer({
   const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
   const [model, setModel] = useState("");
   const modelSelectionDirtyRef = useRef(false);
+  // The familiar whose model state the effect below last loaded, so a daemon
+  // status transition can be told apart from an actual familiar switch.
+  const loadedFamiliarIdRef = useRef<string | null>(null);
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -260,19 +263,40 @@ export function ResearchMissionComposer({
   const appliedRecommendedDraftRevision = useRef<number | null>(null);
 
   useEffect(() => {
-    modelSelectionDirtyRef.current = false;
+    const familiarChanged = loadedFamiliarIdRef.current !== familiarId;
+    if (familiarChanged) {
+      loadedFamiliarIdRef.current = familiarId;
+      modelSelectionDirtyRef.current = false;
+    } else if (modelSelectionDirtyRef.current) {
+      return;
+    }
+    // A clean daemon transition must immediately restore the safe fallback
+    // before capability re-evaluation; an explicit user pick returns above.
+    setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+    setModel("");
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
-          { cache: "no-store" },
-        );
+        const [response, researchStatus] = await Promise.all([
+          fetch(
+            `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
+            { cache: "no-store" },
+          ),
+          fetch("/api/daemon/status?scope=research-local", { cache: "no-store" })
+            .then((result) => result.json() as Promise<{
+              research?: { sessionLaunchPolicy?: boolean };
+            }>)
+            .catch(() => null),
+        ]);
         const json = (await response.json()) as {
           ok?: boolean;
           state?: ChatModelState;
         };
         if (cancelled || modelSelectionDirtyRef.current || !json.ok || !json.state) return;
+        if (
+          json.state.harness === "codex"
+          && researchStatus?.research?.sessionLaunchPolicy !== true
+        ) return;
         setHarness(json.state.harness);
         setModel(json.state.effectiveModel);
       } catch {
@@ -282,7 +306,7 @@ export function ResearchMissionComposer({
     return () => {
       cancelled = true;
     };
-  }, [familiarId]);
+  }, [familiarId, daemonRunning]);
 
   useEffect(() => {
     if (
