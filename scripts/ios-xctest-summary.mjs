@@ -197,15 +197,6 @@ export function countXCTestMethodsInDirectory(dir, { readDir = readdirSync, read
 export const QUARANTINED_FAILURES = new Map([
   // ── Residue after #4958. Each needs a decision, not a patch ──────────────
   [
-    "testNewerStandaloneTasksLoadWinsOverOlderSuccessfulTaskSnapshot",
-    {
-      bead: "cave-dwy2a",
-      reason:
-        "Hangs. It wedged the very first run of this suite for 36 minutes; -test-timeouts-enabled now converts it into a named 60s failure so the rest of the suite still reports.",
-      expires: "2026-09-27",
-    },
-  ],
-  [
     "testConcurrentTaskChatOpensReuseOneAuthoritativeThread",
     { bead: "cave-22b4y", reason: "resolveProjectNavigation answers .pending until .projects has succeeded in the current generation, and openChat treats pending as failure.", expires: "2026-09-27" },
   ],

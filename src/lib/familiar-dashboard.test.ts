@@ -169,6 +169,108 @@ test("Now prefers a running human session over a running generated one", () => {
   });
   assert.equal(overview.now.kind, "session");
   assert.equal(overview.now.id, "chat-1");
+  assert.deepEqual(
+    overview.sessions.active.items.map((session) => session.id),
+    ["chat-1"],
+    "generated runs are not chat deep links",
+  );
+});
+
+test("Overview scopes and caps work and reminders without hiding blocker context", () => {
+  const tasks = Array.from({ length: 8 }, (_, index) => ({
+    id: `task-${index}`,
+    familiarId: "nova",
+    title: `Task ${index}`,
+    status: index === 0 ? "blocked" : "backlog",
+    priority: "high",
+    updatedAt: `2026-08-23T1${index}:00:00.000Z`,
+    dependencies: index === 0
+      ? [{ id: "dep-1", kind: "task", label: "Land the prerequisite", state: "unresolved" }]
+      : [],
+    primaryBlockerId: index === 0 ? "dep-1" : null,
+    nextStep: { summary: `Do step ${index}`, requiresApproval: false },
+  }));
+  const reminders = [
+    ...Array.from({ length: 7 }, (_, index) => ({
+      id: `reminder-${index}`,
+      kind: "reminder",
+      familiarId: "nova",
+      title: `Reminder ${index}`,
+      status: index === 0 ? "fired" : "pending",
+      fireAt: `2026-08-24T1${index}:00:00.000Z`,
+      updatedAt: "2026-08-23T12:00:00.000Z",
+    })),
+    { id: "other", kind: "reminder", familiarId: "sage", title: "Not Nova", status: "fired" },
+    { id: "agent", kind: "agent", familiarId: "nova", title: "Not a reminder", status: "fired" },
+  ];
+
+  const overview = buildFamiliarOverview({
+    sessions: [], memory: [], tasks, reminders, familiarId: "nova", presence: "active",
+  });
+  assert.equal(overview.tasks.items.length, FAMILIAR_DASHBOARD_LIMITS.assignedTasks);
+  assert.equal(overview.tasks.total, 8);
+  assert.equal(overview.reminders.items.length, FAMILIAR_DASHBOARD_LIMITS.reminders);
+  assert.equal(overview.reminders.total, 7);
+  const blocked = overview.tasks.items.find((task) => task.id === "task-0");
+  assert.equal(blocked?.primaryBlockerId, "dep-1");
+  assert.equal(blocked?.unresolvedDependencies.items[0]?.label, "Land the prerequisite");
+  assert.equal(blocked?.nextStep?.summary, "Do step 0");
+  assert.ok(overview.attention.items.some((item) => item.kind === "blocked"));
+  assert.ok(overview.attention.items.some((item) => item.kind === "fired_reminder"));
+});
+
+test("attention retains overflow targets for the native fallback rows", () => {
+  const tasks = Array.from({ length: 7 }, (_, index) => ({
+    id: `task-${index}`,
+    familiarId: "nova",
+    title: `Task ${index}`,
+    status: index === 6 ? "blocked" : "running",
+    priority: "high",
+    updatedAt: `2026-08-23T1${index}:00:00.000Z`,
+  }));
+  const reminders = Array.from({ length: 6 }, (_, index) => ({
+    id: `reminder-${index}`,
+    kind: "reminder",
+    familiarId: "nova",
+    title: `Reminder ${index}`,
+    status: index === 5 ? "fired" : "pending",
+    fireAt: `2026-08-24T${10 + index}:00:00.000Z`,
+    updatedAt: "2026-08-23T12:00:00.000Z",
+  }));
+
+  const overview = buildFamiliarOverview({
+    sessions: [], memory: [], tasks, reminders, familiarId: "nova", presence: "active",
+  });
+
+  assert.ok(!overview.tasks.items.some((task) => task.id === "task-6"));
+  assert.ok(!overview.reminders.items.some((reminder) => reminder.id === "reminder-5"));
+  assert.ok(overview.attention.items.some((item) => item.targetId === "task-6"));
+  assert.ok(overview.attention.items.some((item) => item.targetId === "reminder-5"));
+});
+
+test("generated sessions never enter the recent human-conversation list", () => {
+  const overview = buildFamiliarOverview({
+    sessions: [
+      { id: "generated", status: "completed", generated: true, updated_at: "2026-08-23T12:00:00Z" },
+      { id: "human", status: "completed", generated: false, updated_at: "2026-08-23T11:00:00Z" },
+    ],
+    memory: [],
+    presence: null,
+  });
+  assert.deepEqual(overview.sessions.recent.items.map((session) => session.id), ["human"]);
+  assert.equal(overview.sessions.recent.total, 1);
+});
+
+test("Now does not claim task work when session truth is unavailable", () => {
+  const overview = buildFamiliarOverview({
+    sessions: [], memory: [], familiarId: "nova", sessionsAvailable: false,
+    tasks: [{
+      id: "task", familiarId: "nova", title: "Queued task", status: "running",
+      nextStep: { summary: "Continue the task" },
+    }],
+    presence: null,
+  });
+  assert.deepEqual(overview.now, { kind: "unknown" });
 });
 
 test("bounded lists report the pre-cap total so a client knows what it is not seeing", () => {

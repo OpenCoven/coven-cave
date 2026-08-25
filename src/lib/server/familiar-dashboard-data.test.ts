@@ -64,6 +64,8 @@ function healthyDependencies(overrides = {}) {
     loadConfig: async () => CONFIG,
     resolveAvatar: async () => null,
     loadSessions: async () => ({ sessions: [], degraded: false }),
+    loadTasks: async () => [],
+    loadReminders: async () => [],
     loadMemory: async () => [],
     loadContract: async () => ({ properties: [], violations: [], warnings: [] }),
     loadSelfReports: async () => ({ reports: [], total: 0 }),
@@ -222,7 +224,17 @@ test("a degraded (daemon-down, local-only) session list is not reported as fresh
 // --- the positive `empty` ---------------------------------------------------
 
 test("healthy sources with nothing in them produce `empty` and ZERO issues", async () => {
-  const result = await load();
+  const result = await load({
+    loadRoster: async () => ({
+      ...ROSTER_OK,
+      roster: ROSTER_OK.roster.map((familiar) => ({ ...familiar, status: null })),
+    }),
+    loadConfig: async () => ({
+      ...CONFIG,
+      defaults: { harness: null, model: null },
+      familiars: { sage: {} },
+    }),
+  });
   assert.equal(result.outcome, "ok");
 
   const { overview, analytics } = result.response.sections;

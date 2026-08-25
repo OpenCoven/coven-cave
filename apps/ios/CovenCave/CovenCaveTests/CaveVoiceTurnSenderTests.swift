@@ -193,6 +193,7 @@ final class CaveVoiceTurnSenderTests: XCTestCase {
     func testCancellationAfterSessionBindingReturnsTheLatestBoundSessionWithoutReadingLateReplyFrames() async throws {
         var continuation: AsyncThrowingStream<CaveClient.StreamFrame, Error>.Continuation?
         var publishedSessionIds: [String] = []
+        let sessionBound = expectation(description: "session binding published")
         let sender = CaveVoiceTurnSender { _ in
             AsyncThrowingStream { streamContinuation in
                 continuation = streamContinuation
@@ -207,6 +208,7 @@ final class CaveVoiceTurnSenderTests: XCTestCase {
                 projectRoot: "/repos/alpha",
                 onSessionBound: { sessionId in
                     publishedSessionIds.append(sessionId)
+                    sessionBound.fulfill()
                 }
             )
         }
@@ -219,7 +221,7 @@ final class CaveVoiceTurnSenderTests: XCTestCase {
             id: 1
         ))
 
-        for _ in 0..<20 where publishedSessionIds.isEmpty { await Task.yield() }
+        await fulfillment(of: [sessionBound], timeout: 1)
         XCTAssertEqual(publishedSessionIds, ["session-late"])
 
         replyTask.cancel()
