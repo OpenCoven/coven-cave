@@ -5901,6 +5901,57 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
+    func testTaskLoadsRemainSingleFlightPerScopeWhenScopesInterleave() async {
+        let alpha = project("alpha", "Alpha")
+        let standaloneStarted = Gate()
+        let standaloneRelease = Gate()
+        let standaloneClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            tasks: [card("standalone-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: standaloneStarted,
+            taskRelease: standaloneRelease
+        )
+        let contextStarted = Gate()
+        let contextRelease = Gate()
+        let contextClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            sessions: [],
+            tasks: [card("context-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: contextStarted,
+            taskRelease: contextRelease
+        )
+        let app = makeApp(coreResourceClientFactory: { _ in standaloneClient })
+        _ = connect(app, host: "http://127.0.0.1:1")
+
+        let firstStandalone = Task { await app.loadTasks(using: standaloneClient) }
+        await standaloneStarted.wait()
+        let contextLoad = Task { await app.loadProjectContext(using: contextClient) }
+        await contextStarted.wait()
+
+        let thirdLoadStarted = expectation(description: "third task load started")
+        let secondStandalone = Task {
+            thirdLoadStarted.fulfill()
+            await app.loadTasks(using: standaloneClient)
+        }
+        await fulfillment(of: [thirdLoadStarted], timeout: 1)
+        await Task.yield()
+
+        await standaloneRelease.open()
+        await firstStandalone.value
+        await secondStandalone.value
+
+        let standaloneCalls = await standaloneClient.callLog.snapshot()
+        XCTAssertEqual(standaloneCalls.tasks, 1)
+
+        await contextRelease.open()
+        await contextLoad.value
+    }
+
+    @MainActor
     func testNewerStandaloneSessionsLoadWinsOverOlderSuccessfulSessionSnapshotFallback() async {
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")

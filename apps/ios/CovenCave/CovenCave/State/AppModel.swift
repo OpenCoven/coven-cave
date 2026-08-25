@@ -273,7 +273,7 @@ final class AppModel {
     }
 
     private struct CoordinatedLoadToken: Equatable {
-        enum Scope: Equatable {
+        enum Scope: Hashable {
             case standalone
             case projectContext
         }
@@ -291,10 +291,10 @@ final class AppModel {
         var nextRequestId: UInt64 = 0
         var freshest: CoordinatedLoadToken?
         var lastApplied: CoordinatedLoadToken?
-        var inFlight: (
+        var inFlightByScope: [CoordinatedLoadToken.Scope: (
             token: CoordinatedLoadToken,
             task: Task<CoordinatedLoadOutput<Value>, Never>
-        )?
+        )] = [:]
     }
 
     nonisolated static let projectContextStorageKeyPrefix = "cave.project-context.v2"
@@ -936,9 +936,8 @@ final class AppModel {
         token: CoordinatedLoadToken,
         task: Task<CoordinatedLoadOutput<Value>, Never>
     ) {
-        if let inFlight = state.inFlight,
-           inFlight.token.generation == generation,
-           inFlight.token.scope == scope {
+        if let inFlight = state.inFlightByScope[scope],
+           inFlight.token.generation == generation {
             return inFlight
         }
 
@@ -955,7 +954,7 @@ final class AppModel {
             )
         }
         let handle = (token: token, task: task)
-        state.inFlight = handle
+        state.inFlightByScope[scope] = handle
         return handle
     }
 
@@ -966,8 +965,9 @@ final class AppModel {
         ),
         state: inout CoordinatedLoadState<Value>
     ) {
-        guard state.inFlight?.token == handle.token else { return }
-        state.inFlight = nil
+        let scope = handle.token.scope
+        guard state.inFlightByScope[scope]?.token == handle.token else { return }
+        state.inFlightByScope.removeValue(forKey: scope)
     }
 
     private func coordinatedLoadShouldApply<Value>(
