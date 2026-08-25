@@ -475,6 +475,85 @@ struct FamiliarDashboardProfile: Decodable, Hashable, Sendable {
     var contract: ContractSummary?
 }
 
+/// Copy-only projection used by the native Profile surface.
+///
+/// Keeping absent-state decisions here makes them unit-testable and prevents
+/// individual rows from quietly disagreeing about whether nil means zero,
+/// inherited, or unavailable. Section failure is handled one level above this
+/// projection; values that reach these helpers were read successfully and are
+/// therefore either configured or truthfully absent.
+enum FamiliarProfilePresentation {
+    static let notSet = "Not set"
+
+    static func value(_ raw: String?) -> String {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return notSet }
+        return value
+    }
+
+    static func model(_ profile: FamiliarDashboardProfile) -> String {
+        value(profile.runtime.model)
+    }
+
+    static func modelSource(_ profile: FamiliarDashboardProfile) -> String {
+        switch profile.runtime.modelProvenance {
+        case "familiar": return "Familiar default"
+        case "coven_default": return "Coven default"
+        case "unconfigured": return "Runtime default"
+        default: return "Source unavailable"
+        }
+    }
+
+    static func runtime(_ profile: FamiliarDashboardProfile) -> String {
+        if let harness = profile.runtime.harness?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !harness.isEmpty { return harness }
+        if let fallback = profile.runtime.defaultHarness?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !fallback.isEmpty { return "\(fallback) (Coven default)" }
+        return notSet
+    }
+
+    static func voice(_ familiar: Familiar) -> String {
+        joined([
+            familiar.voiceProvider,
+            familiar.voiceModel,
+            familiar.voiceName,
+        ])
+    }
+
+    static func image(_ familiar: Familiar) -> String {
+        joined([
+            familiar.imageProvider,
+            familiar.imageModel,
+            familiar.imageSize,
+            familiar.imageQuality,
+        ])
+    }
+
+    static func memory(
+        _ section: FamiliarDashboardClientSection<FamiliarDashboardOverview>
+    ) -> String {
+        guard let memory = section.data?.memory else { return "Unavailable" }
+        guard let raw = memory.freshestAt, let date = caveParseISO(raw) else {
+            return memory.entries.total == 0 ? "No memory yet" : "Freshness unavailable"
+        }
+        let value = date.formatted(date: .abbreviated, time: .shortened)
+        return section.isStale ? "\(value) · stale" : value
+    }
+
+    static func contract(_ summary: FamiliarDashboardProfile.ContractSummary?) -> String {
+        guard let summary else { return notSet }
+        return "\(summary.propertiesPassed) of \(summary.propertiesTotal) checks passed"
+    }
+
+    private static func joined(_ values: [String?]) -> String {
+        let present = values.compactMap { raw -> String? in
+            let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        }
+        return present.isEmpty ? notSet : present.joined(separator: " · ")
+    }
+}
+
 struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
     struct Averages: Decodable, Hashable, Sendable {
         var overallConfidence: Double?

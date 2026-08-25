@@ -17,6 +17,16 @@ struct Familiar: Identifiable, Codable, Hashable {
     var avatarUrl: String?
     var activeSessions: Int?
     var memoryFreshness: String?
+    /// Profile/configuration fields published by GET /api/familiars. These
+    /// remain optional so a newer phone can still describe an older Cave
+    /// truthfully as "Not set" instead of failing the entire roster decode.
+    var familiarType: String? = nil
+    var note: String? = nil
+    var imageProvider: String? = nil
+    var imageModel: String? = nil
+    var imageSize: String? = nil
+    var imageQuality: String? = nil
+    var autoSelfReport: Bool? = nil
     /// Voice configuration published by Familiar Studio. All three remain
     /// optional so phones can decode familiars created before voice support.
     var voiceProvider: String? = nil
@@ -30,7 +40,9 @@ struct Familiar: Identifiable, Codable, Hashable {
         case avatarUrl
         case activeSessions = "active_sessions"
         case memoryFreshness = "memory_freshness"
+        case familiarType, note
         case voiceProvider, voiceModel, voiceName
+        case imageProvider, imageModel, imageSize, imageQuality, autoSelfReport
     }
 }
 
