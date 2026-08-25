@@ -32,6 +32,31 @@ export function cronHealth(
   return "healthy";
 }
 
+/**
+ * The last-run cell's leading verb.
+ *
+ * `Rituals Redesign.dc.html`'s companion spec (`Scheduling Spec.dc.html`, §2)
+ * files the bare timestamp as a P1: *"'Run Jul 9' — ambiguous (last run? next
+ * run?) and red without saying why"*, and prescribes **verb + state** —
+ * "ran today, 08:30" / "failed · Aug 13". A cell that only says "Run" leaves
+ * the reader guessing which direction in time they are looking, and colours it
+ * red without ever naming the failure.
+ *
+ * The verbs stay honest about what the store actually holds: `automation-runs
+ * .json` records app-triggered runs only, so "ran" means the newest run this
+ * app recorded, not a claim about the daemon's schedule.
+ */
+export function cronRunVerb(health: CronHealth): string {
+  switch (health) {
+    case "running":
+      return "running";
+    case "failed":
+      return "failed";
+    default:
+      return "ran";
+  }
+}
+
 /** Short status word for the row's `role="img"` label and the detail header. */
 export function cronHealthLabel(health: CronHealth): string {
   switch (health) {
