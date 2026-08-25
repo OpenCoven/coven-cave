@@ -13,9 +13,10 @@ const activityCss = read("../styles/cave-chat/activity.css");
 
 assert.match(
   source,
-  /className="cave-composer-mode-switch" role="group" aria-label="Access mode"[\s\S]*?aria-pressed=\{permissionMode === "read"\}[\s\S]*?setPermissionMode\("read"\)[\s\S]*?<span>Explore<\/span>[\s\S]*?aria-pressed=\{permissionMode === "full"\}[\s\S]*?setPermissionMode\("full"\)[\s\S]*?<span>Build<\/span>/,
-  "the composer exposes the two enforceable access modes as a direct segmented control",
+  /const composerResponseSections:[\s\S]*?id:\s*"access"[\s\S]*?label:\s*"Access"[\s\S]*?value:\s*permissionMode[\s\S]*?value:\s*"read",\s*label:\s*"Explore · read only"[\s\S]*?value:\s*"full",\s*label:\s*"Build · full access"[\s\S]*?setPermissionMode\(value\)/,
+  "the functional access modes live in the low-profile Response options surface",
 );
+assert.doesNotMatch(source, /cave-composer-mode-switch|cave-composer-mode-option/, "access mode should not consume the composer command rail");
 assert.match(
   source,
   /className="cave-composer-send cave-composer-send--busy[\s\S]*?<span>esc · stop<\/span>/,
@@ -33,14 +34,10 @@ assert.match(
 );
 assert.match(
   css,
-  /\.cave-composer-mode-switch \{[\s\S]*?display:\s*inline-flex;[\s\S]*?border:\s*1px solid var\(--border-strong\);/,
-  "access modes share one compact segmented-control outline",
+  /\.cave-composer-control-row \{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+  "the command rail gives context the flexible column and actions only their intrinsic width",
 );
-assert.match(
-  css,
-  /\.cave-composer-mode-option\[aria-pressed="true"\] \{[\s\S]*?border-color:\s*var\(--accent-presence\);[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\);/,
-  "the active access mode uses the design-system accent recipe",
-);
+assert.doesNotMatch(css, /\.cave-composer-mode-switch|\.cave-composer-mode-option/, "retired access switch CSS should stay removed");
 assert.match(
   activityCss,
   /--cave-chat-measure:\s*64rem;/,

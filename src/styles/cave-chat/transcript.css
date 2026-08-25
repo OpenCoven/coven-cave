@@ -686,11 +686,18 @@
 .cave-chat-linear .cave-composer-panel {
   border-radius: var(--radius-panel);
   border-color: var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 92%, var(--bg-panel));
-  backdrop-filter: none;
+  background: color-mix(in oklch, var(--bg-raised) 88%, var(--bg-base));
+  backdrop-filter: blur(18px) saturate(115%);
   box-shadow:
-    0 var(--space-4) var(--space-10) color-mix(in oklch, var(--bg-panel) 64%, transparent),
+    0 12px 32px color-mix(in oklch, var(--bg-panel) 52%, transparent),
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .cave-chat-linear .cave-composer-panel {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+  }
 }
 
 .cave-chat-linear .cave-composer-panel:focus-within {
@@ -720,14 +727,10 @@
   height: var(--space-8);
 }
 
-/* The governing control-row height for the chat surface — two classes deep, so
-   it beats the one-class rule in cave-composer.css (cave-9v4qt).
-   Left at 36px deliberately. Lowering it to 32 was measured and changed
-   nothing: the row's CONTENT (send button, mic, mode pill) renders 38px tall,
-   so min-height is not the binding constraint and shrinking it is a no-op.
-   Anyone shortening this row has to shrink those controls, not this number. */
+/* The direct access switch moved into Tools → Response options, so the
+   remaining icon controls can set the command rail's compact floor. */
 .cave-chat-linear .cave-composer-control-row {
-  min-height: calc(var(--space-8) + var(--space-1));
+  min-height: var(--space-8);
 }
 
 .cave-chat-linear .cave-composer-send {

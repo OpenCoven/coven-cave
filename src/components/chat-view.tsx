@@ -295,6 +295,7 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
+  DEFAULT_PERMISSION_MODE,
   normalizeCommandControls,
   type CommandPermissionMode,
   type CommandResponseSpeed,
@@ -3757,6 +3758,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   const composerResponseSections: ComposerOptionSection[] = [
+    {
+      id: "access",
+      label: "Access",
+      value: permissionMode,
+      options: [
+        { value: "read", label: "Explore · read only" },
+        { value: "full", label: "Build · full access" },
+      ],
+      onChange: (value: string) => {
+        if (value === "read" || value === "full") setPermissionMode(value);
+      },
+    },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
       ? [{
           id: "model",
@@ -7654,6 +7667,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     saveAsTemplateDisabled: !input.trim(),
                     indicator:
                       composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
@@ -7819,28 +7833,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <div className="cave-composer-mode-switch" role="group" aria-label="Access mode">
-                    <button
-                      type="button"
-                      className="cave-composer-mode-option focus-ring"
-                      aria-pressed={permissionMode === "read"}
-                      onClick={() => setPermissionMode("read")}
-                      title="Explore — read only"
-                    >
-                      <Icon name="ph:globe" width="var(--icon-md)" aria-hidden />
-                      <span>Explore</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="cave-composer-mode-option focus-ring"
-                      aria-pressed={permissionMode === "full"}
-                      onClick={() => setPermissionMode("full")}
-                      title="Build — full access"
-                    >
-                      <Icon name="ph:flask" width="var(--icon-md)" aria-hidden />
-                      <span>Build</span>
-                    </button>
-                  </div>
                   <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
                     {busy && (input.trim() || attachments.length > 0) ? (
@@ -8979,26 +8971,24 @@ const TranscriptRows = memo(function TranscriptRows({
     );
   });
   if (fold.hiddenTurns === 0) return rows;
-  // The pill leads the transcript in both states: closed it names what is
-  // hidden, open it names the way back. The two rules make it read as a seam
-  // in the conversation rather than as a toolbar.
+  // The fold leads the transcript in both states: closed it names what is
+  // hidden, open it names the way back. The visual stays one full-width seam;
+  // the count remains available through its accessible name and title.
   return [
     <div key="__chat-fold" className="cave-chat-fold">
-      <span aria-hidden className="cave-chat-fold__rule" />
       <button
         type="button"
-        className="cave-chat-fold__pill focus-ring"
+        className="cave-chat-fold__trigger focus-ring"
         aria-expanded={foldOpen}
         aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
+        title={chatFoldLabel(fold.hiddenTurns, foldOpen)}
         onClick={onToggleFold}
       >
         {/* The caret's direction is driven off the button's own aria-expanded,
             not a data-prop on the Icon: Icon only forwards aria-* / role, so a
             data attribute here is silently dropped and the caret never turns. */}
         <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
-        {chatFoldLabel(fold.hiddenTurns, foldOpen)}
       </button>
-      <span aria-hidden className="cave-chat-fold__rule" />
     </div>,
     ...rows,
   ];

@@ -357,8 +357,8 @@ export function TaskWorkCockpit({
             </span>
           </div>
         )}
-        {/* Collapsed code rail: a full-height reopen rail on the cockpit's
-            right edge, mirroring the chat surface. It must sit INSIDE the body
+        {/* Collapsed code rail: the same transparent pull tab as Chat. It must
+            sit INSIDE the body
             row — the cockpit root is a flex column, so as a root child the
             rail collapsed into a 44px stub in the bottom-left corner under the
             composer instead of a full-height edge rail. In flow here it
@@ -375,8 +375,9 @@ export function TaskWorkCockpit({
             className="workspace-rail-reopen focus-ring"
             onClick={railController.rail.reopen}
           >
-            <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-            <span className="workspace-rail-reopen__label">Code</span>
+            <span className="workspace-rail-reopen__tab" aria-hidden>
+              <Icon name="ph:caret-left" width={10} aria-hidden />
+            </span>
           </button>
         ) : null}
       </div>

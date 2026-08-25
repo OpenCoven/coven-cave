@@ -68,7 +68,7 @@
    lives in transcript.css; change it there. */
 .cave-composer-control-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
   color: var(--text-muted);
@@ -84,62 +84,6 @@
 
 .cave-composer-submit-row {
   justify-content: flex-end;
-}
-
-.cave-composer-mode-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ring-offset);
-  padding: var(--ring-offset);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
-}
-
-.cave-composer-mode-option {
-  display: inline-flex;
-  min-width: var(--space-8);
-  height: var(--space-8);
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  padding-inline: var(--space-2);
-  border: 1px solid transparent;
-  border-radius: calc(var(--radius-control) - var(--ring-offset));
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.cave-composer-mode-option span {
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  white-space: nowrap;
-  transition:
-    max-width var(--duration-fast) var(--ease-standard),
-    opacity var(--duration-fast) var(--ease-standard);
-}
-
-.cave-composer-mode-option:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.cave-composer-mode-option[aria-pressed="true"] {
-  border-color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  color: var(--text-primary);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 28%, transparent);
-}
-
-.cave-composer-mode-option[aria-pressed="true"] span {
-  max-width: 5rem;
-  opacity: 1;
 }
 
 .cave-composer-edge-actions {
@@ -1070,7 +1014,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hc-mic-live { animation: none; }
-  .cave-composer-mode-option span { transition: none; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

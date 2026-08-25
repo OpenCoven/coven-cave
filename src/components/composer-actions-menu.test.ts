@@ -100,8 +100,13 @@ assert.match(
 );
 assert.match(
   actions,
-  /<PopoverSubmenu icon="ph:gear-six" label="Response options"/,
-  "Response options is a cascade flyout carrying host/access/model/thinking/speed",
+  /<PopoverSubmenu icon="ph:gear-six" label="Response options" minWidth=\{300\} panelRole="dialog"/,
+  "Response options is a dialog flyout carrying host/access/model/thinking/speed",
+);
+assert.match(
+  popover,
+  /aria-haspopup=\{panelRole\}[\s\S]*?role=\{panelRole\}/,
+  "submenus expose their configured popup semantics on both trigger and panel",
 );
 assert.match(
   actions,

@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
+const caveChatAux = await readFile(new URL("../styles/cave-chat/auxiliary-surfaces.css", import.meta.url), "utf8");
 const caveChat = (
   await Promise.all(
     ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
@@ -69,35 +70,30 @@ assert.match(
 );
 
 // The rail participates in layout (content beside it, never underneath):
-// it must NOT be absolutely positioned, and it reserves its own width.
+// it must NOT be absolutely positioned, and it reserves only a pull-tab width.
 assert.match(
-  caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 32px;/,
-  "the reopen rail reserves an ultra-minimal in-flow layout width",
+  caveChatAux,
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 14px;[\s\S]{0,300}?background:\s*transparent;/,
+  "the reopen rail reserves a transparent ultra-minimal in-flow pull-tab width",
 );
 assert.doesNotMatch(
-  caveChat,
+  caveChatAux,
   /\.workspace-rail-reopen \{[\s\S]{0,900}?position: absolute;/,
   "the reopen rail must not overlay content (no absolute positioning)",
 );
 
-// Label orientation: reads top→bottom with the glyph face to the
-// right/outside (vertical-rl) — mirroring the left rail's vocabulary.
-assert.match(
-  caveChat,
-  /\.workspace-rail-reopen__label \{\s*writing-mode: vertical-rl;/,
-  "the rail label reads downward with its face to the right/outside",
-);
+assert.doesNotMatch(chatSurface, /workspace-rail-reopen__label|>Code</, "the pull tab has no persistent vertical label");
+assert.match(chatSurface, /workspace-rail-reopen__tab[\s\S]{0,200}?ph:caret-left/, "the pull tab uses a quiet inward caret");
 
 // The rail carries the left panel's glass (with honest fallbacks).
 assert.match(
-  caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?color-mix\(in oklch, var\(--bg-raised\) 88%, transparent\)[\s\S]{0,200}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
-  "the rail wears the same glass as the left sidebar",
+  caveChatAux,
+  /\.workspace-rail-reopen:hover \.workspace-rail-reopen__tab,[\s\S]*?\.workspace-rail-reopen:focus-visible \.workspace-rail-reopen__tab[\s\S]{0,500}?color-mix\(in oklch, var\(--bg-raised\) 82%, transparent\)[\s\S]{0,300}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
+  "the pull tab reveals glass only on hover or keyboard focus",
 );
 assert.match(
-  caveChat,
-  /@media \(prefers-reduced-transparency: reduce\) \{\s*\.workspace-rail-reopen \{/,
+  caveChatAux,
+  /@media \(prefers-reduced-transparency: reduce\) \{\s*\.workspace-rail-reopen:hover \.workspace-rail-reopen__tab,/,
   "rail glass respects reduced transparency",
 );
 

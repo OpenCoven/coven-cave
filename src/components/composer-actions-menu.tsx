@@ -245,7 +245,7 @@ export function ComposerActionsMenu({
                     onSelect={() => openContextPicker("branch")}
                   />
                 ) : null}
-                <PopoverSubmenu icon="ph:gear-six" label="Response options" minWidth={300}>
+                <PopoverSubmenu icon="ph:gear-six" label="Response options" minWidth={300} panelRole="dialog">
                   <ResponseSections
                     hostValue={response.hostValue}
                     hostOptions={hostOptions}
