@@ -1,0 +1,137 @@
+/* Live run card — the visible half of an app-triggered cron run.
+
+   Component-imported by live-run-card.tsx, NOT on the globals.css facade: the
+   root CSS bundle every route downloads has no headroom, and this is a
+   dialog-gated surface. See the CSS section in CLAUDE.md. */
+
+.live-run-card {
+  position: fixed;
+  z-index: 60;
+  right: var(--space-4);
+  bottom: var(--space-8);
+  display: flex;
+  width: 340px;
+  max-width: calc(100vw - var(--space-8));
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 40px color-mix(in oklch, var(--shadow-color) 52%, transparent);
+}
+
+.live-run-card--running {
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
+}
+
+.live-run-card--failed {
+  border-color: color-mix(in oklch, var(--color-danger) 40%, var(--border-hairline));
+}
+
+.live-run-card__mark {
+  display: grid;
+  flex: none;
+  padding-top: 2px;
+  place-items: center;
+}
+
+.live-run-card--succeeded .live-run-card__mark {
+  color: var(--color-success);
+}
+
+.live-run-card--failed .live-run-card__mark {
+  color: var(--color-danger);
+}
+
+.live-run-card__pulse {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  animation: liveRunPulse 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes liveRunPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+
+  55% {
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent-presence) 0%, transparent);
+  }
+}
+
+/* The pulse is the only thing moving, and it carries no information the
+   headline does not already state in words. */
+@media (prefers-reduced-motion: reduce) {
+  .live-run-card__pulse {
+    animation: none;
+  }
+}
+
+.live-run-card__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-run-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.live-run-card__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-run-card__elapsed {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-run-card__headline {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.live-run-card--failed .live-run-card__headline {
+  color: var(--color-danger);
+}
+
+.live-run-card__summary {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-run-card__link {
+  flex: none;
+  align-self: center;
+  border: 0;
+  background: none;
+  color: var(--accent-presence);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.live-run-card__dismiss {
+  flex: none;
+}
