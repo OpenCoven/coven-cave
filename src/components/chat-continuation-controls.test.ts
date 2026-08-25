@@ -8,6 +8,8 @@ const read = (relativePath: string) =>
 
 const source = read("./chat-view.tsx");
 const styles = read("../styles/cave-chat/session-chrome.css");
+const railStyles = read("../styles/cave-chat/auxiliary-surfaces.css");
+const transcriptStyles = read("../styles/cave-chat/transcript.css");
 
 const foldStart = source.indexOf('<div key="__chat-fold" className="cave-chat-fold">');
 const foldEnd = source.indexOf("</div>", foldStart);
@@ -28,5 +30,20 @@ assert.match(
 );
 assert.match(styles, /\.cave-chat-fold__trigger::before,[\s\S]*?\.cave-chat-fold__trigger::after/);
 assert.doesNotMatch(styles, /\.cave-chat-fold__pill|\.cave-chat-fold__rule/, "the oversized pill treatment stays removed");
+assert.match(
+  styles,
+  /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.cave-chat-fold__trigger,[\s\S]*?\.cave-chat-fold__trigger::before,[\s\S]*?\.cave-chat-fold__trigger::after[\s\S]*?transition:\s*none;/,
+  "the fold seam disables every hover and caret transition for reduced motion",
+);
+assert.match(
+  railStyles,
+  /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.workspace-rail-reopen__tab[\s\S]*?transition:\s*none;/,
+  "the Code pull tab does not expand with animation for reduced motion",
+);
+assert.match(
+  transcriptStyles,
+  /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*?\.cave-chat-linear \.cave-composer-panel[\s\S]*?background:\s*var\(--bg-raised\);[\s\S]*?backdrop-filter:\s*none;/,
+  "the chat composer becomes opaque and drops blur for reduced transparency",
+);
 
 console.log("chat-continuation-controls.test.ts OK");

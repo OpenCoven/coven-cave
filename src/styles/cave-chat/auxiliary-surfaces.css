@@ -1025,6 +1025,11 @@
     backdrop-filter: none;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-rail-reopen__tab {
+    transition: none;
+  }
+}
 
 /* ── Chat Settings tab (chat surface → Settings scope) ───────────────────────
    Settings.dc.html redesign: page column, kicker + hint over one bordered

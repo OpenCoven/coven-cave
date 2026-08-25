@@ -532,6 +532,9 @@
   transform: rotate(180deg);
 }
 @media (prefers-reduced-motion: reduce) {
+  .cave-chat-fold__trigger,
+  .cave-chat-fold__trigger::before,
+  .cave-chat-fold__trigger::after,
   .cave-chat-fold__caret {
     transition: none;
   }
