@@ -13,6 +13,16 @@ export const CLIENT_V1_HPKE_AUTHORITY_MODES = Object.freeze([
   "enforce",
 ] as const);
 
+export const CLIENT_V1_HPKE_PROTECTED_OPERATIONS = Object.freeze([
+  "pairing.poll",
+  "pairing.exchange",
+  "familiars.list",
+  "projects.list",
+  "conversations.list",
+  "conversations.read",
+  "messages.list",
+] as const);
+
 export type ClientV1AuthorityMode =
   (typeof CLIENT_V1_HPKE_AUTHORITY_MODES)[number];
 
@@ -78,6 +88,36 @@ export const CLIENT_V1_HPKE_FRESHNESS = Object.freeze({
   replayTtlMs: 120_000,
   replayCapacity: 4_096,
 } as const);
+
+export const CLIENT_V1_AUTHORITY_CONTRACT = Object.freeze({
+  defaultMode: "off",
+  modes: CLIENT_V1_HPKE_AUTHORITY_MODES,
+  mechanism: Object.freeze({
+    id: CLIENT_V1_HPKE_MECHANISM,
+    discoveryVersion: 2,
+    suite: CLIENT_V1_HPKE_SUITE,
+    requestHeaders: CLIENT_V1_HPKE_HEADERS,
+    responseMediaType: CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+    requestHpkeMode: "base",
+    responseHpkeMode: "auth",
+    requestEncoding: "headers-plus-rfc8785-json",
+    aadEncoding: "u32be-length-prefixed-v1",
+    canonicalRoute: "rfc3986-sorted-query-v1",
+    keyIdDerivation: "sha256-domain-separated-public-key-v1",
+    requestInfo: "OpenCoven/client-v1/hpke-bound-v1/request",
+    responseInfo: "OpenCoven/client-v1/hpke-bound-v1/response",
+    limits: CLIENT_V1_HPKE_LIMITS,
+    freshness: CLIENT_V1_HPKE_FRESHNESS,
+    protectedOperations: CLIENT_V1_HPKE_PROTECTED_OPERATIONS,
+    vectorFixture: Object.freeze({
+      fileName: "hpke-bound-v1-vectors.json",
+      sha256FileName: "hpke-bound-v1-vectors.sha256",
+    } as const),
+  } as const),
+} as const);
+
+export type ClientV1AuthorityContract =
+  typeof CLIENT_V1_AUTHORITY_CONTRACT;
 
 export type ClientV1HpkeBinding = {
   method: string;

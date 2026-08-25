@@ -279,7 +279,7 @@ test("serves one operation per method and path", () => {
   }
 });
 
-test("renders pre-publication JSON-safe records for the generated fixture", () => {
+test("renders public JSON-safe records for the generated fixture", () => {
   const records = clientV1OperationRecords();
   assert.equal(records.length, CLIENT_V1_OPERATION_DEFINITIONS.length);
   assert.deepEqual(records[0], {
@@ -288,6 +288,8 @@ test("renders pre-publication JSON-safe records for the generated fixture", () =
     path: "/api/client/v1/health",
     ingress: "public",
     scope: null,
+    credential: "none",
+    binding: "none",
     families: ["health"],
   });
   assert.deepEqual(records.at(-1), {
@@ -296,6 +298,8 @@ test("renders pre-publication JSON-safe records for the generated fixture", () =
     path: "/api/client/v1/conversations/:id/messages",
     ingress: "authenticated",
     scope: "chat:read",
+    credential: "bearer",
+    binding: "hpke-bound-v1",
     families: ["conversation-messages", "cursors"],
   });
   // A copy, not the frozen registry: the fixture builder mutates nothing, but a
@@ -304,19 +308,19 @@ test("renders pre-publication JSON-safe records for the generated fixture", () =
   assert.deepEqual(clientV1OperationRecords()[0].families, ["health"]);
 });
 
-test("keeps credential and binding out of pre-publication manifest records", () => {
-  for (const record of clientV1OperationRecords()) {
-    assert.equal(
-      Object.hasOwn(record, "credential"),
-      false,
-      `${record.id}: credential must remain internal until Task 7`,
-    );
-    assert.equal(
-      Object.hasOwn(record, "binding"),
-      false,
-      `${record.id}: binding must remain internal until Task 7`,
-    );
-  }
+test("publishes credential and binding on every manifest record", () => {
+  assert.deepEqual(
+    clientV1OperationRecords().map(({ id, credential, binding }) => ({
+      id,
+      credential,
+      binding,
+    })),
+    CLIENT_V1_OPERATION_DEFINITIONS.map(({ id, credential, binding }) => ({
+      id,
+      credential,
+      binding,
+    })),
+  );
 });
 
 test("resolves an operation by id and refuses an unknown one", () => {

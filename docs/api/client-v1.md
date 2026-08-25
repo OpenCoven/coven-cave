@@ -13,9 +13,10 @@ that let the Cave's own settings UI see and decide those requests, and **five
 canonical reads** a bearer actually opens — familiars, projects, conversations,
 one conversation, and that conversation's messages.
 
-Every read is a `GET`, requires the `chat:read` scope, and is paged with an
-opaque cursor. **Everything else is still unbuilt**: there is no write route, no
-streaming route, no attachment route, and the other five scopes
+Every read is a `GET` and requires the `chat:read` scope. The four list reads
+are paged with an opaque cursor; `conversations.read` returns one record and
+rejects paging parameters. **Everything else is still unbuilt**: there is no
+write route, no streaming route, no attachment route, and the other five scopes
 (`chat:write`, `conversations:write`, `attachments:write`, `tasks:write`,
 `github:write`) are recorded on a credential and read by nothing.
 
@@ -33,8 +34,10 @@ handling are visible at all.
 | Concern | Authority |
 |---|---|
 | Versions, scopes, capabilities, operation ids, error codes, limits, public-route list | [`src/lib/server/client-v1/contract.ts`](../../src/lib/server/client-v1/contract.ts) |
-| Which method, path, authority and scope each operation names | [`src/lib/server/client-v1/operations.ts`](../../src/lib/server/client-v1/operations.ts) |
+| HPKE modes, suite, headers, bounds, freshness, protected operations, and vector filenames | [`src/lib/server/client-v1/authority-contract.ts`](../../src/lib/server/client-v1/authority-contract.ts) |
+| Which method, path, authority, credential, binding, and scope each operation names | [`src/lib/server/client-v1/operations.ts`](../../src/lib/server/client-v1/operations.ts) |
 | Byte-pinned export of all of the above, plus example envelopes | [`contract-fixture.json`](../../src/lib/server/client-v1/contract-fixture.json) and its `.sha256` |
+| Normative deterministic HPKE handoff bytes | [`hpke-bound-v1-vectors.json`](../../src/lib/server/client-v1/hpke-bound-v1-vectors.json) and [`hpke-bound-v1-vectors.sha256`](../../src/lib/server/client-v1/hpke-bound-v1-vectors.sha256) |
 | Who may reach which route, and from where | [`src/proxy.ts`](../../src/proxy.ts) and [`src/proxy-helpers.ts`](../../src/proxy-helpers.ts) |
 | Per-route request and response shapes | the thirteen `route.ts` files under `src/app/api/client/v1/` |
 | Storage, lifetimes, hashing | `pairing-store.ts`, `credential-store.ts`, `instance-id.ts` |
@@ -53,6 +56,298 @@ undocumented. It also compares the operation table in *Capability discovery*
 against the fixture record by record, so a method, path or authority class that
 moves fails here rather than leaving a client author reading a table that
 describes a previous build.
+
+## HPKE-bound credential authority
+
+Client v1 can carry the pairing secret or bearer inside an HPKE request and
+authenticate the response from the same discovered Cave runtime. The mechanism
+identifier is exactly `hpke-bound-v1`.
+
+This is an additive, default-off compatibility contract. The default mode remains `off`;
+`off` is not deprecated. Existing v1 clients keep using the v1
+discovery record and plaintext credential headers unless an operator explicitly
+selects an active mode. This publication does not claim that enforcement is
+live or the production default.
+
+### Discovery versions and modes
+
+Discovery always uses `client-v1-discovery.json` with owner-only mode `0600`.
+The discovery contract itself remains version `1` and declares
+`hpkeBoundVersion: 2`:
+
+- discovery record v1 contains `version`, `endpoint`, `pid`, `nonce`, and
+  `startedAt`;
+- discovery record v2 contains those fields plus public `authority` metadata:
+  `mechanism`, `mode`, `keyId`, `publicKey`, and the three numeric suite IDs.
+
+`nonce`, `keyId`, and `publicKey` in v2 are canonical unpadded base64url
+encodings of exactly 32 bytes. A v2 record and every generated contract
+artifact must not contain `privateKey`, `secretKey`, `senderKey`, or
+`recipientPrivateKey`.
+
+| Mode | Discovery | Missing marker on a protected operation | Present marker |
+|---|---|---|---|
+| `off` | v1 | Legacy plaintext behavior | The authority wrapper is inactive; compatibility behavior is unchanged. |
+| `advertise` | v2 | Legacy plaintext behavior, but only while the boot authority is available | Exact `hpke-bound-v1` is opened and Auth-sealed. Once any marker is present, advertise mode never falls back to plaintext. |
+| `enforce` | v2 | Plaintext `426 incompatible_version` with `hpke_binding_required` | Exact `hpke-bound-v1` is required and opened; any other value is invalid. |
+
+In either active mode, unavailable boot key material returns plaintext
+`503 service_unavailable` with `authority_unavailable` before credential
+parsing, replay/rate-limit charging, store access, or a route callback. It is
+not equivalent to `off`. An active mode publishes v2 only when the boot
+authority was created successfully.
+
+### Suite and key identity
+
+| Component | Name | Numeric ID |
+|---|---|---:|
+| KEM | `DHKEM(X25519, HKDF-SHA256)` | `32` (`0x0020`) |
+| KDF | `HKDF-SHA256` | `1` (`0x0001`) |
+| AEAD | `AES-256-GCM` | `2` (`0x0002`) |
+
+The runtime derives its 32-byte key ID once at boot:
+the manifest names this rule
+`sha256-domain-separated-public-key-v1`.
+
+```text
+SHA-256(
+  UTF8("OpenCoven/client-v1/hpke-bound-v1/key-id\0")
+  || SerializePublicKey(runtimeRecipientPublicKey)
+)
+```
+
+Discovery publishes the canonical unpadded base64url result. Every process
+creates a fresh X25519 keypair and therefore a fresh key ID, even though the
+installation `instanceId` remains stable.
+
+### Request headers and exact bounds
+
+Every bound request carries these exact headers:
+
+| Field | Header |
+|---|---|
+| mechanism | `x-coven-client-v1-authority` |
+| key ID | `x-coven-client-v1-authority-key-id` |
+| instance ID | `x-coven-client-v1-authority-instance` |
+| runtime nonce | `x-coven-client-v1-authority-runtime-nonce` |
+| request nonce | `x-coven-client-v1-authority-request-nonce` |
+| issued at | `x-coven-client-v1-authority-issued-at` |
+| encapsulated key | `x-coven-client-v1-authority-enc` |
+| ciphertext | `x-coven-client-v1-authority-ciphertext` |
+
+The mechanism is exact ASCII `hpke-bound-v1`. Key ID, runtime nonce, request
+nonce, and encapsulated key are canonical unpadded base64url of 32 bytes and
+therefore 43 characters. The instance header is canonical base64url of the
+UTF-8 `instanceId`, with a decoded length of 1 through 256 bytes. `issuedAt` is
+1 through 16 decimal epoch-millisecond digits, with no sign or leading zero,
+and must be a safe positive integer. Ciphertext is canonical base64url of
+16 through 2048 decoded bytes.
+
+| Bound | Exact value |
+|---|---:|
+| raw key bytes | `32` |
+| encoded key characters | `43` |
+| request plaintext bytes | `1024` |
+| request ciphertext bytes | `2048` |
+| request body bytes | `65536` |
+| response plaintext bytes | `8388608` |
+| response ciphertext bytes | `8388624` |
+| response envelope bytes | `11185056` |
+| canonical route bytes | `2048` |
+| instance id bytes | `256` |
+| maximum age milliseconds | `60000` |
+| maximum future skew milliseconds | `10000` |
+| replay TTL milliseconds | `120000` |
+| replay capacity | `4096` |
+
+The route's ordinary body remains outside the credential plaintext. Cave reads
+at most 65,536 exact body bytes, hashes those bytes with SHA-256, and
+reconstructs the request for the route. All seven currently protected
+operations require an empty body.
+
+### Canonical route and binary AAD
+
+The canonical route mode is `rfc3986-sorted-query-v1`. Cave takes the actual
+request URL, refuses `%` or `\` in the pathname, decodes query names and values
+with `URLSearchParams`, then RFC 3986-encodes each component with uppercase hex,
+`%20` for spaces, and escaping for `!'()*`. Each name and value is encoded before sorting.
+The already-encoded ASCII pairs are sorted by encoded name and
+then encoded value using byte/code-unit order, joined with `=` and `&`, and
+never encoded a second time.
+
+AAD uses `u32be-length-prefixed-v1`, not JSON. Every variable field is a
+four-byte unsigned big-endian byte length followed by its bytes; `issuedAt` is
+first encoded as unsigned 64-bit big-endian and then framed like the others.
+Request AAD is:
+
+```text
+UTF8("OpenCoven/client-v1/hpke-bound-v1/aad/request\0")
+|| frame(ASCII(uppercase method))
+|| frame(UTF8(canonical route))
+|| frame(SHA-256(exact request body))
+|| frame(UTF8(decoded instanceId))
+|| frame(runtime nonce bytes)
+|| frame(key ID bytes)
+|| frame(request nonce bytes)
+|| frame(uint64be(issuedAt))
+```
+
+Response AAD uses the same fields and order with
+`OpenCoven/client-v1/hpke-bound-v1/aad/response\0`. Host, port, PID, and timing
+alone are not authority. The response AAD is rebuilt from the stored request
+binding, never from untrusted outer response fields.
+
+### Canonical plaintext and HPKE direction
+
+The request encoding is `headers-plus-rfc8785-json`. The Base-mode request
+plaintext is RFC 8785 JCS UTF-8 with exactly these properties:
+
+```json
+{
+  "version": 1,
+  "authorization": {
+    "kind": "pairing-secret",
+    "value": "<existing pairing secret parser>"
+  },
+  "responsePublicKey": "<fresh 32-byte X25519 public key, base64url>"
+}
+```
+
+`authorization.kind` is exactly `pairing-secret` or `bearer`. The bearer keeps
+its existing 512-character maximum. Unknown/missing properties, noncanonical
+JSON bytes, a wrong key length, and duplicate plaintext credential headers are
+rejected.
+
+The Cave opens requests in RFC 9180 Base mode with:
+
+```text
+OpenCoven/client-v1/hpke-bound-v1/request
+```
+
+The response plaintext is RFC 8785 JCS UTF-8 with exactly:
+
+```json
+{
+  "version": 1,
+  "requestNonce": "<the request nonce>",
+  "status": 200,
+  "headers": {
+    "contentType": "application/json",
+    "retryAfter": "optional authenticated seconds"
+  },
+  "body": "<base64url of the exact inner Client v1 response bytes>"
+}
+```
+
+Only `content-type` and optional `retry-after` cross the wrapper. The Cave seals
+that plaintext in RFC 9180 Auth mode with:
+
+```text
+OpenCoven/client-v1/hpke-bound-v1/response
+```
+
+The outer status is always 200 after a successful request open, with media type
+`application/vnd.opencoven.client-v1.hpke-bound-v1+json` and `Cache-Control:
+no-store`. Application semantics come only from the authenticated inner status
+and body.
+
+The outer JSON envelope has exactly `version: 1`, `mechanism:
+"hpke-bound-v1"`, `keyId`, `requestNonce`, `enc`, and `ciphertext`. Before
+opening it, the client compares mechanism, key ID, and request nonce with its
+outstanding request, then uses only `enc` and `ciphertext` as HPKE inputs. A
+forged envelope cannot choose the identity or AAD used to verify itself.
+
+One per-runtime X25519 keypair safely serves as the Base-mode recipient for
+requests and the Auth-mode sender for responses. RFC 9180 includes a different
+mode byte in each key schedule (`0x00` Base versus `0x02` Auth); request and
+response have distinct `info` strings and AAD domains; and each open/seal uses
+a separate one-direction context with a fresh peer ephemeral or response key.
+No AEAD context, sequence number, key, or nonce is reused. The private key is
+never serialized or used outside HPKE.
+
+### Freshness, replay, capacity, and process ownership
+
+`issuedAt` is accepted inclusively from 60 seconds old through 10 seconds in
+the future. The request nonce is 32 random bytes. After a successful open and
+canonical validation, Cave synchronously reserves `keyId:requestNonce` for 120
+seconds before any credential parser, store, rate limiter, read source, or
+route callback. A duplicate remains rejected even when the first route result
+was an error.
+
+The replay map holds 4096 live entries and never evicts one early. Its
+steady-state protected-request capacity is `4096 / 120 = 34.133...` requests
+per second. An empty map may accept a burst of 4096 unique requests; the 4097th
+gets an Auth-encrypted inner `503 service_unavailable` with
+`authority_replay_capacity`. For a same-instant burst the authenticated
+`retry-after` is 120 seconds.
+
+The client preserves its credential and cursor, waits for the authenticated
+delay, and retries the same logical operation with a fresh nonce, current
+timestamp, and freshly sealed envelope. It never replays the rejected
+ciphertext. Pagination may retain accepted pages, but retries the rejected page
+from the same cursor with that fresh envelope; the rejected attempt never
+reaches the bearer store, rate limiter, or read source.
+
+The published key and replay map must belong to a single request-serving process.
+A future multi-worker deployment must use a linearizable shared nonce
+reservation and coordinated key ownership, or distinct unroutable authority
+endpoints per process. If ownership cannot be proved, active modes fail closed
+as unavailable; they do not use process-local replay maps behind one advertised
+endpoint.
+
+### Errors, trust, consumer actions, and logs
+
+| Condition | Outer HTTP | Inner/application result | Authenticated | Required consumer action |
+|---|---:|---|---|---|
+| Active boot authority unavailable | 503 | `service_unavailable` / `authority_unavailable` | no | Preserve credentials; rediscover/back off; do not retry plaintext. |
+| `enforce` marker absent | 426 | `incompatible_version` / `hpke_binding_required` | no | Rediscover or upgrade; preserve the credential. |
+| Marker present but not exact `hpke-bound-v1` | 400 | `invalid_request` / `authority_invalid` | no | Treat as transport failure; never retry plaintext. |
+| Key ID or runtime nonce is stale | 409 | `conflict` / `authority_key_stale` | no | Rediscover once; never send plaintext. |
+| Installation identity is stale | 409 | `conflict` / `authority_instance_stale` | no | Discard the endpoint association and rediscover. |
+| Timestamp is stale or too far future | 409 | `conflict` / `authority_request_stale` | no | Retry once with a fresh nonce and time. |
+| Malformed field, key, ciphertext, AAD, body hash, plaintext, or HPKE open | 400 | `invalid_request` / `authority_invalid` | no | Treat as unauthenticated transport failure. |
+| Post-open freshness reservation is stale | 200 | inner 409 `conflict` / `authority_request_stale` | yes | Retry once with a fresh nonce and time. |
+| Replay after successful open | 200 | inner 409 `conflict` / `authority_replayed` | yes | Generate a new request nonce; do not replay. |
+| Replay map at capacity | 200 | inner 503 `service_unavailable` / `authority_replay_capacity` | yes | Honor inner `retry-after`; retry with a fresh envelope. |
+| Existing route result | 200 | unchanged inner status/code/body | yes | Apply only after Auth verification. |
+| Cave cannot seal the response | 500 | `internal_error` / `authority_response_failed` | no | Treat as unauthenticated transport failure. |
+
+A client may delete a credential, revoke local trust, or begin re-pairing only
+when an authenticated decrypted inner response tells it to. A plaintext,
+pre-decryption, forged, replacement-listener, or seal-failure response is
+transport guidance and must not trigger destructive credential state. After a
+marker has been observed, `advertise` never falls back on any validation,
+decryption, replay, or response-authentication failure.
+
+Pre-decryption diagnostics use fixed messages and the reason enums above.
+Secret-safe logs may contain the operation ID and one fixed reason. They must
+not contain Authorization, pairing secrets, bearers, request or response
+plaintext, request bodies, ciphertext, encapsulated keys, response public keys,
+request nonces, HPKE exception text, or serialized `Request`/`Response`
+objects.
+
+### Protected operations and administrator exclusion
+
+The `hpke-bound-v1` protected operation list is exactly `pairing.poll`,
+`pairing.exchange`, `familiars.list`, `projects.list`,
+`conversations.list`, `conversations.read`, and `messages.list`.
+`health.read` and `pairing.create` carry no credential and remain unbound.
+
+The four administrator operations — `pairing.admin.list`,
+`pairing.admin.decide`, `credentials.admin.list`, and
+`credentials.admin.revoke` — are explicitly excluded. Their `admin` sidecar
+credential is not a pairing secret or bearer and is never carried by this
+mechanism.
+
+The normative deterministic interoperability artifacts are:
+
+- [`src/lib/server/client-v1/hpke-bound-v1-vectors.json`](../../src/lib/server/client-v1/hpke-bound-v1-vectors.json)
+- [`src/lib/server/client-v1/hpke-bound-v1-vectors.sha256`](../../src/lib/server/client-v1/hpke-bound-v1-vectors.sha256)
+
+Consumers recompute the SHA-256 over the exact LF-normalized JSON bytes. The
+main contract fixture publishes only those filenames; it does not embed the
+vector payload. Plan prose, pull-request text, and copied values are not vector
+truth.
 
 ## The envelope
 
@@ -144,21 +439,21 @@ Each id names a fixed method and path for the life of `apiVersion` 1.x, so a
 client resolves an id to a request from this table — or from the vendored
 contract fixture, which carries the same records — rather than by probing paths.
 
-| Operation | Route | Authority | Scope | Families |
-|---|---|---|---|---|
-| `health.read` | `GET /api/client/v1/health` | public | — | `health` |
-| `pairing.create` | `POST /api/client/v1/pairing/requests` | public | — | `pairing` |
-| `pairing.poll` | `GET /api/client/v1/pairing/requests/:id` | public | — | `pairing` |
-| `pairing.exchange` | `POST /api/client/v1/pairing/requests/:id/exchange` | public | — | `pairing` |
-| `pairing.admin.list` | `GET /api/client/v1/admin/pairing-requests` | admin | — | `pairing` |
-| `pairing.admin.decide` | `POST /api/client/v1/admin/pairing-requests/:id/decision` | admin | — | `pairing` |
-| `credentials.admin.list` | `GET /api/client/v1/admin/credentials` | admin | — | `credentials` |
-| `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | — | `credentials` |
-| `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `chat:read` | `familiars`, `cursors` |
-| `projects.list` | `GET /api/client/v1/projects` | authenticated | `chat:read` | `projects`, `cursors` |
-| `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `chat:read` | `conversations`, `cursors` |
-| `conversations.read` | `GET /api/client/v1/conversations/:id` | authenticated | `chat:read` | `conversations` |
-| `messages.list` | `GET /api/client/v1/conversations/:id/messages` | authenticated | `chat:read` | `conversation-messages`, `cursors` |
+| Operation | Route | Authority | Credential | Binding | Scope | Families |
+|---|---|---|---|---|---|---|
+| `health.read` | `GET /api/client/v1/health` | public | `none` | `none` | — | `health` |
+| `pairing.create` | `POST /api/client/v1/pairing/requests` | public | `none` | `none` | — | `pairing` |
+| `pairing.poll` | `GET /api/client/v1/pairing/requests/:id` | public | `pairing-secret` | `hpke-bound-v1` | — | `pairing` |
+| `pairing.exchange` | `POST /api/client/v1/pairing/requests/:id/exchange` | public | `pairing-secret` | `hpke-bound-v1` | — | `pairing` |
+| `pairing.admin.list` | `GET /api/client/v1/admin/pairing-requests` | admin | `admin` | `none` | — | `pairing` |
+| `pairing.admin.decide` | `POST /api/client/v1/admin/pairing-requests/:id/decision` | admin | `admin` | `none` | — | `pairing` |
+| `credentials.admin.list` | `GET /api/client/v1/admin/credentials` | admin | `admin` | `none` | — | `credentials` |
+| `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | `admin` | `none` | — | `credentials` |
+| `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiars`, `cursors` |
+| `projects.list` | `GET /api/client/v1/projects` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `projects`, `cursors` |
+| `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations`, `cursors` |
+| `conversations.read` | `GET /api/client/v1/conversations/:id` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations` |
+| `messages.list` | `GET /api/client/v1/conversations/:id/messages` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversation-messages`, `cursors` |
 
 #### Three authority classes, and why the id tells you which
 

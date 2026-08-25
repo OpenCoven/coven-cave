@@ -16,6 +16,7 @@ import {
   type ClientV1OperationBinding,
   type ClientV1OperationCredential,
 } from "./authority-contract.ts";
+import * as authorityContractModule from "./authority-contract.ts";
 
 const authorityContractSource = readFileSync(
   new URL("./authority-contract.ts", import.meta.url),
@@ -110,6 +111,11 @@ function pureInitializerViolation(
   }
   if (pureNumericExpression(node)) {
     return undefined;
+  }
+  if (ts.isIdentifier(node)) {
+    return /^[A-Z][A-Z0-9_]*$/u.test(node.text)
+      ? undefined
+      : `only references to reviewed constant declarations are approved: ${node.getText(sourceFile)}`;
   }
   if (
     ts.isCallExpression(node)
@@ -282,6 +288,84 @@ test("pins the Client v1 HPKE authority mechanism and modes", () => {
     "enforce",
   ]);
   assert.equal(Object.isFrozen(CLIENT_V1_HPKE_AUTHORITY_MODES), true);
+});
+
+test("publishes the complete pure authority manifest contract", () => {
+  const authority = Reflect.get(
+    authorityContractModule,
+    "CLIENT_V1_AUTHORITY_CONTRACT",
+  );
+  assert.deepEqual(authority, {
+    defaultMode: "off",
+    modes: ["off", "advertise", "enforce"],
+    mechanism: {
+      id: "hpke-bound-v1",
+      discoveryVersion: 2,
+      suite: {
+        kem: "DHKEM(X25519, HKDF-SHA256)",
+        kemId: 32,
+        kdf: "HKDF-SHA256",
+        kdfId: 1,
+        aead: "AES-256-GCM",
+        aeadId: 2,
+      },
+      requestHeaders: {
+        mechanism: "x-coven-client-v1-authority",
+        keyId: "x-coven-client-v1-authority-key-id",
+        instanceId: "x-coven-client-v1-authority-instance",
+        runtimeNonce: "x-coven-client-v1-authority-runtime-nonce",
+        requestNonce: "x-coven-client-v1-authority-request-nonce",
+        issuedAt: "x-coven-client-v1-authority-issued-at",
+        enc: "x-coven-client-v1-authority-enc",
+        ciphertext: "x-coven-client-v1-authority-ciphertext",
+      },
+      responseMediaType:
+        "application/vnd.opencoven.client-v1.hpke-bound-v1+json",
+      requestHpkeMode: "base",
+      responseHpkeMode: "auth",
+      requestEncoding: "headers-plus-rfc8785-json",
+      aadEncoding: "u32be-length-prefixed-v1",
+      canonicalRoute: "rfc3986-sorted-query-v1",
+      keyIdDerivation: "sha256-domain-separated-public-key-v1",
+      requestInfo: "OpenCoven/client-v1/hpke-bound-v1/request",
+      responseInfo: "OpenCoven/client-v1/hpke-bound-v1/response",
+      limits: {
+        rawKeyBytes: 32,
+        encodedKeyCharacters: 43,
+        requestPlaintextBytes: 1024,
+        requestCiphertextBytes: 2048,
+        requestBodyBytes: 65_536,
+        responsePlaintextBytes: 8 * 1024 * 1024,
+        responseCiphertextBytes: (8 * 1024 * 1024) + 16,
+        responseEnvelopeBytes: 11_185_056,
+        canonicalRouteBytes: 2_048,
+        instanceIdBytes: 256,
+      },
+      freshness: {
+        maximumAgeMs: 60_000,
+        maximumFutureSkewMs: 10_000,
+        replayTtlMs: 120_000,
+        replayCapacity: 4_096,
+      },
+      protectedOperations: [
+        "pairing.poll",
+        "pairing.exchange",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list",
+      ],
+      vectorFixture: {
+        fileName: "hpke-bound-v1-vectors.json",
+        sha256FileName: "hpke-bound-v1-vectors.sha256",
+      },
+    },
+  });
+  assert.equal(Object.isFrozen(authority), true);
+  assert.equal(Object.isFrozen(authority.mechanism), true);
+  assert.equal(Object.isFrozen(authority.mechanism.protectedOperations), true);
+  assert.equal(Object.isFrozen(authority.mechanism.vectorFixture), true);
 });
 
 test("pins the RFC 9180 suite identifiers", () => {

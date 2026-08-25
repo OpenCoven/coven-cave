@@ -306,11 +306,6 @@ export function clientV1Operation(
 /**
  * The definitions as plain JSON records, for the generated contract fixture.
  *
- * Authority metadata deliberately remains internal until Task 7 publishes it
- * atomically with operational handlers, manifest types, fixture bytes, and
- * documentation. Keeping the pre-publication record shape stable preserves
- * the existing generated contract bytes.
- *
  * Sorted `families` are NOT re-sorted here: membership order is reviewed with
  * the record, and re-sorting would hide a reviewer's intent behind an
  * alphabetiser.
@@ -321,6 +316,8 @@ export function clientV1OperationRecords(): {
   path: string;
   ingress: string;
   scope: string | null;
+  credential: ClientV1OperationCredential;
+  binding: ClientV1OperationBinding;
   families: string[];
 }[] {
   return CLIENT_V1_OPERATION_DEFINITIONS.map((definition) => ({
@@ -329,6 +326,8 @@ export function clientV1OperationRecords(): {
     path: definition.path,
     ingress: definition.ingress,
     scope: definition.scope,
+    credential: definition.credential,
+    binding: definition.binding,
     families: [...definition.families],
   }));
 }

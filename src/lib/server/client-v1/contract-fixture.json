@@ -1,6 +1,76 @@
 {
   "contract": {
     "apiVersion": "1.0",
+    "authority": {
+      "defaultMode": "off",
+      "mechanism": {
+        "aadEncoding": "u32be-length-prefixed-v1",
+        "canonicalRoute": "rfc3986-sorted-query-v1",
+        "discoveryVersion": 2,
+        "freshness": {
+          "maximumAgeMs": 60000,
+          "maximumFutureSkewMs": 10000,
+          "replayCapacity": 4096,
+          "replayTtlMs": 120000
+        },
+        "id": "hpke-bound-v1",
+        "keyIdDerivation": "sha256-domain-separated-public-key-v1",
+        "limits": {
+          "canonicalRouteBytes": 2048,
+          "encodedKeyCharacters": 43,
+          "instanceIdBytes": 256,
+          "rawKeyBytes": 32,
+          "requestBodyBytes": 65536,
+          "requestCiphertextBytes": 2048,
+          "requestPlaintextBytes": 1024,
+          "responseCiphertextBytes": 8388624,
+          "responseEnvelopeBytes": 11185056,
+          "responsePlaintextBytes": 8388608
+        },
+        "protectedOperations": [
+          "pairing.poll",
+          "pairing.exchange",
+          "familiars.list",
+          "projects.list",
+          "conversations.list",
+          "conversations.read",
+          "messages.list"
+        ],
+        "requestEncoding": "headers-plus-rfc8785-json",
+        "requestHeaders": {
+          "ciphertext": "x-coven-client-v1-authority-ciphertext",
+          "enc": "x-coven-client-v1-authority-enc",
+          "instanceId": "x-coven-client-v1-authority-instance",
+          "issuedAt": "x-coven-client-v1-authority-issued-at",
+          "keyId": "x-coven-client-v1-authority-key-id",
+          "mechanism": "x-coven-client-v1-authority",
+          "requestNonce": "x-coven-client-v1-authority-request-nonce",
+          "runtimeNonce": "x-coven-client-v1-authority-runtime-nonce"
+        },
+        "requestHpkeMode": "base",
+        "requestInfo": "OpenCoven/client-v1/hpke-bound-v1/request",
+        "responseHpkeMode": "auth",
+        "responseInfo": "OpenCoven/client-v1/hpke-bound-v1/response",
+        "responseMediaType": "application/vnd.opencoven.client-v1.hpke-bound-v1+json",
+        "suite": {
+          "aead": "AES-256-GCM",
+          "aeadId": 2,
+          "kdf": "HKDF-SHA256",
+          "kdfId": 1,
+          "kem": "DHKEM(X25519, HKDF-SHA256)",
+          "kemId": 32
+        },
+        "vectorFixture": {
+          "fileName": "hpke-bound-v1-vectors.json",
+          "sha256FileName": "hpke-bound-v1-vectors.sha256"
+        }
+      },
+      "modes": [
+        "off",
+        "advertise",
+        "enforce"
+      ]
+    },
     "capabilities": [
       "health",
       "pairing",
@@ -13,6 +83,7 @@
     ],
     "discovery": {
       "fileName": "client-v1-discovery.json",
+      "hpkeBoundVersion": 2,
       "mode": "0600",
       "version": 1
     },
@@ -57,6 +128,8 @@
     "minimumClientVersion": "0.1.0",
     "operations": [
       {
+        "binding": "none",
+        "credential": "none",
         "families": [
           "health"
         ],
@@ -67,6 +140,8 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "none",
         "families": [
           "pairing"
         ],
@@ -77,6 +152,8 @@
         "scope": null
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "pairing-secret",
         "families": [
           "pairing"
         ],
@@ -87,6 +164,8 @@
         "scope": null
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "pairing-secret",
         "families": [
           "pairing"
         ],
@@ -97,6 +176,8 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
         "families": [
           "pairing"
         ],
@@ -107,6 +188,8 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
         "families": [
           "pairing"
         ],
@@ -117,6 +200,8 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
         "families": [
           "credentials"
         ],
@@ -127,6 +212,8 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
         "families": [
           "credentials"
         ],
@@ -137,6 +224,8 @@
         "scope": null
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
         "families": [
           "familiars",
           "cursors"
@@ -148,6 +237,8 @@
         "scope": "chat:read"
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
         "families": [
           "projects",
           "cursors"
@@ -159,6 +250,8 @@
         "scope": "chat:read"
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
         "families": [
           "conversations",
           "cursors"
@@ -170,6 +263,8 @@
         "scope": "chat:read"
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
         "families": [
           "conversations"
         ],
@@ -180,6 +275,8 @@
         "scope": "chat:read"
       },
       {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
         "families": [
           "conversation-messages",
           "cursors"
@@ -232,6 +329,24 @@
       "pid": 4321,
       "startedAt": "2026-08-20T20:20:12.617Z",
       "version": 1
+    },
+    "discoveryRecordV2": {
+      "authority": {
+        "keyId": "Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g",
+        "mechanism": "hpke-bound-v1",
+        "mode": "advertise",
+        "publicKey": "sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs",
+        "suite": {
+          "aeadId": 2,
+          "kdfId": 1,
+          "kemId": 32
+        }
+      },
+      "endpoint": "http://127.0.0.1:3020",
+      "nonce": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+      "pid": 4321,
+      "startedAt": "2026-08-25T15:42:58.109Z",
+      "version": 2
     },
     "errorEnvelope": {
       "apiVersion": "1.0",

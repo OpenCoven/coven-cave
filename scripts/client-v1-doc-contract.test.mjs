@@ -180,7 +180,7 @@ test("documents every scope, capability, and error code in the contract", () => 
   );
 });
 
-test("pins every advertised operation to the method, path and authority it names", () => {
+test("pins every advertised operation to its full public manifest record", () => {
   // Name coverage is not enough for the operation inventory, and this is the
   // one place a stale PROSE claim can be caught structurally. `streaming` was
   // named in this document for months — accurately, as a known gap — while the
@@ -194,12 +194,12 @@ test("pins every advertised operation to the method, path and authority it names
   const wrong = [];
   for (const operation of fixture.contract.operations) {
     const row = new RegExp(
-      `^\\|\\s*\`${operation.id.replaceAll(".", "\\.")}\`\\s*\\|\\s*\`([A-Z]+)\\s+([^\`]+)\`\\s*\\|\\s*([a-z]+)\\s*\\|`,
+      `^\\|\\s*\`${operation.id.replaceAll(".", "\\.")}\`\\s*\\|\\s*\`([A-Z]+)\\s+([^\`]+)\`\\s*\\|\\s*([a-z]+)\\s*\\|\\s*\`([a-z-]+)\`\\s*\\|\\s*\`([a-z0-9-]+)\`\\s*\\|`,
       "mu",
     );
     const match = row.exec(doc);
     if (!match) {
-      wrong.push(`${operation.id}: no \`| \`${operation.id}\` | \`METHOD /path\` | <authority> |\` table row`);
+      wrong.push(`${operation.id}: no full operation manifest table row`);
       continue;
     }
     if (match[1] !== operation.method || match[2] !== operation.path) {
@@ -210,6 +210,16 @@ test("pins every advertised operation to the method, path and authority it names
     if (match[3] !== operation.ingress) {
       wrong.push(
         `${operation.id}: documented authority ${match[3]}, the contract declares ${operation.ingress}`,
+      );
+    }
+    if (match[4] !== operation.credential) {
+      wrong.push(
+        `${operation.id}: documented credential ${match[4]}, the contract declares ${operation.credential}`,
+      );
+    }
+    if (match[5] !== operation.binding) {
+      wrong.push(
+        `${operation.id}: documented binding ${match[5]}, the contract declares ${operation.binding}`,
       );
     }
   }
@@ -229,6 +239,137 @@ test("pins every advertised operation to the method, path and authority it names
     invented,
     [],
     `${DOC_REPO_PATH} documents operations the contract does not advertise: ${invented.join(", ")}`,
+  );
+});
+
+test("pins the normative HPKE authority wire literals and safety rules", () => {
+  const requiredLiterals = [
+    "hpke-bound-v1",
+    "off",
+    "advertise",
+    "enforce",
+    "DHKEM(X25519, HKDF-SHA256)",
+    "HKDF-SHA256",
+    "AES-256-GCM",
+    "Base-mode recipient",
+    "Auth-mode sender",
+    "4096 / 120 = 34.133",
+    "single request-serving process",
+    "linearizable",
+    "x-coven-client-v1-authority",
+    "x-coven-client-v1-authority-key-id",
+    "x-coven-client-v1-authority-instance",
+    "x-coven-client-v1-authority-runtime-nonce",
+    "x-coven-client-v1-authority-request-nonce",
+    "x-coven-client-v1-authority-issued-at",
+    "x-coven-client-v1-authority-enc",
+    "x-coven-client-v1-authority-ciphertext",
+    "headers-plus-rfc8785-json",
+    "u32be-length-prefixed-v1",
+    "rfc3986-sorted-query-v1",
+    "sha256-domain-separated-public-key-v1",
+    "OpenCoven/client-v1/hpke-bound-v1/request",
+    "OpenCoven/client-v1/hpke-bound-v1/response",
+    "application/vnd.opencoven.client-v1.hpke-bound-v1+json",
+    "authority_unavailable",
+    "hpke_binding_required",
+    "authority_key_stale",
+    "authority_instance_stale",
+    "authority_request_stale",
+    "authority_invalid",
+    "authority_replayed",
+    "authority_replay_capacity",
+    "authority_response_failed",
+    "hpke-bound-v1-vectors.json",
+    "hpke-bound-v1-vectors.sha256",
+    "src/lib/server/client-v1/hpke-bound-v1-vectors.json",
+    "src/lib/server/client-v1/hpke-bound-v1-vectors.sha256",
+  ];
+  assert.deepEqual(
+    requiredLiterals.filter((literal) => !doc.includes(literal)),
+    [],
+    `${DOC_REPO_PATH} omits normative authority literals`,
+  );
+
+  const requiredReasons = [
+    "default mode remains `off`",
+    "encoded before sorting",
+    "fresh nonce",
+    "authenticated decrypted inner response",
+    "never falls back",
+    "must not contain",
+  ];
+  assert.deepEqual(
+    requiredReasons.filter((reason) => !doc.includes(reason)),
+    [],
+    `${DOC_REPO_PATH} omits normative authority safety rules`,
+  );
+
+  for (const [label, expected] of [
+    ["raw key bytes", "32"],
+    ["encoded key characters", "43"],
+    ["request plaintext bytes", "1024"],
+    ["request ciphertext bytes", "2048"],
+    ["request body bytes", "65536"],
+    ["response plaintext bytes", "8388608"],
+    ["response ciphertext bytes", "8388624"],
+    ["response envelope bytes", "11185056"],
+    ["canonical route bytes", "2048"],
+    ["instance id bytes", "256"],
+    ["maximum age milliseconds", "60000"],
+    ["maximum future skew milliseconds", "10000"],
+    ["replay TTL milliseconds", "120000"],
+    ["replay capacity", "4096"],
+  ]) {
+    assert.match(
+      doc,
+      new RegExp(`^\\|\\s*${label}\\s*\\|\\s*\`${expected}\`\\s*\\|`, "mu"),
+      `${DOC_REPO_PATH} must pin ${label}=${expected}`,
+    );
+  }
+
+  const tableRows = doc.split(/\r?\n/u).filter((line) => line.startsWith("|"));
+  for (const values of [
+    ["KEM", "DHKEM(X25519, HKDF-SHA256)", "32", "0x0020"],
+    ["KDF", "HKDF-SHA256", "1", "0x0001"],
+    ["AEAD", "AES-256-GCM", "2", "0x0002"],
+    ["`off`", "v1", "Legacy plaintext behavior"],
+    ["`advertise`", "v2", "never falls back"],
+    ["`enforce`", "v2", "426 incompatible_version", "hpke_binding_required"],
+    ["mechanism", "x-coven-client-v1-authority"],
+    ["key ID", "x-coven-client-v1-authority-key-id"],
+    ["instance ID", "x-coven-client-v1-authority-instance"],
+    ["runtime nonce", "x-coven-client-v1-authority-runtime-nonce"],
+    ["request nonce", "x-coven-client-v1-authority-request-nonce"],
+    ["issued at", "x-coven-client-v1-authority-issued-at"],
+    ["encapsulated key", "x-coven-client-v1-authority-enc"],
+    ["ciphertext", "x-coven-client-v1-authority-ciphertext"],
+    ["503", "service_unavailable", "authority_unavailable", "no"],
+    ["426", "incompatible_version", "hpke_binding_required", "no"],
+    ["400", "invalid_request", "authority_invalid", "no"],
+    ["409", "conflict", "authority_key_stale", "no"],
+    ["409", "conflict", "authority_instance_stale", "no"],
+    ["409", "conflict", "authority_request_stale", "no"],
+    ["200", "inner 409", "conflict", "authority_request_stale", "yes"],
+    ["200", "inner 409", "conflict", "authority_replayed", "yes"],
+    ["200", "inner 503", "service_unavailable", "authority_replay_capacity", "yes"],
+    ["500", "internal_error", "authority_response_failed", "no"],
+  ]) {
+    assert.ok(
+      tableRows.some((row) => values.every((value) => row.includes(value))),
+      `${DOC_REPO_PATH} must contain one normative table row with: ${values.join(", ")}`,
+    );
+  }
+
+  assert.doesNotMatch(doc, /`off`\s+is\s+deprecated/iu);
+  assert.deepEqual(
+    doc.split(/\r?\n/u).filter(
+      (line) =>
+        /(?:enforcement|`enforce`)\s+(?:is|is now)\s+(?:live|the default|default)/iu.test(line)
+        && !/\bnot\b/iu.test(line),
+    ),
+    [],
+    `${DOC_REPO_PATH} must not claim enforcement is live or default`,
   );
 });
 
