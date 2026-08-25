@@ -223,7 +223,7 @@ export function createClientV1AuthorityRuntimeFromGlobal({
       const marker = input.request.headers.get(
         CLIENT_V1_HPKE_HEADERS.mechanism,
       );
-      if (!marker) {
+      if (marker === null) {
         if (mode === "advertise") return input.invoke(input.request);
         return clientV1AuthorityRequiredResponse();
       }

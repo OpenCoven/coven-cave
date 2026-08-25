@@ -36,16 +36,18 @@ export function parseClientV1AuthorityMode(
 | Mode | Discovery | Plaintext protected request | Bound protected request | Purpose |
 |---|---|---|---|---|
 | `off` | Existing version `1`, unchanged fields and values | Existing behavior | Not activated; it reaches the existing handler without a plaintext credential and is refused normally | Merge-safe default for all current Client v1 consumers |
-| `advertise` | Version `2` with `hpke-bound-v1` public metadata | Accepted for compatibility | Accepted; response is authenticated and encrypted | SDK and Chat integration before the enforcement flip |
-| `enforce` | Version `2` with the same public metadata | Rejected before pairing-secret/bearer parsing | Required and accepted | Opt-in real-socket enforcement and later production posture |
+| `advertise` | Version `2` with `hpke-bound-v1` public metadata | Accepted for compatibility only when the authority header is absent | Accepted; response is authenticated and encrypted | SDK and Chat integration before the enforcement flip |
+| `enforce` | Version `2` with the same public metadata | Rejected when the authority header is absent; invalid when it is present but non-exact | Required and accepted | Opt-in real-socket enforcement and later production posture |
 
 The following downgrade rules are mandatory:
 
-1. Once the `x-coven-client-v1-authority: hpke-bound-v1` marker is present, any missing field, invalid encoding, failed HPKE open, wrong AAD, or wrong credential kind is terminal for that request. `advertise` must never fall back to plaintext after a bound attempt.
-2. In `enforce`, a missing marker on a protected operation returns `426 incompatible_version` before reading `Authorization` or `X-Coven-Pairing-Secret`.
-3. A stale key ID requires rediscovery; Cave never tries another boot key.
-4. Only a successfully HPKE-authenticated response may cause a consumer to discard, revoke, or re-pair a credential. A plaintext pre-decryption error is transport guidance, never authenticated credential state.
-5. `advertise` or `enforce` with an unavailable boot key is not equivalent to `off`. Every protected operation returns `503 service_unavailable` with `details.reason: "authority_unavailable"` before any pairing-secret/bearer parser, store, rate limiter, read source, or legacy callback runs.
+1. The mechanism header is absent only when `headers.get("x-coven-client-v1-authority") === null`. `advertise` may use the legacy plaintext callback only in that exact case.
+2. Every present mechanism value other than exact ASCII `hpke-bound-v1`—including empty, whitespace-normalized empty, case-changed, duplicate, or comma-combined values—returns fixed `400 authority_invalid` in both `advertise` and `enforce`, before reading credentials or invoking a callback.
+3. Once the exact `x-coven-client-v1-authority: hpke-bound-v1` marker is present, any missing field, invalid encoding, failed HPKE open, wrong AAD, or wrong credential kind is terminal for that request. `advertise` must never fall back to plaintext after a bound attempt.
+4. In `enforce`, an absent marker on a protected operation returns `426 incompatible_version` before reading `Authorization` or `X-Coven-Pairing-Secret`.
+5. A stale key ID requires rediscovery; Cave never tries another boot key.
+6. Only a successfully HPKE-authenticated response may cause a consumer to discard, revoke, or re-pair a credential. A plaintext pre-decryption error is transport guidance, never authenticated credential state.
+7. `advertise` or `enforce` with an unavailable boot key is not equivalent to `off`. Every protected operation returns `503 service_unavailable` with `details.reason: "authority_unavailable"` before any pairing-secret/bearer parser, store, rate limiter, read source, or legacy callback runs.
 
 Current behavior remains unchanged unless an operator explicitly selects `advertise` or `enforce`. No operation ID, capability, health field, pairing lifetime, bearer format, route, rate-limit budget, or administrator credential changes in this slice.
 
@@ -110,7 +112,7 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `src/lib/server/client-v1/authority-runtime.ts`
   - Mode dispatch, global boot-key consumption, protected-request wrapper, credential injection into a reconstructed `Request`, pre-auth error normalization, response encryption, and secret-safe diagnostics.
 - `src/lib/server/client-v1/authority-runtime.test.ts`
-  - Default-off compatibility, active bootstrap-unavailable refusal, advertise dual-stack behavior, enforce downgrade rejection, atomic replay ordering before secret/bearer stores, concurrent duplicate behavior, and encrypted response semantics.
+  - Default-off compatibility, active bootstrap-unavailable refusal, absent-versus-present marker handling in both active modes, exact-value and combined-header rejection without callback or secret leakage, atomic replay ordering before secret/bearer stores, concurrent duplicate behavior, and encrypted response semantics.
 - `src/lib/server/client-v1/testing/hpke-client.ts`
   - Test-only Base-mode request sender and Auth-mode response opener shared by route tests and the real-socket takeover harness.
   - Never exported from a production package surface.
@@ -638,6 +640,7 @@ The fixed capacity and TTL admit at most `4096 / 120 = 34.133...` successfully o
 |---|---:|---|---|---|---|
 | Active `advertise`/`enforce` bootstrap is unavailable | 503 | `service_unavailable` | `authority_unavailable` | no | Preserve credentials; rediscover/back off; never retry plaintext |
 | Enforce mode, marker absent | 426 | `incompatible_version` | `hpke_binding_required` | no | Rediscover/upgrade; do not discard credential |
+| Mechanism header present with any value other than exact `hpke-bound-v1` | 400 | `invalid_request` | `authority_invalid` | no | Treat as unauthenticated transport failure; never retry plaintext |
 | Key ID or runtime nonce is not this boot’s authority tuple | 409 | `conflict` | `authority_key_stale` | no | Rediscover once; do not send plaintext |
 | Instance ID is not the Cave installation currently answering | 409 | `conflict` | `authority_instance_stale` | no | Discard endpoint association and rediscover; do not send plaintext |
 | Timestamp stale or too far future | 409 | `conflict` | `authority_request_stale` | no | Retry once with a fresh nonce/time |
@@ -1874,8 +1877,8 @@ Create test boot material with `deriveKeyPair`, inject it into `createClientV1Ru
 4. that unavailable response has `error.code === "service_unavailable"`, `error.details.reason === "authority_unavailable"`, and `error.retryable === true`;
 5. `advertise` calls the legacy callback when the marker is absent only when boot material is available;
 6. `advertise` opens a valid bound request, injects only the expected internal credential header, strips the other credential header, and returns an Auth-mode outer 200;
-7. `advertise` never falls back when the marker is present but invalid;
-8. `enforce` rejects missing binding with 426 before invoking the callback;
+7. in both `advertise` and `enforce`, present empty, whitespace, case-changed, duplicate, and comma-combined marker values return the same fixed `authority_invalid`, invoke the callback zero times, and expose neither test secret nor bearer;
+8. `enforce` rejects an absent binding with 426 before invoking the callback;
 9. the four `ClientV1HpkeBoundRequestError` kinds map exactly to stale-key, stale-instance, stale-request, and invalid plaintext responses before callback;
 10. replay reservation occurs before a spy pairing/bearer handler;
 11. two simultaneous `handle(...)` calls using clones of one identical valid envelope invoke the callback once, return one encrypted success, and return one encrypted inner `authority_replayed`;
@@ -1883,7 +1886,7 @@ Create test boot material with `deriveKeyPair`, inject it into `createClientV1Ru
 13. an injected replay cache returning `{ ok: false, reason: "stale" }` invokes the callback zero times and returns encrypted inner `409 conflict` with `details.reason === "authority_request_stale"`;
 14. replay, capacity, and stale reservation results all invoke the callback zero times;
 15. a request exactly on the lower freshness boundary reads the runtime clock once, reserves successfully, and a second identical request returns encrypted `authority_replayed` without a second callback;
-16. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying a bound marker returns fixed `authority_invalid`;
+16. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying an exact bound marker returns fixed `authority_invalid`;
 17. errors and captured diagnostics contain neither test secret nor bearer.
 
 For the defensive stale-result path, inject:
@@ -2078,7 +2081,7 @@ if (unavailable) {
 }
 
 const marker = input.request.headers.get(CLIENT_V1_HPKE_HEADERS.mechanism);
-if (!marker) {
+if (marker === null) {
   if (mode === "advertise") return input.invoke(input.request);
   return clientV1AuthorityRequiredResponse();
 }

@@ -386,6 +386,111 @@ test("advertise permits only an unmarked legacy fallback and enforce requires bi
   assert.equal(invocations, 1);
 });
 
+test("present non-exact authority markers fail fixed before callbacks in advertise and enforce", async () => {
+  const markerCases = [
+    {
+      name: "empty",
+      addMarker(headers: Headers) {
+        headers.set(CLIENT_V1_HPKE_HEADERS.mechanism, "");
+      },
+      expected: "",
+    },
+    {
+      name: "whitespace",
+      addMarker(headers: Headers) {
+        headers.set(CLIENT_V1_HPKE_HEADERS.mechanism, " \t ");
+      },
+      expected: "",
+    },
+    {
+      name: "case-changed",
+      addMarker(headers: Headers) {
+        headers.set(CLIENT_V1_HPKE_HEADERS.mechanism, "HPKE-BOUND-V1");
+      },
+      expected: "HPKE-BOUND-V1",
+    },
+    {
+      name: "duplicate",
+      addMarker(headers: Headers) {
+        headers.append(
+          CLIENT_V1_HPKE_HEADERS.mechanism,
+          CLIENT_V1_HPKE_MECHANISM,
+        );
+        headers.append(
+          CLIENT_V1_HPKE_HEADERS.mechanism,
+          CLIENT_V1_HPKE_MECHANISM,
+        );
+      },
+      expected: `${CLIENT_V1_HPKE_MECHANISM}, ${CLIENT_V1_HPKE_MECHANISM}`,
+    },
+    {
+      name: "combined",
+      addMarker(headers: Headers) {
+        headers.set(
+          CLIENT_V1_HPKE_HEADERS.mechanism,
+          `${CLIENT_V1_HPKE_MECHANISM}, unknown-authority`,
+        );
+      },
+      expected: `${CLIENT_V1_HPKE_MECHANISM}, unknown-authority`,
+    },
+  ] as const;
+
+  for (const mode of ["advertise", "enforce"] as const) {
+    const bootstrap = await createBootstrap(
+      mode,
+      mode === "advertise" ? 19 : 20,
+    );
+    const authority = withBootstrap(bootstrap, () =>
+      createClientV1AuthorityRuntimeFromGlobal({ now: () => TEST_NOW }));
+
+    for (const markerCase of markerCases) {
+      const headers = new Headers({
+        authorization: ["Bearer", TEST_BEARER].join(" "),
+        [CLIENT_V1_PAIRING_SECRET_HEADER]: TEST_PAIRING_SECRET,
+      });
+      markerCase.addMarker(headers);
+      assert.equal(
+        headers.get(CLIENT_V1_HPKE_HEADERS.mechanism),
+        markerCase.expected,
+        `${markerCase.name} marker must remain present in Headers`,
+      );
+
+      let invocations = 0;
+      const response = await authority.handle({
+        operation: "projects.list",
+        request: new Request(
+          "http://127.0.0.1:3020/api/client/v1/projects",
+          { headers },
+        ),
+        invoke: async () => {
+          invocations += 1;
+          return Response.json({
+            bearer: TEST_BEARER,
+            pairingSecret: TEST_PAIRING_SECRET,
+          });
+        },
+      });
+      assert.equal(
+        invocations,
+        0,
+        `${mode}/${markerCase.name} must not invoke the legacy callback`,
+      );
+      const rendered = await response.clone().text();
+      assert.equal(rendered.includes(TEST_BEARER), false);
+      assert.equal(rendered.includes(TEST_PAIRING_SECRET), false);
+      await assertPlainError(
+        response,
+        400,
+        fixedError(
+          "invalid_request",
+          "Invalid authority envelope.",
+          "authority_invalid",
+        ),
+      );
+    }
+  }
+});
+
 test("valid bound requests inject exactly one credential and Auth-seal the response", async () => {
   const bootstrap = await createBootstrap("advertise", 4);
   const authority = withBootstrap(bootstrap, () =>
