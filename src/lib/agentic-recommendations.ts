@@ -10,6 +10,7 @@ export const AGENTIC_EVIDENCE_KINDS = [
   "mission",
   "saved-link",
   "vault",
+  "session",
   "message",
   "artifact",
 ] as const;
