@@ -56,6 +56,7 @@ export type OpenClawAgentBinding = {
 };
 
 export type OpenClawBridgeCapabilities = {
+  /** Bridge implementation support. Runtime activation remains compatibility-negotiated. */
   streaming: boolean;
   toolEvents: boolean;
   stableSessionKey: boolean;
@@ -98,8 +99,8 @@ export class OpenClawAgentResolutionError extends Error {
 
 export function openClawBridgeCapabilities(): OpenClawBridgeCapabilities {
   return {
-    streaming: false,
-    toolEvents: false,
+    streaming: true,
+    toolEvents: true,
     stableSessionKey: true,
     localFileAttachments: false,
     sshRuntime: false,
