@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -84,6 +85,19 @@ try {
     await packageFixture(projectRoot, packageName);
     await packageFixture(path.dirname(dependencyRoot), packageName);
   }
+  const installedHpkeCore = await realpath(new URL("../node_modules/@hpke/core", import.meta.url));
+  const installedHpkeDhkem = await realpath(new URL("../node_modules/@hpke/dhkem-x25519", import.meta.url));
+  const installedHpkeCommon = await realpath(path.join(installedHpkeCore, "..", "common"));
+  for (const [packageName, source] of [
+    ["@hpke/core", installedHpkeCore],
+    ["@hpke/dhkem-x25519", installedHpkeDhkem],
+    ["@hpke/common", installedHpkeCommon],
+  ]) {
+    await cp(source, path.join(dependencyRoot, ...packageName.split("/")), {
+      dereference: true,
+      recursive: true,
+    });
+  }
   for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
     await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
   }
@@ -143,6 +157,53 @@ try {
     await readFile(path.join(destination, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll"), "utf8"),
     "native dependency\n",
   );
+  await write(
+    destination,
+    "hpke-runtime-probe.mjs",
+    [
+      'const [core, x25519, common] = await Promise.all([',
+      '  import("@hpke/core"),',
+      '  import("@hpke/dhkem-x25519"),',
+      '  import("@hpke/common"),',
+      "]);",
+      "const suite = new core.CipherSuite({",
+      "  kem: new x25519.DhkemX25519HkdfSha256(),",
+      "  kdf: new core.HkdfSha256(),",
+      "  aead: new core.Aes256Gcm(),",
+      "});",
+      "const keyPair = await suite.kem.generateKeyPair();",
+      "const publicKey = await suite.kem.serializePublicKey(keyPair.publicKey);",
+      'if (publicKey.byteLength !== 32) throw new Error("unexpected X25519 public key length");',
+      'if (Object.keys(common).length === 0) throw new Error("@hpke/common exported no runtime API");',
+      "console.log(JSON.stringify({ publicKeyBytes: publicKey.byteLength, commonExports: Object.keys(common).length }));",
+      "",
+    ].join("\n"),
+  );
+  const hpkeProbe = spawnSync(process.execPath, ["hpke-runtime-probe.mjs"], {
+    cwd: destination,
+    encoding: "utf8",
+  });
+  assert.equal(
+    hpkeProbe.status,
+    0,
+    `assembled HPKE runtime must import and initialize: ${hpkeProbe.stderr || hpkeProbe.error}`,
+  );
+  const hpkeResult = JSON.parse(hpkeProbe.stdout);
+  assert.equal(hpkeResult.publicKeyBytes, 32);
+  assert.ok(hpkeResult.commonExports > 0);
+  const repositoryManifest = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  for (const [packageName, expectedVersion] of [
+    ["@hpke/core", repositoryManifest.dependencies["@hpke/core"]],
+    ["@hpke/dhkem-x25519", repositoryManifest.dependencies["@hpke/dhkem-x25519"]],
+    ["@hpke/common", repositoryManifest.pnpm.overrides["@hpke/common"]],
+  ]) {
+    const packagedManifest = JSON.parse(
+      await readFile(path.join(destination, "node_modules", ...packageName.split("/"), "package.json"), "utf8"),
+    );
+    assert.equal(packagedManifest.version, expectedVersion, `${packageName} must retain its pinned runtime version`);
+  }
   assert.ok(await missing(path.join(destination, "node_modules/foo/node_modules/evil/index.js")));
   assert.ok(await missing(path.join(destination, ".next/server/route.js.map")));
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {

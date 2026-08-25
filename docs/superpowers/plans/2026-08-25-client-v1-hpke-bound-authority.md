@@ -190,7 +190,12 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `scripts/client-v1-release-smoke.mjs`
 - `scripts/client-v1-release-smoke.test.mjs`
   - Keep the release health contract unchanged and assert the generated producer contract declares `defaultMode: "off"`.
-  - Live discovery-v1/v2 behavior is exercised by the takeover harness, which owns process startup and the isolated Cave home.
+- `scripts/sidecar-runtime-closure.mjs`
+- `scripts/sidecar-runtime-closure.test.mjs`
+  - Retain and actively import the exact pinned HPKE runtime closure, including transitive `@hpke/common`.
+- `scripts/sidecar-runtime-smoke.mjs`
+  - Keep one packaged launch default-off with discovery v1, then restart in enforce mode and require discovery v2.
+  - The Task 8 takeover harness separately owns hostile listener replacement, request/response secrecy, and its isolated Cave home.
 - `docs/api/client-v1.md`
   - Normative wire contract, mode semantics, error handling, operation coverage, and consumer safety rules.
 - `docs/workflows/client-v1-conformance.md`
@@ -2336,6 +2341,9 @@ git commit \
 - Modify: `src/lib/server/client-v1/discovery.test.ts`
 - Modify: `scripts/client-v1-release-smoke.mjs`
 - Modify: `scripts/client-v1-release-smoke.test.mjs`
+- Modify: `scripts/sidecar-runtime-closure.mjs`
+- Modify: `scripts/sidecar-runtime-closure.test.mjs`
+- Modify: `scripts/sidecar-runtime-smoke.mjs`
 
 - [ ] **Step 1: Write failing discovery-v2 tests**
 
@@ -2569,10 +2577,31 @@ while retaining the same API/minimum/release version checks. Before Task 7's
 atomic public-manifest publication, the existing fixture has no `authority`
 field, so absence means the only compatible pre-publication default, `off`;
 any present `authority.defaultMode` must already be exact `"off"`. Do not add a
-live discovery option to this health-only probe; the takeover harness performs
-isolated process startup and validates default v1 plus enforce-mode v2.
+live discovery option to this health-only probe; the packaged runtime smoke and
+the takeover harness own their distinct process-startup proofs.
 
-- [ ] **Step 9: Run targeted tests**
+- [ ] **Step 9: Retain and exercise the packaged HPKE runtime**
+
+Add `@hpke/core`, `@hpke/dhkem-x25519`, and the lockfile-pinned transitive
+`@hpke/common` to `SIDECAR_DYNAMIC_PACKAGES`. Require each package manifest and
+ESM entry module in `verifySidecarRuntime`; the existing package-copy filter
+retains the packages' runtime subpaths while excluding maps, declarations, and
+nested package trees.
+
+Extend `sidecar-runtime-closure.test.mjs` with the installed pinned HPKE
+packages, assemble the fixture sidecar, and run a bare-package import probe
+from inside that assembled root. The probe must import all three packages,
+construct the production suite, generate an X25519 keypair, and confirm the
+serialized public key is 32 bytes.
+
+Keep the first launch in `sidecar-runtime-smoke.mjs` default-off and assert it
+publishes discovery v1 without authority. Restart the same packaged sidecar
+with `COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE=enforce` and assert discovery v2
+publishes the exact HPKE suite, mechanism, mode, key ID, and public key. This
+Task 5 smoke owns packaged import/initialization/publication only; Task 8 owns
+the hostile listener-takeover harness and Task 9 reruns both gates together.
+
+- [ ] **Step 10: Run targeted tests**
 
 Run:
 
@@ -2581,12 +2610,15 @@ node --require ./scripts/css-source-contract-hook.cjs \
   --experimental-strip-types \
   src/lib/server/client-v1/discovery.test.ts
 node --test scripts/client-v1-release-smoke.test.mjs
+node --test scripts/sidecar-runtime-closure.test.mjs
 pnpm build:server
 ```
 
 Expected: PASS; `server.mjs` builds with the literal dynamic package imports.
+After assembling the release sidecar, `pnpm test:sidecar-runtime` must also
+pass its default-off and enforce-mode launches.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add \
@@ -2595,7 +2627,10 @@ git add \
   src/lib/server/client-v1/discovery.ts \
   src/lib/server/client-v1/discovery.test.ts \
   scripts/client-v1-release-smoke.mjs \
-  scripts/client-v1-release-smoke.test.mjs
+  scripts/client-v1-release-smoke.test.mjs \
+  scripts/sidecar-runtime-closure.mjs \
+  scripts/sidecar-runtime-closure.test.mjs \
+  scripts/sidecar-runtime-smoke.mjs
 git commit \
   -m "feat(client-v1): publish HPKE discovery v2" \
   -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
@@ -3867,8 +3902,11 @@ pnpm test:sidecar-runtime
 Expected:
 
 - release build succeeds;
-- `server.mjs` resolves both HPKE packages from the assembled runtime;
-- sidecar tracing includes their production package files;
+- Task 5's assembled-runtime probe resolves `@hpke/core`,
+  `@hpke/dhkem-x25519`, and pinned `@hpke/common`, initializes the production
+  suite, and generates an X25519 keypair;
+- the packaged runtime smoke starts default-off with discovery v1, then starts
+  in enforce mode and publishes discovery v2;
 - no native addon or platform-specific binary is introduced;
 - existing runtime-size budgets pass. If the traced pure-JS package bytes exceed a budget, update the reviewed budget by the measured delta in the same implementation change and explain it in the commit.
 
@@ -3884,7 +3922,9 @@ pnpm test:client-v1:authority-takeover
 Expected:
 
 - release-smoke expectations keep the default health contract unchanged and read `defaultMode: "off"` from the generated fixture;
-- the live harness observes discovery v1 in its legacy phase and discovery v2 in its enforce phase;
+- the Task 8 takeover harness independently observes discovery v1 in its
+  legacy phase and discovery v2 in its enforce phase, beyond Task 5's packaged
+  startup smoke;
 - no private field appears;
 - both commands exit 0.
 

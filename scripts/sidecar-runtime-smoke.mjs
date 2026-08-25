@@ -103,6 +103,20 @@ async function waitForAvatar(baseUrl, output) {
   throw new Error(`timed out waiting for sidecar avatar endpoint; last fetch error: ${output.lastFetchError ?? "none"}`);
 }
 
+async function waitForClientV1Discovery(covenHome, timeoutMs = 5_000) {
+  const discoveryFile = path.join(covenHome, "cave", "client-v1-discovery.json");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return JSON.parse(await readFile(discoveryFile, "utf8"));
+    } catch (error) {
+      if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for packaged Client v1 discovery at ${discoveryFile}`);
+}
+
 function attachOutput(child) {
   const lines = [];
   const remember = (source, chunk) => {
@@ -414,6 +428,9 @@ async function main() {
       new Promise((_, reject) => child.once("error", reject)),
     ]);
     const res = await Promise.race([waitForAvatar(baseUrl, output), earlyExit]);
+    const defaultDiscovery = await waitForClientV1Discovery(covenHome);
+    assert.equal(defaultDiscovery.version, 1, "packaged sidecar must keep Client v1 authority default-off");
+    assert.equal(defaultDiscovery.authority, undefined, "default-off discovery must not publish HPKE authority");
     assert.equal(res.headers.get("content-type")?.split(";")[0], "image/png");
     const bytes = Buffer.from(await res.arrayBuffer());
     assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "avatar response should be PNG");
@@ -641,6 +658,9 @@ async function main() {
       sidecarRoot,
       covenHome,
       port: secondPort,
+      environment: {
+        COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE: "enforce",
+      },
     }));
     const secondEarlyExit = Promise.race([
       waitForExit(child).then((exit) => {
@@ -649,6 +669,13 @@ async function main() {
       new Promise((_, reject) => child.once("error", reject)),
     ]);
     await Promise.race([waitForAvatar(baseUrl, output), secondEarlyExit]);
+    const enforcedDiscovery = await waitForClientV1Discovery(covenHome);
+    assert.equal(enforcedDiscovery.version, 2, "packaged active-mode sidecar must publish discovery v2");
+    assert.deepEqual(enforcedDiscovery.authority?.suite, { kemId: 32, kdfId: 1, aeadId: 2 });
+    assert.equal(enforcedDiscovery.authority?.mechanism, "hpke-bound-v1");
+    assert.equal(enforcedDiscovery.authority?.mode, "enforce");
+    assert.match(enforcedDiscovery.authority?.keyId ?? "", /^[A-Za-z0-9_-]{43}$/);
+    assert.match(enforcedDiscovery.authority?.publicKey ?? "", /^[A-Za-z0-9_-]{43}$/);
 
     const restoredResponse = await fetch(`${baseUrl}/api/preferences`, {
       headers: authenticatedHeaders(baseUrl),
