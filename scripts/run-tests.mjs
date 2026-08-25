@@ -501,6 +501,7 @@ export const SUITES = {
     "src/lib/reminder-draft.test.ts",
     "src/lib/parse-when.test.ts",
     "src/lib/schedule-plan.test.ts",
+    "src/lib/schedule-plan-model.test.ts",
     "src/lib/daily-report.test.ts",
     "src/lib/daily-note.test.ts",
     "src/components/familiar-daily-notes.test.ts",
