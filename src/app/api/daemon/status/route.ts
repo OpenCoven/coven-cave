@@ -103,7 +103,8 @@ export async function GET(request: Request) {
       diagnosticOperation: "research-local-capability",
     });
     const health = daemonHealthResponseSucceeded(res) ? res.data : null;
-    const sessionLaunchPolicy = supportsSessionLaunchPolicy(health);
+    const sessionLaunchPolicy = isOwnerLocalResearchDaemonTarget(target)
+      && supportsSessionLaunchPolicy(health);
     return respond({
       running: health !== null,
       target: targetSummary(target),

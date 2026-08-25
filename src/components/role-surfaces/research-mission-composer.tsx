@@ -240,6 +240,9 @@ export function ResearchMissionComposer({
   const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
   const [model, setModel] = useState("");
   const modelSelectionDirtyRef = useRef(false);
+  // The familiar whose model state the effect below last loaded, so a daemon
+  // status transition can be told apart from an actual familiar switch.
+  const loadedFamiliarIdRef = useRef<string | null>(null);
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -260,9 +263,17 @@ export function ResearchMissionComposer({
   const appliedRecommendedDraftRevision = useRef<number | null>(null);
 
   useEffect(() => {
-    modelSelectionDirtyRef.current = false;
-    setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
-    setModel("");
+    // Only a familiar switch clears the latch and returns to defaults. A
+    // daemon status transition just re-evaluates availability, so an explicit
+    // runtime/model pick survives it.
+    if (loadedFamiliarIdRef.current !== familiarId) {
+      loadedFamiliarIdRef.current = familiarId;
+      modelSelectionDirtyRef.current = false;
+      setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+      setModel("");
+    } else if (modelSelectionDirtyRef.current) {
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
