@@ -36,6 +36,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { failingCronIds } from "@/lib/automations/cron-health";
+import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
+import { LiveRunCard } from "@/components/automations/live-run-card";
 import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
 import { CodexDetailPanel } from "@/components/automations/cron-detail-panel";
@@ -158,6 +160,11 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const [subsOpen, setSubsOpen] = useState(false);
   const [subsHasPat, setSubsHasPat] = useState(false);
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
+  // The run the card follows after a manual trigger. "Run now" already
+  // announces itself into an sr-only live region, so a sighted user currently
+  // sees a button stop being busy and nothing else — cave-06qka is the same
+  // asymmetry on the Review Deck.
+  const [liveRunFor, setLiveRunFor] = useState<string | null>(null);
   const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
   // Guards async setState after unmount; runsReqRef drops a stale per-automation
   // runs fetch when a faster, later selection won.
@@ -584,6 +591,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       announce(`Run started for '${auto.name}'.`);
+      setLiveRunFor(auto.id);
       await refreshRuns(auto.id);
       await refreshLastRuns();
     } catch (err) {
@@ -780,6 +788,27 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       soonest: undefined as string | undefined,
     };
   }, [liveAutos, failingIds.size]);
+
+  // The card's view of the followed run, recomputed each render so the elapsed
+  // readout stays honest without this component owning a timer of its own.
+  const liveRun = liveRunFor
+    ? liveRunView(newestRunFor(automationRuns, liveRunFor), Date.now())
+    : null;
+
+  // Poll only while the run is unsettled. A finished run needs no polling, and
+  // an unfollowed one needs none either — this is the whole reason the card
+  // tracks `settled` rather than just a phase.
+  //
+  // usePausablePoll rather than a raw interval: it stops while the tab is
+  // hidden and refreshes on return, so a run card left open in a background
+  // tab does not keep hitting /runs. `pausable-poll-discipline.test.ts` gates
+  // exactly this, and it was right to — the raw version polled regardless of
+  // visibility.
+  usePausablePoll(
+    () => { if (liveRunFor) void refreshRuns(liveRunFor); },
+    2500,
+    { enabled: Boolean(liveRunFor && liveRun && !liveRun.settled) },
+  );
 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
@@ -1348,6 +1377,17 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           onClose={() => setSubsOpen(false)}
         />
       )}
+
+      {liveRun ? (
+        <LiveRunCard
+          view={liveRun}
+          onDismiss={() => setLiveRunFor(null)}
+          onOpenCron={() => {
+            const auto = codexAutos.find((a) => a.id === liveRun.automationId);
+            if (auto) { selectTab("crons"); setSelectedCodex(auto); setSelectedItem(null); }
+          }}
+        />
+      ) : null}
 
       {deletePending ? (
         <UndoToast
