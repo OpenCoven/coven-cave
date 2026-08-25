@@ -786,7 +786,7 @@ function classifyLifecycleUnitInternal(
   // exception granted to escape a full budget went on to hold the budget full,
   // forcing the next session to request another one.
   //
-  // Retirement stays gated by the 3-hour cooldown, the repository-wide
+  // Retirement stays gated by the 15-minute cooldown, the repository-wide
   // maintenance gate, and the deletion proof below, so dropping the exception
   // here reclassifies landed work without authorizing any new deletion.
 
