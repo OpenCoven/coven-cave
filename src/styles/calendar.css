@@ -155,24 +155,28 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  /* 2px, not --space-1: at six bands a 4px gap eats the columns it separates.
+     Same micro-mark family the earlier handoffs banked. */
   gap: 2px;
-  height: 34px;
+  height: var(--space-8);
 }
 
 .cal-run-density__band {
   flex: 1;
   border-radius: 2px;
   /* Level 0 keeps a visible floor so the axis reads as an axis rather than a
-     gap — an absent band would misalign the hours either side of it. */
-  height: 4px;
+     gap — an absent band would misalign the hours either side of it.
+     The ramp is --space-1..-6: a density chart only needs its steps to be
+     even, and the frame's 4/9/14/19/24/29 is the same ramp off the scale. */
+  height: var(--space-1);
   background: color-mix(in oklch, var(--foreground) 7%, transparent);
 }
 
-.cal-run-density__band[data-level="1"] { height: 9px;  background: color-mix(in oklch, var(--accent-presence) 38%, transparent); }
-.cal-run-density__band[data-level="2"] { height: 14px; background: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
-.cal-run-density__band[data-level="3"] { height: 19px; background: color-mix(in oklch, var(--accent-presence) 66%, transparent); }
-.cal-run-density__band[data-level="4"] { height: 24px; background: color-mix(in oklch, var(--accent-presence) 80%, transparent); }
-.cal-run-density__band[data-level="5"] { height: 29px; background: color-mix(in oklch, var(--accent-presence) 94%, transparent); }
+.cal-run-density__band[data-level="1"] { height: var(--space-2); background: color-mix(in oklch, var(--accent-presence) 38%, transparent); }
+.cal-run-density__band[data-level="2"] { height: var(--space-3); background: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
+.cal-run-density__band[data-level="3"] { height: var(--space-4); background: color-mix(in oklch, var(--accent-presence) 66%, transparent); }
+.cal-run-density__band[data-level="4"] { height: var(--space-5); background: color-mix(in oklch, var(--accent-presence) 80%, transparent); }
+.cal-run-density__band[data-level="5"] { height: var(--space-6); background: color-mix(in oklch, var(--accent-presence) 94%, transparent); }
 
 .cal-run-density__axis {
   display: flex;
