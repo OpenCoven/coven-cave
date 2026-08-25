@@ -38,6 +38,10 @@ import {
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ElevenLabsDeliveryPresetId } from "@/lib/voice/elevenlabs-shared";
+import {
+  loadElevenLabsCatalog,
+  type ElevenLabsCatalogState,
+} from "@/lib/voice/settings-client";
 import type { ResearchTabProps } from "./researcher-surface";
 import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
 import {
@@ -74,6 +78,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
   const [mediaGuestVoice, setMediaGuestVoice] = useState("");
+  const [elevenLabsCatalog, setElevenLabsCatalog] = useState<
+    { status: "idle" | "loading" } | ElevenLabsCatalogState
+  >({ status: "idle" });
   const [mediaStyle, setMediaStyle] = useState<ResearchPodcastStyle>("breakdown");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
@@ -115,6 +122,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const listControllerRef = useRef<AbortController | null>(null);
   const readinessInFlightRef = useRef(false);
   const readinessControllerRef = useRef<AbortController | null>(null);
+  const elevenLabsCatalogControllerRef = useRef<AbortController | null>(null);
   const retryInFlightRef = useRef<string | null>(null);
 
   const loadGenerations = useCallback(async (showLoading: boolean) => {
@@ -200,6 +208,20 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     }
   }, []);
 
+  const loadElevenLabsCatalogForStudio = useCallback(async () => {
+    elevenLabsCatalogControllerRef.current?.abort();
+    const controller = new AbortController();
+    elevenLabsCatalogControllerRef.current = controller;
+    setElevenLabsCatalog({ status: "loading" });
+    const result = await loadElevenLabsCatalog(fetch, controller.signal);
+    if (!controller.signal.aborted) {
+      setElevenLabsCatalog(result);
+    }
+    if (elevenLabsCatalogControllerRef.current === controller) {
+      elevenLabsCatalogControllerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (loadedFamiliarRef.current !== familiarId) {
       loadedFamiliarRef.current = familiarId;
@@ -224,6 +246,24 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       readinessInFlightRef.current = false;
     };
   }, [loadReadiness]);
+
+  useEffect(() => {
+    if (
+      configKind === null ||
+      isResearchGenerationKind(configKind) ||
+      mediaProvider !== "elevenlabs"
+    ) {
+      elevenLabsCatalogControllerRef.current?.abort();
+      elevenLabsCatalogControllerRef.current = null;
+      setElevenLabsCatalog({ status: "idle" });
+      return;
+    }
+    void loadElevenLabsCatalogForStudio();
+    return () => {
+      elevenLabsCatalogControllerRef.current?.abort();
+      elevenLabsCatalogControllerRef.current = null;
+    };
+  }, [configKind, loadElevenLabsCatalogForStudio, mediaProvider]);
 
   const hasActiveMediaGeneration = generations.some((generation) =>
     !isResearchGenerationKind(generation.kind) &&
@@ -849,6 +889,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onMediaVoiceChange={setMediaVoice}
           mediaGuestVoice={mediaGuestVoice}
           onMediaGuestVoiceChange={setMediaGuestVoice}
+          elevenLabsCatalog={elevenLabsCatalog}
+          onRetryElevenLabsCatalog={loadElevenLabsCatalogForStudio}
           mediaStyle={mediaStyle}
           onMediaStyleChange={setMediaStyle}
           mediaLength={mediaLength}

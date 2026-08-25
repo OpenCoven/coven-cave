@@ -33,7 +33,10 @@ import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { StandardSelect } from "@/components/ui/select";
+import {
+  StandardSelect,
+  type StandardSelectOption,
+} from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { useResearchMediaUrl } from "@/lib/research-media-client";
 import {
@@ -59,6 +62,7 @@ import {
   isValidElevenLabsSeed,
   type ElevenLabsDeliveryPresetId,
 } from "@/lib/voice/elevenlabs-shared";
+import type { ElevenLabsCatalogState } from "@/lib/voice/settings-client";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -602,6 +606,8 @@ export function GenerationConfigModal({
   onMediaVoiceChange,
   mediaGuestVoice,
   onMediaGuestVoiceChange,
+  elevenLabsCatalog,
+  onRetryElevenLabsCatalog,
   mediaStyle,
   onMediaStyleChange,
   mediaLength,
@@ -631,6 +637,10 @@ export function GenerationConfigModal({
   /** Podcast-only guest voice; empty string means one voice for both speakers. */
   mediaGuestVoice: string;
   onMediaGuestVoiceChange: (voice: string) => void;
+  elevenLabsCatalog:
+    | { status: "idle" | "loading" }
+    | ElevenLabsCatalogState;
+  onRetryElevenLabsCatalog: () => void;
   /** Podcast-only drafting style; ignored for video kinds. */
   mediaStyle: ResearchPodcastStyle;
   onMediaStyleChange: (style: ResearchPodcastStyle) => void;
@@ -654,6 +664,37 @@ export function GenerationConfigModal({
   const meta = studioMetaForKind(kind);
   const isMedia = !isResearchGenerationKind(kind);
   const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
+  const elevenLabsVoiceOptions: StandardSelectOption<string>[] =
+    elevenLabsCatalog.status === "ready"
+      ? [
+          ...[
+            mediaVoice,
+            ...(mediaGuestVoice ? [mediaGuestVoice] : []),
+          ]
+            .filter(
+              (voice, index, voices) =>
+                voice &&
+                voices.indexOf(voice) === index &&
+                !elevenLabsCatalog.voices.some(
+                  (option) => option.id === voice,
+                ),
+            )
+            .map((voice) => ({
+              value: voice,
+              label: "Current voice",
+              detail: voice,
+            })),
+          ...elevenLabsCatalog.voices.map((voice) => ({
+            value: voice.id,
+            label: voice.name,
+            detail: voice.category ?? voice.id,
+          })),
+        ]
+      : [];
+  const elevenLabsCatalogUnavailable =
+    elevenLabsCatalog.status === "idle" ||
+    elevenLabsCatalog.status === "loading" ||
+    elevenLabsCatalog.status === "error";
   const mediaConfigurationError = (() => {
     if (!isMedia) return null;
     if (!readiness) return "Media readiness is still loading.";
@@ -688,7 +729,16 @@ export function GenerationConfigModal({
           "ElevenLabs voice rendering is not ready."
         );
       }
-      if (!mediaVoice.trim()) return "Enter an ElevenLabs voice ID.";
+      if (
+        elevenLabsCatalog.status === "idle" ||
+        elevenLabsCatalog.status === "loading"
+      ) {
+        return "ElevenLabs voices are still loading.";
+      }
+      if (elevenLabsCatalog.status === "error") {
+        return elevenLabsCatalog.message;
+      }
+      if (!mediaVoice.trim()) return "Choose an ElevenLabs voice.";
     }
     if (kind === "short-video" && mediaLength === "extended") {
       return "Short video length must be brief or standard.";
@@ -859,30 +909,40 @@ export function GenerationConfigModal({
                   className="research-studio-config__label"
                   htmlFor="research-studio-config-elevenlabs-voice"
                 >
-                  ElevenLabs voice ID
+                  Host voice
                 </label>
-                <input
+                <StandardSelect
                   id="research-studio-config-elevenlabs-voice"
-                  className="research-studio-config__input focus-ring"
+                  label="Host voice"
+                  className="research-studio__select focus-ring"
                   value={mediaVoice}
+                  options={elevenLabsVoiceOptions}
+                  disabled={elevenLabsCatalogUnavailable}
                   placeholder={
-                    readiness?.providers.elevenlabs.defaultVoiceId ?? ""
+                    elevenLabsCatalog.status === "loading" ||
+                    elevenLabsCatalog.status === "idle"
+                      ? "Loading voices…"
+                      : "Choose a voice"
                   }
                   aria-describedby="research-studio-config-voice-help"
-                  aria-invalid={mediaConfigurationError ? true : undefined}
-                  aria-errormessage={
-                    mediaConfigurationError
-                      ? "research-studio-config-media-error"
-                      : undefined
-                  }
-                  onChange={(event) => onMediaVoiceChange(event.target.value)}
+                  onChange={onMediaVoiceChange}
                 />
                 <span
                   id="research-studio-config-voice-help"
                   className="research-studio-config__hint"
                 >
-                  The exact voice ID is frozen on this draft.
+                  Saved voices in your ElevenLabs library. The selected voice is
+                  frozen on this draft.
                 </span>
+                {elevenLabsCatalog.status === "error" ? (
+                  <button
+                    type="button"
+                    className="research-studio-act research-studio-act--tiny focus-ring"
+                    onClick={onRetryElevenLabsCatalog}
+                  >
+                    Retry voices
+                  </button>
+                ) : null}
               </div>
             )}
 
@@ -955,21 +1015,22 @@ export function GenerationConfigModal({
                     ))}
                   </select>
                 ) : (
-                  <input
+                  <StandardSelect
                     id="research-studio-config-guest-voice"
-                    className="research-studio-config__input focus-ring"
+                    label="Guest voice (optional)"
+                    className="research-studio__select focus-ring"
                     value={mediaGuestVoice}
+                    options={[
+                      {
+                        value: "",
+                        label: "Same as host voice",
+                      },
+                      ...elevenLabsVoiceOptions,
+                    ]}
+                    disabled={elevenLabsCatalogUnavailable}
                     placeholder="Same as host voice"
                     aria-describedby="research-studio-config-guest-voice-help"
-                    aria-invalid={mediaConfigurationError ? true : undefined}
-                    aria-errormessage={
-                      mediaConfigurationError
-                        ? "research-studio-config-media-error"
-                        : undefined
-                    }
-                    onChange={(event) =>
-                      onMediaGuestVoiceChange(event.target.value)
-                    }
+                    onChange={onMediaGuestVoiceChange}
                   />
                 )}
                 <span
