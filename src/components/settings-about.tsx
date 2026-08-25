@@ -38,6 +38,7 @@ type LinkCard = {
   hint: string;
   href: string;
   icon: IconName;
+  tone: "docs" | "x" | "discord";
 };
 
 const SMALL_LINKS: LinkCard[] = [
@@ -46,18 +47,21 @@ const SMALL_LINKS: LinkCard[] = [
     hint: "docs.opencoven.ai",
     href: "https://docs.opencoven.ai",
     icon: "ph:file-text",
+    tone: "docs",
   },
   {
     label: "X",
     hint: "@OpenCvn",
     href: "https://x.com/OpenCvn",
     icon: "ph:x-logo-bold",
+    tone: "x",
   },
   {
     label: "Discord",
     hint: "the coven hall",
     href: "https://discord.gg/opencoven",
     icon: "ph:discord-logo",
+    tone: "discord",
   },
 ];
 
@@ -173,12 +177,14 @@ function ElsewhereCard({
   return (
     <Button
       variant="ghost"
-      className="settings-about-link-card settings-about-link-card--small focus-ring"
+      className={`settings-about-link-card settings-about-link-card--small settings-about-link-card--${card.tone} focus-ring`}
       onClick={() => openExternalUrl(card.href)}
       aria-label={`Open ${card.label}`}
     >
-      <span className="settings-about-link-card__glyph" aria-hidden="true">
-        <Icon name={card.icon} width={16} />
+      <span className="settings-about-link-card__art" aria-hidden="true">
+        <span className="settings-about-link-card__glyph">
+          <Icon name={card.icon} width={18} />
+        </span>
       </span>
       <span className="settings-about-link-card__copy">
         <strong>{card.label}</strong>
@@ -530,6 +536,9 @@ export function AboutSection() {
             }
             aria-label="Open CovenCave on GitHub"
           >
+            <span className="settings-about-github-art" aria-hidden="true">
+              <Icon name="ph:github-logo" width={28} />
+            </span>
             <span className="settings-about-link-card__heading">
               <Icon name="ph:github-logo" width={16} aria-hidden />
               <strong>GitHub</strong>
@@ -549,8 +558,10 @@ export function AboutSection() {
             aria-label="Listen to the OpenCoven podcast"
           >
             <span className="settings-about-podcast-art" aria-hidden="true">
-              <Icon name="ph:waveform-bold" width={24} />
-              <small>OCW</small>
+              <span>
+                <Icon name="ph:waveform-bold" width={24} />
+                <small>OCW</small>
+              </span>
             </span>
             <span className="settings-about-link-card__copy">
               <small>Podcast</small>

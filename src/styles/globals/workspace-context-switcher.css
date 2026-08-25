@@ -21,13 +21,12 @@
 }
 
 .sidebar-scope-selector__trigger {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: flex-start;
-  width: fit-content;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
-  min-height: var(--rail-control);
+  min-height: calc(var(--rail-control) + var(--space-3));
   gap: 0;
   padding: 0;
   overflow: hidden;
@@ -55,27 +54,23 @@
 }
 
 .sidebar-scope-selector__project {
-  display: grid;
-  flex: none;
-  place-items: center;
-  align-self: stretch;
-  width: var(--rail-control);
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
   border-right: 1px solid var(--border-hairline);
-  color: var(--text-muted);
 }
 
 .sidebar-scope-selector__familiar {
   display: flex;
   align-items: center;
-  align-self: stretch;
-  min-width: 0;
-  gap: var(--space-1);
+  gap: var(--space-2);
   padding: 0 var(--space-2);
   background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
 
-.sidebar-scope-selector__icon {
+.sidebar-scope-selector__identity-icon {
   display: grid;
   flex: none;
   place-items: center;
@@ -84,15 +79,40 @@
   color: var(--text-secondary);
 }
 
-.sidebar-scope-selector__label {
-  flex: 0 1 auto;
+.sidebar-scope-selector__identity-copy {
+  display: flex;
+  flex: 1 1 auto;
   min-width: 0;
+  flex-direction: column;
+  gap: calc(var(--space-1) / 2);
+}
+
+.sidebar-scope-selector__identity-copy small {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.sidebar-scope-selector__identity-copy strong {
   overflow: hidden;
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-scope-selector__caret {
+  display: grid;
+  align-self: stretch;
+  place-items: center;
+  padding: 0 var(--space-2);
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.sidebar-scope-selector__trigger[aria-expanded="true"]
+  .sidebar-scope-selector__caret {
+  transform: rotate(180deg);
 }
 
 .sidebar-scope-selector__item-copy {
@@ -285,7 +305,8 @@
 }
 
 .shell-nav--rail .sidebar-scope-selector__project,
-.shell-nav--rail .sidebar-scope-selector__label {
+.shell-nav--rail .sidebar-scope-selector__identity-copy,
+.shell-nav--rail .sidebar-scope-selector__caret {
   display: none;
 }
 

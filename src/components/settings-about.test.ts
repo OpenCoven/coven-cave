@@ -101,6 +101,8 @@ test("About ports the handoff link grid with production destinations", () => {
 
 test("About follows the revised handoff artwork and full-width release rail", () => {
   assert.match(component, /className="settings-about-grimoire-mark"/);
+  assert.match(component, /className="settings-about-github-art"/);
+  assert.match(component, /className="settings-about-link-card__art"/);
   assert.match(component, />Open Coven Weekly</);
   assert.match(component, />Shipping notes, every Friday\.</);
   assert.match(component, />OCW</);
@@ -120,7 +122,7 @@ test("About podcast fills the default four-column row remainder", () => {
 
   assert.match(
     defaultCss,
-    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 3;/,
+    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 2;/,
   );
 });
 
@@ -134,7 +136,7 @@ test("About podcast shares the intermediate two-column row", () => {
 
   assert.match(
     intermediateCss,
-    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 1;/,
+    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 2;/,
   );
 });
 
