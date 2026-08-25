@@ -35,7 +35,7 @@ assert.match(
 );
 assert.match(
   iosJob,
-  /needs:[\s\S]{0,160}- release-web-validated[\s\S]{0,160}- release-platform-validation/,
+  /needs:[\s\S]{0,160}- release-web-validation[\s\S]{0,160}- release-platform-validation/,
   "TestFlight publication waits for release tests and cross-platform conformance",
 );
 assert.match(

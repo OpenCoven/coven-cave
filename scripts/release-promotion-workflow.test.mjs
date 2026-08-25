@@ -190,6 +190,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   const release = await workflow("release.yml");
   const authorization = release.jobs["authorize-release-promotion"];
   const releaseWeb = release.jobs["release-web-validation"];
+  const releaseWebCore = release.jobs["release-web-core"];
 
   assert.deepEqual(release.on.push.tags, ["v*.*.*", "!v*.*.*-*"]);
   assert.ok(releaseWeb, "release workflow keeps the web validation gate");
@@ -231,28 +232,28 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
         "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
     ),
   );
-  assert.deepEqual(release.jobs["release-web-validated"].needs, [
-    "release-web-validation",
+  assert.deepEqual(release.jobs["release-web-validation"].needs, [
+    "release-web-core",
     "release-e2e",
     "release-e2e-agentic",
   ]);
-  assert.equal(release.jobs["release-web-validated"].if, "always()");
+  assert.equal(release.jobs["release-web-validation"].if, "always()");
   assert.match(
-    release.jobs["release-web-validated"].steps[0].run,
+    release.jobs["release-web-validation"].steps[0].run,
     /test "\$WEB_RESULT" = "success"[\s\S]*test "\$E2E_RESULT" = "success"[\s\S]*test "\$E2E_AGENTIC_RESULT" = "success"/,
   );
   assert.equal(
-    release.jobs["release-web-validation"].steps.some((step) =>
+    release.jobs["release-web-core"].steps.some((step) =>
       String(step.run ?? "").includes("playwright test"),
     ),
     false,
     "the web/unit/build job must not retain a second monolithic Playwright invocation",
   );
-  assert.ok(release.jobs["release-ios-build"].needs.includes("release-web-validated"));
-  assert.ok(release.jobs.build.needs.includes("release-web-validated"));
+  assert.ok(release.jobs["release-ios-build"].needs.includes("release-web-validation"));
+  assert.ok(release.jobs.build.needs.includes("release-web-validation"));
   assert.equal(release.jobs["daemon-package"].needs, "authorize-release-promotion");
   assert.equal(release.jobs["source-version"].needs, "authorize-release-promotion");
-  assert.equal(releaseWeb["timeout-minutes"], 90);
+  assert.equal(releaseWebCore["timeout-minutes"], 90);
   assert.equal(
     release.jobs["source-version"].outputs["release-commit"],
     "${{ steps.release.outputs.commit }}",

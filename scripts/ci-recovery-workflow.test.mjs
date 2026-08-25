@@ -250,10 +250,10 @@ const releaseSource = await readFile(
 );
 const releaseWorkflow = parse(releaseSource);
 for (const jobName of [
+  "release-web-core",
   "release-web-validation",
   "release-e2e",
   "release-e2e-agentic",
-  "release-web-validated",
   "release-platform-validation",
   "release-windows-native",
   "release-ios-build",
@@ -265,7 +265,7 @@ assert.deepEqual(
   [
     "daemon-package",
     "source-version",
-    "release-web-validated",
+    "release-web-validation",
     "release-platform-validation",
     "release-windows-native",
   ],

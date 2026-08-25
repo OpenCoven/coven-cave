@@ -363,7 +363,7 @@ jobs:
             --version "$RELEASE_VERSION" \
             --require-final-changelog
 
-  release-web-validation:
+  release-web-core:
     name: Validate release web
     needs:
       - daemon-package
@@ -458,18 +458,18 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
-  release-web-validated:
+  release-web-validation:
     name: Release web validated
     if: always()
     needs:
-      - release-web-validation
+      - release-web-core
       - release-e2e
       - release-e2e-agentic
     runs-on: ubuntu-24.04
     steps:
       - name: Require every web validation job
         env:
-          WEB_RESULT: ${{ needs.release-web-validation.result }}
+          WEB_RESULT: ${{ needs.release-web-core.result }}
           E2E_RESULT: ${{ needs.release-e2e.result }}
           E2E_AGENTIC_RESULT: ${{ needs.release-e2e-agentic.result }}
         run: |
@@ -672,7 +672,7 @@ jobs:
     needs:
       - daemon-package
       - source-version
-      - release-web-validated
+      - release-web-validation
       - release-platform-validation
     runs-on: macos-15
     timeout-minutes: 90
@@ -1014,7 +1014,7 @@ jobs:
     needs:
       - daemon-package
       - source-version
-      - release-web-validated
+      - release-web-validation
       - release-platform-validation
       - release-windows-native
     env:
