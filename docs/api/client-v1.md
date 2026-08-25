@@ -7,11 +7,12 @@ without that client being part of the Cave build and without it being handed
 the desktop shell's own per-launch secret.
 
 **Read the scope line before you read anything else.** As of this commit the
-surface is thirteen routes: a health handshake, three pairing routes that walk a
-client from "no credential" to "holding a bearer", four administrator routes
-that let the Cave's own settings UI see and decide those requests, and **five
-canonical reads** a bearer actually opens — familiars, projects, conversations,
-one conversation, and that conversation's messages.
+surface is thirteen routes: a credential-free health handshake, three pairing
+routes that walk a client through create, secret-authorized poll/exchange, and
+finally "holding a bearer", four administrator routes that let the Cave's own
+settings UI see and decide those requests, and **five canonical reads** a bearer
+actually opens — familiars, projects, conversations, one conversation, and that
+conversation's messages.
 
 Every read is a `GET` and requires the `chat:read` scope. The four list reads
 are paged with an opaque cursor; `conversations.read` returns one record and
@@ -464,9 +465,16 @@ the generated fixture — a per-caller list could not be pinned by anything.
 The authority class is therefore legible from the id itself, so a client never
 has to consult a table to avoid calling something it can never reach:
 
-- **public** — no credential. `health.read` and the three `pairing.*` bootstrap
-  operations. Still loopback-only; "public" names the absence of a *credential*,
-  never the absence of an ingress rule.
+- **public** — the four loopback bootstrap operations, without a bearer or
+  administrator credential gate. Here, "public" means that neither a bearer nor
+  the administrator credential gates ingress. `health.read` and
+  `pairing.create` carry credential `none`. `pairing.poll` and
+  `pairing.exchange` carry a `pairing-secret`. An `hpke-bound-v1` request carries
+  that secret only inside the encrypted canonical plaintext. A plaintext legacy
+  request, when the selected mode permits it, carries the secret only in the
+  `x-coven-pairing-secret` header. The pairing secret is never a URL/query
+  parameter or application request-body field. All four remain loopback-only;
+  "public" never means an open network route.
 - **authenticated** — a paired bearer carrying the named scope. Every id without
   `.admin.` that is not one of the four above. **This is the only class an
   external application can ever hold.**
@@ -819,10 +827,13 @@ Reads the status of a pairing request you hold the secret for. This is the
 route a client polls while the user is deciding, if it does not want to poll by
 attempting the exchange.
 
-**Requires:** the loopback stamp, and the pairing secret in the
-`x-coven-pairing-secret` header. That header is the only accepted carrier — a
-`?secret=` query parameter is refused with 401, so the secret never lands in a
-URL, a log, or a `Referer`.
+**Requires:** the loopback stamp and the pairing secret. An `hpke-bound-v1`
+request carries the secret as `authorization.kind: "pairing-secret"` inside the
+encrypted canonical plaintext. When the selected mode permits a plaintext
+legacy request (`off`, or `advertise` without an authority marker), the only
+accepted carrier is the `x-coven-pairing-secret` header. The secret is never an
+application request-body field, and a `?secret=` query parameter is refused
+with 401, so it never lands in a URL, a log, or a `Referer`.
 
 The stamp is re-checked here, as it is on both pairing POSTs, and it is checked
 before the rate-limit budget is read. It used to be left entirely to the proxy
@@ -865,8 +876,12 @@ budget makes possible.
 Redeems an approved pairing request for a bearer credential. Exactly once —
 this is the step that consumes the user's approval.
 
-**Requires:** the loopback stamp, the `x-coven-pairing-secret` header, and (at
-the proxy) `Content-Length: 0`. No request body.
+**Requires:** the loopback stamp and the pairing secret. An `hpke-bound-v1`
+request carries the secret inside its encrypted canonical plaintext; when the
+selected mode permits a plaintext legacy request, the only accepted carrier is
+the `x-coven-pairing-secret` header. It is never carried in the URL/query or the
+application request body. At the proxy, `Content-Length: 0`; there is no
+application request body.
 
 **200:**
 

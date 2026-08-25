@@ -242,6 +242,40 @@ test("pins every advertised operation to its full public manifest record", () =>
   );
 });
 
+test("defines public ingress separately from operation credentials", () => {
+  const normalizedDoc = doc.replace(/\s+/gu, " ");
+  const publicCredentials = Object.fromEntries(
+    fixture.contract.operations
+      .filter((operation) => operation.ingress === "public")
+      .map((operation) => [operation.id, operation.credential]),
+  );
+  assert.deepEqual(publicCredentials, {
+    "health.read": "none",
+    "pairing.create": "none",
+    "pairing.poll": "pairing-secret",
+    "pairing.exchange": "pairing-secret",
+  });
+
+  assert.doesNotMatch(
+    doc,
+    /\*\*public\*\*\s*[—-]\s*no credential\./iu,
+    `${DOC_REPO_PATH} must not equate public ingress with every operation carrying no credential`,
+  );
+  for (const required of [
+    'Here, "public" means that neither a bearer nor the administrator credential gates ingress.',
+    "`health.read` and `pairing.create` carry credential `none`.",
+    "`pairing.poll` and `pairing.exchange` carry a `pairing-secret`.",
+    "An `hpke-bound-v1` request carries that secret only inside the encrypted canonical plaintext.",
+    "A plaintext legacy request, when the selected mode permits it, carries the secret only in the `x-coven-pairing-secret` header.",
+    "The pairing secret is never a URL/query parameter or application request-body field.",
+  ]) {
+    assert.ok(
+      normalizedDoc.includes(required),
+      `${DOC_REPO_PATH} must state the public-ingress credential distinction: ${required}`,
+    );
+  }
+});
+
 test("pins the normative HPKE authority wire literals and safety rules", () => {
   const requiredLiterals = [
     "hpke-bound-v1",
