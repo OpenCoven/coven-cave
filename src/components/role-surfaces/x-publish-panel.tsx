@@ -72,6 +72,7 @@ type PublishWire = {
   publication?: XPublicationRecord;
   confirmationToken?: string;
   alreadyPublished?: boolean;
+  account?: { id?: unknown; username?: unknown };
 };
 
 const REFUSAL_FALLBACK = "X publishing is not available for this familiar.";
@@ -90,31 +91,6 @@ const NO_PUBLICATIONS: readonly XPublicationRecord[] = [];
  * comes back with the route's generic refusal.
  */
 const POST_ID = /^\d+$/;
-
-/**
- * The handle the confirmed post would go out as, or `null` if nothing answered.
- *
- * Never throws. This runs inside the confirmation step, and a connection read
- * that failed must not turn a successfully minted approval into an error —
- * the modal states the unknown instead. The publish itself is still gated by
- * the server's own write preflight, which is where a genuinely missing
- * connection is refused in the server's own words.
- */
-async function readConnectedAccount(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/x/connection", { cache: "no-store" });
-    if (!res.ok) return null;
-    const json = (await res.json().catch(() => null)) as {
-      connected?: unknown;
-      account?: { username?: unknown } | null;
-    } | null;
-    if (!json || json.connected !== true) return null;
-    const username = json.account?.username;
-    return typeof username === "string" && username !== "" ? username : null;
-  } catch {
-    return null;
-  }
-}
 
 async function postPublishAction(body: Record<string, unknown>): Promise<PublishWire> {
   const res = await fetch("/api/x/publish", {
@@ -224,25 +200,20 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   }, [announce, reload]);
 
   const confirm = useCallback(() => run(async () => {
-    // Requested together: the account is part of what the confirmation modal
-    // asks a person to approve, not a separate fact fetched after the fact.
-    // `readConnectedAccount` never throws — a failed read shows as "could not
-    // be confirmed" in the modal rather than blocking a mint that otherwise
-    // succeeded.
-    const [result, account] = await Promise.all([
-      postPublishAction({
-        action: "draft",
-        familiarId,
-        text,
-        // Reuse this composer's own draft record rather than accumulating one
-        // per keystroke-session. Only a record still in `draft` can be reused —
-        // the store refuses to edit anything else — and the reconciliation
-        // effect below drops the confirmation the moment a reload shows the
-        // record has left `draft`, so a settled id is never re-sent here.
-        ...(confirmation ? { publicationId: confirmation.publicationId } : {}),
-      }),
-      readConnectedAccount(),
-    ]);
+    // The draft response carries the account identity covered by the same
+    // server-minted confirmation as the wording. A separate connection GET
+    // could race the mint and show a different account than the token covers.
+    const result = await postPublishAction({
+      action: "draft",
+      familiarId,
+      text,
+      // Reuse this composer's own draft record rather than accumulating one
+      // per keystroke-session. Only a record still in `draft` can be reused —
+      // the store refuses to edit anything else — and the reconciliation
+      // effect below drops the confirmation the moment a reload shows the
+      // record has left `draft`, so a settled id is never re-sent here.
+      ...(confirmation ? { publicationId: confirmation.publicationId } : {}),
+    });
     if (!result.publication || typeof result.confirmationToken !== "string") {
       throw new Error("The Cave did not return a confirmation for that draft.");
     }
@@ -250,7 +221,9 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       publicationId: result.publication.id,
       text: result.publication.text,
       token: result.confirmationToken,
-      account,
+      account: typeof result.account?.username === "string"
+        ? result.account.username
+        : null,
     });
     announce("This wording is confirmed. Review it in the dialog, then publish.");
   }), [announce, confirmation, familiarId, run, text]);
@@ -573,7 +546,18 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
           {published.map((publication) => (
             <li key={publication.id} className="role-surface-list-row">
               <span className="role-surface-memory-excerpt">{publication.text}</span>
-              <span className="role-surface-tag">{publication.postId ?? "posted"}</span>
+              {publication.canonicalUrl ? (
+                <a
+                  className="role-surface-tag focus-ring"
+                  href={publication.canonicalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {publication.postId ?? "Open on X"}
+                </a>
+              ) : (
+                <span className="role-surface-tag">{publication.postId ?? "posted"}</span>
+              )}
             </li>
           ))}
         </ul>

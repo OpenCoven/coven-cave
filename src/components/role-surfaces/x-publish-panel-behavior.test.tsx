@@ -473,6 +473,9 @@ test("a lost publish response is reconciled from the record, not left inviting a
     ),
   ).toHaveLength(1);
   expect(panelText(renderer)).toContain("1234567890123456789");
+  expect(
+    renderer.root.findByProps({ href: publishedRecord.canonicalUrl }).props.target,
+  ).toBe("_blank");
   // Leaving the wording in the box next to an error is how the same post gets
   // sent twice by hand.
   expect(textarea(renderer).props.value).toBe("");
@@ -511,26 +514,16 @@ test("an approval survives a list that does not name its record", async () => {
 
 test("the confirmation modal names the account the post would go out as", async () => {
   handler = (url, init) => {
-    if (init?.method !== "POST") {
-      // The connection check the confirmation step makes, and the initial
-      // publications load — distinguished by URL, since both are GETs.
-      if (String(url).includes("/api/x/connection")) {
-        return {
-          body: {
-            configured: true,
-            connected: true,
-            account: { id: "42", username: "novaops", name: "Nova Ops" },
-            scopes: ["tweet.write"],
-            activeFlow: false,
-          },
-        };
-      }
-      return { body: { ok: true, publications: [] } };
-    }
+    if (init?.method !== "POST") return { body: { ok: true, publications: [] } };
     const body = JSON.parse(String(init.body));
     if (body.action === "draft") {
       return {
-        body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
+        body: {
+          ok: true,
+          publication: { ...DRAFT, text: body.text },
+          confirmationToken: "t",
+          account: { id: "42", username: "novaops", name: "Nova Ops" },
+        },
       };
     }
     return { body: { ok: true, publication: { ...DRAFT, status: "published" } } };
@@ -547,15 +540,9 @@ test("the confirmation modal names the account the post would go out as", async 
   expect(panelText(renderer)).toContain("No location will be added.");
 });
 
-test("a connection read that fails states the account is unknown rather than guessing or blocking", async () => {
-  // The connection check itself answers a 500 — nothing about the draft or the
-  // token is at fault, so confirming must still succeed. Only the account line
-  // in the modal is affected.
+test("a draft response without account identity states it is unknown rather than guessing", async () => {
   handler = (url, init) => {
-    if (init?.method !== "POST") {
-      if (String(url).includes("/api/x/connection")) return { status: 500, body: null };
-      return { body: { ok: true, publications: [] } };
-    }
+    if (init?.method !== "POST") return { body: { ok: true, publications: [] } };
     const body = JSON.parse(String(init.body));
     return {
       body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
@@ -571,6 +558,7 @@ test("a connection read that fails states the account is unknown rather than gue
   // The unknown account must not be reported as a settled refusal to publish —
   // the confirmation still succeeded and Publish is still available.
   expect(panelText(renderer)).not.toContain("not available for this familiar");
+  expect(requests.some((request) => request.url.includes("/api/x/connection"))).toBe(false);
 });
 
 test("two rapid Publish clicks dispatch exactly one request", async () => {

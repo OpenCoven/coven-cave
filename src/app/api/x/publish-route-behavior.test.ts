@@ -94,7 +94,7 @@ function publishRequest(body: Record<string, unknown>): Request {
 }
 
 async function draft(text: string, familiarId = "nova") {
-  return upsertXPublicationDraft({ familiarId, text });
+  return upsertXPublicationDraft({ familiarId, text, accountId: "42" });
 }
 
 test("the route publishes the confirmed wording and ignores replacement text in the body", async () => {
@@ -156,6 +156,7 @@ test("an expired confirmation is refused with repairable copy, and sends nothing
   const { publication, confirmationToken } = await upsertXPublicationDraft({
     familiarId: "nova",
     text: "Reviewed eleven minutes ago.",
+    accountId: "42",
     now: mintedAt,
   });
 
@@ -232,4 +233,27 @@ test("two identical publish requests for one draft post exactly once", async () 
   assert.deepEqual(sentToX, ["Exactly once."], "the second request sent nothing");
   const json = (await second.json()) as { alreadyPublished: boolean };
   assert.equal(json.alreadyPublished, true, "and says so rather than implying a second post");
+});
+
+test("changing the connected account after confirmation refuses the publish", async () => {
+  const { publication, confirmationToken } = await draft("Approved for Nova Ops.");
+  xCredentialService.replaceBundle({
+    accessToken: "other-access-token",
+    refreshToken: "other-refresh-token",
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    scopes: ["tweet.read", "tweet.write", "users.read"],
+    account: { id: "99", username: "otherops", name: "Other Ops" },
+  });
+
+  const response = await POST(publishRequest({
+    action: "publish",
+    familiarId: "nova",
+    publicationId: publication.id,
+    confirmationToken,
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(sentToX, []);
+  const stored = (await listXPublications("nova")).find((entry) => entry.id === publication.id);
+  assert.equal(stored?.status, "draft");
 });

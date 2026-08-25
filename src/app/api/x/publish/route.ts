@@ -72,6 +72,11 @@ function connectedUsername(): string | undefined {
   return status.connected ? status.account.username : undefined;
 }
 
+function connectedAccount() {
+  const status = xCredentialService.getConnectionStatus();
+  return status.connected ? status.account : undefined;
+}
+
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
@@ -102,9 +107,11 @@ export async function POST(req: Request) {
 
     switch (body.action) {
       case "draft": {
+        const account = connectedAccount();
         const draft = await upsertXPublicationDraft({
           familiarId,
           text: typeof body.text === "string" ? body.text : "",
+          accountId: account?.id ?? "",
           ...(body.publicationId === undefined
             ? {}
             : { publicationId: requireString(body.publicationId, "publicationId") }),
@@ -113,24 +120,34 @@ export async function POST(req: Request) {
           ok: true,
           publication: draft.publication,
           confirmationToken: draft.confirmationToken,
+          ...(account ? { account } : {}),
         });
       }
 
       case "publish": {
+        const confirmedAccount = connectedAccount();
         const result = await publishXPublication(
           {
             familiarId,
             publicationId: requireString(body.publicationId, "publicationId"),
             confirmationToken: body.confirmationToken,
+            accountId: confirmedAccount?.id ?? "",
           },
           {
             // The preflight sits inside `send` so the access token is minted
             // as late as possible, right before the request goes out. A
             // capability or token failure here is a definite failure — nothing
             // reached X — so the store returns the record to `draft`.
-            send: (text) =>
-              withXWritePreflight(familiarId, WRITE_SCOPES, (accessToken) =>
-                createXPost(accessToken, text)),
+            send: (text, confirmedAccountId) =>
+              withXWritePreflight(familiarId, WRITE_SCOPES, (accessToken) => {
+                const currentAccount = connectedAccount();
+                if (!currentAccount || currentAccount.id !== confirmedAccountId) {
+                  throw invalid(
+                    "The connected X account changed. Review the wording and account again.",
+                  );
+                }
+                return createXPost(accessToken, text);
+              }),
             accountUsername: connectedUsername,
           },
         );

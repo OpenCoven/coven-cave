@@ -656,6 +656,30 @@ test("a token whose timestamp is in the future is refused rather than trusted", 
   assert.deepEqual(sent, []);
 });
 
+test("a confirmation minted for one account cannot publish through another", async () => {
+  const { publication, confirmationToken } = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    text: "Post this as Nova.",
+    accountId: "account-a",
+  });
+  const sent: string[] = [];
+
+  await assert.rejects(
+    publishXPublication(
+      {
+        familiarId: FAMILIAR,
+        publicationId: publication.id,
+        confirmationToken,
+        accountId: "account-b",
+      },
+      recordingSend(sent),
+    ),
+    (error: unknown) => error instanceof XApiError && error.code === "invalid-request",
+  );
+  assert.deepEqual(sent, []);
+  assert.equal((await statusOf(publication.id))?.status, "draft");
+});
+
 test("a stored record claiming published without its post id is rejected wholesale", async () => {
   const { publication } = await draft("Half a record.");
   const target = path.join(publicationsDir, `${FAMILIAR}.json`);

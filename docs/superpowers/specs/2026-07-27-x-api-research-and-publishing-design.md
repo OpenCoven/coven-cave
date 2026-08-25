@@ -467,7 +467,7 @@ familiar grant, validates the text, stores it, and returns a confirmation
 token. **Shipped token design, kept deliberately:** rather than a random,
 one-time, in-memory token pointing at a server-held frozen payload, the token
 is `<mintedAtMs>.<hmac>`, an HMAC-SHA256 over
-`familiarId|publicationId|mintedAt|text` keyed by a 32-byte secret generated
+`familiarId|publicationId|mintedAt|accountId|text` keyed by a 32-byte secret generated
 once per install (`x-publications/.confirmation-key`, `0o600`). The token
 does not point at a copy of the text -- it authenticates the exact text
 *already stored on the record*, recomputed from disk at publish time. This
@@ -505,7 +505,9 @@ design's edge here is theoretical, not load-bearing.
 The confirmation modal renders the server-returned exact text, the connected
 account, an advisory character count, and the statement **No location will be
 added.** It uses the shared Modal, focus trap, focus return, and visible focus
-ring.
+ring. The account identity is covered by the same confirmation HMAC as the
+wording; reconnecting a different account requires a fresh review instead of
+silently sending the approved text under a different identity.
 
 **Publish to X** sends only the confirmation token (plus the familiar and
 record IDs needed to look the record up -- never a `text` field the server

@@ -340,17 +340,20 @@ async function confirmationDigest(
   publicationId: string,
   text: string,
   mintedAt: number,
+  accountId: string,
 ): Promise<string> {
   const key = await confirmationKey();
   return createHmac("sha256", key)
     // Length-prefixed, so an id cannot be shifted across a delimiter to mint
-    // a token that validates against a different record. `mintedAt` is inside
+    // a token that validates against a different record. The account id is
+    // length-prefixed for the same reason: approval of wording under one
+    // identity must not carry through a reconnect to another. `mintedAt` is inside
     // the MAC rather than beside it: it travels in the clear so verification
     // can read it without server-side state, and covering it is what stops a
     // holder from simply rewriting the timestamp to refresh their own window.
     .update(
       `${familiarId.length}:${familiarId}|${publicationId.length}:${publicationId}`
-      + `|${mintedAt}|${text}`,
+      + `|${mintedAt}|${accountId.length}:${accountId}|${text}`,
     )
     .digest("hex");
 }
@@ -360,8 +363,15 @@ async function mintConfirmationToken(
   publicationId: string,
   text: string,
   mintedAt: number,
+  accountId: string,
 ): Promise<string> {
-  return `${mintedAt}.${await confirmationDigest(familiarId, publicationId, text, mintedAt)}`;
+  return `${mintedAt}.${await confirmationDigest(
+    familiarId,
+    publicationId,
+    text,
+    mintedAt,
+    accountId,
+  )}`;
 }
 
 function tokensMatch(expected: string, provided: unknown): boolean {
@@ -405,6 +415,7 @@ async function verifyConfirmationToken(input: {
   familiarId: string;
   publicationId: string;
   text: string;
+  accountId: string;
   provided: unknown;
   now: Date;
 }): Promise<ConfirmationVerdict> {
@@ -415,6 +426,7 @@ async function verifyConfirmationToken(input: {
     input.publicationId,
     input.text,
     parsed.mintedAt,
+    input.accountId,
   );
   if (!tokensMatch(expected, parsed.digest)) return "mismatch";
   const age = input.now.getTime() - parsed.mintedAt;
@@ -445,6 +457,8 @@ export async function upsertXPublicationDraft(input: {
   familiarId: string;
   text: string;
   publicationId?: string;
+  /** Connected account this confirmation is approving. Empty only in tests/legacy callers. */
+  accountId?: string;
   now?: Date;
 }): Promise<XPublicationDraft> {
   const { familiarId } = input;
@@ -493,6 +507,7 @@ export async function upsertXPublicationDraft(input: {
         publication.id,
         publication.text,
         mintedAt.getTime(),
+        input.accountId ?? "",
       ),
     };
   });
@@ -510,7 +525,7 @@ type PreparedPublish =
 
 export type XPublishDependencies = {
   /** Sends the post. Must reject with `dispatched: true` when uncertain. */
-  send(text: string): Promise<{ id: string }>;
+  send(text: string, confirmedAccountId: string): Promise<{ id: string }>;
   /** The connected account, for the canonical URL. */
   accountUsername(): string | undefined;
   now?: () => Date;
@@ -530,6 +545,8 @@ export async function publishXPublication(
     familiarId: string;
     publicationId: string;
     confirmationToken: unknown;
+    /** Current connected account, checked against the account approved at mint time. */
+    accountId?: string;
   },
   dependencies: XPublishDependencies,
 ): Promise<XPublishOutcome> {
@@ -568,6 +585,7 @@ export async function publishXPublication(
       familiarId,
       publicationId: existing.id,
       text: existing.text,
+      accountId: input.accountId ?? "",
       provided: input.confirmationToken,
       now: dispatchAt,
     });
@@ -603,7 +621,7 @@ export async function publishXPublication(
   const pending = prepared.publication;
   let created: { id: string };
   try {
-    created = await dependencies.send(pending.text);
+    created = await dependencies.send(pending.text, input.accountId ?? "");
   } catch (error) {
     // A definite failure — X refused the request, or it never left — returns
     // the record to `draft` so a human can try again. An ambiguous one stays
