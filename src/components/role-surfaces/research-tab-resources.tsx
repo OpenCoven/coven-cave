@@ -736,7 +736,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       ) : null}
 
       {openLink ? (
-        <div className="research-res-overlay" onClick={closeOverlay}>
+        <div
+          className="research-res-overlay"
+          data-reader={reading && readerExpanded || undefined}
+          onClick={closeOverlay}
+        >
           <div
             ref={dialogRef}
             role="dialog"
@@ -744,6 +748,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             aria-labelledby="research-res-overlay-title"
             className="research-res-overlay__dialog"
             data-expanded={readerExpanded || undefined}
+            data-reader={reading && readerExpanded || undefined}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
@@ -783,27 +788,40 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
               </div>
               <div className="research-res-overlay__head-actions">
                 {openPaperId && reading ? (
-                  <button
-                    type="button"
-                    className="research-res-overlay__close focus-ring"
-                    onClick={() => setReaderExpanded((current) => !current)}
-                    aria-label={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                    aria-pressed={readerExpanded}
-                    title={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                  >
-                    <Icon
-                      name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
-                      width={13}
-                      height={13}
-                      aria-hidden
-                    />
-                  </button>
+                  <>
+                    {readerExpanded ? (
+                      <button
+                        type="button"
+                        className="research-res-overlay__close focus-ring"
+                        onClick={() => context.openUrl(paperDownloadUrl(openPaperId))}
+                        aria-label="Download PDF"
+                        title="Download PDF"
+                      >
+                        <Icon name="ph:download-simple" width={13} height={13} aria-hidden />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="research-res-overlay__close focus-ring"
+                      onClick={() => setReaderExpanded((current) => !current)}
+                      aria-label={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                      aria-pressed={readerExpanded}
+                      title={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                    >
+                      <Icon
+                        name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
+                        width={13}
+                        height={13}
+                        aria-hidden
+                      />
+                    </button>
+                  </>
                 ) : null}
                 <button
                   type="button"
                   className="research-res-overlay__close focus-ring"
                   onClick={closeOverlay}
-                  aria-label="Close resource details"
+                  aria-label={reading ? "Close paper reader" : "Close resource details"}
                 >
                   <Icon name="ph:x" width={13} height={13} aria-hidden />
                 </button>
@@ -905,7 +923,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       size="sm"
                       variant="secondary"
                       leadingIcon="ph:book-open"
-                      onClick={() => setReading(true)}
+                      onClick={() => {
+                        setReading(true);
+                        setReaderExpanded(true);
+                      }}
                     >
                       Read
                     </Button>

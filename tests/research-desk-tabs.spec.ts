@@ -280,6 +280,12 @@ type MockSavedLink = {
   title: string;
   addedAt: string;
   source: "chat" | "desk";
+  paper?: {
+    arxivId: string;
+    authors: string[];
+    abstract: string;
+    publishedAt: string;
+  };
   xArticle?: MockXArticle;
 };
 
@@ -325,7 +331,20 @@ const ORDINARY_RESOURCE_LINK: MockSavedLink = {
 const LINKS: MockSavedLink[] = [
   { id: "l-gh", url: "https://github.com/acme/vector-bench", category: "github", title: "acme/vector-bench", addedAt: iso(60), source: "chat" },
   { id: "l-docs", url: "https://docs.qdrant.tech/guide", category: "docs", title: "Qdrant guide", addedAt: iso(120), source: "chat" },
-  { id: "l-paper", url: "https://arxiv.org/abs/2401.01234", category: "paper", title: "Efficient ANN search", addedAt: iso(90), source: "desk" },
+  {
+    id: "l-paper",
+    url: "https://arxiv.org/abs/2401.01234",
+    category: "paper",
+    title: "Efficient ANN search",
+    addedAt: iso(90),
+    source: "desk",
+    paper: {
+      arxivId: "2401.01234",
+      authors: ["A. Researcher", "B. Builder"],
+      abstract: "A compact fixture paper for the Research Desk reader.",
+      publishedAt: "2024-01-03T00:00:00.000Z",
+    },
+  },
 ];
 
 const AGENTIC_CONTEXT_FINGERPRINT = "ctx-v1-1234567890abcdef1234567890abcdef";
@@ -1142,6 +1161,48 @@ test.describe("research desk tabs", () => {
     await overlay.getByRole("button", { name: "Close resource details" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // Focus returns to the card title that opened it.
+    await expect(opener).toBeFocused();
+  });
+
+  test("Resources opens papers edge-to-edge and Escape exits focus before closing", async ({ page }) => {
+    await page.route("**/api/research/papers/pdf?id=2401.01234", async (route) => {
+      await route.fulfill({
+        path: "tests/fixtures/sample-paper.pdf",
+        contentType: "application/pdf",
+      });
+    });
+    await openResearchDesk(page);
+    await deskTab(page, /^Resources/).click();
+
+    const opener = page.getByRole("button", {
+      name: /Efficient ANN search — open details/,
+    });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "Efficient ANN search" });
+    await dialog.getByRole("button", { name: "Read", exact: true }).click();
+
+    await expect(dialog).toHaveAttribute("data-reader", "true");
+    await expect(dialog.getByRole("button", { name: "Download PDF" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Exit focus reader" })).toBeVisible();
+    await expect(dialog.locator(".research-res-overlay__source")).toBeHidden();
+    await expect(dialog.locator(".research-res-overlay__actions")).toBeHidden();
+    await expect(dialog.locator(".research-paper-view__stage")).toHaveCSS("max-height", "none");
+
+    const viewport = page.viewportSize();
+    const box = await dialog.boundingBox();
+    expect(viewport).not.toBeNull();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeLessThanOrEqual(1);
+    expect(box!.y).toBeLessThanOrEqual(1);
+    expect(box!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
+    expect(box!.height).toBeGreaterThanOrEqual(viewport!.height - 1);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toHaveAttribute("data-reader", "true");
+    await expect(dialog.locator(".research-res-overlay__source")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
     await expect(opener).toBeFocused();
   });
 
