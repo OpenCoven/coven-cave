@@ -1186,7 +1186,12 @@ test.describe("research desk tabs", () => {
     await expect(dialog.getByRole("button", { name: "Exit focus reader" })).toBeVisible();
     await expect(dialog.locator(".research-res-overlay__source")).toBeHidden();
     await expect(dialog.locator(".research-res-overlay__actions")).toBeHidden();
-    await expect(dialog.locator(".research-paper-view__stage")).toHaveCSS("max-height", "none");
+    const stage = dialog.locator(".research-paper-view__stage");
+    await expect(stage).toHaveCSS("max-height", "none");
+    await expect(stage).toHaveAttribute("data-status", "ready", { timeout: 15_000 });
+    await expect
+      .poll(() => dialog.locator(".research-paper-view__canvas").evaluate((canvas) => canvas.width))
+      .toBeGreaterThan(100);
 
     const viewport = page.viewportSize();
     const box = await dialog.boundingBox();
