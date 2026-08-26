@@ -210,7 +210,7 @@ describe("completeThroughMs", () => {
     const late = cron("late", "RRULE:FREQ=DAILY;BYHOUR=23;BYMINUTE=0");
     const projection = projectCronRuns([early, late], start, longEnd);
     assert.equal(projection.truncated, true);
-    const lastOf = (id) =>
+    const lastOf = (id: string) =>
       Math.max(
         ...projection.runs
           .filter((run) => run.automationId === id)
