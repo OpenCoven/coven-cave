@@ -34,7 +34,7 @@ assert.match(
 );
 assert.match(
   source,
-  /\.filter\(\s*\(el\) => !el\.hasAttribute\("disabled"\) && el\.getClientRects\(\)\.length > 0,\s*\)/,
+  /typeof el\.getClientRects !== "function" \|\| el\.getClientRects\(\)\.length > 0/,
   "excludes controls hidden by an active dialog mode from the Tab cycle",
 );
 
