@@ -565,15 +565,38 @@ one risk it covers — somebody else still sitting in that directory — is the 
 thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991,
 and 15m since `cave-0pu26`.
 
-If you know the unit is idle, say so explicitly (`cave-jinkd`):
+If you know the unit is idle, say so explicitly — and say WHICH unit
+(`cave-jinkd`, scoped in `cave-qamzg`):
 
 ```bash
-pnpm beads:worktrees:apply --allow-unenforced-planes --allow-cooldown-override
+pnpm beads:worktrees:apply --allow-unenforced-planes \
+  --allow-cooldown-override --only <path|branch|ref|head>
 ```
 
-The patrol prints that exact line for you whenever cooldown is the only thing
-left, so you never have to look it up — the same affordance the create gate
-gives for its budget exception.
+`--only` is **required** with the override and repeatable. It must name a unit
+that exists, and name exactly one — an ambiguous or unknown value is refused
+rather than resolved, because a scope that quietly covered a neighbour would
+defeat the point of having one.
+
+**Why it is required.** The flag began as an all-or-nothing lever over the
+whole cooldown lane, and the very first real use showed why that is unsafe
+here: the patrol's hint listed two cooldown units and the second belonged to
+**another live session** (`cave-iizwt`, PR #5021, landed mid-session). Running
+the unscoped override would have retired that session's worktree alongside the
+operator's own — the class of incident `scripts/worktree-autolock.mjs` exists
+to prevent. The override went unused and three units were hand-retired instead,
+which is what a lever nobody dares pull is worth.
+
+The patrol still prints the admissible line for you whenever cooldown is the
+only thing left — with an `--only` line per unit — the same affordance the
+create gate gives for its budget exception. It deliberately does **not** hand
+you a prefilled command covering every unit it lists: take the `--only` lines
+for units that are yours, and leave the rest alone.
+
+Note `--only` scopes the **override and nothing else**. Every other unit still
+retires on the gate's own evidence, which needs no assertion from you; passing
+`--only` without the override is refused rather than silently ignored, so it
+cannot be mistaken for a way to narrow the whole apply.
 
 **What the flag can and cannot do.** `cooldownIsTheOnlyBlocker` answers
 admission by re-running the real classifier one cooldown into the future and
