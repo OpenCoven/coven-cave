@@ -1,0 +1,126 @@
+name: Restore fully hidden sidebar
+
+on:
+  push:
+    branches:
+      - fix/cave-z2bvz-fully-hide-sidebar
+    paths:
+      - .github/workflows/restore-fully-hidden-sidebar.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-fully-hidden-sidebar
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    if: github.repository == 'OpenCoven/coven-cave' && github.ref == 'refs/heads/fix/cave-z2bvz-fully-hide-sidebar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the isolated restoration branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/cave-z2bvz-fully-hide-sidebar
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reverse only the accidental rail-policy overwrite from #4758
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary \
+            c3b0ed8c4028657e5525812c07fc2199245fec8c \
+            581365c3056a980375abde18e4e382abb3f30758 \
+            -- \
+            src/components/shell.tsx \
+            src/components/shell-first-paint.test.ts \
+            src/components/shell-left-panels-fit.test.ts \
+            src/components/shell-nav-memory.test.ts \
+            src/components/roles-tools-navigation.test.ts \
+            src/components/sidepanel-nav-peek.test.ts \
+            > /tmp/cave-z2bvz-rail.patch
+          test -s /tmp/cave-z2bvz-rail.patch
+          git apply --reverse --3way /tmp/cave-z2bvz-rail.patch
+
+      - name: Remove only the four cave-z2bvz quarantines from #4768
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary \
+            0febf45c4befe3d83692bde318a2bacc3aae269f \
+            39b2c430815d36ac9c662460589c208a6a5a682a \
+            -- \
+            tests/sidebar-hidden-push.spec.ts \
+            tests/right-chat-panel.spec.ts \
+            tests/chat-code-workflow.spec.ts \
+            > /tmp/cave-z2bvz-quarantine.patch
+          test -s /tmp/cave-z2bvz-quarantine.patch
+          git apply --reverse --3way /tmp/cave-z2bvz-quarantine.patch
+
+      - name: Prove the restoration is narrow and complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+
+          cat > /tmp/expected-paths <<'EOF'
+          src/components/roles-tools-navigation.test.ts
+          src/components/shell-first-paint.test.ts
+          src/components/shell-left-panels-fit.test.ts
+          src/components/shell-nav-memory.test.ts
+          src/components/shell.tsx
+          src/components/sidepanel-nav-peek.test.ts
+          tests/chat-code-workflow.spec.ts
+          tests/right-chat-panel.spec.ts
+          tests/sidebar-hidden-push.spec.ts
+          EOF
+          git diff --name-only | sort > /tmp/actual-paths
+          sort -o /tmp/expected-paths /tmp/expected-paths
+          diff -u /tmp/expected-paths /tmp/actual-paths
+
+          ! grep -n 'cave-z2bvz' \
+            tests/sidebar-hidden-push.spec.ts \
+            tests/right-chat-panel.spec.ts \
+            tests/chat-code-workflow.spec.ts
+
+          grep -Fq 'const NAV_COLLAPSED_PX = 0;' src/components/shell.tsx
+          grep -Fq 'collapsedSize={NAV_COLLAPSED_PX}' src/components/shell.tsx
+          grep -Fq 'aria-hidden={isMobile ? mobileDrawer !== "nav" : !navOpen}' src/components/shell.tsx
+          grep -Fq 'inert={isMobile ? mobileDrawer !== "nav" : !navOpen}' src/components/shell.tsx
+          grep -Fq 'shell-separator--collapsed-nav' src/components/shell.tsx
+          ! grep -q 'NAV_RAIL_PX' src/components/shell.tsx
+          ! grep -q 'shell-nav--rail' src/components/shell.tsx
+
+      - name: Run focused shell contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types src/components/shell-first-paint.test.ts
+          node --experimental-strip-types src/components/shell-left-panels-fit.test.ts
+          node --experimental-strip-types src/components/shell-nav-memory.test.ts
+          node --experimental-strip-types src/components/roles-tools-navigation.test.ts
+          node --experimental-strip-types src/components/sidepanel-nav-peek.test.ts
+
+      - name: Commit the focused restoration and retire this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config core.hooksPath /dev/null
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/restore-fully-hidden-sidebar.yml
+          git add \
+            src/components/shell.tsx \
+            src/components/shell-first-paint.test.ts \
+            src/components/shell-left-panels-fit.test.ts \
+            src/components/shell-nav-memory.test.ts \
+            src/components/roles-tools-navigation.test.ts \
+            src/components/sidepanel-nav-peek.test.ts \
+            tests/sidebar-hidden-push.spec.ts \
+            tests/right-chat-panel.spec.ts \
+            tests/chat-code-workflow.spec.ts
+          git commit -m "fix(shell): restore fully hidden desktop navigation"
+          git push origin HEAD:fix/cave-z2bvz-fully-hide-sidebar
