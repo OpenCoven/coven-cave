@@ -135,6 +135,12 @@ test("the paper reader opens directly into a near-bezelless focus mode", () => {
     "reader chrome loads with the Resources surface, before the lazy PDF chunk mounts",
   );
   assert.match(source, /const \[readerExpanded, setReaderExpanded\] = useState\(false\)/);
+  assert.match(source, /const readerFocusControlRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(
+    source,
+    /if \(reading && readerExpanded\) readerFocusControlRef\.current\?\.focus\(\)/,
+    "focus moves from the removed Read button to a surviving reader control",
+  );
   assert.match(
     source,
     /if \(readerExpanded\) \{\s*setReaderExpanded\(false\);\s*return;\s*\}\s*closeOverlay\(\)/,
@@ -163,6 +169,10 @@ test("the paper reader opens directly into a near-bezelless focus mode", () => {
     readerStyles,
     /\.research-res-overlay__dialog\[data-reader\] \.research-paper-view__stage[\s\S]*max-height: none/,
   );
+  assert.match(readerStyles, /var\(--sai-top\)/);
+  assert.match(readerStyles, /var\(--sai-right\)/);
+  assert.match(readerStyles, /var\(--sai-bottom\)/);
+  assert.match(readerStyles, /var\(--sai-left\)/);
 });
 
 test("resources expose a labeled multiline batch intake with truthful preview", () => {

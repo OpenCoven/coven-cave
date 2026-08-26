@@ -130,6 +130,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const activeArticleIdRef = useRef<string | null>(null);
   const articleReaderRef = useRef<HTMLElement | null>(null);
   const pendingArticleFocusRef = useRef(false);
+  const readerFocusControlRef = useRef<HTMLButtonElement>(null);
   const selectedMission = research.selected;
   const act = research.act;
   const intake = useMemo(() => summarizeLinkIntake(draft, links), [draft, links]);
@@ -363,6 +364,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     closeOverlay();
   }, [closeOverlay, readerExpanded]);
   useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
+
+  useEffect(() => {
+    if (reading && readerExpanded) readerFocusControlRef.current?.focus();
+  }, [reading, readerExpanded]);
 
   // A fresh overlay never inherits the previous one's confirm/copied/reading
   // state — closing the overlay or opening a different resource both land
@@ -802,6 +807,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       </button>
                     ) : null}
                     <button
+                      ref={readerFocusControlRef}
                       type="button"
                       className="research-res-overlay__close focus-ring"
                       onClick={() => setReaderExpanded((current) => !current)}

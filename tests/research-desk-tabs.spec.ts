@@ -1183,15 +1183,25 @@ test.describe("research desk tabs", () => {
 
     await expect(dialog).toHaveAttribute("data-reader", "true");
     await expect(dialog.getByRole("button", { name: "Download PDF" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Exit focus reader" })).toBeVisible();
+    const exitFocus = dialog.getByRole("button", { name: "Exit focus reader" });
+    await expect(exitFocus).toBeVisible();
+    await expect(exitFocus).toBeFocused();
     await expect(dialog.locator(".research-res-overlay__source")).toBeHidden();
     await expect(dialog.locator(".research-res-overlay__actions")).toBeHidden();
     const stage = dialog.locator(".research-paper-view__stage");
     await expect(stage).toHaveCSS("max-height", "none");
     await expect(stage).toHaveAttribute("data-status", "ready", { timeout: 15_000 });
     await expect
-      .poll(() => dialog.locator(".research-paper-view__canvas").evaluate((canvas) => canvas.width))
+      .poll(() => dialog.locator(".research-paper-view__canvas").evaluate(
+        (canvas) => (canvas as HTMLCanvasElement).width,
+      ))
       .toBeGreaterThan(100);
+    for (let index = 0; index < 8; index += 1) {
+      await page.keyboard.press("Tab");
+      await expect
+        .poll(() => dialog.evaluate((node) => node.contains(document.activeElement)))
+        .toBe(true);
+    }
 
     const viewport = page.viewportSize();
     const box = await dialog.boundingBox();
