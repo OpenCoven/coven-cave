@@ -248,9 +248,19 @@
    on screen. */
 .gh-row.is-selected .gh-actions.reveal-on-hover,
 .gh-actions.reveal-on-hover:has(.gh-action-error) { opacity:1; }
-.gh-action-wrap { position:relative; display:inline-flex; }
+/* No positioning context: the only absolutely-positioned child was the action
+   popover, which the shared Popover now portals. Leaving `position:relative`
+   here — and the `position:static` override that used to fight it — would
+   preserve scaffolding for a layout that no longer exists. cave-cadp4. */
+.gh-action-wrap { display:inline-flex; }
 .gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:var(--color-danger-foreground); font-size:10px; font-weight:700; }
-.gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--glass-elevated); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); box-shadow:0 12px 30px rgba(0,0,0,.18); }
+/* Skin only. Position, stacking and dismissal belong to the shared Popover,
+   which portals this panel to the top layer — these used to be
+   `position:absolute; top:calc(100% + 4px)`, which opened DOWNWARD out of
+   `.gh-next-body` (`overflow-y:auto; overflow-x:hidden`, inside a drawer capped
+   at `max-height:min(66%,340px)`) and was clipped on both axes into an
+   unreadable sliver. cave-cadp4. */
+.gh-action-popover { min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--glass-elevated); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); box-shadow:0 12px 30px rgba(0,0,0,.18); }
 .gh-action-popover--wide { padding:0; min-width:280px; background:transparent; border:none; box-shadow:none; backdrop-filter:none; }
 .gh-action-popover-title { padding:0 4px 6px; font-size:11px; color:var(--text-muted); }
 .gh-action-popover-list { list-style:none; margin:0; padding:0; max-height:220px; overflow-y:auto; }
@@ -262,7 +272,6 @@
 /* Detail-panel actions sit at the panel's LEFT edge, so a right-anchored popover
    extends into the scroll container's unreachable left overflow and gets clipped.
    Anchor to the actions row itself (wrap goes static) and open from the left. */
-.gh-glass-actions .gh-action-wrap { position:static; }
 
 .gh-glass-panel {
   position:relative;
