@@ -1382,9 +1382,11 @@ export const SUITES = {
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/ci-paths.test.mjs",
     "scripts/export-client-v1-contract.test.mjs",
+    "scripts/export-client-v1-hpke-vectors.test.mjs",
     "scripts/client-v1-doc-contract.test.mjs",
     "scripts/client-v1-settings-doc-contract.test.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
+    "scripts/client-v1-authority-takeover.test.mjs",
     "scripts/client-v1-conformance.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
@@ -1426,6 +1428,10 @@ export const SUITES = {
     "src/app/api/canvas/route.test.ts",
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/lib/server/client-v1/authority-contract.test.ts",
+    "src/lib/server/client-v1/authority-replay.test.ts",
+    "src/lib/server/client-v1/authority-runtime.test.ts",
+    "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
@@ -1924,6 +1930,8 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
+  // imports the TypeScript Client v1 HPKE test codec
+  "scripts/client-v1-authority-takeover.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
@@ -1938,6 +1946,7 @@ const STRIP_TYPES_MJS = new Set([
 export const SUITE_PREFLIGHTS = {
   api: [
     ["scripts/export-client-v1-contract.mjs", "--check"],
+    ["scripts/export-client-v1-hpke-vectors.mjs", "--check"],
   ],
 };
 
@@ -1950,6 +1959,8 @@ const ALIAS_LOADER = new Set([
   "src/components/running-sessions-mission-row.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
+  // Resolves the process-local instance id through the "@/lib" Cave path.
+  "src/lib/server/client-v1/authority-runtime.test.ts",
   "src/app/api/client/v1/pairing/requests/route.test.ts",
   "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
   "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",

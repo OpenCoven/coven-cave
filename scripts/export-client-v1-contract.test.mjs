@@ -14,6 +14,11 @@ import {
   clientV1ContractFixtureSha256,
   renderClientV1ContractFixture,
 } from "./export-client-v1-contract.mjs";
+import * as contractExporter from "./export-client-v1-contract.mjs";
+import {
+  CLIENT_V1_HPKE_VECTOR_PATH,
+  CLIENT_V1_HPKE_VECTOR_SHA256_PATH,
+} from "./export-client-v1-hpke-vectors.mjs";
 
 const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
 
@@ -160,6 +165,7 @@ test("ratchets the exported fixture to the reviewed Phase 1 public routes", () =
     fileName: "client-v1-discovery.json",
     mode: "0600",
     version: 1,
+    hpkeBoundVersion: 2,
   });
   // /api/client/v1/health answers with the release-compatibility record, so
   // the exported health envelope has to carry the same shape rather than a
@@ -172,6 +178,164 @@ test("ratchets the exported fixture to the reviewed Phase 1 public routes", () =
   ]);
   assert.equal(typeof fixture.examples.pairingCreatedEnvelope.data.secret, "string");
   assert.equal(typeof fixture.examples.pairingExchangeEnvelope.data.bearer, "string");
+});
+
+test("ratchets the complete authority contract and protected operation inventory", () => {
+  const reviewedModes = Reflect.get(
+    contractExporter,
+    "REVIEWED_CLIENT_V1_AUTHORITY_MODES",
+  );
+  const reviewedProtectedOperations = Reflect.get(
+    contractExporter,
+    "REVIEWED_CLIENT_V1_HPKE_BOUND_OPERATIONS",
+  );
+  assert.deepEqual(reviewedModes, ["off", "advertise", "enforce"]);
+  assert.deepEqual(reviewedProtectedOperations, [
+    "pairing.poll",
+    "pairing.exchange",
+    "familiars.list",
+    "projects.list",
+    "conversations.list",
+    "conversations.read",
+    "messages.list",
+  ]);
+
+  const fixture = JSON.parse(renderClientV1ContractFixture());
+  assert.deepEqual(fixture.contract.authority, {
+    defaultMode: "off",
+    modes: reviewedModes,
+    mechanism: {
+      id: "hpke-bound-v1",
+      discoveryVersion: 2,
+      suite: {
+        kem: "DHKEM(X25519, HKDF-SHA256)",
+        kemId: 32,
+        kdf: "HKDF-SHA256",
+        kdfId: 1,
+        aead: "AES-256-GCM",
+        aeadId: 2,
+      },
+      requestHeaders: {
+        mechanism: "x-coven-client-v1-authority",
+        keyId: "x-coven-client-v1-authority-key-id",
+        instanceId: "x-coven-client-v1-authority-instance",
+        runtimeNonce: "x-coven-client-v1-authority-runtime-nonce",
+        requestNonce: "x-coven-client-v1-authority-request-nonce",
+        issuedAt: "x-coven-client-v1-authority-issued-at",
+        enc: "x-coven-client-v1-authority-enc",
+        ciphertext: "x-coven-client-v1-authority-ciphertext",
+      },
+      responseMediaType:
+        "application/vnd.opencoven.client-v1.hpke-bound-v1+json",
+      requestHpkeMode: "base",
+      responseHpkeMode: "auth",
+      requestEncoding: "headers-plus-rfc8785-json",
+      aadEncoding: "u32be-length-prefixed-v1",
+      canonicalRoute: "rfc3986-sorted-query-v1",
+      keyIdDerivation: "sha256-domain-separated-public-key-v1",
+      requestInfo: "OpenCoven/client-v1/hpke-bound-v1/request",
+      responseInfo: "OpenCoven/client-v1/hpke-bound-v1/response",
+      limits: {
+        rawKeyBytes: 32,
+        encodedKeyCharacters: 43,
+        requestPlaintextBytes: 1024,
+        requestCiphertextBytes: 2048,
+        requestBodyBytes: 65_536,
+        responsePlaintextBytes: 8 * 1024 * 1024,
+        responseCiphertextBytes: (8 * 1024 * 1024) + 16,
+        responseEnvelopeBytes: 11_185_056,
+        canonicalRouteBytes: 2_048,
+        instanceIdBytes: 256,
+      },
+      freshness: {
+        maximumAgeMs: 60_000,
+        maximumFutureSkewMs: 10_000,
+        replayTtlMs: 120_000,
+        replayCapacity: 4_096,
+      },
+      protectedOperations: reviewedProtectedOperations,
+      vectorFixture: {
+        fileName: "hpke-bound-v1-vectors.json",
+        sha256FileName: "hpke-bound-v1-vectors.sha256",
+      },
+    },
+  });
+  assert.deepEqual(
+    fixture.contract.operations
+      .filter((operation) => operation.binding === "hpke-bound-v1")
+      .map((operation) => operation.id),
+    reviewedProtectedOperations,
+  );
+  assert.equal(
+    JSON.stringify(fixture).match(
+      /privateKey|secretKey|senderKey|recipientPrivateKey/gu,
+    ),
+    null,
+  );
+});
+
+test("recursively rejects private-key-shaped fixture fields", () => {
+  const reject = Reflect.get(
+    contractExporter,
+    "assertNoPrivateKeyShapedFields",
+  );
+  assert.equal(typeof reject, "function");
+  for (const field of [
+    "privateKey",
+    "secretKey",
+    "senderKey",
+    "recipientPrivateKey",
+  ]) {
+    assert.throws(
+      () => reject({ safe: [{ nested: { [field]: "must-never-publish" } }] }),
+      /private-key-shaped field/u,
+      field,
+    );
+  }
+});
+
+test("independently recomputes the committed normative vector bytes and digest", () => {
+  const vectorModuleUrl = new URL(
+    "../src/lib/server/client-v1/hpke-bound-v1-vector.ts",
+    import.meta.url,
+  ).href;
+  const source = [
+    `import { createClientV1HpkeBoundV1Vector } from ${JSON.stringify(vectorModuleUrl)};`,
+    "process.stdout.write(JSON.stringify(await createClientV1HpkeBoundV1Vector()));",
+  ].join("\n");
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--no-warnings",
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      source,
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const generated = JSON.parse(result.stdout);
+  const sortJson = (value) => {
+    if (Array.isArray(value)) return value.map(sortJson);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort((left, right) => left < right ? -1 : left > right ? 1 : 0)
+        .map((key) => [key, sortJson(value[key])]),
+    );
+  };
+  const rendered = `${JSON.stringify(sortJson(generated), null, 2)}\n`;
+  const committedBytes = readFileSync(CLIENT_V1_HPKE_VECTOR_PATH);
+  const committedDigest = readFileSync(
+    CLIENT_V1_HPKE_VECTOR_SHA256_PATH,
+    "utf8",
+  );
+  assert.equal(committedBytes.toString("utf8"), rendered);
+  assert.equal(
+    committedDigest,
+    `${createHash("sha256").update(rendered).digest("hex")}\n`,
+  );
 });
 
 test("ratchets the exported fixture to the reviewed live capability inventory", () => {

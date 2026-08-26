@@ -7,7 +7,23 @@ on unit-test proxies alone.** This runbook is the repeatable form of that
 evidence.
 
 ```bash
-pnpm build                                   # the run drives the assembled artifact
+pnpm build
+pnpm test:client-v1:authority-takeover
+node scripts/client-v1-conformance.mjs --include-authority-takeover
+```
+
+The build command assembles the release artifact both socket proofs drive. The
+focused command safely approves an isolated pairing, Auth-opens its bound
+exchange, proves the issued bearer on a live bound `projects.list`, then
+replaces the listener. Both the pairing-secret and bearer requests expose only
+HPKE metadata/ciphertext, the replacement key cannot open either request, and
+plaintext or replacement-key Auth responses are rejected. The conformance
+command records those five aggregate assertions alongside the current Client
+v1 behavior.
+
+For the ordinary or TTL conformance runs:
+
+```bash
 pnpm test:client-v1:conformance              # ~40 s, exit 0 or 1
 pnpm test:client-v1:conformance --include-ttl \
   --out docs/client-v1-conformance-results/<date>-v<version>-<platform>.json
@@ -35,6 +51,9 @@ The run therefore starts a Cave, drives it over `127.0.0.1`, and stops it.
 #4838 names Cave, the SDK and Chat. **The SDK and Chat halves live in other
 repositories and are not exercised here.** A green record from this harness is
 evidence about Cave and about nothing else.
+
+The listener-takeover proof has the same boundary: it is Cave-only evidence and
+does not prove SDK or Chat integration.
 
 The run also says, in its own evidence record (`notCovered`), what a pass does
 not mean:

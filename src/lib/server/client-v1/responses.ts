@@ -256,6 +256,77 @@ export function clientV1RateLimitResponse(
   });
 }
 
+export function clientV1AuthorityRequiredResponse(): Response {
+  return clientV1ErrorResponse(
+    "incompatible_version",
+    "HPKE authority binding is required.",
+    { details: { reason: "hpke_binding_required" } },
+  );
+}
+
+export function clientV1AuthorityUnavailableResponse(): Response {
+  return clientV1ErrorResponse(
+    "service_unavailable",
+    "Client v1 HPKE authority is unavailable.",
+    {
+      details: { reason: "authority_unavailable" },
+      retryable: true,
+    },
+  );
+}
+
+export function clientV1AuthorityInvalidResponse(): Response {
+  return clientV1ErrorResponse(
+    "invalid_request",
+    "Invalid authority envelope.",
+    { details: { reason: "authority_invalid" } },
+  );
+}
+
+export function clientV1AuthorityStaleKeyResponse(): Response {
+  return clientV1ErrorResponse(
+    "conflict",
+    "The Cave authority key is stale.",
+    {
+      details: { reason: "authority_key_stale" },
+      retryable: true,
+    },
+  );
+}
+
+export function clientV1AuthorityStaleInstanceResponse(): Response {
+  return clientV1ErrorResponse(
+    "conflict",
+    "The Cave instance identity is stale.",
+    {
+      details: { reason: "authority_instance_stale" },
+      retryable: true,
+    },
+  );
+}
+
+export function clientV1AuthorityStaleRequestResponse(): Response {
+  return clientV1ErrorResponse(
+    "conflict",
+    "The authority request is stale.",
+    {
+      details: { reason: "authority_request_stale" },
+      retryable: true,
+    },
+  );
+}
+
+export function clientV1AuthorityResponseFailure(): Response {
+  return clientV1ErrorResponse(
+    "internal_error",
+    "The authenticated response could not be produced.",
+    {
+      details: { reason: "authority_response_failed" },
+      retryable: true,
+    },
+  );
+}
+
 export function clientV1OperationInProgressError(operation: string): ClientV1ErrorEnvelope {
   return clientV1Error("conflict", "The operation is already in progress.", {
     details: {
