@@ -13,10 +13,13 @@ node scripts/client-v1-conformance.mjs --include-authority-takeover
 ```
 
 The build command assembles the release artifact both socket proofs drive. The
-focused command proves that replacing the Cave listener exposes a legacy
-pairing secret but only HPKE ciphertext in enforce mode, and that plaintext or
-replacement-key responses are rejected. The conformance command records those
-five assertions alongside the current Client v1 behavior.
+focused command safely approves an isolated pairing, Auth-opens its bound
+exchange, proves the issued bearer on a live bound `projects.list`, then
+replaces the listener. Both the pairing-secret and bearer requests expose only
+HPKE metadata/ciphertext, the replacement key cannot open either request, and
+plaintext or replacement-key Auth responses are rejected. The conformance
+command records those five aggregate assertions alongside the current Client
+v1 behavior.
 
 For the ordinary or TTL conformance runs:
 

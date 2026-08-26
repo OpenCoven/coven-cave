@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -26,6 +27,7 @@ import {
 } from "../src/lib/server/client-v1/hpke-bound-v1.ts";
 import { createClientV1HpkeTestClient } from "../src/lib/server/client-v1/testing/hpke-client.ts";
 import {
+  ADMIN_TOKEN_HEADER,
   AUTHORITY_TAKEOVER_ASSERTION_IDS,
   freePort,
   requestOnce,
@@ -37,6 +39,11 @@ import {
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 const UTF8 = new TextEncoder();
+
+export const AUTHORITY_TAKEOVER_CREDENTIAL_KINDS = Object.freeze([
+  "pairing-secret",
+  "bearer",
+]);
 
 class AuthorityTakeoverFailure extends Error {
   constructor(assertionId, reason) {
@@ -58,31 +65,40 @@ function bodyText(body) {
   return "";
 }
 
+function hasHeader(headers, name) {
+  return Object.keys(headers ?? {}).some(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+  );
+}
+
+function capturedValues(capture) {
+  const values = [capture.url ?? "", bodyText(capture.body)];
+  for (const value of Object.values(capture.headers ?? {})) {
+    if (Array.isArray(value)) values.push(...value);
+    else if (typeof value === "string") values.push(value);
+  }
+  return values;
+}
+
+function capturesSensitiveValue(capture, value) {
+  return (
+    typeof value === "string"
+    && value.length > 0
+    && capturedValues(capture).some((candidate) => candidate.includes(value))
+  );
+}
+
 export function inspectCapturedPlaintextRequest(
   capture,
   sensitive = {},
 ) {
-  const body = bodyText(capture.body);
-  const pairingSecret = headerValue(
-    capture.headers,
-    "x-coven-pairing-secret",
-  );
-  const authorization = headerValue(capture.headers, "authorization");
   return {
     exposedPairingSecret:
-      pairingSecret.length > 0
-      || (
-        typeof sensitive.pairingSecret === "string"
-        && sensitive.pairingSecret.length > 0
-        && body.includes(sensitive.pairingSecret)
-      ),
+      hasHeader(capture.headers, "x-coven-pairing-secret")
+      || capturesSensitiveValue(capture, sensitive.pairingSecret),
     exposedBearer:
-      /^Bearer \S+$/iu.test(authorization)
-      || (
-        typeof sensitive.bearer === "string"
-        && sensitive.bearer.length > 0
-        && body.includes(sensitive.bearer)
-      ),
+      hasHeader(capture.headers, "authorization")
+      || capturesSensitiveValue(capture, sensitive.bearer),
     hasBoundCiphertext:
       headerValue(capture.headers, CLIENT_V1_HPKE_HEADERS.mechanism)
         === CLIENT_V1_HPKE_MECHANISM
@@ -95,6 +111,74 @@ export function inspectCapturedPlaintextRequest(
 
 export function inspectCapturedBoundRequest(capture, sensitive = {}) {
   return inspectCapturedPlaintextRequest(capture, sensitive);
+}
+
+export async function evaluateBoundCredentialTakeover(
+  attempts,
+  predicates,
+) {
+  const expectedKinds = AUTHORITY_TAKEOVER_CREDENTIAL_KINDS;
+  if (
+    attempts.length !== expectedKinds.length
+    || attempts.some(
+      (attempt, index) => attempt.kind !== expectedKinds[index],
+    )
+  ) {
+    throw new Error(
+      "authority takeover credential classes are incomplete",
+    );
+  }
+
+  const ciphertextOnly = [];
+  const replacementCannotOpen = [];
+  const plaintextResponseRejected = [];
+  const forgedAuthResponseRejected = [];
+  for (const attempt of attempts) {
+    const sensitive = attempt.kind === "pairing-secret"
+      ? { pairingSecret: attempt.value }
+      : { bearer: attempt.value };
+    for (const responseKind of ["plaintext", "forged"]) {
+      ciphertextOnly.push(
+        await predicates.ciphertextOnly({
+          kind: attempt.kind,
+          capture: attempt[responseKind].capture,
+          sensitive,
+        }),
+      );
+    }
+    replacementCannotOpen.push(
+      await predicates.replacementCannotOpen({
+        kind: attempt.kind,
+        capture: attempt.plaintext.capture,
+        prepared: attempt.prepared,
+        replacementKeyPair: attempt.replacementKeyPair,
+      }),
+    );
+    plaintextResponseRejected.push(
+      !await predicates.acceptsResponse({
+        kind: attempt.kind,
+        responseKind: "plaintext",
+        prepared: attempt.prepared,
+        response: attempt.plaintext.response,
+      }),
+    );
+    forgedAuthResponseRejected.push(
+      !await predicates.acceptsResponse({
+        kind: attempt.kind,
+        responseKind: "forged",
+        prepared: attempt.prepared,
+        response: attempt.forged.response,
+      }),
+    );
+  }
+  return {
+    ciphertextOnly: ciphertextOnly.every(Boolean),
+    replacementCannotOpen: replacementCannotOpen.every(Boolean),
+    plaintextResponseRejected:
+      plaintextResponseRejected.every(Boolean),
+    forgedAuthResponseRejected:
+      forgedAuthResponseRejected.every(Boolean),
+  };
 }
 
 export async function acceptsPreparedBoundResponse(prepared, response) {
@@ -219,14 +303,24 @@ async function startCaptureListener(port, responder) {
 async function startForgingCaptureListener(port, prepared) {
   const suite = createClientV1HpkeSuite();
   const replacementKeyPair = await suite.kem.generateKeyPair();
+  const sequence = AUTHORITY_TAKEOVER_CREDENTIAL_KINDS.flatMap(
+    (kind) => [
+      { kind, responseKind: "plaintext" },
+      { kind, responseKind: "forged" },
+    ],
+  );
   let requestCount = 0;
   const listener = await startCaptureListener(port, async () => {
+    const step = sequence[requestCount];
     requestCount += 1;
-    if (requestCount === 1) return plaintextUnauthorizedResponse();
-    if (requestCount === 2) {
-      return forgeReplacementResponse(prepared, replacementKeyPair);
+    if (!step) throw new Error("unexpected request count");
+    if (step.responseKind === "plaintext") {
+      return plaintextUnauthorizedResponse();
     }
-    throw new Error("unexpected request count");
+    return forgeReplacementResponse(
+      prepared[step.kind],
+      replacementKeyPair,
+    );
   });
   return { ...listener, replacementKeyPair };
 }
@@ -254,6 +348,27 @@ async function createPairing(origin) {
   assert.equal(typeof response.json?.data?.requestId, "string");
   assert.equal(typeof response.json?.data?.secret, "string");
   return response.json.data;
+}
+
+async function approvePairing(origin, adminToken, pairing) {
+  const body = JSON.stringify({ decision: "approved" });
+  const response = await requestOnce(origin, {
+    method: "POST",
+    path:
+      `/api/client/v1/admin/pairing-requests/${pairing.requestId}/decision`,
+    headers: {
+      [ADMIN_TOKEN_HEADER]: adminToken,
+      "content-type": "application/json",
+      origin,
+      referer: `${origin}/settings`,
+    },
+    body,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.json?.data?.pairingRequest?.status,
+    "approved",
+  );
 }
 
 async function readAuthorityDiscovery(caveHomeDir) {
@@ -294,10 +409,10 @@ async function prepareBoundRequest({
   origin,
   discovery,
   instanceId,
-  pairing,
   operation,
   requestPath,
   method,
+  authorization,
 }) {
   assert.equal(discovery.version, 2);
   return createClientV1HpkeTestClient({
@@ -309,10 +424,7 @@ async function prepareBoundRequest({
     method,
     body: new Uint8Array(),
     issuedAt: Date.now(),
-    authorization: {
-      kind: "pairing-secret",
-      value: pairing.secret,
-    },
+    authorization,
   });
 }
 
@@ -323,6 +435,10 @@ async function proveBoundPollSucceeds(input) {
     requestPath:
       `/api/client/v1/pairing/requests/${input.pairing.requestId}`,
     method: "GET",
+    authorization: {
+      kind: "pairing-secret",
+      value: input.pairing.secret,
+    },
   });
   const outer = await fetch(prepared.request.clone());
   assert.equal(outer.status, 200);
@@ -343,7 +459,37 @@ async function prepareBoundExchange(input) {
     requestPath:
       `/api/client/v1/pairing/requests/${input.pairing.requestId}/exchange`,
     method: "POST",
+    authorization: {
+      kind: "pairing-secret",
+      value: input.pairing.secret,
+    },
   });
+}
+
+async function prepareBoundProjects(input) {
+  return prepareBoundRequest({
+    ...input,
+    operation: "projects.list",
+    requestPath: "/api/client/v1/projects",
+    method: "GET",
+    authorization: {
+      kind: "bearer",
+      value: input.bearer,
+    },
+  });
+}
+
+async function openLiveBoundJson(prepared) {
+  const outer = await fetch(prepared.request.clone());
+  assert.equal(outer.status, 200);
+  assert.equal(
+    outer.headers.get("content-type"),
+    CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+  );
+  const inner = await prepared.open(outer);
+  assert.equal(inner.status, 200);
+  assert.equal(inner.headers.contentType, "application/json");
+  return JSON.parse(new TextDecoder().decode(inner.body));
 }
 
 function assertLegacySecretExposure(capture, secret) {
@@ -363,19 +509,19 @@ function assertLegacySecretExposure(capture, secret) {
   );
 }
 
-function assertCiphertextOnly(capture, pairingSecret) {
-  assert.deepEqual(
-    inspectCapturedBoundRequest(capture, { pairingSecret }),
-    {
-      exposedPairingSecret: false,
-      exposedBearer: false,
-      hasBoundCiphertext: true,
-    },
-  );
-  for (const name of Object.values(CLIENT_V1_HPKE_HEADERS)) {
-    assert.ok(headerValue(capture.headers, name).length > 0);
+function isCiphertextOnly(capture, sensitive) {
+  const inspected = inspectCapturedBoundRequest(capture, sensitive);
+  if (
+    inspected.exposedPairingSecret
+    || inspected.exposedBearer
+    || !inspected.hasBoundCiphertext
+  ) {
+    return false;
   }
-  assert.equal(capture.body.byteLength, 0);
+  for (const name of Object.values(CLIENT_V1_HPKE_HEADERS)) {
+    if (headerValue(capture.headers, name).length === 0) return false;
+  }
+  return capture.body.byteLength === 0;
 }
 
 async function replacementCannotOpen(
@@ -383,28 +529,35 @@ async function replacementCannotOpen(
   prepared,
   replacementKeyPair,
 ) {
-  const suite = createClientV1HpkeSuite();
-  const recipient = await suite.createRecipientContext({
-    recipientKey: replacementKeyPair.privateKey,
-    enc: base64UrlDecode(
-      headerValue(capture.headers, CLIENT_V1_HPKE_HEADERS.enc),
+  try {
+    const suite = createClientV1HpkeSuite();
+    const recipient = await suite.createRecipientContext({
+      recipientKey: replacementKeyPair.privateKey,
+      enc: base64UrlDecode(
+        headerValue(capture.headers, CLIENT_V1_HPKE_HEADERS.enc),
+        {
+          minimum: CLIENT_V1_HPKE_LIMITS.rawKeyBytes,
+          maximum: CLIENT_V1_HPKE_LIMITS.rawKeyBytes,
+        },
+      ).bytes,
+      info: CLIENT_V1_HPKE_REQUEST_INFO,
+    });
+    const ciphertext = base64UrlDecode(
+      headerValue(capture.headers, CLIENT_V1_HPKE_HEADERS.ciphertext),
       {
-        minimum: CLIENT_V1_HPKE_LIMITS.rawKeyBytes,
-        maximum: CLIENT_V1_HPKE_LIMITS.rawKeyBytes,
+        minimum: 16,
+        maximum: CLIENT_V1_HPKE_LIMITS.requestCiphertextBytes,
       },
-    ).bytes,
-    info: CLIENT_V1_HPKE_REQUEST_INFO,
-  });
-  const ciphertext = base64UrlDecode(
-    headerValue(capture.headers, CLIENT_V1_HPKE_HEADERS.ciphertext),
-    {
-      minimum: 16,
-      maximum: CLIENT_V1_HPKE_LIMITS.requestCiphertextBytes,
-    },
-  ).bytes;
-  await assert.rejects(
-    recipient.open(ciphertext, prepared.requestAad),
-  );
+    ).bytes;
+    try {
+      await recipient.open(ciphertext, prepared.requestAad);
+      return false;
+    } catch {
+      return true;
+    }
+  } catch {
+    return false;
+  }
 }
 
 async function fixedAssertion(assertionId, reason, action) {
@@ -438,6 +591,7 @@ export async function runAuthorityTakeoverProof() {
   try {
     const port = await freePort();
     const homes = await seedIsolatedCaveHomes(scratchRoot);
+    const adminToken = `authority-takeover-${randomUUID()}`;
 
     cave = await startCave({
       port,
@@ -476,7 +630,7 @@ export async function runAuthorityTakeoverProof() {
     cave = await startCave({
       port,
       ...homes,
-      adminToken: null,
+      adminToken,
       authorityMode: "enforce",
     });
     const discovery = await readAuthorityDiscovery(homes.caveHomeDir);
@@ -495,73 +649,128 @@ export async function runAuthorityTakeoverProof() {
       instanceId: health.data.instanceId,
       pairing: boundPairing,
     });
-    const prepared = await prepareBoundExchange({
+    await approvePairing(cave.origin, adminToken, boundPairing);
+    const liveExchange = await prepareBoundExchange({
       origin: cave.origin,
       discovery,
       instanceId: health.data.instanceId,
       pairing: boundPairing,
     });
+    const takeoverExchange = await prepareBoundExchange({
+      origin: cave.origin,
+      discovery,
+      instanceId: health.data.instanceId,
+      pairing: boundPairing,
+    });
+    const exchanged = await openLiveBoundJson(liveExchange);
+    const bearer = exchanged?.data?.bearer;
+    assert.equal(typeof bearer, "string");
+    assert.equal(/^[A-Za-z0-9_-]{43}$/u.test(bearer), true);
+    const liveProjects = await prepareBoundProjects({
+      origin: cave.origin,
+      discovery,
+      instanceId: health.data.instanceId,
+      bearer,
+    });
+    const projects = await openLiveBoundJson(liveProjects);
+    assert.equal(Array.isArray(projects?.data?.projects), true);
+    const takeoverProjects = await prepareBoundProjects({
+      origin: cave.origin,
+      discovery,
+      instanceId: health.data.instanceId,
+      bearer,
+    });
     await stopCave(cave, port);
     cave = null;
 
-    replacement = await startForgingCaptureListener(port, prepared);
-    const plaintext = await fetch(prepared.request.clone());
-    replacement.throwIfFailed();
-    await fixedAssertion(
-      AUTHORITY_TAKEOVER_ASSERTION_IDS[3],
-      "plaintext replacement response was accepted",
-      async () => {
-        assert.equal(
-          await acceptsPreparedBoundResponse(prepared, plaintext),
-          false,
-        );
-      },
+    replacement = await startForgingCaptureListener(port, {
+      "pairing-secret": takeoverExchange,
+      bearer: takeoverProjects,
+    });
+    const pairingPlaintext = await fetch(
+      takeoverExchange.request.clone(),
     );
-
+    const pairingForged = await fetch(takeoverExchange.request.clone());
+    const bearerPlaintext = await fetch(
+      takeoverProjects.request.clone(),
+    );
+    const bearerForged = await fetch(takeoverProjects.request.clone());
+    replacement.throwIfFailed();
+    let boundResults = null;
     await fixedAssertion(
       AUTHORITY_TAKEOVER_ASSERTION_IDS[1],
       "bound request exposed credential material",
       async () => {
-        assert.equal(replacement.captures.length, 1);
-        assertCiphertextOnly(
-          replacement.captures[0],
-          boundPairing.secret,
+        assert.equal(replacement.captures.length, 4);
+        boundResults = await evaluateBoundCredentialTakeover(
+          [
+            {
+              kind: "pairing-secret",
+              value: boundPairing.secret,
+              prepared: takeoverExchange,
+              replacementKeyPair: replacement.replacementKeyPair,
+              plaintext: {
+                capture: replacement.captures[0],
+                response: pairingPlaintext,
+              },
+              forged: {
+                capture: replacement.captures[1],
+                response: pairingForged,
+              },
+            },
+            {
+              kind: "bearer",
+              value: bearer,
+              prepared: takeoverProjects,
+              replacementKeyPair: replacement.replacementKeyPair,
+              plaintext: {
+                capture: replacement.captures[2],
+                response: bearerPlaintext,
+              },
+              forged: {
+                capture: replacement.captures[3],
+                response: bearerForged,
+              },
+            },
+          ],
+          {
+            ciphertextOnly: ({ capture, sensitive }) =>
+              isCiphertextOnly(capture, sensitive),
+            replacementCannotOpen: ({
+              capture,
+              prepared,
+              replacementKeyPair,
+            }) => replacementCannotOpen(
+              capture,
+              prepared,
+              replacementKeyPair,
+            ),
+            acceptsResponse: ({ prepared, response }) =>
+              acceptsPreparedBoundResponse(prepared, response),
+          },
         );
+        assert.equal(boundResults.ciphertextOnly, true);
       },
     );
     await fixedAssertion(
       AUTHORITY_TAKEOVER_ASSERTION_IDS[2],
       "replacement listener opened the bound request",
       async () => {
-        await replacementCannotOpen(
-          replacement.captures[0],
-          prepared,
-          replacement.replacementKeyPair,
-        );
+        assert.equal(boundResults?.replacementCannotOpen, true);
       },
     );
-
-    const forged = await fetch(prepared.request.clone());
-    replacement.throwIfFailed();
     await fixedAssertion(
-      AUTHORITY_TAKEOVER_ASSERTION_IDS[1],
-      "bound request exposed credential material",
+      AUTHORITY_TAKEOVER_ASSERTION_IDS[3],
+      "plaintext replacement response was accepted",
       async () => {
-        assert.equal(replacement.captures.length, 2);
-        assertCiphertextOnly(
-          replacement.captures[1],
-          boundPairing.secret,
-        );
+        assert.equal(boundResults?.plaintextResponseRejected, true);
       },
     );
     await fixedAssertion(
       AUTHORITY_TAKEOVER_ASSERTION_IDS[4],
       "replacement Auth response was accepted",
       async () => {
-        assert.equal(
-          await acceptsPreparedBoundResponse(prepared, forged),
-          false,
-        );
+        assert.equal(boundResults?.forgedAuthResponseRejected, true);
       },
     );
 

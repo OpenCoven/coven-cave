@@ -15,7 +15,9 @@ import {
 } from "../src/lib/server/client-v1/hpke-bound-v1.ts";
 import { createClientV1HpkeTestClient } from "../src/lib/server/client-v1/testing/hpke-client.ts";
 import {
+  AUTHORITY_TAKEOVER_CREDENTIAL_KINDS,
   acceptsPreparedBoundResponse,
+  evaluateBoundCredentialTakeover,
   forgeReplacementResponse,
   inspectCapturedBoundRequest,
   inspectCapturedPlaintextRequest,
@@ -23,6 +25,13 @@ import {
 
 const PAIRING_SECRET = base64UrlEncode(new Uint8Array(32).fill(0x31));
 const BEARER = "coven_test_bearer";
+
+test("takeover credential kinds include pairing-secret and bearer", () => {
+  assert.deepEqual(
+    [...AUTHORITY_TAKEOVER_CREDENTIAL_KINDS],
+    ["pairing-secret", "bearer"],
+  );
+});
 
 test("inspectCapturedPlaintextRequest reports exact exposed credential and ciphertext booleans", () => {
   assert.deepEqual(
@@ -56,6 +65,44 @@ test("inspectCapturedPlaintextRequest reports exact exposed credential and ciphe
   );
 });
 
+test("inspectCapturedPlaintextRequest scans the URL, every header value, and the body", () => {
+  for (const capture of [
+    {
+      url: `/capture?credential=${PAIRING_SECRET}`,
+      headers: {},
+      body: Buffer.alloc(0),
+    },
+    {
+      url: "/capture",
+      headers: { "x-forwarded-credential": BEARER },
+      body: Buffer.alloc(0),
+    },
+    {
+      url: "/capture",
+      headers: {},
+      body: Buffer.from(`wrapped=${BEARER}`, "utf8"),
+    },
+  ]) {
+    const inspected = inspectCapturedPlaintextRequest(capture, {
+      pairingSecret: PAIRING_SECRET,
+      bearer: BEARER,
+    });
+    assert.equal(
+      inspected.exposedPairingSecret || inspected.exposedBearer,
+      true,
+    );
+  }
+
+  assert.equal(
+    inspectCapturedPlaintextRequest({
+      url: "/capture",
+      headers: { authorization: "Basic opaque" },
+      body: Buffer.alloc(0),
+    }).exposedBearer,
+    true,
+  );
+});
+
 test("inspectCapturedBoundRequest reports the exact ciphertext-only result", () => {
   assert.deepEqual(
     inspectCapturedBoundRequest(
@@ -74,6 +121,159 @@ test("inspectCapturedBoundRequest reports the exact ciphertext-only result", () 
       hasBoundCiphertext: true,
     },
   );
+});
+
+function takeoverAttempt(kind) {
+  return {
+    kind,
+    value: kind === "pairing-secret" ? PAIRING_SECRET : BEARER,
+    prepared: { label: `${kind}-prepared` },
+    replacementKeyPair: { label: "replacement-key-pair" },
+    plaintext: {
+      capture: { label: `${kind}-plaintext-capture` },
+      response: { label: `${kind}-plaintext-response` },
+    },
+    forged: {
+      capture: { label: `${kind}-forged-capture` },
+      response: { label: `${kind}-forged-response` },
+    },
+  };
+}
+
+test("evaluateBoundCredentialTakeover requires pairing-secret and bearer before predicates run", async () => {
+  let calls = 0;
+  await assert.rejects(
+    evaluateBoundCredentialTakeover(
+      [takeoverAttempt("pairing-secret")],
+      {
+        ciphertextOnly() {
+          calls += 1;
+          return true;
+        },
+        replacementCannotOpen() {
+          calls += 1;
+          return true;
+        },
+        acceptsResponse() {
+          calls += 1;
+          return false;
+        },
+      },
+    ),
+    /credential classes are incomplete/u,
+  );
+  assert.equal(calls, 0);
+});
+
+test("evaluateBoundCredentialTakeover checks both credential classes with exact predicate inputs", async () => {
+  const attempts = [
+    takeoverAttempt("pairing-secret"),
+    takeoverAttempt("bearer"),
+  ];
+  const ciphertextCalls = [];
+  const replacementCalls = [];
+  const responseCalls = [];
+
+  const result = await evaluateBoundCredentialTakeover(attempts, {
+    ciphertextOnly(input) {
+      ciphertextCalls.push({
+        kind: input.kind,
+        capture: input.capture.label,
+        sensitiveKeys: Object.keys(input.sensitive),
+      });
+      return true;
+    },
+    replacementCannotOpen(input) {
+      replacementCalls.push({
+        kind: input.kind,
+        capture: input.capture.label,
+        prepared: input.prepared.label,
+        replacementKeyPair: input.replacementKeyPair.label,
+      });
+      return true;
+    },
+    acceptsResponse(input) {
+      responseCalls.push({
+        kind: input.kind,
+        responseKind: input.responseKind,
+        prepared: input.prepared.label,
+        response: input.response.label,
+      });
+      return false;
+    },
+  });
+
+  assert.deepEqual(result, {
+    ciphertextOnly: true,
+    replacementCannotOpen: true,
+    plaintextResponseRejected: true,
+    forgedAuthResponseRejected: true,
+  });
+  assert.equal(ciphertextCalls.length, 4);
+  assert.equal(replacementCalls.length, 2);
+  assert.equal(responseCalls.length, 4);
+  assert.deepEqual(ciphertextCalls, [
+    {
+      kind: "pairing-secret",
+      capture: "pairing-secret-plaintext-capture",
+      sensitiveKeys: ["pairingSecret"],
+    },
+    {
+      kind: "pairing-secret",
+      capture: "pairing-secret-forged-capture",
+      sensitiveKeys: ["pairingSecret"],
+    },
+    {
+      kind: "bearer",
+      capture: "bearer-plaintext-capture",
+      sensitiveKeys: ["bearer"],
+    },
+    {
+      kind: "bearer",
+      capture: "bearer-forged-capture",
+      sensitiveKeys: ["bearer"],
+    },
+  ]);
+  assert.deepEqual(replacementCalls, [
+    {
+      kind: "pairing-secret",
+      capture: "pairing-secret-plaintext-capture",
+      prepared: "pairing-secret-prepared",
+      replacementKeyPair: "replacement-key-pair",
+    },
+    {
+      kind: "bearer",
+      capture: "bearer-plaintext-capture",
+      prepared: "bearer-prepared",
+      replacementKeyPair: "replacement-key-pair",
+    },
+  ]);
+  assert.deepEqual(responseCalls, [
+    {
+      kind: "pairing-secret",
+      responseKind: "plaintext",
+      prepared: "pairing-secret-prepared",
+      response: "pairing-secret-plaintext-response",
+    },
+    {
+      kind: "pairing-secret",
+      responseKind: "forged",
+      prepared: "pairing-secret-prepared",
+      response: "pairing-secret-forged-response",
+    },
+    {
+      kind: "bearer",
+      responseKind: "plaintext",
+      prepared: "bearer-prepared",
+      response: "bearer-plaintext-response",
+    },
+    {
+      kind: "bearer",
+      responseKind: "forged",
+      prepared: "bearer-prepared",
+      response: "bearer-forged-response",
+    },
+  ]);
 });
 
 async function preparedFixture() {
