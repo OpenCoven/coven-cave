@@ -85,8 +85,13 @@ reason to guess a field shape.
 - Depend on the official protocol/client packages rather than local copies of
   WebSocket framing, signing, or schemas.
 - Resolve bounded profiles from the Ed25519-signed OpenClaw registry. A profile
-  declares exact versions, protocol, methods, events, capabilities, official
-  outer-schema hash, lifecycle values, and direct aliases.
+  declares an exact server version, wire protocol, and official outer-schema
+  hash, plus minimum required unique subsets of methods, events, server
+  capabilities, and client capabilities. Additional unique catalog entries are
+  inert: they cannot expand Cave's fixed parser, lifecycle values, or direct
+  aliases. Runtime-loaded channel plugin methods are environment-dependent, so
+  exact catalog equality is neither stable nor an appropriate compatibility
+  condition.
 - Generate/capture protocol conformance fixtures from each supported package
   release. Include supported, old/unsupported, future/unknown, missing-scope,
   pairing-required, replay, sequence-gap, disconnect, cancellation, and
@@ -102,9 +107,12 @@ wire protocol v4. It validates `HelloOkSchema`, `ChatEventSchema`, and
 `AgentEventSchema`, then selects a compatibility profile requiring
 `chat.send`, `chat.abort`, `sessions.messages.subscribe`, `chat`, `agent`, and
 `session.tool`. Additional advertised beta5 catalog entries remain inert. The
-built-in profile is pinned to the upstream source revision that defines the
-tool lifecycle aliases and phases; no observed payload can expand that contract
-at runtime.
+built-in beta5 conformance fixture freezes the fixed core/auxiliary method
+catalog and fixed event catalog from OpenClaw tag `v2026.7.2-beta.5` at commit
+`ee929dbb857c717a60f3b2b502db5a6dd31b5c11`; it intentionally excludes
+runtime-loaded channel plugin methods. The profile is pinned to the upstream
+source revision that defines the tool lifecycle aliases and phases; no observed
+payload can expand that contract at runtime.
 
 The reference client delegates device identity, challenge signing, and token
 lifecycle to host-owned `GatewayClientHostDeps`. Cave backs those with an
@@ -125,7 +133,7 @@ regeneration would silently unpair the device.
 | Package profile | Wire protocol | Runtime projection | Tool cards | Upgrade rule |
 | --- | --- | --- | --- | --- |
 | `2026.7.2-beta.4` | v4 only | Unsupported by the current tool profile | Disabled | Keep CLI/plain chat. |
-| `2026.7.2-beta.5` + source profile `d66b514a7e7565d89c87ab6f1a509623128093f0` | v4 only | Correlated `chat` plus schema-validated `agent` / `session.tool` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Enabled only for the exact accepted `(sessionKey, agentId, runId)` and pinned lifecycle profile | Add a new fixture and explicit profile for every package or source-contract change. |
+| `2026.7.2-beta.5` + source profile `d66b514a7e7565d89c87ab6f1a509623128093f0` | v4 only | Correlated `chat` plus schema-validated `agent` / `session.tool` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Enabled only when the exact version/protocol/schema hash and minimum required unique catalog subsets match; extras remain inert | Refresh the fixed-catalog fixture for source review, but add a profile only when the bound identity or required lifecycle contract changes. |
 | Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
 
 The conformance suite records the package release, schema hash, source revision,

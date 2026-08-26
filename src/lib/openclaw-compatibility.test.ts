@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import fs, { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
@@ -40,6 +40,11 @@ assert.equal(
   OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
   "ed68832d5ecbc52de7ad5394933cb2a0df7b0f0b6f7a880127f688becbd76bd2",
 );
+assert.equal(
+  openClawSchemaBundlePayloadHash(BUILTIN_OPENCLAW_SCHEMA_BUNDLE),
+  "c14d44e311bbf1f540836b6881403bd6147463bfaeebaaf756d4c6111dc0bb49",
+  "the built-in compatibility payload remains unchanged",
+);
 
 const beta4Discovery = openClawDiscoveryFromHello(gatewayBeta4);
 const beta5Discovery = openClawDiscoveryFromHello(gatewayBeta5);
@@ -54,36 +59,40 @@ assert.deepStrictEqual(beta4Discovery, {
   agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
 });
 
-assert.deepStrictEqual(beta5Discovery, {
-  serverVersion: "2026.7.2-beta.5",
-  protocol: 4,
-  methods: [
-    "health",
-    "config.get",
-    "chat.send",
-    "chat.abort",
-    "sessions.messages.subscribe",
-    "models.list",
-    "sessions.list",
-    "exec.approval.get",
-  ],
-  events: [
-    "connect.challenge",
-    "chat",
-    "agent",
-    "session.tool",
-    "presence",
-    "health",
-    "heartbeat",
-  ],
-  serverCapabilities: [
-    "board-widget-put-canvas-doc",
-    "chat-send-routing-contract",
-    "openclaw-setup-model-ref",
-  ],
-  clientCapabilities: ["tool-events"],
-  agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
-});
+assert.equal(beta5Discovery.serverVersion, "2026.7.2-beta.5");
+assert.equal(beta5Discovery.protocol, 4);
+assert.equal(
+  beta5Discovery.methods.length,
+  new Set(beta5Discovery.methods).size,
+  "the pinned fixed method catalog is de-duplicated",
+);
+assert.equal(
+  beta5Discovery.events.length,
+  new Set(beta5Discovery.events).size,
+  "the pinned fixed event catalog is de-duplicated",
+);
+assert.ok(
+  beta5Discovery.methods.length >= 300,
+  "the beta5 fixture contains the substantial fixed core/auxiliary method catalog, not a hand-picked sample",
+);
+assert.ok(
+  beta5Discovery.events.length >= 40,
+  "the beta5 fixture contains the substantial fixed Gateway event catalog, not a hand-picked sample",
+);
+// Runtime-loaded channel plugin methods follow the fixed catalog upstream, but
+// are environment-dependent and intentionally cannot be frozen in this fixture.
+assert.equal(
+  createHash("sha256").update(JSON.stringify(gatewayBeta5.features)).digest("hex"),
+  "f9cd3f1a6f8711289ae754b5b4d0ff28c307ce75d4a45cad7c22e894c9f642ba",
+  "the fixed beta5 catalog matches the source-reviewed pinned fingerprint",
+);
+assert.deepStrictEqual(beta5Discovery.serverCapabilities, [
+  "board-widget-put-canvas-doc",
+  "chat-send-routing-contract",
+  "openclaw-setup-model-ref",
+]);
+assert.deepStrictEqual(beta5Discovery.clientCapabilities, ["tool-events"]);
+assert.equal(beta5Discovery.agentEventSchemaHash, OPENCLAW_AGENT_EVENT_SCHEMA_HASH);
 
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta4));
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta5));
@@ -138,6 +147,15 @@ assert.deepStrictEqual(beta5Profile, {
     blobSha: "d66b514a7e7565d89c87ab6f1a509623128093f0",
   },
 });
+
+for (const field of ["methods", "events", "serverCapabilities", "clientCapabilities"] as const) {
+  for (const required of beta5Profile.requires[field]) {
+    assert.ok(
+      beta5Discovery[field].includes(required),
+      `the pinned beta5 fixture advertises required ${field} entry ${required}`,
+    );
+  }
+}
 
 assert.equal(selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta4Discovery), null, "beta4 must not match the beta5-only tool profile");
 assert.deepStrictEqual(
