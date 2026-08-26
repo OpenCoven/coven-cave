@@ -392,11 +392,15 @@ function firstBooleanMetadata(record: Record<string, unknown>, aliases: string[]
   return typeof value.value === "boolean" ? value.value : INVALID_OPENCLAW_METADATA;
 }
 
-function exactSetMatch(left: string[], right: string[]): boolean {
-  return left.length === right.length
-    && new Set(left).size === left.length
-    && new Set(right).size === right.length
-    && left.every((entry) => right.includes(entry));
+function requiredSubsetMatch(discoveryEntries: string[], requiredEntries: string[]): boolean {
+  if (
+    !discoveryEntries.every((entry) => typeof entry === "string")
+    || !requiredEntries.every((entry) => typeof entry === "string")
+    || new Set(discoveryEntries).size !== discoveryEntries.length
+    || new Set(requiredEntries).size !== requiredEntries.length
+  ) return false;
+  const discovered = new Set(discoveryEntries);
+  return requiredEntries.every((entry) => discovered.has(entry));
 }
 
 export function selectOpenClawToolProfile(profiles: unknown, discovery: OpenClawGatewayDiscovery): OpenClawToolProfile | null {
@@ -406,10 +410,10 @@ export function selectOpenClawToolProfile(profiles: unknown, discovery: OpenClaw
     profile.requires.serverVersions.includes(discovery.serverVersion)
     && profile.requires.protocol === discovery.protocol
     && profile.requires.agentEventSchemaHash === discovery.agentEventSchemaHash
-    && exactSetMatch(discovery.methods, profile.requires.methods)
-    && exactSetMatch(discovery.events, profile.requires.events)
-    && exactSetMatch(discovery.serverCapabilities, profile.requires.serverCapabilities)
-    && exactSetMatch(discovery.clientCapabilities, profile.requires.clientCapabilities),
+    && requiredSubsetMatch(discovery.methods, profile.requires.methods)
+    && requiredSubsetMatch(discovery.events, profile.requires.events)
+    && requiredSubsetMatch(discovery.serverCapabilities, profile.requires.serverCapabilities)
+    && requiredSubsetMatch(discovery.clientCapabilities, profile.requires.clientCapabilities),
   );
   if (!matches.length) return null;
   return [...matches].sort((left, right) =>
