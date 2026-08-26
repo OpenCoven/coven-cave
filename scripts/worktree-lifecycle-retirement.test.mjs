@@ -20,6 +20,7 @@ import {
 } from "./maintenance-gate.mjs";
 import { refreshCovenBin } from "../src/lib/coven-bin.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
+import { cooldownIsTheOnlyBlocker } from "../src/lib/worktree-lifecycle.ts";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const moduleUrl = pathToFileURL(
@@ -2229,6 +2230,119 @@ test("removeWorktree leaves a foreign lock in place and reports it actionably", 
   } finally {
     cleanupFixture(fixture.fixtureRoot);
   }
+});
+
+// ── cave-qamzg: the cooldown override is scoped to NAMED units ───────────────
+// --allow-cooldown-override began as an all-or-nothing lever over the whole
+// cooldown lane. The first real use found the patrol's hint listing two
+// cooldown units, the second belonging to ANOTHER live session (cave-iizwt,
+// PR #5021, landed mid-session). Applying it would have retired that session's
+// worktree alongside the operator's own. The flag's basis is an operator
+// asserting a unit is IDLE, and an assertion has to be about something
+// specific — so the assertion now names its units.
+function cooldownItem(name, nowMs) {
+  const head = name.padEnd(40, "0");
+  return makeItem({
+    branch: `fix/${name}`,
+    ref: `refs/heads/fix/${name}`,
+    path: `/owned/${name}`,
+    head,
+    lane: "cooldown",
+    updatedAtMs: nowMs - 1_000,
+    mergedPr: { number: 1, mergedAtMs: nowMs - 1_000, headOid: head },
+    headOnDefaultBranch: true,
+    metadata: {
+      path: `/owned/${name}`,
+      branch: `fix/${name}`,
+      owner: "kitty",
+      purpose: "fixture",
+      createdAt: new Date(nowMs - 5_000).toISOString(),
+      disposition: "active",
+    },
+  });
+}
+
+test("the cooldown override admits only units the scope names", () => {
+  const nowMs = 1_000_000_000_000;
+  const mine = cooldownItem("mine", nowMs);
+  const theirs = cooldownItem("theirs", nowMs);
+  // Precondition: both really are held by cooldown alone, so the test is about
+  // the scope rather than about one of them being ineligible anyway.
+  assert.equal(cooldownIsTheOnlyBlocker(mine, nowMs), true);
+  assert.equal(cooldownIsTheOnlyBlocker(theirs, nowMs), true);
+
+  const { operations } = makeOperations();
+  const report = retireLifecycleUnits({
+    items: [mine, theirs],
+    gateHandle: { generation: 7, token: "gate" },
+    operations,
+    allowCooldownOverride: true,
+    cooldownOverrideOnly: ["/owned/mine"],
+    nowMs,
+  });
+
+  assert.deepEqual(
+    report.attempts.map((attempt) => attempt.ref),
+    ["refs/heads/fix/mine"],
+    "the other session's unit is not touched",
+  );
+});
+
+test("an empty scope admits nothing, even with the override set", () => {
+  // The patrol refuses this invocation up front. If some other caller forgets
+  // the scope, the override must admit NOTHING rather than everything — the
+  // safe direction, and the opposite of what an empty allowlist usually means.
+  const nowMs = 1_000_000_000_000;
+  const item = cooldownItem("mine", nowMs);
+  const { operations } = makeOperations();
+  const report = retireLifecycleUnits({
+    items: [item],
+    gateHandle: { generation: 7, token: "gate" },
+    operations,
+    allowCooldownOverride: true,
+    cooldownOverrideOnly: [],
+    nowMs,
+  });
+  assert.deepEqual(report.attempts, [], "no unit is admitted by an empty scope");
+});
+
+test("the scope matches a branch, a ref, or the worktree directory name", () => {
+  const nowMs = 1_000_000_000_000;
+  for (const value of ["fix/mine", "refs/heads/fix/mine", "mine"]) {
+    const { operations } = makeOperations();
+    const report = retireLifecycleUnits({
+      items: [cooldownItem("mine", nowMs)],
+      gateHandle: { generation: 7, token: "gate" },
+      operations,
+      allowCooldownOverride: true,
+      cooldownOverrideOnly: [value],
+      nowMs,
+    });
+    assert.equal(report.attempts.length, 1, `--only ${value} names the unit`);
+  }
+});
+
+test("the scope never widens eligibility past the cooldown lane", () => {
+  // Naming a unit is an assertion about idleness, not a waiver of the gate.
+  // A dirty unit stays refused however precisely it is named.
+  const nowMs = 1_000_000_000_000;
+  const dirty = makeItem({
+    branch: "fix/dirty",
+    ref: "refs/heads/fix/dirty",
+    path: "/owned/dirty",
+    lane: "active",
+    changes: ["M src/thing.ts"],
+  });
+  const { operations } = makeOperations();
+  const report = retireLifecycleUnits({
+    items: [dirty],
+    gateHandle: { generation: 7, token: "gate" },
+    operations,
+    allowCooldownOverride: true,
+    cooldownOverrideOnly: ["/owned/dirty", "fix/dirty"],
+    nowMs,
+  });
+  assert.deepEqual(report.attempts, [], "naming a unit does not waive the gate");
 });
 
 let failures = 0;
