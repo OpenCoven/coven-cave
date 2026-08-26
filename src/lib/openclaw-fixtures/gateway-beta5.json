@@ -6,9 +6,30 @@
     "connId": "conn-beta5"
   },
   "features": {
-    "methods": ["chat.send", "chat.abort", "sessions.messages.subscribe"],
-    "events": ["chat", "agent", "session.tool"],
-    "capabilities": ["chat-send-routing-contract"]
+    "methods": [
+      "health",
+      "config.get",
+      "chat.send",
+      "chat.abort",
+      "sessions.messages.subscribe",
+      "models.list",
+      "sessions.list",
+      "exec.approval.get"
+    ],
+    "events": [
+      "connect.challenge",
+      "chat",
+      "agent",
+      "session.tool",
+      "presence",
+      "health",
+      "heartbeat"
+    ],
+    "capabilities": [
+      "board-widget-put-canvas-doc",
+      "chat-send-routing-contract",
+      "openclaw-setup-model-ref"
+    ]
   },
   "snapshot": {
     "presence": [],

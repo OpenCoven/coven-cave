@@ -34,6 +34,13 @@ the offline and development baseline. It pins OpenClaw Gateway protocol v4,
 publisher and release anchors required to ship independently refreshable
 compatibility.
 
+Profile `requires` arrays are minimum requirements within the bound server
+version, wire protocol, and `AgentEventSchema` hash. Discovery may contain
+additional unique methods, events, and server or client capabilities; missing
+required entries or duplicate catalog entries still fail closed. Extra
+advertised names do not expand Cave's fixed `eventNames`, streams, lifecycle
+sets, aliases, schema validation, or parser behavior.
+
 ## Publishing, checkpoint, and rollback
 
 `OpenCoven/coven-runtimes` owns bundle review, the private signing key, and the

@@ -28,11 +28,12 @@ launch arguments, logging behavior, or new envelopes. No capability string or
 observed frame is a substitute for this verified contract.
 
 Negotiation is two-phase. Cave first connects without `tool-events`, validates
-the authenticated hello, and selects a profile against the exact server
-version, protocol, methods, events, server capabilities, client capability, and
-official package-schema hash. Only then does it reconnect advertising
-`tool-events`; the second hello must preserve the selected identity before Cave
-subscribes or dispatches.
+the authenticated hello, and selects a profile against the bound server
+version, exact protocol and package-schema hash, plus minimum required methods,
+events, server capabilities, and client capabilities. Additional unique
+advertised catalog entries do not expand Cave's fixed parser or event
+allowlists. Only then does it reconnect advertising `tool-events`; the second
+hello must preserve the selected identity before Cave subscribes or dispatches.
 
 The direct dispatcher supplies an idempotency key, receives the accepted run
 identifier, then binds all live state to `(sessionKey, agentId, runId)`. A tool
@@ -98,11 +99,12 @@ reason to guess a field shape.
 
 Cave pins the `2026.7.2-beta.5` protocol/client package pair and negotiates
 wire protocol v4. It validates `HelloOkSchema`, `ChatEventSchema`, and
-`AgentEventSchema`, then selects an exact compatibility profile for
+`AgentEventSchema`, then selects a compatibility profile requiring
 `chat.send`, `chat.abort`, `sessions.messages.subscribe`, `chat`, `agent`, and
-`session.tool`. The built-in profile is pinned to the upstream source revision
-that defines the tool lifecycle aliases and phases; no observed payload can
-expand that contract at runtime.
+`session.tool`. Additional advertised beta5 catalog entries remain inert. The
+built-in profile is pinned to the upstream source revision that defines the
+tool lifecycle aliases and phases; no observed payload can expand that contract
+at runtime.
 
 The reference client delegates device identity, challenge signing, and token
 lifecycle to host-owned `GatewayClientHostDeps`. Cave backs those with an

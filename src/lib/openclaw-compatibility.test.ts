@@ -57,9 +57,30 @@ assert.deepStrictEqual(beta4Discovery, {
 assert.deepStrictEqual(beta5Discovery, {
   serverVersion: "2026.7.2-beta.5",
   protocol: 4,
-  methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
-  events: ["chat", "agent", "session.tool"],
-  serverCapabilities: ["chat-send-routing-contract"],
+  methods: [
+    "health",
+    "config.get",
+    "chat.send",
+    "chat.abort",
+    "sessions.messages.subscribe",
+    "models.list",
+    "sessions.list",
+    "exec.approval.get",
+  ],
+  events: [
+    "connect.challenge",
+    "chat",
+    "agent",
+    "session.tool",
+    "presence",
+    "health",
+    "heartbeat",
+  ],
+  serverCapabilities: [
+    "board-widget-put-canvas-doc",
+    "chat-send-routing-contract",
+    "openclaw-setup-model-ref",
+  ],
   clientCapabilities: ["tool-events"],
   agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
 });
@@ -122,8 +143,39 @@ assert.equal(selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta4Disc
 assert.deepStrictEqual(
   selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta5Discovery),
   beta5Profile,
-  "beta5 discovery selects the reviewed built-in profile",
+  "the authentic beta5 Gateway catalog fixture selects the reviewed built-in profile",
 );
+assert.deepStrictEqual(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+    ...beta5Discovery,
+    clientCapabilities: [...beta5Discovery.clientCapabilities, "future-client-capability"],
+  }),
+  beta5Profile,
+  "additional unique client capabilities do not invalidate a matching profile",
+);
+for (const field of ["methods", "events", "serverCapabilities", "clientCapabilities"] as const) {
+  for (const required of beta5Profile.requires[field]) {
+    assert.equal(
+      selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+        ...beta5Discovery,
+        [field]: beta5Discovery[field].filter((entry) => entry !== required),
+      }),
+      null,
+      `missing required ${field} entry ${required} is rejected`,
+    );
+  }
+
+  const duplicate = beta5Discovery[field][0];
+  assert.ok(duplicate);
+  assert.equal(
+    selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+      ...beta5Discovery,
+      [field]: [...beta5Discovery[field], duplicate],
+    }),
+    null,
+    `duplicate ${field} entries are rejected`,
+  );
+}
 const { priority: _omittedPriority, ...beta5ProfileWithoutPriority } = {
   ...beta5Profile,
   id: "openclaw-agent-tool-default-priority",
@@ -149,30 +201,6 @@ assert.deepStrictEqual(
   ),
   { ...beta5Profile, id: "openclaw-agent-tool-priority-1", source: { ...beta5Profile.source }, priority: 1 },
   "explicit priorities still outrank the default effective priority deterministically",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    methods: [...beta5Discovery.methods, "chat.extra"],
-  }),
-  null,
-  "beta5 discovery with any extra method is unselectable",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    events: [...beta5Discovery.events, "session.extra"],
-  }),
-  null,
-  "beta5 discovery with any extra event is unselectable",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    serverCapabilities: [...beta5Discovery.serverCapabilities, "extra-capability"],
-  }),
-  null,
-  "beta5 discovery with any extra server capability is unselectable",
 );
 
 assert.deepStrictEqual(
@@ -200,8 +228,8 @@ assert.deepStrictEqual(
   "nested result.status is only consulted through the Cave-owned bounded envelope logic",
 );
 
-const unknownEvent = parseOpenClawToolEvent("chat", toolLifecycleV1.frames[0].payload, beta5Profile);
-assert.equal(unknownEvent.kind, "unknown");
+const unknownEvent = parseOpenClawToolEvent("presence", toolLifecycleV1.frames[0].payload, beta5Profile);
+assert.equal(unknownEvent.kind, "unknown", "extra advertised events do not expand the profile parser allowlist");
 assert.match(unknownEvent.fingerprint, /^[a-f0-9]{16}$/);
 
 const unknownStream = parseOpenClawToolEvent(
