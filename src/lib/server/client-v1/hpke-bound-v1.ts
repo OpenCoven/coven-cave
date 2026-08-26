@@ -299,7 +299,7 @@ function parseAuthorization(value: unknown): ClientV1HpkeAuthorization {
     value.kind === "bearer"
     && value.value.length >= 1
     && value.value.length <= 512
-    && /^\S+$/u.test(value.value)
+    && /^[\x21-\x7e]+$/u.test(value.value)
   ) {
     return { kind: "bearer", value: value.value };
   }

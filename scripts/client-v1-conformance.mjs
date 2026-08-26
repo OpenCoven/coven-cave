@@ -818,19 +818,23 @@ export async function startCave(input) {
 export async function stopCave(server, port) {
   if (!server?.child) return;
   const { child } = server;
-  const exit = child.exitCode === null ? once(child, "exit") : Promise.resolve();
-  if (child.exitCode === null && process.platform === "win32") {
+  const isRunning = () => child.exitCode === null && child.signalCode === null;
+  const wasRunning = isRunning();
+  const exit = wasRunning ? once(child, "exit") : Promise.resolve();
+  if (isRunning() && process.platform === "win32") {
     spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-  } else if (child.exitCode === null) {
+  } else if (isRunning()) {
     child.kill("SIGTERM");
   }
-  const timer = setTimeout(() => {
-    if (child.exitCode === null) child.kill("SIGKILL");
-  }, 10_000);
+  const timer = wasRunning
+    ? setTimeout(() => {
+      if (isRunning()) child.kill("SIGKILL");
+    }, 10_000)
+    : null;
   try {
     await exit;
   } finally {
-    clearTimeout(timer);
+    if (timer !== null) clearTimeout(timer);
   }
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const stillUp = await requestOnce(`http://127.0.0.1:${port}`, { path: "/" }).then(() => true, () => false);

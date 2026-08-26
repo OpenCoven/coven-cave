@@ -731,6 +731,33 @@ test("rejects noncanonical JCS, duplicate keys, invalid UTF-8, and invalid respo
   }
 });
 
+test("bearer authorization accepts only visible ASCII header bytes", async () => {
+  const valid = "!#$%&'*+-.^_`|~:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const opened = await openFixture(
+    await createRequestFixture({
+      authorization: { kind: "bearer", value: valid },
+    }),
+  );
+  assert.deepEqual(opened.authorization, { kind: "bearer", value: valid });
+
+  for (const value of [
+    `nul\u0000byte`,
+    "carriage\rreturn",
+    "line\nfeed",
+    `delete${String.fromCharCode(0x7f)}`,
+    "non-ascii-é",
+  ]) {
+    await assertRequestError(
+      openFixture(
+        await createRequestFixture({
+          authorization: { kind: "bearer", value },
+        }),
+      ),
+      "invalid",
+    );
+  }
+});
+
 test("binds key, method, route, query, body, instance, nonces, time, AAD, info, enc, and ciphertext", async () => {
   const fixture = await createRequestFixture({
     url: `${ORIGIN}${ROUTE}?z=%21&a=hello+world`,

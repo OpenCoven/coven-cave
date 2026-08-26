@@ -282,6 +282,15 @@ gets an Auth-encrypted inner `503 service_unavailable` with
 `authority_replay_capacity`. For a same-instant burst the authenticated
 `retry-after` is 120 seconds.
 
+Malformed credential kinds, illegal bearer bytes, nonzero bodies, unusable
+response keys, and authorized-request reconstruction failures are rejected
+before reservation. A structurally complete envelope remains reserved even
+when the route later rejects an unknown credential. This listener is
+direct-loopback only, where a local process able to mint such traffic can
+already deny local availability; releasing by route status would couple replay
+integrity to authentication semantics and reopen duplicate races. Capacity
+therefore stays bounded and fail-closed rather than provisional.
+
 The client preserves its credential and cursor, waits for the authenticated
 delay, and retries the same logical operation with a fresh nonce, current
 timestamp, and freshly sealed envelope. It never replays the rejected

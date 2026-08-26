@@ -156,6 +156,19 @@ test("validates and freshly clones the exact version-2 public authority record",
   assert.notStrictEqual(validated.authority.suite, input.authority.suite);
 });
 
+test("rejects a version-2 authority key ID that does not derive from its public key", () => {
+  const authority = v2Record().authority;
+  assert.throws(
+    () => validateClientV1DiscoveryRecord(v2Record({
+      authority: {
+        ...authority,
+        keyId: Buffer.alloc(32).toString("base64url"),
+      },
+    })),
+    /authority keyId.*public key/i,
+  );
+});
+
 test("rejects every non-exact version-2 authority shape", () => {
   const authority = v2Record().authority;
   const invalidRecords: unknown[] = [

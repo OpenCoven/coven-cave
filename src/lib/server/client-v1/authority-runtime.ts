@@ -265,7 +265,6 @@ export function createClientV1AuthorityRuntimeFromGlobal({
         }
         return clientV1AuthorityOpenErrorResponses[error.kind]();
       }
-      const reservation = replay.reserve(opened.binding, requestNow);
 
       let responsePublicKey: CryptoKey;
       try {
@@ -275,15 +274,6 @@ export function createClientV1AuthorityRuntimeFromGlobal({
           );
       } catch {
         return clientV1AuthorityInvalidResponse();
-      }
-
-      if (!reservation.ok) {
-        return sealAuthorityResponse({
-          bootstrap,
-          opened,
-          responsePublicKey,
-          response: replayFailureResponse(reservation),
-        });
       }
       if (opened.authorization.kind !== operation.credential) {
         return sealAuthorityResponse({
@@ -302,10 +292,30 @@ export function createClientV1AuthorityRuntimeFromGlobal({
         });
       }
 
-      const authorizedRequest = rebuildAuthorizedRequest({
-        request: input.request,
-        opened,
-      });
+      let authorizedRequest: Request;
+      try {
+        authorizedRequest = rebuildAuthorizedRequest({
+          request: input.request,
+          opened,
+        });
+      } catch {
+        return sealAuthorityResponse({
+          bootstrap,
+          opened,
+          responsePublicKey,
+          response: clientV1AuthorityInvalidResponse(),
+        });
+      }
+
+      const reservation = replay.reserve(opened.binding, requestNow);
+      if (!reservation.ok) {
+        return sealAuthorityResponse({
+          bootstrap,
+          opened,
+          responsePublicKey,
+          response: replayFailureResponse(reservation),
+        });
+      }
       let response: Response;
       try {
         response = await input.invoke(authorizedRequest);

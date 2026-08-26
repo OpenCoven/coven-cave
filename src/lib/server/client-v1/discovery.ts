@@ -19,6 +19,11 @@ import {
 } from "./authority-contract.ts";
 import { CLIENT_V1_DISCOVERY_CONTRACT } from "./contract.ts";
 import {
+  base64UrlDecode,
+  base64UrlEncode,
+  clientV1HpkeKeyId,
+} from "./hpke-bound-v1.ts";
+import {
   assertClientV1PathOwnership,
   type ClientV1PathOwnershipOptions,
 } from "./path-ownership.ts";
@@ -193,23 +198,14 @@ function requireLivePid(
 function requireCanonical32ByteBase64Url(
   value: unknown,
   label: string,
-): string {
-  if (
-    typeof value !== "string"
-    || value.includes("=")
-    || !/^[A-Za-z0-9_-]{43}$/u.test(value)
-  ) {
+): { bytes: Uint8Array; encoded: string } {
+  try {
+    return base64UrlDecode(value, { minimum: 32, maximum: 32 });
+  } catch {
     throw new Error(
       `Client v1 discovery ${label} must be canonical unpadded base64url for exactly 32 bytes.`,
     );
   }
-  const bytes = Buffer.from(value, "base64url");
-  if (bytes.byteLength !== 32 || bytes.toString("base64url") !== value) {
-    throw new Error(
-      `Client v1 discovery ${label} must be canonical unpadded base64url for exactly 32 bytes.`,
-    );
-  }
-  return value;
 }
 
 function validateClientV1DiscoveryRecordV1(
@@ -266,23 +262,31 @@ function validateClientV1DiscoveryRecordV2(
   ) {
     throw new Error("Client v1 discovery authority suite must be 32/1/2.");
   }
+  const nonce = requireCanonical32ByteBase64Url(input.nonce, "nonce");
+  const keyId = requireCanonical32ByteBase64Url(
+    authority.keyId,
+    "authority keyId",
+  );
+  const publicKey = requireCanonical32ByteBase64Url(
+    authority.publicKey,
+    "authority publicKey",
+  );
+  if (base64UrlEncode(clientV1HpkeKeyId(publicKey.bytes)) !== keyId.encoded) {
+    throw new Error(
+      "Client v1 discovery authority keyId must derive from its public key.",
+    );
+  }
   return {
     version: 2,
     endpoint: requireEndpoint(input.endpoint),
     pid: requireLivePid(input.pid, options.isProcessAlive),
-    nonce: requireCanonical32ByteBase64Url(input.nonce, "nonce"),
+    nonce: nonce.encoded,
     startedAt: requireTimestamp(input.startedAt),
     authority: {
       mechanism: CLIENT_V1_HPKE_MECHANISM,
       mode: authority.mode,
-      keyId: requireCanonical32ByteBase64Url(
-        authority.keyId,
-        "authority keyId",
-      ),
-      publicKey: requireCanonical32ByteBase64Url(
-        authority.publicKey,
-        "authority publicKey",
-      ),
+      keyId: keyId.encoded,
+      publicKey: publicKey.encoded,
       suite: {
         kemId: CLIENT_V1_HPKE_SUITE.kemId,
         kdfId: CLIENT_V1_HPKE_SUITE.kdfId,

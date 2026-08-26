@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import {
@@ -31,6 +32,7 @@ import {
   parseRawResponse,
   recordAuthorityTakeoverResult,
   renderConformanceRecord,
+  stopCave,
   summarizeConformance,
 } from "./client-v1-conformance.mjs";
 
@@ -140,6 +142,53 @@ test("buildCaveEnvironment isolates authority fixtures from inherited credential
   );
   assert.equal(configured.COVEN_CAVE_AUTH_TOKEN, "fixture-admin");
   assert.equal(configured.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE, "off");
+});
+
+test("stopCave treats a child with a signalCode as already exited", async () => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = "SIGTERM";
+  child.pid = 123;
+  const kills = [];
+  let exitSubscriptions = 0;
+  const originalOnce = child.once;
+  child.once = function (event, listener) {
+    if (event === "exit") exitSubscriptions += 1;
+    return originalOnce.call(this, event, listener);
+  };
+  child.kill = (signal) => {
+    kills.push(signal);
+    queueMicrotask(() => child.emit("exit", null, child.signalCode));
+    return true;
+  };
+
+  await stopCave({ child }, 1);
+
+  assert.equal(exitSubscriptions, 0);
+  assert.deepEqual(kills, []);
+});
+
+test("stopCave subscribes before terminating a live child and does not force-kill its signal exit", async () => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.pid = 123;
+  const events = [];
+  const originalOnce = child.once;
+  child.once = function (event, listener) {
+    if (event === "exit") events.push("subscribe");
+    return originalOnce.call(this, event, listener);
+  };
+  child.kill = (signal) => {
+    events.push(signal);
+    child.signalCode = signal;
+    queueMicrotask(() => child.emit("exit", null, signal));
+    return true;
+  };
+
+  await stopCave({ child }, 1);
+
+  assert.deepEqual(events, ["subscribe", "SIGTERM"]);
 });
 
 // ── the envelope ─────────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ import {
 } from "./operations.ts";
 import {
   clientV1Error,
+  clientV1ErrorResponse,
 } from "./responses.ts";
 import {
   createClientV1HpkeTestClient,
@@ -695,6 +696,191 @@ test("replay reservation is synchronous before the credential handler", async ()
   assert.equal((await openJson(client, response)).status, 200);
 });
 
+test("credential mismatch and nonzero bodies do not consume replay capacity", async () => {
+  const bootstrap = await createBootstrap("advertise", 21);
+  const reservations: string[] = [];
+  const replay: ClientV1AuthorityReplayCache = {
+    reserve: (binding) => {
+      reservations.push(binding.requestNonce);
+      return { ok: true };
+    },
+    size: () => reservations.length,
+  };
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({
+      now: () => TEST_NOW,
+      replay,
+    }));
+  const cases = [
+    {
+      operation: "projects.list" as const,
+      client: await createBoundClient({
+        bootstrap,
+        operation: "pairing.poll",
+        requestNonceByte: 82,
+      }),
+    },
+    {
+      operation: "pairing.exchange" as const,
+      client: await createBoundClient({
+        bootstrap,
+        operation: "pairing.exchange",
+        body: new Uint8Array([1]),
+        requestNonceByte: 83,
+      }),
+    },
+  ];
+
+  for (const item of cases) {
+    let invocations = 0;
+    const response = await authority.handle({
+      operation: item.operation,
+      request: item.client.request,
+      invoke: async () => {
+        invocations += 1;
+        return Response.json({ unexpected: true });
+      },
+    });
+    assert.equal(invocations, 0);
+    const opened = await openJson(item.client, response);
+    assert.equal(opened.status, 400);
+    assert.equal(
+      (opened.body as ClientV1ErrorEnvelope).error.details?.reason,
+      "authority_invalid",
+    );
+  }
+  assert.deepEqual(reservations, []);
+});
+
+test("an unusable response public key does not consume replay capacity", async () => {
+  const bootstrap = await createBootstrap("advertise", 22);
+  const client = await createBoundClient({
+    bootstrap,
+    requestNonceByte: 84,
+  });
+  const kem = bootstrap.suite.kem;
+  const originalDeserialize = kem.deserializePublicKey.bind(kem);
+  kem.deserializePublicKey = async () => {
+    throw new Error("invalid response public key");
+  };
+  let reservations = 0;
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({
+      now: () => TEST_NOW,
+      replay: {
+        reserve: () => {
+          reservations += 1;
+          return { ok: true };
+        },
+        size: () => reservations,
+      },
+    }));
+
+  try {
+    await assertPlainError(
+      await authority.handle({
+        operation: "projects.list",
+        request: client.request,
+        invoke: async () => Response.json({ unexpected: true }),
+      }),
+      400,
+      fixedError(
+        "invalid_request",
+        "Invalid authority envelope.",
+        "authority_invalid",
+      ),
+    );
+  } finally {
+    kem.deserializePublicKey = originalDeserialize;
+  }
+  assert.equal(reservations, 0);
+});
+
+test("an illegal header bearer does not consume replay capacity", async () => {
+  const bootstrap = await createBootstrap("advertise", 23);
+  let reservations = 0;
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({
+      now: () => TEST_NOW,
+      replay: {
+        reserve: () => {
+          reservations += 1;
+          return { ok: true };
+        },
+        size: () => reservations,
+      },
+    }));
+  const client = await createBoundClient({
+    bootstrap,
+    authorization: { kind: "bearer", value: "nul\u0000bearer" },
+    requestNonceByte: 85,
+  });
+
+  await assertPlainError(
+    await authority.handle({
+      operation: "projects.list",
+      request: client.request,
+      invoke: async () => Response.json({ unexpected: true }),
+    }),
+    400,
+    fixedError(
+      "invalid_request",
+      "Invalid authority envelope.",
+      "authority_invalid",
+    ),
+  );
+  assert.equal(reservations, 0);
+});
+
+test("authorized Request reconstruction failures are fixed and do not consume replay capacity", async () => {
+  const bootstrap = await createBootstrap("advertise", 24);
+  const client = await createBoundClient({
+    bootstrap,
+    requestNonceByte: 86,
+  });
+  let reservations = 0;
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({
+      now: () => TEST_NOW,
+      replay: {
+        reserve: () => {
+          reservations += 1;
+          return { ok: true };
+        },
+        size: () => reservations,
+      },
+    }));
+  const OriginalRequest = globalThis.Request;
+  class ThrowingRequest extends OriginalRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      if (typeof input === "string" && init?.headers !== undefined) {
+        throw new TypeError("request reconstruction failed");
+      }
+      super(input, init);
+    }
+  }
+  globalThis.Request = ThrowingRequest;
+
+  let response: Response;
+  try {
+    response = await authority.handle({
+      operation: "projects.list",
+      request: client.request,
+      invoke: async () => Response.json({ unexpected: true }),
+    });
+  } finally {
+    globalThis.Request = OriginalRequest;
+  }
+
+  assert.equal(reservations, 0);
+  const opened = await openJson(client, response);
+  assert.equal(opened.status, 400);
+  assert.equal(
+    (opened.body as ClientV1ErrorEnvelope).error.details?.reason,
+    "authority_invalid",
+  );
+});
+
 test("concurrent identical bound requests invoke one handler and encrypt one replay", async () => {
   const bootstrap = await createBootstrap("advertise", 7);
   const authority = withBootstrap(bootstrap, () =>
@@ -730,6 +916,41 @@ test("concurrent identical bound requests invoke one handler and encrypt one rep
     "authority_replayed",
   );
   assert.equal((replayed?.body as ClientV1ErrorEnvelope).error.retryable, true);
+});
+
+test("a structurally valid unknown credential remains reserved after route rejection", async () => {
+  // The protected listener is direct-loopback only. A local process that can
+  // mint valid envelopes can already deny local availability; releasing a
+  // nonce based on route semantics would instead weaken replay integrity.
+  const bootstrap = await createBootstrap("advertise", 25);
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({ now: () => TEST_NOW }));
+  const client = await createBoundClient({
+    bootstrap,
+    authorization: { kind: "bearer", value: "unknown-but-structurally-valid" },
+    requestNonceByte: 87,
+  });
+  let invocations = 0;
+  const handle = () =>
+    authority.handle({
+      operation: "projects.list",
+      request: client.request.clone(),
+      invoke: async () => {
+        invocations += 1;
+        return clientV1ErrorResponse("unauthorized", "Unauthorized.");
+      },
+    });
+
+  const first = await openJson(client, await handle());
+  const second = await openJson(client, await handle());
+
+  assert.equal(invocations, 1);
+  assert.equal(first.status, 401);
+  assert.equal(second.status, 409);
+  assert.equal(
+    (second.body as ClientV1ErrorEnvelope).error.details?.reason,
+    "authority_replayed",
+  );
 });
 
 test("every non-ok reservation is encrypted and fails closed before stores or handlers", async () => {
