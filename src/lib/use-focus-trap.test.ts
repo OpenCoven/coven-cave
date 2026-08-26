@@ -32,6 +32,11 @@ assert.match(
   /querySelectorAll<HTMLElement>\(FOCUSABLE\)/,
   "re-queries focusables on each Tab event",
 );
+assert.match(
+  source,
+  /typeof el\.getClientRects !== "function" \|\| el\.getClientRects\(\)\.length > 0/,
+  "excludes controls hidden by an active dialog mode from the Tab cycle",
+);
 
 // Exports the shared FOCUSABLE selector for consumers who want to use it directly.
 assert.match(source, /export const FOCUSABLE\s*=/, "exports FOCUSABLE selector constant");

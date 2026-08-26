@@ -9,6 +9,10 @@ const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
 );
+const readerStyles = readFileSync(
+  new URL("../../styles/research-paper-focus-reader.css", import.meta.url),
+  "utf8",
+);
 const researchLinksHook = readFileSync(new URL("./use-research-links.ts", import.meta.url), "utf8");
 const xArticles = readFileSync(new URL("../../lib/x-articles.ts", import.meta.url), "utf8");
 const readerUrl = new URL("../research-x-article-reader.tsx", import.meta.url);
@@ -124,17 +128,51 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
 });
 
-test("the paper reader expands in place and Escape collapses before closing", () => {
+test("the paper reader opens directly into a near-bezelless focus mode", () => {
+  assert.match(
+    source,
+    /import "@\/styles\/research-paper-focus-reader\.css"/,
+    "reader chrome loads with the Resources surface, before the lazy PDF chunk mounts",
+  );
   assert.match(source, /const \[readerExpanded, setReaderExpanded\] = useState\(false\)/);
+  assert.match(source, /const readerFocusControlRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(
+    source,
+    /if \(reading && readerExpanded\) readerFocusControlRef\.current\?\.focus\(\)/,
+    "focus moves from the removed Read button to a surviving reader control",
+  );
   assert.match(
     source,
     /if \(readerExpanded\) \{\s*setReaderExpanded\(false\);\s*return;\s*\}\s*closeOverlay\(\)/,
   );
+  assert.match(
+    source,
+    /onClick=\{\(\) => \{\s*setReading\(true\);\s*setReaderExpanded\(true\);\s*\}\}/,
+    "Read enters focus mode without requiring a second expansion click",
+  );
+  assert.match(source, /data-reader=\{reading && readerExpanded \|\| undefined\}/);
   assert.match(source, /data-expanded=\{readerExpanded \|\| undefined\}/);
-  assert.match(source, /aria-label=\{readerExpanded \? "Collapse paper reader" : "Expand paper reader"\}/);
+  assert.match(source, /aria-label=\{readerExpanded \? "Exit focus reader" : "Enter focus reader"\}/);
   assert.match(source, /name=\{readerExpanded \? "ph:corners-in" : "ph:corners-out"\}/);
-  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\]/);
-  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\] \.research-paper-view__stage/);
+  assert.match(source, /aria-label="Download PDF"/);
+  assert.match(readerStyles, /\.research-res-overlay\[data-reader\]/);
+  assert.match(readerStyles, /\.research-res-overlay__dialog\[data-reader\]/);
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-res-overlay__source[\s\S]*display: none/,
+  );
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-res-overlay__actions[\s\S]*display: none/,
+  );
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-paper-view__stage[\s\S]*max-height: none/,
+  );
+  assert.match(readerStyles, /var\(--sai-top\)/);
+  assert.match(readerStyles, /var\(--sai-right\)/);
+  assert.match(readerStyles, /var\(--sai-bottom\)/);
+  assert.match(readerStyles, /var\(--sai-left\)/);
 });
 
 test("resources expose a labeled multiline batch intake with truthful preview", () => {
