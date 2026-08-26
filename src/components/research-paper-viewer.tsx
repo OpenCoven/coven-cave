@@ -42,7 +42,6 @@ import type {
   RenderTask,
   TextLayer,
 } from "pdfjs-dist";
-import "@/styles/research-paper-focus-reader.css";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import {

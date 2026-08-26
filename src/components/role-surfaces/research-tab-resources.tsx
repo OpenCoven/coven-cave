@@ -16,6 +16,7 @@
  */
 
 import dynamic from "next/dynamic";
+import "@/styles/research-paper-focus-reader.css";
 import {
   useCallback,
   useEffect,

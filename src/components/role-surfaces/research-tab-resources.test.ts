@@ -129,6 +129,11 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
 });
 
 test("the paper reader opens directly into a near-bezelless focus mode", () => {
+  assert.match(
+    source,
+    /import "@\/styles\/research-paper-focus-reader\.css"/,
+    "reader chrome loads with the Resources surface, before the lazy PDF chunk mounts",
+  );
   assert.match(source, /const \[readerExpanded, setReaderExpanded\] = useState\(false\)/);
   assert.match(
     source,
