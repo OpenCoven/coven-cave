@@ -343,14 +343,15 @@ function headMismatchReason(pr: WorktreeMergedPrRef): string {
  * non-divergent and retained — so this is not a correctness check. It is a
  * "let a concurrent session notice" window: the one risk left is that someone
  * else is still sitting in the directory, and no amount of git evidence can
- * answer that. 8h originally (#4215), 3h since #4991 (`cave-vwt75`).
+ * answer that. 8h originally (#4215), 3h since #4991 (`cave-vwt75`), and
+ * 15m since `cave-0pu26`.
  *
  * An operator who KNOWS the unit is idle can discharge the wait explicitly
  * with `--allow-cooldown-override` — see {@link cooldownIsTheOnlyBlocker}.
  * The scheduled sweep never passes it, because a cron job has nobody to make
  * that assertion.
  */
-export const RETIREMENT_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+export const RETIREMENT_COOLDOWN_MS = 15 * 60 * 1000;
 /** Branch namespaces whose content is a snapshot to preserve, never retire.
  *
  *  `wip/` is a NAMESPACE here, not a token anywhere in the name. The previous
@@ -785,7 +786,7 @@ function classifyLifecycleUnitInternal(
   // exception granted to escape a full budget went on to hold the budget full,
   // forcing the next session to request another one.
   //
-  // Retirement stays gated by the 3-hour cooldown, the repository-wide
+  // Retirement stays gated by the 15-minute cooldown, the repository-wide
   // maintenance gate, and the deletion proof below, so dropping the exception
   // here reclassifies landed work without authorizing any new deletion.
 
@@ -806,13 +807,13 @@ function classifyLifecycleUnitInternal(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
       ...reviewAfterReasons(observation.metadata, nowMs),
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
     ...reviewAfterReasons(observation.metadata, nowMs),
   ]);
@@ -855,12 +856,12 @@ function classifyLifecycleUnitWithoutMetadata(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
   ]);
 }
