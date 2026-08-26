@@ -106,7 +106,8 @@ const POST_TEXT = "Bounded reads are the whole point of a cost-aware client.";
 // id and none of these instants is ever compared against the real clock, so a
 // fixed date is safe here — and deliberate, since it keeps the fixtures stable.
 //
-// It must NOT be used to seed the X post cache. See `cacheLivePost`.
+// It must NOT be used to seed the X post cache. Use
+// `cacheNormalizedXPosts(..., CACHE_NOW)` for live cache fixtures.
 const NOW = new Date("2026-08-22T12:00:00.000Z");
 // Cache freshness is a wall-clock contract. Keep mission lifecycle time fixed,
 // but seed cache entries relative to the test run so they do not expire tomorrow.
@@ -378,12 +379,13 @@ test("a mission with no attached X sources touches neither X nor the network, an
 // Cache expiry — the boundary every test above reads through blindly
 // ---------------------------------------------------------------------------
 // cave-gbqwe. This suite could not see its own fuse. Every test above seeds
-// through `cacheLivePost`, which anchors to the real clock, so none of them can
-// tell a 24h TTL from an infinite one: mutating `x-sources` to never expire a
-// cache entry ran against this file at 27 passed / 0 failed. That is why the
-// original bomb (cave-p36ov) was invisible from inside its own suite for a
-// whole day — the file exercises hydration heavily and expiry not at all, even
-// though hydration's answer for every attached post turns on it.
+// through `cacheNormalizedXPosts(..., CACHE_NOW)`, which anchors to the real
+// clock, so none of them can tell a 24h TTL from an infinite one: mutating
+// `x-sources` to never expire a cache entry ran against this file at 27 passed /
+// 0 failed. That is why the original bomb (cave-p36ov) was invisible from
+// inside its own suite for a whole day — the file exercises hydration heavily
+// and expiry not at all, even though hydration's answer for every attached post
+// turns on it.
 //
 // The dependency is real and unavoidable: `hydrateMissionXSources` resolves a
 // post through `deps.getCachedXPost`, whose production wiring is
@@ -394,7 +396,7 @@ test("a mission with no attached X sources touches neither X nor the network, an
 //
 // These are the only instants in this file read back through the same instants
 // they were written with, and that is deliberate rather than an exception to
-// `cacheLivePost`'s rule. The relationship asserted below holds BETWEEN two
+// the live `CACHE_NOW` rule. The relationship asserted below holds BETWEEN two
 // fixtures and never consults the wall clock, so these tests behave identically
 // today, tomorrow, and a decade after any date written here — they pin the
 // boundary without re-arming what #4942 defused.
