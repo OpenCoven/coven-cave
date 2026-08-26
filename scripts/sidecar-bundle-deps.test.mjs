@@ -149,6 +149,60 @@ assert.ok(
   Number.isSafeInteger(declaredSidecarBudget.fileCount) && declaredSidecarBudget.fileCount > 0,
   "the declared sidecar file-count budget must be a positive integer",
 );
+const sidecarMeasurement = declaredSidecarBudget.measurement;
+const measuredPlatforms = ["windows", "ubuntu", "macos"];
+assert.equal(sidecarMeasurement.on, "2026-08-25", "the Task9 HPKE budget review date must not drift");
+assert.equal(
+  sidecarMeasurement.reference,
+  "OpenCoven/coven-cave#4996",
+  "the Task9 HPKE budget must retain its governing issue reference",
+);
+const governingMeasurement = Math.max(
+  ...measuredPlatforms.map((platform) => sidecarMeasurement[platform]),
+);
+assert.equal(
+  sidecarMeasurement[sidecarMeasurement.governingPlatform],
+  governingMeasurement,
+  "the named governing platform must hold the reviewed maximum",
+);
+assert.equal(
+  governingMeasurement + sidecarMeasurement.headroom,
+  declaredSidecarBudget.fileCount,
+  "the governing measurement plus reviewed headroom must equal the single-source file budget",
+);
+assert.equal(
+  sidecarMeasurement.headroom,
+  150,
+  "the HPKE feature delta must preserve the established 150-file headroom",
+);
+assert.ok(
+  sidecarMeasurement.featureDelta
+    && Number.isSafeInteger(sidecarMeasurement.featureDelta.fileCount)
+    && sidecarMeasurement.featureDelta.fileCount > 0,
+  "budget metadata must declare the reviewed feature-only file delta",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.approximateDiskKiB,
+  868,
+  "the reviewed approximate HPKE disk footprint must not drift",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.runtimeKind,
+  "pure-js",
+  "the reviewed HPKE closure must remain pure JavaScript",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.nativeOrPlatformSubtree,
+  false,
+  "the reviewed HPKE closure must not include a native or platform subtree",
+);
+for (const platform of measuredPlatforms) {
+  assert.equal(
+    sidecarMeasurement[platform] - sidecarMeasurement.featureDelta.baseline[platform],
+    sidecarMeasurement.featureDelta.fileCount,
+    `${platform} must move by exactly the reviewed feature delta`,
+  );
+}
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [
   "dist/compiled/webpack/webpack-lib.js",

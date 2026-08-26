@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,8 @@ import {
   assembleSidecarRuntime,
   collectTracedDependencies,
   isInsideAllowedRoots,
+  sidecarRuntimeMetrics,
+  SIDECAR_DYNAMIC_PACKAGES,
   SIDECAR_FORBIDDEN_ROOTS,
   SIDECAR_NEXT_RUNTIME_FILES,
   SIDECAR_RUNTIME_BUDGET_FILE,
@@ -38,6 +40,24 @@ async function missing(target) {
     if (error.code === "ENOENT") return true;
     throw error;
   }
+}
+
+async function relativeFiles(root) {
+  const files = [];
+  const pending = [["", root]];
+  while (pending.length > 0) {
+    const [relativeDirectory, directory] = pending.pop();
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relativePath = path.join(relativeDirectory, entry.name);
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push([relativePath, entryPath]);
+      } else if (entry.isFile()) {
+        files.push(relativePath);
+      }
+    }
+  }
+  return files.sort();
 }
 
 const fixture = await mkdtemp(path.join(os.tmpdir(), "coven-sidecar-closure-"));
@@ -140,6 +160,37 @@ try {
     "a non-integer budget would disable the gate rather than fail it",
   );
   assert.equal(SIDECAR_RUNTIME_BUDGETS.unpackedBytes, 200 * 1024 * 1024 - 1);
+  const reviewedHpke = declaredBudget.measurement.featureDelta;
+  assert.ok(reviewedHpke, "budget metadata must declare the reviewed HPKE feature delta");
+  const hpkeRoot = path.join(destination, "node_modules", "@hpke");
+  const hpkeMetrics = await sidecarRuntimeMetrics(hpkeRoot);
+  assert.deepEqual(
+    SIDECAR_DYNAMIC_PACKAGES.filter((packageName) => packageName.startsWith("@hpke/")),
+    reviewedHpke.packages,
+    "the reviewed HPKE package set must remain in the explicit dynamic closure",
+  );
+  assert.equal(
+    hpkeMetrics.fileCount,
+    reviewedHpke.fileCount,
+    "the assembled HPKE subtree must match the reviewed feature-only file delta",
+  );
+  assert.equal(
+    hpkeMetrics.directoryCount + 1,
+    reviewedHpke.directoryCount,
+    "the assembled HPKE subtree must retain exactly the reviewed directories, including its root",
+  );
+  assert.ok(
+    hpkeMetrics.unpackedBytes <= reviewedHpke.approximateDiskKiB * 1024,
+    "the HPKE subtree's logical bytes must remain within its reviewed approximate disk footprint",
+  );
+  const hpkeFiles = await relativeFiles(hpkeRoot);
+  assert.deepEqual(
+    hpkeFiles.filter((relativePath) =>
+      /(?:^|[\\/])(?:prebuilds|vendor|darwin|linux|win32|windows|macos|freebsd|android|arm64|x64)(?:[\\/]|$)|\.(?:node|dll|dylib|so)(?:\.|$)/i.test(relativePath)
+    ),
+    [],
+    "the pinned pure-JS HPKE closure must not acquire a native or platform subtree",
+  );
 
   assert.equal(JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).version, "9.8.7");
   assert.equal(await readFile(path.join(destination, "marketplace/catalog.json"), "utf8"), "{}\n");
@@ -203,6 +254,13 @@ try {
       await readFile(path.join(destination, "node_modules", ...packageName.split("/"), "package.json"), "utf8"),
     );
     assert.equal(packagedManifest.version, expectedVersion, `${packageName} must retain its pinned runtime version`);
+    for (const platformField of ["os", "cpu", "libc", "gypfile", "bin", "optionalDependencies"]) {
+      assert.equal(
+        packagedManifest[platformField],
+        undefined,
+        `${packageName} must remain free of ${platformField} platform or native metadata`,
+      );
+    }
   }
   assert.ok(await missing(path.join(destination, "node_modules/foo/node_modules/evil/index.js")));
   assert.ok(await missing(path.join(destination, ".next/server/route.js.map")));

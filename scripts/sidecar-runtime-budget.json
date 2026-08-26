@@ -1,15 +1,32 @@
 {
   "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
   "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
-  "fileCount": 6785,
+  "fileCount": 6924,
   "measurement": {
-    "on": "2026-08-24",
+    "on": "2026-08-25",
+    "reference": "OpenCoven/coven-cave#4996",
     "governingPlatform": "windows",
-    "windows": 6635,
-    "ubuntu": 6631,
-    "macos": 6627,
+    "windows": 6774,
+    "ubuntu": 6770,
+    "macos": 6766,
     "headroom": 150,
-    "headroomRationale": "Release candidate v0.3.10-rc.1 measured 6,627 files on macOS, 6,631 on Ubuntu, and 6,635 on Windows. A clean v0.3.9 reconstruction measured 6,242 files on macOS. Exact path comparison attributes the +385 net files to generated runtime growth: .next server/static output +315, Next 16.3.1 runtime +52, SWC runtime +16, and two workflow files. The release adds 18 API routes and upgrades Next 16.2.12 to 16.3.1; no new file class, dependency subtree, source map set, test tree, or duplicated package tree entered the closure. Preserve the established 150-file one-week headroom from the governing Windows measurement.",
-    "bead": "cave-3t37b"
+    "featureDelta": {
+      "fileCount": 139,
+      "directoryCount": 42,
+      "approximateDiskKiB": 868,
+      "runtimeKind": "pure-js",
+      "nativeOrPlatformSubtree": false,
+      "packages": [
+        "@hpke/common",
+        "@hpke/core",
+        "@hpke/dhkem-x25519"
+      ],
+      "baseline": {
+        "windows": 6635,
+        "ubuntu": 6631,
+        "macos": 6627
+      }
+    },
+    "headroomRationale": "OpenCoven/coven-cave#4996 adds the pinned pure-JS @hpke/common, @hpke/core, and @hpke/dhkem-x25519 dynamic runtime closure: exactly 139 packaged files in 42 directories, approximately 868 KiB on disk, with no native or platform subtree. Each reviewed platform measurement moves by exactly that feature delta from the 2026-08-24 baseline: macOS 6,766, Ubuntu 6,770, and Windows 6,774. Preserve the established 150-file headroom from the governing Windows measurement, yielding 6,924 files. Unrelated current-main drift remains inside that headroom; the expanded-byte ceiling and directory budgets are unchanged."
   }
 }
