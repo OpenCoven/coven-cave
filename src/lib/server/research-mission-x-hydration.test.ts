@@ -122,25 +122,6 @@ function post(postId: string, text = POST_TEXT): NormalizedXPost {
   };
 }
 
-/**
- * Seed the bounded X post cache with an entry that is LIVE right now.
- *
- * Cache freshness is the one thing in this file measured against the real
- * clock: `hydrateMissionXSources` reads through `getCachedXPost`, which
- * defaults its `now` to `new Date()`, and an entry is live for `CACHE_TTL_MS`
- * (24 hours) after the instant it was cached. Seeding at a fixed calendar
- * instant therefore yields an entry that is live only while real time happens
- * to fall within 24h of that instant — so the tests below would pass until
- * that window closed and fail every run afterwards, on a wall clock rather
- * than on anything they mean to assert.
- *
- * Anchoring to the real clock is what makes "this post is already cached" mean
- * what the tests say it means. Never pass `NOW` here.
- */
-async function cacheLivePost(postId: string, text = POST_TEXT): Promise<void> {
-  await cacheNormalizedXPosts([post(postId, text)]);
-}
-
 /** The exact upstream payload `lookupXPost` accepts. */
 function lookupResponse(postId: string, text = POST_TEXT): Response {
   return new Response(
