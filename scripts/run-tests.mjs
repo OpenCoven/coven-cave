@@ -679,6 +679,7 @@ export const SUITES = {
     "src/components/notification-bell-glyph-size.test.ts",
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
+    "src/components/github-action-popover-portal.test.ts",
     "src/components/surface-loading-states.test.ts",
     "src/components/loading-discipline.test.ts",
     "src/components/chat-header-row.test.ts",
