@@ -49,16 +49,19 @@ export async function withClientV1HpkeRouteTestAuthority<T>(
     globalThis.__covenCaveClientV1AuthorityBootstrap;
   const previousInstanceId =
     process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID;
+  const restoreBootstrap = (): void => {
+    if (previousBootstrap === undefined) {
+      delete globalThis.__covenCaveClientV1AuthorityBootstrap;
+    } else {
+      globalThis.__covenCaveClientV1AuthorityBootstrap = previousBootstrap;
+    }
+  };
   globalThis.__covenCaveClientV1AuthorityBootstrap = bootstrap;
   process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID = input.instanceId;
   const runtime = createClientV1AuthorityRuntimeFromGlobal({
     now: () => input.now,
   });
-  if (previousBootstrap === undefined) {
-    delete globalThis.__covenCaveClientV1AuthorityBootstrap;
-  } else {
-    globalThis.__covenCaveClientV1AuthorityBootstrap = previousBootstrap;
-  }
+  restoreBootstrap();
 
   try {
     return await action({
@@ -73,11 +76,7 @@ export async function withClientV1HpkeRouteTestAuthority<T>(
       runtimeNonce: base64UrlEncode(runtimeNonceBytes),
     });
   } finally {
-    if (previousBootstrap === undefined) {
-      delete globalThis.__covenCaveClientV1AuthorityBootstrap;
-    } else {
-      globalThis.__covenCaveClientV1AuthorityBootstrap = previousBootstrap;
-    }
+    restoreBootstrap();
     if (previousInstanceId === undefined) {
       delete process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID;
     } else {
