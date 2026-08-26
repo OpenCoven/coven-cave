@@ -431,6 +431,50 @@ if (!isWin) {
   );
 }
 
+// ── 3e. A tag pushed WITHOUT a local tag is still retention (cave-bgxx4) ─────
+// 3d creates the tag locally and then pushes it, so a local name always
+// existed. `worktree-retention-push.mjs` does not work that way: it pushes
+// `<sha>:refs/tags/<tag>` and creates NO local tag. So the retention this
+// repository writes automatically was exactly the case the guard could not see
+// — `for-each-ref refs/tags` found nothing, the helper returned early, and the
+// ls-remote evidence was never consulted.
+//
+// The cost was a reflex: retiring a merged unit blocked with "exists on NO
+// remote ref" while the tag sat on origin at that SHA, three times in one
+// session (cave-kmrd3 / #5025, then cave-cgfx2). Each was cleared with
+// `git fetch origin --tags`, which quietly reframes a guard defect as an
+// operator chore — and a guard that cries wolf is how WT_GUARD_BYPASS becomes
+// muscle memory.
+{
+  const { dir, wt } = repoWithWorktree({ push: false });
+  const tip = sh("git", ["-C", wt, "rev-parse", "HEAD"], dir).trim();
+
+  // No local tag anywhere — exactly what the retention hook leaves behind.
+  let res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(res.status, 2, "unretained work is still blocked");
+
+  // Push the commit straight to a tag ref, creating nothing locally.
+  sh("git", ["-C", wt, "push", "-q", "origin", `${tip}:refs/tags/retention/feature-x-${tip.slice(0, 9)}`], dir);
+  assert.equal(
+    sh("git", ["-C", wt, "tag", "-l"], dir).trim(),
+    "",
+    "precondition: the fixture really has no local tag",
+  );
+
+  res = runHook(`git worktree remove ${wt}`, dir);
+  assert.equal(
+    res.status,
+    0,
+    `a tag pushed with no local counterpart IS retention — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+  res = runHook(`git branch -D feature-x`, wt);
+  assert.equal(
+    res.status,
+    0,
+    `branch -D allowed too — guard said: ${JSON.stringify(res.stderr)}`,
+  );
+}
+
 // ── 3d-ii. Unverifiable retention must read as NO retention ──────────────────
 // The tag probe needs the network (git keeps no remote-tracking ref for tags).
 // If that lookup fails, the guard must block: "cannot verify" is not "verified",
