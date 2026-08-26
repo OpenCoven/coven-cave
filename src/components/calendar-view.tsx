@@ -1,9 +1,16 @@
 "use client";
 
 import "@/styles/calendar.css";
+/**
+ * How much of a projection is trustworthy per day. Passed alongside the runs so
+ * a cell can say its count is a floor rather than a total (cave-fdcd4).
+ */
+type ProjectionCompleteness = Pick<CronProjection, "truncated" | "completeThroughMs">;
+
 import {
   RUN_DENSITY_MAX_LEVEL,
   clusterLabel,
+  dayProjectionIsPartial,
   clusterRunsByMinute,
   runCountLabel,
   runCountOn,
@@ -297,9 +304,11 @@ const MAX_ALLDAY_VISIBLE = 3;
 function RunDensityStrip({
   columns,
   onOpenDay,
+  projectionCompleteness,
 }: {
   columns: { date: Date; runs: readonly ProjectedCronRun[] }[];
   onOpenDay?: (day: Date) => void;
+  projectionCompleteness?: ProjectionCompleteness;
 }) {
   // Nothing projected anywhere in the week — draw no band at all rather than a
   // row of empty axes, which would read as "measured zero" instead of "off".
@@ -318,7 +327,10 @@ function RunDensityStrip({
         {columns.map((col, i) => {
           const bands = runDensityBands(col.runs, col.date);
           const count = runCountOn(col.runs, col.date);
-          const label = runCountLabel(count, "ritual runs");
+          const partial = projectionCompleteness
+            ? dayProjectionIsPartial(projectionCompleteness, col.date)
+            : false;
+          const label = runCountLabel(count, "ritual runs", partial);
           if (!label) return <div key={i} className="flex-1 min-w-[80px] p-1" />;
           const Cell = onOpenDay ? "button" : "div";
           return (
@@ -328,7 +340,9 @@ function RunDensityStrip({
                   ? {
                       type: "button" as const,
                       onClick: () => onOpenDay(col.date),
-                      "aria-label": `${label} on ${fmtDateHeading(col.date)} — open day`,
+                      "aria-label": partial
+                        ? `at least ${count} ritual runs on ${fmtDateHeading(col.date)}, projection truncated — open day`
+                        : `${label} on ${fmtDateHeading(col.date)} — open day`,
                     }
                   : {})}
                 className={`cal-run-density ${onOpenDay ? "cal-run-density--action focus-ring" : ""}`}
@@ -967,6 +981,7 @@ function WeekView({
   items,
   deadlines,
   projectedRuns,
+  projectionCompleteness,
   anchor,
   onAddEntry,
   onOpenItem,
@@ -978,6 +993,8 @@ function WeekView({
   deadlines?: CalendarDeadline[];
   /** Cron occurrences projected onto this week — see calendar-cron-projection. */
   projectedRuns?: readonly ProjectedCronRun[];
+  /** Whether those runs are complete for a given day — see cave-fdcd4. */
+  projectionCompleteness?: ProjectionCompleteness;
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
@@ -1089,7 +1106,11 @@ function WeekView({
       {/* Cron density — a forecast band, above the grid so it does not scroll
           away from the columns it describes. Self-guards: renders nothing when
           the week has no projected runs. */}
-      <RunDensityStrip columns={densityColumns} onOpenDay={onOpenDay} />
+      <RunDensityStrip
+        columns={densityColumns}
+        onOpenDay={onOpenDay}
+        projectionCompleteness={projectionCompleteness}
+      />
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
       </div>
@@ -1103,6 +1124,7 @@ function MonthView({
   items,
   deadlines,
   projectedRuns,
+  projectionCompleteness,
   anchor,
   onOpenItem,
   onDayClick,
@@ -1113,6 +1135,8 @@ function MonthView({
   deadlines?: CalendarDeadline[];
   /** Cron occurrences projected onto this grid — see calendar-cron-projection. */
   projectedRuns?: readonly ProjectedCronRun[];
+  /** Whether those runs are complete for a given day — see cave-fdcd4. */
+  projectionCompleteness?: ProjectionCompleteness;
   anchor: Date;
   onOpenItem?: (item: InboxItem) => void;
   onDayClick?: (day: Date) => void;
@@ -1320,10 +1344,20 @@ function MonthView({
                         because none of these have happened yet. */}
                     {(() => {
                       const runs = runCountOn(projectedRuns ?? [], day);
-                      const label = runCountLabel(runs);
+                      const partial = projectionCompleteness
+                        ? dayProjectionIsPartial(projectionCompleteness, day)
+                        : false;
+                      const label = runCountLabel(runs, "runs", partial);
                       if (!label) return null;
                       return (
-                        <span className="cal-month-runs" title={`${label} projected`}>
+                        <span
+                          className="cal-month-runs"
+                          title={
+                            partial
+                              ? `at least ${runs} projected — the projection hit its cap, so this day may hold more`
+                              : `${label} projected`
+                          }
+                        >
                           <Icon name="ph:clock" width={10} height={10} aria-hidden />
                           <span>{label}</span>
                           <span
@@ -1754,7 +1788,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // surface lying about itself. Widen this only alongside a renderer.
   const projection: CronProjection = useMemo(() => {
     if (!showRuns || !PROJECTING_VIEWS.has(effectiveView) || cronAutomations.length === 0) {
-      return { runs: [], projectedCount: 0, truncated: false };
+      return { runs: [], projectedCount: 0, truncated: false, completeThroughMs: 0 };
     }
     const start =
       effectiveView === "month" ? startOfWeek(startOfMonth(anchor))
@@ -2072,6 +2106,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           <WeekView
             items={scopedItems}
             projectedRuns={projection.runs}
+            projectionCompleteness={projection}
             deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
@@ -2085,6 +2120,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           <MonthView
             items={scopedItems}
             projectedRuns={projection.runs}
+            projectionCompleteness={projection}
             deadlines={scopedDeadlines}
             anchor={anchor}
             onOpenItem={(item) => setSelectedItem(item)}

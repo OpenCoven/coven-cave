@@ -119,7 +119,7 @@ describe("projectionSummary", () => {
 
   it("renders nothing rather than a '0 active crons' line", () => {
     // An absence does not need a sentence drawing attention to it.
-    assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false }), null);
+    assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false, completeThroughMs: 0 }), null);
   });
 });
 
@@ -132,7 +132,7 @@ describe("projectionSummary", () => {
 // asserts the model's half of that contract: no runs means no sentence.
 describe("projection chrome contract", () => {
   it("says nothing when there is nothing drawn", () => {
-    assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false }), null);
+    assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false, completeThroughMs: 0 }), null);
   });
 });
 
@@ -163,5 +163,63 @@ describe("window boundaries", () => {
   it("still includes an occurrence at the very start of the window", () => {
     const runs = projectCronRuns(daily, dayStart, nextMidnight - 1).runs;
     assert.equal(new Date(runs[0].atIso).getTime(), dayStart);
+  });
+});
+
+describe("completeThroughMs", () => {
+  // `truncated` says the frame is short; this says WHERE, which is what a
+  // per-day cell needs to know whether its own number is a total or a floor.
+  const start = new Date(2026, 7, 24, 0, 0, 0).getTime();
+  const shortEnd = new Date(2026, 7, 31, 0, 0, 0).getTime();
+  // Long enough that a daily cron runs past CRON_PROJECTION_PER_CRON_CAP.
+  const longEnd = new Date(2030, 0, 1).getTime();
+
+  it("is the window end when nothing was dropped", () => {
+    const projection = projectCronRuns([cron("c1", DAILY_9)], start, shortEnd);
+    assert.equal(projection.truncated, false);
+    assert.equal(projection.completeThroughMs, shortEnd, "all of it is trustworthy");
+  });
+
+  it("stops at the last occurrence a per-cron cap allowed", () => {
+    const projection = projectCronRuns([cron("c1", DAILY_9)], start, longEnd);
+    assert.equal(projection.truncated, true);
+    const last = new Date(projection.runs[projection.runs.length - 1].atIso).getTime();
+    assert.equal(projection.completeThroughMs, last, "complete up to its final surviving fire");
+    assert.ok(projection.completeThroughMs < longEnd, "and that is well short of the window");
+  });
+
+  it("declares NOTHING complete when the overall cap stopped the walk early", () => {
+    // Six daily crons over this window exhaust CRON_PROJECTION_CAP before the
+    // last is reached. Crons the loop never visits are absent from the WHOLE
+    // window, not just its tail, so no day in it is trustworthy — reporting
+    // "complete through the last instant we happened to reach" would be the
+    // comfortable lie.
+    const many = Array.from({ length: 6 }, (_, i) => cron(`c${i}`, DAILY_9));
+    const projection = projectCronRuns(many, start, longEnd);
+    assert.equal(projection.truncated, true);
+    assert.ok(
+      projection.completeThroughMs < start,
+      `nothing in the window is complete (got ${projection.completeThroughMs}, start ${start})`,
+    );
+  });
+
+  it("takes the EARLIEST cut-off when several crons are capped", () => {
+    // One cron running out early must not be masked by another that survived
+    // further into the window.
+    const early = cron("early", "RRULE:FREQ=DAILY;BYHOUR=1;BYMINUTE=0");
+    const late = cron("late", "RRULE:FREQ=DAILY;BYHOUR=23;BYMINUTE=0");
+    const projection = projectCronRuns([early, late], start, longEnd);
+    assert.equal(projection.truncated, true);
+    const lastOf = (id) =>
+      Math.max(
+        ...projection.runs
+          .filter((run) => run.automationId === id)
+          .map((run) => new Date(run.atIso).getTime()),
+      );
+    assert.equal(
+      projection.completeThroughMs,
+      Math.min(lastOf("early"), lastOf("late")),
+      "the earliest exhaustion bounds the whole window",
+    );
   });
 });
