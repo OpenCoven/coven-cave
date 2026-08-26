@@ -24,6 +24,20 @@ export type ProjectedCronRun = {
 
 export type CronProjection = {
   runs: ProjectedCronRun[];
+  /**
+   * The instant through which this projection is COMPLETE.
+   *
+   * Everything at or before it is fully enumerated; anything after it may be
+   * missing occurrences the caps dropped. Equal to the window end when nothing
+   * was truncated, and to `startMs - 1` when the overall cap stopped the walk
+   * before every cron had been visited — those crons contribute nothing
+   * ANYWHERE, so no part of the window is complete.
+   *
+   * `truncated` says the frame is short; this says WHERE, which is what a
+   * per-day surface needs. A month cell showing "2 runs" is otherwise
+   * indistinguishable from one that would have shown nine (cave-fdcd4).
+   */
+  completeThroughMs: number;
   /** Active crons that contributed at least one run to this window. */
   projectedCount: number;
   /**
@@ -85,11 +99,15 @@ export function projectCronRuns(
   startMs: number,
   endMs: number,
 ): CronProjection {
-  if (!(endMs > startMs)) return { runs: [], projectedCount: 0, truncated: false };
+  if (!(endMs > startMs)) {
+    return { runs: [], projectedCount: 0, truncated: false, completeThroughMs: endMs };
+  }
 
   const runs: ProjectedCronRun[] = [];
   const contributors = new Set<string>();
   let truncated = false;
+  // Complete until something says otherwise.
+  let completeThroughMs = endMs;
 
   for (const auto of automations) {
     if (auto.status !== "ACTIVE") continue;
@@ -100,6 +118,11 @@ export function projectCronRuns(
     const remaining = CRON_PROJECTION_CAP - runs.length;
     if (remaining <= 0) {
       truncated = true;
+      // This cron and every one after it was never walked, so they are absent
+      // from the WHOLE window rather than from its tail. Nothing here is
+      // complete, and saying "complete through the last instant we happened to
+      // reach" would be the more comfortable lie.
+      completeThroughMs = startMs - 1;
       break;
     }
     const { times, hitCap } = walkWindow(
@@ -108,7 +131,15 @@ export function projectCronRuns(
       endMs,
       Math.min(CRON_PROJECTION_PER_CRON_CAP, remaining),
     );
-    if (hitCap) truncated = true;
+    if (hitCap) {
+      truncated = true;
+      // This cron stopped early — at its own 120 ceiling, or because the
+      // remaining overall budget was smaller. Either way its occurrences are
+      // known up to its last one and unknown after it, so the window is
+      // complete only as far as the EARLIEST such cut-off.
+      const last = times.length > 0 ? new Date(times[times.length - 1]!).getTime() : startMs - 1;
+      if (Number.isFinite(last)) completeThroughMs = Math.min(completeThroughMs, last);
+    }
     for (const atIso of times) {
       runs.push({ automationId: auto.id, name: auto.name, atIso });
       contributors.add(auto.id);
@@ -116,7 +147,7 @@ export function projectCronRuns(
   }
 
   runs.sort((a, b) => a.atIso.localeCompare(b.atIso) || a.name.localeCompare(b.name));
-  return { runs, projectedCount: contributors.size, truncated };
+  return { runs, projectedCount: contributors.size, truncated, completeThroughMs };
 }
 
 /** Group projected runs by local calendar day (`YYYY-MM-DD`), which is the key

@@ -13,7 +13,7 @@
 // load is". A finer bucket would render sub-pixel bands at the width a week
 // column actually gets; a coarser one stops distinguishing morning from night.
 
-import type { ProjectedCronRun } from "./calendar-cron-projection.ts";
+import type { CronProjection, ProjectedCronRun } from "./calendar-cron-projection.ts";
 
 /** Hours covered by one band. 24 / 4 = the six bands the frame draws. */
 export const RUN_DENSITY_BAND_HOURS = 4;
@@ -114,15 +114,41 @@ export function runCountOn(runs: readonly ProjectedCronRun[], day: Date): number
 }
 
 /**
+ * Whether `day` falls past the point where the projection is still complete.
+ *
+ * A partial day's count is a FLOOR, not a total: the caps dropped occurrences
+ * it would otherwise hold. Callers say so with a "+" rather than presenting the
+ * number as final — a cell reading "2 runs" where the answer is nine tells the
+ * reader the month is quieter than it is, which the projection module's own
+ * comment calls the same class of lie as a status that cannot be known.
+ *
+ * Compares against the END of the local day: a day containing the cut-off is
+ * itself partial, because everything after that instant is unknown.
+ */
+export function dayProjectionIsPartial(
+  projection: Pick<CronProjection, "truncated" | "completeThroughMs">,
+  day: Date,
+): boolean {
+  if (!projection.truncated) return false;
+  const dayEndMs =
+    new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime() - 1;
+  return dayEndMs > projection.completeThroughMs;
+}
+
+/**
  * The caption under a density strip, or under a month cell's glyph.
  *
  * Returns null at zero rather than "0 runs": a day with no projected runs
  * should draw no chrome at all, and returning a string would tempt a caller
  * into rendering an empty affordance.
  */
-export function runCountLabel(count: number, noun = "runs"): string | null {
+export function runCountLabel(count: number, noun = "runs", partial = false): string | null {
+  // A partial day with zero KNOWN runs still has nothing to show: "0+ runs" is
+  // noise on a day the reader has no reason to look at, and every other cell in
+  // a truncated window already carries the "+".
   if (count <= 0) return null;
-  return `${count} ${count === 1 ? noun.replace(/s$/, "") : noun}`;
+  const word = count === 1 && !partial ? noun.replace(/s$/, "") : noun;
+  return `${count}${partial ? "+" : ""} ${word}`;
 }
 
 export type RunCluster = {
