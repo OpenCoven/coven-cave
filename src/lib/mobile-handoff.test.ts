@@ -41,25 +41,24 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
 {
   assert.equal(
-    shouldAllowMagicDnsFallback({
-      serveOk: false,
-      statusOk: false,
-    }),
+    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: false }),
     false,
-    "a failed Serve mutation, including macOS CLIError 3, needs a matching route in status before a handoff can succeed",
+    "a failed Serve mutation with no status proof stays fail-closed",
   );
   assert.equal(
-    shouldAllowMagicDnsFallback({
-      serveOk: true,
-      statusOk: false,
-    }),
+    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: true }),
+    false,
+    "a readable status does not by itself authorize MagicDNS fallback after mutation failure",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: false }),
     true,
-    "a successful Serve mutation may use MagicDNS when its follow-up status read is unavailable",
+    "an acknowledged Serve mutation may use MagicDNS when status is unavailable",
   );
   assert.equal(
     shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
-    false,
-    "a readable Serve status remains authoritative",
+    true,
+    "status-schema drift must not veto an acknowledged Serve mutation",
   );
 }
 
@@ -228,7 +227,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       ok: false,
       reason: "tailscale serve route not found for http://127.0.0.1:3000",
     },
-    "a readable empty Serve status must not promote a bare MagicDNS name to a live route",
+    "a readable empty Serve status must not promote a bare MagicDNS name unless mutation evidence allows it",
   );
   const linuxMismatchedServeStatus = {
     Web: {
@@ -248,7 +247,37 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       ok: false,
       reason: "tailscale serve route not found for http://127.0.0.1:3000",
     },
-    "a Linux Serve status for another loopback backend must not promote MagicDNS to a live route",
+    "a stale Serve status for another loopback backend must not promote MagicDNS without mutation evidence",
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: linuxMismatchedServeStatus,
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: true,
+    }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "magicdns-self-status",
+    },
+    "after an acknowledged reclaim mutation, stale status-schema data cannot veto the recovered route",
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: { FutureSchema: { routes: [] } },
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: true,
+    }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "magicdns-self-status",
+    },
+    "an unknown future Serve status schema cannot veto an acknowledged successful mutation",
   );
   assert.deepEqual(
     nativeAppDiscoveryProof({
