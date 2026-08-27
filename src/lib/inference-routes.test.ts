@@ -136,4 +136,29 @@ assert.notEqual(
   "launch authority changes invalidate native resume",
 );
 
+const orcarouter = normalizeInferenceRoute({
+  id: "orcarouter-gateway",
+  label: "OrcaRouter gateway",
+  harness: "codex",
+  provider: "anthropic",
+  protocol: "openai-responses",
+  supportTier: "compatible-gateway",
+  endpoint: "https://api.orcarouter.ai/v1",
+  credentialRef: "vault:orcarouter",
+  gatewayKind: "orcarouter",
+  enabled: true,
+});
+assert.ok(orcarouter, "OrcaRouter normalizes as a named gateway kind");
+assert.equal(orcarouter.gatewayKind, "orcarouter");
+assert.equal(
+  inferenceRouteFingerprint(orcarouter),
+  inferenceRouteFingerprint({ ...orcarouter, label: "OrcaRouter (renamed)" }),
+  "presentation copy does not invalidate an OrcaRouter-gated native session",
+);
+assert.notEqual(
+  inferenceRouteFingerprint(orcarouter),
+  inferenceRouteFingerprint({ ...orcarouter, gatewayKind: "openrouter" }),
+  "the gateway kind participates in launch identity, mirroring OpenRouter",
+);
+
 console.log("inference-routes.test.ts: ok");

@@ -28,7 +28,7 @@ export type InferenceRoute = {
   endpoint?: string;
   credentialRef?: string;
   runtimeProfile?: string;
-  gatewayKind?: "litellm" | "openrouter" | "custom";
+  gatewayKind?: "litellm" | "openrouter" | "orcarouter" | "custom";
   enabled: boolean;
 };
 
@@ -52,6 +52,7 @@ const PROTOCOLS = new Set<InferenceProtocol>([
 const GATEWAY_KINDS = new Set<NonNullable<InferenceRoute["gatewayKind"]>>([
   "litellm",
   "openrouter",
+  "orcarouter",
   "custom",
 ]);
 
