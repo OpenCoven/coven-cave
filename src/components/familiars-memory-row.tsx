@@ -54,7 +54,13 @@ export function MemoryRowItem({
       >
         <span className="fm-memory-row__provenance" data-kind={row.kind}>
           <Icon
-            name={row.kind === "canonical" ? "ph:brain" : "ph:file-text"}
+            name={
+              row.kind === "canonical"
+                ? "ph:brain"
+                : row.contentKind === "hermes-message"
+                  ? "ph:database"
+                  : "ph:file-text"
+            }
             width={13}
             aria-hidden
           />
@@ -67,7 +73,11 @@ export function MemoryRowItem({
             <span className="fm-memory-row__age shrink-0">{age}</span>
           </span>
           <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-            {row.kind === "canonical" ? row.excerpt : compactRowPath(row.path)}
+            {row.kind === "canonical"
+              ? row.excerpt
+              : row.contentKind === "hermes-message"
+                ? row.excerpt
+                : compactRowPath(row.path)}
           </span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="truncate">{row.sourceLabel}</span>
@@ -80,6 +90,12 @@ export function MemoryRowItem({
               </>
             ) : null}
             {size ? <><span aria-hidden>·</span><span>{size}</span></> : null}
+            {row.kind === "file" && row.readOnly ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>Read only</span>
+              </>
+            ) : null}
             {row.stale ? (
               <span className="inline-flex items-center gap-1 text-[var(--color-warning)]" title="Stale — suggested for cleanup">
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />

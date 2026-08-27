@@ -52,6 +52,10 @@ export type RawFileEntry = {
   modified: string;
   familiarId?: string | null;
   excerpt?: string;
+  harnessId?: string | null;
+  readOnly?: boolean;
+  contentKind?: "file" | "hermes-message";
+  serverMatched?: boolean;
 };
 
 export function normalizeFileEntry(e: RawFileEntry): ManagedMemoryEntry {

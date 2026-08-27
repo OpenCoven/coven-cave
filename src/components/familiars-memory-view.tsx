@@ -115,9 +115,40 @@ type Props = {
   onCanonicalMemorySelectionApplied?: (id: string) => void;
 };
 
+type HermesMemoryError =
+  | "database-unavailable"
+  | "database-unreadable"
+  | "unknown-familiar"
+  | "not-hermes"
+  | "remote-unavailable"
+  | "invalid-profile";
+
 type FileMemoryResponse =
-  | { ok: true; entries: FileMemoryEntry[] }
+  | {
+      ok: true;
+      entries: FileMemoryEntry[];
+      hermes?: {
+        available: boolean;
+        error?: HermesMemoryError;
+      };
+    }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
+
+function hermesMemoryErrorCopy(error: HermesMemoryError | undefined): string {
+  switch (error) {
+    case "database-unreadable":
+      return "Hermes state.db is present but could not be read.";
+    case "remote-unavailable":
+      return "Remote Hermes memory is unavailable from this local read-only bridge.";
+    case "invalid-profile":
+      return "This familiar's Hermes profile binding is invalid.";
+    case "unknown-familiar":
+    case "not-hermes":
+      return "This familiar is not configured for local Hermes memory.";
+    default:
+      return "Hermes state.db was not found.";
+  }
+}
 
 type CanonicalState = MemoryFeed["canonical"];
 type OverviewState = MemoryFeed["overview"];
@@ -171,6 +202,12 @@ export function FamiliarsMemoryView({
     state: "loading",
     entries: [],
   });
+  const [hermesSearch, setHermesSearch] = useState<{
+    familiarId: string;
+    query: string;
+    entries: FileMemoryEntry[];
+    error?: string;
+  } | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [storedFamiliarFilter, setFamiliarFilter] = useSurfacePreference(
@@ -435,6 +472,98 @@ export function FamiliarsMemoryView({
       ? canonicalMemorySelectionRowId(pendingCanonicalMemorySelection)
       : null;
   const normalizedQuery = query.trim().toLowerCase();
+  const selectedFamiliarForScope =
+    familiarById.get(effectiveFamiliarFilter) ??
+    (activeFamiliar?.id === effectiveFamiliarFilter ? activeFamiliar : null);
+  const selectedHarness = (
+    selectedFamiliarForScope?.harnessOverride ??
+    selectedFamiliarForScope?.defaultHarness ??
+    selectedFamiliarForScope?.harness ??
+    ""
+  ).toLowerCase();
+  const includeHermesMemory = selectedHarness === "hermes";
+  useEffect(() => {
+    if (!includeHermesMemory) {
+      setHermesSearch(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      const search = new URLSearchParams({
+        hermesOnly: "1",
+        familiarId: effectiveFamiliarFilter,
+        query: normalizedQuery,
+      });
+      void fetch(`/api/memory?${search.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = (await response.json()) as FileMemoryResponse;
+          if (!response.ok || !data.ok) {
+            throw new Error(
+              "error" in data ? data.error ?? "Hermes memory search failed" : "Hermes memory search failed",
+            );
+          }
+          setHermesSearch({
+            familiarId: effectiveFamiliarFilter,
+            query: normalizedQuery,
+            entries: data.entries.filter(
+              (entry) => entry.contentKind === "hermes-message",
+            ).map((entry) => ({
+              ...entry,
+              serverMatched: Boolean(normalizedQuery),
+            }            )),
+            error:
+              data.hermes?.available === false
+                ? hermesMemoryErrorCopy(data.hermes.error)
+                : undefined,
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setHermesSearch({
+            familiarId: effectiveFamiliarFilter,
+            query: normalizedQuery,
+            entries: [],
+            error:
+              error instanceof Error
+                ? error.message
+                : "Hermes memory search failed",
+          });
+        });
+    }, normalizedQuery ? 180 : 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [
+    effectiveFamiliarFilter,
+    includeHermesMemory,
+    lastLoadedAt,
+    normalizedQuery,
+  ]);
+  const filesForView = useMemo(() => {
+    if (
+      hermesSearch?.familiarId !== effectiveFamiliarFilter ||
+      hermesSearch.query !== normalizedQuery
+    ) {
+      return filesState.entries;
+    }
+    return [
+      ...filesState.entries.filter(
+        (entry) => entry.contentKind !== "hermes-message",
+      ),
+      ...hermesSearch.entries,
+    ];
+  }, [
+    effectiveFamiliarFilter,
+    filesState.entries,
+    hermesSearch,
+    normalizedQuery,
+  ]);
   const availableCanonicalEntries = useMemo(
     () =>
       excludeMissingCanonicalMemory(
@@ -476,10 +605,14 @@ export function FamiliarsMemoryView({
 
   const familiarScopedFiles = useMemo(
     () =>
-      filesState.entries.filter(
-        (entry) => entry.familiarId === effectiveFamiliarFilter,
+      filesForView.filter(
+        (entry) =>
+          entry.familiarId === effectiveFamiliarFilter ||
+          (includeHermesMemory &&
+            !entry.familiarId &&
+            entry.harnessId === "hermes"),
       ),
-    [effectiveFamiliarFilter, filesState.entries],
+    [effectiveFamiliarFilter, filesForView, includeHermesMemory],
   );
 
   const visibleFiles = useMemo(() => {
@@ -507,7 +640,9 @@ export function FamiliarsMemoryView({
         (entry) =>
           sourceFilter === "all" || entry.sourceKind === sourceFilter,
       )
-      .filter((entry) => memoryMatches(entry, normalizedQuery))
+      .filter(
+        (entry) => entry.serverMatched || memoryMatches(entry, normalizedQuery),
+      )
       .filter((entry) => !staleOnly || staleByEntry.get(entry) === true)
       .sort(compare[sortMode]);
   }, [
@@ -522,8 +657,9 @@ export function FamiliarsMemoryView({
     () => {
       const rows = buildMemoryRows({
         canonical: availableCanonicalEntries,
-        files: filesState.entries,
+        files: filesForView,
         familiarFilter: effectiveFamiliarFilter,
+        includeOwnerlessHarness: includeHermesMemory ? "hermes" : undefined,
         query: normalizedQuery,
         sourceFilter,
         sortMode,
@@ -567,7 +703,8 @@ export function FamiliarsMemoryView({
       availableCanonicalEntries,
       effectiveFamiliarFilter,
       familiarById,
-      filesState.entries,
+      filesForView,
+      includeHermesMemory,
       normalizedQuery,
       pendingCanonicalMemorySelection?.id,
       sortMode,
@@ -781,9 +918,7 @@ export function FamiliarsMemoryView({
     storedFamiliarFilter,
   ]);
 
-  const selectedFamiliar =
-    familiarById.get(effectiveFamiliarFilter) ??
-    (activeFamiliar?.id === effectiveFamiliarFilter ? activeFamiliar : null);
+  const selectedFamiliar = selectedFamiliarForScope;
   const familiarOptions = useMemo(() => {
     const options =
       familiarsWithMemory.length > 0 ? familiarsWithMemory : familiars;
@@ -1073,6 +1208,15 @@ export function FamiliarsMemoryView({
             />
           </div>
         ) : null}
+        {includeHermesMemory && hermesSearch?.error ? (
+          <div className="mt-2">
+            <ErrorState
+              compact
+              headline="Couldn't load Hermes memory"
+              subtitle={hermesSearch.error}
+            />
+          </div>
+        ) : null}
         {missingCanonical.notice ? (
           <div
             role="status"
@@ -1295,6 +1439,7 @@ export function FamiliarsMemoryView({
                 />
               ) : (
                 <MemoryReaderPane
+                  key={selectedRow?.rowId ?? "empty"}
                   row={selectedRow?.kind === "file" ? selectedRow : null}
                   age={selectedRow ? age(selectedRow.sortTime) : ""}
                   sizeLabel={

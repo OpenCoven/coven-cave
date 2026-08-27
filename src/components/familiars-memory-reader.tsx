@@ -105,26 +105,28 @@ export function MemoryReaderPane({
             {row.title}
           </h3>
           <div className="fm-reader-actions flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setEditing((previous) => {
-                  if (previous) setRefreshToken((current) => current + 1);
-                  return !previous;
-                });
-              }}
-              aria-pressed={editing}
-              aria-label={editing ? "Stop editing" : "Edit memory file"}
-              title={editing ? "Stop editing" : "Edit"}
-              className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
-                editing
-                  ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon name="ph:pencil-simple" width={11} aria-hidden />
-              {editing ? "Done" : "Edit"}
-            </button>
+            {!row.readOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing((previous) => {
+                    if (previous) setRefreshToken((current) => current + 1);
+                    return !previous;
+                  });
+                }}
+                aria-pressed={editing}
+                aria-label={editing ? "Stop editing" : "Edit memory file"}
+                title={editing ? "Stop editing" : "Edit"}
+                className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] transition-colors ${
+                  editing
+                    ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <Icon name="ph:pencil-simple" width={11} aria-hidden />
+                {editing ? "Done" : "Edit"}
+              </button>
+            ) : null}
             {!editing ? (
               <>
                 <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[length:var(--text-2xs)]">
@@ -153,24 +155,26 @@ export function MemoryReaderPane({
                 >
                   <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
                 </button>
-                <OverflowMenu ariaLabel="More memory actions" size="xs">
-                  <PopoverItem onSelect={() => void copyPath()}>
-                    {copied ? "Path copied" : "Copy path"}
-                  </PopoverItem>
-                  <PopoverItem onSelect={() => onOpenFile(row.path)}>
-                    Open file
-                  </PopoverItem>
-                  <PopoverItem onSelect={() => openGrimoireDoc("memory", row.contentPath)}>
-                    Open in Memories
-                  </PopoverItem>
-                </OverflowMenu>
+                {!row.readOnly ? (
+                  <OverflowMenu ariaLabel="More memory actions" size="xs">
+                    <PopoverItem onSelect={() => void copyPath()}>
+                      {copied ? "Path copied" : "Copy path"}
+                    </PopoverItem>
+                    <PopoverItem onSelect={() => onOpenFile(row.path)}>
+                      Open file
+                    </PopoverItem>
+                    <PopoverItem onSelect={() => openGrimoireDoc("memory", row.contentPath)}>
+                      Open in Memories
+                    </PopoverItem>
+                  </OverflowMenu>
+                ) : null}
               </>
             ) : null}
           </div>
         </div>
         <div className="fm-reader-meta">
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-            File
+            {row.contentKind === "hermes-message" ? "Hermes history" : "File"}
           </span>
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{row.sourceLabel}</span>
           {sizeLabel ? (
@@ -182,17 +186,24 @@ export function MemoryReaderPane({
               Stale
             </span>
           ) : null}
+          {row.readOnly ? (
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">
+              Read only
+            </span>
+          ) : null}
         </div>
         <div className="fm-reader-path">
           <code
             className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
             title={row.path}
           >
-            {compactPath(row.path)}
+            {row.contentKind === "hermes-message"
+              ? "~/.hermes/state.db · message record"
+              : compactPath(row.path)}
           </code>
         </div>
       </div>
-      {editing ? (
+      {editing && !row.readOnly ? (
         <div className="fm-reader-body min-h-0 flex-1">
           <MemoryMdEditor
             path={row.contentPath}

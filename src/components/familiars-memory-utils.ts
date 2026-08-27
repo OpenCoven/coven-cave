@@ -12,11 +12,16 @@ export type FileMemoryEntry = {
   sourceKind: "coven-origin" | "external-harness" | "runtime";
   sourceKindLabel: string;
   rootPath: string;
-  origin?: "coven";
+  origin?: string;
   harnessId?: string;
   runtimeId?: string;
   sourceContext?: string;
   familiarId?: string;
+  title?: string;
+  excerpt?: string;
+  readOnly?: boolean;
+  contentKind?: "file" | "hermes-message";
+  serverMatched?: boolean;
 };
 
 export function compactPath(path: string): string {

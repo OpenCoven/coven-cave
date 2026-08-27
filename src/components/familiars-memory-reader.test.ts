@@ -40,6 +40,17 @@ assert.match(source, /<MemoryMdEditor/, "edit mode uses the shared MemoryMdEdito
 assert.match(source, /editing \? \([\s\S]*?<MemoryMdEditor[\s\S]*?path=\{row\.contentPath\}/, "editor mounts only after a file row is selected");
 assert.match(source, /setEditing\(false\);?\s*\n?\s*\}, \[fetchPath\]\)/, "switching rows ends the edit session");
 assert.match(source, /setRefreshToken\(\(current\) => current \+ 1\)/, "leaving edit re-fetches the read view");
+assert.match(
+  source,
+  /\{!row\.readOnly \? \([\s\S]*?Edit memory file/,
+  "read-only records never expose the edit affordance",
+);
+assert.match(
+  source,
+  /\{editing && !row\.readOnly \? \([\s\S]*?<MemoryMdEditor/,
+  "read-only records can never mount the editor",
+);
+assert.match(source, /Read only/, "read-only provenance is visible in the reader");
 
 // Copy-path + empty state + open-file + expand.
 assert.match(source, /copyText\(/, "copy-path button must copy the path");

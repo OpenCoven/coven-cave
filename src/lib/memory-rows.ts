@@ -32,8 +32,11 @@ export type FileMemoryRow = {
   sortTime: string;
   size: number;
   sourceLabel: string;
+  excerpt?: string;
   stale: boolean;
   protection: ProtectionTier;
+  readOnly: boolean;
+  contentKind: "file" | "hermes-message";
 };
 
 export type MemoryRow = CanonicalMemoryRow | FileMemoryRow;
@@ -48,6 +51,7 @@ type BuildArgs = {
   canonical: CanonicalMemorySummary[];
   files: RawFileEntry[];
   familiarFilter: string;
+  includeOwnerlessHarness?: string;
   query: string;
   sourceFilter: "all" | string;
   sortMode: SortMode;
@@ -166,8 +170,14 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
       (entry) =>
         args.sourceFilter === "all" || entry.sourceKind === args.sourceFilter,
     )
-    .filter((entry) => entry.familiarId === args.familiarFilter)
-    .filter((entry) => fileMemoryMatches(entry, query))
+    .filter(
+      (entry) =>
+        entry.familiarId === args.familiarFilter ||
+        (!entry.familiarId &&
+          Boolean(args.includeOwnerlessHarness) &&
+          entry.harnessId === args.includeOwnerlessHarness),
+    )
+    .filter((entry) => entry.serverMatched || fileMemoryMatches(entry, query))
     .map((entry) => {
       const managed = normalizeFileEntry(entry);
       return {
@@ -179,8 +189,13 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         sortTime: entry.modified,
         size: entry.size,
         sourceLabel: entry.sourceKindLabel,
+        ...(entry.excerpt ? { excerpt: entry.excerpt } : {}),
         stale: detectStale(managed).stale,
-        protection: classifyProtection(entry.fullPath),
+        protection: entry.readOnly
+          ? "structural"
+          : classifyProtection(entry.fullPath),
+        readOnly: Boolean(entry.readOnly),
+        contentKind: entry.contentKind ?? "file",
       };
     });
 

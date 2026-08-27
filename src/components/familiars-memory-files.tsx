@@ -192,6 +192,7 @@ export function MemoryFilesList({
   onDelete,
 }: MemoryFilesListProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const [readerEntry, setReaderEntry] = useState<FileMemoryEntry | null>(null);
   const sliced = entries.slice(0, limit ?? entries.length);
   const hidden = entries.length - sliced.length;
   return (
@@ -224,10 +225,22 @@ export function MemoryFilesList({
             >
               <button
                 type="button"
-                onClick={() => (onSelect ? onSelect(`file:${entry.fullPath}`) : onOpen?.(entry.fullPath))}
+                onClick={() => {
+                  if (onSelect) {
+                    onSelect(`file:${entry.fullPath}`);
+                  } else if (entry.readOnly) {
+                    setReaderEntry(entry);
+                  } else {
+                    onOpen?.(entry.fullPath);
+                  }
+                }}
                 className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
               >
-                <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                <Icon
+                  name={entry.contentKind === "hermes-message" ? "ph:database" : "ph:file-text"}
+                  width={13}
+                  className="mt-0.5 shrink-0 text-[var(--text-muted)]"
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]" title={entry.relPath}>{base}</span>
                   <span className="mt-0.5 block truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
@@ -248,7 +261,7 @@ export function MemoryFilesList({
               </button>
               <div className="flex items-center gap-1 pr-2">
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
-                {onDelete && classifyProtection(entry.fullPath) !== "structural" ? (
+                {onDelete && !entry.readOnly && classifyProtection(entry.fullPath) !== "structural" ? (
                   <button
                     type="button"
                     className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
@@ -273,6 +286,13 @@ export function MemoryFilesList({
           <Icon name="ph:caret-down" width={11} />
           Show {Math.min(hidden, 80)} more · {sliced.length} of {entries.length}
         </button>
+      ) : null}
+      {readerEntry ? (
+        <MemoryReaderModal
+          path={readerEntry.fullPath}
+          title={readerEntry.title ?? readerEntry.relPath}
+          onClose={() => setReaderEntry(null)}
+        />
       ) : null}
     </div>
   );

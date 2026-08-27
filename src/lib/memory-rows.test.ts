@@ -76,6 +76,66 @@ function rows(
 }
 
 {
+  const [hermes] = rows({
+    canonical: [],
+    files: [
+      {
+        fullPath: "hermes://familiar/cody/messages/7",
+        relPath: "Bridge design · Assistant",
+        rootLabel: "Hermes history",
+        sourceKind: "external-harness",
+        sourceKindLabel: "Hermes",
+        size: 42,
+        modified: "2026-06-13T11:45:00Z",
+        harnessId: "hermes",
+        excerpt: "A provider-agnostic memory result.",
+        readOnly: true,
+        contentKind: "hermes-message",
+        serverMatched: true,
+      },
+    ],
+    includeOwnerlessHarness: "hermes",
+    query: "violet checklist",
+  });
+  assert.deepEqual(hermes, {
+    kind: "file",
+    rowId: "file:hermes://familiar/cody/messages/7",
+    title: "Bridge design · Assistant",
+    path: "hermes://familiar/cody/messages/7",
+    contentPath: "hermes://familiar/cody/messages/7",
+    sortTime: "2026-06-13T11:45:00Z",
+    size: 42,
+    sourceLabel: "Hermes",
+    excerpt: "A provider-agnostic memory result.",
+    stale: false,
+    protection: "structural",
+    readOnly: true,
+    contentKind: "hermes-message",
+  });
+  assert.equal(
+    rows({
+      canonical: [],
+      files: [
+        {
+          fullPath: "hermes://familiar/cody/messages/7",
+          relPath: "Bridge design · Assistant",
+          rootLabel: "Hermes history",
+          sourceKind: "external-harness",
+          sourceKindLabel: "Hermes",
+          size: 42,
+          modified: "2026-06-13T11:45:00Z",
+          harnessId: "hermes",
+          readOnly: true,
+          contentKind: "hermes-message",
+        },
+      ],
+    }).length,
+    0,
+    "ownerless Hermes records stay hidden outside a Hermes familiar scope",
+  );
+}
+
+{
   const result = rows();
   const canonicalRow = result.find((row) => row.kind === "canonical");
   const fileRow = result.find((row) => row.kind === "file");
@@ -102,6 +162,8 @@ function rows(
     sourceLabel: "Runtime memory",
     stale: false,
     protection: "normal",
+    readOnly: false,
+    contentKind: "file",
   });
   for (const forbidden of ["path", "contentPath", "protection", "size"]) {
     assert.equal(
@@ -213,6 +275,8 @@ const groupedRows: MemoryRow[] = [
     sourceLabel: "Runtime memory",
     stale: false,
     protection: "normal",
+    readOnly: false,
+    contentKind: "file",
   },
   {
     kind: "file",
@@ -225,6 +289,8 @@ const groupedRows: MemoryRow[] = [
     sourceLabel: "Coven origin",
     stale: false,
     protection: "normal",
+    readOnly: false,
+    contentKind: "file",
   },
 ];
 

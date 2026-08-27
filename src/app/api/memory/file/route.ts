@@ -3,6 +3,12 @@ import { readFile, stat } from "node:fs/promises";
 import { redact } from "@/lib/redact";
 import { resolveAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
 import { writeAllowedMemoryFile } from "@/lib/server/memory-file-write";
+import {
+  isHermesMemoryUri,
+  parseHermesMemoryUri,
+  readHermesMemory,
+} from "@/lib/server/hermes-memory";
+import { resolveHermesMemorySource } from "@/lib/server/hermes-memory-source";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +18,56 @@ export async function GET(req: Request) {
   const reveal = url.searchParams.get("reveal") === "1";
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
+  }
+  if (isHermesMemoryUri(target)) {
+    if (url.searchParams.get("stat") === "1") {
+      return NextResponse.json(
+        { ok: false, error: "live follow is unavailable for Hermes memory" },
+        { status: 400 },
+      );
+    }
+    try {
+      const reference = parseHermesMemoryUri(target);
+      if (!reference) {
+        return NextResponse.json({ ok: false, error: "memory not found" }, { status: 404 });
+      }
+      const source = await resolveHermesMemorySource(reference.familiarId);
+      if (!source.ok) {
+        const status =
+          source.error === "unknown-familiar"
+            ? 404
+            : source.error === "not-hermes"
+              ? 403
+              : 409;
+        return NextResponse.json(
+          { ok: false, error: "Hermes memory source is unavailable" },
+          { status },
+        );
+      }
+      const memory = await readHermesMemory(target, {
+        hermesHome: source.hermesHome,
+        familiarId: source.familiarId,
+      });
+      if (!memory) {
+        return NextResponse.json({ ok: false, error: "memory not found" }, { status: 404 });
+      }
+      const { text, redactions } = redact(memory.content);
+      return NextResponse.json({
+        ok: true,
+        path: target,
+        revealed: reveal,
+        text: reveal ? memory.content : text,
+        redactions,
+        rawLength: memory.content.length,
+        mtimeMs: Date.parse(memory.modified),
+        readOnly: true,
+      });
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Hermes memory is unreadable" },
+        { status: 500 },
+      );
+    }
   }
   const allowedPath = await resolveAllowedMemoryFilePath(target);
   if (!allowedPath) {
