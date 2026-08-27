@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -384,7 +384,9 @@ async function main() {
     `packaged native modules must load from the sidecar runtime: ${nativeModules.stderr || nativeModules.error}`,
   );
 
-  const covenHome = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-"));
+  const covenHome = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-")),
+  );
   const daemonMarker = path.join(covenHome, "daemon-timeout-child.pid");
   const hangingDaemon = await writeHangingDaemonFixture(covenHome, daemonMarker);
   const avatarDir = path.join(covenHome, "workspaces", "familiars", "smoke", "avatars");

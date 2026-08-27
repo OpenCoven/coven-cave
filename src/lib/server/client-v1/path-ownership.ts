@@ -370,7 +370,7 @@ export const probeWindowsAcl: ClientV1WindowsAclProbe = async (path) => {
       env: windowsProbeEnv(path),
       encoding: "utf8",
       windowsHide: true,
-      timeout: 15_000,
+      timeout: 60_000,
       maxBuffer: 1024 * 1024,
     },
   );

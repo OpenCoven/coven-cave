@@ -292,7 +292,7 @@ function assertStandaloneWindowsExclusive(path, label) {
         env: probeEnv,
         encoding: "utf8",
         windowsHide: true,
-        timeout: 15e3,
+        timeout: 6e4,
         maxBuffer: 1024 * 1024
       }
     ));
