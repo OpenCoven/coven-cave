@@ -752,6 +752,7 @@ export const SUITES = {
     "src/components/calendar-overflow-pill.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-gallery.test.ts",
+    "src/lib/canvas-github-import.test.ts",
     "src/lib/canvas-artifacts.test.ts",
     "src/lib/canvas-comments.test.ts",
     "src/lib/canvas-content-sync.test.ts",
