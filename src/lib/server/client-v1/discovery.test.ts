@@ -573,6 +573,7 @@ test("the standalone server enforces ownership on Windows with this module's scr
     ["the inlined ACL script", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/],
     ["the trusted SYSTEM SID", /const WINDOWS_SYSTEM_SID = "([^"]+)";/],
     ["the trusted Administrators SID", /const WINDOWS_ADMINISTRATORS_SID = "([^"]+)";/],
+    ["the ACL subprocess timeout", /timeout:\s*([\d_]+),/],
     ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
     [
       "the exclusivity findings",
@@ -598,6 +599,11 @@ test("the standalone server enforces ownership on Windows with this module's scr
       `${what} must stay identical to the module server.mjs cannot import`,
     );
   }
+  assert.equal(
+    Number(region(moduleSource, "path-ownership.ts", /timeout:\s*([\d_]+),/).replaceAll("_", "")),
+    60_000,
+    "the Windows ACL probe must tolerate a cold PowerShell start on hosted release runners",
+  );
   assert.match(
     source,
     /if \(findings\.length > 0\) \{\s*throw new Error\(/,
