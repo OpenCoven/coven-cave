@@ -131,7 +131,7 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
         openNavigation.tap()
 
-        let projectContext = app.buttons["Projects"]
+        let projectContext = app.buttons["Project context button"]
         XCTAssertTrue(projectContext.waitForExistence(timeout: 5),
                       "drawer exposes the shared project switcher")
         projectContext.tap()
