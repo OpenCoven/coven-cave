@@ -661,3 +661,58 @@ test("semantically equal noncanonical legacy bytes are rewritten to the exact ve
     assert.equal(metadata.catalogRevision, 1);
   });
 });
+
+test("a retained A5 tombstone prevents a downgraded legacy projection from resurrecting a deleted resource", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    const stale = link("deleted-in-a5");
+    await writeResearchLinksVerified({ version: 1, links: [stale] }, { path: legacyPath });
+    await listCompatibleResearchLinks(options);
+
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.withOperationalTransaction(async (transaction) => {
+      const current = transaction.listManifests().find(
+        (manifest) => manifest.id === deterministicResourceId(stale.id),
+      );
+      assert.ok(current);
+      const journal = await transaction.beginDeletion({
+        expectedManifest: current,
+        deletedAt: NOW,
+        snapshotIds: [],
+      });
+      const deleting: ResourceManifestV1 = {
+        ...current,
+        revision: current.revision + 1,
+        ingest: { desired: false, state: "deleting" },
+        updatedAt: NOW,
+      };
+      await transaction.updateManifest({
+        id: current.id,
+        expectedRevision: current.revision,
+        manifest: deleting,
+      });
+      await transaction.publishTombstone({
+        version: 1,
+        resourceId: current.id,
+        deletionRevision: journal.deletionRevision,
+        deletedAt: journal.deletedAt,
+      });
+      await transaction.deleteDeletingManifest(deleting);
+    });
+
+    // Simulate an older binary restoring its stale pre-delete projection.
+    await writeResearchLinksVerified({ version: 1, links: [stale] }, { path: legacyPath });
+    assert.deepEqual(await listCompatibleResearchLinks(options), []);
+    assert.deepEqual(
+      (JSON.parse(await readFile(legacyPath, "utf8")) as { links: SavedLink[] }).links,
+      [],
+    );
+
+    await assert.rejects(
+      () => mutateCompatibleResearchLinks(
+        () => ({ links: [stale], result: null }),
+        options,
+      ),
+      /cannot recreate a tombstoned resource revision/,
+    );
+  });
+});

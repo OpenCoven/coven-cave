@@ -19,12 +19,15 @@ import path from "node:path";
 import test from "node:test";
 
 import type {
+  ResourceIngestJobV1,
   ResourceManifestV1,
   ResourceSnapshotV1,
 } from "../research-resource-contracts.ts";
 import {
   createResearchResourceStore,
   ResearchResourceStoreError,
+  type ResourceDeletionJournalV1,
+  type ResourceIngestFailureV1,
 } from "./research-resource-store.ts";
 
 function digest(bytes: Uint8Array): string {
@@ -106,6 +109,22 @@ function hasStoreCode(code: ResearchResourceStoreError["code"]): (error: unknown
 
 function blobPath(root: string, sha256: string): string {
   return path.join(root, "blobs", "sha256", sha256.slice(0, 2), sha256);
+}
+
+function ingestJob(resourceId: string): ResourceIngestJobV1 {
+  return {
+    version: 1,
+    id: `job-${resourceId}`,
+    resourceId,
+    resourceRevision: 1,
+    deletionRevision: 0,
+    status: "queued",
+    stage: "fetch",
+    attempt: 0,
+    availableAt: "2026-08-27T12:00:00Z",
+    createdAt: "2026-08-27T12:00:00Z",
+    updatedAt: "2026-08-27T12:00:00Z",
+  };
 }
 
 test("publishes and verifies an immutable snapshot with private storage modes", async () => {
@@ -882,5 +901,180 @@ test("compatibility deletion rejects same-byte target substitution", async () =>
       hasStoreCode("revision-conflict"),
     );
     assert.deepEqual(await store.readManifest(original.id), original);
+  });
+});
+
+test("operational transaction persists fenced job transitions and bounded failures privately", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const resource = manifest("operational", {
+      ingest: { desired: true, state: "queued" },
+    });
+    await store.createManifest(resource);
+    const queued = ingestJob(resource.id);
+    const token = "0123456789abcdef0123456789abcdef";
+    const claimed: ResourceIngestJobV1 = {
+      ...queued,
+      status: "claimed",
+      lease: { owner: "worker_1", token, expiresAt: "2099-08-27T12:05:00Z" },
+      updatedAt: "2026-08-27T12:01:00Z",
+    };
+    const failure: ResourceIngestFailureV1 = {
+      version: 1,
+      jobId: queued.id,
+      resourceId: resource.id,
+      resourceRevision: 1,
+      deletionRevision: 0,
+      stage: "fetch",
+      code: "transport_timeout",
+      retryable: true,
+      occurredAt: "2026-08-27T12:02:00Z",
+    };
+
+    await store.withOperationalTransaction(async (transaction) => {
+      assert.deepEqual(await transaction.createJob(queued), { created: true, job: queued });
+      assert.deepEqual((await transaction.createJob(queued)).created, false);
+      await transaction.replaceJob(queued, claimed);
+      transaction.assertPublicationFence({
+        expectedJob: claimed,
+        leaseToken: token,
+        resourceId: resource.id,
+        resourceRevision: 1,
+        deletionRevision: 0,
+        now: "2026-08-27T12:02:00Z",
+      });
+      assert.deepEqual(await transaction.writeFailure(failure), failure);
+      assert.deepEqual(transaction.readFailure(queued.id), failure);
+      await assert.rejects(
+        () => transaction.replaceJob(claimed, { ...claimed, updatedAt: "2026-08-27T12:03:00Z", attempt: 1 }),
+        hasStoreCode("revision-conflict"),
+      );
+    });
+
+    await store.withOperationalTransaction(async (transaction) => {
+      assert.deepEqual(transaction.listJobs(), [claimed]);
+      assert.deepEqual(transaction.listFailures(), [failure]);
+    });
+    if (process.platform !== "win32") {
+      for (const directory of ["jobs", "failures", "fences", "deletions", "tombstones"]) {
+        assert.equal((await lstat(path.join(root, directory))).mode & 0o777, 0o700);
+      }
+      assert.equal((await lstat(path.join(root, "jobs", `${queued.id}.json`))).mode & 0o777, 0o600);
+      assert.equal((await lstat(path.join(root, "failures", `${queued.id}.json`))).mode & 0o777, 0o600);
+    }
+  });
+});
+
+test("deletion state captures every snapshot, advances by CAS, and removes only an exact deleting manifest", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const resource = manifest("delete-general");
+    await store.createManifest(resource);
+    const bytesA = Buffer.from("historical A");
+    const bytesB = Buffer.from("historical B");
+    const snapshotA = snapshot({ id: "delete-snapshot-a", resourceId: resource.id, normalizedBlob: bytesA });
+    const snapshotB = snapshot({ id: "delete-snapshot-b", resourceId: resource.id, normalizedBlob: bytesB });
+    await store.publishSnapshot({ snapshot: snapshotA, normalizedBlob: bytesA });
+    await store.publishSnapshot({ snapshot: snapshotB, normalizedBlob: bytesB });
+
+    await store.withOperationalTransaction(async (transaction) => {
+      assert.deepEqual(transaction.listSnapshots(resource.id).map((entry) => entry.id), [snapshotA.id, snapshotB.id]);
+      await assert.rejects(
+        () => transaction.beginDeletion({
+          expectedManifest: resource,
+          deletedAt: "2026-08-27T12:01:00Z",
+          snapshotIds: [snapshotA.id],
+        }),
+        hasStoreCode("snapshot-conflict"),
+      );
+      const fenced = await transaction.beginDeletion({
+        expectedManifest: resource,
+        deletedAt: "2026-08-27T12:01:00Z",
+        snapshotIds: [snapshotA.id, snapshotB.id],
+      });
+      assert.equal(fenced.phase, "fenced");
+      assert.equal(transaction.readDeletionFence(resource.id)?.deletionRevision, 1);
+      const deleting = await transaction.updateManifest({
+        id: resource.id,
+        expectedRevision: 1,
+        manifest: {
+          ...resource,
+          revision: 2,
+          ingest: { desired: false, state: "deleting" },
+          updatedAt: "2026-08-27T12:02:00Z",
+        },
+      });
+      const manifestDeleting: ResourceDeletionJournalV1 = {
+        ...fenced,
+        phase: "manifest_deleting",
+        updatedAt: "2026-08-27T12:02:00Z",
+      };
+      await transaction.advanceDeletionJournal(fenced, manifestDeleting);
+      await transaction.publishTombstone({
+        version: 1,
+        resourceId: resource.id,
+        deletionRevision: 1,
+        deletedAt: fenced.deletedAt,
+      });
+      await transaction.deleteSnapshot(snapshotA.id);
+      await transaction.deleteSnapshot(snapshotB.id);
+      assert.deepEqual((await transaction.deleteDeletingManifest(deleting)).id, resource.id);
+    });
+
+    assert.equal(await store.readManifest(resource.id), null);
+    await store.withOperationalTransaction(async (transaction) => {
+      assert.equal(transaction.readTombstone(resource.id)?.deletionRevision, 1);
+      assert.equal(transaction.readDeletionJournal(resource.id)?.phase, "manifest_deleting");
+    });
+  });
+});
+
+test("operational scans fail closed on unexpected entries and private tombstone fields", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    await store.listManifests();
+    await writeFile(path.join(root, "jobs", "unexpected.txt"), "not a record", { mode: 0o600 });
+    await assert.rejects(
+      () => store.withOperationalTransaction(async () => undefined),
+      hasStoreCode("corrupt"),
+    );
+  });
+});
+
+test("a durable deletion journal repairs a crash before fence publication", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const resource = manifest("deletion-fence-repair");
+    await store.createManifest(resource);
+    await store.withOperationalTransaction(async (transaction) => {
+      await transaction.beginDeletion({
+        expectedManifest: resource,
+        deletedAt: "2026-08-27T12:01:00Z",
+        snapshotIds: [],
+      });
+    });
+    await unlink(path.join(root, "fences", `${resource.id}.json`));
+
+    await store.withOperationalTransaction(async (transaction) => {
+      assert.equal(transaction.readDeletionJournal(resource.id)?.phase, "fenced");
+      assert.equal(transaction.readDeletionFence(resource.id)?.deletionRevision, 1);
+    });
+    assert.equal((await lstat(path.join(root, "fences", `${resource.id}.json`))).isFile(), true);
+  });
+});
+
+test("snapshot deletion replay collects CAS blobs left after record removal", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const normalizedBlob = Buffer.from("crash residue");
+    const record = snapshot({ id: "snapshot-delete-replay", normalizedBlob });
+    await store.publishSnapshot({ snapshot: record, normalizedBlob });
+    await unlink(path.join(root, "snapshots", `${record.id}.json`));
+    assert.equal((await lstat(blobPath(root, record.normalizedBlobDigest))).isFile(), true);
+
+    const replayed = await store.deleteSnapshot(record.id);
+    assert.equal(replayed.deleted, false);
+    assert.deepEqual(replayed.removedBlobDigests, [record.normalizedBlobDigest]);
+    await assert.rejects(() => lstat(blobPath(root, record.normalizedBlobDigest)), { code: "ENOENT" });
   });
 });

@@ -161,6 +161,7 @@ export type ResourceIngestJobV1 = {
   availableAt: string;
   lease?: {
     owner: string;
+    token: string;
     expiresAt: string;
   } & UnknownFields;
   createdAt: string;
@@ -630,13 +631,16 @@ export function parseResourceIngestJobV1(value: unknown): ProtocolParseResult<Re
   const attempt = integer(attemptField.value, "$.attempt", "attempt"); if (!attempt.ok) return attempt;
   const availableAtField = required(raw, "availableAt", "$"); if (!availableAtField.ok) return availableAtField;
   const availableAt = utc(availableAtField.value, "$.availableAt", "availableAt"); if (!availableAt.ok) return availableAt;
-  const lease = optional(raw, "lease", "$", (item, itemPath) => {
+  const lease = optional<Exclude<ResourceIngestJobV1["lease"], undefined>>(raw, "lease", "$", (item, itemPath) => {
     const leaseObject = object(item, itemPath); if (!leaseObject.ok) return leaseObject;
     const ownerField = required(leaseObject.value, "owner", itemPath); if (!ownerField.ok) return ownerField;
     const owner = identifier(ownerField.value, childPath(itemPath, "owner"), "lease owner"); if (!owner.ok) return owner;
+    const tokenField = required(leaseObject.value, "token", itemPath); if (!tokenField.ok) return tokenField;
+    const token = stringValue(tokenField.value, childPath(itemPath, "token"), "lease token", { nonEmpty: true }); if (!token.ok) return token;
+    if (!/^[a-f0-9]{32}$/.test(token.value)) return fail("invalid_value", childPath(itemPath, "token"), "lease token must be 128-bit lowercase hexadecimal");
     const expiresField = required(leaseObject.value, "expiresAt", itemPath); if (!expiresField.ok) return expiresField;
     const expiresAt = utc(expiresField.value, childPath(itemPath, "expiresAt"), "lease expiresAt"); if (!expiresAt.ok) return expiresAt;
-    return pass({ ...leaseObject.value, owner: owner.value, expiresAt: expiresAt.value });
+    return pass({ ...leaseObject.value, owner: owner.value, token: token.value, expiresAt: expiresAt.value });
   }); if (!lease.ok) return lease;
   if ((status.value === "claimed") !== (lease.value !== undefined)) {
     return fail("semantic_conflict", "$.lease", "lease must be present exactly when status is claimed");

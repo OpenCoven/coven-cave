@@ -240,7 +240,12 @@ function ingestJob() {
     stage: "extract",
     attempt: 1,
     availableAt: CREATED_AT,
-    lease: { owner: "worker_1", expiresAt: "2026-08-26T12:05:00Z", futureLeaseField: true },
+    lease: {
+      owner: "worker_1",
+      token: "0123456789abcdef0123456789abcdef",
+      expiresAt: "2026-08-26T12:05:00Z",
+      futureLeaseField: true,
+    },
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     futureJobField: true,
@@ -255,6 +260,17 @@ test("ingest jobs preserve operational intent and enforce lease truth", () => {
   const { lease: _lease, ...withoutLease } = ingestJob();
   expectError(parseResourceIngestJobV1(withoutLease), "$.lease", "semantic_conflict");
   expectError(parseResourceIngestJobV1({ ...ingestJob(), status: "queued" }), "$.lease", "semantic_conflict");
+  expectError(
+    parseResourceIngestJobV1({ ...ingestJob(), lease: { ...ingestJob().lease, token: "short" } }),
+    "$.lease.token",
+    "invalid_value",
+  );
+  const { token: _token, ...leaseWithoutToken } = ingestJob().lease;
+  expectError(
+    parseResourceIngestJobV1({ ...ingestJob(), lease: leaseWithoutToken }),
+    "$.lease.token",
+    "missing_field",
+  );
   expectError(parseResourceIngestJobV1({ ...ingestJob(), deletionRevision: -1 }), "$.deletionRevision", "invalid_value");
 });
 
