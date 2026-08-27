@@ -198,13 +198,13 @@ export interface ClientV1PathOwnershipOptions {
  *
  * Node reports `uid: 0` for every path on win32 and `chmod` there sets nothing
  * but the read-only bit, so neither half of the POSIX contract this module
- * enforces has a native equivalent. `GetAccessControl("Access")` writes only
- * the DACL section — `Set-Acl`, which also carries owner and audit sections,
- * fails with `PrivilegeNotHeldException` (SeSecurityPrivilege) against an
- * already-protected path.
+ * enforces has a native equivalent. The repair takes ownership as the current
+ * SID, then writes only the owner and DACL sections; `Set-Acl`, which also
+ * carries the audit section, fails with `PrivilegeNotHeldException`
+ * (SeSecurityPrivilege) against an already-protected path.
  *
- * Ownership is verified, never taken: a path owned by somebody else is a
- * finding to report, not a race to win.
+ * The resulting owner and DACL are re-read below. A repair that cannot make
+ * both exclusive remains a finding and is refused rather than trusted.
  */
 const WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
