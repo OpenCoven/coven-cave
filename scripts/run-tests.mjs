@@ -454,6 +454,7 @@ export const SUITES = {
     "src/lib/server/research-mission-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
+    "src/lib/server/research-resource-store.test.ts",
     "src/lib/research-media-ticket.test.ts",
     "src/lib/server/chat-attachment-store.test.ts",
     "src/lib/server/research-podcast-pipeline.test.ts",
