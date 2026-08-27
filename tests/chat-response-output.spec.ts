@@ -43,6 +43,14 @@ The response stays readable and stable while preserving the familiar's authored 
 - Keep supporting details beneath the primary conclusion.
 
 Use \`[READY]\` literally in code, while standalone [REVIEW] and [BLOCKED] tokens become badges.
+
+${Array.from(
+  { length: 32 },
+  (_, index) => `Supporting detail ${index + 1} keeps the transcript scrollable.`,
+).join("\n\n")}
+
+<coven:skill name="brainstorming" stage="done" note="Mapped the response structure" />
+<coven:skill name="verification-before-completion" stage="running" note="Checking the rendered result" />
 `;
 
 async function setup(page: Page) {
@@ -168,4 +176,62 @@ test("interrupted responses preserve partial text and keep Retry visible", async
   });
   await expect(bubble.getByText("Response interrupted")).toBeVisible();
   await expect(bubble.getByRole("button", { name: "Retry response" })).toBeVisible();
+});
+
+test("run skills open one complete ledger and reading older output hides the composer", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/?mode=chat#chat-s-response-complete", { waitUntil: "domcontentloaded" });
+
+  const verificationCard = page.getByRole("button", {
+    name: /Open details for skill verification-before-completion/,
+  });
+  await expect(verificationCard).toBeVisible({ timeout: 30_000 });
+  await verificationCard.click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Skills used in this run" })).toBeVisible();
+  await expect(dialog.getByText("brainstorming", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("verification-before-completion", { exact: true })).toBeVisible();
+  await expect(dialog.locator('[data-selected="true"]')).toContainText(
+    "verification-before-completion",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(verificationCard).toBeFocused();
+
+  const mainChat = page.getByTestId("chat-main");
+  const transcript = mainChat.locator(".cave-chat-transcript");
+  const composer = mainChat.locator(".cave-composer-dock");
+  await expect(composer).toBeVisible();
+  await transcript.hover();
+  await page.mouse.wheel(0, -900);
+  await expect(composer).toHaveCount(0);
+  await mainChat.getByRole("button", { name: "Latest" }).click();
+  await expect(composer).toBeVisible();
+});
+
+test("the header archive button sends one archive mutation and leaves the session", async ({
+  page,
+}) => {
+  await setup(page);
+  let archiveRequests = 0;
+  await page.route("**/api/sessions/s-response-complete", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    archiveRequests += 1;
+    expect(route.request().postDataJSON()).toEqual({ archived: true });
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/?mode=chat#chat-s-response-complete", { waitUntil: "domcontentloaded" });
+
+  const archive = page.getByRole("button", { name: "Archive this chat" });
+  await expect(archive).toBeVisible({ timeout: 30_000 });
+  await archive.click();
+
+  await expect.poll(() => archiveRequests).toBe(1);
+  await expect(page).not.toHaveURL(/#chat-s-response-complete$/);
 });

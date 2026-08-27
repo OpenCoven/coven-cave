@@ -18,6 +18,30 @@ enum FamiliarDashboardFixtures {
         "updatedAt": "2026-08-23T11:59:00.000Z"
       },
       "presence": "active",
+      "live": {
+        "harness": "codex",
+        "model": "gpt-5.6",
+        "activeSessionCount": 1,
+        "memoryFreshestAt": "2026-08-20T10:00:00.000Z"
+      },
+      "tasks": {
+        "items": [{
+          "id": "task-1",
+          "title": "Repair the loader",
+          "status": "blocked",
+          "priority": "high",
+          "projectId": "project-1",
+          "sessionId": null,
+          "updatedAt": "2026-08-23T11:57:00.000Z",
+          "unresolvedDependencies": {
+            "items": [{ "id": "dep-1", "kind": "task", "label": "Land prerequisite" }],
+            "total": 1
+          },
+          "primaryBlockerId": "dep-1",
+          "nextStep": { "summary": "Re-run the focused tests", "requiresApproval": false }
+        }],
+        "total": 1
+      },
       "sessions": {
         "active": {
           "items": [
@@ -46,6 +70,22 @@ enum FamiliarDashboardFixtures {
           "total": 9
         },
         "freshestAt": "2026-08-20T10:00:00.000Z"
+      },
+      "attention": {
+        "items": [{
+          "id": "task:task-1", "source": "task", "kind": "blocked",
+          "title": "Repair the loader", "targetId": "task-1"
+        }],
+        "total": 1
+      },
+      "reminders": {
+        "items": [{
+          "id": "reminder-1", "title": "Review the result", "body": null,
+          "status": "pending", "fireAt": "2026-08-24T15:00:00.000Z",
+          "firedAt": null, "updatedAt": "2026-08-23T12:00:00.000Z",
+          "familiarId": "nova"
+        }],
+        "total": 1
       }
     }
     """
@@ -96,12 +136,66 @@ enum FamiliarDashboardFixtures {
       "windowStart": "2026-08-01T00:00:00.000Z",
       "windowEnd": "2026-08-22T00:00:00.000Z",
       "averages": {
-        "overallConfidence": 0.82,
-        "toolReliability": 0.9,
+        "overallConfidence": 82,
+        "toolReliability": 90,
         "memoryRecall": null,
-        "fileLocatability": 0.5
+        "fileLocatability": 50
       },
-      "sessionPulse": { "active": 1, "recent": 4 }
+      "sessionPulse": { "active": 1, "recent": 4 },
+      "activity": {
+        "availability": "available",
+        "periodDays": 14,
+        "days": [
+          { "date": "2026-08-22", "count": 2 },
+          { "date": "2026-08-23", "count": 0 }
+        ],
+        "activeSessions": 1,
+        "totalSessions": 4,
+        "lastActiveAt": "2026-08-22T12:00:00.000Z"
+      },
+      "confidence": {
+        "state": "measured",
+        "band": "high",
+        "sampleCount": 12,
+        "latestReportAt": "2026-08-22T12:00:00.000Z"
+      },
+      "signalTrends": {
+        "availability": "available",
+        "periodDays": 30,
+        "sampleCount": 8,
+        "metrics": [
+          { "key": "confidence", "label": "Confidence", "direction": "improving", "delta": 8 },
+          { "key": "memoryRecall", "label": "Memory recall", "direction": "insufficient", "delta": null }
+        ]
+      },
+      "memory": {
+        "availability": "available",
+        "total": 3,
+        "freshestAt": "2026-08-22T13:00:00.000Z",
+        "state": "measured",
+        "sampleCount": 6,
+        "recall": 75,
+        "fileLocatability": 50,
+        "latestReportAt": "2026-08-22T12:00:00.000Z"
+      },
+      "capabilities": {
+        "sampleCount": 12,
+        "used": { "items": [{ "name": "shell", "count": 8 }], "total": 1 },
+        "lacking": { "items": [{ "name": "simulator", "importance": "high" }], "total": 1 },
+        "vital": { "items": [{ "name": "memory", "state": "healthy" }], "total": 1 }
+      },
+      "attention": {
+        "sampleCount": 12,
+        "contractGaps": 2,
+        "persistentBlockers": {
+          "items": [{ "id": "b1", "title": "Simulator unavailable", "impact": "Native visual pass blocked" }],
+          "total": 1
+        },
+        "healRequests": {
+          "items": [{ "id": "h1", "title": "Repair the contract", "severity": "crit", "actionKind": "fix-contract" }],
+          "total": 1
+        }
+      }
     }
     """
 

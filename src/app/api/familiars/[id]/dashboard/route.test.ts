@@ -47,6 +47,8 @@ function dependencies(overrides = {}, spy) {
     loadConfig: track("loadConfig", async () => CONFIG),
     resolveAvatar: track("resolveAvatar", async () => null),
     loadSessions: track("loadSessions", async () => ({ sessions: [], degraded: false })),
+    loadTasks: track("loadTasks", async () => []),
+    loadReminders: track("loadReminders", async () => []),
     loadMemory: track("loadMemory", async () => []),
     loadContract: track("loadContract", async () => ({
       properties: [{ property: "Named Identity", pass: true }],
@@ -54,6 +56,7 @@ function dependencies(overrides = {}, spy) {
       warnings: [],
     })),
     loadSelfReports: track("loadSelfReports", async () => ({ reports: [], total: 0 })),
+    loadMetricSnapshots: track("loadMetricSnapshots", async () => ({ snapshots: [], total: 0 })),
     ...overrides,
   };
 }

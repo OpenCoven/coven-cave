@@ -1,5 +1,9 @@
 # Eight-Hour Worktree Retirement Design
 
+> Historical policy record. Superseded on 2026-08-25 by `cave-0pu26`, which
+> reduces the mandatory retirement recency window to 15 minutes while preserving
+> the maintenance gate and deletion proof.
+
 ## Goal
 
 Reduce the mandatory branch/worktree retirement recency window from 24 hours to

@@ -3,11 +3,15 @@
 /**
  * review-file-navigator — the Review Deck's changed-file list.
  *
- * A column inside the change viewer that collapses to a spine when the pane is
- * narrow. Tree and flat modes render one flattened row list with listbox / tree
- * semantics, roving j/k traversal, and full paths kept intact: the strip it
- * replaced truncated paths and collapsed duplicate basenames onto each other,
- * so two files called `route.ts` were indistinguishable.
+ * The full changed-file list, reached from the file rail's overflow chip. Tree
+ * and flat modes render one flattened row list with listbox / tree semantics,
+ * roving j/k traversal, and full paths kept intact: the strip it replaced
+ * truncated paths and collapsed duplicate basenames onto each other, so two
+ * files called `route.ts` were indistinguishable.
+ *
+ * The cockpit gave the centre column entirely to the diff, so this is no
+ * longer a column that collapses to a spine — it is a popover that opens and
+ * closes. `onCollapse` therefore dismisses it.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,56 +28,6 @@ import {
   type NavMode,
 } from "./review-file-tree";
 import type { ReviewFile } from "./use-review-source";
-
-/** How many status dots the collapsed spine shows before it stops. */
-const SPINE_DOTS = 12;
-
-export function ReviewFileSpine({
-  files,
-  openPath,
-  filtered,
-  truncated,
-  onExpand,
-}: {
-  files: readonly ReviewFile[];
-  openPath: string | null;
-  filtered: boolean;
-  truncated: boolean;
-  onExpand: () => void;
-}) {
-  const additions = files.reduce((sum, file) => sum + file.additions, 0);
-  const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
-  const title = `Expand file navigator — ${files.length} files, +${additions} −${deletions}`;
-  return (
-    <button type="button" className="rd-nav-spine focus-ring-inset" title={title} aria-label={title} onClick={onExpand}>
-      <span className="rd-nav-spine-head">
-        <Icon name="ph:files" width={14} height={14} aria-hidden />
-        <span className="rd-nav-spine-count">{files.length}</span>
-      </span>
-      <span className="rd-nav-spine-dots" aria-hidden>
-        {files.slice(0, SPINE_DOTS).map((file) => (
-          <span
-            key={file.path}
-            className="rd-nav-spine-dot"
-            data-status={file.status}
-            data-open={file.path === openPath ? "true" : undefined}
-            data-hollow={file.noPatchReason != null ? "true" : undefined}
-            title={`${file.path} (${file.status})`}
-          />
-        ))}
-      </span>
-      {truncated ? (
-        <span className="rd-nav-spine-warn" aria-hidden>
-          <Icon name="ph:warning-fill" width={11} height={11} />
-        </span>
-      ) : null}
-      <span className="rd-nav-spine-label">{filtered ? "Filtered" : "Files"}</span>
-      <span className="rd-nav-spine-caret" aria-hidden>
-        <Icon name="ph:caret-right" width={11} height={11} />
-      </span>
-    </button>
-  );
-}
 
 export function ReviewFileNavigator({
   files,

@@ -155,8 +155,8 @@ assert.equal(
 );
 assert.match(
   source,
-  /inline-flex h-7 items-center px-2\.5 text-\[length:var\(--text-xs\)\][\s\S]{0,200}viewMode === id/,
-  "View-mode tabs are h-7 — same height as the toolbar controls",
+  /<Tabs[\s\S]{0,220}items=\{VIEW_MODES\}[\s\S]{0,160}value=\{viewMode\}[\s\S]{0,200}variant="segment"[\s\S]{0,160}className="calendar-view-switcher[^"]*"/,
+  "View modes use the shared compact segmented Tabs primitive",
 );
 assert.match(
   source,
@@ -165,8 +165,28 @@ assert.match(
 );
 assert.match(
   source,
-  /<Button[\s\S]{0,220}leadingIcon="ph:plus-bold"[\s\S]{0,160}>\s*Add event\s*<\/Button>/,
-  "Toolbar Add event is the shared Button primitive with its label",
+  /<Button[\s\S]{0,160}variant="primary"[\s\S]{0,220}leadingIcon="ph:plus-bold"[\s\S]{0,160}>\s*Add event\s*<\/Button>/,
+  "Toolbar Add event is the one primary shared Button action",
+);
+assert.match(
+  source,
+  /calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b[\s\S]{0,120}py-1/,
+  "Calendar chrome uses the compact command rail",
+);
+assert.doesNotMatch(
+  source,
+  /calendar-toolbar[^"]*md:flex-nowrap/,
+  "The calendar rail can wrap inside narrow desktop split panes",
+);
+assert.match(
+  source,
+  /className="calendar-view-switcher hidden max-w-full shrink-0 lg:flex"/,
+  "View tabs appear only where non-Agenda modes remain selectable",
+);
+assert.doesNotMatch(
+  source,
+  /VIEW_MODES\.map\([\s\S]{0,800}aria-pressed=\{viewMode === id\}/,
+  "Calendar no longer hand-rolls its own segmented buttons",
 );
 
 // cave-4op toolbar slice: the nav arrows are shared IconButtons and the raw
@@ -192,6 +212,16 @@ assert.match(
   calendarCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile calendar icon buttons should be square touch targets",
+);
+assert.match(
+  calendarCss,
+  /\.calendar-view-switcher\s*\{(?=[^}]*gap:\s*0;)(?=[^}]*padding:\s*0;)(?=[^}]*border:\s*0;)[^}]*\}/,
+  "The desktop view switcher removes segmented-control inset from the flush rail",
+);
+assert.match(
+  calendarCss,
+  /\.calendar-view-switcher \[role="tab"\]\s*\{[^}]*padding:\s*var\(--space-1\) var\(--space-3\);/,
+  "The compact shared view tabs keep tokenized, readable hit areas",
 );
 
 // Calendar event buttons show a visible keyboard focus ring. The time-grid

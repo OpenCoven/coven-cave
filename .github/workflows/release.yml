@@ -85,7 +85,7 @@ on:
         required: false
         type: string
       allow_unconfigured_registries:
-        description: "EMERGENCY ONLY: skip the signed OpenCode/Grok schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
+        description: "EMERGENCY ONLY: skip the signed OpenCode/Grok/OpenClaw schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
         required: false
         default: false
         type: boolean
@@ -363,13 +363,13 @@ jobs:
             --version "$RELEASE_VERSION" \
             --require-final-changelog
 
-  release-web-validation:
-    name: Validate release web and E2E
+  release-web-core:
+    name: Validate release web
     needs:
       - daemon-package
       - source-version
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -403,8 +403,80 @@ jobs:
             rm -rf .next
           done
           exit 1
+
+  release-e2e:
+    name: Validate release E2E (${{ matrix.shard }}/8)
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+
+  release-e2e-agentic:
+    name: Validate release E2E (agentic)
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
+  release-web-validation:
+    name: Release web validated
+    if: always()
+    needs:
+      - release-web-core
+      - release-e2e
+      - release-e2e-agentic
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every web validation job
+        env:
+          WEB_RESULT: ${{ needs.release-web-core.result }}
+          E2E_RESULT: ${{ needs.release-e2e.result }}
+          E2E_AGENTIC_RESULT: ${{ needs.release-e2e-agentic.result }}
+        run: |
+          set -euo pipefail
+          test "$WEB_RESULT" = "success"
+          test "$E2E_RESULT" = "success"
+          test "$E2E_AGENTIC_RESULT" = "success"
 
   release-platform-validation:
     name: Validate release runtime (${{ matrix.os }})
@@ -1157,11 +1229,34 @@ jobs:
             echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT"
           } >> "$GITHUB_ENV"
 
+      - name: Require signed OpenClaw compatibility registry
+        # Skippable only via manual workflow_dispatch with an explicit flag;
+        # tag-push releases remain fail-closed (docs/openclaw-compatibility-registry.md).
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_unconfigured_registries }}
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-openclaw-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_OPENCLAW_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_OPENCLAW_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_OPENCLAW_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_OPENCLAW_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
       # The escape hatch above is deliberately available for emergency manual
       # runs, but using it must never be silent: v0.2.0 shipped with BOTH
       # guards skipped and nobody noticed for four days, because the only
       # evidence was a `skipped` line buried in the job steps (cave-yp21x).
-      # This is the inverse condition of the two guards, so it fires exactly
+      # This is the inverse condition of the registry guards, so it fires exactly
       # when they did not.
       - name: Record skipped compatibility guards
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
@@ -1171,8 +1266,8 @@ jobs:
             echo "### ⚠️ Compatibility registry guards SKIPPED"
             echo
             echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_registries: true\`, so"
-            echo "**neither** the OpenCode nor the Grok signed schema-registry gate verified"
-            echo "anything. The build used the built-in baseline parsers."
+            echo "The signed schema-registry gates for OpenCode, Grok, and OpenClaw verified"
+            echo "**nothing**. The build used the built-in baseline parsers."
             echo
             echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
             echo "If this run publishes a release, its notes carry the same statement."
@@ -1651,7 +1746,7 @@ jobs:
       id-token: write
       attestations: write
     runs-on: ubuntu-24.04
-    if: ${{ success() && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    if: ${{ success() && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -1819,7 +1914,7 @@ jobs:
     # succeeded" rule for EVERY dependency, so rollback-readiness has to be
     # named explicitly or a failed rollback gate would still publish the
     # manifest that moves users forward.
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

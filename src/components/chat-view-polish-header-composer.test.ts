@@ -140,12 +140,14 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Tools surface while access and voice stay one click away.
+// one grouped Tools surface while voice stays one click away and functional
+// access control moves into Response options.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-mode-switch"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
-  "composer exposes the grouped Tools trigger at its edge while keeping Access and Voice direct in the command rail",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  "composer exposes grouped Tools at its edge and keeps only context plus direct send actions in the command rail",
 );
+assert.doesNotMatch(source, /className="cave-composer-mode-switch"/, "access mode is demoted into Response options");
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
 const composerActionsMenuBlock = composerActionsMenuMatch[0];
@@ -211,8 +213,8 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
-  "composer footer lays out access, live context, and submit controls in one command rail",
+  /\.cave-composer-control-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+  "composer footer lays out live context and submit controls in one compact command rail",
 );
 // The extracted response section renders each control inline (no nested
 // popover) and keeps the connect-host dialog available to the grouped surface.
@@ -937,6 +939,11 @@ assert.match(
 );
 assert.match(
   source,
+  /\{inlineComposer \? null : showDockedComposer \? composerNode : null\}/,
+  "The active-chat composer uses the measured threshold and staged-input visibility policy",
+);
+assert.match(
+  source,
   /useEffect\(\(\) => \{\s*updateFollowing\(true\);[\s\S]*?\}, \[sessionId, updateFollowing\]\)/,
   "A freshly opened chat / session switch must re-engage following by default",
 );
@@ -994,8 +1001,8 @@ assert.doesNotMatch(
 // chat section spreads its handler bundle (whole-surface drop target).
 assert.match(
   source,
-  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.dropHandlers\}/,
-  "the whole chat section is the drop target (handlers spread from the shared hook)",
+  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.\(offlineReadOnly \? \{\} : dropHandlers\)\}/,
+  "the whole live chat section is the drop target while offline copies reject attachment mutation",
 );
 assert.match(
   attachStagingHook,

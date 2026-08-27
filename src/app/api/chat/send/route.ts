@@ -189,6 +189,7 @@ import {
   dispatchOpenClawGatewayTurn,
   openClawGatewayPairedDeviceAuthStatus,
 } from "@/lib/openclaw-gateway";
+import type { OpenClawDeviceCredentialStore } from "@/lib/server/openclaw-device-credentials";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -312,6 +313,7 @@ import {
   daemonSessionCwd,
   filterUsableLocalDirectories,
   resolveFamiliarWorkspace,
+  shouldRetryBlankCopilotResume,
 } from "./chat-send-runtime";
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
@@ -455,6 +457,10 @@ type OfflineChatQueuePayload = Pick<
   userTurnId: string;
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
+};
+
+type ChatSendRouteDependencies = {
+  openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
 };
 
 
@@ -723,6 +729,7 @@ function openClawChatResponse(args: {
   modelState: ChatModelState;
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
+  openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -837,7 +844,9 @@ function openClawChatResponse(args: {
           push({ kind: "tool_use", ...tool });
         }
       };
-      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
+        args.openClawGatewayCredentialStore,
+      );
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
         sessionKey: openClawSessionKey(conversationId),
@@ -847,6 +856,7 @@ function openClawChatResponse(args: {
         // stable request id. Reusing it as Gateway's idempotency key makes a
         // retry observable to the Gateway instead of creating another run.
         idempotencyKey: args.body.runId ?? "",
+        credentialStore: args.openClawGatewayCredentialStore,
         onEvent: (event) => {
           if (event.kind === "compatibility") {
             if (gatewayToolProjectionEnabled) {
@@ -1589,6 +1599,17 @@ function openClawChatResponse(args: {
 }
 
 export async function POST(req: Request) {
+  return postChat(req);
+}
+
+export async function __postChatForTests(
+  req: Request,
+  dependencies: ChatSendRouteDependencies,
+) {
+  return postChat(req, dependencies);
+}
+
+async function postChat(req: Request, dependencies: ChatSendRouteDependencies = {}) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
@@ -2782,6 +2803,7 @@ export async function POST(req: Request) {
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
       ownsFirstExchangeTitle,
+      openClawGatewayCredentialStore: dependencies.openClawGatewayCredentialStore,
     });
   }
 
@@ -5311,21 +5333,22 @@ export async function POST(req: Request) {
         await runAttempt(args);
       }
 
-      // Copilot can silently close an expired native session with exit code 0:
-      // no result frame, no assistant text, and no "session not found" stderr.
-      // Treat that exact resumed-attempt shape as a stale session so the
-      // existing bounded context-replay retry can answer the user's turn.
-      if (
-        copilotStream &&
-        resumeTarget &&
-        !runtimeAccessRefreshNeeded &&
-        !inferenceRouteRefreshNeeded &&
-        !runHandle.stopRequested &&
-        !launchFailure &&
-        !assistantText.trim() &&
-        result.duration_ms == null &&
-        result.is_error == null
-      ) {
+      // Copilot can silently close an expired native session with no result
+      // frame or assistant text. This can surface as either exit code 0 or a
+      // nonzero process exit, so retry both blank resumed-attempt shapes while
+      // preserving explicit successful empty results and every fresh-session
+      // boundary above.
+      if (shouldRetryBlankCopilotResume({
+        hasCopilotStream: Boolean(copilotStream),
+        resumeTarget,
+        runtimeAccessRefreshNeeded,
+        inferenceRouteRefreshNeeded,
+        stopRequested: runHandle.stopRequested,
+        launchFailed: Boolean(launchFailure),
+        assistantText,
+        durationMs: result.duration_ms,
+        resultIsError: result.is_error,
+      })) {
         resumeFailed = true;
       }
 

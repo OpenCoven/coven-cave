@@ -12,6 +12,7 @@ import "@/styles/globals/surface-marketplace.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
+import { SurfaceToolbar } from "@/components/ui/surface-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
@@ -615,32 +616,37 @@ export function MarketplaceViewSurface({
           search on the right. The shared Tabs primitive supplies
           role=tablist/tab, roving tabindex, and the marketplace-tab / panel
           aria wiring via idPrefix. */}
-      <header className="surface-compact-header">
-        <h1 className="surface-compact-title">Marketplace</h1>
-        <Tabs
-          items={sectionTabs}
-          value={section}
-          onChange={selectSectionTracked}
-          ariaLabel="Marketplace sections"
-          idPrefix="marketplace"
-          variant="segment"
-          size="sm"
-          className="surface-compact-tabs"
-        />
-        <div className="surface-compact-actions">
-          {searchLabel ? (
-            <SearchInput
-              ref={searchRef}
-              value={query}
-              onValueChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder={searchLabel}
-              containerClassName="surface-compact-search"
-              aria-label={searchLabel}
-            />
-          ) : null}
-        </div>
-      </header>
+      <SurfaceToolbar
+        title={(
+          <span className="surface-compact-title" role="heading" aria-level={1}>
+            Marketplace
+          </span>
+        )}
+        className="surface-compact-header"
+        filters={(
+          <Tabs
+            items={sectionTabs}
+            value={section}
+            onChange={selectSectionTracked}
+            ariaLabel="Marketplace sections"
+            idPrefix="marketplace"
+            variant="segment"
+            size="sm"
+            className="surface-compact-tabs"
+          />
+        )}
+        search={searchLabel ? (
+          <SearchInput
+            ref={searchRef}
+            value={query}
+            onValueChange={setQuery}
+            onClear={() => setQuery("")}
+            placeholder={searchLabel}
+            containerClassName="surface-compact-search"
+            aria-label={searchLabel}
+          />
+        ) : undefined}
+      />
       {activeError ? (
         <p role="alert" className="mx-4 mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--danger-text)]">
           {activeError}

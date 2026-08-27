@@ -228,8 +228,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* New chat remains in the rail; section and scope controls live in the
-          persistent title bar so they do not move with the drawer. */}
+      {/* New chat and the compact scope selector remain in the desktop rail;
+          mobile drawers keep the full stacked project/familiar controls. */}
       <SidebarRailHeader
         familiars={familiars}
         activeFamiliarId={activeFamiliarId ?? null}
@@ -251,7 +251,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         projectCrewError={props.projectCrewError}
         reloadProjectCrew={props.reloadProjectCrew}
         contextNotice={props.contextNotice}
-        contextMode="mobile"
+        contextMode="all"
       />
 
       <div

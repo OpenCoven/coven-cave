@@ -115,6 +115,25 @@ function asText(value) {
  * for the rest of it.
  */
 function commandFailure(operation, result) {
+  // A command that never RAN is not an unavailable version, and saying so cost
+  // a session ~40 minutes (cave-a8uza): a spawn that timed out arrived here
+  // with no stderr and was reported as a bare `coven-version-unavailable`,
+  // which names the wrong subsystem entirely and reads as the deterministic
+  // "your CLI is too old" refusal. The reader then goes hunting a toolchain
+  // fault that does not exist. `spawnFailure` is the runner's own account of
+  // why nothing executed, so report that instead and say it is retryable.
+  if (result?.spawnFailure) {
+    const { kind, code, timeoutMs, elapsedMs, binary } = result.spawnFailure;
+    const parts = [
+      kind === "timeout"
+        ? `timed out after ${timeoutMs}ms`
+        : `could not be started${code ? ` (${code})` : ""}`,
+      elapsedMs === undefined ? null : `elapsed ${elapsedMs}ms`,
+      binary ? `binary ${binary}` : null,
+      "transient — retry",
+    ].filter(Boolean);
+    return { ok: false, reason: `coven-${operation}-did-not-run: ${parts.join("; ")}` };
+  }
   // Horizontal whitespace only in the leading class — `\s` would span newlines
   // and let the match start on a blank line, defeating the "non-empty" part.
   const detail = asText(result?.stderr).match(/^[^\S\n]*(\S[^\n]*)/m)?.[1];
@@ -198,22 +217,56 @@ function heldBy(status, handle, nowSeconds) {
  * reports the argv it executed — every other test injects `run`, so nothing
  * else reaches this function.
  */
-export function defaultRunCoven({ args, cwd }) {
+/** Wall-clock ceiling on the spawn itself. */
+const COVEN_SPAWN_TIMEOUT_MS = 35_000;
+
+/**
+ * Ceiling on building the child's PATH, which is NOT covered by the spawn
+ * timeout above: `covenSpawnEnv()` is evaluated as an argument, so it runs to
+ * completion before `spawnSync` starts its own clock.
+ *
+ * That mattered more than it sounds. `covenSpawnEnv()` runs a `$SHELL -ilc
+ * 'echo $PATH'` probe to learn the interactive-login PATH, and an interactive
+ * shell sources the user's whole profile. Measured on a developer machine:
+ * 3.8s idle — already at that probe's own 4s budget — and 11.7s for the full
+ * env build. Under load it is far worse, and the result is memoised only in a
+ * module-level variable, so every fresh CLI process pays it again.
+ *
+ * `covenSpawnEnv` deliberately declines to cache a value produced past its
+ * deadline, so bounding it here degrades this one call without poisoning the
+ * cache for a later caller that can afford the full probe.
+ */
+const COVEN_ENV_DISCOVERY_BUDGET_MS = 5_000;
+
+export function defaultRunCoven({ args, cwd, now = Date.now }) {
   const launch = covenLaunchCommand();
+  const binary = [launch.command, ...launch.fixedArgs].join(" ");
   if (launch.resolutionTimedOut || launch.unresolvedWindowsShim) {
     // Nothing was executed, but resolution did pick something — name it, so a
     // refusal from here is as readable as one from a spawn that ran.
-    return { ok: false, stdout: "", stderr: "", status: null, binary: launch.command };
+    return {
+      ok: false,
+      stdout: "",
+      stderr: "",
+      status: null,
+      binary: launch.command,
+      spawnFailure: {
+        kind: launch.resolutionTimedOut ? "timeout" : "unresolved",
+        binary: launch.command,
+      },
+    };
   }
+  const startedAt = now();
   const result = spawnSync(launch.command, [...launch.fixedArgs, ...args], {
     cwd,
     encoding: "utf8",
-    env: covenSpawnEnv(),
+    env: covenSpawnEnv({ discoveryDeadline: startedAt + COVEN_ENV_DISCOVERY_BUDGET_MS }),
     shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
-    timeout: 35_000,
+    timeout: COVEN_SPAWN_TIMEOUT_MS,
   });
+  const elapsedMs = now() - startedAt;
   return {
     ok: result.status === 0 && !result.error,
     stdout: asText(result.stdout),
@@ -223,7 +276,22 @@ export function defaultRunCoven({ args, cwd }) {
     // judged instead of leaving the reader to re-derive resolution by hand.
     // Several `coven` binaries commonly coexist on one machine and only the
     // resolver knows which one it picked (cave-6bb4m).
-    binary: [launch.command, ...launch.fixedArgs].join(" "),
+    binary,
+    // Why nothing usable came back, when that is the reason (cave-a8uza).
+    // `result.error` was previously collapsed into `ok` and dropped, which left
+    // `commandFailure` unable to tell a timeout from a clean non-zero exit and
+    // reporting both as an unavailable VERSION.
+    ...(result.error
+      ? {
+          spawnFailure: {
+            kind: result.error.code === "ETIMEDOUT" ? "timeout" : "spawn-error",
+            code: result.error.code,
+            timeoutMs: COVEN_SPAWN_TIMEOUT_MS,
+            elapsedMs,
+            binary,
+          },
+        }
+      : {}),
   };
 }
 

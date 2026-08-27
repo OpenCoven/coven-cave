@@ -402,8 +402,8 @@ assert.match(
 
 assert.match(
   source,
-  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => handlers\(\)\.editTurnInComposer\(t\) : undefined\}/,
-  "Only user turns with text get the Edit affordance (CHAT-D6-01)",
+  /onEdit=\{!readOnly && t\.role === "user" && t\.text\.trim\(\) \? \(\) => handlers\(\)\.editTurnInComposer\(t\) : undefined\}/,
+  "Only writable user turns with text get the Edit affordance (CHAT-D6-01)",
 );
 
 assert.match(
@@ -431,8 +431,8 @@ assert.match(
 
 assert.match(
   source,
-  /onRegenerate=\{handlers\(\)\.regenerateFor\(t\)\}/,
-  "Assistant turns get the Regenerate affordance via the gated helper (CHAT-D6-02)",
+  /onRegenerate=\{readOnly \? undefined : handlers\(\)\.regenerateFor\(t\)\}/,
+  "Writable assistant turns get the Regenerate affordance via the gated helper (CHAT-D6-02)",
 );
 
 assert.match(

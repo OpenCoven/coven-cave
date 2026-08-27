@@ -20,8 +20,8 @@ test("the sparkle only renders when a transcript is actually in scope", () => {
   // back to the manual pencil rather than ship a control that can only no-op.
   assert.match(
     header,
-    /\{generateTitle \? \(\s*<button/,
-    "the sparkle button is gated on the generateTitle prop",
+    /\{generateTitle && !readOnly \? \(\s*<button/,
+    "the sparkle button is gated on the generateTitle prop and writable state",
   );
   assert.match(
     header,

@@ -19,6 +19,17 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 export type PopoverMode = "board" | "chat" | "assign";
 
 type Props = {
+  /**
+   * Whether this dialog places ITSELF (`absolute right-0 top-full`).
+   *
+   * False when a Popover owns placement. It matters more than it looks: an
+   * absolutely-positioned child is out of flow, so the Popover's wrapper
+   * measures ZERO height, its auto-flip decides there is room below, and the
+   * dialog runs off the bottom of the viewport — measured at bottom 1004 in a
+   * 900px viewport before this existed (cave-cadp4).
+   */
+  positioned?: boolean;
+
   mode: PopoverMode;
   item: GitHubItem;
   familiars: Familiar[];
@@ -326,6 +337,7 @@ export function GitHubActionPopover({
   cardsFailed = false,
   onClose,
   onComplete,
+  positioned = true,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -371,7 +383,7 @@ export function GitHubActionPopover({
       aria-modal="true"
       aria-label={TITLES[mode]}
       tabIndex={-1}
-      className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3 shadow-xl"
+      className={`${positioned ? "absolute right-0 top-full z-50 mt-1 " : ""}w-64 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3 shadow-xl`}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}

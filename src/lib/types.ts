@@ -136,6 +136,9 @@ export type SessionGitContext = {
   branch?: string | null;
   worktreeRoot?: string | null;
   isWorktree?: boolean;
+  /** Main checkout that owns this linked worktree, derived from
+   *  `git rev-parse --git-common-dir`. Present only for linked worktrees. */
+  repositoryRoot?: string | null;
 };
 
 export type SessionPullRequestContext = {

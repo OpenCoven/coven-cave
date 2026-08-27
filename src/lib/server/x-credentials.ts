@@ -1,7 +1,8 @@
 import {
   deleteLocalEncryptedSecret,
-  getLocalEncryptedSecret,
+  getLocalEncryptedSecretSnapshot,
   setLocalEncryptedSecret,
+  setLocalEncryptedSecretIfRevision,
 } from "../local-encrypted-vault.ts";
 import { XApiError, type XScope } from "../x-api.ts";
 import { refreshXToken } from "./x-client.ts";
@@ -500,12 +501,37 @@ export function createXCredentialService(
   };
 }
 
-export const xCredentialService: XCredentialService =
-  createXCredentialService({
-    getSecret: () => getLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY),
+/**
+ * Builds the dependency wiring the production singleton runs on. Exported so
+ * a regression test can stand up independent service instances (simulating
+ * concurrent processes/module instances) against the same real, on-disk
+ * vault, with only the refresh call swapped for a controllable double - the
+ * storage custody wiring underneath is byte-for-byte what production uses.
+ */
+export function createProductionXCredentialDependencies(
+  refreshBundle: XCredentialServiceDependencies["refreshBundle"] = (
+    refreshToken,
+  ) => refreshXToken({ refreshToken }),
+  now?: XCredentialServiceDependencies["now"],
+): XCredentialServiceDependencies {
+  return {
+    getSecretSnapshot: () =>
+      getLocalEncryptedSecretSnapshot(X_OAUTH_TOKEN_BUNDLE_KEY),
     setSecret: (value) =>
       setLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY, value),
+    setSecretIfRevision: (expectedRevision, value) =>
+      setLocalEncryptedSecretIfRevision(
+        X_OAUTH_TOKEN_BUNDLE_KEY,
+        expectedRevision,
+        value,
+      ),
     deleteSecret: () =>
       deleteLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY),
-    refreshBundle: (refreshToken) => refreshXToken({ refreshToken }),
-  });
+    refreshBundle,
+    now,
+  };
+}
+
+export const xCredentialService: XCredentialService = createXCredentialService(
+  createProductionXCredentialDependencies(),
+);

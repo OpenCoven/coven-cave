@@ -183,11 +183,62 @@ test("runtime changes reset model and model choices come from that runtime inven
   assert.match(composer, /inventoryProvenanceLabel/);
   assert.match(
     composer,
-    /onChange=\{\(next\) => \{\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
   );
   assert.match(composer, /<StandardSelect[\s\S]*?id="research-runtime-model"/);
   assert.match(composer, /options=\{modelOptions\}/);
   assert.doesNotMatch(composer, /id="research-runtime-model"\s*type="text"/);
+});
+
+test("Research Desk starts from the active familiar's shared agent model default", () => {
+  assert.match(
+    composer,
+    /fetch\(\s*`\/api\/chat\/model-state\?familiarId=\$\{encodeURIComponent\(familiarId\)\}`/,
+  );
+  assert.match(composer, /setHarness\(json\.state\.harness\)/);
+  assert.match(composer, /setModel\(json\.state\.effectiveModel\)/);
+  assert.match(
+    composer,
+    /if\s*\(\s*cancelled\s*\|\|\s*modelSelectionDirtyRef\.current\s*\|\|\s*!json\.ok\s*\|\|\s*!json\.state\s*\)\s*return;/,
+  );
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setModel\(next\);\s*\}\}/,
+  );
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*modelSelectionDirtyRef\.current = true;\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+  );
+});
+
+test("inherited Codex defaults require the active local daemon launch policy", () => {
+  assert.match(composer, /\/api\/daemon\/status\?scope=research-local/);
+  assert.match(
+    composer,
+    /const loadedFamiliarIdRef = useRef<string \| null>\(null\);/,
+  );
+  assert.match(
+    composer,
+    /const familiarChanged = loadedFamiliarIdRef\.current !== familiarId;[\s\S]*if \(familiarChanged\) \{[\s\S]*modelSelectionDirtyRef\.current = false;[\s\S]*\} else if \(modelSelectionDirtyRef\.current\) \{[\s\S]*return;[\s\S]*\}[\s\S]*setHarness\(RESEARCH_RUNTIME_DEFAULT_HARNESS\);[\s\S]*setModel\(""\);/,
+  );
+  assert.match(
+    composer,
+    /json\.state\.harness === "codex"[\s\S]*researchStatus\?\.research\?\.sessionLaunchPolicy !== true[\s\S]*return;/,
+  );
+  assert.match(
+    composer,
+    /Promise\.all\(\[[\s\S]*api\/chat\/model-state[\s\S]*api\/daemon\/status\?scope=research-local/,
+  );
+  assert.match(composer, /\}, \[familiarId, daemonRunning\]\);/);
+});
+
+test("agentic topic recommendations are always available and include Coven sessions", () => {
+  assert.doesNotMatch(promptTab, /caveAgenticRecommendations/);
+  assert.doesNotMatch(promptTab, /agenticRecommendationsEnabled\s*\?/);
+  assert.match(
+    promptTab,
+    /Grounded in collective Coven sessions, current missions, saved sources, and relevant Vault evidence\./,
+  );
 });
 
 // ── Quick saves: selected resources are part of the launch contract ──────────
@@ -225,7 +276,7 @@ test("quick saves support search-scoped bulk selection without losing hidden pic
 test("agentic topic recommendations keep client and server evidence freshness separate", () => {
   // The shared lifecycle sees durable client-visible Desk state only. The
   // composer draft remains absent, so ordinary typing never starts a request.
-  assert.match(promptTab, /caveAgenticRecommendations\(\)/);
+  assert.doesNotMatch(promptTab, /caveAgenticRecommendations/);
   assert.match(promptTab, /useAgenticRecommendations<ResearchRecommendationClientContext>/);
   assert.match(promptTab, /buildResearchRecommendationContext/);
   assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_MISSIONS = 12/);
@@ -236,7 +287,7 @@ test("agentic topic recommendations keep client and server evidence freshness se
   assert.match(recommendationContext, /mission\.artifacts/);
   assert.match(recommendationContext, /const bounded = value\.slice\(0, MAX_REVISION_TEXT_CHARS\)/);
   assert.doesNotMatch(recommendationContext, /intent: mission\.intent/);
-  assert.match(promptTab, /enabled: agenticRecommendationsEnabled/);
+  assert.match(promptTab, /enabled: !research\.loading && !links\.loading/);
   // The backend's fingerprint is the bounded revision for server-only X and
   // Vault evidence. It must survive transport and gate every explicit action.
   assert.match(promptTab, /serverContextFingerprint: body\.contextFingerprint/);

@@ -77,6 +77,7 @@ import {
   readCachedConversation,
 } from "@/lib/conversation-cache";
 import { sameConversationRevision } from "@/lib/conversation-revision";
+import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -108,6 +109,7 @@ import {
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
@@ -226,9 +228,6 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
-import { FollowUpCards } from "@/components/chat-follow-up-cards";
-import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -279,7 +278,7 @@ import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-fil
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
-import { SkillStageCard } from "@/components/skill-stage-card";
+import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
 import { AutoModeFeedbackModal } from "@/components/auto-mode-feedback-modal";
 import {
@@ -293,6 +292,7 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
+  DEFAULT_PERMISSION_MODE,
   normalizeCommandControls,
   type CommandPermissionMode,
   type CommandResponseSpeed,
@@ -486,7 +486,7 @@ type Props = {
    *  below always pass their own (non-null) sessionId; the two "Back to
    *  sessions" render buttons pass whatever is currently shown. ChatRouter
    *  only actually navigates when it's still displaying that exact session
-   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  (cave-rl980 Task 4 final review): setChatArchived/deleteChat
    *  are async, and by the time the request settles the user may have
    *  already switched to a different thread or familiar, whose view must
    *  never be clobbered by a now-irrelevant completion. */
@@ -499,7 +499,10 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onOpenPreview?: (url: string) => void;
-  onProjectRootChange?: (projectRoot: string | null) => void;
+  onProjectRootChange?: (
+    projectRoot: string | null,
+    runtimeHost: string | null,
+  ) => void;
 };
 
 export type ChatViewHandle = {
@@ -507,7 +510,7 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
 
 function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
   const origin = session?.origin as string | undefined;
@@ -1605,6 +1608,7 @@ function MetaLine({
   projectRoot,
   onSessionsChanged,
   generateTitle,
+  readOnly = false,
   children,
 }: {
   session: SessionRow | null;
@@ -1625,6 +1629,7 @@ function MetaLine({
   onSessionsChanged?: () => void;
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
+  readOnly?: boolean;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1700,6 +1705,7 @@ function MetaLine({
           displayTitleOverride={titleOverride}
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitle}
+          readOnly={readOnly}
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
@@ -2325,7 +2331,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
-  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -2350,7 +2355,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? false
       : isChatArchiveNudgeDismissed(sessionId ?? "", window.localStorage),
   );
-  const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
   const [modelControls, setModelControls] = useState<ModelControlValues>({});
@@ -2701,8 +2705,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSetupBannerDismissed(true);
   };
   useEffect(() => {
-    onProjectRootChange?.(activeProjectRoot || null);
-  }, [activeProjectRoot, onProjectRootChange]);
+    onProjectRootChange?.(
+      activeProjectRoot || null,
+      composerHostValue === LOCAL_HOST_ID ? null : composerHostValue,
+    );
+  }, [activeProjectRoot, composerHostValue, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
@@ -2745,6 +2752,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
+  const [releasedScrollDistance, setReleasedScrollDistance] = useState(0);
+  const [composerHeight, setComposerHeight] = useState(0);
+  const composerDockRef = useRef<HTMLElement | null>(null);
   const [newResponseContent, setNewResponseContent] = useState(false);
   const observedAssistantTurnIdRef = useRef<string | null>(null);
   const observedAssistantSourceRef = useRef("");
@@ -2817,13 +2827,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
+      setReleasedScrollDistance(0);
       setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
         cancelAnimationFrame(releasedAnchorFrameRef.current);
         releasedAnchorFrameRef.current = null;
       }
-    } else if (!historyExpandedRef.current) {
+    } else {
+      const el = scrollRef.current;
+      if (el) {
+        setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
+      }
+    }
+    if (!next && !historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
       // the current view instead of jumping it.
@@ -3753,6 +3770,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   const composerResponseSections: ComposerOptionSection[] = [
+    {
+      id: "access",
+      label: "Access",
+      value: permissionMode,
+      options: [
+        { value: "read", label: "Explore · read only" },
+        { value: "full", label: "Build · full access" },
+      ],
+      onChange: (value: string) => {
+        if (value === "read" || value === "full") setPermissionMode(value);
+      },
+    },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
       ? [{
           id: "model",
@@ -4085,59 +4114,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // The latest settled turn's follow-up suggestions render directly above the
-  // composer. Suggestions are ephemeral actions, not transcript history, so
-  // assistant rows only strip their control blocks and never render old cards.
-  const followUp = useMemo(() => {
-    const empty = { suggestions: [] as NextPath[] };
-    const last = [...activePath]
-      .reverse()
-      .find((t) => t.role === "assistant" && !t.pending && !t.error);
-    if (!last?.text) return empty;
-    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
-      messageId: last.id,
-      taskId: linkedContext?.task?.id ?? null,
-      toolOutcomeIds: (last.tools ?? [])
-        .filter((tool) => tool.status === "ok" || tool.status === "error")
-        .map((tool) => tool.id),
-    });
-    return suggestions.length ? { suggestions } : empty;
-  }, [activePath, linkedContext?.task?.id]);
-
-  const handleFollowUp = useCallback((path: NextPath) => {
-    if (path.kind === "reply") {
-      setInput(path.prompt);
-      requestAnimationFrame(() => inputRef.current?.focus());
-      return;
-    }
-    if (path.kind === "task") {
-      setTaskSuggestion(path);
-      return;
-    }
-    if (path.actionId === "open-tasks") {
-      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
-    }
-  }, []);
-
-  const handleTaskCreated = useCallback((card: Card) => {
-    const linked = {
-      id: card.id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      lifecycle: card.lifecycle,
-      labels: card.labels,
-      cwd: card.cwd,
-      projectId: card.projectId ?? null,
-      notes: card.notes.trim() || null,
-    };
-    setLinkedContext((previous) => {
-      const context = previous ?? { task: null, tasks: [], github: [] };
-      if (context.tasks.some((task) => task.id === linked.id)) return context;
-      return { ...context, task: context.task ?? linked, tasks: [...context.tasks, linked] };
-    });
-  }, []);
-
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
   // chunk). Lookups are O(1).
@@ -4323,6 +4299,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     let cancelled = false;
     void (async () => {
       if (!cachedConversation) setHistoryState("loading");
+      let durableConversation: ConversationHistoryPayload | null = null;
+      if (!cachedConversation) {
+        const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
+        if (cancelled) return;
+        if (cached?.data.ok && cached.data.conversation) {
+          durableConversation = cached.data;
+          setLinkedContext(durableConversation.context ?? null);
+          applyConversationPayload(durableConversation);
+          setHistoryState("offline");
+        }
+      }
       try {
         const json = await loadConversation(sessionId) as ConversationHistoryPayload | null;
         if (cancelled) return;
@@ -4332,6 +4319,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
+          void writeOfflineCache(
+            "conversation",
+            sessionId,
+            json,
+            json.conversation.activeLeafId ?? "conversation",
+          );
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
@@ -4394,6 +4387,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               setHistoryState("loaded");
               return;
             }
+          }
+          if (
+            (durableConversation || cachedConversation)
+            && !(error instanceof ConversationLoadError && error.status === 404)
+          ) {
+            setHistoryState("offline");
+            return;
           }
           setFlowTranscriptFallback(null);
           setTurns([]);
@@ -4563,6 +4563,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (followingRef.current) return;
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setReleasedScrollDistance(Math.max(0, gap));
       if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -6151,6 +6152,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
+    if (historyState === "offline") {
+      announce("Offline copies are read only. Reconnect before sending.", "assertive");
+      return;
+    }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
@@ -7030,30 +7035,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setArchiveNudgeDismissed(true);
   }, [sessionId]);
 
-  const archiveChat = useCallback(async () => {
-    if (!sessionId || archivingChat) return;
-    setArchivingChat(true);
+  const setChatArchived = useCallback(async (archived: boolean) => {
+    if (!sessionId || archiving) return;
+    setArchiving(true);
     setError(null);
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ archived: true }),
+        body: JSON.stringify({ archived }),
       });
       const json = await res.json().catch(() => ({ ok: false }));
       if (!res.ok || !json.ok) {
-        setError(json.error ?? "archive failed");
+        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
         return;
       }
+      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
-      onSessionRemoved?.(sessionId, "archived");
-      onBack?.(sessionId);
+      // Leaving mirrors delete only for archive; unarchive keeps you in place.
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "archive failed");
+      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
-      setArchivingChat(false);
+      setArchiving(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
+  }, [announce, archiving, onBack, onSessionRemoved, onSessionsChanged, sessionId]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -7155,35 +7164,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
 
-  const setChatArchived = async (archived: boolean) => {
-    if (!sessionId || archiving) return;
-    setArchiving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ archived }),
-      });
-      const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
-        return;
-      }
-      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
-      onSessionsChanged?.();
-      // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) {
-        onSessionRemoved?.(sessionId, "archived");
-        onBack?.(sessionId);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
-    } finally {
-      setArchiving(false);
-    }
-  };
-
   useImperativeHandle(
     ref,
     () => ({
@@ -7254,8 +7234,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
+  const offlineReadOnly = historyState === "offline";
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const hasStagedComposerInput =
+    input.length > 0 ||
+    attachments.length > 0 ||
+    replyTarget !== null ||
+    taskArmed ||
+    dictation.listening ||
+    dropActive;
+  const showDockedComposer = shouldShowDockedComposer({
+    following,
+    hasStagedInput: hasStagedComposerInput,
+    releasedScrollDistance,
+    composerHeight,
+  });
+  useLayoutEffect(() => {
+    const node = composerDockRef.current;
+    if (!node) return;
+    const measure = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inlineComposer, showDockedComposer]);
   const chatContextControls = (
     <ComposerContextChips
       projects={projects}
@@ -7283,10 +7290,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
   const composerNode = (
-        <footer
-          className="cave-composer-dock"
-          style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+    <footer
+      ref={composerDockRef}
+      className="cave-composer-dock"
+      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+    >
+      {historyState === "offline" && sessionId ? (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
         >
+          <span>Offline copy · Read only. Reconnect before sending or changing this chat.</span>
+          <Button variant="ghost" onClick={retryHistory}>
+            Try live connection
+          </Button>
+        </div>
+      ) : (
+        <>
           {setupCandidateRoot && !setupBannerDismissed ? (
             <div
               role="status"
@@ -7631,6 +7651,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     saveAsTemplateDisabled: !input.trim(),
                     indicator:
                       composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
@@ -7796,28 +7817,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <div className="cave-composer-mode-switch" role="group" aria-label="Access mode">
-                    <button
-                      type="button"
-                      className="cave-composer-mode-option focus-ring"
-                      aria-pressed={permissionMode === "read"}
-                      onClick={() => setPermissionMode("read")}
-                      title="Explore — read only"
-                    >
-                      <Icon name="ph:globe" width="var(--icon-md)" aria-hidden />
-                      <span>Explore</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="cave-composer-mode-option focus-ring"
-                      aria-pressed={permissionMode === "full"}
-                      onClick={() => setPermissionMode("full")}
-                      title="Build — full access"
-                    >
-                      <Icon name="ph:flask" width="var(--icon-md)" aria-hidden />
-                      <span>Build</span>
-                    </button>
-                  </div>
                   <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
                     {busy && (input.trim() || attachments.length > 0) ? (
@@ -7876,7 +7875,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — carries linked work and latest assistant options.
+              {/* Footer band — carries linked work and new-chat context.
                   Context controls ride here only for new chats (inlineComposer);
                   active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
@@ -7886,15 +7885,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 ) : null}
                 {linkedContextRow}
-                {followUp.suggestions.length > 0 && !busy ? (
-                  <div className="cave-chat-followups">
-                    <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
-        </footer>
+        </>
+      )}
+    </footer>
   );
 
 
@@ -7902,7 +7898,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
-      {...dropHandlers}
+      {...(offlineReadOnly ? {} : dropHandlers)}
       data-auto-mode={autoMissionActive ? "running" : autoModeSelected ? "selected" : undefined}
     >
       {dropActive ? (
@@ -7964,6 +7960,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitleFromTranscript}
+          readOnly={offlineReadOnly}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -7971,14 +7968,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 Archive stays always-visible (the design's "Mark done" slot,
                 chat-revamp 1b) and flips to Unarchive on archived sessions so
                 restore is one click too. Delete keeps its confirm popover. */}
-            {sessionId && session ? (
+            {sessionId && session && !offlineReadOnly ? (
               <VoiceCallButton
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
               />
             ) : null}
-            {sessionId && session ? (
+            {sessionId && session && !offlineReadOnly ? (
               <ArchiveChatButton
                 archived={Boolean(session.archived_at)}
                 archiving={archiving}
@@ -7998,10 +7995,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <Icon name="ph:magnifying-glass" width={12} aria-hidden />
               </button>
             ) : null}
-            {sessionId ? (
+            {sessionId && !offlineReadOnly ? (
               <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
             ) : null}
-            {sessionId && (
+            {sessionId && !offlineReadOnly && (
               <SessionOverflowMenu
                 key={sessionId}
                 projects={projects}
@@ -8039,7 +8036,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
-        {!inlineComposer ? (
+        {!inlineComposer && !offlineReadOnly ? (
           <div className="cave-chat-header-context">{chatContextControls}</div>
         ) : null}
       </header>
@@ -8104,11 +8101,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ref={scrollRef}
         tabIndex={0}
         className="cave-chat-transcript relative h-full min-h-0 overflow-y-auto"
-        onDragOver={familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
-        onDragLeave={familiarDrag ? () => setDropHover(false) : undefined}
-        onDrop={familiarDrag ? handleFamiliarDrop : undefined}
+        onDragOver={!offlineReadOnly && familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
+        onDragLeave={!offlineReadOnly && familiarDrag ? () => setDropHover(false) : undefined}
+        onDrop={!offlineReadOnly && familiarDrag ? handleFamiliarDrop : undefined}
       >
-        {familiarDrag ? (
+        {!offlineReadOnly && familiarDrag ? (
           <div className="cave-chat-drop" data-hover={dropHover ? "true" : undefined} aria-hidden>
             <span className="cave-chat-drop__hint">
               <Icon name="ph:users-three" width={20} height={20} aria-hidden />
@@ -8221,6 +8218,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onToggleFold={toggleFold}
             familiar={familiar}
             busy={busy}
+            readOnly={offlineReadOnly}
             foundTurnId={foundTurnId}
             feedbackContext={feedbackContext}
             expandedAvatarTurnId={expandedAvatarTurnId}
@@ -8229,16 +8227,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
-          {shouldShowChatArchiveNudge({
+          {!offlineReadOnly && shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
             sessionArchived: Boolean(session?.archived_at),
             dismissed: archiveNudgeDismissed,
           }) ? (
             <ChatArchiveNudge
               taskTitle={linkedContext?.task?.title ?? ""}
-              onArchive={() => void archiveChat()}
+              onArchive={() => void setChatArchived(true)}
               onDismiss={dismissArchiveNudge}
-              archiving={archivingChat}
+              archiving={archiving}
             />
           ) : null}
           <div ref={tailRef} />
@@ -8400,22 +8398,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
-      {inlineComposer ? null : composerNode}
-      {taskSuggestion && sessionId ? (
-        <FollowUpTaskReview
-          open
-          sessionId={sessionId}
-          suggestion={taskSuggestion}
-          context={{
-            turns: activePath,
-            familiarId: familiar.id,
-            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
-          }}
-          onCreated={handleTaskCreated}
-          onClose={() => setTaskSuggestion(null)}
-        />
-      ) : null}
-      {voiceCallOpen && sessionId && (
+      {inlineComposer ? null : showDockedComposer ? composerNode : null}
+      {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
           familiar={familiar}
           sessionId={sessionId}
@@ -8742,6 +8726,7 @@ const TranscriptRows = memo(function TranscriptRows({
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
+  readOnly,
   foundTurnId,
   feedbackContext,
   expandedAvatarTurnId,
@@ -8760,6 +8745,7 @@ const TranscriptRows = memo(function TranscriptRows({
   onToggleFold: () => void;
   familiar: Familiar;
   busy: boolean;
+  readOnly: boolean;
   foundTurnId: string | null;
   feedbackContext: FeedbackContext;
   expandedAvatarTurnId: string | null;
@@ -8812,6 +8798,7 @@ const TranscriptRows = memo(function TranscriptRows({
         return prev.role !== t.role;
       })();
       const singleBranchNav = (() => {
+        if (readOnly) return undefined;
         const { siblings, index } = handlers().siblingsFor(t.id);
         if (siblings.length <= 1) return undefined;
         return {
@@ -8829,17 +8816,17 @@ const TranscriptRows = memo(function TranscriptRows({
           announceLifecycle={t.id === latestAssistantId}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
-          onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
-          onRegenerate={handlers().regenerateFor(t)}
-          onReply={handlers().replyFor(t)}
-          onAskAbout={handlers().askAboutFor(t)}
+          onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+          onRegenerate={readOnly ? undefined : handlers().regenerateFor(t)}
+          onReply={readOnly ? undefined : handlers().replyFor(t)}
+          onAskAbout={readOnly ? undefined : handlers().askAboutFor(t)}
           readerPrompt={handlers().readerPromptFor(t)}
-          onRerunWith={handlers().rerunWithFor(t)}
+          onRerunWith={readOnly ? undefined : handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
-          onRequest={(prompt) => void handlers().send(prompt)}
+          onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
           handlersRef={handlersRef}
-          feedbackContext={feedbackContext}
+          feedbackContext={readOnly ? undefined : feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
@@ -8880,6 +8867,7 @@ const TranscriptRows = memo(function TranscriptRows({
             return prev.role !== t.role;
           })();
           const groupBranchNav = (() => {
+            if (readOnly) return undefined;
             const { siblings, index } = handlers().siblingsFor(t.id);
             if (siblings.length <= 1) return undefined;
             return {
@@ -8897,17 +8885,17 @@ const TranscriptRows = memo(function TranscriptRows({
               announceLifecycle={t.id === latestAssistantId}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
-              onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
-              onRegenerate={handlers().regenerateFor(t)}
-              onReply={handlers().replyFor(t)}
-              onAskAbout={handlers().askAboutFor(t)}
+              onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+              onRegenerate={readOnly ? undefined : handlers().regenerateFor(t)}
+              onReply={readOnly ? undefined : handlers().replyFor(t)}
+              onAskAbout={readOnly ? undefined : handlers().askAboutFor(t)}
               readerPrompt={handlers().readerPromptFor(t)}
-              onRerunWith={handlers().rerunWithFor(t)}
+              onRerunWith={readOnly ? undefined : handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
-              onRequest={(prompt) => void handlers().send(prompt)}
+              onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
               handlersRef={handlersRef}
-              feedbackContext={feedbackContext}
+              feedbackContext={readOnly ? undefined : feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
@@ -8918,26 +8906,24 @@ const TranscriptRows = memo(function TranscriptRows({
     );
   });
   if (fold.hiddenTurns === 0) return rows;
-  // The pill leads the transcript in both states: closed it names what is
-  // hidden, open it names the way back. The two rules make it read as a seam
-  // in the conversation rather than as a toolbar.
+  // The fold leads the transcript in both states: closed it names what is
+  // hidden, open it names the way back. The visual stays one full-width seam;
+  // the count remains available through its accessible name and title.
   return [
     <div key="__chat-fold" className="cave-chat-fold">
-      <span aria-hidden className="cave-chat-fold__rule" />
       <button
         type="button"
-        className="cave-chat-fold__pill focus-ring"
+        className="cave-chat-fold__trigger focus-ring"
         aria-expanded={foldOpen}
         aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
+        title={chatFoldLabel(fold.hiddenTurns, foldOpen)}
         onClick={onToggleFold}
       >
         {/* The caret's direction is driven off the button's own aria-expanded,
             not a data-prop on the Icon: Icon only forwards aria-* / role, so a
             data attribute here is silently dropped and the caret never turns. */}
         <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
-        {chatFoldLabel(fold.hiddenTurns, foldOpen)}
       </button>
-      <span aria-hidden className="cave-chat-fold__rule" />
     </div>,
     ...rows,
   ];
@@ -9327,16 +9313,7 @@ function TurnRowImpl({
       {/* Skill stage cards (design §5): one per skill name per turn,
           updated in place by repeated <coven:skill> markers. */}
       {skillUpdates.length ? (
-        <div className="mt-2 space-y-1.5">
-          {skillUpdates.map((update) => (
-            <SkillStageCard
-              key={update.name}
-              name={update.name}
-              stage={update.stage}
-              note={update.note}
-            />
-          ))}
-        </div>
+        <SkillRunSummary skills={skillUpdates} />
       ) : null}
       {autoStatusUpdate ? (
         <div className="mt-2">

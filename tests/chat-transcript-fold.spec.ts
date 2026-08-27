@@ -55,7 +55,7 @@ const SESSION = {
   hasLocalConversation: true,
 };
 
-const foldPill = (page: Page) => page.locator(".cave-chat-fold__pill");
+const foldTrigger = (page: Page) => page.locator(".cave-chat-fold__trigger");
 const turns = (page: Page) => page.locator("[data-turn-id]");
 
 async function openFoldedThread(page: Page) {
@@ -101,28 +101,29 @@ test.describe("earlier-turns fold", () => {
   test("a long thread opens folded, names what it hides, and reveals every turn", async ({ page }) => {
     await openFoldedThread(page);
 
-    // Closed: only the recent exchange is mounted, and the pill counts TURNS —
-    // not groups. Counting groups would print "1 earlier turn" over a fold
-    // hiding a whole voice call.
+    // Closed: only the recent exchange is mounted. The visible control is a
+    // minimal seam, while its accessible label and title still count TURNS —
+    // not groups.
     const foldedCount = await turns(page).count();
     expect(foldedCount, "a closed fold mounts only the kept tail").toBeLessThan(TURNS.length);
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "false");
-    await expect(foldPill(page)).toContainText(`${TURNS.length - foldedCount} earlier`);
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(foldTrigger(page)).toHaveAttribute("title", `${TURNS.length - foldedCount} earlier turns`);
+    await expect(foldTrigger(page)).toHaveText("");
 
     // The accessible name is a sentence, not the terse mono chrome.
-    await expect(foldPill(page)).toHaveAttribute("aria-label", /^Show \d+ earlier turns?$/);
+    await expect(foldTrigger(page)).toHaveAttribute("aria-label", /^Show \d+ earlier turns?$/);
 
-    // Open: every turn is reachable, and the label names the way back rather
-    // than continuing to claim turns are hidden while they are on screen.
-    await foldPill(page).click();
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "true");
+    // Open: every turn is reachable, and the accessible copy names the way
+    // back rather than claiming turns are hidden while they are on screen.
+    await foldTrigger(page).click();
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "true");
     await expect(turns(page)).toHaveCount(TURNS.length);
-    await expect(foldPill(page)).toContainText("hide earlier turns");
-    await expect(foldPill(page)).toHaveAttribute("aria-label", "Hide earlier turns");
+    await expect(foldTrigger(page)).toHaveAttribute("title", "hide earlier turns");
+    await expect(foldTrigger(page)).toHaveAttribute("aria-label", "Hide earlier turns");
 
     // And it folds back, so the control is a toggle rather than a one-way door.
-    await foldPill(page).click();
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "false");
+    await foldTrigger(page).click();
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "false");
     await expect(turns(page)).toHaveCount(foldedCount);
   });
 
@@ -146,8 +147,8 @@ test.describe("earlier-turns fold", () => {
       .poll(transform, { message: "closed, the caret points down (press to reveal)" })
       .toBe(ROTATED_180);
 
-    await foldPill(page).click();
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "true");
+    await foldTrigger(page).click();
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "true");
 
     // Open, the rotation is dropped entirely — the caret points up, at what the
     // press now does.
@@ -158,7 +159,7 @@ test.describe("earlier-turns fold", () => {
 
   test("opening find clears the fold so a hit in a hidden turn is reachable", async ({ page }) => {
     await openFoldedThread(page);
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "false");
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "false");
     expect(await turns(page).count(), "starts folded").toBeLessThan(TURNS.length);
 
     // Find searches the WHOLE transcript and jumps by resolving [data-turn-id]
@@ -167,7 +168,7 @@ test.describe("earlier-turns fold", () => {
     // Find therefore has to clear the fold as well as the render cap.
     await page.keyboard.press(process.platform === "darwin" ? "Meta+f" : "Control+f");
 
-    await expect(foldPill(page)).toHaveAttribute("aria-expanded", "true", { timeout: 10_000 });
+    await expect(foldTrigger(page)).toHaveAttribute("aria-expanded", "true", { timeout: 10_000 });
     await expect(turns(page)).toHaveCount(TURNS.length);
 
     // The oldest turn — the one furthest behind the fold — is now addressable,

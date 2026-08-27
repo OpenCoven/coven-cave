@@ -96,6 +96,8 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   const outerPanel = page.locator('[data-panel="true"]#right-chat');
   await expect(page.getByRole("button", { name: "Close Chat panel" }).first()).toBeVisible();
   await expect(panel).toHaveAttribute("aria-hidden", "false");
+  await expect(panel.locator(".right-chat__rail")).toBeVisible();
+  await expect(panel.locator(".right-chat__header")).toHaveCount(0);
   await expect(panel).toContainText("Newest Cody chat");
   await expect(panel).not.toContainText("Nova must not be selected");
 
@@ -154,8 +156,8 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await expect(reopenedPanel).toHaveAttribute("aria-hidden", "false");
   expect(Math.abs(((await reopenedOuterPanel.boundingBox())?.width ?? 0) - persistedWidth)).toBeLessThan(4);
 
-  await panel.locator('button[aria-label="Switch Chat panel thread"]').click();
-  await page.getByRole("menu", { name: "Switch Chat panel thread options" }).getByText("Older Cody chat", { exact: true }).click();
+  await panel.locator('button[aria-label^="Switch Chat panel thread, current:"]').click();
+  await page.getByRole("menu", { name: /^Switch Chat panel thread, current: .* options$/ }).getByText("Older Cody chat", { exact: true }).click();
   await expect(reopenedPanel).toHaveAttribute("data-session-id", "cody-old");
   await expect(page).toHaveURL(/#chat-cody-new$/);
 

@@ -54,8 +54,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /onProjectRootChange\?\.\(activeProjectRoot \|\| null\)/,
-  "ChatView reports the same active project root used by send so the rail can stay in sync",
+  /onProjectRootChange\?\.\(\s*activeProjectRoot \|\| null,\s*composerHostValue === LOCAL_HOST_ID \? null : composerHostValue,\s*\)/,
+  "ChatView reports the active project root and runtime host used by send so the rail can stay in sync",
 );
 assert.match(
   chatView,
@@ -74,8 +74,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /sessionId && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
-  "The active-chat project selector shares the same draft used by send",
+  /sessionId && !offlineReadOnly && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
+  "The writable active-chat project selector shares the same draft used by send",
 );
 // The empty state (the familiar's starting page) lives in chat-empty-state.tsx
 // since the task-aware extraction; its picker pins follow it there.

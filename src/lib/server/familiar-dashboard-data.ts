@@ -59,13 +59,15 @@ import {
   type FamiliarDashboardIssue,
   type FamiliarDashboardSuccess,
   type OverviewMemoryInput,
+  type OverviewReminderInput,
   type OverviewSessionInput,
-  type ProfileContractInput,
+  type OverviewTaskInput,
 } from "@/lib/familiar-dashboard";
 import { bindingFor, loadConfig, type CaveConfig } from "@/lib/cave-config";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { canonicalMemoryList } from "@/lib/server/canonical-memory-gateway";
-import { evaluateFamiliarContract } from "@/lib/familiar-contract";
+import { evaluateFamiliarContract, type ContractReport } from "@/lib/familiar-contract";
+import { deriveHealRequests } from "@/lib/familiar-heal-requests";
 import { readFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
@@ -74,11 +76,16 @@ import {
   type VisibleFamiliarRosterResult,
 } from "@/lib/server/familiar-roster";
 import { computeSessionsList } from "@/lib/server/sessions-list";
-import { listSelfReports } from "@/lib/server/familiar-self-reports";
+import { listMetricSnapshots, listSelfReports } from "@/lib/server/familiar-self-reports";
 import { redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildFamiliarProfile } from "@/lib/familiar-dashboard";
+import type { ThreadMetricSnapshot } from "@/lib/signal-trends";
 import type { SessionRow } from "@/lib/types";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import { loadBoard } from "@/lib/cave-board";
+import { loadInbox } from "@/lib/cave-inbox";
+import type { Card } from "@/lib/cave-board-types";
+import type { InboxItem } from "@/lib/cave-inbox";
 
 export type FamiliarDashboardSessions = {
   sessions: SessionRow[];
@@ -91,11 +98,16 @@ export type FamiliarDashboardDependencies = {
   loadConfig: () => Promise<CaveConfig>;
   resolveAvatar: (familiarId: string) => Promise<{ mtimeMs: number } | null>;
   loadSessions: (familiarId: string) => Promise<FamiliarDashboardSessions>;
+  loadTasks: () => Promise<Card[]>;
+  loadReminders: () => Promise<InboxItem[]>;
   loadMemory: () => Promise<CanonicalMemorySummary[]>;
-  loadContract: (familiarId: string) => Promise<ProfileContractInput>;
+  loadContract: (familiarId: string) => Promise<ContractReport>;
   loadSelfReports: (
     familiarId: string,
   ) => Promise<{ reports: ThreadSelfReport[]; total: number }>;
+  loadMetricSnapshots: (
+    familiarId: string,
+  ) => Promise<{ snapshots: ThreadMetricSnapshot[]; total: number }>;
 };
 
 export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
@@ -113,22 +125,25 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
       });
       if (!result.payload.ok) throw new Error("sessions unavailable");
       return {
-        sessions: result.payload.sessions,
+        // Analytics needs only the latest bounded evidence set. Keep the list
+        // route broad for its own UI, but never pass its entire history into a
+        // dashboard read.
+        sessions: result.payload.sessions.slice(0, FAMILIAR_DASHBOARD_LIMITS.metricSnapshots),
         degraded: result.payload.degraded === true,
       };
     },
     loadMemory: canonicalMemoryList,
+    loadTasks: async () => (await loadBoard()).cards,
+    loadReminders: async () => (await loadInbox()).items,
     loadContract: async (familiarId: string) => {
       const { files } = await readFamiliarContractFiles(familiarId);
       const report = evaluateFamiliarContract(files);
-      return {
-        properties: report.properties,
-        violations: report.violations,
-        warnings: report.warnings,
-      };
+      return report;
     },
     loadSelfReports: (familiarId: string) =>
       listSelfReports(familiarId, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
+    loadMetricSnapshots: (familiarId: string) =>
+      listMetricSnapshots(familiarId, { limit: FAMILIAR_DASHBOARD_LIMITS.metricSnapshots }),
   });
 }
 
@@ -199,13 +214,16 @@ export async function loadFamiliarDashboard(input: {
   const entry = roster.data.roster.find((candidate) => candidate.id === familiarId);
   if (!entry) return { outcome: "not_found" };
 
-  const [config, avatar, sessions, memory, contract, selfReports] = await Promise.all([
+  const [config, avatar, sessions, memory, tasks, reminders, contract, selfReports, metricSnapshots] = await Promise.all([
     capture(dependencies.loadConfig),
     capture(() => dependencies.resolveAvatar(familiarId)),
     capture(() => dependencies.loadSessions(familiarId)),
     capture(dependencies.loadMemory),
+    capture(dependencies.loadTasks),
+    capture(dependencies.loadReminders),
     capture(() => dependencies.loadContract(familiarId)),
     capture(() => dependencies.loadSelfReports(familiarId)),
+    capture(() => dependencies.loadMetricSnapshots(familiarId)),
   ]);
 
   // Config failure is survivable but not silent: without it the roster's own
@@ -245,6 +263,12 @@ export async function loadFamiliarDashboard(input: {
   if (!memory.ok) {
     overviewIssues.push({ source: "memory", code: "memory_unavailable", retryable: true });
   }
+  if (!tasks.ok) {
+    overviewIssues.push({ source: "tasks", code: "tasks_unavailable", retryable: true });
+  }
+  if (!reminders.ok) {
+    overviewIssues.push({ source: "reminders", code: "reminders_unavailable", retryable: true });
+  }
 
   const sessionInputs: OverviewSessionInput[] = sessions.ok
     ? sessions.data.sessions.map((session) => {
@@ -273,11 +297,65 @@ export async function loadFamiliarDashboard(input: {
         })
     : [];
 
+  const taskInputs: OverviewTaskInput[] = tasks.ok
+    ? tasks.data.map((task) => {
+        const safe = redactSecretsDeep(task);
+        return {
+          id: String(safe.id ?? task.id),
+          title: typeof safe.title === "string" ? safe.title : "",
+          status: task.status,
+          priority: task.priority,
+          familiarId: task.familiarId,
+          projectId: task.projectId ?? null,
+          sessionId: task.sessionId,
+          updatedAt: task.updatedAt,
+          dependencies: (task.dependencies ?? []).map((dependency) => ({
+            id: dependency.id,
+            kind: dependency.kind,
+            label: clampDashboardText(dependency.label),
+            state: dependency.state,
+          })),
+          primaryBlockerId: task.primaryBlockerId ?? null,
+          nextStep: task.nextStep
+            ? {
+                summary: clampDashboardText(task.nextStep.summary),
+                requiresApproval: task.nextStep.requiresApproval,
+              }
+            : null,
+        };
+      })
+    : [];
+
+  const reminderInputs: OverviewReminderInput[] = reminders.ok
+    ? reminders.data.map((reminder) => {
+        const safe = redactSecretsDeep(reminder);
+        return {
+          id: String(safe.id ?? reminder.id),
+          kind: reminder.kind,
+          title: typeof safe.title === "string" ? safe.title : "",
+          body: typeof safe.body === "string" ? safe.body : null,
+          status: reminder.status,
+          fireAt: reminder.fireAt,
+          firedAt: reminder.firedAt,
+          updatedAt: reminder.updatedAt,
+          familiarId: reminder.familiarId,
+        };
+      })
+    : [];
+
+  const overviewBinding = effectiveConfig ? bindingFor(effectiveConfig, familiarId) : null;
+
   const overviewData = buildFamiliarOverview({
     sessions: sessionInputs,
     memory: memoryInputs,
+    tasks: taskInputs,
+    reminders: reminderInputs,
     presence: identity.presence,
+    familiarId,
+    harness: overviewBinding?.harness ?? null,
+    model: overviewBinding?.model ?? null,
     sessionsAvailable: sessions.ok,
+    tasksAvailable: tasks.ok,
   });
 
   const overview = buildDashboardSection({
@@ -290,7 +368,13 @@ export async function loadFamiliarDashboard(input: {
     hasContent:
       overviewData.sessions.active.total > 0 ||
       overviewData.sessions.recent.total > 0 ||
-      overviewData.memory.entries.total > 0,
+      overviewData.memory.entries.total > 0 ||
+      overviewData.tasks.total > 0 ||
+      overviewData.reminders.total > 0 ||
+      overviewData.attention.total > 0 ||
+      overviewData.presence !== null ||
+      overviewData.live.harness !== null ||
+      overviewData.live.model !== null,
   });
 
   // --- profile -------------------------------------------------------------
@@ -359,6 +443,20 @@ export async function loadFamiliarDashboard(input: {
       retryable: true,
     });
   }
+  if (!metricSnapshots.ok) {
+    analyticsIssues.push({
+      source: "metric_snapshots",
+      code: "metric_snapshots_unavailable",
+      retryable: true,
+    });
+  }
+  if (!contract.ok) {
+    analyticsIssues.push({
+      source: "contract",
+      code: "contract_unavailable",
+      retryable: false,
+    });
+  }
 
   const analyticsData = buildFamiliarAnalyticsDigest({
     reports: selfReports.ok
@@ -367,6 +465,23 @@ export async function loadFamiliarDashboard(input: {
     reportsTotal: selfReports.ok ? selfReports.data.total : 0,
     activeSessions: overviewData.sessions.active.total,
     recentSessions: overviewData.sessions.recent.total,
+    sessions: sessions.ok
+      ? sessionInputs.map((session) => ({
+          status: session.status,
+          updatedAt: session.updated_at,
+          generated: session.generated,
+        }))
+      : [],
+    sessionsAvailable: sessions.ok,
+    metricSnapshots: metricSnapshots.ok ? metricSnapshots.data.snapshots : [],
+    metricSnapshotsAvailable: metricSnapshots.ok,
+    memory: memoryInputs,
+    memoryAvailable: memory.ok,
+    contractGapCount: contract.ok ? contract.data.violations.length : null,
+    healRequests: contract.ok
+      ? deriveHealRequests({ familiarId, contractReport: contract.data, growthReport: null })
+      : [],
+    now: input.now ?? new Date(),
   });
 
   const analytics = buildDashboardSection({
@@ -374,7 +489,11 @@ export async function loadFamiliarDashboard(input: {
     requiredFailure: analyticsRequiredFailure,
     issues: analyticsIssues,
     data: analyticsData,
-    hasContent: analyticsData.sampleSize > 0,
+    hasContent:
+      analyticsData.sampleSize > 0 ||
+      (analyticsData.activity.totalSessions ?? 0) > 0 ||
+      analyticsData.memory.total !== null && analyticsData.memory.total > 0 ||
+      analyticsData.attention.healRequests.total > 0,
   });
 
   const assembled: FamiliarDashboardSuccess = {

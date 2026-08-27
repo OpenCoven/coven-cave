@@ -3,6 +3,10 @@ import {
   type ClientV1Authenticator,
 } from "./auth.ts";
 import {
+  createClientV1AuthorityRuntimeFromGlobal,
+  type ClientV1AuthorityRuntime,
+} from "./authority-runtime.ts";
+import {
   createCredentialStore,
   type CredentialStore,
 } from "./credential-store.ts";
@@ -16,6 +20,7 @@ import {
 } from "./rate-limit.ts";
 
 export interface ClientV1Runtime {
+  authority: ClientV1AuthorityRuntime;
   authenticator: ClientV1Authenticator;
   credentialStore: CredentialStore;
   now: () => number;
@@ -24,6 +29,7 @@ export interface ClientV1Runtime {
 }
 
 export interface ClientV1RuntimeOptions {
+  authority?: ClientV1AuthorityRuntime;
   credentialRoot?: string;
   loopbackSecret?: string;
   now?: () => number;
@@ -33,6 +39,9 @@ export function createClientV1Runtime(
   options: ClientV1RuntimeOptions = {},
 ): ClientV1Runtime {
   const now = options.now ?? Date.now;
+  const authority =
+    options.authority
+    ?? createClientV1AuthorityRuntimeFromGlobal({ now });
   const credentialStore = createCredentialStore({
     ...(options.credentialRoot ? { root: options.credentialRoot } : {}),
     now,
@@ -45,6 +54,7 @@ export function createClientV1Runtime(
       options.loopbackSecret ?? process.env.COVEN_CAVE_LOCAL_PEER_SECRET ?? "",
   });
   return {
+    authority,
     authenticator,
     credentialStore,
     now,

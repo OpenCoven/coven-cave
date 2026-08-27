@@ -94,9 +94,18 @@ assert.match(view, /<AllDayStrip columns=\{allDayColumns\} onOpenItem=\{onOpenIt
 assert.match(view, /onOpenItem=\{onOpenItem\}\s*\n\s*maxVisible=\{Infinity\}/, "Day view shows every all-day item");
 assert.match(view, /const goToDay = \(day: Date\) => \{[\s\S]*?setViewMode\("day"\)/, "goToDay opens the single-day view");
 
-// ───────── View toggle is an accessible group ─────────
-assert.match(view, /role="group" aria-label="Calendar view"/, "view-mode toggle is a labelled group");
-assert.match(view, /aria-pressed=\{viewMode === id\}/, "each view-mode button announces its pressed state");
+// ───────── View toggle is an accessible tablist ─────────
+assert.match(
+  view,
+  /<Tabs[\s\S]{0,220}items=\{VIEW_MODES\}[\s\S]{0,160}value=\{viewMode\}[\s\S]{0,180}ariaLabel="Calendar view"/,
+  "view-mode toggle uses the shared labelled Tabs primitive",
+);
+assert.match(view, /idPrefix="calendar-view"/, "calendar tabs expose stable ids for panel wiring");
+assert.match(
+  view,
+  /role="tabpanel"[\s\S]{0,160}id="calendar-view-panel"[\s\S]{0,160}aria-labelledby=\{`calendar-view-tab-\$\{viewMode\}`\}/,
+  "the active calendar body is labelled by the selected view tab",
+);
 
 // ───────── Shortcut guard ignores contenteditable ─────────
 assert.match(view, /target\.isContentEditable/, "Single-key shortcuts must not fire inside contenteditable");
@@ -137,7 +146,11 @@ assert.match(view, /function MiniMonthPopover[\s\S]*?useFocusTrap\(true, ref, \{
 assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).length >= 2, "today is marked with aria-current=\"date\"");
 // Horizontal arrows don't page the period out from under a focused grid event
 // or month day-cell (both own their arrows via roving nav).
-assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\], \[data-month-cell="true"\]'\)\) break;/, "a focused event or month cell keeps its own Arrow handling");
+assert.match(
+  view,
+  /if \(target\.closest\('\[data-calendar-event="true"\], \[data-month-cell="true"\], \[role="tablist"\]'\)\) break;/,
+  "focused events, month cells, and calendar tabs keep their own Arrow handling",
+);
 
 // ───────── Detail panel reconciles with live items (cave-latd) ─────────
 // `selectedItem` is a snapshot captured at click; an effect keyed on
@@ -182,7 +195,7 @@ assert.match(view, /const effectiveView: ViewMode = viewMode === "week" && narro
 assert.match(view, /setNarrowPane\(w > 0 && w < 560\)/, "the fallback keys on container width, not viewport");
 assert.match(view, /\{effectiveView === "week" && \(/, "the render switch reads the effective view");
 assert.match(view, /if \(effectiveView === "week"\) return addDays\(prev, dir \* 7\)/, "navigate steps by the VISIBLE unit");
-assert.match(view, /aria-pressed=\{viewMode === id\}/, "the view toggle still reflects the user's stored choice");
+assert.match(view, /<Tabs[\s\S]{0,220}value=\{viewMode\}/, "the view toggle still reflects the user's stored choice");
 assert.match(view, /if \(isMobile && viewMode !== "agenda"[\s\S]{0,360}setDeepLinkViewMode\("agenda"\)/, "mobile Agenda is a transient viewport override, not a saved preference");
 assert.doesNotMatch(view, /if \(isMobile && viewMode !== "agenda"[\s\S]{0,360}setViewMode\("agenda"\)/, "mobile layout must not replace a desktop calendar preference");
 

@@ -173,9 +173,24 @@ assert.doesNotMatch(
 // sibling assertion in scripts/desktop-reachability.test.mjs. Widening the
 // budget is not the fix either: an unbounded gap lets one arm's reap satisfy
 // the other arm's exit, so dropping the release from a single arm would still
-// pass.
+// pass. The anchor alone does not stop that — a lazy `[\s\S]*?` runs on into
+// the next arm as soon as this one stops ending in the closing token — so the
+// tempered token below refuses to cross another `Err(SidecarStartError::`.
+// Both this contract and the sibling now use that identical window; they had
+// diverged on the closing token (`fatal_exit(` here, `fatal_exit(&error)`
+// there) while both comments claimed they matched.
+//
+// What this still cannot see: both assertions read ORDER IN THE SOURCE TEXT,
+// so wrapping a call in `if claimed_the_port { … }` leaves the text ordered
+// while the call may never run. Verified — that mutation passes both files.
+// It is the ceiling of a source-text contract, not a gap this anchor
+// introduced; the old forms missed it identically. Unconditional execution is
+// what `sidecar_port_lock`'s own unit tests are for. Do not read either
+// contract as promising more than sequence.
 const reapedThenExit = [
-  ...setup.matchAll(/Err\(SidecarStartError::[\s\S]*?fatal_exit\(/g),
+  ...setup.matchAll(
+    /Err\(SidecarStartError::(?:(?!Err\(SidecarStartError::)[\s\S])*?fatal_exit\(/g,
+  ),
 ].map((m) => m[0]);
 assert.equal(
   reapedThenExit.length,
@@ -183,9 +198,17 @@ assert.equal(
   "expected exactly two reaped-child fatal_exit arms; re-check this contract if that changed",
 );
 for (const arm of reapedThenExit) {
-  assert.ok(
-    arm.includes("release_all_claims()"),
-    "a fatal_exit that has already reaped the child must release the port claim first, or the user's retry is refused by a copy holding a port nothing is on",
+  // Order, not mere presence. Hoisting `release_all_claims()` above the reap
+  // keeps it inside the arm and before the exit, so an `includes` check passes
+  // — while the claim is now dropped with node still bound, and the copy that
+  // takes it probes the port, finds a dying orphan, and tells the user to
+  // switch to it. That is the "stale story about its own predecessor's orphan"
+  // sidecar_port_lock.rs cites as the reason the release is not in
+  // `show_fatal_dialog`. Reap, then release, then block.
+  assert.match(
+    arm,
+    /stop_after_startup_error\([\s\S]*?\)[\s\S]*?release_all_claims\(\)/,
+    "a fatal_exit that has already reaped the child must release the port claim first, or the user's retry is refused by a copy holding a port nothing is on — and the release must come after the reap, never before it",
   );
 }
 

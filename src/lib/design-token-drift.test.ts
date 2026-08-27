@@ -89,8 +89,44 @@ const BASELINES = {
 // tokenize-css.mjs is a no-op over all three, so tier 1 stays clean.
 // -1: the compact Research mode picker replaces an off-grid spacing literal
 // with the shared control rhythm.
-BASELINES.offScaleSpacingPx = 1607;
-BASELINES.inlineTsxStyles = 280;
+// +1: the calendar's cron density strip (cave-aa10e, "Rituals Redesign.dc.html"
+// CALENDAR TAB) — `gap: 2px` between the six four-hour bands. This is the one
+// spacing value in the new block that is not on scale, and --space-1 is the
+// wrong answer for it: at six bands inside a week column that can be as narrow
+// as 80px, 4px gaps spend a quarter of the strip on the spaces between bars,
+// and the strip stops reading as one chart and starts reading as six. It is
+// the same 1/2px micro-mark family the Chart Room, Weaves, Review Deck and
+// GitHub-composer handoffs already banked above, for the same reason each time.
+// Everything else the strip adds IS on scale: the band ramp is --space-1..-6
+// (the frame's 4/9/14/19/24/29 is the same even ramp off the scale, and a
+// density chart only needs its steps even), the row is --space-8, and the
+// padding and label gaps are --space-1/-2. Heights do not reach this ratchet
+// anyway — SPACING_PROPS is padding/margin/gap — so the ramp was snapped for
+// its own sake rather than to move this number.
+// measured, not derived: 1608 is the count on this branch rebased onto
+// cae54fb6e5, which is what CI scans. Measured 1607 before the rebase, because
+// the branch predated its own live-run-card merge; re-measure after the base
+// moves, never derive a baseline from another baseline.
+BASELINES.offScaleSpacingPx = 1608;
+// +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
+// cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
+// five: the two rail widths the USER DRAGS (one `style` object carrying
+// --rd-queue-width and --rd-inspector-width, re-clamped against the live
+// window), the two segments of the workspace header's added/removed bar (each
+// a share of THIS change's own diff), the queue mix bar's per-bucket segment
+// (a share of what is in view right now), and the reviewed-file progress
+// fill's percentage. Every one is a per-item or per-user measurement, which is
+// the same category the Coding Desk, Research Desk and chat run-rail entries
+// banked above; `coven-design/no-static-inline-style` is AST-accurate about
+// exactly this question and reports zero findings across the seven new and
+// rewritten cockpit components. The frame's *fixed* numbers deliberately did
+// NOT come here — pane minimums and initial widths are constants in
+// review-cockpit.ts, and every colour, size, radius and spacing value in the
+// seven rewritten stylesheets is a token: the sheets went from 15 off-scale
+// spacing literals to ZERO in this PR (two named sub-grid marks,
+// --rd-hairline and --rd-tight, replaced the repeated 1/2px well insets), so
+// offScaleSpacingPx is unchanged rather than raised.
+BASELINES.inlineTsxStyles = 285;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

@@ -14,6 +14,7 @@ struct ConnectionView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var host: String = ""
+    @State private var pendingManualInvite: CaveInvite?
     @State private var busy = false
     /// Whether the clipboard holds text — drives the "Paste" affordance. We only
     /// READ the clipboard when the user taps Paste, so there's no surprise
@@ -107,6 +108,11 @@ struct ConnectionView: View {
             // the Paste affordance in step with the clipboard.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { canPaste = UIPasteboard.general.hasStrings }
+            }
+            .onChange(of: host) { _, updatedHost in
+                if pendingManualInvite?.host != updatedHost {
+                    pendingManualInvite = nil
+                }
             }
             .sheet(isPresented: $showScanner) {
                 QRScannerSheet { payload in
@@ -441,7 +447,15 @@ struct ConnectionView: View {
 
     private func connect() {
         focused = false
-        guard let invite = CaveInvite.parse(cleanHost(host)) else { return }
+        guard let parsedInvite = CaveInvite.parse(cleanHost(host)) else { return }
+        let invite = CaveInvite(
+            host: parsedInvite.host,
+            token: parsedInvite.token,
+            threadId: pendingManualInvite?.host == parsedInvite.host
+                ? pendingManualInvite?.threadId
+                : parsedInvite.threadId
+        )
+        pendingManualInvite = nil
         // Avoid redundant work before spawning the Task. The outcome switch
         // remains authoritative if a same-runloop tap still races this guard.
         guard appLock.canBeginAuthentication else { return }
@@ -449,10 +463,19 @@ struct ConnectionView: View {
         busy = true
         liveCheck = .idle
         Task {
-            let outcome = await configurePairing(invite)
+            let pairingIntent = PairingIntent(invite: invite)
+            app.stagePairingDestination(pairingIntent)
+            let result = await configurePairing(pairingIntent)
             busy = false
-            handleApprovalOutcome(outcome)
-            if outcome == .authorized, app.connectionState == .connected {
+            handleApprovalOutcome(result.outcome)
+            if result.outcome == .authorized, let lease = result.lease {
+                app.armPairingDestination(pairingIntent, lease: lease)
+            } else {
+                app.cancelPairingDestination(matching: pairingIntent.id)
+            }
+            if result.outcome == .authorized,
+               result.lease != nil,
+               app.connectionState == .connected {
                 Haptics.success()
             }
         }
@@ -472,34 +495,48 @@ struct ConnectionView: View {
         guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
         host = invite.host
         if invite.token != nil {
+            pendingManualInvite = nil
             // Same synchronous fast-path as `connect()`; QR scans route here too.
             guard appLock.canBeginAuthentication else { return }
             busy = true
             liveCheck = .idle
             Task {
-                let outcome = await configurePairing(invite)
+                let pairingIntent = PairingIntent(invite: invite)
+                app.stagePairingDestination(pairingIntent)
+                let result = await configurePairing(pairingIntent)
                 busy = false
-                handleApprovalOutcome(outcome)
-                if outcome == .authorized, app.connectionState == .connected {
+                handleApprovalOutcome(result.outcome)
+                if result.outcome == .authorized, let lease = result.lease {
+                    app.armPairingDestination(pairingIntent, lease: lease)
+                } else {
+                    app.cancelPairingDestination(matching: pairingIntent.id)
+                }
+                if result.outcome == .authorized,
+                   result.lease != nil,
+                   app.connectionState == .connected {
                     Haptics.success()
                 }
             }
         } else {
+            pendingManualInvite = invite
             manualEntry = true
             focused = true
         }
     }
 
-    private func configurePairing(_ invite: CaveInvite) async -> AuthenticationOutcome {
+    private func configurePairing(
+        _ intent: PairingIntent
+    ) async -> (outcome: AuthenticationOutcome, lease: AppModel.ConnectionDispatchLease?) {
         guard PairingApprovalPolicy.requiresApproval(hasExistingPairing: app.connection != nil) else {
-            await app.configure(host: invite.host, token: invite.token)
-            return .authorized
+            let lease = await app.configure(host: intent.host, token: intent.token)
+            return (.authorized, lease)
         }
-        return await appLock.performApprovedAction(
+        let outcome = await appLock.requestApproval(
             reason: "Confirm it's you to replace your desktop pairing"
-        ) {
-            await app.configure(host: invite.host, token: invite.token)
-        }
+        )
+        guard outcome == .authorized else { return (outcome, nil) }
+        let lease = await app.configure(host: intent.host, token: intent.token)
+        return (.authorized, lease)
     }
 
     private func handleApprovalOutcome(_ outcome: AuthenticationOutcome) {

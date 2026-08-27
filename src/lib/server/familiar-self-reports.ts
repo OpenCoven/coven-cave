@@ -162,6 +162,7 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
  */
 export async function listMetricSnapshots(
   familiarId: string,
+  opts: { limit?: number } = {},
 ): Promise<{ snapshots: ThreadMetricSnapshot[]; total: number }> {
   const [persisted, reports] = await Promise.all([
     readPersistedMetricSnapshots(familiarId),
@@ -179,7 +180,8 @@ export async function listMetricSnapshots(
   const snapshots = [...byId.values()].sort(
     (a, b) => new Date(a.reportedAt).getTime() - new Date(b.reportedAt).getTime(),
   );
-  return { snapshots, total: snapshots.length };
+  const limit = Math.max(0, Math.min(100, Math.floor(opts.limit ?? 100)));
+  return { snapshots: snapshots.slice(-limit), total: snapshots.length };
 }
 
 export async function listSelfReports(

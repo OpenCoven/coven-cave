@@ -65,9 +65,12 @@ struct FamiliarDashboardIssueCode: RawRepresentable, Hashable, Sendable, Decodab
     static let familiarUnavailable = Self(rawValue: "familiar_unavailable")
     static let sessionsUnavailable = Self(rawValue: "sessions_unavailable")
     static let sessionsDegraded = Self(rawValue: "sessions_degraded")
+    static let tasksUnavailable = Self(rawValue: "tasks_unavailable")
+    static let remindersUnavailable = Self(rawValue: "reminders_unavailable")
     static let memoryUnavailable = Self(rawValue: "memory_unavailable")
     static let contractUnavailable = Self(rawValue: "contract_unavailable")
     static let selfReportsUnavailable = Self(rawValue: "self_reports_unavailable")
+    static let metricSnapshotsUnavailable = Self(rawValue: "metric_snapshots_unavailable")
     static let responseBudgetExceeded = Self(rawValue: "response_budget_exceeded")
 
     /// Exactly the codes this build's server declares. Used by the copy table
@@ -75,7 +78,9 @@ struct FamiliarDashboardIssueCode: RawRepresentable, Hashable, Sendable, Decodab
     /// than discarded.
     static let known: [Self] = [
         .familiarUnavailable, .sessionsUnavailable, .sessionsDegraded,
+        .tasksUnavailable, .remindersUnavailable,
         .memoryUnavailable, .contractUnavailable, .selfReportsUnavailable,
+        .metricSnapshotsUnavailable,
         .responseBudgetExceeded,
     ]
 }
@@ -92,9 +97,12 @@ struct FamiliarDashboardSource: RawRepresentable, Hashable, Sendable, Decodable 
 
     static let familiar = Self(rawValue: "familiar")
     static let sessions = Self(rawValue: "sessions")
+    static let tasks = Self(rawValue: "tasks")
+    static let reminders = Self(rawValue: "reminders")
     static let memory = Self(rawValue: "memory")
     static let contract = Self(rawValue: "contract")
     static let selfReports = Self(rawValue: "self_reports")
+    static let metricSnapshots = Self(rawValue: "metric_snapshots")
     static let budget = Self(rawValue: "budget")
 }
 
@@ -277,6 +285,49 @@ struct FamiliarDashboardMemoryEntry: Decodable, Hashable, Sendable, Identifiable
     }
 }
 
+struct FamiliarDashboardTaskDependency: Decodable, Hashable, Sendable, Identifiable {
+    var id: String
+    var kind: String
+    var label: String
+}
+
+struct FamiliarDashboardTask: Decodable, Hashable, Sendable, Identifiable {
+    struct NextStep: Decodable, Hashable, Sendable {
+        var summary: String
+        var requiresApproval: Bool
+    }
+
+    var id: String
+    var title: String
+    var status: String
+    var priority: String
+    var projectId: String?
+    var sessionId: String?
+    var updatedAt: String
+    var unresolvedDependencies: FamiliarDashboardBoundedList<FamiliarDashboardTaskDependency>
+    var primaryBlockerId: String?
+    var nextStep: NextStep?
+}
+
+struct FamiliarDashboardReminder: Decodable, Hashable, Sendable, Identifiable {
+    var id: String
+    var title: String
+    var body: String?
+    var status: String
+    var fireAt: String?
+    var firedAt: String?
+    var updatedAt: String
+    var familiarId: String
+}
+
+struct FamiliarDashboardAttention: Decodable, Hashable, Sendable, Identifiable {
+    var id: String
+    var source: String
+    var kind: String
+    var title: String
+    var targetId: String
+}
+
 /// What this Familiar is doing right now.
 ///
 /// `idle` and `unknown` are different values on purpose. `idle` is a POSITIVE
@@ -286,10 +337,11 @@ struct FamiliarDashboardMemoryEntry: Decodable, Hashable, Sendable, Identifiable
 /// unrecognised `kind` degrades to `.unknown` and never to `.idle`.
 enum FamiliarDashboardNow: Decodable, Hashable, Sendable {
     case session(id: String, title: String, updatedAt: String)
+    case task(id: String, title: String, nextStep: String, updatedAt: String)
     case idle
     case unknown
 
-    private enum CodingKeys: String, CodingKey { case kind, id, title, updatedAt }
+    private enum CodingKeys: String, CodingKey { case kind, id, title, nextStep, updatedAt }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -301,6 +353,13 @@ enum FamiliarDashboardNow: Decodable, Hashable, Sendable {
                 title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
                 updatedAt: try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
             )
+        case "task":
+            self = .task(
+                id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+                title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+                nextStep: try container.decodeIfPresent(String.self, forKey: .nextStep) ?? "",
+                updatedAt: try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
+            )
         case "idle":
             self = .idle
         default:
@@ -310,6 +369,13 @@ enum FamiliarDashboardNow: Decodable, Hashable, Sendable {
 }
 
 struct FamiliarDashboardOverview: Decodable, Hashable, Sendable {
+    struct Live: Decodable, Hashable, Sendable {
+        var harness: String?
+        var model: String?
+        var activeSessionCount: Int
+        var memoryFreshestAt: String?
+    }
+
     struct Sessions: Decodable, Hashable, Sendable {
         var active: FamiliarDashboardBoundedList<FamiliarDashboardSession>
         var recent: FamiliarDashboardBoundedList<FamiliarDashboardSession>
@@ -323,8 +389,40 @@ struct FamiliarDashboardOverview: Decodable, Hashable, Sendable {
 
     var now: FamiliarDashboardNow
     var presence: String?
+    var live: Live
+    var tasks: FamiliarDashboardBoundedList<FamiliarDashboardTask>
     var sessions: Sessions
     var memory: Memory
+    var attention: FamiliarDashboardBoundedList<FamiliarDashboardAttention>
+    var reminders: FamiliarDashboardBoundedList<FamiliarDashboardReminder>
+
+    private enum CodingKeys: String, CodingKey {
+        case now, presence, live, tasks, sessions, memory, attention, reminders
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        now = try container.decode(FamiliarDashboardNow.self, forKey: .now)
+        presence = try container.decodeIfPresent(String.self, forKey: .presence)
+        sessions = try container.decode(Sessions.self, forKey: .sessions)
+        memory = try container.decode(Memory.self, forKey: .memory)
+        live = try container.decodeIfPresent(Live.self, forKey: .live)
+            ?? Live(
+                harness: nil,
+                model: nil,
+                activeSessionCount: sessions.active.total,
+                memoryFreshestAt: memory.freshestAt
+            )
+        tasks = try container.decodeIfPresent(
+            FamiliarDashboardBoundedList<FamiliarDashboardTask>.self, forKey: .tasks
+        ) ?? .init(items: [], total: 0)
+        attention = try container.decodeIfPresent(
+            FamiliarDashboardBoundedList<FamiliarDashboardAttention>.self, forKey: .attention
+        ) ?? .init(items: [], total: 0)
+        reminders = try container.decodeIfPresent(
+            FamiliarDashboardBoundedList<FamiliarDashboardReminder>.self, forKey: .reminders
+        ) ?? .init(items: [], total: 0)
+    }
 }
 
 struct FamiliarDashboardProfile: Decodable, Hashable, Sendable {
@@ -380,6 +478,85 @@ struct FamiliarDashboardProfile: Decodable, Hashable, Sendable {
     var contract: ContractSummary?
 }
 
+/// Copy-only projection used by the native Profile surface.
+///
+/// Keeping absent-state decisions here makes them unit-testable and prevents
+/// individual rows from quietly disagreeing about whether nil means zero,
+/// inherited, or unavailable. Section failure is handled one level above this
+/// projection; values that reach these helpers were read successfully and are
+/// therefore either configured or truthfully absent.
+enum FamiliarProfilePresentation {
+    static let notSet = "Not set"
+
+    static func value(_ raw: String?) -> String {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return notSet }
+        return value
+    }
+
+    static func model(_ profile: FamiliarDashboardProfile) -> String {
+        value(profile.runtime.model)
+    }
+
+    static func modelSource(_ profile: FamiliarDashboardProfile) -> String {
+        switch profile.runtime.modelProvenance {
+        case "familiar": return "Familiar default"
+        case "coven_default": return "Coven default"
+        case "unconfigured": return "Runtime default"
+        default: return "Source unavailable"
+        }
+    }
+
+    static func runtime(_ profile: FamiliarDashboardProfile) -> String {
+        if let harness = profile.runtime.harness?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !harness.isEmpty { return harness }
+        if let fallback = profile.runtime.defaultHarness?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !fallback.isEmpty { return "\(fallback) (Coven default)" }
+        return notSet
+    }
+
+    static func voice(_ familiar: Familiar) -> String {
+        joined([
+            familiar.voiceProvider,
+            familiar.voiceModel,
+            familiar.voiceName,
+        ])
+    }
+
+    static func image(_ familiar: Familiar) -> String {
+        joined([
+            familiar.imageProvider,
+            familiar.imageModel,
+            familiar.imageSize,
+            familiar.imageQuality,
+        ])
+    }
+
+    static func memory(
+        _ section: FamiliarDashboardClientSection<FamiliarDashboardOverview>
+    ) -> String {
+        guard let memory = section.data?.memory else { return "Unavailable" }
+        guard let raw = memory.freshestAt, let date = caveParseISO(raw) else {
+            return memory.entries.total == 0 ? "No memory yet" : "Freshness unavailable"
+        }
+        let value = date.formatted(date: .abbreviated, time: .shortened)
+        return section.isStale ? "\(value) · stale" : value
+    }
+
+    static func contract(_ summary: FamiliarDashboardProfile.ContractSummary?) -> String {
+        guard let summary else { return notSet }
+        return "\(summary.propertiesPassed) of \(summary.propertiesTotal) checks passed"
+    }
+
+    private static func joined(_ values: [String?]) -> String {
+        let present = values.compactMap { raw -> String? in
+            let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        }
+        return present.isEmpty ? notSet : present.joined(separator: " · ")
+    }
+}
+
 struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
     struct Averages: Decodable, Hashable, Sendable {
         var overallConfidence: Double?
@@ -393,6 +570,78 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
         var recent: Int
     }
 
+    struct Activity: Decodable, Hashable, Sendable {
+        struct Day: Decodable, Hashable, Sendable {
+            var date: String
+            var count: Int
+        }
+        var availability: String
+        var periodDays: Int
+        var days: [Day]
+        var activeSessions: Int?
+        var totalSessions: Int?
+        var lastActiveAt: String?
+    }
+
+    struct Confidence: Decodable, Hashable, Sendable {
+        var state: String
+        var band: String?
+        var sampleCount: Int
+        var latestReportAt: String?
+    }
+
+    struct SignalTrends: Decodable, Hashable, Sendable {
+        struct Metric: Decodable, Hashable, Sendable {
+            var key: String
+            var label: String
+            var direction: String
+            var delta: Double?
+        }
+        var availability: String
+        var periodDays: Int
+        var sampleCount: Int
+        var metrics: [Metric]
+    }
+
+    struct MemoryDigest: Decodable, Hashable, Sendable {
+        var availability: String?
+        var total: Int?
+        var freshestAt: String?
+        var state: String
+        var sampleCount: Int
+        var recall: Double?
+        var fileLocatability: Double?
+        var latestReportAt: String?
+    }
+
+    struct Capability: Decodable, Hashable, Sendable { var name: String; var count: Int }
+    struct CapabilityGap: Decodable, Hashable, Sendable { var name: String; var importance: String }
+    struct VitalCapability: Decodable, Hashable, Sendable { var name: String; var state: String }
+    struct Capabilities: Decodable, Hashable, Sendable {
+        var sampleCount: Int
+        var used: FamiliarDashboardBoundedList<Capability>
+        var lacking: FamiliarDashboardBoundedList<CapabilityGap>
+        var vital: FamiliarDashboardBoundedList<VitalCapability>
+    }
+
+    struct Attention: Decodable, Hashable, Sendable {
+        struct Blocker: Decodable, Hashable, Sendable {
+            var id: String
+            var title: String
+            var impact: String
+        }
+        struct HealRequest: Decodable, Hashable, Sendable {
+            var id: String
+            var title: String
+            var severity: String
+            var actionKind: String
+        }
+        var sampleCount: Int
+        var contractGaps: Int?
+        var persistentBlockers: FamiliarDashboardBoundedList<Blocker>
+        var healRequests: FamiliarDashboardBoundedList<HealRequest>?
+    }
+
     /// Every figure below is derived from `sampleSize` reports and no others.
     /// A client that renders an average without its sample count invites the
     /// reader to trust one report as though it were thirty.
@@ -403,6 +652,14 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
     var windowEnd: String?
     var averages: Averages
     var sessionPulse: SessionPulse
+    // Additive v1 fields remain optional so a phone can still read a cached
+    // snapshot written by the earlier v1 server shape during an upgrade.
+    var activity: Activity? = nil
+    var confidence: Confidence? = nil
+    var signalTrends: SignalTrends? = nil
+    var memory: MemoryDigest? = nil
+    var capabilities: Capabilities? = nil
+    var attention: Attention? = nil
 }
 
 // MARK: - Wire envelopes
@@ -581,12 +838,18 @@ enum FamiliarDashboardIssueCopy {
             return "Sessions couldn’t be read, so current work is unknown."
         case .sessionsDegraded:
             return "The session list came back incomplete."
+        case .tasksUnavailable:
+            return "Assigned work couldn’t be read."
+        case .remindersUnavailable:
+            return "Reminders couldn’t be read."
         case .memoryUnavailable:
             return "Memory couldn’t be read."
         case .contractUnavailable:
             return "The capability contract couldn’t be evaluated."
         case .selfReportsUnavailable:
             return "Self-reports couldn’t be read, so trends are missing."
+        case .metricSnapshotsUnavailable:
+            return "Signal history couldn’t be read, so trends are missing."
         case .responseBudgetExceeded:
             return "This section was too large to send and was left out."
         default:

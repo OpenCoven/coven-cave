@@ -12,7 +12,17 @@ import {
 import { join, resolve } from "node:path";
 
 import { caveHome } from "../../coven-paths.ts";
+import {
+  CLIENT_V1_HPKE_MECHANISM,
+  CLIENT_V1_HPKE_SUITE,
+  type ClientV1HpkeAuthority,
+} from "./authority-contract.ts";
 import { CLIENT_V1_DISCOVERY_CONTRACT } from "./contract.ts";
+import {
+  base64UrlDecode,
+  base64UrlEncode,
+  clientV1HpkeKeyId,
+} from "./hpke-bound-v1.ts";
 import {
   assertClientV1PathOwnership,
   type ClientV1PathOwnershipOptions,
@@ -20,13 +30,26 @@ import {
 
 export const CLIENT_V1_DISCOVERY_FILE = CLIENT_V1_DISCOVERY_CONTRACT.fileName;
 
-export interface ClientV1DiscoveryRecord {
+export interface ClientV1DiscoveryRecordV1 {
   version: 1;
   endpoint: string;
   pid: number;
   nonce: string;
   startedAt: string;
 }
+
+export interface ClientV1DiscoveryRecordV2 {
+  version: 2;
+  endpoint: string;
+  pid: number;
+  nonce: string;
+  startedAt: string;
+  authority: ClientV1HpkeAuthority;
+}
+
+export type ClientV1DiscoveryRecord =
+  | ClientV1DiscoveryRecordV1
+  | ClientV1DiscoveryRecordV2;
 
 export interface ClientV1DiscoveryOptions {
   isProcessAlive?: (pid: number) => boolean;
@@ -131,24 +154,64 @@ function requireTimestamp(value: unknown): string {
   return value;
 }
 
-export function validateClientV1DiscoveryRecord(
-  value: unknown,
-  options: Pick<ClientV1DiscoveryOptions, "isProcessAlive"> = {},
-): ClientV1DiscoveryRecord {
+function requireDiscoveryObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Client v1 discovery record must be an object.");
   }
-  const input = value as Record<string, unknown>;
-  if (input.version !== 1) {
-    throw new Error("Client v1 discovery version must be 1.");
+  return value as Record<string, unknown>;
+}
+
+function assertExactKeys(
+  value: unknown,
+  expected: readonly string[],
+  label: string,
+): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Client v1 discovery ${label} must be an object.`);
   }
-  if (!Number.isSafeInteger(input.pid) || (input.pid as number) < 1) {
+  const actual = Object.keys(value).sort();
+  const required = [...expected].sort();
+  if (
+    actual.length !== required.length
+    || actual.some((key, index) => key !== required[index])
+  ) {
+    throw new Error(
+      `Client v1 discovery ${label} must contain exactly ${required.join(", ")}.`,
+    );
+  }
+}
+
+function requireLivePid(
+  value: unknown,
+  isProcessAlive: ((pid: number) => boolean) | undefined,
+): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
     throw new Error("Client v1 discovery pid must be a positive safe integer.");
   }
-  const pid = input.pid as number;
-  if (!(options.isProcessAlive ?? processIsAlive)(pid)) {
+  const pid = value as number;
+  if (!(isProcessAlive ?? processIsAlive)(pid)) {
     throw new Error("Client v1 discovery pid must identify a live process.");
   }
+  return pid;
+}
+
+function requireCanonical32ByteBase64Url(
+  value: unknown,
+  label: string,
+): { bytes: Uint8Array; encoded: string } {
+  try {
+    return base64UrlDecode(value, { minimum: 32, maximum: 32 });
+  } catch {
+    throw new Error(
+      `Client v1 discovery ${label} must be canonical unpadded base64url for exactly 32 bytes.`,
+    );
+  }
+}
+
+function validateClientV1DiscoveryRecordV1(
+  input: Record<string, unknown>,
+  options: Pick<ClientV1DiscoveryOptions, "isProcessAlive">,
+): ClientV1DiscoveryRecordV1 {
   if (
     typeof input.nonce !== "string"
     || !input.nonce.trim()
@@ -159,10 +222,92 @@ export function validateClientV1DiscoveryRecord(
   return {
     version: 1,
     endpoint: requireEndpoint(input.endpoint),
-    pid,
+    pid: requireLivePid(input.pid, options.isProcessAlive),
     nonce: input.nonce,
     startedAt: requireTimestamp(input.startedAt),
   };
+}
+
+function validateClientV1DiscoveryRecordV2(
+  input: Record<string, unknown>,
+  options: Pick<ClientV1DiscoveryOptions, "isProcessAlive">,
+): ClientV1DiscoveryRecordV2 {
+  assertExactKeys(
+    input,
+    ["version", "endpoint", "pid", "nonce", "startedAt", "authority"],
+    "version-2 record",
+  );
+  const authority = input.authority;
+  assertExactKeys(
+    authority,
+    ["mechanism", "mode", "keyId", "publicKey", "suite"],
+    "version-2 authority",
+  );
+  const suite = authority.suite;
+  assertExactKeys(
+    suite,
+    ["kemId", "kdfId", "aeadId"],
+    "version-2 authority suite",
+  );
+  if (authority.mechanism !== CLIENT_V1_HPKE_MECHANISM) {
+    throw new Error("Client v1 discovery authority mechanism is invalid.");
+  }
+  if (authority.mode !== "advertise" && authority.mode !== "enforce") {
+    throw new Error("Client v1 discovery authority mode must be advertise or enforce.");
+  }
+  if (
+    suite.kemId !== CLIENT_V1_HPKE_SUITE.kemId
+    || suite.kdfId !== CLIENT_V1_HPKE_SUITE.kdfId
+    || suite.aeadId !== CLIENT_V1_HPKE_SUITE.aeadId
+  ) {
+    throw new Error("Client v1 discovery authority suite must be 32/1/2.");
+  }
+  const nonce = requireCanonical32ByteBase64Url(input.nonce, "nonce");
+  const keyId = requireCanonical32ByteBase64Url(
+    authority.keyId,
+    "authority keyId",
+  );
+  const publicKey = requireCanonical32ByteBase64Url(
+    authority.publicKey,
+    "authority publicKey",
+  );
+  if (base64UrlEncode(clientV1HpkeKeyId(publicKey.bytes)) !== keyId.encoded) {
+    throw new Error(
+      "Client v1 discovery authority keyId must derive from its public key.",
+    );
+  }
+  return {
+    version: 2,
+    endpoint: requireEndpoint(input.endpoint),
+    pid: requireLivePid(input.pid, options.isProcessAlive),
+    nonce: nonce.encoded,
+    startedAt: requireTimestamp(input.startedAt),
+    authority: {
+      mechanism: CLIENT_V1_HPKE_MECHANISM,
+      mode: authority.mode,
+      keyId: keyId.encoded,
+      publicKey: publicKey.encoded,
+      suite: {
+        kemId: CLIENT_V1_HPKE_SUITE.kemId,
+        kdfId: CLIENT_V1_HPKE_SUITE.kdfId,
+        aeadId: CLIENT_V1_HPKE_SUITE.aeadId,
+      },
+    },
+  };
+}
+
+export function validateClientV1DiscoveryRecord(
+  value: unknown,
+  options: Pick<ClientV1DiscoveryOptions, "isProcessAlive"> = {},
+): ClientV1DiscoveryRecord {
+  const input = requireDiscoveryObject(value);
+  if (input.version === 1) {
+    return validateClientV1DiscoveryRecordV1(input, options);
+  }
+  if (input.version === 2) {
+    return validateClientV1DiscoveryRecordV2(input, options);
+  }
+  throw new Error("Client v1 discovery version must be 1 or 2.");
 }
 
 async function assertRegularTargetOrMissing(

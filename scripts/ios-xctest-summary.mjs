@@ -197,15 +197,6 @@ export function countXCTestMethodsInDirectory(dir, { readDir = readdirSync, read
 export const QUARANTINED_FAILURES = new Map([
   // ── Residue after #4958. Each needs a decision, not a patch ──────────────
   [
-    "testNewerStandaloneTasksLoadWinsOverOlderSuccessfulTaskSnapshot",
-    {
-      bead: "cave-dwy2a",
-      reason:
-        "Hangs. It wedged the very first run of this suite for 36 minutes; -test-timeouts-enabled now converts it into a named 60s failure so the rest of the suite still reports.",
-      expires: "2026-09-27",
-    },
-  ],
-  [
     "testConcurrentTaskChatOpensReuseOneAuthoritativeThread",
     { bead: "cave-22b4y", reason: "resolveProjectNavigation answers .pending until .projects has succeeded in the current generation, and openChat treats pending as failure.", expires: "2026-09-27" },
   ],
@@ -234,16 +225,19 @@ export const QUARANTINED_FAILURES = new Map([
     { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
   ],
   [
-    "testPendingTaskIntentWaitsForRelocatedBootstrapBeforeHydrating",
-    { bead: "cave-vz17i", reason: "XCTAssertEqual 0 != 1 — a relocated bootstrap does not hydrate the pending task intent.", expires: "2026-09-27" },
-  ],
-  [
-    "testRefreshConnectionWaitsForFirstProjectContextLoadBeforeConnected",
-    { bead: "cave-vz17i", reason: "XCTAssertEqual 1 != 0 — the shell reports connected before the first project-context load settles.", expires: "2026-09-27" },
-  ],
-  [
     "testSessionUnlinkRelinkKeepsTheLatestOptimisticState",
-    { bead: "cave-vz17i", reason: "XCTAssertTrue failed — an unlink/relink cycle does not retain the latest optimistic state.", expires: "2026-09-27" },
+    {
+      bead: "cave-jiox8",
+      reason:
+        "linkedThread(for:) returns nil after an optimistic relink: BOTH of its " +
+        "branches require cachedSessionRow(for: card.sessionId) to be non-nil, and " +
+        "this test never populates the session-row cache. Undecided on purpose — " +
+        "either the gate is too strict and defeats optimistic linking for a " +
+        "session the server has not confirmed yet (product bug), or the fixture " +
+        "omits a row production always has (test bug). Deciding it needs the suite " +
+        "run, not source reading.",
+      expires: "2026-09-27",
+    },
   ],
 ]);
 

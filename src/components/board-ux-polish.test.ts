@@ -14,6 +14,23 @@ const styles = (await Promise.all([
   "../styles/board/gantt-fallbacks.css",
 ].map((path) => readFile(new URL(path, import.meta.url), "utf8")))).join("\n");
 
+// ───────── Shared primary-surface toolbar ─────────
+assert.match(
+  view,
+  /import \{ SurfaceToolbar \} from "@\/components\/ui\/surface-toolbar"/,
+  "Tasks should compose the shared primary-surface toolbar",
+);
+assert.match(
+  view,
+  /<SurfaceToolbar[\s\S]*title="Tasks"[\s\S]*search=\{[\s\S]*<BoardTokenSearch[\s\S]*actions=\{activeTab/,
+  "Tasks should route title, search, and actions through SurfaceToolbar",
+);
+assert.match(
+  view,
+  /id: "new-task",[\s\S]*placement: "primary"[\s\S]*id: "select-tasks",[\s\S]*placement: "visible"[\s\S]*id: "clear-or-delete-tasks",[\s\S]*placement: "overflow"/,
+  "Tasks should keep creation primary and move secondary/destructive verbs into the shared action budget",
+);
+
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");
 assert.match(view, /finally\s*\{\s*if \(!ctl\.signal\.aborted\) setHasLoaded\(true\);/, "load() must set hasLoaded in finally (skipping a superseded/aborted load)");
@@ -35,17 +52,27 @@ assert.match(view, /\{actionError && \(/, "actionError must render a banner");
 assert.match(
   styles,
   /\.board-header\s*\{[\s\S]*flex-wrap:\s*nowrap/,
-  "Desktop board header should keep title, search, and controls on one row",
-);
-assert.match(
-  styles,
-  /\.board-header-controls\s*\{[\s\S]*flex-wrap:\s*nowrap/,
-  "Desktop board controls should not wrap under the search field",
+  "Desktop shared Tasks header should keep its primary slots on one row",
 );
 assert.match(
   styles,
   /\.board-token-search\s*\{[\s\S]*min-width:\s*0/,
   "Desktop board search should be allowed to shrink before forcing toolbar wrapping",
+);
+assert.match(
+  styles,
+  /\.board-header \.ui-view-header-search\s*\{[^}]*max-width:\s*none/,
+  "Tasks should let the shared search slot fill its available desktop toolbar space",
+);
+assert.match(
+  styles,
+  /\.board-header \.ui-btn--sm\s*\{[^}]*height:\s*var\(--board-control-h/,
+  "Tasks should align shared action buttons with its desktop segment controls",
+);
+assert.match(
+  styles,
+  /\.board-header \.ui-icon-btn--sm\s*\{[^}]*width:\s*var\(--board-control-h[^}]*height:\s*var\(--board-control-h/,
+  "Tasks should align the shared overflow trigger with its desktop segment controls",
 );
 // The stacked layout is keyed to the surface's own width (@container board) so
 // it also engages inside a narrow drag-to-split pane on a wide viewport.
@@ -79,7 +106,7 @@ assert.match(kanban, /board-kanban-card--grabbed/, "Grabbed visual affordance pr
 // ───────── Mobile board chrome ─────────
 assert.match(
   styles,
-  /@container board \(max-width: 767px\) \{[\s\S]*\.board-token-field\s*\{[\s\S]*min-height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@container board \(max-width: 767px\) \{[\s\S]*\.board-token-field\s*\{[\s\S]*min-height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-header \.ui-btn,[\s\S]*\.board-header \.ui-icon-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Narrow board search and toolbar controls should meet thumb-sized touch targets",
 );
 

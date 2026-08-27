@@ -5,6 +5,10 @@ import test from "node:test";
 const packageVersion: string = JSON.parse(
   readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
 ).version;
+const contractSource = readFileSync(
+  new URL("./contract.ts", import.meta.url),
+  "utf8",
+);
 
 import {
   CLIENT_V1_API_VERSION,
@@ -39,10 +43,12 @@ import {
   type ClientV1Cursor,
   type ClientV1ErrorEnvelope,
   type ClientV1Identity,
+  type ClientV1OperationManifestEntry,
   type ClientV1Revision,
   type ClientV1StatusRecord,
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
+import { encodeClientV1Cursor } from "./cursor-token.ts";
 import { clientV1OperationRecords } from "./operations.ts";
 import {
   clientV1Error,
@@ -75,10 +81,31 @@ export type ClientV1SuccessEnvelopeExcludesErrorIsExact = Assert<
 export type ClientV1ErrorEnvelopeExcludesDataIsExact = Assert<
   Equal<ClientV1ErrorEnvelope["data"], undefined>
 >;
+export type ClientV1OperationManifestCredentialIsExact = Assert<
+  Equal<
+    ClientV1OperationManifestEntry["credential"],
+    "none" | "pairing-secret" | "bearer" | "admin"
+  >
+>;
+export type ClientV1OperationManifestBindingIsExact = Assert<
+  Equal<ClientV1OperationManifestEntry["binding"], "none" | "hpke-bound-v1">
+>;
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
+
+test("contract module keeps its edge-safe data-only runtime import boundary", () => {
+  const runtimeImports = [...contractSource.matchAll(
+    /^import (?!type\b)[\s\S]*? from "([^"]+)";$/gmu,
+  )].map((match) => match[1]);
+
+  assert.deepEqual(runtimeImports, [
+    "./authority-contract.ts",
+    "./operations.ts",
+  ]);
+  assert.doesNotMatch(contractSource, /\bBuffer\b/u);
+});
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
@@ -200,6 +227,11 @@ test("keeps the manifest's operation records in step with the wire ids", () => {
     // something its bearer will ever satisfy.
     assert.equal(record.id.includes(".admin."), record.ingress === "admin", record.id);
     assert.equal(record.scope === null, record.ingress !== "authenticated", record.id);
+    assert.ok(
+      ["none", "pairing-secret", "bearer", "admin"].includes(record.credential),
+      record.id,
+    );
+    assert.ok(["none", "hpke-bound-v1"].includes(record.binding), record.id);
   }
   // Every advertised family is claimed by at least one record. The converse of
   // the per-record check above, and the one that catches a family surviving in
@@ -455,6 +487,7 @@ test("exports additive Phase 1 health, pairing, credential, and discovery exampl
     fileName: "client-v1-discovery.json",
     mode: "0600",
     version: 1,
+    hpkeBoundVersion: 2,
   });
   // The health envelope example must be the compatibility record the route
   // serves, so the fixture and /api/client/v1/health cannot drift apart.
@@ -483,6 +516,20 @@ test("exports additive Phase 1 health, pairing, credential, and discovery exampl
     false,
   );
   assert.equal(fixture.examples.discoveryRecord.version, 1);
+  assert.deepEqual(fixture.examples.discoveryRecordV2, {
+    version: 2,
+    endpoint: "http://127.0.0.1:3020",
+    pid: 4321,
+    nonce: "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+    startedAt: "2026-08-25T15:42:58.109Z",
+    authority: {
+      mechanism: "hpke-bound-v1",
+      mode: "advertise",
+      keyId: "Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g",
+      publicKey: "sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs",
+      suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+    },
+  });
 });
 
 test("rate-limit responses carry canonical envelopes and Retry-After metadata", async () => {
@@ -843,6 +890,74 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
       fileName: "client-v1-discovery.json",
       mode: "0600",
       version: 1,
+      hpkeBoundVersion: 2,
+    },
+    authority: {
+      defaultMode: "off",
+      modes: ["off", "advertise", "enforce"],
+      mechanism: {
+        id: "hpke-bound-v1",
+        discoveryVersion: 2,
+        suite: {
+          kem: "DHKEM(X25519, HKDF-SHA256)",
+          kemId: 32,
+          kdf: "HKDF-SHA256",
+          kdfId: 1,
+          aead: "AES-256-GCM",
+          aeadId: 2,
+        },
+        requestHeaders: {
+          mechanism: "x-coven-client-v1-authority",
+          keyId: "x-coven-client-v1-authority-key-id",
+          instanceId: "x-coven-client-v1-authority-instance",
+          runtimeNonce: "x-coven-client-v1-authority-runtime-nonce",
+          requestNonce: "x-coven-client-v1-authority-request-nonce",
+          issuedAt: "x-coven-client-v1-authority-issued-at",
+          enc: "x-coven-client-v1-authority-enc",
+          ciphertext: "x-coven-client-v1-authority-ciphertext",
+        },
+        responseMediaType:
+          "application/vnd.opencoven.client-v1.hpke-bound-v1+json",
+        requestHpkeMode: "base",
+        responseHpkeMode: "auth",
+        requestEncoding: "headers-plus-rfc8785-json",
+        aadEncoding: "u32be-length-prefixed-v1",
+        canonicalRoute: "rfc3986-sorted-query-v1",
+        keyIdDerivation: "sha256-domain-separated-public-key-v1",
+        requestInfo: "OpenCoven/client-v1/hpke-bound-v1/request",
+        responseInfo: "OpenCoven/client-v1/hpke-bound-v1/response",
+        limits: {
+          rawKeyBytes: 32,
+          encodedKeyCharacters: 43,
+          requestPlaintextBytes: 1024,
+          requestCiphertextBytes: 2048,
+          requestBodyBytes: 65_536,
+          responsePlaintextBytes: 8 * 1024 * 1024,
+          responseCiphertextBytes: (8 * 1024 * 1024) + 16,
+          responseEnvelopeBytes: 11_185_056,
+          canonicalRouteBytes: 2_048,
+          instanceIdBytes: 256,
+        },
+        freshness: {
+          maximumAgeMs: 60_000,
+          maximumFutureSkewMs: 10_000,
+          replayTtlMs: 120_000,
+          replayCapacity: 4_096,
+        },
+        protectedOperations: [
+          "pairing.poll",
+          "pairing.exchange",
+          "familiars.list",
+          "projects.list",
+          "conversations.list",
+          "conversations.read",
+          "messages.list",
+        ],
+        vectorFixture: {
+          fileName: "hpke-bound-v1-vectors.json",
+          sha256FileName: "hpke-bound-v1-vectors.sha256",
+        },
+      },
     },
     pairingRequired: true,
     pairingScopes: [...CLIENT_V1_SCOPES],
@@ -868,8 +983,14 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
     updatedAt: "2026-08-15T00:00:01.000Z",
   });
   assert.deepEqual(fixture.examples.cursor, {
-    current: "conversation-list:cursor:0",
-    next: "conversation-list:cursor:1",
+    current: encodeClientV1Cursor({
+      sort: "2026-08-15T00:00:01.000Z",
+      id: "conversation-example",
+    }),
+    next: encodeClientV1Cursor({
+      sort: "2026-08-14T00:00:00.000Z",
+      id: "conversation-example-next",
+    }),
     hasMore: true,
   });
   assert.equal(fixture.examples.successEnvelope.minimumClientVersion, "0.1.0");
@@ -896,6 +1017,9 @@ test("copies protocol defaults into fixtures and envelope metadata", () => {
   assert.notStrictEqual(fixture.contract.limits, CLIENT_V1_LIMITS);
   assert.notStrictEqual(fixture.contract.publicRoutes, CLIENT_V1_PUBLIC_ROUTES);
   assert.notStrictEqual(fixture.contract.discovery, CLIENT_V1_DISCOVERY_CONTRACT);
+  const fixtureAuthority = JSON.parse(
+    JSON.stringify(fixture.contract.authority),
+  ) as typeof fixture.contract.authority;
 
   fixture.contract.capabilities.pop();
   fixture.contract.pairingScopes.pop();
@@ -905,6 +1029,7 @@ test("copies protocol defaults into fixtures and envelope metadata", () => {
   fixture.contract.operations.pop();
   fixture.contract.operations[0].families.pop();
   (fixture.contract.discovery as { mode: string }).mode = "0644";
+  (fixture.contract.authority.mechanism.protectedOperations as unknown as string[]).pop();
   (fixture.contract.limits as { maxPageSize: number }).maxPageSize = 1;
 
   assert.deepEqual(clientV1Success({ status: "ok" }).capabilities, [...CLIENT_V1_CAPABILITIES]);
@@ -919,6 +1044,7 @@ test("copies protocol defaults into fixtures and envelope metadata", () => {
     createClientV1ContractFixture().contract.discovery,
     CLIENT_V1_DISCOVERY_CONTRACT,
   );
+  assert.deepEqual(createClientV1ContractFixture().contract.authority, fixtureAuthority);
 
   const identity: ClientV1Identity & { extension: { labels: string[] } } = {
     kind: "conversation",

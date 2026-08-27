@@ -43,6 +43,24 @@ function record(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function v2Record(overrides: Record<string, unknown> = {}) {
+  return {
+    version: 2,
+    endpoint: "http://127.0.0.1:3020",
+    pid: process.pid,
+    nonce: "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+    startedAt: "2026-08-25T15:42:58.109Z",
+    authority: {
+      mechanism: "hpke-bound-v1",
+      mode: "enforce",
+      keyId: "Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g",
+      publicKey: "sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs",
+      suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+    },
+    ...overrides,
+  };
+}
+
 /**
  * Assert an owner-only POSIX mode where the platform actually enforces one.
  *
@@ -125,6 +143,113 @@ test("validates live version-1 discovery records at path-free loopback endpoints
     }),
     /live process/i,
   );
+});
+
+test("validates and freshly clones the exact version-2 public authority record", () => {
+  const input = v2Record();
+  const validated = validateClientV1DiscoveryRecord(input);
+
+  assert.deepEqual(validated, input);
+  assert.notStrictEqual(validated, input);
+  assert.equal(validated.version, 2);
+  assert.notStrictEqual(validated.authority, input.authority);
+  assert.notStrictEqual(validated.authority.suite, input.authority.suite);
+});
+
+test("rejects a version-2 authority key ID that does not derive from its public key", () => {
+  const authority = v2Record().authority;
+  assert.throws(
+    () => validateClientV1DiscoveryRecord(v2Record({
+      authority: {
+        ...authority,
+        keyId: Buffer.alloc(32).toString("base64url"),
+      },
+    })),
+    /authority keyId.*public key/i,
+  );
+});
+
+test("rejects every non-exact version-2 authority shape", () => {
+  const authority = v2Record().authority;
+  const invalidRecords: unknown[] = [
+    { ...v2Record(), authority: undefined },
+    v2Record({ extra: true }),
+    v2Record({ authority: { ...authority, mechanism: "hpke-bound-v2" } }),
+    v2Record({ authority: { ...authority, mode: "off" } }),
+    v2Record({ authority: { ...authority, mode: "audit" } }),
+    v2Record({
+      authority: {
+        ...authority,
+        suite: { ...authority.suite, kemId: 33 },
+      },
+    }),
+    v2Record({
+      authority: {
+        ...authority,
+        suite: { ...authority.suite, kdfId: 2 },
+      },
+    }),
+    v2Record({
+      authority: {
+        ...authority,
+        suite: { ...authority.suite, aeadId: 1 },
+      },
+    }),
+  ];
+  for (const field of ["privateKey", "secretKey", "senderKey", "d", "extra"]) {
+    invalidRecords.push(v2Record({
+      authority: { ...authority, [field]: "must-never-publish" },
+    }));
+    invalidRecords.push(v2Record({
+      authority: {
+        ...authority,
+        suite: { ...authority.suite, [field]: "must-never-publish" },
+      },
+    }));
+  }
+
+  for (const invalid of invalidRecords) {
+    assert.throws(
+      () => validateClientV1DiscoveryRecord(invalid),
+      /client v1 discovery/i,
+    );
+  }
+});
+
+test("rejects padded, noncanonical, and wrong-length v2 authority bytes", () => {
+  const canonical = Buffer.alloc(32).toString("base64url");
+  const encodings = [
+    `${canonical}=`,
+    `${canonical.slice(0, -1)}B`,
+    Buffer.alloc(31).toString("base64url"),
+    Buffer.alloc(33).toString("base64url"),
+  ];
+
+  for (const field of ["nonce", "keyId", "publicKey"] as const) {
+    for (const value of encodings) {
+      const input = field === "nonce"
+        ? v2Record({ nonce: value })
+        : v2Record({
+          authority: { ...v2Record().authority, [field]: value },
+        });
+      assert.throws(
+        () => validateClientV1DiscoveryRecord(input),
+        /canonical.*base64url|base64url.*32 bytes/i,
+        `${field}: ${value}`,
+      );
+    }
+  }
+});
+
+test("rejects unknown discovery versions with the fixed union error", () => {
+  for (const version of [0, 3, "2", null, undefined]) {
+    assert.throws(
+      () => validateClientV1DiscoveryRecord(record({ version })),
+      {
+        message: "Client v1 discovery version must be 1 or 2.",
+      },
+    );
+  }
 });
 
 test("publishes atomically with owner-only modes and no leftover temporary files", async (t) => {
@@ -329,6 +454,84 @@ test("server lifecycle publishes only from listener readiness and performs nonce
     shutdown![0].indexOf("cleanupStandaloneClientV1Discovery()")
       < shutdown![0].indexOf("terminatePtySessions()"),
     "cleanup runs before PTY teardown, which is why it must not be able to throw",
+  );
+});
+
+test("standalone authority boot is default-off, one-key, public-only, and fail-closed", async () => {
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+  const prepare = source.indexOf("await app.prepare()");
+  const parse = source.indexOf("parseStandaloneClientV1AuthorityMode(");
+  const generate = source.indexOf("suite.kem.generateKeyPair()");
+  const publish = source.indexOf("publishStandaloneClientV1DiscoveryRecord(");
+
+  assert.match(
+    source,
+    /const CLIENT_V1_AUTHORITY_MODE_ENV =\s*"COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE"/,
+  );
+  assert.match(
+    source,
+    /const value = raw\?\.trim\(\) \|\| "off"/,
+    "authority mode defaults to off",
+  );
+  assert.match(
+    source,
+    /`\$\{CLIENT_V1_AUTHORITY_MODE_ENV\} must be off, advertise, or enforce\.`/,
+    "invalid modes use the fixed allowed-value message",
+  );
+  assert.ok(parse !== -1 && parse < prepare, "invalid mode parsing must happen before app.prepare");
+  assert.match(source, /if \(CLIENT_V1_AUTHORITY_MODE !== "off"\) \{/);
+  assert.match(source, /import\("@hpke\/core"\)/);
+  assert.match(source, /import\("@hpke\/dhkem-x25519"\)/);
+  assert.equal(
+    source.match(/suite\.kem\.generateKeyPair\(\)/gu)?.length,
+    1,
+    "one per-boot recipient/sender keypair is generated",
+  );
+  assert.match(source, /suite\.kem\.serializePublicKey\(keyPair\.publicKey\)/);
+  assert.match(source, /randomBytes\(32\)/, "the active runtime nonce is exactly 32 bytes");
+  assert.ok(generate !== -1 && generate < publish, "the keypair exists before publication");
+  assert.doesNotMatch(
+    source,
+    /process\.env(?:\.[A-Z0-9_]+|\[[^\]]+\])\s*=\s*[^;\n]*(?:privateKey|keyPair|senderKey)/,
+    "private key material never enters the environment",
+  );
+  assert.match(
+    source,
+    /globalThis\.__covenCaveClientV1AuthorityBootstrap\s*=\s*CLIENT_V1_AUTHORITY_BOOTSTRAP/,
+    "the in-memory bootstrap is globally available to the request runtime",
+  );
+  assert.match(
+    source,
+    /catch \{\s*clientV1AuthorityInitializationError = new Error\(\s*"Client v1 HPKE authority initialization failed\.",?\s*\);[\s\S]*?CLIENT_V1_AUTHORITY_BOOTSTRAP = \{\s*mode: CLIENT_V1_AUTHORITY_MODE,\s*unavailable: true,?\s*\}/,
+    "active initialization failure retains the requested mode without downgrading to off",
+  );
+  assert.match(
+    source,
+    /if \("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP\) \{\s*throw clientV1AuthorityInitializationError/,
+    "unavailable active mode publishes no record through the existing loud failure path",
+  );
+
+  const publication = /function publishStandaloneClientV1DiscoveryRecord\([\s\S]*?\n\}/.exec(source);
+  assert.ok(publication, "server.ts must define publishStandaloneClientV1DiscoveryRecord");
+  assert.match(
+    publication![0],
+    /CLIENT_V1_AUTHORITY_MODE === "off"[\s\S]*?version: 1/,
+    "off mode publishes discovery v1",
+  );
+  assert.match(
+    publication![0],
+    /version: 2[\s\S]*?authority: \{[\s\S]*?mechanism: "hpke-bound-v1"[\s\S]*?mode: bootstrap\.mode[\s\S]*?keyId:[\s\S]*?publicKey:[\s\S]*?suite: \{ kemId: 32, kdfId: 1, aeadId: 2 \}/,
+    "active modes publish only public discovery v2 metadata",
+  );
+  assert.doesNotMatch(
+    publication![0],
+    /privateKey|secretKey|senderKey|\bd\s*:/,
+    "discovery JSON never contains private key material",
+  );
+  assert.match(
+    source,
+    /const CLIENT_V1_DISCOVERY_NONCE =[\s\S]*?runtimeNonce[\s\S]*?toString\("base64url"\)[\s\S]*?: randomUUID\(\)/,
+    "active discovery uses the runtime nonce while off mode keeps the UUID",
   );
 });
 

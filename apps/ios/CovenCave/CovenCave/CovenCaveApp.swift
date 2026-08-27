@@ -206,7 +206,14 @@ struct CovenCaveApp: App {
             guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
                 return
             }
-            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
+            if let lease = await app.configure(
+                host: reservedIntent.host,
+                token: reservedIntent.token
+            ) {
+                app.armPairingDestination(reservedIntent, lease: lease)
+            } else {
+                app.cancelPairingDestination(matching: reservedIntent.id)
+            }
             return
         }
 
@@ -218,9 +225,17 @@ struct CovenCaveApp: App {
             guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
                 return
             }
-            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
+            if let lease = await app.configure(
+                host: reservedIntent.host,
+                token: reservedIntent.token
+            ) {
+                app.armPairingDestination(reservedIntent, lease: lease)
+            } else {
+                app.cancelPairingDestination(matching: reservedIntent.id)
+            }
         case .denied:
             if app.consumePendingPairingIntent(matching: intent.id) {
+                app.cancelPairingDestination(matching: intent.id)
                 pairingApprovalFailed = true
             }
         case .unavailable:

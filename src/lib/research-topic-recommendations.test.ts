@@ -11,6 +11,7 @@ import {
 } from "./research-topic-recommendations.ts";
 import type { KnowledgeEntry } from "./server/knowledge-vault.ts";
 import type { SavedXSource } from "./server/x-sources.ts";
+import type { SessionRow } from "./types.ts";
 
 function mission(
   id: string,
@@ -66,6 +67,21 @@ function vaultEntry(id: string, title: string, body: string): KnowledgeEntry {
   };
 }
 
+function session(id: string, title: string): SessionRow {
+  return {
+    id,
+    title,
+    project_root: "/tmp/coven",
+    harness: "copilot",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-08-19T09:00:00.000Z",
+    updated_at: "2026-08-19T10:00:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  };
+}
+
 function context(
   overrides: Partial<ResearchTopicRecommendationContext> = {},
 ): ResearchTopicRecommendationContext {
@@ -75,10 +91,22 @@ function context(
     savedLinks: [],
     xSources: [],
     vaultEntries: [],
+    sessions: [],
     reducedContext: false,
     ...overrides,
   };
 }
+
+test("proposes a new topic from collective Coven session history", () => {
+  const result = recommendResearchTopics(context({
+    sessions: [session("session-1", "Evaluate durable agent memory architectures")],
+  }));
+
+  assert.equal(result.recommendations[0]?.payload.recommendationKind, "start-mission");
+  assert.equal(result.recommendations[0]?.payload.topic, "Evaluate durable agent memory architectures");
+  assert.deepEqual(result.recommendations[0]?.evidenceRefs.map((ref) => ref.id), ["session:session-1"]);
+  assert.equal(result.context.sessions, 1);
+});
 
 test("returns no fallback topics without resolved Research Desk or Vault evidence", () => {
   const result = recommendResearchTopics(context());

@@ -112,8 +112,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*pendingProjectNavigationIntent = intent[\s\S]*resolvePendingProjectNavigationIntent\([^)]*\)/,
-  "runtime links queue one project-aware navigation intent until hydration can resolve it",
+  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*beginProjectNavigation\(intent\)/,
+  "runtime links enter the centralized project-navigation authority so they queue until hydration can resolve them",
 );
 assert.match(
   appModel,
@@ -985,13 +985,8 @@ assert.match(
 );
 assert.match(
   familiars,
-  /statCard\("Chats", value: statsModel\.chats, icon: "bubble\.left"\)/,
-  "familiar detail chat counts are scoped through the active project stats model",
-);
-assert.match(
-  familiars,
-  /let assignedTasks = context\.map \{ scopedContext in[\s\S]*scopedContext\.matches\(task: \$0, registeredProjects: app\.projects\)[\s\S]*&& \$0\.familiarId == familiar\.id/,
-  "familiar detail task counts are scoped to the explicit active project context",
+  /let profile: FamiliarDashboardProfile[\s\S]{0,180}let overview: FamiliarDashboardClientSection<FamiliarDashboardOverview>/,
+  "the Familiar Profile is driven by the coherent dashboard snapshot",
 );
 assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
 assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");

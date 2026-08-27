@@ -87,6 +87,7 @@ test("candidate validation requires signed tag provenance and calls every deferr
   assert.ok(full.on.workflow_call, "full validation is reusable only");
   assert.deepEqual(Object.keys(full.jobs).sort(), [
     "e2e",
+    "e2e-agentic",
     "frontend",
     "release-candidate-validated",
     "runtime",
@@ -122,17 +123,36 @@ test("candidate validation requires signed tag provenance and calls every deferr
     "candidate E2E installs both required browser engines",
   );
   assert.ok(
-    full.jobs.e2e.steps.some((step) => step.run === "pnpm exec playwright test"),
-    "candidate E2E retains the default Chromium and WebKit coverage",
+    full.jobs.e2e.steps.some(
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
+    ),
+    "candidate E2E isolates each worker behind its own dev server",
   );
-  const agenticE2e = full.jobs.e2e.steps.find(
-    (step) =>
-      step.run ===
-      "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
-  );
-  assert.deepEqual(agenticE2e?.env, {
+  assert.equal(full.jobs.e2e.name, "Validate candidate E2E (${{ matrix.shard }}/8)");
+  assert.equal(full.jobs.e2e.strategy["fail-fast"], false);
+  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(full.jobs.e2e["timeout-minutes"], 30);
+  const agenticE2e = full.jobs["e2e-agentic"];
+  assert.equal(agenticE2e.name, "Validate candidate E2E (agentic)");
+  assert.equal(agenticE2e["timeout-minutes"], 30);
+  assert.deepEqual(agenticE2e.env, {
     NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
   });
+  assert.ok(
+    agenticE2e.steps.some(
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+    ),
+    "candidate E2E retains flag-enabled agentic coverage in an isolated job",
+  );
+  const agenticCheckout = agenticE2e.steps.find(
+    (step) =>
+      typeof step.uses === "string" && step.uses.startsWith("actions/checkout@"),
+  );
+  assert.equal(agenticCheckout?.with?.ref, "${{ inputs.ref }}");
   assert.deepEqual(full.jobs.runtime.strategy.matrix.os, [
     "ubuntu-24.04",
     "windows-latest",
@@ -151,10 +171,17 @@ test("candidate validation requires signed tag provenance and calls every deferr
   const rollup = full.jobs["release-candidate-validated"];
   assert.equal(rollup.name, "Release candidate validated");
   assert.equal(rollup.if, "always()");
-  assert.deepEqual(rollup.needs, ["frontend", "rust", "e2e", "runtime", "windows-native"]);
+  assert.deepEqual(rollup.needs, [
+    "frontend",
+    "rust",
+    "e2e",
+    "e2e-agentic",
+    "runtime",
+    "windows-native",
+  ]);
   assert.match(
     rollup.steps[0].run,
-    /test "\$FRONTEND_RESULT" = "success"[\s\S]*test "\$WINDOWS_NATIVE_RESULT" = "success"/,
+    /test "\$FRONTEND_RESULT" = "success"[\s\S]*test "\$E2E_AGENTIC_RESULT" = "success"[\s\S]*test "\$WINDOWS_NATIVE_RESULT" = "success"/,
     "the rollup must fail closed for failed, skipped, or cancelled dependencies",
   );
 });
@@ -162,8 +189,11 @@ test("candidate validation requires signed tag provenance and calls every deferr
 test("final publishing is final-tag-only and transitively promotion-authorized", async () => {
   const release = await workflow("release.yml");
   const authorization = release.jobs["authorize-release-promotion"];
+  const releaseWeb = release.jobs["release-web-validation"];
+  const releaseWebCore = release.jobs["release-web-core"];
 
   assert.deepEqual(release.on.push.tags, ["v*.*.*", "!v*.*.*-*"]);
+  assert.ok(releaseWeb, "release workflow keeps the web validation gate");
   assert.equal(authorization.name, "Authorize release promotion");
   assert.deepEqual(authorization.permissions, { actions: "read", contents: "read" });
   const authorizationCheckout = authorization.steps.find((step) =>
@@ -179,8 +209,51 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
     authorization.steps.map((step) => step.run ?? "").join("\n"),
     /node scripts\/release-promotion\.mjs release/,
   );
+  const releaseE2e = release.jobs["release-e2e"];
+  assert.equal(releaseE2e.name, "Validate release E2E (${{ matrix.shard }}/8)");
+  assert.equal(releaseE2e.strategy["fail-fast"], false);
+  assert.deepEqual(releaseE2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.ok(
+    releaseE2e.steps.some(
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
+    ),
+    "final release E2E isolates each worker behind its own dev server",
+  );
+  const releaseAgentic = release.jobs["release-e2e-agentic"];
+  assert.deepEqual(releaseAgentic.env, {
+    NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
+  });
+  assert.ok(
+    releaseAgentic.steps.some(
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+    ),
+  );
+  assert.deepEqual(release.jobs["release-web-validation"].needs, [
+    "release-web-core",
+    "release-e2e",
+    "release-e2e-agentic",
+  ]);
+  assert.equal(release.jobs["release-web-validation"].if, "always()");
+  assert.match(
+    release.jobs["release-web-validation"].steps[0].run,
+    /test "\$WEB_RESULT" = "success"[\s\S]*test "\$E2E_RESULT" = "success"[\s\S]*test "\$E2E_AGENTIC_RESULT" = "success"/,
+  );
+  assert.equal(
+    release.jobs["release-web-core"].steps.some((step) =>
+      String(step.run ?? "").includes("playwright test"),
+    ),
+    false,
+    "the web/unit/build job must not retain a second monolithic Playwright invocation",
+  );
+  assert.ok(release.jobs["release-ios-build"].needs.includes("release-web-validation"));
+  assert.ok(release.jobs.build.needs.includes("release-web-validation"));
   assert.equal(release.jobs["daemon-package"].needs, "authorize-release-promotion");
   assert.equal(release.jobs["source-version"].needs, "authorize-release-promotion");
+  assert.equal(releaseWebCore["timeout-minutes"], 90);
   assert.equal(
     release.jobs["source-version"].outputs["release-commit"],
     "${{ steps.release.outputs.commit }}",
@@ -481,6 +554,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     "build: Require OpenCoven X app configuration",
     "build: Require signed OpenCode compatibility registry",
     "build: Require signed Grok compatibility registry",
+    "build: Require signed OpenClaw compatibility registry",
   ]) {
     assert.ok(
       gates.some((gate) => gate.label === required),
@@ -529,7 +603,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     );
   }
 
-  // Exactly two gates are waivable, only by the documented registry hatch, and
+  // Exactly three gates are waivable, only by the documented registry hatch, and
   // only on a dispatch. Anything else that goes quiet when every hatch input is
   // pulled is a gate that acquired an escape route nobody wrote down.
   const hatchedDispatch = releaseRun({
@@ -555,6 +629,7 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     waived,
     [
       "build: Require signed Grok compatibility registry",
+      "build: Require signed OpenClaw compatibility registry",
       "build: Require signed OpenCode compatibility registry",
     ],
     "a release gate gained an escape hatch — document it here deliberately, with the reason",
@@ -799,6 +874,36 @@ test("checksums publishes SHA256SUMS only for a wholly successful build", async 
     ),
     false,
     "windows_diagnostics_only must not publish checksums",
+  );
+});
+
+test("iOS-only recovery does not run desktop release publication", async () => {
+  const release = await workflow("release.yml");
+  const iosOnly = releaseRun({
+    event: "workflow_dispatch",
+    inputs: { platform: "ios" },
+    needs: {
+      build: { result: "success" },
+      "rollback-readiness": { result: "success" },
+    },
+  });
+
+  for (const name of ["checksums", "updater-manifest"]) {
+    assert.equal(
+      evaluateCondition(release.jobs[name].if, iosOnly),
+      false,
+      `${name} must skip when an iOS-only dispatch intentionally produces no desktop release`,
+    );
+  }
+
+  assert.deepEqual(needs(release.jobs.homebrew), ["checksums"]);
+  assert.equal(
+    evaluateCondition(
+      release.jobs.homebrew.if,
+      releaseRun({ cancelled: false, needs: { checksums: { result: "skipped" } } }),
+    ),
+    false,
+    "Homebrew notification must remain transitively skipped with desktop checksums",
   );
 });
 

@@ -270,22 +270,18 @@ case "$1 $2" in
     ;;
 esac
 case "$*" in
-  *"graphql"*"associatedPullRequests"*)
-    OID_ARG=
-    for arg in "$@"; do
-      case "$arg" in
-        oid=*) OID_ARG=\${arg#oid=} ;;
-      esac
-    done
-    if [ "$OID_ARG" = "${initialOid}" ]; then
-      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":1,"url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"MERGED","isDraft":false,"mergedAt":"2026-07-31T12:00:00Z","headRefName":"fixture-main","headRefOid":"${initialOid}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
-    else
-      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
-    fi
-
+  *"commits/${initialOid}/pulls?per_page=100"*)
+    printf '%s\\n' '[[{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+    ;;
+  *"/commits/"*"/pulls?per_page=100"*)
+    printf '%s\\n' '[[]]'
+    ;;
+  *"/pulls?state=all&per_page=100"*)
+    printf '%s\\n' '{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
     ;;
   *"graphql"*)
-    printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+    printf '%s\\n' 'unexpected GraphQL call' >&2
+    exit 2
     ;;
   "api "*)
     printf '%s\\n' '[{"total_count":0,"workflow_runs":[]}]'
@@ -542,6 +538,20 @@ if (command === "update") {
       const intended = incoming.coven?.worktrees?.at(-1) ?? incoming.coven?.worktree;
       spawnSync(realGit, ["-C", intended.path, "checkout", "--detach", state.alternateOid], { stdio: "ignore" });
       return { status: 25, error: "fixture persistence failed after changing worktree identity" };
+    }
+    if (mode === "vanish-unit-then-succeed") {
+      // cave-6go4e's shape: the metadata write SUCCEEDS and is persisted, and
+      // the unit is gone by the time anything looks. Removing it any earlier is
+      // caught by the created-OID capture instead, which is why this sits here
+      // rather than in the git stub.
+      const intended = incoming.coven?.worktrees?.at(-1) ?? incoming.coven?.worktree;
+      spawnSync(realGit, ["-C", state.repo, "worktree", "remove", "--force", intended.path], { stdio: "ignore" });
+      spawnSync(realGit, ["-C", state.repo, "branch", "-D", intended.branch], { stdio: "ignore" });
+      rmSync(intended.path, { recursive: true, force: true });
+      // Persist exactly as the ordinary success path does -- the record really
+      // does land, which is what makes the phantom dangerous.
+      issue.metadata = { ...(issue.metadata ?? {}), ...incoming };
+      return { status: 0, output: issue };
     }
     if (mode === "fail-unverifiable") {
       state.config.showAlwaysFail = true;
@@ -2143,5 +2153,64 @@ await withFixture(
     );
   },
 );
+
+// cave-6go4e. Observed in the wild on cave-aa10e: this command exited 0 and
+// printed a full created report -- path, branch, head, and a metadata record it
+// had already written to the bead -- for a worktree that did not exist, was not
+// registered, and whose branch did not resolve. Nothing in the hook logs or
+// GitHub Desktop's log touched it, and a rerun minutes later succeeded, so the
+// cause is intermittent and is NOT diagnosed here. What is fixed is that the
+// command can no longer CLAIM it: a false report sends the caller to a
+// directory that is not there and leaves the bead claiming a unit nothing can
+// retire, which is the cave-l11sw shape whose only repair is hand-editing a
+// lifecycle record.
+await withFixture({}, async (fixture) => {
+  const target = path.join(fixture.repo, ".worktrees", "cave-unit1-example");
+  updateFixture(fixture, (state) => {
+    state.config.updateMode = "vanish-unit-then-succeed";
+  });
+  const result = runCreate(fixture, createArgs());
+
+  assert.notEqual(result.status, 0, "a phantom creation must not exit 0");
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(
+    parsed.error,
+    "creation reported success but the unit is not present",
+  );
+  assert.ok(
+    Array.isArray(parsed.missing) && parsed.missing.length > 0,
+    "the refusal names what is missing",
+  );
+  assert.equal(parsed.claimed.path, target, "and echoes what it claimed");
+  assert.match(
+    result.stderr,
+    /--unset-metadata coven/,
+    "the refusal prints the repair for the record it may have left behind",
+  );
+});
+
+// The invariant that was violated, and that nothing asserted: sixteen existing
+// checks read `status === 0` and not one of them looked at whether the worktree
+// was there.
+await withFixture({}, async (fixture) => {
+  const branch = "feat/cave-unit1-example";
+  const fullRef = `refs/heads/${branch}`;
+  const target = path.join(fixture.repo, ".worktrees", "cave-unit1-example");
+
+  const result = runCreate(fixture, createArgs());
+  assert.equal(result.status, 0, `create must succeed: ${result.stderr}`);
+
+  const entry = pathEntry(target);
+  assert.ok(entry?.exists && entry.kind === "directory", "the directory is there");
+  assert.ok(registeredAt(fixture.repo, target), "git registers the worktree");
+  const ref = refState(fixture.repo, fullRef);
+  assert.ok(ref, "the branch resolves");
+
+  // ...and the report describes THAT unit rather than some other one.
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.path, target);
+  assert.equal(report.fullRef, fullRef);
+  assert.equal(report.head, ref.oid);
+});
 
 console.log("worktree-lifecycle-create.test.mjs: ok");

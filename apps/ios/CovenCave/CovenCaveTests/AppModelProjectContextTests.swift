@@ -987,6 +987,31 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.toast?.style, .success, file: file, line: line)
     }
 
+    /// Relocating the connection posts a success notice: when discovery moves
+    /// the shell to a different port, `AppModel` announces "Connected on port
+    /// N". That is deliberate, user-facing behaviour, so a test that forces a
+    /// relocation cannot assert `toast == nil` and mean "the pending navigation
+    /// reported nothing".
+    ///
+    /// Asserting the toast is EXACTLY this notice says the same thing without
+    /// being wrong about the relocation: `showToast` replaces `app.toast`
+    /// outright, so any navigation toast would have displaced this one.
+    private func assertOnlyPortRelocationNoticeToast(
+        _ app: AppModel,
+        port: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        assertToast(
+            app,
+            text: "Connected on port \(port)",
+            systemImage: "antenna.radiowaves.left.and.right",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(app.toast?.style, .success, file: file, line: line)
+    }
+
     private func waitFor(
         _ condition: @escaping @MainActor () -> Bool,
         iterations: Int = 20,
@@ -4073,6 +4098,7 @@ final class AppModelProjectContextTests: XCTestCase {
         )
         let app = makeApp(coreResourceClientFactory: { _ in initialClient })
         _ = connect(app, host: "http://127.0.0.1:1")
+        await app.loadProjectContext(using: initialClient)
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectMembership = ProjectMembershipIndex(
@@ -4081,6 +4107,7 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectMembershipLoaded = true
         app.familiars = [familiar("nova", "Nova")]
         app.projectContext = .project(alpha)
+        let baselineInitialCalls = await initialClient.callLog.snapshot()
 
         let existing = ChatThread(
             title: "Recovered local copy",
@@ -4121,7 +4148,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertEqual(app.threads.count, 1)
         let initialCalls = await initialClient.callLog.snapshot()
-        XCTAssertEqual(initialCalls.sessions, 1)
+        XCTAssertEqual(initialCalls.sessions, baselineInitialCalls.sessions + 1)
         let refreshedCalls = await refreshedClient.callLog.snapshot()
         XCTAssertEqual(refreshedCalls.sessions, 1)
     }
@@ -4709,7 +4736,17 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(calls.grants, 1)
         XCTAssertEqual(calls.familiars, 1)
         XCTAssertEqual(calls.sessions, 1)
-        XCTAssertEqual(calls.tasks, 0)
+        // Task history IS consulted here, and one fetch is correct. The cold
+        // selection is staged local threads -> server sessions -> task history
+        // -> alphabetical, and `shouldFetchTaskHistoryForProjectContextSelection`
+        // fetches whenever the decision would otherwise land on the alphabetical
+        // or unassigned fallback. This client serves an EMPTY session list, so
+        // sessions succeed without identifying a registered project and the
+        // task-history stage runs — which is the point of that stage: it picks
+        // the project the operator actually worked in instead of the one that
+        // happens to sort first. Asserting 0 here asserted that the fallback
+        // never runs, which was never true; it had simply never executed.
+        XCTAssertEqual(calls.tasks, 1)
     }
 
     func testColdLaunchChoosesMostRecentHydratedLocalThreadProjectBeforeServerHistory() async {
@@ -5294,11 +5331,19 @@ final class AppModelProjectContextTests: XCTestCase {
         Task { await historyStarted.wait(); started.fulfill() }
         await fulfillment(of: [started], timeout: 1)
 
+        // `historyStarted` is opened by BOTH `sessions()` and `tasks()`, and the
+        // cold selection stages sessions FIRST — so the gate we just waited on
+        // was opened by the sessions call, while `tasks()` has not run and
+        // cannot yet: sessions is still parked on the shared `historyRelease`.
+        // Asserting `tasks == 1` here asserted an ordering the staging makes
+        // impossible. What this moment actually proves is that the bootstrap
+        // fan-out has begun and the intent has NOT hydrated off the back of it.
         let postBootstrapCalls = await controlledClient.callLog.snapshot()
-        XCTAssertEqual(postBootstrapCalls.tasks, 1)
+        XCTAssertEqual(postBootstrapCalls.sessions, 1)
+        XCTAssertEqual(postBootstrapCalls.tasks, 0)
         XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, target.id)
         XCTAssertNil(app.cardToOpen)
-        XCTAssertNil(app.toast)
+        assertOnlyPortRelocationNoticeToast(app, port: 4000)
 
         await historyRelease.open()
         await refreshTask.value
@@ -5308,7 +5353,12 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.projectContext, .project(alpha))
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertNil(app.pendingProjectNavigationIntent)
-        XCTAssertNil(app.toast)
+        assertOnlyPortRelocationNoticeToast(app, port: 4000)
+        // The hydration the mid-flight snapshot was too early to see: once the
+        // release gate opens, the staged task fetch does run, and it is what
+        // resolves `cardToOpen` above.
+        let hydratedCalls = await controlledClient.callLog.snapshot()
+        XCTAssertEqual(hydratedCalls.tasks, 1)
     }
 
     func testPendingTaskIntentFailsOnlyAfterSuccessfulCurrentGenerationTaskLoad() async throws {
@@ -5848,6 +5898,57 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.tasks.map(\.id), ["alpha-task"])
         XCTAssertTrue(app.tasksLoaded)
         XCTAssertNil(app.tasksError)
+    }
+
+    @MainActor
+    func testTaskLoadsRemainSingleFlightPerScopeWhenScopesInterleave() async {
+        let alpha = project("alpha", "Alpha")
+        let standaloneStarted = Gate()
+        let standaloneRelease = Gate()
+        let standaloneClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            tasks: [card("standalone-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: standaloneStarted,
+            taskRelease: standaloneRelease
+        )
+        let contextStarted = Gate()
+        let contextRelease = Gate()
+        let contextClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            sessions: [],
+            tasks: [card("context-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: contextStarted,
+            taskRelease: contextRelease
+        )
+        let app = makeApp(coreResourceClientFactory: { _ in standaloneClient })
+        _ = connect(app, host: "http://127.0.0.1:1")
+
+        let firstStandalone = Task { await app.loadTasks(using: standaloneClient) }
+        await standaloneStarted.wait()
+        let contextLoad = Task { await app.loadProjectContext(using: contextClient) }
+        await contextStarted.wait()
+
+        let thirdLoadStarted = expectation(description: "third task load started")
+        let secondStandalone = Task {
+            thirdLoadStarted.fulfill()
+            await app.loadTasks(using: standaloneClient)
+        }
+        await fulfillment(of: [thirdLoadStarted], timeout: 1)
+        await Task.yield()
+
+        await standaloneRelease.open()
+        await firstStandalone.value
+        await secondStandalone.value
+
+        let standaloneCalls = await standaloneClient.callLog.snapshot()
+        XCTAssertEqual(standaloneCalls.tasks, 1)
+
+        await contextRelease.open()
+        await contextLoad.value
     }
 
     @MainActor

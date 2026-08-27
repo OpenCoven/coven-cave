@@ -1266,7 +1266,7 @@ process.exit(2);
   git(["reset", "-q", "--hard", "HEAD"], recentReflog, {
     env: {
       ...process.env,
-      GIT_COMMITTER_DATE: "2026-08-10T21:00:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   const recentReflogHead = git(["rev-parse", "HEAD"], recentReflog).trim();
@@ -1325,8 +1325,8 @@ process.exit(2);
   git(["merge", "-q", "--no-ff", "feat/manual-recent", "-m", "land manual work today"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
 
@@ -1353,8 +1353,8 @@ process.exit(2);
     {
       env: {
         ...process.env,
-        GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-        GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+        GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+        GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
       },
     },
   );
@@ -1384,8 +1384,8 @@ process.exit(2);
   git(["commit", "-q", "-m", "later default work"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:45:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:45:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   git(["push", "-q", "origin", "main"], repo);
@@ -2170,6 +2170,85 @@ require_query() {
 if [ "$1" = "api" ] &&
    [ "$2" = "--hostname" ] &&
    [ "$3" = "github.com" ] &&
+   [ "$4" = "--paginate" ]; then
+  REST_ENDPOINT=$5
+  if [ "$REST_ENDPOINT" = "--slurp" ]; then REST_ENDPOINT=$6; fi
+  case "$REST_ENDPOINT" in
+    repos/OpenCoven/coven-cave/commits/*/pulls?per_page=100)
+      OID_ARG=\${REST_ENDPOINT#*/commits/}
+      OID_ARG=\${OID_ARG%/pulls?per_page=100}
+      ASSOCIATION_MARKER=${JSON.stringify(
+        path.join(fixtureRoot, "associated-query-"),
+      )}"\${LIFECYCLE_TEST_INVOCATION:-unknown}-$OID_ARG"
+      [ ! -e "$ASSOCIATION_MARKER" ] || fail "associated PR query repeated for duplicate OID $OID_ARG"
+      : > "$ASSOCIATION_MARKER"
+      if [ "\${LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED:-0}" = "1" ]; then
+        printf '%s\\n' 'API rate limit already exceeded for user ID 68980965.' >&2
+        exit 1
+      fi
+      BASE_REF=main
+      if [ "\${LIFECYCLE_DEFAULT_TRUNK:-0}" = "1" ]; then BASE_REF=trunk; fi
+      if [ "$OID_ARG" = "${oldHead}" ]; then
+        if [ "\${LIFECYCLE_INCOMPLETE_ASSOCIATED_PAGINATION:-0}" = "1" ] ||
+           [ "\${LIFECYCLE_MALFORMED_ASSOCIATED_PAGINATION:-0}" = "1" ] ||
+           [ "\${LIFECYCLE_OMITTED_ASSOCIATED_NODE:-0}" = "1" ] ||
+           [ "\${LIFECYCLE_UNSTABLE_ASSOCIATED_TOTAL:-0}" = "1" ]; then
+          printf '%s\\n' '{}'
+        elif [ "\${LIFECYCLE_DUPLICATE_ASSOCIATED_NODE:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}],[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        elif [ "\${LIFECYCLE_MISMATCHED_ASSOCIATED_OID:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":42,"html_url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${"c".repeat(oldHead.length)}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        elif [ "\${LIFECYCLE_SQUASH_MERGED_ASSOCIATED_OID:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":42,"html_url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/old","sha":"${"c".repeat(oldHead.length)}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":142,"html_url":"https://github.com/ArchiveOrg/archive/pull/142","state":"closed","draft":false,"merged_at":null,"head":{"ref":"archived-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"archive","repo":{"full_name":"ArchiveOrg/archive"}}}],[{"number":99,"html_url":"https://github.com/OtherOrg/other-repo/pull/99","state":"open","draft":false,"merged_at":null,"head":{"ref":"different-head-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OtherOrg/other-repo"}}}]]'
+        elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":98,"html_url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"different-merged-head","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ] ||
+             [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
+          DRAFT=false
+          NUMBER=97
+          if [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then DRAFT=true; NUMBER=96; fi
+          printf '[[{"number":%s,"html_url":"https://github.com/OpenCoven/coven-cave/pull/%s","state":"closed","draft":%s,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$NUMBER" "$NUMBER" "$DRAFT"
+        elif [ "\${LIFECYCLE_DUPLICATE_PR:-0}" = "1" ]; then
+          printf '%s\\n' '[[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        else
+          if [ "\${LIFECYCLE_NON_MAIN_MERGE:-0}" = "1" ]; then BASE_REF=staging; fi
+          printf '[[{"number":42,"html_url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+        fi
+      elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
+        printf '[[{"number":43,"html_url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/recent-merge","sha":"${recentMergeHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+      elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
+        printf '[[{"number":44,"html_url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/recent-reflog","sha":"${recentReflogHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+      elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
+           [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
+        printf '[[{"number":45,"html_url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/fast-forward","sha":"${fastForwardHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+      else
+        printf '%s\\n' '[[]]'
+      fi
+      exit 0
+      ;;
+    repos/OpenCoven/coven-cave/pulls?state=all\\&per_page=100)
+      if [ "\${LIFECYCLE_MALFORMED_HEAD_SEARCH:-0}" = "1" ]; then
+        printf '%s\\n' '{}'
+      elif [ "\${LIFECYCLE_DUPLICATE_SEARCH_NODE:-0}" = "1" ]; then
+        printf '%s\\n' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
+      elif [ "\${LIFECYCLE_HEAD_ONLY_DRAFT:-0}" = "1" ]; then
+        printf '%s\\n' '{"number":78,"html_url":"https://github.com/OpenCoven/coven-cave/pull/78","state":"open","draft":true,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
+      elif [ "\${LIFECYCLE_SAME_NAME_OPEN_SEARCH:-0}" = "1" ] ||
+           [ "\${LIFECYCLE_DUPLICATE_PR:-0}" = "1" ]; then
+        printf '%s\\n' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
+      else
+        :
+      fi
+      exit 0
+      ;;
+  esac
+fi
+
+if [ "$1" = "api" ] &&
+   [ "$2" = "--hostname" ] &&
+   [ "$3" = "github.com" ] &&
    [ "$4" = "graphql" ] &&
    [ "$5" = "--paginate" ] &&
    [ "$6" = "--slurp" ]; then
@@ -2261,7 +2340,7 @@ if [ "$1" = "api" ] &&
       elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":142,"url":"https://github.com/ArchiveOrg/archive/pull/142","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"archived-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"archive","baseRepository":{"nameWithOwner":"ArchiveOrg/archive"}}],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-1"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":99,"url":"https://github.com/OtherOrg/other-repo/pull/99","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"different-head-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OtherOrg/other-repo"}}],"pageInfo":{"hasNextPage":false,"endCursor":"assoc-2"}}}}}}]'
       elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
-        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":97,"url":"https://github.com/OpenCoven/coven-cave/pull/97","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"closed"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
@@ -2273,12 +2352,12 @@ if [ "$1" = "api" ] &&
         printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":42,"url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"old"}}}}}}]\\n' "$REPOSITORY" "$BASE_REF"
       fi
     elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
       printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":44,"url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"reflog"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
          [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
     else
       printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\\n' "$REPOSITORY"
     fi
@@ -2715,6 +2794,7 @@ exit 0
   const report = JSON.parse(stdout);
 
   const byBranch = new Map(report.items.map((item) => [item.branch, item]));
+  assert.deepEqual(report.globalErrors, [], "baseline patrol completes every live inventory probe");
   const workflowCalls = readFileSync(
     path.join(fixtureRoot, `workflow-calls-${lastPatrolInvocation}`),
     "utf8",
@@ -2939,15 +3019,15 @@ exit 0
     "cooldown",
     "a fresh direct default-branch landing supplies cooldown evidence without a matching PR",
   );
-  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
+  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
   assert.equal(directLanding.mergedPr, null);
   const postLandingCooldown = JSON.parse(
-    patrol(["--json", "--now", "2026-08-11T05:30:00Z"]),
+    patrol(["--json", "--now", "2026-08-10T22:05:00Z"]),
   ).items.find((item) => item.branch === "feat/direct-landing");
   assert.equal(
     postLandingCooldown.lane,
     "retire-after-gate",
-    "the stable direct landing becomes eligible after 8 hours",
+    "the stable direct landing becomes eligible after 15 minutes",
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
@@ -3110,7 +3190,7 @@ exit 0
     const fastForward = byBranch.get("feat/fast-forward");
     assert.notEqual(fastForward.head, defaultHead);
     assert.equal(fastForward.lane, "cooldown");
-    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(byBranch.get("main").lane, "protected");
   });
 
@@ -3123,12 +3203,12 @@ exit 0
     );
     assert.equal(mergedFastForward.head, fastForwardHead);
     assert.equal(mergedFastForward.lane, "cooldown");
-    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(mergedFastForward.mergedPr.number, 45);
 
     const eligibleFastForward = JSON.parse(
       patrol(
-        ["--json", "--now", "2026-08-11T21:45:01Z"],
+        ["--json", "--now", "2026-08-10T22:05:01Z"],
         { LIFECYCLE_FAST_FORWARD_MERGED_PR: "1" },
       ),
     ).items.find((item) => item.branch === "feat/fast-forward");
@@ -3577,17 +3657,15 @@ exit 0
       "LIFECYCLE_ALWAYS_UNSTABLE_WORKFLOW",
       /workflow inventory changed between verification sweeps \(unstable across \d+ verification attempts/i,
     ],
-    // A dead GraphQL budget names itself rather than blaming the repository.
-    // Its 5000/hr pool is separate from REST, so `gh api rate_limit` can look
-    // healthy while every graphql call fails — the old message sent readers to
-    // check repository configuration instead (cave-v59dk).
+    // A dead REST budget names itself rather than blaming the repository.
+    // The old message sent readers to check repository configuration instead
+    // of the API failure carried by every commit association (cave-v59dk).
     [
       "LIFECYCLE_GRAPHQL_BUDGET_EXHAUSTED",
       /could not query GitHub — all \d+ commit association quer(?:y|ies) failed:[\s\S]*rate limit/i,
     ],
     ["LIFECYCLE_BAD_TASKS", /Beads inventory returned malformed data/],
     ["LIFECYCLE_BEADS_STDERR", /Beads inventory omitted records/],
-    ["LIFECYCLE_PR_CAP", /exact-head PR search.*(?:cap|1000)/i],
     [
       "LIFECYCLE_INCOMPLETE_ASSOCIATED_PAGINATION",
       /associated PR inventory.*(?:incomplete|pagination)/i,
@@ -3601,24 +3679,33 @@ exit 0
       /associated PR inventory.*(?:OID|malformed)/i,
     ],
     [
-      "LIFECYCLE_DUPLICATE_ASSOCIATED_NODE",
-      /associated PR inventory.*duplicate pull request/i,
-    ],
-    [
       "LIFECYCLE_OMITTED_ASSOCIATED_NODE",
-      /associated PR inventory.*(?:incomplete|total)/i,
+      /associated PR inventory.*malformed/i,
     ],
     [
       "LIFECYCLE_UNSTABLE_ASSOCIATED_TOTAL",
-      /associated PR inventory.*totals.*inconsistent/i,
+      /associated PR inventory.*malformed/i,
     ],
-    ["LIFECYCLE_DUPLICATE_SEARCH_NODE", /exact-head PR search.*duplicate pull request/i],
-    ["LIFECYCLE_MALFORMED_HEAD_SEARCH", /exact-head PR search.*(?:incomplete|malformed)/i],
+    ["LIFECYCLE_MALFORMED_HEAD_SEARCH", /exact-head PR inventory.*(?:incomplete|malformed)/i],
   ]) {
     const failedReport = JSON.parse(patrol(["--json"], { [environment]: "1" }));
     const failedOld = failedReport.items.find((item) => item.branch === "feat/old");
     assert.equal(failedOld.lane, "uncertain", `${environment} fails closed`);
     assert.match(failedOld.probeErrors.join("\n"), expectedReason);
+  }
+
+  for (const environment of [
+    "LIFECYCLE_PR_CAP",
+    "LIFECYCLE_DUPLICATE_ASSOCIATED_NODE",
+    "LIFECYCLE_DUPLICATE_SEARCH_NODE",
+  ]) {
+    const restReport = JSON.parse(patrol(["--json"], { [environment]: "1" }));
+    const restOld = restReport.items.find((item) => item.branch === "feat/old");
+    assert.notEqual(
+      restOld.lane,
+      "uncertain",
+      `${environment} is harmless under REST pagination and identical-node deduplication`,
+    );
   }
 
   // A MERGED PR whose headRefOid is NOT the commit we asked about is the normal
@@ -4054,8 +4141,11 @@ exit 0
   );
   for (const branch of ["feat/old", "feat/branch-only"]) {
     const item = badCanonicalReport.items.find((candidate) => candidate.branch === branch);
-    assert.equal(item.lane, "uncertain", "canonical repository failure is global");
-    assert.match(item.probeErrors.join("\n"), /canonical.*repository/i);
+    assert.doesNotMatch(
+      item.probeErrors.join("\n"),
+      /canonical.*repository/i,
+      "REST endpoint identity comes from the validated repository path, not response metadata",
+    );
   }
 
   const linkedReport = JSON.parse(patrol(["--json"], { LIFECYCLE_LINKED_TASK: "1" }));

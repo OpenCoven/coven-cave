@@ -48,9 +48,10 @@ assert.match(
 );
 assert.match(
   controlRow,
-  /className="cave-composer-mode-switch"[\s\S]*?<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Voice call"[\s\S]*?aria-label="Send message"/,
-  "the control row should keep direct access modes, truthful context, Enhance, Voice, and Send in order",
+  /<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Voice call"[\s\S]*?aria-label="Send message"/,
+  "the control row should keep truthful context, Enhance, Voice, and Send in order",
 );
+assert.doesNotMatch(controlRow, /cave-composer-mode-switch/, "access mode belongs in the grouped Response options menu");
 assert.match(
   edgeActions,
   /<ComposerActionsMenu\s*\n\s*attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
@@ -81,9 +82,10 @@ assert.match(
 // New chats (inlineComposer): cluster mounts in footer band; active chats: session header
 assert.match(
   source,
-  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}[\s\S]*?<FollowUpCards/,
-  "the band conditionally mounts the context cluster (inlineComposer only); linked work and follow-ups always follow",
+  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}/,
+  "the band conditionally mounts the context cluster (inlineComposer only) and linked work",
 );
+assert.doesNotMatch(source, /<FollowUpCards|cave-chat-followups/, "the footer has no recommendation section");
 assert.match(
   source,
   /cave-chat-header-context">\{chatContextControls\}/,
@@ -192,12 +194,12 @@ assert.doesNotMatch(
   /linkedContextRow/,
   "the header never carries the linked-context strip (that always stays in the band)",
 );
-// For active chats (!inlineComposer) the header hosts chatContextControls in
+// For writable active chats the header hosts chatContextControls in
 // .cave-chat-header-context; for new chats they move to the footer band.
 assert.match(
   source,
-  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "active chats (!inlineComposer) mount context controls in .cave-chat-header-context inside the header",
+  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "writable active chats mount context controls in .cave-chat-header-context inside the header",
 );
 // Interactive controls must not be nested inside MetaLine's live region —
 // the context div is placed *after* </MetaLine>, not inside it.
@@ -235,23 +237,25 @@ assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is reti
 // ── The reading measure stays on content while the composer uses the full dock
 assert.match(
   activityCss,
-  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;[\s\S]*--cave-composer-measure:\s*calc\(var\(--space-10\) \* 21\);/,
-  "chat activity should keep the 64rem reading column and define a narrower spacing-derived composer",
+  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
+  "chat activity should keep the 64rem reading column",
 );
+assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
 assert.match(
   activityCss,
   /\.cave-chat-linear \.cave-chat-thread \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
   "chat thread should cap itself with the shared measure token",
 );
+assert.doesNotMatch(transcriptCss, /\.cave-chat-followups/, "removed recommendation styles do not reserve footer height");
 assert.match(
   transcriptCss,
-  /\.cave-chat-followups \{[\s\S]*flex:\s*0 0 100%;[\s\S]*border-top:\s*1px solid var\(--border-hairline\);/,
-  "follow-up options should span the attached footer below its context row",
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,
+  "composer shell should span the full dock width",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*var\(--cave-composer-measure\);/,
-  "composer shell should use the focused intent-entry width",
+  /\.cave-followup-card__why-popover \{[\s\S]*width:\s*min\(/,
+  "follow-up rationale should render in a bounded overlay instead of resizing the footer",
 );
 
 // ── Footer action family + circular send ────────────────────────────────────

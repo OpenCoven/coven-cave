@@ -19,10 +19,10 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
-  return async function pairingRequestGet(
+  const servePairingRequestGet = async (
     request: Request,
     { params: rawParams }: RouteContext,
-  ): Promise<Response> {
+  ): Promise<Response> => {
     // Defence in depth, and the direct lesson of cave-f1xki (#4854): this was
     // the ONLY public route that was both dynamic-segmented and free of a
     // locality check of its own, so when the proxy's ingress classification
@@ -77,6 +77,18 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
       });
     }
     return clientV1SuccessResponse(result.pairing);
+  };
+
+  return async function pairingRequestGet(
+    request: Request,
+    context: RouteContext,
+  ): Promise<Response> {
+    return runtime.authority.handle({
+      operation: "pairing.poll",
+      request,
+      invoke: (authorizedRequest) =>
+        servePairingRequestGet(authorizedRequest, context),
+    });
   };
 }
 

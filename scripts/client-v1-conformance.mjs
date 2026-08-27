@@ -16,7 +16,7 @@
  * the SDK and Chat halves live in other repositories and are not exercised
  * here. Nothing in this file should be read as covering them.
  *
- *   node scripts/client-v1-conformance.mjs [--out <path>] [--include-ttl] [--keep-fixture]
+ *   node scripts/client-v1-conformance.mjs [--out <path>] [--include-ttl] [--include-authority-takeover] [--keep-fixture]
  *
  * Exits 0 when every assertion passed, 1 otherwise, and prints one line per
  * assertion. `--out` also writes the evidence record described in
@@ -105,11 +105,20 @@ export const PAIRING_FAILURE_LIMIT = 10;
  * conformance harness must not produce.
  */
 export function parseConformanceArgs(argv) {
-  const options = { out: null, includeTtl: false, keepFixture: false };
+  const options = {
+    out: null,
+    includeTtl: false,
+    includeAuthorityTakeover: false,
+    keepFixture: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--include-ttl") {
       options.includeTtl = true;
+      continue;
+    }
+    if (flag === "--include-authority-takeover") {
+      options.includeAuthorityTakeover = true;
       continue;
     }
     if (flag === "--keep-fixture") {
@@ -285,11 +294,33 @@ export const TTL_ASSERTION_IDS = {
   skipped: ["pairing.ttl-expiry"],
 };
 
+export const AUTHORITY_TAKEOVER_ASSERTION_IDS = Object.freeze([
+  "takeover.legacy.exposes-pairing-secret",
+  "takeover.bound.exposes-ciphertext-only",
+  "takeover.bound.replacement-cannot-open",
+  "takeover.bound.plaintext-response-rejected",
+  "takeover.bound.forged-auth-response-rejected",
+]);
+
+export const AUTHORITY_TAKEOVER_SKIP_ID =
+  "takeover.authority-listener-proof";
+
 /** The id this coverage check records under; never part of the expected set. */
 export const COVERAGE_ASSERTION_ID = "harness.assertion-coverage";
 
-export function expectedAssertionIds(includeTtl) {
-  return [...EXPECTED_ASSERTION_IDS, ...(includeTtl ? TTL_ASSERTION_IDS.waited : TTL_ASSERTION_IDS.skipped)];
+export function expectedAssertionIds(
+  includeTtl,
+  includeAuthorityTakeover = false,
+) {
+  return [
+    ...EXPECTED_ASSERTION_IDS,
+    ...(includeTtl ? TTL_ASSERTION_IDS.waited : TTL_ASSERTION_IDS.skipped),
+    ...(
+      includeAuthorityTakeover
+        ? AUTHORITY_TAKEOVER_ASSERTION_IDS
+        : [AUTHORITY_TAKEOVER_SKIP_ID]
+    ),
+  ];
 }
 
 /**
@@ -670,7 +701,7 @@ export function parseRawResponse(text) {
 
 // ── process and fixture plumbing ─────────────────────────────────────────────
 
-async function freePort() {
+export async function freePort() {
   const server = createNetServer();
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -709,9 +740,15 @@ async function startFixtureDaemon(roster) {
   };
 }
 
-async function startCave({ port, caveHomeDir, covenHomeDir, adminToken }) {
+export function buildCaveEnvironment({
+  port,
+  caveHomeDir,
+  covenHomeDir,
+  adminToken,
+  authorityMode = "off",
+}, inherited = process.env) {
   const env = {
-    ...process.env,
+    ...inherited,
     NODE_ENV: "production",
     COVEN_HOME: covenHomeDir,
     COVEN_CAVE_HOME: caveHomeDir,
@@ -720,23 +757,31 @@ async function startCave({ port, caveHomeDir, covenHomeDir, adminToken }) {
     // point of clearing these is that an operator's own environment must not
     // reach the server this run judges.
     COVEN_CAVE_HEAP_MONITOR: "0",
+    COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE: authorityMode,
   };
   delete env.COVEN_CAVE_BUNDLE;
   delete env.COVEN_CAVE_ACCESS_TOKEN;
   delete env.COVEN_CAVE_PASSKEY_REQUIRED;
+  delete env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
   delete env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID;
+  delete env.COVEN_CAVE_LOCAL_PEER_SECRET;
+  delete env.COVEN_CAVE_TAILNET_PEER_SECRET;
   delete env.PORT;
   if (adminToken) env.COVEN_CAVE_AUTH_TOKEN = adminToken;
   else delete env.COVEN_CAVE_AUTH_TOKEN;
+  return env;
+}
 
+export async function startCave(input) {
+  const { port } = input;
+  const env = buildCaveEnvironment(input);
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: repositoryRoot,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const log = [];
-  child.stdout.on("data", (chunk) => log.push(chunk.toString()));
-  child.stderr.on("data", (chunk) => log.push(chunk.toString()));
+  child.stdout.resume();
+  child.stderr.resume();
 
   const origin = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 120_000;
@@ -744,19 +789,22 @@ async function startCave({ port, caveHomeDir, covenHomeDir, adminToken }) {
   child.once("exit", () => {
     exited = true;
   });
+  let failure = "Cave readiness timed out after 120 seconds.";
   while (Date.now() < deadline) {
     if (exited) {
-      throw new Error(`Cave exited before it was ready:\n${log.join("")}`);
+      failure = "Cave exited before readiness.";
+      break;
     }
     try {
       const response = await requestOnce(origin, { path: `${CLIENT_V1_PREFIX}/health` });
-      if (response.status === 200) return { child, origin, log };
+      if (response.status === 200) return { child, origin, port };
     } catch {
       // Not listening yet.
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Cave did not answer ${origin}${CLIENT_V1_PREFIX}/health within 120s:\n${log.join("")}`);
+  await stopCave({ child }, port).catch(() => {});
+  throw new Error(failure);
 }
 
 /**
@@ -767,20 +815,26 @@ async function startCave({ port, caveHomeDir, covenHomeDir, adminToken }) {
  * delivered can leave the Next worker holding the socket. So the teardown ends
  * with an actual connect attempt rather than with a resolved promise.
  */
-async function stopCave(server, port) {
+export async function stopCave(server, port) {
   if (!server?.child) return;
   const { child } = server;
-  const exit = once(child, "exit");
-  if (process.platform === "win32") {
+  const isRunning = () => child.exitCode === null && child.signalCode === null;
+  const wasRunning = isRunning();
+  const exit = wasRunning ? once(child, "exit") : Promise.resolve();
+  if (isRunning() && process.platform === "win32") {
     spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-  } else {
+  } else if (isRunning()) {
     child.kill("SIGTERM");
   }
-  const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+  const timer = wasRunning
+    ? setTimeout(() => {
+      if (isRunning()) child.kill("SIGKILL");
+    }, 10_000)
+    : null;
   try {
     await exit;
   } finally {
-    clearTimeout(timer);
+    if (timer !== null) clearTimeout(timer);
   }
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const stillUp = await requestOnce(`http://127.0.0.1:${port}`, { path: "/" }).then(() => true, () => false);
@@ -791,6 +845,13 @@ async function stopCave(server, port) {
 }
 
 // ── the fixture Cave home ────────────────────────────────────────────────────
+
+export async function seedIsolatedCaveHomes(root) {
+  const covenHomeDir = path.join(root, "coven");
+  const caveHomeDir = path.join(covenHomeDir, "cave");
+  await mkdir(caveHomeDir, { recursive: true });
+  return { covenHomeDir, caveHomeDir };
+}
 
 export const FIXTURE_ROSTER = [
   { id: "archivist", display_name: "Archivist", role: "Keeper", description: "Keeps the ledger.", pronouns: "they/them", status: "idle", last_seen: "not-an-instant", active_sessions: 2 },
@@ -2826,6 +2887,7 @@ export function renderConformanceRecord(entries, context) {
     platform: context.platform,
     nodeVersion: process.version,
     includeTtl: context.includeTtl,
+    authorityTakeover: context.authorityTakeover,
     notCovered: context.notCovered,
     findings: context.findings,
     summary,
@@ -2833,9 +2895,68 @@ export function renderConformanceRecord(entries, context) {
   };
 }
 
+export function recordAuthorityTakeoverResult(
+  recorder,
+  { included, result = null, error = null },
+) {
+  const emptyContext = {
+    authorityMode: null,
+    discoveryVersion: null,
+    mechanism: null,
+  };
+  if (!included) {
+    recorder.skip(
+      AUTHORITY_TAKEOVER_SKIP_ID,
+      "operator did not pass --include-authority-takeover",
+    );
+    return emptyContext;
+  }
+
+  const complete =
+    result
+    && Array.isArray(result.assertions)
+    && result.assertions.length
+      === AUTHORITY_TAKEOVER_ASSERTION_IDS.length
+    && AUTHORITY_TAKEOVER_ASSERTION_IDS.every(
+      (id, index) => result.assertions[index] === id,
+    )
+    && result.context?.authorityMode === "enforce"
+    && result.context?.discoveryVersion === 2
+    && result.context?.mechanism === "hpke-bound-v1";
+  if (complete) {
+    for (const id of AUTHORITY_TAKEOVER_ASSERTION_IDS) {
+      recorder.pass(id);
+    }
+    return {
+      authorityMode: result.context.authorityMode,
+      discoveryVersion: result.context.discoveryVersion,
+      mechanism: result.context.mechanism,
+    };
+  }
+
+  const failedId =
+    error
+    && typeof error === "object"
+    && AUTHORITY_TAKEOVER_ASSERTION_IDS.includes(error.assertionId)
+      ? error.assertionId
+      : AUTHORITY_TAKEOVER_ASSERTION_IDS[0];
+  for (const id of AUTHORITY_TAKEOVER_ASSERTION_IDS) {
+    if (id === failedId) {
+      recorder.fail(id, "focused authority takeover proof failed");
+    } else {
+      recorder.skip(
+        id,
+        "focused authority takeover proof did not complete",
+      );
+    }
+  }
+  return emptyContext;
+}
+
 async function main(argv) {
   const options = parseConformanceArgs(argv);
   const recorder = createRecorder();
+  let authorityTakeover;
 
   if (!existsSync(path.join(repositoryRoot, "server.mjs")) || !existsSync(path.join(repositoryRoot, ".next", "BUILD_ID"))) {
     throw new Error("no release build found; run `pnpm build` first (this run must drive the assembled artifact, not a dev server)");
@@ -2901,13 +3022,37 @@ async function main(argv) {
     else console.log(`client-v1-conformance: fixture kept at ${fixtureRoot}`);
   }
 
+  let authorityTakeoverResult = null;
+  let authorityTakeoverError = null;
+  if (options.includeAuthorityTakeover) {
+    try {
+      const { runAuthorityTakeoverProof } = await import(
+        "./client-v1-authority-takeover.mjs"
+      );
+      authorityTakeoverResult = await runAuthorityTakeoverProof();
+    } catch (error) {
+      authorityTakeoverError = error;
+    }
+  }
+  authorityTakeover = recordAuthorityTakeoverResult(recorder, {
+    included: options.includeAuthorityTakeover,
+    result: authorityTakeoverResult,
+    error: authorityTakeoverError,
+  });
+
   // Recorded last, and over whatever the legs above managed to produce — a run
   // that lost legs to a failed precondition has to say so in the record itself,
   // not only in a total the reader has to remember.
   recorder.expect(
     COVERAGE_ASSERTION_ID,
-    checkAssertionCoverage(recorder.entries, expectedAssertionIds(options.includeTtl)),
-    `every declared assertion recorded exactly once (--include-ttl ${options.includeTtl})`,
+    checkAssertionCoverage(
+      recorder.entries,
+      expectedAssertionIds(
+        options.includeTtl,
+        options.includeAuthorityTakeover,
+      ),
+    ),
+    `every declared assertion recorded exactly once (--include-ttl ${options.includeTtl}, --include-authority-takeover ${options.includeAuthorityTakeover})`,
   );
 
   for (const entry of recorder.entries) {
@@ -2926,6 +3071,7 @@ async function main(argv) {
       commit: currentCommit(),
       platform: `${process.platform}-${process.arch}`,
       includeTtl: options.includeTtl,
+      authorityTakeover,
       notCovered: NOT_COVERED,
       findings: FINDINGS,
     });

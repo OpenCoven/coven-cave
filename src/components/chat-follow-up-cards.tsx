@@ -1,5 +1,7 @@
 "use client";
 
+import { useId, useRef, useState } from "react";
+import { Popover, PopoverBody, usePopoverInitialFocus } from "@/components/ui/popover";
 import { Icon, type IconName } from "@/lib/icon";
 import type { NextPath } from "@/lib/next-paths";
 
@@ -33,6 +35,74 @@ const FOLLOW_UP_META: Record<NextPath["kind"], FollowUpMeta> = {
     outcome: "Opens Tasks",
   },
 };
+
+function FollowUpRationale({
+  label,
+  metadata,
+}: {
+  label: string;
+  metadata: NonNullable<NextPath["metadata"]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const panelId = `followup-rationale-${useId().replaceAll(":", "")}`;
+  usePopoverInitialFocus(open, `#${panelId}`);
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className="cave-followup-card__why-trigger focus-ring"
+        aria-label={`Why this suggestion: ${label}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((current) => !current)}
+      >
+        {/* Icon-only. The accessible name is unaffected: `aria-label` above
+            already reads "Why this suggestion: <label>", which is strictly
+            more informative than the word it replaces, and the visible "Why"
+            was never the accessible name anyway. */}
+        <Icon name="ph:info" width={14} height={14} aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        placement="top-end"
+        className="cave-followup-card__why-popover"
+        ariaLabel={`Why this suggestion: ${label}`}
+      >
+        <PopoverBody className="cave-followup-card__why-body">
+          <div id={panelId} className="cave-followup-card__why-panel">
+            <div className="cave-followup-card__why-header">
+              <span>Why this</span>
+              <button
+                type="button"
+                className="cave-followup-card__why-close focus-ring"
+                aria-label="Close explanation"
+                onClick={() => setOpen(false)}
+              >
+                <Icon name="ph:x" width={12} aria-hidden />
+              </button>
+            </div>
+            <p>{metadata.rationale}</p>
+            <div className="cave-followup-card__evidence" aria-label="Evidence">
+              <span>Evidence</span>
+              <div>
+                {metadata.evidenceRefs.map((evidence) => (
+                  <span className="ui-pill" key={`${evidence.kind}:${evidence.id}`}>
+                    {evidence.kind}: {evidence.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
 
 /**
  * Presentation-only next steps. The chat surface retains ownership of routing
@@ -74,20 +144,7 @@ export function FollowUpCards({ paths, onActivate, recommended = true }: FollowU
                 <span className="cave-followup-card__outcome">{meta.outcome}</span>
               </button>
               {path.metadata ? (
-                <details className="cave-followup-card__details">
-                  <summary className="focus-ring">Why this?</summary>
-                  <p>{path.metadata.rationale}</p>
-                  <div className="cave-followup-card__evidence" aria-label="Evidence">
-                    <span>Evidence</span>
-                    <div>
-                      {path.metadata.evidenceRefs.map((evidence) => (
-                        <span className="ui-pill" key={`${evidence.kind}:${evidence.id}`}>
-                          {evidence.kind}: {evidence.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </details>
+                <FollowUpRationale label={path.label} metadata={path.metadata} />
               ) : null}
             </article>
           );

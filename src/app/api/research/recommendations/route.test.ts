@@ -5,7 +5,9 @@ import test from "node:test";
 import type { SavedLink } from "@/lib/link-organizer.ts";
 import type { ResearchMission } from "@/lib/research-missions.ts";
 import type { KnowledgeEntry } from "@/lib/server/knowledge-vault.ts";
+import type { SavedXSource } from "@/lib/server/x-sources.ts";
 import type { AgenticDiagnosticEvent } from "@/lib/agentic-diagnostics.ts";
+import type { SessionRow } from "@/lib/types.ts";
 import {
   createResearchRecommendationsRoute,
   type ResearchRecommendationsRouteDeps,
@@ -34,11 +36,44 @@ function savedLink(id: string): SavedLink {
   };
 }
 
+function xSource(id: string): SavedXSource {
+  return {
+    id,
+    familiarId: "researcher",
+    postId: "1881",
+    canonicalUrl: "https://x.com/opencoven/status/1881",
+    originalUrl: "https://x.com/opencoven/status/1881",
+    note: "Retrieval benchmark discussion",
+    tags: [],
+    addedAt: "2026-08-19T10:00:00.000Z",
+    updatedAt: "2026-08-19T10:00:00.000Z",
+    attachedMissionIds: [],
+    availability: "available",
+  };
+}
+
+function session(id: string): SessionRow {
+  return {
+    id,
+    title: `Session topic ${id}`,
+    project_root: "/tmp/coven",
+    harness: "copilot",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-08-19T09:00:00.000Z",
+    updated_at: "2026-08-19T10:00:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  };
+}
+
 function baseDeps(overrides: Partial<ResearchRecommendationsRouteDeps> = {}): ResearchRecommendationsRouteDeps {
   return {
     listMissions: async () => [],
     listSavedLinks: async () => [],
     listSavedXSources: async () => [],
+    listSessions: async () => [],
+    hasXResearchCapability: async () => true,
     listVaultEntries: async () => [],
     ...overrides,
   };
@@ -56,6 +91,7 @@ test("bounds every context source and returns only an ephemeral read-only projec
     listMissions: async () => Array.from({ length: 40 }, (_, index) => mission(`mission-${index}`)),
     listSavedLinks: async () => Array.from({ length: 40 }, (_, index) => savedLink(`link-${index}`)),
     listSavedXSources: async () => [],
+    listSessions: async () => Array.from({ length: 80 }, (_, index) => session(`session-${index}`)),
     listVaultEntries: async () => Array.from({ length: 40 }, (_, index) => ({
       id: `vault-${index}`,
       title: `Retrieval note ${index}`,
@@ -75,7 +111,22 @@ test("bounds every context source and returns only an ephemeral read-only projec
   assert.ok(body.context.savedLinks <= 12);
   assert.ok(body.context.xSources <= 12);
   assert.ok(body.context.vaultEntries <= 8);
+  assert.ok(body.context.sessions <= 24);
   assert.ok(body.recommendations.length <= 12);
+});
+
+test("grounds topic recommendations in the familiar-accessible Coven session history", async () => {
+  const route = createResearchRecommendationsRoute(baseDeps({
+    listSessions: async () => [session("collective-session")],
+  }));
+
+  const body = await (await route(request())).json();
+
+  assert.equal(body.context.sessions, 1);
+  assert.equal(body.recommendations[0].payload.topic, "Session topic collective-session");
+  assert.deepEqual(body.recommendations[0].evidenceRefs.map((ref: { id: string }) => ref.id), [
+    "session:collective-session",
+  ]);
 });
 
 test("keeps the most recently updated mission inside the bounded Desk snapshot", async () => {
@@ -280,6 +331,51 @@ test("the route exposes no create or refine mission mutation", () => {
   assert.doesNotMatch(route, /createAndStart|createResearchMission|action:\s*["']refine["']/);
   assert.match(route, /export const GET/);
   assert.doesNotMatch(route, /export (async )?function POST|export const POST/);
+});
+
+test("never reads saved X sources for a familiar without the X research capability", async () => {
+  let xReads = 0;
+  const route = createResearchRecommendationsRoute(baseDeps({
+    hasXResearchCapability: async () => false,
+    listSavedXSources: async () => {
+      xReads += 1;
+      return [xSource("x-1")];
+    },
+    listSavedLinks: async () => [savedLink("link-1")],
+  }));
+
+  const response = await route(request());
+  const body = await response.json();
+
+  // Authorize before read: the X store is never touched without the grant.
+  assert.equal(xReads, 0);
+  assert.equal(response.status, 200);
+  assert.equal(body.context.xSources, 0);
+  assert.deepEqual(
+    body.recommendations.flatMap((recommendation: { evidenceRefs: Array<{ label: string }> }) =>
+      recommendation.evidenceRefs.map((ref) => ref.label).filter((label) => label.startsWith("X Article")),
+    ),
+    [],
+  );
+  // The non-X context still produces its own recommendation.
+  assert.equal(body.recommendations.length, 1);
+});
+
+test("still recommends from saved X sources once the X research capability is granted", async () => {
+  const route = createResearchRecommendationsRoute(baseDeps({
+    hasXResearchCapability: async () => true,
+    listSavedXSources: async () => [xSource("x-1")],
+  }));
+
+  const body = await (await route(request())).json();
+
+  assert.equal(body.context.xSources, 1);
+  assert.deepEqual(
+    body.recommendations.flatMap((recommendation: { evidenceRefs: Array<{ id: string }> }) =>
+      recommendation.evidenceRefs.map((ref) => ref.id),
+    ),
+    ["saved-link:x-1"],
+  );
 });
 
 console.log("research recommendations route.test.ts passed");

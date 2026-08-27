@@ -148,11 +148,23 @@ type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-function selectionForProjectRoot(projectRoot: string | null | undefined, groups: ReturnType<typeof deriveChatProjectGroups>): ProjectSelection {
+function selectionForProjectRoot(
+  projectRoot: string | null | undefined,
+  runtimeHost: string | null | undefined,
+  groups: ReturnType<typeof deriveChatProjectGroups>,
+): ProjectSelection {
   if (!projectRoot?.trim()) return "all";
   const normalized = normalizeChatProjectRoot(projectRoot);
-  const group = groups.find((entry) => entry.projectRoot && normalizeChatProjectRoot(entry.projectRoot) === normalized);
-  return group ? selectionKey(group.projectId, group.projectRoot) : "all";
+  const normalizedHost = runtimeHost === "local" ? null : runtimeHost ?? null;
+  const group = groups.find(
+    (entry) =>
+      entry.projectRoot &&
+      normalizeChatProjectRoot(entry.projectRoot) === normalized &&
+      entry.runtimeHost === normalizedHost,
+  );
+  return group
+    ? selectionKey(group.projectId, group.projectRoot, group.runtimeHost)
+    : "all";
 }
 
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
@@ -354,11 +366,19 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       prev.includes(key) ? prev.filter((entry) => entry !== key) : [...prev, key],
     );
   }, []);
-  const syncSidebarProjectRoot = useCallback((nextProjectRoot: string | null) => {
-    const nextSelection = selectionForProjectRoot(nextProjectRoot, sidebarGroups);
+  const syncSidebarProjectRoot = useCallback((
+    nextProjectRoot: string | null,
+    nextRuntimeHost: string | null,
+  ) => {
+    const nextSelection = selectionForProjectRoot(
+      nextProjectRoot,
+      nextRuntimeHost,
+      sidebarGroups,
+    );
     setSelection(nextSelection);
     const group = sidebarGroups.find(
-      (entry) => selectionKey(entry.projectId, entry.projectRoot) === nextSelection,
+      (entry) =>
+        selectionKey(entry.projectId, entry.projectRoot, entry.runtimeHost) === nextSelection,
     );
     if (nextSelection !== "all" && group) {
       const organizationKey = organizationExpansionKey(group.organization.key);
@@ -895,7 +915,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           const fq = findQuery?.trim();
           if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
-        onNewChat={(projectRoot, familiarId) => {
+        onNewChat={(projectRoot, familiarId, runtimeHost) => {
           if (onRequestNewChat) {
             onRequestNewChat();
             return;
@@ -905,7 +925,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           // visibleFamiliars[0] and silently making it the active familiar.
           const next = familiarId ? selectFamiliarForChat(familiarId) : null;
           advanceComposeInstance();
-          setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
+          setView({
+            kind: "chat",
+            sessionId: null,
+            projectRoot,
+            ...(runtimeHost ? { initialControls: { runtimeHost } } : {}),
+            familiarId: next?.id ?? familiarId ?? null,
+          });
         }}
       />
     );
@@ -1109,7 +1135,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
         }}
         onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
-        onNewChat={() => {
+        onNewChat={(projectRoot, runtimeHost) => {
           if (onRequestNewChat) {
             onRequestNewChat();
             return;
@@ -1121,7 +1147,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           setView({
             kind: "chat",
             sessionId: null,
-            projectRoot: undefined,
+            projectRoot: projectRoot ?? undefined,
+            ...(runtimeHost ? { initialControls: { runtimeHost } } : {}),
             familiarId: next?.id ?? nextFamiliarId ?? null,
           });
         }}

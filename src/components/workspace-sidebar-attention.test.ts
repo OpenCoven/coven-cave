@@ -277,6 +277,7 @@ vi.mock("@/components/ui/popover", async () => {
     PopoverBody: ({ children, ...props }) => createElement("div", props, children),
     PopoverItem: ({ children, ...props }) => createElement("div", props, children),
     PopoverLabel: ({ children }) => createElement("div", null, children),
+    PopoverSeparator: () => createElement("hr"),
   };
 });
 vi.mock("@/components/ui/tabs", async () => {

@@ -44,7 +44,7 @@ assert.match(
 // ── 3. ChatList onNewChat increments ─────────────────────────────────────────
 
 const chatListOnNewChat =
-  routerSource.match(/onNewChat=\{\(projectRoot, familiarId\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
+  routerSource.match(/onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
 
 assert.ok(chatListOnNewChat.length > 0, "ChatList onNewChat handler must be present in router");
 
@@ -57,7 +57,7 @@ assert.match(
 // ── 4. ChatProjectSidebar delegates to shell New, with a safe fallback ───────
 
 const sidebarOnNewChat =
-  routerSource.match(/onNewChat=\{\(\) => \{[\s\S]*?\n        \}\}\s*\n        onOpenProjectsTab=/)?.[0] ?? "";
+  routerSource.match(/onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]*?\n        \}\}\s*\n        onOpenProjectsTab=/)?.[0] ?? "";
 
 assert.ok(sidebarOnNewChat.length > 0, "ChatProjectSidebar onNewChat handler must be present in router");
 

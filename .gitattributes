@@ -28,5 +28,7 @@ marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/*.md tex
 marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/*.json text eol=lf
 src/lib/server/client-v1/contract-fixture.json text eol=lf
 src/lib/server/client-v1/contract-fixture.sha256 text eol=lf
+src/lib/server/client-v1/hpke-bound-v1-vectors.json text eol=lf
+src/lib/server/client-v1/hpke-bound-v1-vectors.sha256 text eol=lf
 workflows/optimize-tweet-thread.yaml text eol=lf
 workflows/optimize-tweet-thread.cave.json text eol=lf

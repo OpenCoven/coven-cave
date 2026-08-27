@@ -17,6 +17,7 @@ import { normalizeProjectRoot } from "./cave-projects-types.ts";
 
 const CHANNEL_NAME = "cave:project-images";
 const STORAGE_FULL_REASON = "Cave avatar storage full. Remove an image to free space.";
+const REMOVE_FAILED_REASON = "Couldn’t remove the project icon. Try again.";
 const ALLOWED_MIMES = new Set([
   "image/png",
   "image/jpeg",
@@ -97,20 +98,23 @@ export async function setProjectImage(root: string, image: { dataUrl: string; mi
   return { ok: true };
 }
 
-export async function clearProjectImage(root: string): Promise<void> {
+export async function clearProjectImage(root: string): Promise<SetResult> {
   await ensureHydrated();
   const key = normalizeProjectRoot(root);
-  if (!(key in cached)) return;
+  if (!(key in cached)) return { ok: true };
   try {
     await avatarStorage().delete("projectAvatars", key);
   } catch {
-    return; // keep memory and storage consistent — the image simply stays
+    // Keep memory and storage consistent — the image stays, and the caller can
+    // report that truth instead of announcing a removal that never landed.
+    return { ok: false, reason: REMOVE_FAILED_REASON };
   }
   const next = { ...cached };
   delete next[key];
   cached = Object.keys(next).length > 0 ? next : EMPTY;
   notify();
   broadcast();
+  return { ok: true };
 }
 
 /** Follow a root edit: re-key the stored image so the avatar survives. */

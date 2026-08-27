@@ -872,9 +872,14 @@ export function CommandPalette({
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
-        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
+        className="command-palette glass-overlay [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
       >
-        <div className="flex items-center border-b border-[var(--border-hairline)]">
+        <div className="command-palette__search">
+          <Icon
+            name="ph:magnifying-glass"
+            className="command-palette__search-icon"
+            aria-hidden
+          />
           <input
             ref={inputRef}
             value={query}
@@ -883,7 +888,7 @@ export function CommandPalette({
               setActiveIdx(0);
             }}
             onKeyDown={onComposerKey}
-            placeholder="Search familiars · chats · tasks · memory · settings… (try @familiar)"
+            placeholder="Search Cave…"
             role="combobox"
             aria-label="Search and jump to anything"
             aria-expanded={rows.length > 0}
@@ -892,12 +897,12 @@ export function CommandPalette({
             aria-activedescendant={
               rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
             }
-            className="focus-ring-inset min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            className="command-palette__input"
           />
           {query ? (
             <button
               type="button"
-              className="focus-ring mr-3 rounded-full p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              className="command-palette__clear focus-ring"
               aria-label="Clear search query"
               onClick={() => {
                 updateQuery("");
@@ -995,7 +1000,7 @@ export function CommandPalette({
         <div
           role="toolbar"
           aria-label="Filter search results"
-          className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-3 py-2"
+          className="command-palette__filters"
         >
           {PALETTE_CATEGORIES.filter(
             // Zero-count scopes are dead tabs — hide them. "All" always shows,
@@ -1007,11 +1012,8 @@ export function CommandPalette({
               key={option}
               type="button"
               aria-pressed={category === option}
-              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[length:var(--text-2xs)] font-medium transition-colors ${
-                category === option
-                  ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,var(--border-strong))] bg-[var(--accent-presence-soft)] text-[var(--text-primary)]"
-                  : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              }`}
+              data-active={category === option}
+              className="command-palette__filter focus-ring"
               onClick={() => {
                 setCategory(option);
                 setActiveIdx(0);
@@ -1019,7 +1021,7 @@ export function CommandPalette({
               }}
             >
               {PALETTE_CATEGORY_LABEL[option]}
-              <span className="ml-1 font-mono opacity-70">{counts[option]}</span>
+              <span className="command-palette__filter-count">{counts[option]}</span>
             </button>
           ))}
         </div>
@@ -1037,7 +1039,7 @@ export function CommandPalette({
         <ul
           id="command-palette-listbox"
           role="listbox"
-          className="max-h-[60vh] overflow-y-auto py-1"
+          className="command-palette__results"
         >
           {rows.length === 0 ? (
             <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
@@ -1075,7 +1077,7 @@ export function CommandPalette({
                 {showHeader ? (
                   <li
                     role="presentation"
-                    className="px-4 pb-1 pt-3 text-[length:var(--text-2xs)] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
+                    className="command-palette__group"
                   >
                     {group}
                   </li>
@@ -1090,11 +1092,8 @@ export function CommandPalette({
                   tabIndex={-1}
                   onMouseEnter={() => setActiveIdx(i)}
                   onClick={() => fire(row)}
-                  className={`command-palette-row focus-ring-inset flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left text-sm transition-colors ${
-                    active
-                      ? "border-l-[var(--accent-presence)] bg-[var(--bg-hover)]"
-                      : "border-l-transparent hover:bg-[var(--bg-hover)]"
-                  }`}
+                  data-active={active}
+                  className="command-palette-row focus-ring-inset"
                 >
                   {row.kind === "familiar" ? (
                     <>
@@ -1244,7 +1243,7 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+        <div className="command-palette__footer">
           {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
               devices where there is no ⌘/esc to press (cave-4gg0). */}
           <span className="touch-hidden flex items-center gap-1">
@@ -1252,9 +1251,8 @@ export function CommandPalette({
             <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
             <kbd className="palette-kbd">esc</kbd> close
           </span>
-          <span className="hidden sm:inline">@familiar scopes results</span>
           <span className="flex items-center gap-1">
-            {counts[category]} local
+            {counts[category]} results
             <span className="touch-hidden flex items-center gap-1">
               {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
             </span>

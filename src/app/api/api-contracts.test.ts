@@ -166,6 +166,9 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/dashboard", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/execution-analytics", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/reminders/[reminderId]/action", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/familiars/[id]/reminders/[reminderId]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/familiars/[id]/reminders", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -287,7 +290,7 @@ const contracts: RouteContract[] = [
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
@@ -843,6 +846,19 @@ for (const { file, route } of clientV1Routes) {
     )?.file;
     assert.ok(file, `client-v1 operation ${operation.id} resolved no route file`);
     const routeSource = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+    if (operation.binding === "hpke-bound-v1") {
+      assert.match(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} declares hpke-bound-v1 but its route never calls authority.handle`,
+      );
+    } else {
+      assert.doesNotMatch(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} is not part of hpke-bound-v1`,
+      );
+    }
     if (operation.ingress === "admin") {
       assert.match(
         routeSource,

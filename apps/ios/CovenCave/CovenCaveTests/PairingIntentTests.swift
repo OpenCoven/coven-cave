@@ -18,8 +18,176 @@ final class PairingIntentTests: XCTestCase {
         XCTAssertEqual(app.connection, existing)
     }
 
-    func testNonConnectDeepLinkStillRoutesWithoutCreatingPairingIntent() throws {
+    func testConnectDeepLinkPreservesRequestedChatUntilPairingCompletes() throws {
         let app = AppModel()
+        let url = try XCTUnwrap(
+            URL(string: "covencave://connect?host=new-desktop.example.ts.net&token=new-secret#chat-thread-123")
+        )
+
+        app.handleDeepLink(url)
+
+        XCTAssertEqual(app.pendingPairingIntent?.threadId, "thread-123")
+    }
+
+    func testCompletedPairingQueuesRequestedChatNavigation() {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "new-desktop.example.ts.net",
+            token: "new-secret",
+            threadId: "thread-123"
+        )
+        app.connection = CaveConnection(host: intent.host)
+        app.connectionState = .connected
+        app.stagePairingDestination(intent)
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+
+        app.resumePairingDestination(intent)
+
+        XCTAssertEqual(
+            app.pendingProjectNavigationIntent,
+            ProjectNavigationIntent(entity: .thread(id: "thread-123"), destination: .chats)
+        )
+    }
+
+    func testSupersededPairingDoesNotNavigateOnTheReplacementConnection() {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "old-desktop.example.ts.net",
+            token: "old-secret",
+            threadId: "thread-123"
+        )
+        app.stagePairingDestination(intent)
+        app.connection = CaveConnection(host: "replacement.example.ts.net")
+        app.connectionState = .connected
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+
+        app.resumePairingDestination(intent)
+
+        XCTAssertNil(app.pendingProjectNavigationIntent)
+    }
+
+    func testDiscoveryRelocationStillNavigatesOnThePairedHost() {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "desktop.example.ts.net",
+            token: "secret",
+            threadId: "thread-123"
+        )
+        app.stagePairingDestination(intent)
+        app.connection = CaveConnection(host: "https://desktop.example.ts.net:8443")
+        app.connectionState = .connected
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+
+        XCTAssertEqual(app.pendingProjectNavigationIntent?.threadId, "thread-123")
+    }
+
+    func testPairingDestinationWaitsForTheConnectionToBecomeReady() {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "new-desktop.example.ts.net",
+            token: "new-secret",
+            threadId: "thread-123"
+        )
+        app.connection = CaveConnection(host: intent.host)
+        app.connectionState = .checking
+        app.stagePairingDestination(intent)
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+
+        app.resumePairingDestination(intent)
+
+        XCTAssertNil(app.pendingProjectNavigationIntent)
+
+        app.connectionState = .connected
+
+        XCTAssertEqual(app.pendingProjectNavigationIntent?.threadId, "thread-123")
+    }
+
+    func testPairingDestinationSurvivesDelayedConnectionAfterPortRelocation() {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "desktop.example.ts.net",
+            token: "secret",
+            threadId: "thread-123"
+        )
+        let original = CaveConnection(host: "https://desktop.example.ts.net:3000")
+        let relocated = CaveConnection(host: "https://desktop.example.ts.net:8443")
+        app.connection = original
+        app.connectionState = .checking
+        app.stagePairingDestination(intent)
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+
+        app.rebasePairingDestinationLease(from: original, to: relocated)
+        app.connection = relocated
+        app.connectionState = .connected
+
+        XCTAssertEqual(app.pendingProjectNavigationIntent?.threadId, "thread-123")
+    }
+
+    func testNewerPairingSuppressesStaleDestinationOnTheSameHost() throws {
+        let app = AppModel()
+        let oldIntent = PairingIntent(
+            host: "desktop.example.ts.net",
+            token: "old-secret",
+            threadId: "old-thread"
+        )
+        app.connection = CaveConnection(host: oldIntent.host)
+        app.connectionState = .connected
+        app.stagePairingDestination(oldIntent)
+        let oldLease = app.captureConnectionDispatchLease()
+        let replacementURL = try XCTUnwrap(
+            URL(string: "covencave://connect?host=desktop.example.ts.net&token=new-secret#chat-new-thread")
+        )
+        app.handleDeepLink(replacementURL)
+
+        app.armPairingDestination(oldIntent, lease: oldLease)
+        app.resumePairingDestination(oldIntent)
+
+        XCTAssertNil(app.pendingProjectNavigationIntent)
+        XCTAssertEqual(app.pendingPairingIntent?.threadId, "new-thread")
+    }
+
+    func testNewerOrdinaryNavigationCancelsTheStagedPairingDestination() throws {
+        let app = AppModel()
+        let intent = PairingIntent(
+            host: "desktop.example.ts.net",
+            token: "secret",
+            threadId: "thread-123"
+        )
+        app.connection = CaveConnection(host: intent.host)
+        app.connectionState = .checking
+        app.stagePairingDestination(intent)
+        app.armPairingDestination(intent, lease: app.captureConnectionDispatchLease())
+        let tasksURL = try XCTUnwrap(URL(string: "covencave://tasks"))
+
+        app.handleDeepLink(tasksURL)
+        app.connectionState = .connected
+
+        XCTAssertEqual(
+            app.pendingProjectNavigationIntent,
+            ProjectNavigationIntent(destination: .tasks)
+        )
+        XCTAssertNotEqual(app.pendingProjectNavigationIntent?.threadId, intent.threadId)
+    }
+
+    func testPairingWithoutDestinationPreservesPendingProjectNavigation() {
+        let app = AppModel()
+        let pendingNavigation = ProjectNavigationIntent(destination: .tasks)
+        app.pendingProjectNavigationIntent = pendingNavigation
+        let pairing = PairingIntent(
+            host: "desktop.example.ts.net",
+            token: "secret"
+        )
+
+        app.stagePairingDestination(pairing)
+
+        XCTAssertEqual(app.pendingProjectNavigationIntent, pendingNavigation)
+    }
+
+    func testNonConnectDeepLinkStillRoutesWithoutCreatingPairingIntent() throws {
+        let suiteName = "PairingIntentTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let app = AppModel(defaults: defaults, restoreLocalState: false)
         app.selectedTab = .settings
         let url = try XCTUnwrap(URL(string: "covencave://tasks"))
 

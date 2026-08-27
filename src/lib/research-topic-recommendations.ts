@@ -13,12 +13,14 @@ import { allowedResearchActions, type ResearchMission } from "./research-mission
 import { containsSecretText } from "./secret-redaction.ts";
 import type { KnowledgeEntry } from "./server/knowledge-vault.ts";
 import type { SavedXSource } from "./server/x-sources.ts";
+import type { SessionRow } from "./types.ts";
 
 export const MAX_RESEARCH_TOPIC_RECOMMENDATIONS = 12;
 export const MAX_RESEARCH_TOPIC_MISSIONS = 12;
 export const MAX_RESEARCH_TOPIC_SAVED_LINKS = 12;
 export const MAX_RESEARCH_TOPIC_X_SOURCES = 12;
 export const MAX_RESEARCH_TOPIC_VAULT_ENTRIES = 8;
+export const MAX_RESEARCH_TOPIC_SESSIONS = 24;
 
 export type ResearchRecommendationKind =
   | "start-mission"
@@ -42,6 +44,7 @@ export type ResearchTopicRecommendationContext = {
   savedLinks: readonly SavedLink[];
   xSources: readonly SavedXSource[];
   vaultEntries: readonly KnowledgeEntry[];
+  sessions: readonly SessionRow[];
   /**
    * True only when the route could not retrieve the optional Vault snapshot.
    * Desk evidence remains usable and every returned card labels this limitation.
@@ -58,6 +61,7 @@ export type ResearchTopicRecommendationResult = {
     savedLinks: number;
     xSources: number;
     vaultEntries: number;
+    sessions: number;
   };
 };
 
@@ -69,6 +73,7 @@ export type ResearchTopicContextRevision = {
     savedLinks: number;
     xSources: number;
     vaultEntries: number;
+    sessions: number;
   };
 };
 
@@ -104,12 +109,19 @@ type SafeVaultEntry = {
   modified: string;
 };
 
+type SafeSession = {
+  id: string;
+  title: string;
+  updatedAt: string;
+};
+
 type SafeContext = {
   familiarId: string;
   missions: SafeMission[];
   savedLinks: SafeSavedLink[];
   xSources: SafeXSource[];
   vaultEntries: SafeVaultEntry[];
+  sessions: SafeSession[];
   reducedContext: boolean;
 };
 
@@ -299,6 +311,7 @@ function safeVaultEntries(entries: readonly KnowledgeEntry[]): SafeVaultEntry[] 
       ) {
         return null;
       }
+
       return {
         id,
         collection,
@@ -312,17 +325,32 @@ function safeVaultEntries(entries: readonly KnowledgeEntry[]): SafeVaultEntry[] 
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function safeSessions(sessions: readonly SessionRow[]): SafeSession[] {
+  return sessions
+    .map((session) => {
+      const id = safeRecordId(session.id);
+      const title = safeText(session.title);
+      if (!id || !title) return null;
+      return { id, title, updatedAt: safeText(session.updated_at, 64) ?? "" };
+    })
+    .filter((session): session is SafeSession => session !== null)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
+    .slice(0, MAX_RESEARCH_TOPIC_SESSIONS);
+}
+
 function toSafeContext(context: ResearchTopicRecommendationContext): SafeContext {
   const missions = safeMissions(context.missions);
   const savedLinks = safeSavedLinks(context.savedLinks);
   const xSources = safeXSources(context.xSources);
-  const topicTokens = researchTopicTokens({ missions, savedLinks, xSources });
+  const sessions = safeSessions(context.sessions);
+  const topicTokens = researchTopicTokens({ missions, savedLinks, xSources, sessions });
   return {
     familiarId: safeRecordId(context.familiarId) ?? "research",
     missions,
     savedLinks,
     xSources,
     vaultEntries: relevantVaultEntries(safeVaultEntries(context.vaultEntries), topicTokens),
+    sessions,
     reducedContext: context.reducedContext === true,
   };
 }
@@ -412,11 +440,14 @@ function vaultRelevance(entry: SafeVaultEntry, topicTokens: readonly string[]): 
   return topicTokens.reduce((score, token) => score + (searchable.has(token) ? 1 : 0), 0);
 }
 
-function researchTopicTokens(context: Pick<SafeContext, "missions" | "savedLinks" | "xSources">): string[] {
+function researchTopicTokens(
+  context: Pick<SafeContext, "missions" | "savedLinks" | "xSources" | "sessions">,
+): string[] {
   return tokenize([
     ...context.missions.map((mission) => `${mission.title} ${mission.intent}`),
     ...context.savedLinks.map((link) => link.title),
     ...context.xSources.map((source) => source.note),
+    ...context.sessions.map((session) => session.title),
   ].join(" "));
 }
 
@@ -481,6 +512,11 @@ function fingerprintContext(context: SafeContext): Record<string, unknown> {
       entry.modified,
       stableHash(`${entry.title}\0${entry.tags.join("\0")}\0${entry.body}`),
     ]),
+    sessions: context.sessions.map((session) => [
+      session.id,
+      session.updatedAt,
+      stableHash(session.title),
+    ]),
     reducedContext: context.reducedContext,
   };
 }
@@ -494,6 +530,7 @@ function contextRevision(context: SafeContext): ResearchTopicContextRevision {
       savedLinks: context.savedLinks.length,
       xSources: context.xSources.length,
       vaultEntries: context.vaultEntries.length,
+      sessions: context.sessions.length,
     },
   };
 }
@@ -674,6 +711,36 @@ export function recommendResearchTopics(
       evidenceRefs: [
         ...(existing ? [evidence(existing.id, "mission", existing.title)] : []),
         evidence(entry.id, "vault", entry.title),
+      ],
+    }));
+  }
+
+  for (const session of context.sessions) {
+    const action = topicMissionAction(context.missions, session.title);
+    const existing = action.target;
+    candidates.push(candidate(fingerprint, context.reducedContext, {
+      key: `session:${session.id}`,
+      priority: existing ? 3 : 6,
+      recommendationKind: action.kind,
+      topic: existing?.title ?? session.title,
+      ...(existing ? { targetMissionId: existing.id } : { sourceId: session.id }),
+      rationale: action.kind === "refine-mission"
+        ? `This Coven session matches active mission "${existing!.title}", so it can refine that work without starting a duplicate.`
+        : action.kind === "review-mission"
+          ? `This Coven session matches "${existing!.title}", which should be reviewed before starting duplicate research.`
+          : "This recent Coven session identifies a concrete topic that has not yet become durable research.",
+      inferredGoal: existing
+        ? `Build on the collective session history for ${existing.title}.`
+        : `Turn the session "${session.title}" into durable, evidence-backed knowledge.`,
+      rankReasons: [
+        existing
+          ? "Connects collective Coven session history to existing Research Desk work."
+          : "Grounded in collective Coven session history that is not yet represented by a mission.",
+        "Ranks after active evidence gaps and saved durable sources.",
+      ],
+      evidenceRefs: [
+        ...(existing ? [evidence(existing.id, "mission", existing.title)] : []),
+        evidence(session.id, "session", session.title),
       ],
     }));
   }

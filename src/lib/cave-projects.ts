@@ -10,6 +10,7 @@ export {
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
+import { readCachedStore } from "./server/store-read-cache.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
@@ -125,7 +126,10 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
 }
 
 export async function loadProjects(): Promise<CaveProject[]> {
-  return withProjectsStore(loadProjectsUnlocked);
+  // Keyed on the resolved path so a CAVE_PROJECTS_PATH_OVERRIDE — which
+  // `withProjectsStore` also honours by skipping the lock entirely — can never
+  // be served the canonical store's entry, or the reverse.
+  return readCachedStore(projectsFilePath(), () => withProjectsStore(loadProjectsUnlocked));
 }
 
 /** Registry mutex for callers that already reconcile every involved store. */

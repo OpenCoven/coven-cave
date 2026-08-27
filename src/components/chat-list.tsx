@@ -15,6 +15,7 @@ import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
@@ -32,16 +33,19 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   createChatProjectIndex,
-  deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
-import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import {
+  deriveChatListProjectGroups,
+  withoutArchivedChatSessions,
+} from "@/lib/chat-list-grouping";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
+  selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import {
@@ -120,7 +124,11 @@ type Props = {
   onToggleExpanded: (key: string) => void;
   daemonRunning?: boolean;
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
-  onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
+  onNewChat: (
+    projectRoot?: string,
+    familiarId?: string | null,
+    runtimeHost?: string | null,
+  ) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Open a URL in the in-app browser (the PR-status badge's click-through).
@@ -301,47 +309,42 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   // The siderail never shows archived chats: even while the list's "Show
   // archived" toggle is on, rail groups build from an archive-free view.
-  const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
+  const railSessions = useMemo(() => withoutArchivedChatSessions(mine), [mine]);
 
   // Search first, then status. The chip counts describe the SEARCHED set, so
   // pressing one chip never renumbers the others — the number under "Failed"
   // means "failed among what you searched for", not "failed among what is
   // already filtered to failed".
-  const searched = useMemo(() => filterChatListRows(mine, search, false), [mine, search]);
+  const searched = useMemo(
+    () => search.trim() ? filterChatListRows(mine, search, false) : mine,
+    [mine, search],
+  );
   const statusCounts = useMemo(() => countChatSessionStatuses(searched), [searched]);
   const kindCounts = useMemo(() => countChatSessionKinds(searched), [searched]);
-  const filtered = useMemo(
-    () => filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter),
-    [searched, statusFilter, kindFilter],
-  );
+  const filtered = useMemo(() => {
+    if (statusFilter === "all" && kindFilter === "all") return searched;
+    return filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter);
+  }, [searched, statusFilter, kindFilter]);
 
   const hasAny = mine.length > 0;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const projectIndex = useMemo(() => createChatProjectIndex(projects), [projects]);
-  const grouped = useMemo(() => {
-    return deriveChatProjectGroups(
-      applyProjectOverrides(filtered, projectOverrides),
-      projects,
-      projectIndex,
-      { sessionsNewestFirst: true },
-    );
-  }, [filtered, projects, projectOverrides, projectIndex]);
-
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The view-local selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a project selection must not scope the list there —
   // no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(
-    () => deriveChatProjectGroups(
-      applyProjectOverrides(railSessions, projectOverrides),
+  const { grouped, sidebarGroups } = useMemo(
+    () => deriveChatListProjectGroups(
+      filtered,
+      railSessions,
       projects,
       projectIndex,
-      { sessionsNewestFirst: true },
+      projectOverrides,
     ),
-    [railSessions, projects, projectOverrides, projectIndex],
+    [filtered, railSessions, projects, projectIndex, projectOverrides],
   );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
@@ -477,6 +480,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
       return [{
         projectId: null,
         projectRoot: null,
+        runtimeHost: null,
         projectName: null,
         sessions: rows,
         defaultFamiliarId: latest?.familiarId ?? scopedFamiliarId,
@@ -874,15 +878,16 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
             {mine.length} {mine.length === 1 ? "session" : "sessions"}
           </span>
           <span className="flex-1" />
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:plus-bold"
             onClick={() => onNewChat(undefined, scopedFamiliarId)}
             disabled={!canStartChat}
-            className="chat-list-new-button focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95 disabled:opacity-[var(--opacity-disabled)]"
+            className="chat-list-new-button shrink-0"
           >
-            <Icon name="ph:plus-bold" width={11} aria-hidden />
             New session
-          </button>
+          </Button>
         </div>
         )}
 
@@ -891,6 +896,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
             menu so adding a filter cannot wrap the primary reading path. */}
         <div className="chat-sessions-toolbar mt-3 flex flex-wrap items-center gap-2 px-4 pb-3">
           <label
+            role="search"
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
               compact
@@ -912,6 +918,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                 }
               }}
               placeholder="Search sessions…"
+              aria-label="Search sessions"
               className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
             {!search && (
@@ -923,46 +930,47 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
               </kbd>
             )}
             {search && (
-              <button
-                type="button"
+              <IconButton
+                icon="ph:x"
+                size="xs"
                 onClick={() => setSearch("")}
-                className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 aria-label="Clear chat search"
-              >
-                <Icon name="ph:x" width={12} />
-              </button>
+                className="shrink-0"
+              />
             )}
           </label>
 
           {!compact && (
             <>
               <span role="group" aria-label="Filter sessions by status" className="flex flex-wrap items-center gap-0.5">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   aria-pressed={statusFilter === "all"}
                   onClick={() => setStatusFilter("all")}
-                  className="chat-status-chip focus-ring"
+                  className="chat-status-chip"
                 >
                   All
                   <span className="chat-status-chip__count">{statusCounts.all}</span>
-                </button>
+                </Button>
                 {CHAT_SESSION_STATUS_ORDER.map((key) => {
                   const presentation = CHAT_SESSION_STATUS[key];
                   const active = statusFilter === key;
                   return (
-                    <button
+                    <Button
                       key={key}
-                      type="button"
+                      variant="ghost"
+                      size="sm"
                       aria-pressed={active}
                       disabled={chatStatusChipDisabled(statusCounts[key], active)}
                       onClick={() => setStatusFilter(key)}
-                      className="chat-status-chip focus-ring"
+                      className="chat-status-chip"
                       data-state={key}
                     >
                       <span aria-hidden className="chat-status-chip__dot" />
                       {presentation.label}
                       <span className="chat-status-chip__count">{statusCounts[key]}</span>
-                    </button>
+                    </Button>
                   );
                 })}
               </span>
@@ -985,7 +993,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
               <OverflowMenu
                 ariaLabel="Session view options"
                 icon="ph:sliders-horizontal"
-                className="h-7 w-7 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] text-[var(--text-muted)]"
+                size="sm"
                 minWidth={216}
               >
                 {CHAT_SESSION_KIND_ORDER.map((key) => {
@@ -1042,18 +1050,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                   Select multiple chats
                 </PopoverItem>
               </OverflowMenu>
-              <button
+              <Button
                 ref={sortAnchorRef}
-                type="button"
+                variant="secondary"
+                size="sm"
+                trailingIcon="ph:caret-up-down"
                 aria-haspopup="menu"
                 aria-expanded={sortOpen}
                 onClick={() => setSortOpen((v) => !v)}
-                className="chat-sessions-sort focus-ring"
+                className="chat-sessions-sort"
               >
                 <span className="chat-sessions-sort__label">sort</span>
                 {CHAT_SESSION_SORT_LABEL[sessionSort]}
-                <Icon name="ph:caret-up-down" width={10} className="text-[var(--text-muted)]" aria-hidden />
-              </button>
+              </Button>
               <Popover
                 open={sortOpen}
                 onOpenChange={setSortOpen}
@@ -1082,66 +1091,55 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
           {compact && (
             <>
-              <button
-                type="button"
+              <IconButton
+                icon="ph:archive"
+                size="sm"
                 onClick={() => setShowArchived((v) => !v)}
+                active={showArchived}
                 aria-pressed={showArchived}
                 aria-label={showArchived ? "Hide archived sessions" : "Show archived sessions"}
                 title={showArchived ? "Hide archived sessions" : "Show archived sessions"}
-                className={[
-                  "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
-                  showArchived
-                    ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
-                    : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
-                ].join(" ")}
-              >
-                <Icon name="ph:archive" width={12} aria-hidden />
-              </button>
+                className="chat-list-filter-button"
+              />
 
-              <button
-                type="button"
+              <IconButton
+                icon="ph:list-checks-bold"
+                size="sm"
                 onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
+                active={selectMode}
                 aria-pressed={selectMode}
                 aria-label={selectMode ? "Exit select mode" : "Select multiple chats"}
                 title={selectMode ? "Exit select" : "Select multiple"}
-                className={[
-                  "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
-                  selectMode
-                    ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
-                    : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
-                ].join(" ")}
-              >
-                <Icon name="ph:list-checks-bold" width={12} aria-hidden />
-              </button>
+                className="chat-list-filter-button"
+              />
             </>
           )}
 
           {compact && hasAppliedFilters && (
-            <button
-              type="button"
+            <IconButton
+              icon="ph:funnel"
+              size="sm"
               onClick={clearSessionFilters}
               aria-label="Clear filters"
               title="Clear filters"
-              className="chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]"
-            >
-              <Icon name="ph:funnel" width={12} aria-hidden />
-            </button>
+              className="chat-list-filter-button"
+            />
           )}
 
           {/* Compact companion panels drop the surface title row (no width for
               a serif heading), so the one primary action rides here instead —
               the panel must never be the one place you cannot start a chat. */}
           {compact && (
-            <button
-              type="button"
+            <IconButton
+              icon="ph:plus-bold"
+              variant="primary"
+              size="sm"
               onClick={() => onNewChat(undefined, scopedFamiliarId)}
               disabled={!canStartChat}
               aria-label="New session"
               title="New session"
-              className="chat-list-new-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-control)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-all hover:opacity-90 active:scale-95 disabled:opacity-[var(--opacity-disabled)]"
-            >
-              <Icon name="ph:plus-bold" width={12} aria-hidden />
-            </button>
+              className="chat-list-new-button"
+            />
           )}
         </div>
 
@@ -1245,54 +1243,50 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
             <p className="text-sm text-[var(--text-muted)]">
               {search.trim() ? `No sessions match “${search}”` : "No sessions match the current filters"}
             </p>
-            <button
-              type="button"
-              onClick={clearSessionFilters}
-              className="focus-ring rounded text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
-            >
+            <Button variant="ghost" size="xs" onClick={clearSessionFilters}>
               Clear filters
-            </button>
+            </Button>
           </div>
         ) : (
           <>
           {selectMode && (
             <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-4 py-2">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={toggleSelectAllVisible}
-                  className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
                 >
                   {allVisibleSelected ? "Clear" : "Select all"}
-                </button>
+                </Button>
                 <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon={showArchived ? "ph:tray" : "ph:archive"}
                   disabled={bulkBusy || selectedVisibleCount === 0}
                   onClick={() => void bulkArchive(!showArchived)}
-                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
-                  <Icon name={showArchived ? "ph:tray" : "ph:archive"} width={11} aria-hidden />
                   {showArchived ? "Unarchive" : "Archive"}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="danger-ghost"
+                  size="xs"
+                  leadingIcon="ph:trash"
                   disabled={bulkBusy || selectedVisibleCount === 0}
                   onClick={() => void bulkDelete()}
-                  className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] disabled:opacity-50"
                 >
-                  <Icon name="ph:trash" width={11} aria-hidden />
                   {bulkBusy ? "…" : `Delete${selectedVisibleCount ? ` ${selectedVisibleCount}` : ""}`}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={exitSelect}
-                  className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -1305,7 +1299,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
           >
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {displayGroups.map(({ projectRoot, sessions: rows }) => {
+            {displayGroups.map(({ projectRoot, runtimeHost, projectName, sessions: rows }) => {
               // Flat "All sessions" view (the phone surface): split the list into a
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
@@ -1316,14 +1310,14 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
               const firstPinnedIdx = pinnedFlags.indexOf(true);
               const firstRestIdx = pinnedFlags.indexOf(false);
               return (
-              <li key={projectRoot ?? "__none__"}>
+              <li key={selectionKey(null, projectRoot, runtimeHost)}>
                 {/* Project group header — uppercase label + count + fading rule
                     (rendered for every group in the "Group by project" mode,
                     including the no-project bucket). */}
                 {effectiveSelection === "all" && (projectRoot !== null || groupBy === "project") && (
                   <div className="chat-list-group-header group relative flex items-center gap-2 px-4 pb-1 pt-3">
                     <span className="truncate text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                      {projectRoot ? repoName(projectRoot) : "No project"}
+                      {projectName ?? (projectRoot ? repoName(projectRoot) : "No project")}
                     </span>
                     <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{rows.length}</span>
                     <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />

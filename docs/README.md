@@ -73,6 +73,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Compatibility registries
 
 - [`grok-compatibility-registry.md`](grok-compatibility-registry.md) — signed schema bundles and trust anchors for Grok Build
+- [`openclaw-compatibility-registry.md`](openclaw-compatibility-registry.md) — the signed release guard, checkpoint, rotation, and rollback contract for OpenClaw event profiles
 - [`opencode-compatibility-registry.md`](opencode-compatibility-registry.md) — the same contract for OpenCode event schemas
 
 ### Design

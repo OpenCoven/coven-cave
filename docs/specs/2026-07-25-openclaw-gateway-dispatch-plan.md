@@ -17,13 +17,23 @@ the accepted `runId`, subscribes to session events, and accepts only events
 belonging to that exact run. The current CLI bridge stays the authoritative
 fallback for every other runtime.
 
-## Target contract after a tool schema is published
+## Tool compatibility contract
 
-Full tool activity requires a published, versioned `session.tool` event name,
-payload validator, and lifecycle fixtures. Once those exist, Cave must request
-only the documented capabilities, validate the negotiated role/scopes and
-methods, and bind tool events to the Gateway-accepted run ID. Until then, no
-capability string or observed frame is a substitute for a payload contract.
+OpenClaw's official `AgentEventSchema` validates the outer event envelope but
+leaves `data` unrestricted. Cave therefore combines that official outer schema
+with a signed, data-only profile from the OpenClaw compatibility registry. A
+profile may select fixed event names and streams, closed lifecycle values, and
+direct field aliases. It cannot add executable code, arbitrary JSON paths,
+launch arguments, logging behavior, or new envelopes. No capability string or
+observed frame is a substitute for this verified contract.
+
+Negotiation is two-phase. Cave first connects without `tool-events`, validates
+the authenticated hello, and selects a profile against the bound server
+version, exact protocol and package-schema hash, plus minimum required methods,
+events, server capabilities, and client capabilities. Additional unique
+advertised catalog entries do not expand Cave's fixed parser or event
+allowlists. Only then does it reconnect advertising `tool-events`; the second
+hello must preserve the selected identity before Cave subscribes or dispatches.
 
 The direct dispatcher supplies an idempotency key, receives the accepted run
 identifier, then binds all live state to `(sessionKey, agentId, runId)`. A tool
@@ -43,15 +53,16 @@ reason to guess a field shape.
    authenticate with the reference Gateway client and validate `hello-ok` plus
    negotiated policy limits. Never persist credentials in plaintext or include
    them in logs, caches, SSE, or diagnostics.
-3. Establish the selected canonical-session subscription before dispatching
-   the turn. Add any additional subscription only when its published schema
-   and contract fixture are available.
+3. Resolve the signed compatibility profile, reconnect with `tool-events`, and
+   establish the selected canonical-session subscription before dispatching.
+   Accept `agent` and `session.tool` only when the selected profile names them.
 4. Send `chat.send` with the Cave message, canonical session key, agent ID,
    and an idempotency key derived from the Cave request ID. Record the
    Gateway-accepted `runId`.
 5. Project only matching, schema-validated events to Cave SSE. Maintain a
-   per-run high-water sequence, reject replay, and fail the owned turn on a
-   forward gap until a published history-reconciliation contract is available.
+   per-run high-water sequence and reject replay or regression. Tool sequence
+   values may be sparse because other agent streams share the counter; the
+   Gateway transport gap callback remains the missing-frame authority.
 6. On terminal chat state, persist the response. After a published tool schema
    is supported, also persist reconciled tool cards. On
    cancellation, first persist a per-run `cancelled` terminal fence, then abort
@@ -73,23 +84,35 @@ reason to guess a field shape.
 
 - Depend on the official protocol/client packages rather than local copies of
   WebSocket framing, signing, or schemas.
-- Keep an explicit profile table keyed by protocol version and package release
-  range. A profile declares exact methods, events, scopes, payload validators,
-  limits, and migration behavior.
+- Resolve bounded profiles from the Ed25519-signed OpenClaw registry. A profile
+  declares an exact server version, wire protocol, and official outer-schema
+  hash, plus minimum required unique subsets of methods, events, server
+  capabilities, and client capabilities. Additional unique catalog entries are
+  inert: they cannot expand Cave's fixed parser, lifecycle values, or direct
+  aliases. Runtime-loaded channel plugin methods are environment-dependent, so
+  exact catalog equality is neither stable nor an appropriate compatibility
+  condition.
 - Generate/capture protocol conformance fixtures from each supported package
   release. Include supported, old/unsupported, future/unknown, missing-scope,
   pairing-required, replay, sequence-gap, disconnect, cancellation, and
   concurrent-run cases.
-- Upgrade only after the schema diff and fixtures pass. Unknown wire versions
-  fail closed to CLI; a new Cave release adds a tested profile.
+- Upgrade only after source review and conformance fixtures pass. Compatible
+  signed profile revisions can ship without a Cave UI release; unknown wire
+  versions and profile shapes fail closed to CLI/plain chat.
 
-## Current release boundary (2026-07-26)
+## Current release boundary (2026-07-31)
 
-The only published protocol/client release is the `2026.7.2-beta.4` beta
-package pair, negotiating wire protocol v4. It publishes `HelloOkSchema`,
-`ChatEventSchema`, `chat.send`, `chat.abort`, and
-`sessions.messages.subscribe`. Cave validates that exact chat-only contract in
-its dispatcher, including the accepted `(sessionKey, agentId, runId)` tuple.
+Cave pins the `2026.7.2-beta.5` protocol/client package pair and negotiates
+wire protocol v4. It validates `HelloOkSchema`, `ChatEventSchema`, and
+`AgentEventSchema`, then selects a compatibility profile requiring
+`chat.send`, `chat.abort`, `sessions.messages.subscribe`, `chat`, `agent`, and
+`session.tool`. Additional advertised beta5 catalog entries remain inert. The
+built-in beta5 conformance fixture freezes the fixed core/auxiliary method
+catalog and fixed event catalog from OpenClaw tag `v2026.7.2-beta.5` at commit
+`ee929dbb857c717a60f3b2b502db5a6dd31b5c11`; it intentionally excludes
+runtime-loaded channel plugin methods. The profile is pinned to the upstream
+source revision that defines the tool lifecycle aliases and phases; no observed
+payload can expand that contract at runtime.
 
 The reference client delegates device identity, challenge signing, and token
 lifecycle to host-owned `GatewayClientHostDeps`. Cave backs those with an
@@ -107,37 +130,33 @@ fallback everywhere the store (or the Gateway) is unavailable. An invalid
 persisted identity fails loudly and is never silently regenerated, because
 regeneration would silently unpair the device.
 
-The release also does **not** publish a `session.tool` event name, payload
-schema, or validator. Cave emits no Gateway tool card for this release and does
-not request an unpublished tool-event capability. A method/event capability
-string is not a substitute for a versioned payload contract.
-
 | Package profile | Wire protocol | Runtime projection | Tool cards | Upgrade rule |
 | --- | --- | --- | --- | --- |
-| `2026.7.2-beta.4` | v4 only | Correlated `chat` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Disabled: no published schema (re-verified against `2026.7.2-beta.5`, whose `AgentEvent.data` is unchanged and whose typed `tool.*` events belong to the Talk surface only) | Add a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
+| `2026.7.2-beta.4` | v4 only | Unsupported by the current tool profile | Disabled | Keep CLI/plain chat. |
+| `2026.7.2-beta.5` + source profile `d66b514a7e7565d89c87ab6f1a509623128093f0` | v4 only | Correlated `chat` plus schema-validated `agent` / `session.tool` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Enabled only when the exact version/protocol/schema hash and minimum required unique catalog subsets match; extras remain inert | Refresh the fixed-catalog fixture for source review, but add a profile only when the bound identity or required lifecycle contract changes. |
 | Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
 
-Before enabling tool cards, record the package release, exported validator,
-schema diff, and fixtures for lifecycle, foreign-run rejection, malformed
-payload, replay, gap, disconnect, and cancellation. Do not infer a tool shape
-from an observed Gateway frame.
+The conformance suite records the package release, schema hash, source revision,
+and lifecycle fixtures. It covers foreign-run rejection, malformed payloads,
+replay, gaps, disconnects, reconnects, cancellation, compatibility quarantine,
+and route-level WebSocket-to-SSE/persistence projection. Do not infer a tool
+shape from an observed Gateway frame.
 
 ## Verification
 
-Add a route-level Gateway fixture that performs the real authenticated
-handshake, subscription, `chat.send` acknowledgement, and emitted chat
-lifecycle. It must prove that matching chat frames reach SSE and persistence
-and that otherwise-valid concurrent-session frames are rejected. Once a
-published tool validator exists, extend it with start/update/result cards,
-history reconciliation, and every fallback boundary above.
+The route-level Gateway fixture performs the real WebSocket challenge/connect
+handshake, subscription, `chat.send` acknowledgement, and emitted chat/tool
+lifecycle. It proves that one accepted run reaches SSE and persistence with
+start/update/result cards while an otherwise-valid concurrent run is rejected.
+History reconciliation remains disabled until OpenClaw publishes that contract;
+gaps therefore terminate the owned Gateway path instead of guessing.
 
 ## Delivery slices
 
-1. Add official protocol/client dependencies, capability/profile discovery,
-   paired-device credential storage, and protocol fixtures.
-2. Implement one owned Gateway turn with chat SSE projection and a CLI fallback
-   selected before dispatch.
-3. Implement correlated tool lifecycle, persistence, cancellation, and
-   reconciliation.
-4. Add cross-version conformance and route-level integration tests; document
-   operator setup and upgrade support boundaries.
+The Cave-side slices are implemented: official package pins, paired-device
+storage, signed profile resolution, two-phase dispatch, correlated lifecycle,
+SSE/persistence/resume, quarantine/fallback, and conformance fixtures. The
+remaining deployment slice is owned by `OpenCoven/coven-runtimes`: publish the
+canonical signed sequence-one bundle and configure Cave's production URL,
+public keyring, and checkpoint. Cave remains fail-closed until those public
+trust anchors are present.

@@ -149,9 +149,32 @@ struct ProjectNavigationIntent: Equatable, Hashable, Sendable {
 }
 
 struct PairingIntent: Equatable {
-    let id = UUID()
+    let id: UUID
     let host: String
     let token: String?
+    let threadId: String?
+
+    init(
+        id: UUID = UUID(),
+        host: String,
+        token: String?,
+        threadId: String? = nil
+    ) {
+        self.id = id
+        self.host = host
+        self.token = token
+        self.threadId = threadId
+    }
+
+    init(invite: CaveInvite) {
+        self.init(host: invite.host, token: invite.token, threadId: invite.threadId)
+    }
+
+    func matches(_ connection: CaveConnection?) -> Bool {
+        guard let currentURL = connection?.baseURL,
+              let requestedURL = CaveConnection(host: host).baseURL else { return false }
+        return currentURL.host?.lowercased() == requestedURL.host?.lowercased()
+    }
 }
 
 enum PairingApprovalPolicy {
@@ -273,8 +296,14 @@ final class AppModel {
     }
 
     private struct CoordinatedLoadToken: Equatable {
+        enum Scope: Hashable {
+            case standalone
+            case projectContext
+        }
+
         let generation: UInt64?
         let requestId: UInt64
+        let scope: Scope
     }
 
     private struct CoordinatedLoadOutput<Value>: @unchecked Sendable {
@@ -285,10 +314,10 @@ final class AppModel {
         var nextRequestId: UInt64 = 0
         var freshest: CoordinatedLoadToken?
         var lastApplied: CoordinatedLoadToken?
-        var inFlight: (
+        var inFlightByScope: [CoordinatedLoadToken.Scope: (
             token: CoordinatedLoadToken,
             task: Task<CoordinatedLoadOutput<Value>, Never>
-        )?
+        )] = [:]
     }
 
     nonisolated static let projectContextStorageKeyPrefix = "cave.project-context.v2"
@@ -369,6 +398,7 @@ final class AppModel {
                         systemImage: "antenna.radiowaves.left.and.right"
                     )
                 }
+                resumePendingPairingDestination()
             }
         }
     }
@@ -924,12 +954,13 @@ final class AppModel {
     private func beginCoordinatedLoad<Value>(
         _ state: inout CoordinatedLoadState<Value>,
         generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope,
         operation: @escaping @Sendable () async throws -> Value
     ) -> (
         token: CoordinatedLoadToken,
         task: Task<CoordinatedLoadOutput<Value>, Never>
     ) {
-        if let inFlight = state.inFlight,
+        if let inFlight = state.inFlightByScope[scope],
            inFlight.token.generation == generation {
             return inFlight
         }
@@ -937,7 +968,8 @@ final class AppModel {
         state.nextRequestId &+= 1
         let token = CoordinatedLoadToken(
             generation: generation,
-            requestId: state.nextRequestId
+            requestId: state.nextRequestId,
+            scope: scope
         )
         state.freshest = token
         let task = Task {
@@ -946,7 +978,7 @@ final class AppModel {
             )
         }
         let handle = (token: token, task: task)
-        state.inFlight = handle
+        state.inFlightByScope[scope] = handle
         return handle
     }
 
@@ -957,8 +989,9 @@ final class AppModel {
         ),
         state: inout CoordinatedLoadState<Value>
     ) {
-        guard state.inFlight?.token == handle.token else { return }
-        state.inFlight = nil
+        let scope = handle.token.scope
+        guard state.inFlightByScope[scope]?.token == handle.token else { return }
+        state.inFlightByScope.removeValue(forKey: scope)
     }
 
     private func coordinatedLoadShouldApply<Value>(
@@ -994,12 +1027,17 @@ final class AppModel {
 
     private func coordinatedSessionsLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[SessionRow], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&sessionsLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &sessionsLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.sessions()
         }
         let output = await handle.task.value
@@ -1009,12 +1047,17 @@ final class AppModel {
 
     private func coordinatedTasksLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[BoardCard], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&tasksLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &tasksLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.tasks()
         }
         let output = await handle.task.value
@@ -1241,6 +1284,8 @@ final class AppModel {
 
     @discardableResult
     private func beginProjectNavigation(_ intent: ProjectNavigationIntent) -> Bool {
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
         pendingProjectNavigationIntent = intent
         lastProjectNavigationFailure = nil
         return resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
@@ -1481,10 +1526,18 @@ final class AppModel {
     /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     @discardableResult
     func requestOpenTask(_ card: BoardCard) -> Bool {
+        requestOpenTask(id: card.id, projectId: card.projectId)
+    }
+
+    /// Open a task projected by a bounded dashboard response. The dashboard
+    /// intentionally does not duplicate the complete BoardCard shape; Tasks
+    /// owns the authoritative detail load after this navigation handoff.
+    @discardableResult
+    func requestOpenTask(id: String, projectId: String?) -> Bool {
         beginProjectNavigation(ProjectNavigationIntent(
-            entity: .task(id: card.id),
+            entity: .task(id: id),
             destination: .tasks,
-            projectId: card.projectId
+            projectId: projectId
         ))
     }
 
@@ -3803,7 +3856,8 @@ final class AppModel {
         if !haveUsableSessions {
             let loadedSessions = await coordinatedSessionsLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()
@@ -3857,7 +3911,8 @@ final class AppModel {
         ) {
             let loadedTasks = await coordinatedTasksLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()
@@ -4197,6 +4252,8 @@ final class AppModel {
 
     var deepLink: DeepLink?
     private(set) var pendingPairingIntent: PairingIntent?
+    private var pendingPairingDestination: PairingIntent?
+    private var pendingPairingDestinationLease: ConnectionDispatchLease?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "covencave" else { return }
@@ -4205,7 +4262,9 @@ final class AppModel {
         // mutating credentials beneath a lock or authentication prompt.
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
-            pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
+            let intent = PairingIntent(invite: invite)
+            pendingPairingIntent = intent
+            stagePairingDestination(intent)
             return
         }
         guard let intent = ProjectNavigationIntent(url: url) else { return }
@@ -4216,11 +4275,7 @@ final class AppModel {
         } else {
             deepLink = nil
         }
-        pendingProjectNavigationIntent = intent
-        lastProjectNavigationFailure = nil
-        if resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true) {
-            return
-        }
+        beginProjectNavigation(intent)
     }
 
     @discardableResult
@@ -4232,6 +4287,74 @@ final class AppModel {
         guard let intent = pendingPairingIntent, intent.id == id else { return nil }
         pendingPairingIntent = nil
         return intent
+    }
+
+    func stagePairingDestination(_ intent: PairingIntent) {
+        guard intent.threadId != nil else {
+            pendingPairingDestination = nil
+            pendingPairingDestinationLease = nil
+            return
+        }
+        pendingProjectNavigationIntent = nil
+        lastProjectNavigationFailure = nil
+        pendingPairingDestination = intent
+        pendingPairingDestinationLease = nil
+    }
+
+    func cancelPairingDestination(matching id: UUID) {
+        guard pendingPairingDestination?.id == id else { return }
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
+    }
+
+    func armPairingDestination(_ intent: PairingIntent, lease: ConnectionDispatchLease) {
+        guard pendingPairingDestination?.id == intent.id,
+              connectionDispatchLeaseIsCurrent(lease),
+              intent.matches(connection) else {
+            return
+        }
+        pendingPairingDestinationLease = lease
+        resumePairingDestination(intent)
+    }
+
+    func rebasePairingDestinationLease(
+        from previousConnection: CaveConnection,
+        to relocatedConnection: CaveConnection
+    ) {
+        guard let intent = pendingPairingDestination,
+              let lease = pendingPairingDestinationLease,
+              connectionDispatchLeaseIsCurrent(lease),
+              lease.baseURL == previousConnection.baseURL,
+              intent.matches(previousConnection),
+              intent.matches(relocatedConnection) else {
+            return
+        }
+        pendingPairingDestinationLease = ConnectionDispatchLease(
+            generation: lease.generation,
+            baseURL: relocatedConnection.baseURL
+        )
+    }
+
+    func resumePairingDestination(_ intent: PairingIntent) {
+        guard pendingPairingDestination?.id == intent.id,
+              let lease = pendingPairingDestinationLease,
+              connectionDispatchLeaseIsCurrent(lease),
+              let threadId = intent.threadId,
+              connectionState == .connected,
+              intent.matches(connection) else {
+            return
+        }
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
+        beginProjectNavigation(ProjectNavigationIntent(
+            entity: .thread(id: threadId),
+            destination: .chats
+        ))
+    }
+
+    private func resumePendingPairingDestination() {
+        guard let intent = pendingPairingDestination else { return }
+        resumePairingDestination(intent)
     }
 
 
@@ -4417,7 +4540,8 @@ final class AppModel {
 
     // MARK: - Connection lifecycle
 
-    func configure(host: String, token: String? = nil) async {
+    @discardableResult
+    func configure(host: String, token: String? = nil) async -> ConnectionDispatchLease? {
         // Revoke every owner of the previous authority before touching its
         // credential. A refresh can already be past discovery and suspended in
         // bootstrap/token renewal, where cancelling the coordinator alone no
@@ -4433,7 +4557,7 @@ final class AppModel {
         // A newer configure/disconnect may have taken ownership while actor
         // cancellation suspended this call. The older transition must not save
         // credentials or overwrite the newer endpoint when it resumes.
-        guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return }
+        guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return nil }
 
         let conn = CaveConnection(host: host)
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4469,8 +4593,9 @@ final class AppModel {
         conn.save(defaults: projectContextDefaults)
         await refreshConnection()
         guard connectionConfigurationLeaseIsCurrent(configuredGeneration),
-              connection?.baseURL == conn.baseURL else { return }
+              connection != nil else { return nil }
         requestConnectionRecovery(.foreground)
+        return captureConnectionDispatchLease()
     }
 
     private func resetHostScopedStateForNewConnection() {
@@ -4511,6 +4636,8 @@ final class AppModel {
         cancelQueuedMessageFlush()
         connectionConfigurationGeneration &+= 1
         advanceProjectNavigationConnectionGeneration()
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
         invalidateProjectNavigationHydrations()
         invalidateProjectContextLoads()
         CaveConnection.clear(defaults: projectContextDefaults)
@@ -5002,6 +5129,12 @@ final class AppModel {
                 invalidateProjectContextLoads()
                 advanceProjectNavigationConnectionGeneration()
                 let relocated = CaveConnection(host: Self.canonicalHost(for: working))
+                if let previousConnection = self.connection {
+                    rebasePairingDestinationLease(
+                        from: previousConnection,
+                        to: relocated
+                    )
+                }
                 self.connection = relocated
                 relocated.save(defaults: projectContextDefaults)
                 if let port = working.port {

@@ -45,9 +45,8 @@
     exception cannot rescue this: the inventory throws before admission is ever
     assessed. **Almost every exit 1 is transient — retry before you conclude
     otherwise.** Two failures dominate, and both clear on their own:
-    - the GraphQL quota is exhausted (`API rate limit already exceeded`) — that
-      pool is separate from REST and refills hourly, so `gh api rate_limit --jq
-      .resources.graphql` tells you when to retry;
+    - GitHub's REST quota is exhausted (`API rate limit already exceeded`) —
+      `gh api rate_limit --jq .resources.core` tells you when to retry;
     - a commit's PR association comes back malformed or absent (`commit
       association connection is unavailable`, `pull request node returned
       malformed fields or a mismatched head OID`) — usually a degraded or
@@ -453,3 +452,13 @@ Co-authored-by: Full Name <ID+username@users.noreply.github.com>
 - For substantial external contributions, also add the person to [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
 
 This is about crediting **people**. Don't add trailers or footers that credit an AI model, assistant, vendor, or coding harness.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

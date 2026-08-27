@@ -29,6 +29,14 @@ final class FamiliarDashboardContractTests: XCTestCase {
             updatedAt: "2026-08-23T11:59:00.000Z"))
         XCTAssertEqual(overview.sessions.active.items.first?.status, "running")
         XCTAssertEqual(overview.memory.freshestAt, "2026-08-20T10:00:00.000Z")
+        XCTAssertEqual(overview.live.harness, "codex")
+        XCTAssertEqual(overview.tasks.items.first?.primaryBlockerId, "dep-1")
+        XCTAssertEqual(
+            overview.tasks.items.first?.unresolvedDependencies.items.first?.label,
+            "Land prerequisite")
+        XCTAssertEqual(overview.tasks.items.first?.nextStep?.summary, "Re-run the focused tests")
+        XCTAssertEqual(overview.attention.items.first?.kind, "blocked")
+        XCTAssertEqual(overview.reminders.items.first?.familiarId, "nova")
 
         let profile = try XCTUnwrap(payload.sections.profile.data)
         XCTAssertEqual(profile.runtime.model, "opus")
@@ -44,6 +52,36 @@ final class FamiliarDashboardContractTests: XCTestCase {
             analytics.averages.memoryRecall,
             "a measurement nobody took is null, never zero")
         XCTAssertEqual(analytics.sessionPulse.active, 1)
+        XCTAssertEqual(analytics.activity?.periodDays, 14)
+        XCTAssertEqual(analytics.activity?.days.first?.count, 2)
+        XCTAssertEqual(analytics.activity?.lastActiveAt, "2026-08-22T12:00:00.000Z")
+        XCTAssertEqual(analytics.confidence?.band, "high")
+        XCTAssertEqual(analytics.signalTrends?.metrics.first?.direction, "improving")
+        XCTAssertEqual(analytics.memory?.recall, 75)
+        XCTAssertEqual(analytics.memory?.total, 3)
+        XCTAssertEqual(analytics.memory?.freshestAt, "2026-08-22T13:00:00.000Z")
+        XCTAssertEqual(analytics.capabilities?.used.items.first?.name, "shell")
+        XCTAssertEqual(analytics.attention?.contractGaps, 2)
+        XCTAssertEqual(analytics.attention?.healRequests?.items.first?.actionKind, "fix-contract")
+    }
+
+    func testAdditiveAnalyticsFieldsMayBeMissingFromAnEarlierV1Snapshot() throws {
+        let legacy = """
+        {
+          "sampleSize": 1, "reportsTotal": 1,
+          "windowStart": null, "windowEnd": null,
+          "averages": {
+            "overallConfidence": null, "toolReliability": null,
+            "memoryRecall": null, "fileLocatability": null
+          },
+          "sessionPulse": { "active": 0, "recent": 0 }
+        }
+        """
+        let section = FamiliarDashboardFixtures.section(state: "fresh", data: legacy)
+        let payload = try decode(FamiliarDashboardFixtures.successJSON(analytics: section))
+        let analytics = try XCTUnwrap(payload.sections.analytics.data)
+        XCTAssertNil(analytics.activity)
+        XCTAssertNil(analytics.signalTrends)
     }
 
     /// `total` is what tells a reader how much they are NOT seeing. A bounded
@@ -144,6 +182,36 @@ final class FamiliarDashboardContractTests: XCTestCase {
 
         let payload = try decode(json)
         XCTAssertEqual(payload.sections.overview.data?.now, .unknown)
+    }
+
+    func testTaskNowPreservesItsImperativeNextStep() throws {
+        let overviewData = """
+        {
+          "now": {
+            "kind": "task",
+            "id": "task-1",
+            "title": "Repair the loader",
+            "nextStep": "Re-run the focused tests",
+            "updatedAt": "2026-08-23T11:59:00.000Z"
+          },
+          "presence": null,
+          "sessions": {
+            "active": { "items": [], "total": 0 },
+            "recent": { "items": [], "total": 0 }
+          },
+          "memory": { "entries": { "items": [], "total": 0 }, "freshestAt": null }
+        }
+        """
+        let payload = try decode(FamiliarDashboardFixtures.successJSON(
+            overview: FamiliarDashboardFixtures.section(state: "fresh", data: overviewData)
+        ))
+        XCTAssertEqual(
+            payload.sections.overview.data?.now,
+            .task(
+                id: "task-1", title: "Repair the loader",
+                nextStep: "Re-run the focused tests",
+                updatedAt: "2026-08-23T11:59:00.000Z")
+        )
     }
 
     func testAServerReportedUnknownNowSurvivesDecoding() throws {
