@@ -3348,6 +3348,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         usage?: TurnUsage;
         costUsd?: number;
       } = {};
+      let copilotResultReceived = false;
       // Launch-integrity flag (#3856): set when the pre-spawn availability
       // gate or the post-spawn error handler proves the harness never
       // actually ran. Downstream it suppresses the empty-output diagnostic
@@ -3813,6 +3814,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
                 break;
               }
               case "result": {
+                copilotResultReceived = true;
                 if (!sessionId && ev.sessionId) announceSession(ev.sessionId);
                 result = {
                   duration_ms: ev.durationMs,
@@ -5332,10 +5334,10 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         await runAttempt(args);
       }
 
-      // Copilot can silently close an expired native session with exit code 0:
-      // no result frame, no assistant text, and no "session not found" stderr.
-      // Treat that exact resumed-attempt shape as a stale session so the
-      // existing bounded context-replay retry can answer the user's turn.
+      // Copilot can close an expired native session without a result frame,
+      // either silently or with a non-zero process exit. Treat that exact
+      // resumed-attempt shape as stale so the bounded context-replay retry can
+      // answer the user's turn instead of requiring another prompt.
       if (
         copilotStream &&
         resumeTarget &&
@@ -5344,8 +5346,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         !runHandle.stopRequested &&
         !launchFailure &&
         !assistantText.trim() &&
-        result.duration_ms == null &&
-        result.is_error == null
+        !copilotResultReceived
       ) {
         resumeFailed = true;
       }
@@ -5376,6 +5377,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
         result = {};
+        copilotResultReceived = false;
         resetToolTrackerForRetry();
         openCodeModelRejected = false;
         copilotText.reset();
@@ -5436,6 +5438,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
         result = {};
+        copilotResultReceived = false;
         resetToolTrackerForRetry();
         openCodeModelRejected = false;
         copilotText.reset();

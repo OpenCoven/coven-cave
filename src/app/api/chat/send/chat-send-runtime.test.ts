@@ -41,10 +41,16 @@ test("Chat derives effective grants from usable local directories", async () => 
   );
 });
 
-test("a silent stale Copilot resume retries with recent context", async () => {
+test("a stale Copilot resume without a result frame retries with recent context", async () => {
   const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(
     route,
-    /copilotStream[\s\S]*?resumeTarget[\s\S]*?!assistantText\.trim\(\)[\s\S]*?result\.duration_ms == null[\s\S]*?result\.is_error == null[\s\S]*?resumeFailed = true/,
+    /let copilotResultReceived = false;[\s\S]*?case "result": \{[\s\S]*?copilotResultReceived = true;[\s\S]*?copilotStream[\s\S]*?resumeTarget[\s\S]*?!assistantText\.trim\(\)[\s\S]*?!copilotResultReceived[\s\S]*?resumeFailed = true/,
+    "both silent exit-0 and blank non-zero resumed attempts retry when no terminal result frame arrived",
+  );
+  assert.equal(
+    route.match(/copilotResultReceived = false;/g)?.length,
+    3,
+    "initial launch and both retry reset paths must clear Copilot terminal-frame state",
   );
 });
