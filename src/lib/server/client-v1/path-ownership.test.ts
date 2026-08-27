@@ -264,6 +264,18 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
       );
     }
 
+    execFileSync("icacls.exe", [planted, "/setowner", `*${ADMINISTRATORS_SID}`], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    const ownerRepaired = await probeWindowsAcl(planted);
+    assert.equal(ownerRepaired.repaired, true, "a foreign owner must trigger ACL repair");
+    assert.equal(
+      ownerRepaired.owner,
+      ownerRepaired.self,
+      "repair must take ownership instead of leaving an Administrators-owned path unusable",
+    );
+
     // Whatever the machine's profile policy inherits, this is what the guard
     // exists to catch: hand an untrusted principal write access and the next
     // probe must both see it and take it away.

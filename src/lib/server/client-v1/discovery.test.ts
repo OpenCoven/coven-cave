@@ -599,6 +599,11 @@ test("the standalone server enforces ownership on Windows with this module's scr
       `${what} must stay identical to the module server.mjs cannot import`,
     );
   }
+  assert.match(
+    region(moduleSource, "path-ownership.ts", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/),
+    /\$acl\.SetOwner\(\$me\)/,
+    "the Windows ACL repair must take ownership instead of leaving an Administrators-owned path unusable",
+  );
   assert.equal(
     Number(region(moduleSource, "path-ownership.ts", /timeout:\s*([\d_]+),/).replaceAll("_", "")),
     60_000,
