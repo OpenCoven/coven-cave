@@ -593,6 +593,30 @@ test("owner capability holds through postconditions and dies on tampering, expir
   assert.equal(heartbeatMaintenanceGate(acquired.handle).ok, true);
   const gateFile = path.join(root, "gate.json");
   const heartbeated = JSON.parse(readFileSync(gateFile, "utf8"));
+  const boundedFutureHeartbeat = new Date(Date.now() + 500).toISOString();
+  writeFileSync(
+    gateFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: boundedFutureHeartbeat,
+    }),
+  );
+  assert.equal(
+    heartbeatMaintenanceGate(acquired.handle).ok,
+    true,
+    "a bounded host-clock correction must not abort the current owner",
+  );
+  const boundedHeartbeated = JSON.parse(readFileSync(gateFile, "utf8"));
+  assert.ok(
+    Date.parse(boundedHeartbeated.heartbeatAt) >= Date.parse(boundedFutureHeartbeat),
+    "tolerating a clock correction must never move the persisted heartbeat backwards",
+  );
+  assert.equal(
+    maintenanceGateStatus(repo).gate.clockRegressed,
+    false,
+    "a bounded correction remains a live, non-regressed gate",
+  );
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
   writeFileSync(
     gateFile,
     JSON.stringify({
@@ -1078,6 +1102,31 @@ test("writer lease heartbeat keeps a long-running mutation live", async () => {
   assert.equal(gate.heartbeatWriterIntent(intent.lease).ok, true);
   const intentFile = intentFileForLease(intent.lease);
   const heartbeated = JSON.parse(readFileSync(intentFile, "utf8"));
+  const boundedFutureHeartbeat = new Date(Date.now() + 500).toISOString();
+  writeFileSync(
+    intentFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: boundedFutureHeartbeat,
+    }),
+  );
+  assert.equal(
+    gate.heartbeatWriterIntent(intent.lease).ok,
+    true,
+    "a bounded host-clock correction must not abort the current writer",
+  );
+  const boundedHeartbeated = JSON.parse(readFileSync(intentFile, "utf8"));
+  assert.ok(
+    Date.parse(boundedHeartbeated.heartbeatAt) >= Date.parse(boundedFutureHeartbeat),
+    "tolerating a clock correction must never move the writer heartbeat backwards",
+  );
+  const boundedStatus = maintenanceGateStatus(repo);
+  assert.deepEqual(boundedStatus.liveIntents, ["long-writer"]);
+  assert.deepEqual(
+    boundedStatus.clockRegressedIntents,
+    [],
+    "a bounded correction remains a live, non-regressed writer intent",
+  );
   writeFileSync(
     intentFile,
     JSON.stringify({
