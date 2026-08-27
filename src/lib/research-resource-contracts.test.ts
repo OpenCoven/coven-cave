@@ -117,6 +117,7 @@ function snapshot() {
     normalizedBlobDigest: DIGEST_A,
     normalizedMediaType: "text/plain; charset=utf-8",
     normalizedBytes: 20,
+    normalizationReceipt: { extractorId: "pdf-text", extractorVersion: "1.4.0" },
     sourceSelector: { type: "pdf-page-span", page: 1, start: 0, end: 10, futureSelectorField: true },
     pageBoundaries: [
       { page: 1, start: 0, end: 10, extractorReceipt: "v1" },
@@ -132,8 +133,16 @@ function snapshot() {
 }
 
 test("snapshot delegates exact selectors to A0 and validates deterministic page boundaries", () => {
-  const parsed = expectOk(parseResourceSnapshotV1(snapshot()));
+  const input = structuredClone(snapshot());
+  const parsed = expectOk(parseResourceSnapshotV1(input));
   assert.equal(parsed.sourceSelector.type, "pdf-page-span");
+  assert.deepEqual(parsed.normalizationReceipt, {
+    extractorId: "pdf-text",
+    extractorVersion: "1.4.0",
+  });
+  (input.normalizationReceipt as { extractorVersion: string }).extractorVersion =
+    "changed-after-parse";
+  assert.equal(parsed.normalizationReceipt.extractorVersion, "1.4.0");
   assert.equal(parsed.sourceSelector.futureSelectorField, true);
   assert.equal(parsed.pageBoundaries?.[0]?.extractorReceipt, "v1");
   assert.equal(parsed.futureSnapshotField, "kept");
@@ -173,6 +182,50 @@ test("snapshot delegates exact selectors to A0 and validates deterministic page 
     parseResourceSnapshotV1({ ...snapshot(), sourceSelector: { type: "pdf-page-span", page: 2, start: 0, end: 11 } }),
     "$.sourceSelector.end",
     "semantic_conflict",
+  );
+  const { normalizationReceipt: _receipt, ...withoutReceipt } = snapshot();
+  expectError(
+    parseResourceSnapshotV1(withoutReceipt),
+    "$.normalizationReceipt",
+    "missing_field",
+  );
+  expectError(
+    parseResourceSnapshotV1({
+      ...snapshot(),
+      normalizationReceipt: { extractorId: " pdf-text", extractorVersion: "1.4.0" },
+    }),
+    "$.normalizationReceipt.extractorId",
+    "invalid_value",
+  );
+  for (const [field, value] of [
+    ["extractorId", ""],
+    ["extractorId", "pdf-text "],
+    ["extractorVersion", ""],
+    ["extractorVersion", " 1.4.0"],
+  ] as const) {
+    expectError(
+      parseResourceSnapshotV1({
+        ...snapshot(),
+        normalizationReceipt: {
+          extractorId: field === "extractorId" ? value : "pdf-text",
+          extractorVersion: field === "extractorVersion" ? value : "1.4.0",
+        },
+      }),
+      `$.normalizationReceipt.${field}`,
+      "invalid_value",
+    );
+  }
+  expectError(
+    parseResourceSnapshotV1({
+      ...snapshot(),
+      normalizationReceipt: {
+        extractorId: "pdf-text",
+        extractorVersion: "1.4.0",
+        localBinaryPath: "/tmp/extractor",
+      },
+    }),
+    "$.normalizationReceipt.localBinaryPath",
+    "invalid_value",
   );
 });
 
