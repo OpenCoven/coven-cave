@@ -41,6 +41,15 @@ const OPERATIONS_GUIDE = {
   body: "Hand the release to the on-call operator.",
 };
 
+const INCIDENT_PLAYBOOK = {
+  id: "incident-playbook",
+  title: "Incident playbook",
+  tags: ["operations"],
+  scope: "global",
+  enabled: true,
+  body: "Stabilize the service before changing it.",
+};
+
 const MEMORY_ENTRY = {
   relPath: "memory/notes.md",
   fullPath: "/home/e2e/.coven/memory/notes.md",
@@ -68,7 +77,7 @@ async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
       knowledgePosts.push(route.request().postDataJSON());
       return route.fulfill({ json: { ok: true, entry: { ...KNOWLEDGE_ENTRY } } });
     }
-    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE] } });
+    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE, INCIDENT_PLAYBOOK] } });
   });
   await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [MEMORY_ENTRY] } }));
   await page.route("**/api/memory/file**", (route) => {
@@ -207,6 +216,9 @@ test.describe("grimoire autosave (desktop)", () => {
     await page.keyboard.press("Home");
     await page.keyboard.press("Shift+End");
     await page.keyboard.type("title: Release readiness");
+    // This link exists only in the unsaved editor value. Reader's link chips
+    // must follow that live draft while backlinks remain graph-backed.
+    await typeInEditor(page, " See [[Incident playbook]].");
     const markdownViewport = page.locator(".grimoire-view .cm-scroller");
     await markdownViewport.evaluate((element) => {
       element.scrollTop = (element.scrollHeight - element.clientHeight) * 0.6;
@@ -223,6 +235,7 @@ test.describe("grimoire autosave (desktop)", () => {
     await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeFocused();
     await expect(page.getByRole("heading", { name: "Release readiness", exact: true })).toBeVisible();
     await expect(page.locator(".grimoire-doc-links")).toContainText("Operations guide");
+    await expect(page.locator(".grimoire-doc-links")).toContainText("Incident playbook");
     await expect(page.locator(".md-editor--reader .ProseMirror")).toHaveCount(1, { timeout: 30_000 });
     const readerDocument = page.locator(".md-editor--reader .ProseMirror");
     const readerViewport = page.getByLabel("Document reader");
@@ -255,11 +268,36 @@ test.describe("grimoire autosave (desktop)", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator(".md-editor--reader .ProseMirror")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator(".md-editor--reader .ProseMirror")).toContainText("Editable again.");
-    await page.getByRole("button", { name: "Operations guide", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Operations guide", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Incident playbook", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Incident playbook", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeFocused();
+
+    await page.setViewportSize({ width: 320, height: 720 });
+    const compactHeader = page.locator(".grimoire-header");
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "More Memories actions" })).toBeVisible();
+    expect(await compactHeader.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  });
+
+  test("closing an unsaved title draft restores the persisted Reader title on reopen", async ({ page }) => {
+    await gotoGrimoire(page);
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+
+    const titleLine = page.locator(".grimoire-view .cm-line").filter({ hasText: "title: Release checklist" });
+    await titleLine.click();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Shift+End");
+    await page.keyboard.type("title: Discard this title");
+    await page.getByRole("button", { name: "Close Release checklist (unsaved changes)" }).click();
+    await page.getByRole("button", { name: "Close tab", exact: true }).click();
+
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+    await page.getByRole("button", { name: "Reader", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Release checklist", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Discard this title", exact: true })).toHaveCount(0);
+    expect(knowledgePosts).toHaveLength(0);
   });
 
   test("memory files never autosave — typing leaves the draft unsaved", async ({ page }) => {

@@ -327,7 +327,7 @@ assert.match(view, /selectedKnowledgeEntry[\s\S]{0,400}readerEligible[\s\S]{0,30
 assert.match(view, /event\.key !== "Escape"[\s\S]{0,120}leaveReader\(\)/, "Escape exits Reader mode through the focus-restoring path");
 assert.match(view, /aria-hidden \/>[\s\S]{0,80}Reader\s*<\/button>/, "the document command band exposes Reader mode");
 assert.match(view, /className="grimoire-reader-header"/, "Reader mode replaces the surface chrome with a compact document bar");
-assert.match(view, /const readerTitle =[\s\S]{0,500}draftTitles/, "Reader mode derives its label from the live knowledge draft");
+assert.match(view, /const readerTitle =[\s\S]{0,500}knowledgeDrafts/, "Reader mode derives its label from the live knowledge draft");
 assert.match(view, /<h1[^>]*>[\s\S]{0,120}\{readerTitle\}[\s\S]{0,40}<\/h1>/, "Reader mode retains a live level-one document heading");
 assert.match(view, /ref=\{readerEditRef\}/, "Reader mode moves focus to its stable Edit action");
 assert.match(view, /if \(readerMode\) readerEditRef\.current\?\.focus\(\);\s*\n\s*\}, \[readerMode, selectedKey\]\)/, "Reader link navigation restores focus to the next document's Edit action");
@@ -337,10 +337,17 @@ assert.match(view, /const tabReaderMode = readerMode && key === selectedKey/, "o
 assert.match(view, /readerMode=\{tabReaderMode\}/, "the active document editor receives Reader mode without remounting its tab");
 assert.match(view, /visualLifecycleQueuesRef[\s\S]{0,900}visualLifecycleQueueFor/, "each persistent Grimoire tab owns a stable visual lifecycle queue");
 assert.match(view, /visualLifecycleQueuesRef\.current\.set\(nextKey, queue\)/, "draft-to-saved tab replacement preserves its lifecycle queue");
+assert.match(view, /openTabKeysRef\.current\.has\(key\)[\s\S]{0,500}visualLifecycleQueuesRef\.current\.delete\(key\)/, "closed and evicted tabs release settled visual lifecycle queues");
+assert.match(view, /visualLifecycleQueuesRef\.current\.get\(key\) !== queue/, "queue cleanup cannot delete a replacement queue for a reopened tab");
+assert.match(view, /setKnowledgeDrafts[\s\S]{0,500}openTabKeys\.has\(key\)/, "closed and evicted tabs discard their live knowledge drafts");
+assert.match(view, /const draft = previous\[fromKey\][\s\S]{0,300}\[nextKey\]: draft/, "draft-to-saved tab replacement preserves its live markdown");
 assert.match(view, /readerMode \? "hidden" : "flex shrink-0 items-center/, "the open-document tab strip is suppressed while reading");
 assert.match(view, /selection && selection\.kind !== "knowledge-new" && selection\.kind !== "stitch-new"/, "document links remain reachable beneath the reading canvas");
+assert.match(view, /liveMarkdown=\{selection\.kind === "knowledge"[\s\S]{0,180}knowledgeDrafts\[selectedKey\]/, "Reader links resolve from the active live knowledge draft");
+assert.match(view, /liveMarkdown \?\? knowledge\.find/, "persisted knowledge remains the outgoing-link fallback");
+assert.match(view, /@min-\[480px\]\/grimoire:inline/, "Reader keyboard guidance follows the Grimoire container instead of the viewport");
 assert.match(view, /!readerMode \? \(\s*<div className="grimoire-mobile-back/, "narrow persisted and new-document views retain an explicit way back to the document list");
-assert.match(grimoireCss, /@container grimoire \(max-width: 760px\)[\s\S]{0,500}surface-compact-search[\s\S]{0,500}@container grimoire \(max-width: 480px\)[\s\S]{0,160}grimoire-newstitch/, "narrow document chrome keeps primary and overflow actions reachable without clipping");
+assert.match(grimoireCss, /@container grimoire \(max-width: 760px\)[\s\S]{0,700}grimoire-tabs[\s\S]{0,300}overflow-x: auto[\s\S]{0,700}@container grimoire \(max-width: 480px\)[\s\S]{0,160}grimoire-newstitch/, "narrow document chrome scrolls its tabs so primary and overflow actions remain reachable");
 
 // ── cave-xr0 slice 2: outgoing [[wiki-link]] chips ──────────────────────────
 // The open doc's resolved wiki-links render as a chip row below the editor,
@@ -356,7 +363,7 @@ assert.match(
 );
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
 assert.match(view, /title="No matching Memories doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
-assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,500}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
 // ── Knowledge collections + continuity flags ────────────────────────────────
 assert.match(view, /"cave:grimoire:stitch-groups-collapsed"/, "stitch collection collapse overrides persist");
@@ -374,7 +381,7 @@ assert.match(view, /Create in \$\{collection\.meta\?\.name \?\? collection\.id\}
 // ("Mentions"); mention-sourced chips render dashed to read as inferred.
 assert.match(view, /backlinks = useMemo<GrimoireBacklink\[\]>/, "backlinks derive from the doc graph");
 assert.match(view, /e\.target !== activeKey \|\| e\.type === "tag"/, "backlinks keep link+mention edges targeting the active doc (tags excluded)");
-assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}backlinks=\{backlinks\}/, "the chip row receives the backlinks");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,500}backlinks=\{backlinks\}/, "the chip row receives the backlinks");
 assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : "Links to this doc"/, "chips distinguish inferred mentions from explicit links");
 
 // ── The doc graph (cave-hand): full-corpus scan + Obsidian-style canvas ──────

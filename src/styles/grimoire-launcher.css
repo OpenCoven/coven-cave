@@ -151,8 +151,20 @@
   }
 
   .grimoire-tabs {
+    max-width: 100%;
     min-width: 0;
     justify-self: start;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .grimoire-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .grimoire-tab {
+    flex: none;
   }
 
   .grimoire-header .surface-compact-actions {

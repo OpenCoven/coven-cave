@@ -208,7 +208,7 @@ function KnowledgeMdEditor({
   onDirtyChange,
   readerMode = false,
   visualLifecycleQueueRef,
-  onDraftTitleChange,
+  onDraftChange,
 }: {
   /** null → creating a new entry. */
   entry: KnowledgeEntry | null;
@@ -218,7 +218,7 @@ function KnowledgeMdEditor({
   onDirtyChange?: (dirty: boolean) => void;
   readerMode?: boolean;
   visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
-  onDraftTitleChange?: (title: string | null) => void;
+  onDraftChange?: (raw: string) => void;
 }) {
   const initial = useMemo(
     () =>
@@ -259,7 +259,7 @@ function KnowledgeMdEditor({
       onSave={save}
       onCancel={onCancel}
       onDirtyChange={onDirtyChange}
-      onChange={(raw) => onDraftTitleChange?.(parseMdDocument(raw).title)}
+      onChange={onDraftChange}
       // A new entry materializes on its first (manual) save, which re-keys and
       // remounts this editor; only autosave once it exists so typing isn't
       // interrupted mid-keystroke by that remount.
@@ -533,6 +533,7 @@ export type GrimoireBacklink = { ref: WikiDocRef; title: string; type: GraphEdge
  *  for the active doc, so exactly one doc's content is read at a time. */
 function GrimoireDocLinks({
   selection,
+  liveMarkdown,
   knowledge,
   collections,
   docIndex,
@@ -541,6 +542,8 @@ function GrimoireDocLinks({
   onCreated,
 }: {
   selection: GrimoireSelection;
+  /** The active editor's unsaved text; backlinks still come from the persisted graph. */
+  liveMarkdown?: string;
   knowledge: KnowledgeEntry[];
   collections: KnowledgeCollectionSummary[];
   docIndex: WikiDocIndex;
@@ -581,7 +584,7 @@ function GrimoireDocLinks({
 
   const markdown =
     selection.kind === "knowledge"
-      ? knowledge.find((k) => sameKnowledgeDoc(k, selection))?.body ?? ""
+      ? liveMarkdown ?? knowledge.find((k) => sameKnowledgeDoc(k, selection))?.body ?? ""
       : selection.kind === "memory"
         ? memFile.text ?? ""
         : selection.kind === "journal"
@@ -855,6 +858,9 @@ export function GrimoireView({
     return { openTabs: stored.tabs, selection: active };
   });
   const selectedKey = selection ? selectionKey(selection) : null;
+  const openTabKeys = useMemo(() => new Set(openTabs.map(selectionKey)), [openTabs]);
+  const openTabKeysRef = useRef(openTabKeys);
+  openTabKeysRef.current = openTabKeys;
   // One queue per persistent tab: editors in separate tabs may coexist, while
   // a given tab's Crepe teardown must finish before any replacement mounts.
   const visualLifecycleQueuesRef = useRef(
@@ -867,6 +873,28 @@ export function GrimoireView({
     visualLifecycleQueuesRef.current.set(key, queue);
     return queue;
   }, []);
+
+  useEffect(() => {
+    for (const [key, queue] of visualLifecycleQueuesRef.current) {
+      if (openTabKeysRef.current.has(key)) continue;
+      const releaseWhenSettled = () => {
+        const pending = queue.current;
+        const release = () => {
+          if (openTabKeysRef.current.has(key)) return;
+          if (visualLifecycleQueuesRef.current.get(key) !== queue) return;
+          // An unmount may extend the mutable queue after this effect observed
+          // it. Follow that newer teardown instead of releasing early.
+          if (queue.current !== pending) {
+            releaseWhenSettled();
+            return;
+          }
+          visualLifecycleQueuesRef.current.delete(key);
+        };
+        void pending.then(release, release);
+      };
+      releaseWhenSettled();
+    }
+  }, [openTabKeys]);
 
   useEffect(() => {
     if (!preferencesHydrated || deepLinkActiveRef.current || preferenceRestoreAppliedRef.current) return;
@@ -884,7 +912,16 @@ export function GrimoireView({
   // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
   // editor via onDirtyChange — they drive the tab dot and the close confirm.
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({});
-  const [draftTitles, setDraftTitles] = useState<Record<string, string | null>>({});
+  const [knowledgeDrafts, setKnowledgeDrafts] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setKnowledgeDrafts((previous) => {
+      const staleKeys = Object.keys(previous).filter((key) => !openTabKeys.has(key));
+      if (staleKeys.length === 0) return previous;
+      const next = { ...previous };
+      for (const key of staleKeys) delete next[key];
+      return next;
+    });
+  }, [openTabKeys]);
   const setTabDirty = useCallback((key: string, dirty: boolean) => {
     setDirtyTabs((prev) => {
       if (!!prev[key] === dirty) return prev;
@@ -984,6 +1021,13 @@ export function GrimoireView({
     if (queue && !visualLifecycleQueuesRef.current.has(nextKey)) {
       visualLifecycleQueuesRef.current.set(nextKey, queue);
     }
+    setKnowledgeDrafts((previous) => {
+      if (!Object.hasOwn(previous, fromKey)) return previous;
+      const draft = previous[fromKey];
+      const updated = { ...previous, [nextKey]: draft };
+      if (fromKey !== nextKey) delete updated[fromKey];
+      return updated;
+    });
     setTabState((prev) => {
       let tabs = prev.openTabs.map((t) => (selectionKey(t) === fromKey ? next : t));
       // De-dupe if the target already had a tab.
@@ -1355,8 +1399,8 @@ export function GrimoireView({
     [knowledge, dateTimePrefs],
   );
   const readerTitle = selection
-    ? selection.kind === "knowledge" && selectedKey && Object.hasOwn(draftTitles, selectedKey)
-      ? draftTitles[selectedKey]?.trim() || "Untitled"
+    ? selection.kind === "knowledge" && selectedKey && Object.hasOwn(knowledgeDrafts, selectedKey)
+      ? parseMdDocument(knowledgeDrafts[selectedKey]).title?.trim() || "Untitled"
       : tabTitle(selection)
     : "";
 
@@ -1440,9 +1484,9 @@ export function GrimoireView({
             entry={entry}
             readerMode={tabReaderMode}
             visualLifecycleQueueRef={visualLifecycleQueueFor(key)}
-            onDraftTitleChange={(title) => {
-              setDraftTitles((previous) => (
-                previous[key] === title ? previous : { ...previous, [key]: title }
+            onDraftChange={(raw) => {
+              setKnowledgeDrafts((previous) => (
+                previous[key] === raw ? previous : { ...previous, [key]: raw }
               ));
             }}
             onSaved={(saved) => {
@@ -1553,6 +1597,7 @@ export function GrimoireView({
           <GrimoireDocLinks
             key={selectedKey ?? ""}
             selection={selection}
+            liveMarkdown={selection.kind === "knowledge" && selectedKey ? knowledgeDrafts[selectedKey] : undefined}
             knowledge={knowledge ?? []}
             collections={collections ?? []}
             docIndex={docIndex}
@@ -1578,7 +1623,7 @@ export function GrimoireView({
           <h1 className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
             {readerTitle}
           </h1>
-          <span className="hidden text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:inline">
+          <span className="hidden text-[length:var(--text-2xs)] text-[var(--text-muted)] @min-[480px]/grimoire:inline">
             Esc to return
           </span>
           <button
