@@ -6,13 +6,13 @@ import UIKit
 #endif
 import WidgetKit
 
-/// The primary destinations. Lifted out of the drawer shell so slash commands
+/// The application destinations. Lifted out of the drawer shell so slash commands
 /// (`/board`, `/chats`) can drive selection from anywhere.
 enum AppTab: String, CaseIterable, Sendable { case chats, tasks, settings }
 
 extension AppTab {
-    static let drawerDestinations: [AppTab] = [.chats, .tasks, .settings]
-    static let shortcutOrder: [AppTab] = drawerDestinations
+    static let drawerDestinations: [AppTab] = [.chats, .tasks]
+    static let shortcutOrder: [AppTab] = [.chats, .tasks, .settings]
 
     /// Project search returns to the active project-scoped destination when it
     /// has one; settings falls back to Chats because it does not render
@@ -482,7 +482,7 @@ final class AppModel {
 
     // MARK: - Cross-view command routing
 
-    /// The selected primary destination. Mounted by `MainShellView`; set by
+    /// The selected application destination. Mounted by `MainShellView`; set by
     /// drawer actions, deep links, and `/board` / `/chats`.
     var selectedTab: AppTab = {
         #if DEBUG
