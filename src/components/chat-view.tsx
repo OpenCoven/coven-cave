@@ -7291,6 +7291,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       projects={projects}
       projectValue={resolvedProjectId}
       onProjectChange={setProjectIdDraft}
+      showProject={false}
       familiarId={familiar.id ?? null}
       createProject={createProject}
       createProjectOrThrow={createProjectOrThrow}
@@ -8138,10 +8139,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         usage={lastSettledAssistantTurn?.usage}
         costUsd={lastSettledAssistantTurn?.costUsd}
         durationMs={lastSettledAssistantTurn?.durationMs}
-        projects={projects}
-        projectId={projectIdDraft}
-        onProjectChange={setProjectIdDraft}
-        onAddProject={overflowAddProject.beginAddProject}
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />

@@ -700,7 +700,6 @@ export function WorkspaceSidebar({
           projectCrewError={workspaceProjectCrewError}
           reloadProjectCrew={reloadWorkspaceProjectCrew}
           contextNotice={workspaceContextNotice}
-          contextMode="all"
         />
 
         <div className="cnav__search-wrap">

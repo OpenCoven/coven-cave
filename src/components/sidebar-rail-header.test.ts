@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Parity gate for the siderail's shared header (scope switcher + New chat).
+// Parity gate for the siderail's shared header (mobile context + New chat).
 //
 // Home (SidebarMinimal) and Chat (WorkspaceSidebar) are separate components
 // with separate stylesheets. For a long time each declared this header's chrome
@@ -23,7 +23,6 @@ import { readFileSync } from "node:fs";
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const railHeader = read("./sidebar-rail-header.tsx");
-const sidebarScopeSelector = read("./sidebar-scope-selector.tsx");
 const homeSidebar = read("./sidebar-minimal.tsx");
 const chatSidebar = read("./workspace-sidebar.tsx");
 const railHeaderCss = read("../styles/globals/rail-header.css");
@@ -64,18 +63,12 @@ assert.doesNotMatch(
 assert.doesNotMatch(homeSidebar, /<ProjectPicker/, "the Home rail does not mount ProjectPicker directly");
 assert.doesNotMatch(chatSidebar, /<ProjectPicker/, "the Chat rail does not mount ProjectPicker directly");
 
-// Desktop uses one compact fast-switcher. Mobile keeps the fuller stacked
+// Desktop context lives once in the titlebar. Mobile keeps the full stacked
 // project/familiar controls through WorkspaceContextSwitcher.
-assert.match(
+assert.doesNotMatch(
   railHeader,
-  /import \{ SidebarScopeSelector \} from "@\/components\/sidebar-scope-selector";/,
-  "the shared header imports the compact sidebar scope selector",
-);
-assert.match(railHeader, /<SidebarScopeSelector/, "the shared header renders SidebarScopeSelector");
-assert.match(
-  railHeader,
-  /className="rail-header__scope rail-header__scope--desktop"[\s\S]*?\{compactScope\}/,
-  "desktop renders the compact selector in its own responsive row",
+  /SidebarScopeSelector|rail-header__scope--desktop/,
+  "the redundant desktop rail selector is retired",
 );
 assert.match(
   railHeader,
@@ -87,44 +80,14 @@ assert.doesNotMatch(
   /<FamiliarSwitcher/,
   "the shared header delegates selection instead of mounting FamiliarSwitcher directly",
 );
-assert.match(
-  sidebarScopeSelector,
-  /<PopoverLabel>Projects<\/PopoverLabel>[\s\S]*?<PopoverLabel>Familiars<\/PopoverLabel>/,
-  "the compact popover groups project choices before familiar choices",
-);
-assert.match(
-  sidebarScopeSelector,
-  /onSelect=\{\(\) => closeAnd\(\(\) => onProjectChange\(entry\.id\)\)\}/,
-  "project rows invoke the existing project callback and close",
-);
-assert.match(
-  sidebarScopeSelector,
-  /closeAnd\(\(\) => onSelectFamiliar\(familiar\.id\)\)/,
-  "familiar rows invoke the existing familiar callback and close",
-);
-assert.match(
-  sidebarScopeSelector,
-  /aria-label=\{`Switch project or familiar — current: \$\{scopeLabel\}`\}/,
-  "the icon-only rail state retains a complete accessible name",
-);
-assert.match(
-  sidebarScopeSelector,
-  /projectId \? projectCrew : allFamiliars/,
-  "project scope fails closed to project crew instead of leaking the global familiar list",
-);
-assert.match(
-  sidebarScopeSelector,
-  /useEffect\(\(\) => \{\s*if \(disabled\) setOpen\(false\);\s*\}, \[disabled\]\);/,
-  "disabling the selector clears stored open state so it cannot reopen after loading",
-);
 for (const [name, sidebar] of [
   ["Home", homeSidebar],
   ["Chat", chatSidebar],
 ]) {
-  assert.match(
+  assert.doesNotMatch(
     sidebar,
-    /contextMode="all"/,
-    `the ${name} desktop rail enables the shared scope row`,
+    /contextMode=/,
+    `the ${name} rail does not opt back into duplicate desktop context`,
   );
 }
 
@@ -172,35 +135,18 @@ assert.doesNotMatch(
   "the Chat rail's forked header styles stay retired",
 );
 
-// ── The parity-critical properties resolve from the shared rule ─────────────
-// Selector-specific layout for the crew/project triggers moved from
-// rail-header.css into workspace-context-switcher.css (Task 5). The New-chat
-// rule stays in rail-header.css unchanged.
-const scopeRule =
-  workspaceContextSwitcherCss.match(/\.sidebar-scope-selector__trigger \{[\s\S]*?\n\}/)?.[0] ?? "";
+// ── The parity-critical New chat properties resolve from the shared rule ─────
 const newRule = railHeaderCss.match(/\.rail-header__new \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-assert.notEqual(scopeRule, "", "the shared scope-trigger rule exists");
 assert.notEqual(newRule, "", "the shared New-chat rule exists");
 
 // Radius comes from the token, never a literal. themes.css moves
 // --radius-control to 7/12/16/18px across palettes, so a hardcoded px value
 // here silently diverges on most of the 42 theme combinations — which is the
 // exact bug this file exists to prevent.
-for (const [label, rule] of [
-  ["scope trigger", scopeRule],
-  ["New chat", newRule],
-]) {
-  assert.match(rule, /border-radius: var\(--radius-control\);/, `the ${label} takes its radius from the token`);
-  assert.doesNotMatch(rule, /border-radius:\s*\d+px/, `the ${label} does not hardcode a radius`);
-  assert.doesNotMatch(rule, /\n\s*height:\s*\d+px/, `the ${label} does not pin a fixed height`);
-}
-
-assert.match(
-  scopeRule,
-  /min-height: calc\(var\(--rail-control\) \+ var\(--space-3\)\);/,
-  "the two-line scope trigger grows from the shared rail control token",
-);
+assert.match(newRule, /border-radius: var\(--radius-control\);/, "New chat takes its radius from the token");
+assert.doesNotMatch(newRule, /border-radius:\s*\d+px/, "New chat does not hardcode a radius");
+assert.doesNotMatch(newRule, /\n\s*height:\s*\d+px/, "New chat does not pin a fixed height");
 assert.match(
   newRule,
   /min-height: var\(--rail-control\);/,
@@ -209,38 +155,23 @@ assert.match(
 assert.match(newRule, /font-size: var\(--text-base\);/, "the New chat label uses the rail's base type size");
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__identity-copy strong \{[\s\S]*?font-size: var\(--text-sm\);/,
-  "the scope identities use the denser sidebar label size",
-);
-assert.match(
-  scopeRule,
-  /border: 1px solid var\(--border-hairline\);/,
-  "the scope selector uses a quiet hairline instead of a heavy accent outline",
-);
-assert.match(
-  scopeRule,
-  /background: var\(--bg-subtle\);/,
-  "the scope selector rests on the rail's subtle surface",
-);
-assert.match(
-  scopeRule,
-  /width: 100%;/,
-  "the scope selector fills the available rail width",
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \{[\s\S]*?width: calc\(var\(--space-8\) - var\(--space-1\)\);/,
+  "the titlebar project rests at icon width",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__project \{[\s\S]*?min-width: 0;[\s\S]*?border-right: 1px solid var\(--border-hairline\);/,
-  "the project segment shares the row and keeps a quiet divider",
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project:hover,[\s\S]*?:focus-within \{[\s\S]*?width: 144px;/,
+  "pointer and keyboard inspection reveal the project name",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__familiar \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\);/,
-  "the active familiar segment derives its selected tint from one accent token",
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \{[\s\S]*?min-width: 132px;[\s\S]*?max-width: 200px;/,
+  "the familiar keeps the predominant named segment",
 );
 assert.match(
-  sidebarScopeSelector,
-  /sidebar-scope-selector__project[\s\S]*?>Project<[\s\S]*?\{projectLabel\}[\s\S]*?sidebar-scope-selector__familiar[\s\S]*?>Familiar<[\s\S]*?\{familiarLabel\}/,
-  "the full-width trigger names project first and the active familiar second",
+  workspaceContextSwitcherCss,
+  /@media \(prefers-reduced-motion: reduce\)[\s\S]*?transition: none;/,
+  "the titlebar reveal has a reduced-motion story",
 );
 assert.match(
   sectionTabsCss,
@@ -453,14 +384,9 @@ assert.doesNotMatch(
   "workspace-context-switcher.css gap uses spacing tokens, not raw 10px",
 );
 
-// ── Collapsed segmented control ─────────────────────────────────────────────
-assert.match(
-  workspaceContextSwitcherCss,
-  /\.shell-nav--rail \.sidebar-scope-selector__project,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__identity-copy,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__caret \{[\s\S]*?display: none;/,
-  "the collapsed rail hides the project segment, identity copy, and caret",
-);
+// ── Stable component selectors ──────────────────────────────────────────────
 assert.doesNotMatch(
   workspaceContextSwitcherCss,
   /\.ph-caret-up-down-bold/,
-  "collapsed CSS must not target the generated icon class name — use the stable caret class",
+  "context CSS must not target generated icon class names",
 );

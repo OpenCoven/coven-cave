@@ -1,4 +1,4 @@
-/* ══ Siderail shared header — familiar scope + New chat ═══════════════════════
+/* ══ Siderail shared header — mobile context + New chat ═══════════════════════
    ONE declaration of the chrome both rail sections show in the same place.
 
    Home (.sidebar-minimal) and Chat (.cnav) are separate components with
@@ -36,9 +36,6 @@
 .rail-header__scope--mobile {
   display: none;
 }
-
-/* The scope control and New-chat button are the same box; workspace-context-switcher.css
-   owns the selector-specific trigger rules. */
 
 .rail-header__actions {
   display: flex;
@@ -115,11 +112,10 @@
 }
 
 /* ── Collapsed 56px icon rail ─────────────────────────────────────────────── */
-/* The header survives the collapse as two centered --rail-control squares: the
-   scope trigger keeps its avatar (label and caret drop) and New chat keeps its
-   glyph. Collapsing changes the WIDTH of a control and nothing else — same box
-   height, same skin, same glyph size, same icon column — so hovering the rail
-   open reveals labels instead of relocating buttons (issue 4351).
+/* The header survives the collapse as a centered New chat square. Collapsing
+   changes the WIDTH of the control and nothing else — same box height, same
+   skin, same glyph size, same icon column — so hovering the rail open reveals
+   the label instead of relocating the button (issue 4351).
    New chat used to invert to a solid --accent-presence fill here, which made
    the one control that changed the most on peek also the loudest thing in the
    rail; it now keeps the quiet-primary tint it wears in the panel. */
@@ -128,11 +124,6 @@
   padding-left: 0;
   padding-right: 0;
   align-items: center;
-}
-
-.shell-nav--rail .rail-header__scope {
-  padding: 0;
-  justify-content: center;
 }
 
 .shell-nav--rail .rail-header__new-label,

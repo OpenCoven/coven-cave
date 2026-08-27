@@ -251,7 +251,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         projectCrewError={props.projectCrewError}
         reloadProjectCrew={props.reloadProjectCrew}
         contextNotice={props.contextNotice}
-        contextMode="all"
       />
 
       <div

@@ -31,7 +31,7 @@ assert.match(source, /onClick=\{reloadProjectCrew\}/, "crew load failure can ret
 assert.match(source, /No familiars have access to this project/, "empty crew is explicit");
 assert.match(source, /role="note"/, "non-pilot context notices are explicit");
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "styles use tokens only");
-assert.match(css, /\.shell-nav--rail \.workspace-context-switcher/, "collapsed rail is explicit");
+assert.match(css, /\.workspace-context-switcher--titlebar/, "desktop titlebar treatment is explicit");
 
 // ── Project ordering: ProjectPicker must appear before FamiliarSwitcher ─────
 const projectIndex = source.indexOf("<ProjectPicker");
@@ -74,16 +74,26 @@ assert.match(
   "the presence accent marks the crew trigger on hover",
 );
 
-// ── Collapsed caret selector targets the stable class, not a generated icon class ──
+// ── Project identity is icon-first until hover/focus reveals its name ─────────
 assert.match(
   css,
-  /cave-project-picker__trigger-caret/,
-  "collapsed CSS targets the stable caret class",
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \{[\s\S]*?width:\s*calc\(var\(--space-8\) - var\(--space-1\)\);/,
+  "the titlebar project rests at icon width",
+);
+assert.match(
+  css,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project:hover,[\s\S]*?:focus-within \{[\s\S]*?width:\s*144px;/,
+  "hover and keyboard focus reveal the project name",
+);
+assert.match(
+  css,
+  /cave-project-picker__trigger-label[\s\S]*?max-width:\s*0;[\s\S]*?opacity:\s*0;/,
+  "the project name is visually collapsed at rest",
 );
 assert.doesNotMatch(
   css,
   /\.ph-caret-up-down-bold/,
-  "collapsed CSS must not target generated icon class name",
+  "selector CSS targets stable component classes, not generated icon classes",
 );
 
 // ── createProjectOrThrow is optional — no synthetic throwing default ─────────

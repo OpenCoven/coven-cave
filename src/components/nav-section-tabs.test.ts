@@ -121,14 +121,15 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /contextMode="all"/,
-  "Home enables the compact desktop selector while retaining full mobile scope controls",
+  /<SidebarRailHeader/,
+  "Home keeps the shared mobile context header",
 );
 assert.match(
   chatSidebar,
-  /contextMode="all"/,
-  "Chat enables the compact desktop selector while retaining full mobile scope controls",
+  /<SidebarRailHeader/,
+  "Chat keeps the shared mobile context header",
 );
+assert.doesNotMatch(sidebar + chatSidebar, /contextMode=/, "desktop context is not duplicated in either rail");
 assert.match(
   workspace,
   /setMode\(next === "code" \? "chat" : "home"\)/,
@@ -148,13 +149,18 @@ assert.match(
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.workspace-context-switcher--titlebar \{[\s\S]*?padding-inline-start:\s*var\(--space-2\);[\s\S]*?border-inline-start:\s*1px solid var\(--border-hairline\);/,
-  "workspace scope is quietly separated from room navigation",
+  /\.workspace-context-switcher--titlebar \{[\s\S]*?border:\s*1px solid var\(--border-hairline\);[\s\S]*?border-radius:\s*var\(--radius-card\);[\s\S]*?background:\s*var\(--bg-raised\);/,
+  "workspace identity is grouped on one raised titlebar surface",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \.cave-project-picker__trigger,\s*\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?max-width:\s*144px;[\s\S]*?height:\s*28px;/,
-  "title-bar project and familiar controls stay compact and align with adjacent chrome",
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project:hover,[\s\S]*?:focus-within \{[\s\S]*?width:\s*144px;/,
+  "project identity expands only for pointer or keyboard inspection",
+);
+assert.match(
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \{[\s\S]*?min-width:\s*132px;[\s\S]*?max-width:\s*200px;/,
+  "familiar identity remains the predominant named segment",
 );
 assert.match(
   styles,

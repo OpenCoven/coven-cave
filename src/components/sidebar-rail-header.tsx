@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SidebarRailHeader — the siderail's shared top: workspace context + New chat.
+ * SidebarRailHeader — the siderail's shared top: mobile context + New chat.
  *
  * Both rail sections render this. Home (`SidebarMinimal`) and Chat
  * (`WorkspaceSidebar`) are separate components with separate stylesheets, and
@@ -25,7 +25,6 @@
  */
 
 import type { ReactNode } from "react";
-import { SidebarScopeSelector } from "@/components/sidebar-scope-selector";
 import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -74,7 +73,6 @@ export type SidebarRailHeaderProps = {
   projectCrewError?: string | null;
   reloadProjectCrew?: () => void;
   contextNotice?: string | null;
-  contextMode?: "all" | "mobile" | "hidden";
 };
 
 export function SidebarRailHeader({
@@ -102,7 +100,6 @@ export function SidebarRailHeader({
   projectCrewError,
   reloadProjectCrew,
   contextNotice,
-  contextMode = "all",
 }: SidebarRailHeaderProps) {
   // Context is ready when every required Task6 prop has been supplied. A prop
   // that is null or false is supplied; undefined means the caller has not wired
@@ -121,26 +118,6 @@ export function SidebarRailHeader({
     projectCrewError !== undefined &&
     reloadProjectCrew !== undefined;
 
-  const compactScope = (
-    <SidebarScopeSelector
-      projects={workspaceContextReady ? projects! : EMPTY_PROJECTS}
-      projectId={workspaceContextReady ? projectId! : null}
-      onProjectChange={workspaceContextReady ? onProjectChange! : NOOP_PROJECT_CHANGE}
-      projectLoading={!workspaceContextReady || Boolean(projectLoading)}
-      projectError={workspaceContextReady ? projectError! : null}
-      reloadProjects={workspaceContextReady ? reloadProjects! : NOOP_RELOAD}
-      project={workspaceContextReady ? project! : null}
-      allFamiliars={familiars}
-      projectCrew={workspaceContextReady ? projectCrew! : EMPTY_CREW}
-      projectCrewLoading={!workspaceContextReady || Boolean(projectCrewLoading)}
-      projectCrewError={workspaceContextReady ? projectCrewError! : null}
-      reloadProjectCrew={workspaceContextReady ? reloadProjectCrew! : NOOP_RELOAD}
-      activeFamiliarId={activeFamiliarId}
-      selectedFamiliarIds={selectedFamiliarIds ?? EMPTY_SELECTED_FAMILIAR_IDS}
-      onSelectFamiliar={onSelectFamiliar}
-      contextNotice={contextNotice}
-    />
-  );
   const mobileScope = (
     <WorkspaceContextSwitcher
       projects={workspaceContextReady ? projects! : EMPTY_PROJECTS}
@@ -167,16 +144,9 @@ export function SidebarRailHeader({
 
   return (
     <div className="rail-header">
-      {contextMode === "all" ? (
-        <div className="rail-header__scope rail-header__scope--desktop">
-          {compactScope}
-        </div>
-      ) : null}
-      {contextMode !== "hidden" ? (
-        <div className="rail-header__scope rail-header__scope--mobile">
-          {mobileScope}
-        </div>
-      ) : null}
+      <div className="rail-header__scope rail-header__scope--mobile">
+        {mobileScope}
+      </div>
       <div className="rail-header__actions">
         <button type="button" className="rail-header__new focus-ring" onClick={onNewChat} title={newChatTitle}>
           <Icon

@@ -199,8 +199,8 @@ assert.doesNotMatch(
   "Familiars subpage should not appear as a workspace navigation row",
 );
 
-// The horizontal dock remains retired. Familiar scope returns only through the
-// shared compact sidebar selector, never as a direct FamiliarSwitcher fork.
+// The horizontal dock remains retired. Desktop familiar scope belongs to the
+// titlebar; the shared rail header retains only the mobile fallback.
 assert.doesNotMatch(source, /<FamiliarDock/, "the old horizontal familiar dock is gone");
 assert.doesNotMatch(
   source,
@@ -209,9 +209,10 @@ assert.doesNotMatch(
 );
 assert.match(
   railHeaderSource,
-  /<SidebarScopeSelector/,
-  "the shared rail header owns the compact project/familiar scope selector",
+  /rail-header__scope--mobile/,
+  "the shared rail header owns the mobile project/familiar scope fallback",
 );
+assert.doesNotMatch(railHeaderSource, /SidebarScopeSelector/, "the redundant desktop rail selector is retired");
 assert.match(
   source,
   /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean; preserveSurface\?: boolean \}\) => void/,
@@ -448,30 +449,30 @@ assert.doesNotMatch(
   /className="sidebar-header sidebar-header--static"/,
   "the static wordmark header is gone — the familiar switcher owns the slot (collapse stays on the shell's floating toggle + ⌘B)",
 );
-// The header carries the familiar switcher on every page (cave-vtk9) — the
-// wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
+// The header keeps the mobile familiar switcher on every page. Desktop identity
+// now lives once in the titlebar instead of repeating in the rail.
 assert.match(
   source,
   /<SidebarRailHeader[\s\S]{0,600}familiars=\{familiars\}/,
-  "the sidenav header mounts the familiar switcher",
+  "the sidenav header mounts the mobile familiar switcher",
 );
 assert.match(
   source,
   /onSelectFamiliar=\{onFamiliarScopeChange\}/,
-  "the header switcher drives the shared familiar scope",
+  "the mobile header switcher drives the shared familiar scope",
 );
 const sidebarCss = styles;
-// The trigger selector-specific rules moved from rail-header.css into
-// workspace-context-switcher.css in Task 5. Assert the new location.
+// Mobile keeps the full-width control; desktop rail-collapse rules are retired
+// with the duplicate selector.
 assert.match(
   workspaceContextSwitcherCss,
   /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?width:\s*100%;/,
-  "the expanded familiar control fills its available width in the crew section",
+  "the mobile familiar control fills its available width in the crew section",
 );
-assert.match(
+assert.doesNotMatch(
   workspaceContextSwitcherCss,
-  /\.shell-nav--rail \.workspace-context-switcher__crew \.familiar-switcher__trigger-label,[\s\S]*?display: none/,
-  "the rail keeps the avatar-only trigger (label drops)",
+  /\.shell-nav--rail \.workspace-context-switcher/,
+  "the desktop rail no longer carries project or familiar selection",
 );
 assert.doesNotMatch(
   source,
