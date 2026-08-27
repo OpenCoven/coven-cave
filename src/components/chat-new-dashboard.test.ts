@@ -82,6 +82,11 @@ assert.match(
   /\.cave-chat-transcript:has\(\.home-dash--embed\) \.cave-chat-thread \{[\s\S]{0,200}?max-width: none/,
   "the thread releases its centered reading measure for the board",
 );
+assert.match(
+  css,
+  /\.home-dash__board-inner \{[\s\S]{0,180}?width: 100%;[\s\S]{0,100}?max-width: none;[\s\S]{0,100}?margin: 0;/,
+  "the new-session launcher fills the available Chat pane width",
+);
 assert.doesNotMatch(css, /home-dash__chrome/, "the retired chrome styles are gone");
 assert.doesNotMatch(css, /home-dash__dock/, "the retired dock styles are gone");
 assert.doesNotMatch(css, /home-dash__rail/, "the retired rail styles are gone");

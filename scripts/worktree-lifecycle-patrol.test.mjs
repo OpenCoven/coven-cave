@@ -1266,7 +1266,7 @@ process.exit(2);
   git(["reset", "-q", "--hard", "HEAD"], recentReflog, {
     env: {
       ...process.env,
-      GIT_COMMITTER_DATE: "2026-08-10T21:00:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   const recentReflogHead = git(["rev-parse", "HEAD"], recentReflog).trim();
@@ -1325,8 +1325,8 @@ process.exit(2);
   git(["merge", "-q", "--no-ff", "feat/manual-recent", "-m", "land manual work today"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
 
@@ -1353,8 +1353,8 @@ process.exit(2);
     {
       env: {
         ...process.env,
-        GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-        GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+        GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+        GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
       },
     },
   );
@@ -1384,8 +1384,8 @@ process.exit(2);
   git(["commit", "-q", "-m", "later default work"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:45:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:45:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   git(["push", "-q", "origin", "main"], repo);
@@ -2203,7 +2203,7 @@ if [ "$1" = "api" ] &&
         elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
           printf '%s\\n' '[[{"number":142,"html_url":"https://github.com/ArchiveOrg/archive/pull/142","state":"closed","draft":false,"merged_at":null,"head":{"ref":"archived-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"archive","repo":{"full_name":"ArchiveOrg/archive"}}}],[{"number":99,"html_url":"https://github.com/OtherOrg/other-repo/pull/99","state":"open","draft":false,"merged_at":null,"head":{"ref":"different-head-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OtherOrg/other-repo"}}}]]'
         elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
-          printf '%s\\n' '[[{"number":98,"html_url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"closed","draft":false,"merged_at":"2026-08-10T21:30:00Z","head":{"ref":"different-merged-head","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+          printf '%s\\n' '[[{"number":98,"html_url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"different-merged-head","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
         elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ] ||
              [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
           DRAFT=false
@@ -2217,12 +2217,12 @@ if [ "$1" = "api" ] &&
           printf '[[{"number":42,"html_url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
         fi
       elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
-        printf '[[{"number":43,"html_url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"closed","draft":false,"merged_at":"2026-08-10T21:00:00Z","head":{"ref":"feat/recent-merge","sha":"${recentMergeHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+        printf '[[{"number":43,"html_url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/recent-merge","sha":"${recentMergeHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
         printf '[[{"number":44,"html_url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/recent-reflog","sha":"${recentReflogHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
            [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
-        printf '[[{"number":45,"html_url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"closed","draft":false,"merged_at":"2026-08-10T21:30:00Z","head":{"ref":"feat/fast-forward","sha":"${fastForwardHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+        printf '[[{"number":45,"html_url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/fast-forward","sha":"${fastForwardHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       else
         printf '%s\\n' '[[]]'
       fi
@@ -2340,7 +2340,7 @@ if [ "$1" = "api" ] &&
       elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":142,"url":"https://github.com/ArchiveOrg/archive/pull/142","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"archived-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"archive","baseRepository":{"nameWithOwner":"ArchiveOrg/archive"}}],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-1"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":99,"url":"https://github.com/OtherOrg/other-repo/pull/99","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"different-head-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OtherOrg/other-repo"}}],"pageInfo":{"hasNextPage":false,"endCursor":"assoc-2"}}}}}}]'
       elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
-        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":97,"url":"https://github.com/OpenCoven/coven-cave/pull/97","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"closed"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
@@ -2352,12 +2352,12 @@ if [ "$1" = "api" ] &&
         printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":42,"url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"old"}}}}}}]\\n' "$REPOSITORY" "$BASE_REF"
       fi
     elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
       printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":44,"url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"reflog"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
          [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
     else
       printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\\n' "$REPOSITORY"
     fi
@@ -3019,15 +3019,15 @@ exit 0
     "cooldown",
     "a fresh direct default-branch landing supplies cooldown evidence without a matching PR",
   );
-  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
+  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
   assert.equal(directLanding.mergedPr, null);
   const postLandingCooldown = JSON.parse(
-    patrol(["--json", "--now", "2026-08-11T00:30:00Z"]),
+    patrol(["--json", "--now", "2026-08-10T22:05:00Z"]),
   ).items.find((item) => item.branch === "feat/direct-landing");
   assert.equal(
     postLandingCooldown.lane,
     "retire-after-gate",
-    "the stable direct landing becomes eligible after 3 hours",
+    "the stable direct landing becomes eligible after 15 minutes",
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
@@ -3190,7 +3190,7 @@ exit 0
     const fastForward = byBranch.get("feat/fast-forward");
     assert.notEqual(fastForward.head, defaultHead);
     assert.equal(fastForward.lane, "cooldown");
-    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(byBranch.get("main").lane, "protected");
   });
 
@@ -3203,12 +3203,12 @@ exit 0
     );
     assert.equal(mergedFastForward.head, fastForwardHead);
     assert.equal(mergedFastForward.lane, "cooldown");
-    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(mergedFastForward.mergedPr.number, 45);
 
     const eligibleFastForward = JSON.parse(
       patrol(
-        ["--json", "--now", "2026-08-11T21:45:01Z"],
+        ["--json", "--now", "2026-08-10T22:05:01Z"],
         { LIFECYCLE_FAST_FORWARD_MERGED_PR: "1" },
       ),
     ).items.find((item) => item.branch === "feat/fast-forward");

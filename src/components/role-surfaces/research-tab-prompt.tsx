@@ -35,7 +35,6 @@ import {
   type AgenticRecommendation,
   type RankedAgenticRecommendation,
 } from "@/lib/agentic-recommendations";
-import { caveAgenticRecommendations } from "@/lib/feature-flags";
 import { linkCategoryMeta, type SavedLinkSummary } from "@/lib/link-organizer";
 import {
   buildResearchRecommendationContext,
@@ -174,7 +173,6 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
   const [topicActionId, setTopicActionId] = useState<string | null>(null);
   const [topicActionError, setTopicActionError] = useState<string | null>(null);
   const [recommendationReducedContext, setRecommendationReducedContext] = useState(false);
-  const agenticRecommendationsEnabled = caveAgenticRecommendations();
   const serverRecommendationSnapshot = useRef<ResearchRecommendationSnapshot | null>(null);
   const revisionRequestRef = useRef<Promise<void> | null>(null);
   const draftRef = useRef(draft);
@@ -240,7 +238,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
 
   const agentic = useAgenticRecommendations<ResearchRecommendationClientContext>({
     context: recommendationContext,
-    enabled: agenticRecommendationsEnabled && !research.loading && !links.loading,
+    enabled: !research.loading && !links.loading,
     meaningfulContextKey: researchRecommendationContextKey,
     createRunId: () => `research-topics-${crypto.randomUUID()}`,
     parseOutput: parseResearchTopicRecommendations,
@@ -292,7 +290,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
   });
   const checkRecommendationRevision = useCallback(() => {
     if (revisionRequestRef.current) return revisionRequestRef.current;
-    if (!agenticRecommendationsEnabled || research.loading || links.loading) return Promise.resolve();
+    if (research.loading || links.loading) return Promise.resolve();
     const snapshot = serverRecommendationSnapshot.current;
     if (!snapshot || snapshot.clientContextKey !== recommendationContextKey) return Promise.resolve();
 
@@ -321,7 +319,6 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
     return request;
   }, [
     agentic,
-    agenticRecommendationsEnabled,
     context.activeFamiliar.id,
     links.loading,
     recommendationContextKey,
@@ -329,7 +326,6 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
   ]);
 
   useEffect(() => {
-    if (!agenticRecommendationsEnabled) return;
     const onForeground = () => {
       if (!document.hidden) void checkRecommendationRevision();
     };
@@ -339,7 +335,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
       window.removeEventListener("focus", onForeground);
       document.removeEventListener("visibilitychange", onForeground);
     };
-  }, [agenticRecommendationsEnabled, checkRecommendationRevision]);
+  }, [checkRecommendationRevision]);
 
   const recommendationItems = agentic.state.items
     .filter((item) => item.phase !== "dismissed")
@@ -475,21 +471,20 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
             }}
           />
 
-          {agenticRecommendationsEnabled ? (
-            <section
-              className="research-topic-recommendations"
-              aria-labelledby="research-topic-recommendations-heading"
-              onFocusCapture={(event) => {
-                if (didFocusEnterRecommendations(event)) {
-                  void checkRecommendationRevision();
-                }
-              }}
-            >
+          <section
+            className="research-topic-recommendations"
+            aria-labelledby="research-topic-recommendations-heading"
+            onFocusCapture={(event) => {
+              if (didFocusEnterRecommendations(event)) {
+                void checkRecommendationRevision();
+              }
+            }}
+          >
               <header className="research-topic-recommendations__header">
                 <div>
                   <p className="research-topic-recommendations__kicker">Contextual research</p>
                   <h3 id="research-topic-recommendations-heading">Suggested next topics</h3>
-                  <p>Grounded in current missions, saved sources, and relevant Vault evidence.</p>
+                  <p>Grounded in collective Coven sessions, current missions, saved sources, and relevant Vault evidence.</p>
                 </div>
                 <button
                   type="button"
@@ -556,8 +551,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
                   })}
                 </div>
               )}
-            </section>
-          ) : null}
+          </section>
         </div>
       </div>
 

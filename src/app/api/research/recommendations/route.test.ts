@@ -7,6 +7,7 @@ import type { ResearchMission } from "@/lib/research-missions.ts";
 import type { KnowledgeEntry } from "@/lib/server/knowledge-vault.ts";
 import type { SavedXSource } from "@/lib/server/x-sources.ts";
 import type { AgenticDiagnosticEvent } from "@/lib/agentic-diagnostics.ts";
+import type { SessionRow } from "@/lib/types.ts";
 import {
   createResearchRecommendationsRoute,
   type ResearchRecommendationsRouteDeps,
@@ -51,11 +52,27 @@ function xSource(id: string): SavedXSource {
   };
 }
 
+function session(id: string): SessionRow {
+  return {
+    id,
+    title: `Session topic ${id}`,
+    project_root: "/tmp/coven",
+    harness: "copilot",
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-08-19T09:00:00.000Z",
+    updated_at: "2026-08-19T10:00:00.000Z",
+    attention: { state: "none", since: null, reason: null },
+  };
+}
+
 function baseDeps(overrides: Partial<ResearchRecommendationsRouteDeps> = {}): ResearchRecommendationsRouteDeps {
   return {
     listMissions: async () => [],
     listSavedLinks: async () => [],
     listSavedXSources: async () => [],
+    listSessions: async () => [],
     hasXResearchCapability: async () => true,
     listVaultEntries: async () => [],
     ...overrides,
@@ -74,6 +91,7 @@ test("bounds every context source and returns only an ephemeral read-only projec
     listMissions: async () => Array.from({ length: 40 }, (_, index) => mission(`mission-${index}`)),
     listSavedLinks: async () => Array.from({ length: 40 }, (_, index) => savedLink(`link-${index}`)),
     listSavedXSources: async () => [],
+    listSessions: async () => Array.from({ length: 80 }, (_, index) => session(`session-${index}`)),
     listVaultEntries: async () => Array.from({ length: 40 }, (_, index) => ({
       id: `vault-${index}`,
       title: `Retrieval note ${index}`,
@@ -93,7 +111,22 @@ test("bounds every context source and returns only an ephemeral read-only projec
   assert.ok(body.context.savedLinks <= 12);
   assert.ok(body.context.xSources <= 12);
   assert.ok(body.context.vaultEntries <= 8);
+  assert.ok(body.context.sessions <= 24);
   assert.ok(body.recommendations.length <= 12);
+});
+
+test("grounds topic recommendations in the familiar-accessible Coven session history", async () => {
+  const route = createResearchRecommendationsRoute(baseDeps({
+    listSessions: async () => [session("collective-session")],
+  }));
+
+  const body = await (await route(request())).json();
+
+  assert.equal(body.context.sessions, 1);
+  assert.equal(body.recommendations[0].payload.topic, "Session topic collective-session");
+  assert.deepEqual(body.recommendations[0].evidenceRefs.map((ref: { id: string }) => ref.id), [
+    "session:collective-session",
+  ]);
 });
 
 test("keeps the most recently updated mission inside the bounded Desk snapshot", async () => {

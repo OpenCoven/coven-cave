@@ -638,7 +638,7 @@ test.describe("Chat agentic prompt enhancement", () => {
     release();
   });
 
-  test("cancels a reduced-motion enhancement and lets a contextual next path only fill the composer", async ({ page }) => {
+  test("cancels a reduced-motion enhancement and lets the contextual ghost path only fill the composer", async ({ page }) => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -664,11 +664,10 @@ test.describe("Chat agentic prompt enhancement", () => {
 
     await draft.fill("What should I verify next?");
     await chat.getByRole("button", { name: "Send message" }).click();
-    const nextPaths = chat.getByRole("group", { name: "Suggested next steps" });
-    const reply = nextPaths.getByRole("button", { name: /Reply: Verify the login flow/ });
-    await expect(reply).toBeVisible({ timeout: 15_000 });
-    await expect(reply).toHaveAccessibleName(/Why this: Verify the changed login flow/);
-    await reply.click();
+    await expect(draft).toHaveAttribute("placeholder", "Verify the login flow", { timeout: 15_000 });
+    await expect(chat.getByRole("group", { name: "Suggested next steps" })).toHaveCount(0);
+    await draft.focus();
+    await page.keyboard.press("Tab");
     await expect(draft).toHaveValue("Verify the login flow");
     expect(fixture.chatRequests).toHaveLength(1);
   });

@@ -93,8 +93,11 @@ assert.match(
   /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTabTracked\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
   "Rituals tabs should be driven by the shared Tabs component with accessible wiring",
 );
-const ritualsHeaderStart = automations.indexOf(
-  '<div className="surface-compact-header rituals-overview__header">',
+// The header keeps the shared compact chrome on every tab and layers the
+// Rituals Redesign glass band on Crons only, so the class list is composed
+// rather than literal — match the stable prefix, not the whole string.
+const ritualsHeaderStart = automations.search(
+  /<div className=\{?`?surface-compact-header rituals-overview__header/,
 );
 const ritualsTabsStart = automations.indexOf("<Tabs", ritualsHeaderStart);
 const hiddenPanelsStart = automations.indexOf(
@@ -241,5 +244,157 @@ assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Rituals does not run fl
 assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Rituals does not route into Flow");
 assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
 assert.match(workspace, /if \(next === "flow"\) \{[\s\S]{0,600}?commitMode\("inbox"\)/, "Flow navigation events normalize to Rituals via setMode's alias funnel (cave-m4ih.3)");
+
+// ── Crons tab · `Rituals Redesign.dc.html` ──────────────────────────────────
+// The frame's own annotations scope it: the sidebar is "out of scope" and the
+// Overview tab is "context only — unchanged by this spec", so what is pinned
+// here is the Crons chrome the redesign actually reshapes.
+const scheduleList = readFileSync(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8");
+// The Crons sheet is component-imported by automations-view.tsx so it ships
+// with the lazy AutomationsView chunk rather than the root CSS bundle.
+const cronsStyles = readFileSync(new URL("../styles/rituals-crons.css", import.meta.url), "utf8");
+const familiarCarousel = readFileSync(new URL("./automations/familiar-carousel.tsx", import.meta.url), "utf8");
+
+assert.match(
+  automations,
+  /import "@\/styles\/rituals-crons\.css"/,
+  "the Crons sheet is component-imported so it code-splits with the lazy surface",
+);
+assert.match(
+  automations,
+  /activeTab === "crons" \? " rituals-crons-header" : ""/,
+  "the glass band layers onto the shared compact header for Crons only",
+);
+assert.match(
+  cronsStyles,
+  /\.rituals-crons-header\s*\{(?=[^}]*backdrop-filter:\s*blur\(var\(--glass-blur\)\)\s*saturate\(var\(--glass-saturate\)\))[^}]*\}/,
+  "the glass header filters through the shared glass tokens, not hand-copied values",
+);
+assert.match(
+  automations,
+  /className="rituals-crons-chip rituals-crons-chip--failing focus-ring"[\s\S]{0,200}aria-pressed=\{failingOnly\}/,
+  "the failing chip is a real pressed-state filter toggle, not a readout",
+);
+assert.match(
+  automations,
+  /const failingIds = useMemo\(\(\) => failingCronIds\(liveAutos, lastRunById\)/,
+  "the chip, its filter and the Active group's count all read one failing set",
+);
+assert.match(
+  automations,
+  /const liveAutos = useMemo\(\(\) => codexAutos\.filter\(\(a\) => !hiddenIds\.has\(a\.id\)\)/,
+  "every cron aggregate excludes the undo window's pending deletes, so a hidden row cannot still be counted",
+);
+assert.match(
+  automations,
+  /failingCount=\{failingOnly \? 0 : codexActive\.filter\(\(a\) => failingIds\.has\(a\.id\)\)\.length\}/,
+  "the Active group's failing count is scoped to the rows it annotates, unlike the global header chip",
+);
+assert.match(
+  automations,
+  /togglePauseAutomation: toggleCodex,\s*busyId,/,
+  "row actions see the in-flight mutation, so a double-click cannot submit the same run twice",
+);
+assert.match(
+  automations,
+  /if \(failingOnly && failingIds\.size === 0\) setFailingOnly\(false\)/,
+  "the failing filter clears itself rather than leaving a dead toggle over an empty list",
+);
+assert.match(
+  automations,
+  /failingOnly \? \[\] : codexAutos\.filter\(/,
+  "the failing filter hides the Paused group outright — a paused cron is off, not failing",
+);
+assert.doesNotMatch(
+  `${cronsStyles}\n${readFileSync(new URL("../lib/automations/cron-health.ts", import.meta.url), "utf8")}`,
+  /rituals-cron-row__glyph--stale|CronHealth = [^;]*"stale"/,
+  "no row claims a stale state: the run store only sees app-triggered runs, so staleness is not knowable (see cron-health.ts)",
+);
+assert.match(
+  scheduleList,
+  /\$\{cronRunVerb\(health\)\} \$\{relTime\(lastRun\.startedAt\)\}/,
+  "the last-run cell reads verb + state — a bare \"Run <date>\" is the ambiguity the handoff spec files as a P1",
+);
+assert.doesNotMatch(
+  scheduleList,
+  /`Run \$\{relTime/,
+  "no bare Run-plus-timestamp survives: it never said whether it looked forward or back",
+);
+assert.match(
+  scheduleList,
+  /hover:\[color:var\(--text-primary\)\]!/,
+  "row action labels promote to primary on hover — --text-secondary is 4.3:1 over --bg-hover, below AA",
+);
+assert.match(
+  scheduleList,
+  /rituals-cron-row__glyph--\$\{health\}/,
+  "each health state gets its own glyph shape, so status is never color-only",
+);
+for (const health of ["healthy", "running", "failed", "paused"]) {
+  assert.ok(
+    cronsStyles.includes(`.rituals-cron-row__glyph--${health}`),
+    `the ${health} row glyph has a shape of its own`,
+  );
+}
+assert.match(
+  cronsStyles,
+  /\.rituals-crons-list\s*\{\s*--rituals-cron-tail:\s*112px;/,
+  "the measured column tail lives on the LIST, so the panel's own container query can reach it",
+);
+assert.match(
+  cronsStyles,
+  /@container \(min-width: 780px\) \{\s*\.rituals-crons-list \{[\s\S]{0,120}\.rituals-cron-row__avatars \{\s*display: flex;/,
+  "familiars are the first column to drop as the list narrows under an open detail rail",
+);
+assert.match(
+  familiarCarousel,
+  /role="group"[\s\S]{0,120}aria-label="Filter crons by familiar"/,
+  "the familiar carousel is a toggle GROUP, not a listbox — the strip also carries the non-option combine action",
+);
+assert.match(
+  familiarCarousel,
+  /aria-pressed=\{active\}/,
+  "each familiar card reports its own filter state, so a multi-select is not announced as a radio group",
+);
+assert.doesNotMatch(
+  familiarCarousel,
+  /role="option"|aria-multiselectable/,
+  "no half-listbox semantics survive the switch to the toggle-group pattern",
+);
+assert.match(
+  familiarCarousel,
+  /usePopoverInitialFocus\(combineOpen, "\.rituals-fam-combine-panel"\)/,
+  "the portaled combine popup takes focus, or a keyboard user tabs the whole page to reach it",
+);
+assert.match(
+  familiarCarousel,
+  /prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduced \? "auto" : "smooth"/,
+  "carousel nav scrolling honours reduced motion, not just the CSS transitions",
+);
+assert.match(
+  cronsStyles,
+  /@media \(prefers-reduced-motion: reduce\) \{[\s\S]{0,400}\.rituals-fam-card,/,
+  "the carousel's own transitions are covered by a reduced-motion override, not just the row glyph",
+);
+assert.match(
+  cronsStyles,
+  /\.rituals-cron-row__glyph--running \{(?=[^}]*border: 1\.5px solid var\(--accent-presence\))[^}]*\}/,
+  "running is a dot inside a RING: reduced motion strips the pulse, and hue alone would then be the only cue",
+);
+assert.match(
+  cronsStyles,
+  /@container \(max-width: 700px\) \{\s*\.rituals-cron-row__action-text \{\s*display: none;/,
+  "the action labels hide inside a max-width query — a bare default lost the ordering fight and hid them at every width",
+);
+assert.match(
+  familiarCarousel,
+  /toggleFamiliarSelection\(selected, familiar\.id, event\.metaKey \|\| event\.ctrlKey\)/,
+  "carousel selection keeps the existing click / ⌘-click semantics",
+);
+assert.match(
+  familiarCarousel,
+  /aria-haspopup="menu"[\s\S]{0,1400}ariaLabel="Combine familiars"/,
+  "the combine card opens a keyboard-reachable menu instead of only teaching the ⌘-click gesture — and the trigger promises what the shared Popover actually renders",
+);
 
 console.log("rituals-tabs.test.ts: ok");

@@ -16,6 +16,7 @@
  */
 
 import dynamic from "next/dynamic";
+import "@/styles/research-paper-focus-reader.css";
 import {
   useCallback,
   useEffect,
@@ -129,6 +130,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const activeArticleIdRef = useRef<string | null>(null);
   const articleReaderRef = useRef<HTMLElement | null>(null);
   const pendingArticleFocusRef = useRef(false);
+  const readerFocusControlRef = useRef<HTMLButtonElement>(null);
   const selectedMission = research.selected;
   const act = research.act;
   const intake = useMemo(() => summarizeLinkIntake(draft, links), [draft, links]);
@@ -362,6 +364,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     closeOverlay();
   }, [closeOverlay, readerExpanded]);
   useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
+
+  useEffect(() => {
+    if (reading && readerExpanded) readerFocusControlRef.current?.focus();
+  }, [reading, readerExpanded]);
 
   // A fresh overlay never inherits the previous one's confirm/copied/reading
   // state — closing the overlay or opening a different resource both land
@@ -736,7 +742,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       ) : null}
 
       {openLink ? (
-        <div className="research-res-overlay" onClick={closeOverlay}>
+        <div
+          className="research-res-overlay"
+          data-reader={reading && readerExpanded || undefined}
+          onClick={closeOverlay}
+        >
           <div
             ref={dialogRef}
             role="dialog"
@@ -744,6 +754,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             aria-labelledby="research-res-overlay-title"
             className="research-res-overlay__dialog"
             data-expanded={readerExpanded || undefined}
+            data-reader={reading && readerExpanded || undefined}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
@@ -783,27 +794,41 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
               </div>
               <div className="research-res-overlay__head-actions">
                 {openPaperId && reading ? (
-                  <button
-                    type="button"
-                    className="research-res-overlay__close focus-ring"
-                    onClick={() => setReaderExpanded((current) => !current)}
-                    aria-label={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                    aria-pressed={readerExpanded}
-                    title={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                  >
-                    <Icon
-                      name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
-                      width={13}
-                      height={13}
-                      aria-hidden
-                    />
-                  </button>
+                  <>
+                    {readerExpanded ? (
+                      <button
+                        type="button"
+                        className="research-res-overlay__close focus-ring"
+                        onClick={() => context.openUrl(paperDownloadUrl(openPaperId))}
+                        aria-label="Download PDF"
+                        title="Download PDF"
+                      >
+                        <Icon name="ph:download-simple" width={13} height={13} aria-hidden />
+                      </button>
+                    ) : null}
+                    <button
+                      ref={readerFocusControlRef}
+                      type="button"
+                      className="research-res-overlay__close focus-ring"
+                      onClick={() => setReaderExpanded((current) => !current)}
+                      aria-label={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                      aria-pressed={readerExpanded}
+                      title={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                    >
+                      <Icon
+                        name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
+                        width={13}
+                        height={13}
+                        aria-hidden
+                      />
+                    </button>
+                  </>
                 ) : null}
                 <button
                   type="button"
                   className="research-res-overlay__close focus-ring"
                   onClick={closeOverlay}
-                  aria-label="Close resource details"
+                  aria-label={reading ? "Close paper reader" : "Close resource details"}
                 >
                   <Icon name="ph:x" width={13} height={13} aria-hidden />
                 </button>
@@ -905,7 +930,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       size="sm"
                       variant="secondary"
                       leadingIcon="ph:book-open"
-                      onClick={() => setReading(true)}
+                      onClick={() => {
+                        setReading(true);
+                        setReaderExpanded(true);
+                      }}
                     >
                       Read
                     </Button>

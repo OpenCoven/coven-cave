@@ -73,8 +73,8 @@ assert.match(
 // it must NOT be absolutely positioned, and it reserves only a pull-tab width.
 assert.match(
   caveChatAux,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 14px;[\s\S]{0,300}?background:\s*transparent;/,
-  "the reopen rail reserves a transparent ultra-minimal in-flow pull-tab width",
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 14px;[\s\S]{0,300}?background:\s*var\(--bg-panel\);/,
+  "the reopen rail reserves an opaque ultra-minimal in-flow pull-tab width",
 );
 assert.doesNotMatch(
   caveChatAux,

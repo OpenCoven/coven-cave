@@ -1,6 +1,7 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
 import { compareProjectsAlphabetically, normalizeProjectRoot } from "./cave-projects-types.ts";
+import { parseConversationRuntime } from "./chat-hosts.ts";
 import {
   NO_PROJECT_ORGANIZATION,
   projectOrganization,
@@ -13,6 +14,8 @@ export type { CaveProject };
 export type ChatProjectGroup = {
   projectId: string | null;
   projectRoot: string | null;
+  /** SSH host that owns projectRoot; null means this Cave host. */
+  runtimeHost: string | null;
   projectName: string | null;
   organization: ProjectOrganization;
   /** Explicit user-set project color, when the root maps to a registered project. */
@@ -21,6 +24,34 @@ export type ChatProjectGroup = {
   defaultFamiliarId: string | null;
   updatedAt: string | null;
 };
+
+/** Host half of the project identity recorded on a session. Local and legacy
+ * rows intentionally share the null host; SSH rows never collide with them. */
+export function chatProjectRuntimeHost(session: Pick<SessionRow, "runtime">): string | null {
+  const runtime = parseConversationRuntime(session.runtime);
+  return runtime?.kind === "ssh" ? runtime.host : null;
+}
+
+/** Filesystem half of a session's identity. The daemon normally supplies
+ * project_root; a Cave-local remote conversation can temporarily exist
+ * without that row, so its recorded runtime cwd is the truthful fallback. */
+function chatProjectRootForSession(
+  session: Pick<SessionRow, "project_root" | "runtime">,
+): string | null {
+  if (session.project_root?.trim()) return normalizeChatProjectRoot(session.project_root);
+  const runtime = parseConversationRuntime(session.runtime);
+  return runtime?.cwd?.trim() ? normalizeChatProjectRoot(runtime.cwd) : null;
+}
+
+/** Stable visible-bucket identity. Local keys stay root-readable for existing
+ * persisted selections; remote roots are namespaced by their runtime host. */
+export function chatProjectIdentityKey(
+  projectRoot: string | null | undefined,
+  runtimeHost: string | null | undefined,
+): string {
+  const root = projectRoot?.trim() ? normalizeChatProjectRoot(projectRoot) : "__no-project__";
+  return runtimeHost ? `host:${runtimeHost}:root:${root}` : `root:${root}`;
+}
 
 /**
  * Canonical project-root form for chat.
@@ -299,6 +330,24 @@ export function filterVisibleChatSessions(
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
 }
 
+/** Registered project represented by a session. Remote roots are deliberately
+ * distinct from this machine's registry. A linked local worktree may map back
+ * to its owning checkout through server-enriched git common-dir context. */
+function registeredProjectForSession(
+  session: SessionRow,
+  projects: CaveProject[],
+  projectIndex: ChatProjectIndex,
+): CaveProject | null {
+  if (chatProjectRuntimeHost(session)) return null;
+  const sessionRoot = chatProjectRootForSession(session);
+  return (
+    projectForRoot(sessionRoot, projects, projectIndex) ??
+    (session.git?.isWorktree
+      ? projectForRoot(session.git.repositoryRoot, projects, projectIndex)
+      : null)
+  );
+}
+
 /** The registered project the most recent visible chat ran in, as a root for
  *  resolveChatProjectSelection's `recentProjectRoot` — so a brand-new chat
  *  starts off in the project the user was just working in instead of the
@@ -315,7 +364,7 @@ export function recentChatProjectRoot(
   if (projects.length === 0) return null;
   const projectIndex = createChatProjectIndex(projects);
   for (const session of filterVisibleChatSessions(sessions, null)) {
-    const project = projectForRoot(session.project_root, projects, projectIndex);
+    const project = registeredProjectForSession(session, projects, projectIndex);
     if (project) return project.root;
   }
   return null;
@@ -327,41 +376,51 @@ export function deriveChatProjectGroups(
   projectIndex: ChatProjectIndex = createChatProjectIndex(projects),
   options: { sessionsNewestFirst?: boolean } = {},
 ): ChatProjectGroup[] {
-  const groups = new Map<string | null, SessionRow[]>();
+  const groups = new Map<
+    string,
+    { projectRoot: string | null; runtimeHost: string | null; sessions: SessionRow[] }
+  >();
 
   for (const session of sessions) {
-    const project = projectForRoot(session.project_root, projects, projectIndex);
+    const runtimeHost = chatProjectRuntimeHost(session);
+    const project = registeredProjectForSession(session, projects, projectIndex);
     const projectRoot = project?.root
-      ?? (session.project_root?.trim() ? normalizeChatProjectRoot(session.project_root) : null);
-    const group = groups.get(projectRoot) ?? [];
-    group.push(session);
-    groups.set(projectRoot, group);
+      ?? chatProjectRootForSession(session);
+    const key = chatProjectIdentityKey(projectRoot, runtimeHost);
+    const group = groups.get(key) ?? { projectRoot, runtimeHost, sessions: [] };
+    group.sessions.push(session);
+    groups.set(key, group);
   }
 
-  const rootEntries = Array.from(groups.keys()).filter((root): root is string => root !== null);
+  const rootEntries = Array.from(groups.values()).filter(
+    (entry): entry is typeof entry & { projectRoot: string } => entry.projectRoot !== null,
+  );
   const leafCounts = new Map<string, number>();
-  for (const root of rootEntries) {
-    const leaf = projectLeafName(root);
+  for (const entry of rootEntries) {
+    const leaf = projectLeafName(entry.projectRoot);
     if (leaf) leafCounts.set(leaf, (leafCounts.get(leaf) ?? 0) + 1);
   }
 
-  return Array.from(groups.entries())
-    .map(([projectRoot, rows]) => {
+  return Array.from(groups.values())
+    .map(({ projectRoot, runtimeHost, sessions: rows }) => {
       const sorted = options.sessionsNewestFirst
         ? rows
         : [...rows].sort((a, b) =>
           sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1,
         );
       const latest = sorted[0] ?? null;
-      const project = projectForRoot(projectRoot, projects, projectIndex);
+      const project = runtimeHost ? null : projectForRoot(projectRoot, projects, projectIndex);
       const leaf = projectLeafName(projectRoot);
       const inferredProjectName =
-        projectRoot && !project && leaf && (leafCounts.get(leaf) ?? 0) > 1
-          ? projectNameWithParent(projectRoot)
-          : null;
+        runtimeHost
+          ? `${runtimeHost}/${leaf ?? "No project"}`
+          : projectRoot && !project && leaf && (leafCounts.get(leaf) ?? 0) > 1
+            ? projectNameWithParent(projectRoot)
+            : null;
       return {
         projectId: project?.id ?? null,
         projectRoot,
+        runtimeHost,
         projectName: project?.name ?? inferredProjectName,
         organization: project ? projectOrganization(project) : NO_PROJECT_ORGANIZATION,
         projectColor: project?.color ?? null,
@@ -385,7 +444,9 @@ export function deriveChatProjectGroups(
       const bLabel = b.projectName ?? chatProjectName(b.projectRoot, projects, projectIndex);
       const byLabel = aLabel.localeCompare(bLabel, undefined, { sensitivity: "base", numeric: true });
       if (byLabel !== 0) return byLabel;
-      return (a.projectRoot ?? "").localeCompare(b.projectRoot ?? "");
+      return chatProjectIdentityKey(a.projectRoot, a.runtimeHost).localeCompare(
+        chatProjectIdentityKey(b.projectRoot, b.runtimeHost),
+      );
     });
 }
 

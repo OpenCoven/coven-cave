@@ -103,8 +103,13 @@ assert.match(
 );
 assert.match(
   model,
-  /func configure\(host:[\s\S]*?let transitionGeneration = connectionConfigurationGeneration[\s\S]*?await refreshCoordinator\.cancelActiveRefresh\(\)[\s\S]{0,360}guard connectionConfigurationLeaseIsCurrent\(transitionGeneration\) else \{ return \}[\s\S]*?let configuredGeneration = connectionConfigurationGeneration[\s\S]*?await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)/,
+  /func configure\(host:[\s\S]*?let transitionGeneration = connectionConfigurationGeneration[\s\S]*?await refreshCoordinator\.cancelActiveRefresh\(\)[\s\S]{0,360}guard connectionConfigurationLeaseIsCurrent\(transitionGeneration\) else \{ return nil \}[\s\S]*?let configuredGeneration = connectionConfigurationGeneration[\s\S]*?await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)/,
   "an older configure must prove transition ownership after every suspension before it can overwrite a newer endpoint",
+);
+assert.match(
+  model,
+  /await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)[\s\S]{0,180}requestConnectionRecovery\(\.foreground\)[\s\S]{0,120}return captureConnectionDispatchLease\(\)/,
+  "a winning configure restarts supervised recovery even when discovery relocated its port",
 );
 assert.match(
   model,

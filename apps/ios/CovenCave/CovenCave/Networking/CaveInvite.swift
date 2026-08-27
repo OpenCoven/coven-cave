@@ -10,6 +10,13 @@ import Foundation
 struct CaveInvite: Equatable {
     var host: String
     var token: String?
+    var threadId: String?
+
+    init(host: String, token: String?, threadId: String? = nil) {
+        self.host = host
+        self.token = token
+        self.threadId = threadId
+    }
 
     static func parse(_ input: String) -> CaveInvite? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -19,7 +26,11 @@ struct CaveInvite: Equatable {
         if lower.hasPrefix("covencave://") {
             guard let comps = URLComponents(string: trimmed),
                   let host = queryValue(comps, "host"), !host.isEmpty else { return nil }
-            return CaveInvite(host: host, token: queryValue(comps, "token"))
+            return CaveInvite(
+                host: host,
+                token: queryValue(comps, "token"),
+                threadId: requestedThreadId(comps)
+            )
         }
 
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
@@ -30,7 +41,11 @@ struct CaveInvite: Equatable {
             // verbatim); drop the path/query — the token is captured here.
             var normalized = "\(comps.scheme ?? "https")://\(hostname)"
             if let port = comps.port { normalized += ":\(port)" }
-            return CaveInvite(host: normalized, token: token)
+            return CaveInvite(
+                host: normalized,
+                token: token,
+                threadId: requestedThreadId(comps)
+            )
         }
 
         return CaveInvite(host: trimmed, token: nil)
@@ -48,5 +63,12 @@ struct CaveInvite: Equatable {
     private static func queryValue(_ comps: URLComponents, _ name: String) -> String? {
         let value = comps.queryItems?.first(where: { $0.name == name })?.value
         return (value?.isEmpty == false) ? value : nil
+    }
+
+    private static func requestedThreadId(_ comps: URLComponents) -> String? {
+        guard let fragment = comps.fragment, fragment.hasPrefix("chat-") else { return nil }
+        let threadId = String(fragment.dropFirst("chat-".count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return threadId.isEmpty ? nil : threadId
     }
 }

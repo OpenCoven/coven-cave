@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -72,6 +72,7 @@
     "test:api": "node scripts/run-tests.mjs api",
     "test:api:http": "node scripts/api-http-smoke.mjs",
     "test:client-v1:conformance": "node scripts/client-v1-conformance.mjs",
+    "test:client-v1:authority-takeover": "node --experimental-strip-types scripts/client-v1-authority-takeover.mjs",
     "test:research-media:ffmpeg": "node --experimental-strip-types scripts/research-media-ffmpeg.integration.test.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
     "test:conformance": "node scripts/run-tests.mjs conformance",
@@ -124,6 +125,8 @@
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
+    "@hpke/core": "1.9.0",
+    "@hpke/dhkem-x25519": "1.8.0",
     "@iconify-json/ph": "1.2.2",
     "@iconify/react": "6.0.2",
     "@lezer/highlight": "1.2.3",
@@ -192,6 +195,7 @@
   "packageManager": "pnpm@10.34.0",
   "pnpm": {
     "overrides": {
+      "@hpke/common": "1.10.0",
       "enhanced-resolve": "5.23.0",
       "nanoid@3": "3.3.18",
       "postcss@<8.5.23": "^8.5.26",

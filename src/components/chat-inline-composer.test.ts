@@ -24,8 +24,13 @@ test("one composer element, rendered in exactly one of two positions", () => {
   );
   assert.match(
     chatView,
-    /\{inlineComposer \? null : following \? composerNode : null\}/,
-    "the docked position yields when the composer goes inline or the reader leaves the latest turn",
+    /\{inlineComposer \? null : showDockedComposer \? composerNode : null\}/,
+    "the docked position yields only after the threshold-aware visibility policy releases it",
+  );
+  assert.match(
+    chatView,
+    /const hasStagedComposerInput =[\s\S]*?input\.length > 0[\s\S]*?attachments\.length > 0[\s\S]*?replyTarget !== null[\s\S]*?taskArmed/,
+    "draft text and staged composer state keep the dock visible",
   );
   assert.match(chatView, /composer=\{composerNode\}/, "the same node is handed to the dashboard");
   // Exactly one <footer className="cave-composer-dock"> in the tree.

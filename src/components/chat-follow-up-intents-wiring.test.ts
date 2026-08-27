@@ -6,15 +6,9 @@ const groupChat = await readFile(new URL("./group-chat-view.tsx", import.meta.ur
 const quickChat = await readFile(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 const journal = await readFile(new URL("./journal/journal-entries.tsx", import.meta.url), "utf8");
 
-assert.match(chatView, /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/, "ChatView uses the shared typed follow-up cards");
-assert.match(chatView, /import \{ FollowUpTaskReview \} from "@\/components\/chat-follow-up-task-review"/, "ChatView owns the review-first task handoff");
-assert.match(chatView, /<FollowUpCards[\s\S]*paths=\{followUp\.suggestions\}[\s\S]*onActivate=\{handleFollowUp\}/, "the composer placement routes cards through typed handling");
-assert.equal([...chatView.matchAll(/<FollowUpCards/g)].length, 1, "historical assistant turns never render action cards");
-assert.match(chatView, /setInput\(path\.prompt\);[\s\S]{0,160}inputRef\.current\?\.focus\(\)/, "reply follow-ups fill and focus the composer without sending");
-assert.match(chatView, /path\.kind === "task"[\s\S]{0,120}setTaskSuggestion\(path\)/, "task follow-ups open a review instead of sending");
-assert.match(chatView, /path\.actionId === "open-tasks"[\s\S]{0,180}new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "board" \} \}\)/, "the action allowlist only navigates to Tasks");
-assert.match(chatView, /<FollowUpTaskReview[\s\S]*context=\{[\s\S]*turns: activePath,[\s\S]*familiarId: familiar\.id,[\s\S]*projectId: resolvedProjectId/, "task review inherits active-path, familiar, and project context");
-assert.match(chatView, /onCreated=\{handleTaskCreated\}/, "created tasks update the chat-linked context");
+assert.doesNotMatch(chatView, /FollowUpCards|FollowUpTaskReview|handleFollowUp|taskSuggestion/, "Main Chat removes the recommendation band and its task/action routing");
+assert.match(chatView, /extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply"\)/, "Main Chat keeps only the first reply suggestion for lightweight composer autofill");
+assert.match(chatView, /setInput\(recommendedNextPath\.prompt\)/, "reply autofill remains editable and never sends automatically");
 assert.doesNotMatch(chatView, /onClick=\{\(\) => void send\(s\)\}/, "assistant suggestions never direct-send from the composer row");
 assert.doesNotMatch(chatView, /onSuggestion=\{\(sug\) => void handlers\(\)\.send\(sug\)\}/, "assistant suggestions never direct-send from transcript rows");
 

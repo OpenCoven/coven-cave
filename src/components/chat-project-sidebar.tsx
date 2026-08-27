@@ -89,7 +89,7 @@ type Props = {
    *  chat (keyboard twin of drag-to-split). Absent when splits are off
    *  (compact rail, mobile) — the row falls back to a plain open. */
   onOpenSessionInSplit?: (session: SessionRow) => void;
-  onNewChat: (projectRoot: string | null) => void;
+  onNewChat: (projectRoot: string | null, runtimeHost?: string | null) => void;
   onOpenProjectsTab?: () => void;
 };
 
@@ -579,14 +579,16 @@ export function ChatProjectSidebar({
     let target: ChatProjectGroup | undefined;
     if (overId.startsWith("folder:")) {
       const overKey = overId.slice("folder:".length);
-      target = groups.find((g) => selectionKey(g.projectId, g.projectRoot) === overKey);
+      target = groups.find(
+        (g) => selectionKey(g.projectId, g.projectRoot, g.runtimeHost) === overKey,
+      );
     } else {
       target = groups.find((g) => g.sessions.some((s) => s.id === overId));
     }
     if (!target) return;
 
-    const sourceKey = selectionKey(source.projectId, source.projectRoot);
-    const targetKey = selectionKey(target.projectId, target.projectRoot);
+    const sourceKey = selectionKey(source.projectId, source.projectRoot, source.runtimeHost);
+    const targetKey = selectionKey(target.projectId, target.projectRoot, target.runtimeHost);
 
     if (sourceKey === targetKey) {
       // Same folder → reorder via the shared manual-order list.
@@ -625,7 +627,7 @@ export function ChatProjectSidebar({
   const recentRows = allSessions;
 
   function renderProjectGroup(group: ChatProjectGroup) {
-    const key = selectionKey(group.projectId, group.projectRoot);
+    const key = selectionKey(group.projectId, group.projectRoot, group.runtimeHost);
     const projectExpanded = expandedKeys.includes(key);
     const projectVisible = hasSearch || projectExpanded;
     const isSelected = selection === key;
@@ -691,7 +693,7 @@ export function ChatProjectSidebar({
           </button>
           <button
             type="button"
-            onClick={() => onNewChat(group.projectRoot)}
+            onClick={() => onNewChat(group.projectRoot, group.runtimeHost)}
             title={`New session in ${label}`}
             aria-label={`New session in ${label}`}
             className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
@@ -881,7 +883,7 @@ export function ChatProjectSidebar({
               {!open && groups.length > 0 ? (
                 <div className="flex flex-col items-center gap-1">
                   {groups.map((group) => {
-                    const key = selectionKey(group.projectId, group.projectRoot);
+                    const key = selectionKey(group.projectId, group.projectRoot, group.runtimeHost);
                     const organizationKey = organizationExpansionKey(group.organization.key);
                     const label = repoLabel(group);
                     return (

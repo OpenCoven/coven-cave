@@ -109,6 +109,7 @@ import {
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
@@ -119,7 +120,6 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
-import { useFollowUpsCollapsed } from "@/lib/use-followups-collapsed";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
@@ -228,9 +228,6 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
-import { FollowUpCards } from "@/components/chat-follow-up-cards";
-import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -502,7 +499,10 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onOpenPreview?: (url: string) => void;
-  onProjectRootChange?: (projectRoot: string | null) => void;
+  onProjectRootChange?: (
+    projectRoot: string | null,
+    runtimeHost: string | null,
+  ) => void;
 };
 
 export type ChatViewHandle = {
@@ -2331,7 +2331,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
-  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -2706,8 +2705,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSetupBannerDismissed(true);
   };
   useEffect(() => {
-    onProjectRootChange?.(activeProjectRoot || null);
-  }, [activeProjectRoot, onProjectRootChange]);
+    onProjectRootChange?.(
+      activeProjectRoot || null,
+      composerHostValue === LOCAL_HOST_ID ? null : composerHostValue,
+    );
+  }, [activeProjectRoot, composerHostValue, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
@@ -2750,6 +2752,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
+  const [releasedScrollDistance, setReleasedScrollDistance] = useState(0);
+  const [composerHeight, setComposerHeight] = useState(0);
+  const composerDockRef = useRef<HTMLElement | null>(null);
   const [newResponseContent, setNewResponseContent] = useState(false);
   const observedAssistantTurnIdRef = useRef<string | null>(null);
   const observedAssistantSourceRef = useRef("");
@@ -2822,13 +2827,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
+      setReleasedScrollDistance(0);
       setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
         cancelAnimationFrame(releasedAnchorFrameRef.current);
         releasedAnchorFrameRef.current = null;
       }
-    } else if (!historyExpandedRef.current) {
+    } else {
+      const el = scrollRef.current;
+      if (el) {
+        setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
+      }
+    }
+    if (!next && !historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
       // the current view instead of jumping it.
@@ -4102,62 +4114,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // The latest settled turn's follow-up suggestions render directly above the
-  // composer. Suggestions are ephemeral actions, not transcript history, so
-  // assistant rows only strip their control blocks and never render old cards.
-  const followUp = useMemo(() => {
-    const empty = { suggestions: [] as NextPath[] };
-    const last = [...activePath]
-      .reverse()
-      .find((t) => t.role === "assistant" && !t.pending && !t.error);
-    if (!last?.text) return empty;
-    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
-      messageId: last.id,
-      taskId: linkedContext?.task?.id ?? null,
-      toolOutcomeIds: (last.tools ?? [])
-        .filter((tool) => tool.status === "ok" || tool.status === "error")
-        .map((tool) => tool.id),
-    });
-    return suggestions.length ? { suggestions } : empty;
-  }, [activePath, linkedContext?.task?.id]);
-
-  const followUpsCollapsed = useFollowUpsCollapsed();
-  const followUpsPanelId = `chat-followups-${useId().replaceAll(":", "")}`;
-
-  const handleFollowUp = useCallback((path: NextPath) => {
-    if (path.kind === "reply") {
-      setInput(path.prompt);
-      requestAnimationFrame(() => inputRef.current?.focus());
-      return;
-    }
-    if (path.kind === "task") {
-      setTaskSuggestion(path);
-      return;
-    }
-    if (path.actionId === "open-tasks") {
-      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
-    }
-  }, []);
-
-  const handleTaskCreated = useCallback((card: Card) => {
-    const linked = {
-      id: card.id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      lifecycle: card.lifecycle,
-      labels: card.labels,
-      cwd: card.cwd,
-      projectId: card.projectId ?? null,
-      notes: card.notes.trim() || null,
-    };
-    setLinkedContext((previous) => {
-      const context = previous ?? { task: null, tasks: [], github: [] };
-      if (context.tasks.some((task) => task.id === linked.id)) return context;
-      return { ...context, task: context.task ?? linked, tasks: [...context.tasks, linked] };
-    });
-  }, []);
-
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
   // chunk). Lookups are O(1).
@@ -4607,6 +4563,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (followingRef.current) return;
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setReleasedScrollDistance(Math.max(0, gap));
       if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -7280,6 +7237,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const offlineReadOnly = historyState === "offline";
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const hasStagedComposerInput =
+    input.length > 0 ||
+    attachments.length > 0 ||
+    replyTarget !== null ||
+    taskArmed ||
+    dictation.listening ||
+    dropActive;
+  const showDockedComposer = shouldShowDockedComposer({
+    following,
+    hasStagedInput: hasStagedComposerInput,
+    releasedScrollDistance,
+    composerHeight,
+  });
+  useLayoutEffect(() => {
+    const node = composerDockRef.current;
+    if (!node) return;
+    const measure = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inlineComposer, showDockedComposer]);
   const chatContextControls = (
     <ComposerContextChips
       projects={projects}
@@ -7308,6 +7291,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const composerNode = (
     <footer
+      ref={composerDockRef}
       className="cave-composer-dock"
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
     >
@@ -7891,7 +7875,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — carries linked work and latest assistant options.
+              {/* Footer band — carries linked work and new-chat context.
                   Context controls ride here only for new chats (inlineComposer);
                   active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
@@ -7901,41 +7885,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 ) : null}
                 {linkedContextRow}
-                {followUp.suggestions.length > 0 && !busy ? (
-                  <div
-                    className="cave-chat-followups"
-                    data-collapsed={followUpsCollapsed.collapsed ? "" : undefined}
-                  >
-                    {/* The toggle is a SIBLING of the cards, never inside them:
-                        a control rendered within the collapsed region would
-                        disappear along with it and strand the reader with no
-                        way back. Collapsed still shows this strip and the
-                        count, so the suggestions stay discoverable rather than
-                        silently gone. */}
-                    <button
-                      type="button"
-                      className="cave-chat-followups__toggle focus-ring"
-                      aria-expanded={!followUpsCollapsed.collapsed}
-                      aria-controls={followUpsPanelId}
-                      onClick={followUpsCollapsed.toggle}
-                    >
-                      <Icon
-                        name={followUpsCollapsed.collapsed ? "ph:caret-right" : "ph:caret-down"}
-                        width={12}
-                        height={12}
-                        aria-hidden
-                      />
-                      <span>
-                        {followUp.suggestions.length === 1
-                          ? "1 suggestion"
-                          : `${followUp.suggestions.length} suggestions`}
-                      </span>
-                    </button>
-                    <div id={followUpsPanelId} hidden={followUpsCollapsed.collapsed}>
-                      <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
@@ -8449,21 +8398,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
-      {inlineComposer ? null : following ? composerNode : null}
-      {taskSuggestion && sessionId && !offlineReadOnly ? (
-        <FollowUpTaskReview
-          open
-          sessionId={sessionId}
-          suggestion={taskSuggestion}
-          context={{
-            turns: activePath,
-            familiarId: familiar.id,
-            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
-          }}
-          onCreated={handleTaskCreated}
-          onClose={() => setTaskSuggestion(null)}
-        />
-      ) : null}
+      {inlineComposer ? null : showDockedComposer ? composerNode : null}
       {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
           familiar={familiar}

@@ -29,6 +29,7 @@ const group = (
 ) => ({
   projectId,
   projectRoot,
+  runtimeHost: null,
   organization,
   sessions: Array.from({ length: n }, (_, i) => ({
     id: `${projectId ?? "none"}-${i}`,
@@ -43,6 +44,8 @@ const group = (
 assert.equal(selectionKey("coven-cave"), "coven-cave");
 assert.equal(selectionKey(null), "none");
 assert.equal(selectionKey(null, "/orphan/root"), "root:/orphan/root");
+assert.equal(selectionKey(null, "/orphan/root", "build-box"), "host:build-box:root:/orphan/root");
+assert.equal(selectionKey(null, null, "build-box"), "host:build-box:none");
 
 // applyProjectScope: "all" passes groups through untouched (same reference)
 const groups = [group("alpha", "/alpha"), group(null, null, 1, RECENT, NO_PROJECT_ORGANIZATION)];

@@ -71,6 +71,20 @@ function requiredVersion(value, field, source) {
   return value;
 }
 
+function requiredAuthorityDefaultMode(contract, source) {
+  const value = contract?.authority?.defaultMode;
+  if (value === undefined) {
+    // The full public authority manifest is published atomically with the
+    // protected-operation records in Task 7. Until then the producer contract
+    // remains the existing fixture and its only compatible default is off.
+    return "off";
+  }
+  if (value !== "off") {
+    throw new Error(`${source} authority.defaultMode must be exactly "off"`);
+  }
+  return value;
+}
+
 /**
  * The versions a release build must answer with, read from the reviewed
  * fixture rather than repeated as literals here.
@@ -100,6 +114,7 @@ export function contractExpectations(root = repositoryRoot) {
   return {
     apiVersion: requiredVersion(contract?.apiVersion, "apiVersion", source),
     minimumClientVersion: requiredVersion(contract?.minimumClientVersion, "minimumClientVersion", source),
+    authorityDefaultMode: requiredAuthorityDefaultMode(contract, source),
   };
 }
 

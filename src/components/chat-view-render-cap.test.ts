@@ -53,7 +53,7 @@ assert.match(
 // scroll-up / find-jump never land on an unmounted row.
 assert.match(
   src,
-  /else if \(!historyExpandedRef\.current\)\s*\{[\s\S]*?setHistoryExpanded\(true\)/,
+  /if \(!next && !historyExpandedRef\.current\)\s*\{[\s\S]*?setHistoryExpanded\(true\)/,
   "updateFollowing(false) expands the transcript (covers wheel/touch/keys/find-jump)",
 );
 

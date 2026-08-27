@@ -165,7 +165,11 @@ export function useFocusTrap(
       if (e.key === "Tab" && container) {
         const focusables = Array.from(
           container.querySelectorAll<HTMLElement>(FOCUSABLE),
-        ).filter((el) => !el.hasAttribute("disabled"));
+        ).filter(
+          (el) =>
+            !el.hasAttribute("disabled") &&
+            (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
+        );
         if (focusables.length === 0) {
           e.preventDefault();
           return;

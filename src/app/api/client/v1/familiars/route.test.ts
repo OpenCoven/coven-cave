@@ -3,11 +3,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
+import {
+  CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+} from "@/lib/server/client-v1/authority-contract.ts";
 import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
 import { decodeClientV1Cursor, encodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
 import { CLIENT_V1_AUTHENTICATED_LIMIT } from "@/lib/server/client-v1/rate-limit.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
+import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import type { VisibleFamiliarRosterEntry } from "@/lib/server/familiar-roster.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
@@ -15,6 +20,8 @@ import { createClientV1FamiliarsGetHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-familiars-");
 const STAMP = "loopback-secret";
+const INSTANCE_ID = "client-v1-familiars-route-test";
+const BOUND_NOW = 35_000;
 
 function roster(...ids: string[]): VisibleFamiliarRosterEntry[] {
   return ids.map((id) => ({ id, display_name: id.toUpperCase(), role: "Familiar" }));
@@ -325,4 +332,115 @@ test("the roster is never read before the credential is checked", async () => {
     await handler(request("", { authorization: `Bearer ${writeOnlyBearer}` }));
     assert.equal(reads, 0);
   });
+});
+
+test("bound familiars reads encrypt results and reject downgrade or method drift before stores, budgets, and sources", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    await withClientV1HpkeRouteTestAuthority(
+      { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 51 },
+      async (authority) => {
+        const runtime = createClientV1Runtime({
+          authority: authority.runtime,
+          credentialRoot: root,
+          loopbackSecret: STAMP,
+          now: () => BOUND_NOW,
+        });
+        const issued = await runtime.credentialStore.issue({
+          appName: "OpenCoven Chat",
+          installationId: "chat-install-bound-familiars",
+          scopes: ["chat:read"],
+        });
+        const originalFind =
+          runtime.credentialStore.findByBearer.bind(runtime.credentialStore);
+        const originalCharge =
+          runtime.rateLimiter.consumeAuthenticated.bind(runtime.rateLimiter);
+        let findCalls = 0;
+        let chargeCalls = 0;
+        let sourceCalls = 0;
+        runtime.credentialStore.findByBearer = async (bearer) => {
+          findCalls += 1;
+          return originalFind(bearer);
+        };
+        runtime.rateLimiter.consumeAuthenticated = (credentialId) => {
+          chargeCalls += 1;
+          return originalCharge(credentialId);
+        };
+        const handler = createClientV1FamiliarsGetHandler(
+          runtime,
+          sources({
+            listFamiliars: async () => {
+              sourceCalls += 1;
+              return {
+                ok: true,
+                config: {} as never,
+                target: {} as never,
+                roster: roster("adept"),
+              };
+            },
+          }),
+        );
+
+        const downgrade = await handler(
+          request("", { authorization: ["Bearer", issued.bearer].join(" ") }),
+        );
+        assert.equal(downgrade.status, 426);
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 0,
+          chargeCalls: 0,
+          sourceCalls: 0,
+        });
+
+        const prepared = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "familiars.list",
+          url: "http://127.0.0.1:3020/api/client/v1/familiars",
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(7),
+          authorization: { kind: "bearer", value: issued.bearer },
+        });
+        const headers = new Headers(prepared.request.headers);
+        headers.set(LOCAL_PEER_HEADER, STAMP);
+        const valid = await handler(
+          new Request(prepared.request, { headers }),
+        );
+        assert.equal(valid.status, 200);
+        assert.equal(
+          valid.headers.get("content-type"),
+          CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+        );
+        const opened = await prepared.open(valid);
+        assert.equal(opened.status, 200);
+        assert.deepEqual(
+          (JSON.parse(new TextDecoder().decode(opened.body)) as {
+            data: { familiars: { id: string }[] };
+          }).data.familiars.map(({ id }) => id),
+          ["adept"],
+        );
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 1,
+          chargeCalls: 1,
+          sourceCalls: 1,
+        });
+
+        const beforeMethodDrift = { findCalls, chargeCalls, sourceCalls };
+        const wrongMethod = await handler(
+          new Request(prepared.request.url, {
+            method: "POST",
+            headers,
+          }),
+        );
+        assert.equal(wrongMethod.status, 400);
+        assert.deepEqual(
+          { findCalls, chargeCalls, sourceCalls },
+          beforeMethodDrift,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });

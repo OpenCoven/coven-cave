@@ -554,6 +554,64 @@ closed** on absent data. `=== false` would be the bug — it would treat a
 missing or malformed entry as "not disabled, therefore fine" and waive the
 exclusion silently. Don't tidy it in that direction.
 
+### The 15-minute cooldown, and how to discharge it deliberately
+
+A just-merged unit classifies `cooldown` — *"landed work remains inside the
+mandatory 15-minute cooldown"* — and the patrol will not retire it. Read what that
+gate is before reaching past it: by the time it applies, the unit is **already**
+proven landed, clean, non-divergent and retained on a remote ref. It is not a
+correctness check. It is a *"let a concurrent session notice"* window, and the
+one risk it covers — somebody else still sitting in that directory — is the one
+thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991,
+and 15m since `cave-0pu26`.
+
+If you know the unit is idle, say so explicitly — and say WHICH unit
+(`cave-jinkd`, scoped in `cave-qamzg`):
+
+```bash
+pnpm beads:worktrees:apply --allow-unenforced-planes \
+  --allow-cooldown-override --only <path|branch|ref|head>
+```
+
+`--only` is **required** with the override and repeatable. It must name a unit
+that exists, and name exactly one — an ambiguous or unknown value is refused
+rather than resolved, because a scope that quietly covered a neighbour would
+defeat the point of having one.
+
+**Why it is required.** The flag began as an all-or-nothing lever over the
+whole cooldown lane, and the very first real use showed why that is unsafe
+here: the patrol's hint listed two cooldown units and the second belonged to
+**another live session** (`cave-iizwt`, PR #5021, landed mid-session). Running
+the unscoped override would have retired that session's worktree alongside the
+operator's own — the class of incident `scripts/worktree-autolock.mjs` exists
+to prevent. The override went unused and three units were hand-retired instead,
+which is what a lever nobody dares pull is worth.
+
+The patrol still prints the admissible line for you whenever cooldown is the
+only thing left — with an `--only` line per unit — the same affordance the
+create gate gives for its budget exception. It deliberately does **not** hand
+you a prefilled command covering every unit it lists: take the `--only` lines
+for units that are yours, and leave the rest alone.
+
+Note `--only` scopes the **override and nothing else**. Every other unit still
+retires on the gate's own evidence, which needs no assertion from you; passing
+`--only` without the override is refused rather than silently ignored, so it
+cannot be mistaken for a way to narrow the whole apply.
+
+**What the flag can and cannot do.** `cooldownIsTheOnlyBlocker` answers
+admission by re-running the real classifier one cooldown into the future and
+requiring `retire-after-gate`; it never matches the `cooldown` lane string.
+That is the whole safety property: dirty, unlanded, divergent, `uncertain` and
+protected units classify identically at *any* clock, so the flag can only ever
+discharge elapsed time. A unit whose recency is unknowable stays `uncertain`
+rather than being treated as "wait a bit longer". Every overridden retirement
+is recorded as `admitted by --allow-cooldown-override` in the attempt log.
+
+⚠️ **`scripts/worktree-sweep.sh` must never pass it.** A cron job has nobody to
+assert that a worktree is idle, and that assertion is the entire basis of the
+flag. Do not lower `RETIREMENT_COOLDOWN_MS` to avoid typing it either — the
+constant also governs the unattended sweep.
+
 **So retirement is either the degraded apply above or hand-retirement — both
 are sanctioned, neither is a workaround.** For a unit the patrol already
 classified `cleanup-ready`, use the archive-tag route in the worktree-guard
@@ -964,6 +1022,40 @@ Every push and every failure is appended to
 command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
 always exits 0.
 
+
+## New surface CSS goes in its own sheet, never the globals facade
+
+**Rule:** a new stylesheet for a mode- or dialog-gated surface is
+component-imported by the component that renders it. Do **not** add it to the
+`@import` list in `src/app/globals.css`, and do not append it to an existing
+sheet that is on that list (`surface-compact-calendar.css`, `calendar-agenda.css`,
+…).
+
+**Why:** the root CSS bundle every route downloads runs at essentially zero
+headroom against `BUNDLE_MAX_HOME_CSS_KB`. A build after adding ~2 KB to a
+faceted sheet reads:
+
+```text
+✗ bundle-budget: initial / route CSS 942 KB exceeds budget 940 KB.
+```
+
+The failure is *not* about your 2 KB — every route pays for CSS only one gated
+surface uses. **This was hit three separate times in one session** (the Rituals
+crons sheet, the schedule-plan preview, the cron-detail state band), each time
+costing a full rebuild, because the mistake looks natural: the related rules
+already live in a faceted sheet, so appending seems like tidiness.
+
+**How to apply:**
+
+```ts
+// in the component that renders it
+import "@/styles/<surface>.css";
+```
+
+The `surface-research-*.css` family and `marketplace-view.tsx` are the existing
+precedents. Note the facade order is also pinned by
+`src/app/css-module-order.test.ts`, so adding an import there is a two-file
+change with a test to update — another sign it is the wrong move for surface CSS.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker

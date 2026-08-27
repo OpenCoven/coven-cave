@@ -122,6 +122,8 @@ test("public client v1 changes run Cave API, E2E, and documentation validation",
     "src/lib/server/client-v1/runtime.ts",
     "src/lib/server/client-v1/contract-fixture.json",
     "scripts/export-client-v1-contract.mjs",
+    "scripts/export-client-v1-hpke-vectors.mjs",
+    "scripts/export-client-v1-hpke-vectors.test.mjs",
     "scripts/client-v1-release-smoke.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
     // The real-authority conformance harness (cave-2hjtv). It is operator-run,
@@ -130,6 +132,8 @@ test("public client v1 changes run Cave API, E2E, and documentation validation",
     // rot without a single check noticing.
     "scripts/client-v1-conformance.mjs",
     "scripts/client-v1-conformance.test.mjs",
+    "scripts/client-v1-authority-takeover.mjs",
+    "scripts/client-v1-authority-takeover.test.mjs",
     "docs/workflows/client-v1-conformance.md",
     "docs/client-v1-conformance-results/2026-08-22-v0.3.9-win32.json",
     "src/app/api/client/v1/health/route.ts",
@@ -142,5 +146,18 @@ test("public client v1 changes run Cave API, E2E, and documentation validation",
     assert.equal(paths.frontend, true, `${file} must run Cave API validation`);
     assert.equal(paths.e2e, true, `${file} must run E2E validation`);
     assert.equal(paths.docs, true, `${file} must run documentation validation`);
+  }
+});
+
+test("unrelated scripts do not enter the public client v1 lane", () => {
+  for (const file of [
+    "scripts/client-v1-authority-takeover-notes.mjs",
+    "scripts/export-client-v1-hpke-vectors-draft.mjs",
+    "scripts/unrelated-maintenance.mjs",
+  ]) {
+    const paths = classifyCiPaths([file]);
+    assert.equal(paths.frontend, true, `${file} remains an ordinary script`);
+    assert.equal(paths.e2e, false, `${file} must not enter Client v1 E2E`);
+    assert.equal(paths.docs, false, `${file} must not enter Client v1 docs`);
   }
 });

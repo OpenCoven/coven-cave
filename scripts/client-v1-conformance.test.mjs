@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import {
+  AUTHORITY_TAKEOVER_ASSERTION_IDS,
+  AUTHORITY_TAKEOVER_SKIP_ID,
   BRANCHED_ACTIVE_SEQUENCE,
   COVERAGE_ASSERTION_ID,
   EXPECTED_ASSERTION_IDS,
@@ -17,6 +20,7 @@ import {
   checkPageWalk,
   checkRecordShape,
   checkRecordValues,
+  buildCaveEnvironment,
   createRecorder,
   expectedAssertionIds,
   expectedBranchedMessages,
@@ -26,7 +30,9 @@ import {
   fixtureProjects,
   parseConformanceArgs,
   parseRawResponse,
+  recordAuthorityTakeoverResult,
   renderConformanceRecord,
+  stopCave,
   summarizeConformance,
 } from "./client-v1-conformance.mjs";
 
@@ -41,13 +47,25 @@ import {
 // ── argument parsing ─────────────────────────────────────────────────────────
 
 test("parseConformanceArgs defaults to the fast, evidence-free run", () => {
-  assert.deepEqual(parseConformanceArgs([]), { out: null, includeTtl: false, keepFixture: false });
+  assert.deepEqual(parseConformanceArgs([]), {
+    out: null,
+    includeTtl: false,
+    includeAuthorityTakeover: false,
+    keepFixture: false,
+  });
 });
 
 test("parseConformanceArgs reads every flag", () => {
-  assert.deepEqual(parseConformanceArgs(["--include-ttl", "--keep-fixture", "--out", "docs/x.json"]), {
+  assert.deepEqual(parseConformanceArgs([
+    "--include-ttl",
+    "--include-authority-takeover",
+    "--keep-fixture",
+    "--out",
+    "docs/x.json",
+  ]), {
     out: "docs/x.json",
     includeTtl: true,
+    includeAuthorityTakeover: true,
     keepFixture: true,
   });
 });
@@ -61,6 +79,116 @@ test("parseConformanceArgs refuses an unknown flag rather than ignoring it", () 
 test("parseConformanceArgs refuses --out without a value", () => {
   assert.throws(() => parseConformanceArgs(["--out"]), /--out requires a path/);
   assert.throws(() => parseConformanceArgs(["--out", "--include-ttl"]), /--out requires a path/);
+});
+
+test("buildCaveEnvironment isolates authority fixtures from inherited credentials and homes", () => {
+  const inherited = {
+    SAFE_PARENT_VALUE: "retained",
+    NODE_ENV: "development",
+    COVEN_HOME: "/operator/coven",
+    COVEN_CAVE_HOME: "/operator/cave",
+    COVEN_CAVE_PORT: "9",
+    COVEN_CAVE_BUNDLE: "1",
+    COVEN_CAVE_ACCESS_TOKEN: "access",
+    COVEN_CAVE_AUTH_TOKEN: "admin",
+    COVEN_CAVE_PASSKEY_REQUIRED: "1",
+    COVEN_CAVE_PASSKEY_SESSION_SECRET: "passkey",
+    COVEN_CAVE_CLIENT_V1_INSTANCE_ID: "instance",
+    COVEN_CAVE_LOCAL_PEER_SECRET: "local",
+    COVEN_CAVE_TAILNET_PEER_SECRET: "tailnet",
+    COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE: "advertise",
+    PORT: "3000",
+  };
+  const env = buildCaveEnvironment(
+    {
+      port: 4321,
+      caveHomeDir: "/isolated/coven/cave",
+      covenHomeDir: "/isolated/coven",
+      adminToken: null,
+      authorityMode: "enforce",
+    },
+    inherited,
+  );
+
+  assert.equal(env.SAFE_PARENT_VALUE, "retained");
+  assert.equal(env.NODE_ENV, "production");
+  assert.equal(env.COVEN_HOME, "/isolated/coven");
+  assert.equal(env.COVEN_CAVE_HOME, "/isolated/coven/cave");
+  assert.equal(env.COVEN_CAVE_PORT, "4321");
+  assert.equal(env.COVEN_CAVE_HEAP_MONITOR, "0");
+  assert.equal(env.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE, "enforce");
+  for (const name of [
+    "COVEN_CAVE_BUNDLE",
+    "COVEN_CAVE_ACCESS_TOKEN",
+    "COVEN_CAVE_AUTH_TOKEN",
+    "COVEN_CAVE_PASSKEY_REQUIRED",
+    "COVEN_CAVE_PASSKEY_SESSION_SECRET",
+    "COVEN_CAVE_CLIENT_V1_INSTANCE_ID",
+    "COVEN_CAVE_LOCAL_PEER_SECRET",
+    "COVEN_CAVE_TAILNET_PEER_SECRET",
+    "PORT",
+  ]) {
+    assert.equal(Object.hasOwn(env, name), false, name);
+  }
+
+  const configured = buildCaveEnvironment(
+    {
+      port: 4321,
+      caveHomeDir: "/isolated/coven/cave",
+      covenHomeDir: "/isolated/coven",
+      adminToken: "fixture-admin",
+    },
+    inherited,
+  );
+  assert.equal(configured.COVEN_CAVE_AUTH_TOKEN, "fixture-admin");
+  assert.equal(configured.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE, "off");
+});
+
+test("stopCave treats a child with a signalCode as already exited", async () => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = "SIGTERM";
+  child.pid = 123;
+  const kills = [];
+  let exitSubscriptions = 0;
+  const originalOnce = child.once;
+  child.once = function (event, listener) {
+    if (event === "exit") exitSubscriptions += 1;
+    return originalOnce.call(this, event, listener);
+  };
+  child.kill = (signal) => {
+    kills.push(signal);
+    queueMicrotask(() => child.emit("exit", null, child.signalCode));
+    return true;
+  };
+
+  await stopCave({ child }, 1);
+
+  assert.equal(exitSubscriptions, 0);
+  assert.deepEqual(kills, []);
+});
+
+test("stopCave subscribes before terminating a live child and does not force-kill its signal exit", async () => {
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.pid = 123;
+  const events = [];
+  const originalOnce = child.once;
+  child.once = function (event, listener) {
+    if (event === "exit") events.push("subscribe");
+    return originalOnce.call(this, event, listener);
+  };
+  child.kill = (signal) => {
+    events.push(signal);
+    child.signalCode = signal;
+    queueMicrotask(() => child.emit("exit", null, signal));
+    return true;
+  };
+
+  await stopCave({ child }, 1);
+
+  assert.deepEqual(events, ["subscribe", "SIGTERM"]);
 });
 
 // ── the envelope ─────────────────────────────────────────────────────────────
@@ -363,12 +491,90 @@ test("checkAssertionCoverage ignores its own entry", () => {
 });
 
 test("expectedAssertionIds swaps exactly the TTL leg on --include-ttl", () => {
-  const waited = expectedAssertionIds(true);
-  const skipped = expectedAssertionIds(false);
-  assert.deepEqual(waited.filter((id) => !EXPECTED_ASSERTION_IDS.includes(id)), TTL_ASSERTION_IDS.waited);
-  assert.deepEqual(skipped.filter((id) => !EXPECTED_ASSERTION_IDS.includes(id)), TTL_ASSERTION_IDS.skipped);
+  const waited = expectedAssertionIds(true, false);
+  const skipped = expectedAssertionIds(false, false);
+  assert.deepEqual(
+    waited.filter(
+      (id) =>
+        !EXPECTED_ASSERTION_IDS.includes(id)
+        && id !== AUTHORITY_TAKEOVER_SKIP_ID,
+    ),
+    TTL_ASSERTION_IDS.waited,
+  );
+  assert.deepEqual(
+    skipped.filter(
+      (id) =>
+        !EXPECTED_ASSERTION_IDS.includes(id)
+        && id !== AUTHORITY_TAKEOVER_SKIP_ID,
+    ),
+    TTL_ASSERTION_IDS.skipped,
+  );
   assert.equal(new Set(waited).size, waited.length);
   assert.equal(EXPECTED_ASSERTION_IDS.includes(COVERAGE_ASSERTION_ID), false);
+});
+
+test("expectedAssertionIds swaps one takeover skip for all five proof assertions", () => {
+  const omitted = expectedAssertionIds(false, false);
+  const included = expectedAssertionIds(false, true);
+  assert.equal(omitted.includes(AUTHORITY_TAKEOVER_SKIP_ID), true);
+  assert.equal(
+    AUTHORITY_TAKEOVER_ASSERTION_IDS.some((id) => omitted.includes(id)),
+    false,
+  );
+  assert.equal(included.includes(AUTHORITY_TAKEOVER_SKIP_ID), false);
+  assert.deepEqual(
+    included.filter((id) => AUTHORITY_TAKEOVER_ASSERTION_IDS.includes(id)),
+    AUTHORITY_TAKEOVER_ASSERTION_IDS,
+  );
+});
+
+test("recordAuthorityTakeoverResult records one skip when the focused proof is absent", () => {
+  const recorder = createRecorder();
+  assert.deepEqual(
+    recordAuthorityTakeoverResult(recorder, { included: false }),
+    {
+      authorityMode: null,
+      discoveryVersion: null,
+      mechanism: null,
+    },
+  );
+  assert.deepEqual(recorder.entries, [{
+    id: AUTHORITY_TAKEOVER_SKIP_ID,
+    result: "skip",
+    detail: "operator did not pass --include-authority-takeover",
+  }]);
+});
+
+test("recordAuthorityTakeoverResult records all five focused proof assertions and only safe context", () => {
+  const recorder = createRecorder();
+  const context = recordAuthorityTakeoverResult(recorder, {
+    included: true,
+    result: {
+      assertions: [...AUTHORITY_TAKEOVER_ASSERTION_IDS],
+      context: {
+        authorityMode: "enforce",
+        discoveryVersion: 2,
+        mechanism: "hpke-bound-v1",
+      },
+    },
+  });
+  assert.deepEqual(
+    recorder.entries.map(({ id, result }) => ({ id, result })),
+    AUTHORITY_TAKEOVER_ASSERTION_IDS.map((id) => ({
+      id,
+      result: "pass",
+    })),
+  );
+  assert.deepEqual(context, {
+    authorityMode: "enforce",
+    discoveryVersion: 2,
+    mechanism: "hpke-bound-v1",
+  });
+  assert.deepEqual(Object.keys(context), [
+    "authorityMode",
+    "discoveryVersion",
+    "mechanism",
+  ]);
 });
 
 // ── paged walks ──────────────────────────────────────────────────────────────
@@ -477,6 +683,11 @@ test("the evidence record carries the scope limits and the findings, not just a 
     commit: null,
     platform: "win32-x64",
     includeTtl: false,
+    authorityTakeover: {
+      authorityMode: "enforce",
+      discoveryVersion: 2,
+      mechanism: "hpke-bound-v1",
+    },
     notCovered: NOT_COVERED,
     findings: FINDINGS,
   });
@@ -485,6 +696,20 @@ test("the evidence record carries the scope limits and the findings, not just a 
   assert.ok(record.notCovered.length > 0);
   assert.ok(record.findings.length > 0);
   assert.equal(record.summary.status, "passed");
+  assert.deepEqual(record.authorityTakeover, {
+    authorityMode: "enforce",
+    discoveryVersion: 2,
+    mechanism: "hpke-bound-v1",
+  });
+  assert.deepEqual(Object.keys(record.authorityTakeover), [
+    "authorityMode",
+    "discoveryVersion",
+    "mechanism",
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(record.authorityTakeover),
+    /publicKey|keyId|nonce|ciphertext/u,
+  );
 });
 
 test("NOT_COVERED states the cross-repo boundary the issues span", () => {

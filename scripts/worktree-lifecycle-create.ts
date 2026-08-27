@@ -1193,6 +1193,101 @@ function assessLocalRefusalPreflight(
   };
 }
 
+/**
+ * The root `execute` resolved, so the CLI boundary can re-probe the unit after
+ * the fences are released — see {@link phantomCreationOutcome}.
+ */
+let resolvedRoot: string | null = null;
+
+/**
+ * What is missing from a unit this run claims to have created.
+ *
+ * Empty means the report is true: the directory is there, git registers it, and
+ * the branch resolves to the head that was reported.
+ */
+function missingCreatedArtifacts(
+  root: string,
+  report: CreatedReport,
+): string[] {
+  const state = probePartialState(root, report.path, report.fullRef);
+  const missing: string[] = [];
+  if (!state.pathEntry.exists) {
+    missing.push(`the worktree directory is ${state.pathEntry.kind}`);
+  } else if (state.pathEntry.kind !== "directory") {
+    missing.push(`the worktree path is a ${state.pathEntry.kind}, not a directory`);
+  }
+  if (state.registrations.length === 0) {
+    missing.push("git does not register a worktree at that path");
+  }
+  if (state.ref === null) {
+    missing.push(`${report.fullRef} does not resolve`);
+  } else if (OID.test(report.head) && state.ref.oid !== report.head) {
+    missing.push(
+      `${report.fullRef} is ${state.ref.oid}, not the reported ${report.head}`,
+    );
+  }
+  // A probe that could not read is NOT proof of absence, so it is reported as
+  // its own uncertainty rather than folded into the missing list.
+  return missing.length > 0
+    ? missing
+    : state.probeErrors.length > 0
+      ? [`the unit could not be verified: ${state.probeErrors.join("; ")}`]
+      : [];
+}
+
+/**
+ * Refuse to report a creation that is not there.
+ *
+ * Observed 2026-08-25 on cave-aa10e: this command exited 0 and printed a full
+ * created report — path, branch, head, and a complete metadata record it had
+ * already written to the bead — for a worktree that did not exist, was not
+ * registered, and whose branch did not resolve. Nothing in the hook logs or in
+ * GitHub Desktop's log touched it, and a second run minutes later succeeded, so
+ * the cause is intermittent and is NOT diagnosed here.
+ *
+ * That is exactly why this exists. The report is the only thing a caller reads,
+ * and a false one is worse than a failure: it sends them to a directory that is
+ * not there, and it leaves the bead claiming a unit nothing can retire — the
+ * cave-l11sw shape, whose repair is hand-editing a lifecycle record, the one
+ * thing the worktree rules forbid. Making the state loud where it is observed
+ * costs one probe and removes the silent case whatever the cause turns out to
+ * be.
+ *
+ * It deliberately does NOT repair or roll back. Compensation is a separate,
+ * fenced path with its own preconditions, and by here the fences are released,
+ * so removing anything would be an unfenced mutation racing whatever else the
+ * checkout is doing.
+ */
+function phantomCreationOutcome(
+  report: CreatedReport,
+  missing: string[],
+): Outcome {
+  return {
+    status: 1,
+    // No created report: printing one is the defect this guards.
+    stdout: JSON.stringify({
+      error: "creation reported success but the unit is not present",
+      missing,
+      claimed: {
+        path: report.path,
+        fullRef: report.fullRef,
+        head: report.head,
+        beadId: report.beadId,
+      },
+    }),
+    stderr: [
+      "worktree-lifecycle-create: creation reported success but the unit is not present:",
+      ...missing.map((item) => `  - ${item}`),
+      `  claimed path: ${report.path}`,
+      `  claimed ref:  ${report.fullRef} @ ${report.head}`,
+      "  The bead may now carry a worktree record for a unit that is not there.",
+      `  Clear it on your OWN bead before retrying, and use a different branch name:`,
+      `    bd update ${report.beadId} --unset-metadata coven`,
+    ],
+    createdReport: null,
+  };
+}
+
 function probePartialState(
   root: string,
   worktreePath: string,
@@ -1718,6 +1813,7 @@ function execute(
   leases: MaintenanceFence[],
 ): Outcome {
   const root = realpathSync(path.resolve(options.root));
+  resolvedRoot = root;
   const { fullRef, worktreePath } = validateBranchAndPath(root, options.branch);
   assertRefAndPathAbsent(root, fullRef, worktreePath);
 
@@ -2290,6 +2386,18 @@ function main(): never {
       outcome.stdout = JSON.stringify(outcome.createdReport);
     }
   }
+  // Last stop before the report reaches a caller, and after the fences are
+  // released, so this observes the state they will actually find.
+  if (outcome.createdReport !== null) {
+    const missing =
+      resolvedRoot === null
+        ? ["the resolved repository root is unknown, so the unit cannot be verified"]
+        : missingCreatedArtifacts(resolvedRoot, outcome.createdReport);
+    if (missing.length > 0) {
+      outcome = phantomCreationOutcome(outcome.createdReport, missing);
+    }
+  }
+
   return render(outcome);
 }
 

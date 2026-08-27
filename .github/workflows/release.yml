@@ -85,7 +85,7 @@ on:
         required: false
         type: string
       allow_unconfigured_registries:
-        description: "EMERGENCY ONLY: skip the signed OpenCode/Grok schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
+        description: "EMERGENCY ONLY: skip the signed OpenCode/Grok/OpenClaw schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
         required: false
         default: false
         type: boolean
@@ -1229,11 +1229,34 @@ jobs:
             echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT"
           } >> "$GITHUB_ENV"
 
+      - name: Require signed OpenClaw compatibility registry
+        # Skippable only via manual workflow_dispatch with an explicit flag;
+        # tag-push releases remain fail-closed (docs/openclaw-compatibility-registry.md).
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_unconfigured_registries }}
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-openclaw-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_OPENCLAW_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_OPENCLAW_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_OPENCLAW_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_OPENCLAW_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
       # The escape hatch above is deliberately available for emergency manual
       # runs, but using it must never be silent: v0.2.0 shipped with BOTH
       # guards skipped and nobody noticed for four days, because the only
       # evidence was a `skipped` line buried in the job steps (cave-yp21x).
-      # This is the inverse condition of the two guards, so it fires exactly
+      # This is the inverse condition of the registry guards, so it fires exactly
       # when they did not.
       - name: Record skipped compatibility guards
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
@@ -1243,8 +1266,8 @@ jobs:
             echo "### ⚠️ Compatibility registry guards SKIPPED"
             echo
             echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_registries: true\`, so"
-            echo "**neither** the OpenCode nor the Grok signed schema-registry gate verified"
-            echo "anything. The build used the built-in baseline parsers."
+            echo "The signed schema-registry gates for OpenCode, Grok, and OpenClaw verified"
+            echo "**nothing**. The build used the built-in baseline parsers."
             echo
             echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
             echo "If this run publishes a release, its notes carry the same statement."

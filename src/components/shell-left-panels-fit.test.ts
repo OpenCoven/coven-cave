@@ -81,7 +81,7 @@ assert.match(
 assert.match(
   shell,
   /id="right-chat"[\s\S]{0,260}?defaultSize=\{`\$\{preferredRightChatWidth\}px`\}[\s\S]{0,100}?minSize=\{`\$\{RIGHT_CHAT_MIN_PX\}px`\}[\s\S]{0,100}?maxSize=\{`\$\{RIGHT_CHAT_MAX_PX\}px`\}[\s\S]{0,100}?collapsedSize=\{0\}/,
-  "Right Chat is a 320–640px fully collapsible fourth shell panel",
+  "Right Chat is a 280–520px fully collapsible fourth shell panel",
 );
 assert.match(
   shell,

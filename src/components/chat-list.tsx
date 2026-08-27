@@ -45,6 +45,7 @@ import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
+  selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import {
@@ -123,7 +124,11 @@ type Props = {
   onToggleExpanded: (key: string) => void;
   daemonRunning?: boolean;
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
-  onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
+  onNewChat: (
+    projectRoot?: string,
+    familiarId?: string | null,
+    runtimeHost?: string | null,
+  ) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
   /** Open a URL in the in-app browser (the PR-status badge's click-through).
@@ -475,6 +480,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
       return [{
         projectId: null,
         projectRoot: null,
+        runtimeHost: null,
         projectName: null,
         sessions: rows,
         defaultFamiliarId: latest?.familiarId ?? scopedFamiliarId,
@@ -1293,7 +1299,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
           >
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {displayGroups.map(({ projectRoot, sessions: rows }) => {
+            {displayGroups.map(({ projectRoot, runtimeHost, projectName, sessions: rows }) => {
               // Flat "All sessions" view (the phone surface): split the list into a
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
@@ -1304,14 +1310,14 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
               const firstPinnedIdx = pinnedFlags.indexOf(true);
               const firstRestIdx = pinnedFlags.indexOf(false);
               return (
-              <li key={projectRoot ?? "__none__"}>
+              <li key={selectionKey(null, projectRoot, runtimeHost)}>
                 {/* Project group header — uppercase label + count + fading rule
                     (rendered for every group in the "Group by project" mode,
                     including the no-project bucket). */}
                 {effectiveSelection === "all" && (projectRoot !== null || groupBy === "project") && (
                   <div className="chat-list-group-header group relative flex items-center gap-2 px-4 pb-1 pt-3">
                     <span className="truncate text-[length:var(--text-2xs)] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                      {projectRoot ? repoName(projectRoot) : "No project"}
+                      {projectName ?? (projectRoot ? repoName(projectRoot) : "No project")}
                     </span>
                     <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{rows.length}</span>
                     <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />

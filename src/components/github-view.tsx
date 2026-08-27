@@ -43,7 +43,7 @@ import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+import { Popover, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -395,27 +395,14 @@ function OpenChatAction({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  // Close the multi-card picker on outside click / Escape
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setPickerOpen(false);
-    }
-    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickerOpen]);
+  // Anchors the portalled panels. They are rendered through Popover rather than
+  // positioned inside this wrapper: the buttons sit in `.gh-next-body`, which
+  // is `overflow-y:auto; overflow-x:hidden` inside a drawer capped at
+  // `max-height:min(66%,340px)`, so an absolutely-positioned panel opening
+  // downward from a low anchor was clipped on BOTH axes and rendered as an
+  // unreadable sliver (cave-cadp4). Popover portals out of every clipping
+  // ancestor and flips above the anchor when there is no room below.
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   async function openChatForCard(cardId: string) {
     const target = cards.find((c) => c.id === cardId);
@@ -465,7 +452,7 @@ function OpenChatAction({
   const title = linkedCards.length === 0 ? "Start chat" : "Open chat";
 
   return (
-    <div className="gh-action-wrap">
+    <div className="gh-action-wrap" ref={anchorRef}>
       <Button
         size="xs"
         variant="secondary"
@@ -479,8 +466,16 @@ function OpenChatAction({
 
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
 
-      {pickerOpen && linkedCards.length > 1 && (
-        <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
+      <Popover
+        open={pickerOpen && linkedCards.length > 1}
+        onOpenChange={setPickerOpen}
+        anchorRef={anchorRef}
+        placement="bottom-end"
+        minWidth={220}
+        ariaLabel="Open chat for"
+        className="gh-action-popover"
+      >
+        <div onClick={(e) => e.stopPropagation()}>
           <p className="gh-action-popover-title">Open chat for…</p>
           <ul className="gh-action-popover-list">
             {linkedCards.map((c) => {
@@ -512,11 +507,21 @@ function OpenChatAction({
             })}
           </ul>
         </div>
-      )}
+      </Popover>
 
-      {popoverOpen && (
-        <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
+      <Popover
+        open={popoverOpen}
+        onOpenChange={setPopoverOpen}
+        anchorRef={anchorRef}
+        placement="bottom-end"
+        minWidth={280}
+        scrollStrategy="content"
+        ariaLabel="Start chat"
+        className="gh-action-popover gh-action-popover--wide"
+      >
+        <div onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
+            positioned={false}
             mode="chat"
             item={item}
             familiars={familiars}
@@ -526,7 +531,7 @@ function OpenChatAction({
             onClose={() => setPopoverOpen(false)}
           />
         </div>
-      )}
+      </Popover>
     </div>
   );
 }
@@ -550,26 +555,9 @@ function SafeMergeAction({
   const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  // Close the familiar picker on outside click / Escape (same posture as
-  // OpenChatAction's card picker).
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function onDoc(ev: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(ev.target as Node)) setPickerOpen(false);
-    }
-    function onKey(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setPickerOpen(false);
-    }
-    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickerOpen]);
+  // Same posture as OpenChatAction: Popover owns anchoring and dismissal, and
+  // portals the panel out of the drawer's scroll container (cave-cadp4).
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   if (item.kind !== "pr" && item.kind !== "review_request") return null;
 
@@ -649,7 +637,7 @@ function SafeMergeAction({
   }
 
   return (
-    <div className="gh-action-wrap">
+    <div className="gh-action-wrap" ref={anchorRef}>
       <Button
         size="xs"
         variant="secondary"
@@ -663,8 +651,16 @@ function SafeMergeAction({
       </Button>
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
 
-      {pickerOpen && (
-        <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
+      <Popover
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        anchorRef={anchorRef}
+        placement="bottom-end"
+        minWidth={220}
+        ariaLabel="Merge with"
+        className="gh-action-popover"
+      >
+        <div onClick={(e) => e.stopPropagation()}>
           <p className="gh-action-popover-title">Merge with…</p>
           {familiars.length === 0 ? (
             // An empty roster and a failed load are different claims: one says
@@ -689,7 +685,7 @@ function SafeMergeAction({
             </ul>
           )}
         </div>
-      )}
+      </Popover>
     </div>
   );
 }
@@ -712,6 +708,8 @@ function AddToBoardAction({
   onAfterLink: () => void;
 }) {
   const [mode, setMode] = useState<PopoverMode | null>(null);
+  // Portalled for the same reason as the sibling actions (cave-cadp4).
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   function open(m: PopoverMode, e: React.MouseEvent) {
     e.stopPropagation();
@@ -722,7 +720,7 @@ function AddToBoardAction({
   }
 
   return (
-    <div className="gh-action-wrap">
+    <div className="gh-action-wrap" ref={anchorRef}>
       <Button
         size="xs"
         variant="secondary"
@@ -732,9 +730,19 @@ function AddToBoardAction({
       >
         Task
       </Button>
-      {mode && (
-        <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
-          <GitHubActionPopover
+      <Popover
+        open={mode !== null}
+        onOpenChange={(next) => { if (!next) close(); }}
+        anchorRef={anchorRef}
+        placement="bottom-end"
+        minWidth={280}
+        scrollStrategy="content"
+        ariaLabel="Add to task"
+        className="gh-action-popover gh-action-popover--wide"
+      >
+        <div onClick={(e) => e.stopPropagation()}>
+          {mode ? <GitHubActionPopover
+            positioned={false}
             mode={mode}
             item={item}
             familiars={familiars}
@@ -743,9 +751,9 @@ function AddToBoardAction({
             cardsFailed={cardsFailed}
             onClose={close}
             onComplete={onAfterLink}
-          />
+          /> : null}
         </div>
-      )}
+      </Popover>
     </div>
   );
 }

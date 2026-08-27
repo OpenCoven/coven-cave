@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
+  cooldownIsTheOnlyBlocker,
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   acquireMaintenanceGate,
@@ -42,6 +43,25 @@ type Options = {
    * required — see assessMaintenancePlaneAdmission.
    */
   allowUnenforcedPlanes: boolean;
+  /**
+   * Operator assertion that the cooldown units are idle — nobody is working in
+   * them — so the "let a concurrent session notice" window can be discharged.
+   * It widens eligibility by exactly one lane, and only for units the gate
+   * itself clears once the clock advances (`cooldownIsTheOnlyBlocker` re-runs
+   * the classifier rather than matching a lane string), so it can never admit
+   * dirty, unlanded, divergent, uncertain or protected work.
+   *
+   * The scheduled sweep (scripts/worktree-sweep.sh) must never pass it: a cron
+   * job has nobody to make that assertion.
+   */
+  allowCooldownOverride: boolean;
+  /**
+   * Units the operator is asserting are idle, for --allow-cooldown-override.
+   *
+   * Required with that flag and meaningless without it. Matches a worktree
+   * path, a branch, a ref, or a head OID.
+   */
+  cooldownOverrideOnly: string[];
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
@@ -151,6 +171,8 @@ export function parseArgs(argv: string[]): Options {
     apply: false,
     maxRetire: parseMaxRetire(undefined),
     allowUnenforcedPlanes: false,
+    allowCooldownOverride: false,
+    cooldownOverrideOnly: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -172,6 +194,19 @@ export function parseArgs(argv: string[]): Options {
       case "--allow-unenforced-planes":
         options.allowUnenforcedPlanes = true;
         break;
+      case "--allow-cooldown-override":
+        options.allowCooldownOverride = true;
+        break;
+      case "--only": {
+        const value = argv[++index];
+        if (value === undefined || value.trim().length === 0) {
+          throw new Error(
+            "--only requires a worktree path, branch, ref, or head OID",
+          );
+        }
+        options.cooldownOverrideOnly.push(value.trim());
+        break;
+      }
       case "--max-retire": {
         const value = argv[++index];
         if (value === undefined) {
@@ -572,8 +607,61 @@ function renderPatrolReport(
   if (malformedClaims) {
     lines.push(malformedClaims);
   }
+  const cooldownHint = renderCooldownOverrideHint(inventory.items, nowMs, false);
+  if (cooldownHint) {
+    lines.push("", cooldownHint);
+  }
   lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
   return lines.join("\n");
+}
+
+
+/**
+ * When the ONLY thing between a unit and retirement is the clock, print the
+ * exact rerun that admits it.
+ *
+ * The create gate learned this lesson first (`cave-no5nr`): a refusal that
+ * names a policy but not the command teaches sessions to reach for an
+ * unmanaged workaround. "Wait three hours" is the same shape — so say what to
+ * run instead, and let the operator decide whether the assertion it makes is
+ * true.
+ */
+function renderCooldownOverrideHint(
+  items: readonly PatrolItem[],
+  nowMs: number,
+  applying: boolean,
+): string | null {
+  const waiting = items.filter((item) => cooldownIsTheOnlyBlocker(item, nowMs));
+  if (waiting.length === 0) return null;
+  const names = waiting
+    .map((item) => {
+      const scope = item.path ?? item.branch ?? item.ref ?? item.head;
+      return `  - ${formatItemIdentity(item)}\n      --only ${scope}`;
+    })
+    .sort(compareText);
+  return [
+    `${waiting.length} unit(s) are retirable except for the cooldown:`,
+    ...names,
+    "",
+    "The cooldown is the 'let a concurrent session notice' window — the work is",
+    "already proven landed, clean and retained. If you know nobody is working in",
+    "them, discharge it explicitly, naming the units you know are idle:",
+    "",
+    "  pnpm beads:worktrees:apply --allow-unenforced-planes \\",
+    "    --allow-cooldown-override --only <path|branch>",
+    "",
+    // Deliberately NOT a prefilled command containing every unit above. This
+    // list routinely includes other live sessions' worktrees — the first real
+    // use of the override found exactly that (cave-qamzg) — and a ready-made
+    // line covering all of them is how someone retires a colleague's work with
+    // one paste. Copy the --only lines you can vouch for, and no others.
+    "Take only the --only lines for units that are YOURS. Others in this list",
+    "may belong to a live session that has not finished with them.",
+    "",
+    applying
+      ? "Every overridden retirement is recorded as such in the attempt log."
+      : "That runs --apply. Re-read the units above first.",
+  ].join("\n");
 }
 
 function compareText(left: string, right: string): number {
@@ -667,7 +755,9 @@ export function runRetirementApply(
     // (worktree-lifecycle-retirement.ts:161); anything else would reserve a
     // slot for work that cannot happen.
     const retirableAtGate = inventory.items.some(
-      (item) => item.lane === "retire-after-gate",
+      (item) =>
+        item.lane === "retire-after-gate" ||
+        (options.allowCooldownOverride && cooldownIsTheOnlyBlocker(item, options.nowMs)),
     );
     // Only reserve when there is more than one slot to divide. With
     // --max-retire 1 a reservation would not share the budget, it would just
@@ -702,6 +792,9 @@ export function runRetirementApply(
             gateHandle: acquired.handle,
             operations,
             maxRetire: String(gitLimit),
+            allowCooldownOverride: options.allowCooldownOverride,
+            cooldownOverrideOnly: options.cooldownOverrideOnly,
+            nowMs: options.nowMs,
           })
         : {
             retired: [],
@@ -838,7 +931,96 @@ export function runRetirementApply(
   };
 }
 
-export function main(argv = process.argv.slice(2)): number {
+export /**
+ * Which unit a single `--only` value names, if exactly one.
+ *
+ * Matching is exact on the identities a unit actually has — path, ref, branch,
+ * head — plus the worktree's directory name, which is what an operator reads
+ * off the patrol's own output. Deliberately NOT a substring or prefix match:
+ * this decides which unit an idleness assertion covers, and a value that
+ * quietly widened to a neighbour would recreate the very bug the scope exists
+ * to close.
+ */
+function unitsNamedBy(value: string, items: readonly PatrolItem[]): PatrolItem[] {
+  return items.filter((item) => {
+    if (item.path === value || item.ref === value || item.branch === value) return true;
+    if (item.head === value) return true;
+    if (item.path !== null && item.path.split("/").pop() === value) return true;
+    return false;
+  });
+}
+
+/**
+ * Refuse an invocation whose cooldown override is not scoped to named units.
+ *
+ * `--allow-cooldown-override` began as an all-or-nothing lever over the whole
+ * cooldown lane, and that is unsafe on a shared checkout: the first real use
+ * found the patrol's hint listing two cooldown units, the second belonging to
+ * ANOTHER live session (cave-iizwt, PR #5021, landed mid-session). Applying it
+ * would have retired that session's worktree alongside the operator's own —
+ * the class of incident worktree-autolock.mjs exists to prevent. The override
+ * went unused and three units were hand-retired instead, which is what a lever
+ * nobody dares pull is worth.
+ *
+ * The flag's whole basis is an operator ASSERTING that a unit is idle, and an
+ * assertion has to be about something specific. So the scope is required, each
+ * value must name a unit that exists, and it must name exactly one.
+ *
+ * Returns the refusal lines, or [] to proceed.
+ */
+function cooldownOverrideScopeRefusal(
+  options: Options,
+  items: readonly PatrolItem[],
+): string[] {
+  const P = "worktree-lifecycle-patrol:";
+  if (!options.allowCooldownOverride) {
+    if (options.cooldownOverrideOnly.length === 0) return [];
+    // Refused rather than ignored: silently accepting a scope that governs
+    // nothing invites the reading that --only narrows the whole apply.
+    return [
+      `${P} --only is meaningless without --allow-cooldown-override.`,
+      "  --only scopes the cooldown override and nothing else; every other unit",
+      "  is retired on the gate's own evidence, which needs no assertion from you.",
+    ];
+  }
+  if (options.cooldownOverrideOnly.length === 0) {
+    const waiting = items.filter((item) => cooldownIsTheOnlyBlocker(item, options.nowMs));
+    return [
+      `${P} --allow-cooldown-override requires --only <path|branch|ref|head>.`,
+      "  The flag asserts that a unit is IDLE, and that assertion has to name",
+      "  something. Applied to the whole lane it also retires units belonging to",
+      "  other live sessions, which is how a colleague loses a worktree mid-edit.",
+      ...(waiting.length > 0
+        ? [
+            "  Units currently held only by cooldown — name the ones that are YOURS:",
+            ...waiting.map(
+              (item) => `    --only ${item.path ?? item.branch ?? item.ref ?? item.head}`,
+            ),
+          ]
+        : ["  Nothing is currently held only by cooldown."]),
+    ];
+  }
+  const refusal: string[] = [];
+  for (const value of options.cooldownOverrideOnly) {
+    const matches = unitsNamedBy(value, items);
+    if (matches.length === 0) {
+      refusal.push(
+        `${P} --only ${value} names no unit in this checkout.`,
+        "  A typo here would assert idleness about something that does not exist.",
+      );
+    } else if (matches.length > 1) {
+      refusal.push(
+        `${P} --only ${value} is ambiguous — it names ${matches.length} units:`,
+        ...matches.map((item) => `    ${item.path ?? item.ref ?? item.branch ?? item.head}`),
+        "  Name one unambiguously; a scope that covers a unit you did not mean is",
+        "  the failure this flag is scoped to avoid.",
+      );
+    }
+  }
+  return refusal;
+}
+
+function main(argv = process.argv.slice(2)): number {
   const options = parseArgs(argv);
   const inventory = collectWorktreeLifecycleInventory({
     repo: options.repo!,
@@ -848,6 +1030,11 @@ export function main(argv = process.argv.slice(2)): number {
   const summary = summarizeInventory(inventory);
 
   if (options.apply) {
+    const scopeRefusal = cooldownOverrideScopeRefusal(options, inventory.items);
+    if (scopeRefusal.length > 0) {
+      for (const line of scopeRefusal) console.error(line);
+      return 2;
+    }
     const capabilities = repositoryMaintenanceCapabilities();
     const admission = assessMaintenancePlaneAdmission({
       capabilities: capabilities as unknown as MaintenancePlaneCapabilities,

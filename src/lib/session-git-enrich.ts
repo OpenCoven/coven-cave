@@ -93,9 +93,18 @@ async function readGitContext(git: GitRunner, projectRoot: string): Promise<Sess
   const gitDir = resolveGitPath(trimmed, gitDirRaw);
   const commonDir = resolveGitPath(trimmed, commonDirRaw);
   const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
+  const repositoryRoot =
+    isWorktree && commonDir && path.basename(commonDir) === ".git"
+      ? path.dirname(commonDir)
+      : null;
 
   if (!branch && !worktreeRoot && !isWorktree) return null;
-  return { branch, worktreeRoot, isWorktree };
+  return {
+    branch,
+    worktreeRoot,
+    isWorktree,
+    ...(repositoryRoot ? { repositoryRoot } : {}),
+  };
 }
 
 export type DiffStat = { additions: number; deletions: number };

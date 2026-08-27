@@ -3,9 +3,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
+import {
+  CLIENT_V1_HPKE_HEADERS,
+  CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+} from "@/lib/server/client-v1/authority-contract.ts";
+import { base64UrlEncode } from "@/lib/server/client-v1/hpke-bound-v1.ts";
 import { PAIRING_TTL_MS } from "@/lib/server/client-v1/pairing-store.ts";
 import { CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT } from "@/lib/server/client-v1/rate-limit.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
+import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 import { createPairingExchangePostHandler } from "./exchange/route.ts";
@@ -13,6 +20,8 @@ import { createPairingRequestGetHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-poll-");
 const secretHeader = "X-Coven-Pairing-Secret";
+const INSTANCE_ID = "client-v1-poll-route-test";
+const BOUND_NOW = 25_000;
 const pairingInput = {
   appName: "OpenCoven Chat",
   installationId: "chat-install-1",
@@ -407,6 +416,176 @@ test("polling with the correct secret is never rate limited", async () => {
     assert.equal(
       runtime.rateLimiter.peekPairingExchangeFailure(spent.id).remaining,
       CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+    );
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("bound poll encrypts pending and approved status and rejects downgrade or replay before the pairing budget", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    await withClientV1HpkeRouteTestAuthority(
+      { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 31 },
+      async (authority) => {
+        const runtime = createClientV1Runtime({
+          authority: authority.runtime,
+          credentialRoot: root,
+          loopbackSecret: "loopback-secret",
+          now: () => BOUND_NOW,
+        });
+        const pairing = runtime.pairingStore.create(pairingInput);
+        const originalLookup = runtime.pairingStore.lookup.bind(runtime.pairingStore);
+        const originalPeek =
+          runtime.rateLimiter.peekPairingExchangeFailure.bind(runtime.rateLimiter);
+        const originalConsume =
+          runtime.rateLimiter.consumePairingExchangeFailure.bind(runtime.rateLimiter);
+        let lookupCalls = 0;
+        let peekCalls = 0;
+        let consumeCalls = 0;
+        runtime.pairingStore.lookup = (id, secret) => {
+          lookupCalls += 1;
+          return originalLookup(id, secret);
+        };
+        runtime.rateLimiter.peekPairingExchangeFailure = (id) => {
+          peekCalls += 1;
+          return originalPeek(id);
+        };
+        runtime.rateLimiter.consumePairingExchangeFailure = (id) => {
+          consumeCalls += 1;
+          return originalConsume(id);
+        };
+        const handler = createPairingRequestGetHandler(runtime);
+
+        const downgrade = await handler(
+          request(pairing.id, pairing.secret),
+          context(pairing.id),
+        );
+        assert.equal(downgrade.status, 426);
+        assert.equal(lookupCalls, 0);
+        assert.equal(peekCalls, 0);
+        assert.equal(consumeCalls, 0);
+
+        const pending = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "pairing.poll",
+          url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}`,
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(1),
+          authorization: { kind: "pairing-secret", value: pairing.secret },
+        });
+        const pendingHeaders = new Headers(pending.request.headers);
+        pendingHeaders.set(LOCAL_PEER_HEADER, "loopback-secret");
+        const pendingRequest = new Request(pending.request, {
+          headers: pendingHeaders,
+        });
+        const pendingResponse = await handler(
+          pendingRequest.clone(),
+          context(pairing.id),
+        );
+        assert.equal(pendingResponse.status, 200);
+        assert.equal(
+          pendingResponse.headers.get("content-type"),
+          CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+        );
+        const pendingInner = await pending.open(pendingResponse);
+        assert.equal(pendingInner.status, 200);
+        assert.equal(
+          (JSON.parse(new TextDecoder().decode(pendingInner.body)) as {
+            data: { status: string };
+          }).data.status,
+          "pending",
+        );
+        assert.equal(lookupCalls, 1);
+        assert.equal(peekCalls, 1);
+        assert.equal(consumeCalls, 0);
+
+        const replayResponse = await handler(
+          pendingRequest.clone(),
+          context(pairing.id),
+        );
+        const replayInner = await pending.open(replayResponse);
+        assert.equal(replayInner.status, 409);
+        assert.equal(
+          (JSON.parse(new TextDecoder().decode(replayInner.body)) as {
+            error: { details: { reason: string } };
+          }).error.details.reason,
+          "authority_replayed",
+        );
+        assert.equal(lookupCalls, 1);
+        assert.equal(peekCalls, 1);
+        assert.equal(consumeCalls, 0);
+        assert.equal(
+          runtime.rateLimiter.peekPairingExchangeFailure(pairing.id).remaining,
+          CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+        );
+
+        assert.equal(
+          runtime.pairingStore.decide(pairing.id, "approved", BOUND_NOW),
+          true,
+        );
+        const approved = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "pairing.poll",
+          url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}`,
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(2),
+          authorization: { kind: "pairing-secret", value: pairing.secret },
+        });
+        const approvedHeaders = new Headers(approved.request.headers);
+        approvedHeaders.set(LOCAL_PEER_HEADER, "loopback-secret");
+        const approvedResponse = await handler(
+          new Request(approved.request, { headers: approvedHeaders }),
+          context(pairing.id),
+        );
+        const approvedInner = await approved.open(approvedResponse);
+        assert.equal(approvedInner.status, 200);
+        assert.equal(
+          (JSON.parse(new TextDecoder().decode(approvedInner.body)) as {
+            data: { status: string };
+          }).data.status,
+          "approved",
+        );
+
+        const wrongKey = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "pairing.poll",
+          url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}`,
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(3),
+          authorization: { kind: "pairing-secret", value: pairing.secret },
+        });
+        const wrongKeyHeaders = new Headers(wrongKey.request.headers);
+        wrongKeyHeaders.set(LOCAL_PEER_HEADER, "loopback-secret");
+        wrongKeyHeaders.set(
+          CLIENT_V1_HPKE_HEADERS.keyId,
+          base64UrlEncode(new Uint8Array(32).fill(0xee)),
+        );
+        const beforeWrongKey = {
+          lookupCalls,
+          peekCalls,
+          consumeCalls,
+        };
+        const wrongKeyResponse = await handler(
+          new Request(wrongKey.request, { headers: wrongKeyHeaders }),
+          context(pairing.id),
+        );
+        assert.equal(wrongKeyResponse.status, 409);
+        assert.deepEqual(
+          { lookupCalls, peekCalls, consumeCalls },
+          beforeWrongKey,
+        );
+      },
     );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);

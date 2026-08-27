@@ -101,8 +101,12 @@ Profiles select on all of the following:
 - required client capability;
 - official `AgentEventSchema` hash.
 
-A future server version, package schema, event family, or capability set does
-not inherit an older profile automatically.
+The `requires` arrays are minimum subsets, not complete Gateway catalogs.
+Additional unique advertised methods, events, or capabilities are inert:
+they do not expand the profile's closed event names, streams, lifecycle values,
+aliases, official schema validation, or Cave-owned parser envelopes. Missing
+required entries and duplicate discovery entries fail closed. A future server
+version or package schema does not inherit an older profile automatically.
 
 ### Two-phase Gateway negotiation
 

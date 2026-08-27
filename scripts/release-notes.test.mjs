@@ -183,6 +183,7 @@ test("the provenance block appears only when the guards were actually skipped", 
   assert.match(skipped, /^## Build provenance/m, "a skipped-guard build states its provenance");
   assert.match(skipped, /allow_unconfigured_registries/, "names the flag that caused it");
   assert.match(skipped, /built-in baseline schema parsers/, "says what it used instead");
+  assert.match(skipped, /OpenCode, Grok, and OpenClaw/, "names every skipped registry guard");
   assert.match(skipped, /tag push cannot skip/, "says the normal path is still fail-closed");
 
   assert.doesNotMatch(render("v7.0.55"), /Build provenance/, "unset flag renders no block");

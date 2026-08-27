@@ -1,3 +1,11 @@
+import {
+  CLIENT_V1_AUTHORITY_CONTRACT,
+  type ClientV1AuthorityContract,
+  type ClientV1HpkeAuthority,
+  type ClientV1OperationBinding,
+  type ClientV1OperationCredential,
+} from "./authority-contract.ts";
+
 // The reviewed operation registry. A value import, but a cheap one: operations.ts
 // is frozen data whose own imports are all `import type` and therefore erased,
 // so contract.ts keeps the property proxy-helpers.ts depends on — pulling it in
@@ -163,6 +171,7 @@ export const CLIENT_V1_DISCOVERY_CONTRACT = freezeReadonlyObject({
   fileName: "client-v1-discovery.json",
   mode: "0600",
   version: 1,
+  hpkeBoundVersion: 2,
 } as const);
 
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
@@ -172,7 +181,7 @@ export type ClientV1ErrorCode = (typeof CLIENT_V1_ERROR_CODES)[number];
 export type ClientV1IdentityKind = (typeof CLIENT_V1_IDENTITY_KINDS)[number];
 
 export type JsonPrimitive = null | boolean | number | string;
-export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
+export type JsonValue = JsonPrimitive | readonly JsonValue[] | JsonObject;
 export type JsonObject = { [key: string]: JsonValue };
 export type ClientV1Record = JsonObject;
 export type ClientV1IdempotencyKey = string & {
@@ -276,6 +285,8 @@ export type ClientV1OperationManifestEntry = {
   path: string;
   ingress: string;
   scope: string | null;
+  credential: ClientV1OperationCredential;
+  binding: ClientV1OperationBinding;
   families: string[];
 };
 
@@ -285,6 +296,7 @@ export type ClientV1ContractManifest = {
   capabilities: ClientV1Capability[];
   operations: ClientV1OperationManifestEntry[];
   discovery: typeof CLIENT_V1_DISCOVERY_CONTRACT;
+  authority: ClientV1AuthorityContract;
   pairingRequired: typeof CLIENT_V1_PAIRING_REQUIRED;
   pairingScopes: ClientV1Scope[];
   pairingSecretHeader: typeof CLIENT_V1_PAIRING_SECRET_HEADER;
@@ -335,6 +347,14 @@ export type ClientV1ContractFixture = {
       nonce: string;
       startedAt: string;
     };
+    discoveryRecordV2: {
+      version: 2;
+      endpoint: string;
+      pid: number;
+      nonce: string;
+      startedAt: string;
+      authority: ClientV1HpkeAuthority;
+    };
   };
 };
 
@@ -347,6 +367,12 @@ const CLIENT_V1_CAPABILITY_SET = new Set<string>(CLIENT_V1_CAPABILITIES);
 const CLIENT_V1_OPERATION_SET = new Set<string>(CLIENT_V1_OPERATIONS);
 const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
 const CLIENT_V1_IDENTITY_KIND_SET = new Set<string>(CLIENT_V1_IDENTITY_KINDS);
+
+function isClientV1JsonArray(
+  value: JsonValue,
+): value is readonly JsonValue[] {
+  return Array.isArray(value);
+}
 
 function rejectNonJsonValue(): never {
   throw new Error("Client v1 values must be JSON-safe plain values.");
@@ -410,7 +436,11 @@ export function parseClientV1JsonValue(value: unknown): JsonValue {
 
 export function parseClientV1JsonObject(value: unknown): JsonObject {
   const parsed = parseClientV1JsonValue(value);
-  if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+  if (
+    parsed === null
+    || isClientV1JsonArray(parsed)
+    || typeof parsed !== "object"
+  ) {
     throw new Error("Client v1 values must be JSON-safe plain objects.");
   }
   return parsed;
@@ -720,7 +750,7 @@ export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelop
 
 export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
   const parsed = parseClientV1JsonValue(value);
-  if (Array.isArray(parsed)) return parsed.map(sortClientV1JsonKeys);
+  if (isClientV1JsonArray(parsed)) return parsed.map(sortClientV1JsonKeys);
   if (parsed === null || typeof parsed !== "object") return parsed;
   return Object.fromEntries(
     Object.keys(parsed)
@@ -739,8 +769,8 @@ function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue
 }
 
 function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((entry) => cloneClientV1JsonValue(entry)) as T;
+  if (isClientV1JsonArray(value)) {
+    return value.map((entry) => cloneClientV1JsonValue(entry)) as unknown as T;
   }
   if (value === null || typeof value !== "object") {
     return value;
@@ -821,6 +851,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       capabilities: defaultCapabilities(),
       operations: clientV1OperationRecords(),
       discovery: cloneClientV1Record(CLIENT_V1_DISCOVERY_CONTRACT),
+      authority: cloneClientV1Record(CLIENT_V1_AUTHORITY_CONTRACT),
       pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
       pairingScopes: [...CLIENT_V1_SCOPES],
       pairingSecretHeader: CLIENT_V1_PAIRING_SECRET_HEADER,
@@ -903,6 +934,20 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
         pid: 4321,
         nonce: "018f4f1a-77c2-7a31-8a15-55a25aaba003",
         startedAt: "2026-08-20T20:20:12.617Z",
+      },
+      discoveryRecordV2: {
+        version: 2,
+        endpoint: "http://127.0.0.1:3020",
+        pid: 4321,
+        nonce: "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+        startedAt: "2026-08-25T15:42:58.109Z",
+        authority: {
+          mechanism: "hpke-bound-v1",
+          mode: "advertise",
+          keyId: "Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g",
+          publicKey: "sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs",
+          suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+        },
       },
     },
   };

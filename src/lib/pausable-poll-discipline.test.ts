@@ -33,6 +33,7 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
  */
 const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/ui/thinking-indicator.tsx", "elapsed-time ticker while a turn is pending; no network"],
+  ["components/automations/live-run-card.tsx", "elapsed-time ticker for a run in flight; no network — the runs poll itself is usePausablePoll in automations-view"],
   ["components/voice-call-overlay.tsx", "live call-duration ticker; pausing it would misreport the call"],
   ["components/home/home-feed.tsx", "minute ticker for relative timestamps; no network"],
   ["components/calendar-view-primitives.tsx", "wall-clock minute ticker for the now-line; no network"],

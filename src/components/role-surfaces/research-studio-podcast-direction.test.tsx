@@ -56,8 +56,10 @@ const readiness = {
 function renderConfig(overrides: Record<string, unknown> = {}) {
   const calls: Record<string, unknown[]> = {
     delivery: [],
+    guestVoice: [],
     model: [],
     seed: [],
+    voice: [],
   };
   const props = {
     kind: "podcast",
@@ -70,9 +72,18 @@ function renderConfig(overrides: Record<string, unknown> = {}) {
     mediaProvider: "elevenlabs",
     onMediaProviderChange: () => {},
     mediaVoice: "21m00Tcm4TlvDq8ikWAM",
-    onMediaVoiceChange: () => {},
+    onMediaVoiceChange: (value: unknown) => calls.voice.push(value),
     mediaGuestVoice: "",
-    onMediaGuestVoiceChange: () => {},
+    onMediaGuestVoiceChange: (value: unknown) => calls.guestVoice.push(value),
+    elevenLabsCatalog: {
+      status: "ready",
+      voices: [
+        { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", category: "premade" },
+        { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", category: "premade" },
+      ],
+      models: [],
+    },
+    onRetryElevenLabsCatalog: () => {},
     mediaStyle: "breakdown",
     onMediaStyleChange: () => {},
     mediaLength: "standard",
@@ -135,6 +146,90 @@ const DIRECTION_IDS = [
 ];
 
 describe("Studio podcast delivery controls", () => {
+  test("use ElevenLabs dropdowns for both podcast voices", () => {
+    const { renderer, calls } = renderConfig();
+    const host = selectById(
+      renderer,
+      "research-studio-config-elevenlabs-voice",
+    );
+    const guest = selectById(
+      renderer,
+      "research-studio-config-guest-voice",
+    );
+
+    expect(host).not.toBeNull();
+    expect(guest).not.toBeNull();
+    expect(
+      host.props.options.map((option: { value: string }) => option.value),
+    ).toEqual(["21m00Tcm4TlvDq8ikWAM", "AZnzlk1XvdvUeBnXmlld"]);
+    expect(
+      guest.props.options.map((option: { value: string }) => option.value),
+    ).toEqual(["", "21m00Tcm4TlvDq8ikWAM", "AZnzlk1XvdvUeBnXmlld"]);
+
+    act(() => {
+      host.props.onChange("AZnzlk1XvdvUeBnXmlld");
+      guest.props.onChange("21m00Tcm4TlvDq8ikWAM");
+    });
+    expect(calls.voice).toEqual(["AZnzlk1XvdvUeBnXmlld"]);
+    expect(calls.guestVoice).toEqual(["21m00Tcm4TlvDq8ikWAM"]);
+  });
+
+  test("block drafting while the ElevenLabs voice catalog is unavailable", () => {
+    const loading = renderConfig({
+      elevenLabsCatalog: { status: "loading" },
+    });
+
+    expect(
+      selectById(
+        loading.renderer,
+        "research-studio-config-elevenlabs-voice",
+      ).props.disabled,
+    ).toBe(true);
+    expect(
+      loading.renderer.root
+        .findAllByType("button")
+        .find((button) => textOf(button).includes("Draft for review")).props
+        .disabled,
+    ).toBe(true);
+
+    const failed = renderConfig({
+      elevenLabsCatalog: {
+        status: "error",
+        code: "network_error",
+        message: "Couldn’t reach ElevenLabs. Try again.",
+      },
+    });
+    expect(
+      textOf(byId(failed.renderer, "research-studio-config-media-error")),
+    ).toContain("Couldn’t reach ElevenLabs");
+    expect(
+      failed.renderer.root
+        .findAllByType("button")
+        .some((button) => textOf(button) === "Retry voices"),
+    ).toBe(true);
+  });
+
+  test("associate invalid voice dropdowns with the media error", () => {
+    const { renderer } = renderConfig({
+      elevenLabsCatalog: {
+        status: "error",
+        message: "Voice catalog unavailable.",
+      },
+    });
+
+    for (const id of [
+      "research-studio-config-elevenlabs-voice",
+      "research-studio-config-guest-voice",
+    ]) {
+      const trigger = byId(renderer, id);
+      expect(trigger.props["aria-invalid"]).toBe(true);
+      expect(trigger.props["aria-errormessage"]).toBe(
+        "research-studio-config-media-error",
+      );
+      expect(selectById(renderer, id).props.showCaret).toBe(false);
+    }
+  });
+
   test("appear for an ElevenLabs podcast", () => {
     const { renderer } = renderConfig();
     for (const id of DIRECTION_IDS) {

@@ -336,7 +336,22 @@ function headMismatchReason(pr: WorktreeMergedPrRef): string {
   return `local HEAD does not match merged PR #${pr.number} head ${pr.headOid.slice(0, 9)} — fast-forward with \`git merge --ff-only ${pr.headOid}\` if this unit holds nothing else`;
 }
 
-export const RETIREMENT_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+/**
+ * How long landed work rests before automated retirement will touch it.
+ *
+ * By the time this applies the unit is ALREADY proven landed, clean,
+ * non-divergent and retained — so this is not a correctness check. It is a
+ * "let a concurrent session notice" window: the one risk left is that someone
+ * else is still sitting in the directory, and no amount of git evidence can
+ * answer that. 8h originally (#4215), 3h since #4991 (`cave-vwt75`), and
+ * 15m since `cave-0pu26`.
+ *
+ * An operator who KNOWS the unit is idle can discharge the wait explicitly
+ * with `--allow-cooldown-override` — see {@link cooldownIsTheOnlyBlocker}.
+ * The scheduled sweep never passes it, because a cron job has nobody to make
+ * that assertion.
+ */
+export const RETIREMENT_COOLDOWN_MS = 15 * 60 * 1000;
 /** Branch namespaces whose content is a snapshot to preserve, never retire.
  *
  *  `wip/` is a NAMESPACE here, not a token anywhere in the name. The previous
@@ -771,7 +786,7 @@ function classifyLifecycleUnitInternal(
   // exception granted to escape a full budget went on to hold the budget full,
   // forcing the next session to request another one.
   //
-  // Retirement stays gated by the 3-hour cooldown, the repository-wide
+  // Retirement stays gated by the 15-minute cooldown, the repository-wide
   // maintenance gate, and the deletion proof below, so dropping the exception
   // here reclassifies landed work without authorizing any new deletion.
 
@@ -792,13 +807,13 @@ function classifyLifecycleUnitInternal(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
       ...reviewAfterReasons(observation.metadata, nowMs),
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
     ...reviewAfterReasons(observation.metadata, nowMs),
   ]);
@@ -841,12 +856,12 @@ function classifyLifecycleUnitWithoutMetadata(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
   ]);
 }
@@ -859,6 +874,33 @@ export function classifyLifecycleUnit(
     allowLegacyMissingMetadata: false,
   });
 }
+
+/**
+ * Would this unit be retirable if the ONLY thing in its way — the mandatory
+ * cooldown — had already elapsed?
+ *
+ * Answered by re-running the real classifier one cooldown into the future,
+ * never by matching the "cooldown" lane string. That distinction IS the safety
+ * property. A unit that is dirty, unlanded, divergent, uncertain or protected
+ * classifies exactly the same at any clock, so this can only ever discharge one
+ * thing: elapsed time. It cannot be widened by accident into "retire anything
+ * the gate refused", because the answer still comes from the gate.
+ *
+ * Requiring the present lane to be `cooldown` as well is not redundant: it
+ * keeps the predicate honest about what it claims. Without it a unit that is
+ * already `retire-after-gate` would answer true, and callers would be told the
+ * override was needed when it was not.
+ */
+export function cooldownIsTheOnlyBlocker(
+  observation: WorktreeLifecycleObservation,
+  nowMs = Date.now(),
+): boolean {
+  if (classifyLifecycleUnit(observation, nowMs).lane !== "cooldown") return false;
+  return (
+    classifyLifecycleUnit(observation, nowMs + RETIREMENT_COOLDOWN_MS).lane === "retire-after-gate"
+  );
+}
+
 
 function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {
   return ref ?? (branch ? `refs/heads/${branch}` : null);
