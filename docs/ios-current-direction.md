@@ -25,8 +25,9 @@ When these disagree with an older iOS note or plan, the order above wins.
 
 - Chats is familiars-first: one familiar row leads to its conversations.
 - The drawer is the sole primary navigation surface. Its primary destinations
-  are Chats, Tasks, and Settings; Projects and Familiars remain first-class
-  drawer actions.
+  are Chats and Tasks; Projects and Familiars are grouped as contextual
+  workspace resources, while the profile avatar is the sole drawer entry to
+  Settings.
 - The native iOS Terminal, PTY transport, xterm WebView, terminal composer,
   slash-command route, generated bundle, and tests are retired. Desktop and web
   terminal surfaces are unaffected.

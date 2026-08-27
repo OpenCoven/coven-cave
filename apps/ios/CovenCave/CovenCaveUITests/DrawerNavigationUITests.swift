@@ -25,7 +25,7 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "leaving the launch thread returns to Chats home")
         openNavigation.tap()
-        app.buttons["Settings"].tap()
+        app.buttons["Profile and settings"].tap()
 
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "Settings exposes the navigation drawer")
@@ -61,7 +61,7 @@ final class DrawerNavigationUITests: XCTestCase {
     @MainActor
     func testDrawerRoutesBetweenPrimaryDestinationsWithoutATabBar() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "settings"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "tasks"]
         app.launch()
 
         XCTAssertFalse(app.tabBars.firstMatch.exists, "the app has no native tab bar")
@@ -71,13 +71,21 @@ final class DrawerNavigationUITests: XCTestCase {
                       "a primary destination exposes the navigation drawer")
         openNavigation.tap()
 
-        for destination in ["Chats", "Familiars", "Tasks", "Settings"] {
+        for destination in ["Chats", "Tasks"] {
             XCTAssertTrue(app.buttons[destination].waitForExistence(timeout: 5),
-                          "drawer includes \(destination)")
+                          "drawer includes primary destination \(destination)")
         }
+        for resource in ["Projects", "Familiars"] {
+            XCTAssertTrue(app.buttons[resource].waitForExistence(timeout: 5),
+                          "drawer includes contextual resource \(resource)")
+        }
+        XCTAssertTrue(app.staticTexts["Workspace"].waitForExistence(timeout: 5),
+                      "drawer groups contextual resources below primary navigation")
+        XCTAssertTrue(app.buttons["Profile and settings"].waitForExistence(timeout: 5),
+                      "the profile avatar is the Settings entry point")
+        XCTAssertFalse(app.buttons["Settings"].exists,
+                       "Settings is not duplicated as a primary drawer row")
         XCTAssertFalse(app.buttons["Terminal"].exists, "the retired iOS terminal stays out of the drawer")
-        XCTAssertFalse(app.buttons["Projects"].exists,
-                       "Projects is no longer a peer work destination")
 
         let projectContext = app.buttons["Project context button"]
         XCTAssertTrue(projectContext.waitForExistence(timeout: 5),
@@ -92,6 +100,18 @@ final class DrawerNavigationUITests: XCTestCase {
                       "closing the switcher returns to the current destination")
         openNavigation.tap()
 
+        app.buttons["Profile and settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10),
+                      "the profile avatar opens Settings")
+
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "Settings exposes the navigation drawer")
+        openNavigation.tap()
+        app.buttons["Chats"].tap()
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "Chats is mounted after drawer routing")
+
+        openNavigation.tap()
         app.buttons["Tasks"].tap()
         XCTAssertTrue(app.navigationBars["Tasks"].waitForExistence(timeout: 10),
                       "Tasks is mounted after drawer routing")
@@ -111,7 +131,7 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
         openNavigation.tap()
 
-        let projectContext = app.buttons["Project context button"]
+        let projectContext = app.buttons["Projects"]
         XCTAssertTrue(projectContext.waitForExistence(timeout: 5),
                       "drawer exposes the shared project switcher")
         projectContext.tap()
