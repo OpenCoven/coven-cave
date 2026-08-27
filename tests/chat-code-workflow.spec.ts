@@ -834,14 +834,7 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
   await capture(page, testInfo, "chat-code-workflow-returned-chat");
 });
 
-// QUARANTINED — cave-z2bvz. This test carries the cleanest proof of the
-// regression anywhere in the suite: it expects .chat-surface at x=9 with a
-// tolerance of 10 and receives 65, and 65 minus 9 is exactly the 56px width of
-// the rail PR #4758 restored. The y, width and height assertions in the same
-// call are unaffected, which is the signature of a pure horizontal offset.
-// Its theme, responsive-sheet and reduced-motion contracts are unrelated and
-// still valid, so this quarantine carries coverage debt tracked on the bead.
-test.fixme("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, and reduced-motion contracts", async ({
+test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, and reduced-motion contracts", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "resized desktop Chromium intentionally pins responsive CSS behavior");

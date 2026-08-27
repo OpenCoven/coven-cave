@@ -86,11 +86,7 @@ async function boot(page: Page) {
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
 }
 
-// QUARANTINED — cave-z2bvz. Fails only on the collapsed-sidebar assertion,
-// which PR #4758 invalidated by silently reverting PR #4747. The rest of this
-// test still describes live behaviour, so quarantining it costs real coverage;
-// that debt is tracked on the bead and clears the moment the revert is decided.
-test.fixme("desktop keeps the panel across surfaces and supports a second Chat conversation", async ({ page }, testInfo) => {
+test("desktop keeps the panel across surfaces and supports a second Chat conversation", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await boot(page);
 

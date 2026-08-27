@@ -476,12 +476,12 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /if \(\s*!chatContextual &&\s*isShellNavCollapsedLayout\(\{[\s\S]*?layout: defaultLayout,[\s\S]*?  collapsedNavPixels: NAV_RAIL_PX,[\s\S]*?\}\)\s*\) \{\s*seedNavOpenPref\(false\);\s*\}[\s\S]*?resolveShellDestinationLayout\(/,
+  /if \(\s*!chatContextual &&\s*isShellNavCollapsedLayout\(\{[\s\S]*?layout: defaultLayout,[\s\S]*?  collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?\}\)\s*\) \{\s*seedNavOpenPref\(false\);\s*\}[\s\S]*?resolveShellDestinationLayout\(/,
   "legacy collapsed normal layouts migrate the collapsed preference before their expanded fallback is restored",
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -634,12 +634,12 @@ assert.doesNotMatch(
 );
 assert.match(
   shell,
-  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
-  "mobile closes completely while desktop preserves the icon rail",
+  /collapsedSize=\{NAV_COLLAPSED_PX\}/,
+  "mobile and desktop navigation close completely",
 );
 assert.match(
   shell,
-  /collapsedNavPixels: NAV_RAIL_PX,/,
+  /collapsedNavPixels: NAV_COLLAPSED_PX,/,
   "the restored destination layout describes the same collapsed width as the panel",
 );
 // Chat collapsing to a rail changes what the panel LOOKS like, not who owns the
