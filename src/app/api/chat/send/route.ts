@@ -313,6 +313,7 @@ import {
   daemonSessionCwd,
   filterUsableLocalDirectories,
   resolveFamiliarWorkspace,
+  shouldRetryBlankCopilotResume,
 } from "./chat-send-runtime";
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
@@ -5332,21 +5333,22 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         await runAttempt(args);
       }
 
-      // Copilot can silently close an expired native session with exit code 0:
-      // no result frame, no assistant text, and no "session not found" stderr.
-      // Treat that exact resumed-attempt shape as a stale session so the
-      // existing bounded context-replay retry can answer the user's turn.
-      if (
-        copilotStream &&
-        resumeTarget &&
-        !runtimeAccessRefreshNeeded &&
-        !inferenceRouteRefreshNeeded &&
-        !runHandle.stopRequested &&
-        !launchFailure &&
-        !assistantText.trim() &&
-        result.duration_ms == null &&
-        result.is_error == null
-      ) {
+      // Copilot can silently close an expired native session with no result
+      // frame or assistant text. This can surface as either exit code 0 or a
+      // nonzero process exit, so retry both blank resumed-attempt shapes while
+      // preserving explicit successful empty results and every fresh-session
+      // boundary above.
+      if (shouldRetryBlankCopilotResume({
+        hasCopilotStream: Boolean(copilotStream),
+        resumeTarget,
+        runtimeAccessRefreshNeeded,
+        inferenceRouteRefreshNeeded,
+        stopRequested: runHandle.stopRequested,
+        launchFailed: Boolean(launchFailure),
+        assistantText,
+        durationMs: result.duration_ms,
+        resultIsError: result.is_error,
+      })) {
         resumeFailed = true;
       }
 
