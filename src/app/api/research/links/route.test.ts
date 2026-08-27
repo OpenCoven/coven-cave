@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { savedLinkDedupeKey, type SavedLink } from "@/lib/link-organizer";
@@ -89,7 +92,7 @@ function reserveAllXCandidates(urls: readonly string[]) {
   });
 }
 
-test("rejects non-local list, detail, and save requests before data access", async () => {
+test("rejects non-local list, detail, save, and delete requests before data access", async () => {
   let reads = 0;
   const route = createResearchLinksRouteHandlers({
     listSavedLinkSummaries: async () => {
@@ -108,19 +111,82 @@ test("rejects non-local list, detail, and save requests before data access", asy
       reads++;
       return { added: [], duplicates: [], invalid: [] };
     },
+    removeSavedLink: async () => {
+      reads++;
+      return true;
+    },
   });
 
   for (const request of [
     localRequest("/api/research/links", { headers: { host: "cave.example.com" } }),
     localRequest("/api/research/links?id=link-1", { headers: { host: "cave.example.com" } }),
     post({ urls: ["https://example.com"] }, "cave.example.com"),
+    localRequest("/api/research/links", {
+      method: "DELETE",
+      headers: { host: "cave.example.com", "content-type": "application/json" },
+      body: JSON.stringify({ id: "link-1" }),
+    }),
   ]) {
-    const response = request.method === "POST"
-      ? await route.POST(request)
+    const response = request.method === "POST" ? await route.POST(request)
+      : request.method === "DELETE" ? await route.DELETE(request)
       : await route.GET(request);
     assert.equal(response.status, 403);
   }
   assert.equal(reads, 0);
+});
+
+test("real handlers repair before response, commit deletes, and bound migration failures", async () => {
+  const parent = await mkdtemp(path.join(tmpdir(), "research-links-route-a4-"));
+  const legacyPath = path.join(parent, "research-links.json");
+  const resourceRoot = path.join(parent, "research-resources");
+  const previousLegacy = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
+  const previousResources = process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE;
+  process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = legacyPath;
+  process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE = resourceRoot;
+  try {
+    const route = createResearchLinksRouteHandlers();
+    const saved = await route.POST(post({ urls: ["https://example.com/route-barrier"] }));
+    assert.equal(saved.status, 200);
+    const savedBody = await saved.json() as { added: SavedLink[] };
+    const id = savedBody.added[0]?.id;
+    assert.ok(id);
+
+    const listed = await route.GET(localRequest("/api/research/links"));
+    assert.equal(listed.status, 200);
+    assert.equal((await listed.json() as { links: SavedLink[] }).links.length, 1);
+    const detail = await route.GET(localRequest(`/api/research/links?id=${encodeURIComponent(id)}`));
+    assert.equal(detail.status, 200);
+
+    const removed = await route.DELETE(localRequest("/api/research/links", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    }));
+    assert.equal(removed.status, 200);
+    assert.deepEqual(await removed.json(), { ok: true });
+    assert.deepEqual(
+      (JSON.parse(await readFile(legacyPath, "utf8")) as { links: unknown[] }).links,
+      [],
+    );
+
+    const projection = path.join(resourceRoot, "migration", "research-links-projection.json");
+    await writeFile(projection, "{ corrupt projection containing PRIVATE_SENTINEL and /secret/path");
+    await chmod(projection, 0o600);
+    const failed = await route.GET(localRequest("/api/research/links"));
+    assert.equal(failed.status, 500);
+    const failureBody = JSON.stringify(await failed.json());
+    assert.equal(failureBody, JSON.stringify({
+      ok: false,
+      error: "failed to read the saved-links store",
+    }));
+    assert.doesNotMatch(failureBody, /PRIVATE_SENTINEL|secret|research-links-route-a4/);
+  } finally {
+    if (previousLegacy === undefined) delete process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
+    else process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = previousLegacy;
+    if (previousResources === undefined) delete process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE;
+    else process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE = previousResources;
+    await rm(parent, { recursive: true, force: true });
+  }
 });
 
 test("lists summaries without Article bodies and returns one full link by id", async () => {

@@ -47,7 +47,47 @@ export type VerifiedResourceSnapshot = {
   rawBlob?: Uint8Array;
 };
 
+export type ManifestCatalogCompatibilityOperation =
+  | { kind: "create"; manifest: ResourceManifestV1 }
+  | {
+      kind: "update";
+      id: string;
+      expectedRevision: number;
+      manifest: ResourceManifestV1;
+    }
+  | {
+      kind: "replace";
+      expectedManifest: ResourceManifestV1;
+      manifest: ResourceManifestV1;
+    }
+  | { kind: "delete"; expectedManifest: ResourceManifestV1 };
+
+export type ManifestCatalogTransaction = {
+  listManifests(): ResourceManifestV1[];
+  preflightCompatibilityMutation(
+    operations: readonly ManifestCatalogCompatibilityOperation[],
+  ): Promise<void>;
+  createManifest(
+    manifest: ResourceManifestV1,
+  ): Promise<{ created: boolean; manifest: ResourceManifestV1 }>;
+  updateManifest(input: {
+    id: string;
+    expectedRevision: number;
+    manifest: ResourceManifestV1;
+  }): Promise<ResourceManifestV1>;
+  replaceCompatibilityManifest(input: {
+    expectedManifest: ResourceManifestV1;
+    manifest: ResourceManifestV1;
+  }): Promise<ResourceManifestV1>;
+  deleteCompatibilityManifest(
+    expectedManifest: ResourceManifestV1,
+  ): Promise<{ deleted: true; manifest: ResourceManifestV1 }>;
+};
+
 export type ResearchResourceStore = {
+  withManifestCatalogTransaction<T>(
+    operation: (transaction: ManifestCatalogTransaction) => Promise<T>,
+  ): Promise<T>;
   createManifest(
     manifest: ResourceManifestV1,
   ): Promise<{ created: boolean; manifest: ResourceManifestV1 }>;
@@ -268,12 +308,12 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
-async function readSafeFile(input: {
+async function readSafeFileWithIdentity(input: {
   target: string;
   rootRealPath: string;
   label: string;
   maxBytes: number;
-}): Promise<Uint8Array> {
+}): Promise<{ bytes: Uint8Array; identity: PathIdentity }> {
   const before = await pathMetadata(input.target, `${input.label} is missing`);
   if (before.isSymbolicLink()) {
     throw new ResearchResourceStoreError("symlink", `${input.label} is a symlink`);
@@ -337,10 +377,22 @@ async function readSafeFile(input: {
       }
       chunks.push(chunk.subarray(0, bytesRead));
     }
-    return new Uint8Array(Buffer.concat(chunks, total));
+    return {
+      bytes: new Uint8Array(Buffer.concat(chunks, total)),
+      identity: pathIdentity(input.target, opened),
+    };
   } finally {
     await handle.close();
   }
+}
+
+async function readSafeFile(input: {
+  target: string;
+  rootRealPath: string;
+  label: string;
+  maxBytes: number;
+}): Promise<Uint8Array> {
+  return (await readSafeFileWithIdentity(input)).bytes;
 }
 
 async function writeAll(handle: FileHandle, bytes: Uint8Array): Promise<void> {
@@ -428,7 +480,8 @@ async function publishReplace(input: {
   expectedBytes: Uint8Array;
   label: string;
   maxBytes: number;
-}): Promise<void> {
+  expectedIdentity: PathIdentity;
+}): Promise<PathIdentity> {
   await assertStableLayout(input.layout);
   await assertStableDirectory(input.directory, input.label);
   const temporary = path.join(
@@ -449,13 +502,16 @@ async function publishReplace(input: {
     await handle.close();
     handle = null;
 
-    const currentBytes = await readSafeFile({
+    const current = await readSafeFileWithIdentity({
       target: input.target,
       rootRealPath: input.layout.rootRealPath,
       label: input.label,
       maxBytes: input.maxBytes,
     });
-    if (!Buffer.from(currentBytes).equals(Buffer.from(input.expectedBytes))) {
+    if (
+      !sameIdentity(current.identity, input.expectedIdentity) ||
+      !Buffer.from(current.bytes).equals(Buffer.from(input.expectedBytes))
+    ) {
       throw new ResearchResourceStoreError(
         "revision-conflict",
         `${input.label} changed before replacement`,
@@ -474,6 +530,7 @@ async function publishReplace(input: {
     await assertSafeOwnership(input.target, published, `Research Resource ${input.label}`);
     assertPrivateMode(published.mode, FILE_MODE, input.label);
     await syncDirectory(input.directory.path);
+    return pathIdentity(input.target, published);
   } finally {
     await handle?.close().catch(() => {});
     await rm(temporary, { force: true });
@@ -633,13 +690,22 @@ async function readManifestRecord(
   resourceId: string,
   missingAsNull: boolean,
 ): Promise<ResourceManifestV1 | null> {
+  return (await readManifestRecordWithIdentity(layout, resourceId, missingAsNull))?.manifest ?? null;
+}
+
+async function readManifestRecordWithIdentity(
+  layout: StoreLayout,
+  resourceId: string,
+  missingAsNull: boolean,
+): Promise<{ manifest: ResourceManifestV1; identity: PathIdentity } | null> {
   try {
-    const bytes = await readSafeFile({
+    const record = await readSafeFileWithIdentity({
       target: manifestFile(layout, resourceId),
       rootRealPath: layout.rootRealPath,
       label: `manifest ${resourceId}`,
       maxBytes: MAX_MANIFEST_RECORD_BYTES,
     });
+    const { bytes } = record;
     const manifest = parseManifest(parseJson(bytes, `manifest ${resourceId}`));
     if (manifest.id !== resourceId) {
       throw new ResearchResourceStoreError("corrupt", "manifest filename and id do not match");
@@ -651,7 +717,7 @@ async function readManifestRecord(
         `manifest ${resourceId} is not canonical JSON`,
       );
     }
-    return manifest;
+    return { manifest, identity: record.identity };
   } catch (error) {
     if (
       missingAsNull &&
@@ -664,9 +730,13 @@ async function readManifestRecord(
   }
 }
 
-async function scanManifests(layout: StoreLayout): Promise<Map<string, ResourceManifestV1>> {
+async function scanManifests(layout: StoreLayout): Promise<{
+  records: Map<string, ResourceManifestV1>;
+  identities: Map<string, PathIdentity>;
+}> {
   await assertStableLayout(layout);
   const records = new Map<string, ResourceManifestV1>();
+  const identities = new Map<string, PathIdentity>();
   const names: string[] = [];
   for await (const entry of await opendir(layout.manifests.path)) {
     if (names.length >= MAX_MANIFEST_RECORDS) {
@@ -686,9 +756,10 @@ async function scanManifests(layout: StoreLayout): Promise<Map<string, ResourceM
     if (!SAFE_STORE_ID.test(id) || WINDOWS_DEVICE_IDS.test(id)) {
       throw new ResearchResourceStoreError("corrupt", `unsafe manifest entry ${name}`);
     }
-    const manifest = await readManifestRecord(layout, id, false);
-    if (!manifest) throw new ResearchResourceStoreError("corrupt", `manifest ${id} vanished`);
-    records.set(id, manifest);
+    const record = await readManifestRecordWithIdentity(layout, id, false);
+    if (!record) throw new ResearchResourceStoreError("corrupt", `manifest ${id} vanished`);
+    records.set(id, record.manifest);
+    identities.set(id, record.identity);
   }
   const canonicalOwners = new Map<string, string>();
   const legacyOwners = new Map<string, string>();
@@ -713,7 +784,7 @@ async function scanManifests(layout: StoreLayout): Promise<Map<string, ResourceM
     }
   }
   await assertStableDirectory(layout.manifests, "manifests");
-  return records;
+  return { records, identities };
 }
 
 function assertUniqueManifest(
@@ -854,6 +925,374 @@ async function verifyCurrentSnapshot(
   }
 }
 
+function manifestBytes(manifest: ResourceManifestV1): Uint8Array {
+  const bytes = new TextEncoder().encode(`${canonicalJson(manifest)}\n`);
+  if (bytes.byteLength > MAX_MANIFEST_RECORD_BYTES) {
+    throw new ResearchResourceStoreError("too-large", "manifest record exceeds 1 MiB");
+  }
+  return bytes;
+}
+
+function detachedManifest(manifest: ResourceManifestV1): ResourceManifestV1 {
+  return structuredClone(manifest);
+}
+
+function sortedDetachedManifests(
+  records: Map<string, ResourceManifestV1>,
+): ResourceManifestV1[] {
+  return [...records.values()]
+    .sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
+    )
+    .map(detachedManifest);
+}
+
+function parseExpectedRevision(expectedRevision: number): void {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      "expectedRevision must be a positive safe integer",
+    );
+  }
+}
+
+function assertNextRevision(
+  existing: ResourceManifestV1,
+  manifest: ResourceManifestV1,
+  expectedRevision: number,
+): void {
+  if (existing.revision !== expectedRevision) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      "manifest revision changed before the update",
+    );
+  }
+  if (manifest.revision !== expectedRevision + 1) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      "next manifest revision must increment expectedRevision exactly once",
+    );
+  }
+  if (Date.parse(manifest.updatedAt) <= Date.parse(existing.updatedAt)) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      "updatedAt must advance on every manifest revision",
+    );
+  }
+}
+
+async function createManifestLocked(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  identities: Map<string, PathIdentity>,
+  inputManifest: ResourceManifestV1,
+): Promise<{ created: boolean; manifest: ResourceManifestV1 }> {
+  const prepared = await validateManifestCreate(layout, records, inputManifest);
+  if (prepared.existing) {
+    return { created: false, manifest: detachedManifest(prepared.manifest) };
+  }
+  const manifest = prepared.manifest;
+  const result = await publishNoReplace({
+    layout,
+    directory: layout.manifests,
+    target: manifestFile(layout, manifest.id),
+    bytes: prepared.recordBytes,
+    label: `manifest ${manifest.id}`,
+    maxBytes: MAX_MANIFEST_RECORD_BYTES,
+    existingMismatchCode: "immutable-conflict",
+  });
+  records.set(manifest.id, detachedManifest(manifest));
+  const published = await readManifestRecordWithIdentity(layout, manifest.id, false);
+  if (!published) throw new ResearchResourceStoreError("corrupt", `manifest ${manifest.id} vanished`);
+  identities.set(manifest.id, published.identity);
+  return { created: result === "created", manifest: detachedManifest(manifest) };
+}
+
+async function validateManifestCreate(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  inputManifest: ResourceManifestV1,
+): Promise<{
+  manifest: ResourceManifestV1;
+  recordBytes: Uint8Array;
+  existing: boolean;
+}> {
+  const manifest = parseManifest(inputManifest);
+  if (manifest.revision !== 1) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      "new manifests must start at revision 1",
+    );
+  }
+  const recordBytes = manifestBytes(manifest);
+  const existing = records.get(manifest.id);
+  if (existing) {
+    if (canonicalJson(existing) === canonicalJson(manifest)) {
+      assertUniqueManifest(records, manifest);
+      await verifyCurrentSnapshot(layout, manifest);
+      return { manifest, recordBytes, existing: true };
+    }
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      `manifest ${manifest.id} already exists with different content`,
+    );
+  }
+  assertUniqueManifest(records, manifest);
+  await verifyCurrentSnapshot(layout, manifest);
+  return { manifest, recordBytes, existing: false };
+}
+
+async function updateManifestLocked(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  identities: Map<string, PathIdentity>,
+  input: { id: string; expectedRevision: number; manifest: ResourceManifestV1 },
+): Promise<ResourceManifestV1> {
+  const prepared = await validateManifestUpdate(layout, records, input);
+  const { existing, manifest } = prepared;
+  const expectedIdentity = identities.get(manifest.id);
+  if (!expectedIdentity) {
+    throw new ResearchResourceStoreError("corrupt", `manifest ${manifest.id} identity is missing`);
+  }
+  const publishedIdentity = await publishReplace({
+    layout,
+    directory: layout.manifests,
+    target: manifestFile(layout, manifest.id),
+    bytes: prepared.recordBytes,
+    expectedBytes: manifestBytes(existing),
+    label: `manifest ${manifest.id}`,
+    maxBytes: MAX_MANIFEST_RECORD_BYTES,
+    expectedIdentity,
+  });
+  records.set(manifest.id, detachedManifest(manifest));
+  identities.set(manifest.id, publishedIdentity);
+  return detachedManifest(manifest);
+}
+
+async function validateManifestUpdate(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  input: { id: string; expectedRevision: number; manifest: ResourceManifestV1 },
+): Promise<{
+  existing: ResourceManifestV1;
+  manifest: ResourceManifestV1;
+  recordBytes: Uint8Array;
+}> {
+  assertResourceId(input.id);
+  parseExpectedRevision(input.expectedRevision);
+  const manifest = parseManifest(input.manifest);
+  if (manifest.id !== input.id) {
+    throw new ResearchResourceStoreError("immutable-conflict", "manifest id cannot change");
+  }
+  const existing = records.get(input.id);
+  if (!existing) {
+    throw new ResearchResourceStoreError("missing", `manifest ${input.id} is missing`);
+  }
+  assertNextRevision(existing, manifest, input.expectedRevision);
+  if (
+    manifest.id !== existing.id ||
+    manifest.canonicalIdentity !== existing.canonicalIdentity ||
+    manifest.createdAt !== existing.createdAt ||
+    canonicalJson(manifest.legacySavedLink ?? null) !==
+      canonicalJson(existing.legacySavedLink ?? null)
+  ) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "manifest identity, creation time, and legacy origin cannot change",
+    );
+  }
+  assertUniqueManifest(records, manifest);
+  await verifyCurrentSnapshot(layout, manifest);
+  return { existing, manifest, recordBytes: manifestBytes(manifest) };
+}
+
+async function assertCompatibilityDeletion(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  inputExpected: ResourceManifestV1,
+): Promise<ResourceManifestV1> {
+  const expected = parseManifest(inputExpected);
+  const existing = records.get(expected.id);
+  if (!existing) {
+    throw new ResearchResourceStoreError("missing", `manifest ${expected.id} is missing`);
+  }
+  if (canonicalJson(existing) !== canonicalJson(expected)) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      `manifest ${expected.id} changed before compatibility deletion`,
+    );
+  }
+  if (!existing.legacySavedLink) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "compatibility deletion requires a legacy saved-link origin",
+    );
+  }
+  if (existing.currentSnapshotId) {
+    throw new ResearchResourceStoreError(
+      "snapshot-conflict",
+      "compatibility deletion cannot remove a current snapshot owner",
+    );
+  }
+  if (existing.ingest.desired || existing.ingest.state !== "metadata_only") {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "compatibility deletion is limited to metadata-only resources not desired for ingest",
+    );
+  }
+  const snapshots = await scanSnapshots(layout);
+  if ([...snapshots.values()].some((snapshot) => snapshot.resourceId === existing.id)) {
+    throw new ResearchResourceStoreError(
+      "snapshot-conflict",
+      "compatibility deletion cannot remove a resource referenced by a snapshot",
+    );
+  }
+  return existing;
+}
+
+async function deleteCompatibilityManifestLocked(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  identities: Map<string, PathIdentity>,
+  expectedManifest: ResourceManifestV1,
+): Promise<{ deleted: true; manifest: ResourceManifestV1 }> {
+  const existing = await assertCompatibilityDeletion(layout, records, expectedManifest);
+  const expectedIdentity = identities.get(existing.id);
+  if (!expectedIdentity) {
+    throw new ResearchResourceStoreError("corrupt", `manifest ${existing.id} identity is missing`);
+  }
+  await assertStableDirectory(layout.manifests, "manifests");
+  const current = await readSafeFileWithIdentity({
+    target: manifestFile(layout, existing.id),
+    rootRealPath: layout.rootRealPath,
+    label: `manifest ${existing.id}`,
+    maxBytes: MAX_MANIFEST_RECORD_BYTES,
+  });
+  if (
+    !sameIdentity(current.identity, expectedIdentity) ||
+    !Buffer.from(current.bytes).equals(Buffer.from(manifestBytes(existing)))
+  ) {
+    throw new ResearchResourceStoreError(
+      "revision-conflict",
+      `manifest ${existing.id} changed before compatibility deletion`,
+    );
+  }
+  await unlink(manifestFile(layout, existing.id));
+  await syncDirectory(layout.manifests.path);
+  records.delete(existing.id);
+  identities.delete(existing.id);
+  return { deleted: true, manifest: detachedManifest(existing) };
+}
+
+async function replaceCompatibilityManifestLocked(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  identities: Map<string, PathIdentity>,
+  input: { expectedManifest: ResourceManifestV1; manifest: ResourceManifestV1 },
+): Promise<ResourceManifestV1> {
+  const prepared = await validateCompatibilityReplacement(layout, records, input);
+  const { existing, manifest, recordBytes } = prepared;
+  const expectedIdentity = identities.get(existing.id);
+  if (!expectedIdentity) {
+    throw new ResearchResourceStoreError("corrupt", `manifest ${existing.id} identity is missing`);
+  }
+  const publishedIdentity = await publishReplace({
+    layout,
+    directory: layout.manifests,
+    target: manifestFile(layout, manifest.id),
+    bytes: recordBytes,
+    expectedBytes: manifestBytes(existing),
+    label: `manifest ${manifest.id}`,
+    maxBytes: MAX_MANIFEST_RECORD_BYTES,
+    expectedIdentity,
+  });
+  records.set(manifest.id, detachedManifest(manifest));
+  identities.set(manifest.id, publishedIdentity);
+  return detachedManifest(manifest);
+}
+
+async function validateCompatibilityReplacement(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  input: { expectedManifest: ResourceManifestV1; manifest: ResourceManifestV1 },
+): Promise<{
+  existing: ResourceManifestV1;
+  manifest: ResourceManifestV1;
+  recordBytes: Uint8Array;
+}> {
+  const existing = await assertCompatibilityDeletion(layout, records, input.expectedManifest);
+  const manifest = parseManifest(input.manifest);
+  if (manifest.id !== existing.id) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "compatibility replacement cannot change the manifest id",
+    );
+  }
+  assertNextRevision(existing, manifest, existing.revision);
+  if (
+    !manifest.legacySavedLink ||
+    manifest.currentSnapshotId ||
+    manifest.ingest.desired ||
+    manifest.ingest.state !== "metadata_only"
+  ) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "compatibility replacement must remain an unreferenced metadata-only saved link",
+    );
+  }
+  const replacementRecords = new Map(records);
+  replacementRecords.delete(existing.id);
+  assertUniqueManifest(replacementRecords, manifest);
+  await verifyCurrentSnapshot(layout, manifest);
+  const recordBytes = manifestBytes(manifest);
+  return { existing, manifest, recordBytes };
+}
+
+async function preflightCompatibilityMutation(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  operations: readonly ManifestCatalogCompatibilityOperation[],
+): Promise<void> {
+  if (operations.length > MAX_MANIFEST_RECORDS) {
+    throw new ResearchResourceStoreError(
+      "too-large",
+      `compatibility mutation exceeds the ${MAX_MANIFEST_RECORDS} operation limit`,
+    );
+  }
+  const simulated = new Map(
+    [...records].map(([id, manifest]) => [id, detachedManifest(manifest)]),
+  );
+  for (const operation of operations) {
+    switch (operation.kind) {
+      case "create": {
+        const prepared = await validateManifestCreate(layout, simulated, operation.manifest);
+        simulated.set(prepared.manifest.id, detachedManifest(prepared.manifest));
+        break;
+      }
+      case "update": {
+        const prepared = await validateManifestUpdate(layout, simulated, operation);
+        simulated.set(prepared.manifest.id, detachedManifest(prepared.manifest));
+        break;
+      }
+      case "replace": {
+        const prepared = await validateCompatibilityReplacement(layout, simulated, operation);
+        simulated.set(prepared.manifest.id, detachedManifest(prepared.manifest));
+        break;
+      }
+      case "delete": {
+        const existing = await assertCompatibilityDeletion(
+          layout,
+          simulated,
+          operation.expectedManifest,
+        );
+        simulated.delete(existing.id);
+        break;
+      }
+    }
+  }
+}
+
 export function createResearchResourceStore(
   options: { root?: string } = {},
 ): ResearchResourceStore {
@@ -878,7 +1317,27 @@ export function createResearchResourceStore(
     }
   };
 
+  const withManifestCatalogTransaction = async <T>(
+    operation: (transaction: ManifestCatalogTransaction) => Promise<T>,
+  ): Promise<T> => withMutationLock(async (layout) => {
+    const { records, identities } = await scanManifests(layout);
+    const transaction: ManifestCatalogTransaction = {
+      listManifests: () => sortedDetachedManifests(records),
+      preflightCompatibilityMutation: (operations) =>
+        preflightCompatibilityMutation(layout, records, operations),
+      createManifest: (manifest) => createManifestLocked(layout, records, identities, manifest),
+      updateManifest: (input) => updateManifestLocked(layout, records, identities, input),
+      replaceCompatibilityManifest: (input) =>
+        replaceCompatibilityManifestLocked(layout, records, identities, input),
+      deleteCompatibilityManifest: (expectedManifest) =>
+        deleteCompatibilityManifestLocked(layout, records, identities, expectedManifest),
+    };
+    return operation(transaction);
+  });
+
   return {
+    withManifestCatalogTransaction,
+
     async createManifest(inputManifest) {
       const manifest = parseManifest(inputManifest);
       if (manifest.revision !== 1) {
@@ -887,64 +1346,23 @@ export function createResearchResourceStore(
           "new manifests must start at revision 1",
         );
       }
-      const recordBytes = new TextEncoder().encode(`${canonicalJson(manifest)}\n`);
-      if (recordBytes.byteLength > MAX_MANIFEST_RECORD_BYTES) {
-        throw new ResearchResourceStoreError("too-large", "manifest record exceeds 1 MiB");
-      }
-      return withMutationLock(async (layout) => {
-        const records = await scanManifests(layout);
-        const existing = records.get(manifest.id);
-        if (existing) {
-          if (canonicalJson(existing) === canonicalJson(manifest)) {
-            assertUniqueManifest(records, manifest);
-            await verifyCurrentSnapshot(layout, manifest);
-            return { created: false, manifest };
-          }
-          throw new ResearchResourceStoreError(
-            "immutable-conflict",
-            `manifest ${manifest.id} already exists with different content`,
-          );
-        }
-        assertUniqueManifest(records, manifest);
-        await verifyCurrentSnapshot(layout, manifest);
-        const result = await publishNoReplace({
-          layout,
-          directory: layout.manifests,
-          target: manifestFile(layout, manifest.id),
-          bytes: recordBytes,
-          label: `manifest ${manifest.id}`,
-          maxBytes: MAX_MANIFEST_RECORD_BYTES,
-          existingMismatchCode: "immutable-conflict",
-        });
-        return { created: result === "created", manifest };
-      });
+      manifestBytes(manifest);
+      return withManifestCatalogTransaction((transaction) =>
+        transaction.createManifest(manifest));
     },
 
     async readManifest(resourceId) {
       assertResourceId(resourceId);
-      const layout = await ensureLayout(root);
-      await assertStableLayout(layout);
-      return readManifestRecord(layout, resourceId, true);
+      return withMutationLock((layout) => readManifestRecord(layout, resourceId, true));
     },
 
     async listManifests() {
-      return withMutationLock(async (layout) => {
-        const records = await scanManifests(layout);
-        return [...records.values()].sort(
-          (left, right) =>
-            right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
-        );
-      });
+      return withManifestCatalogTransaction(async (transaction) => transaction.listManifests());
     },
 
     async updateManifest(input) {
       assertResourceId(input.id);
-      if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
-        throw new ResearchResourceStoreError(
-          "revision-conflict",
-          "expectedRevision must be a positive safe integer",
-        );
-      }
+      parseExpectedRevision(input.expectedRevision);
       const manifest = parseManifest(input.manifest);
       if (manifest.id !== input.id) {
         throw new ResearchResourceStoreError("immutable-conflict", "manifest id cannot change");
@@ -955,53 +1373,9 @@ export function createResearchResourceStore(
           "next manifest revision must increment expectedRevision exactly once",
         );
       }
-      const recordBytes = new TextEncoder().encode(`${canonicalJson(manifest)}\n`);
-      if (recordBytes.byteLength > MAX_MANIFEST_RECORD_BYTES) {
-        throw new ResearchResourceStoreError("too-large", "manifest record exceeds 1 MiB");
-      }
-      return withMutationLock(async (layout) => {
-        const records = await scanManifests(layout);
-        const existing = records.get(input.id);
-        if (!existing) {
-          throw new ResearchResourceStoreError("missing", `manifest ${input.id} is missing`);
-        }
-        if (existing.revision !== input.expectedRevision) {
-          throw new ResearchResourceStoreError(
-            "revision-conflict",
-            "manifest revision changed before the update",
-          );
-        }
-        if (
-          manifest.id !== existing.id ||
-          manifest.canonicalIdentity !== existing.canonicalIdentity ||
-          manifest.createdAt !== existing.createdAt ||
-          canonicalJson(manifest.legacySavedLink ?? null) !==
-            canonicalJson(existing.legacySavedLink ?? null)
-        ) {
-          throw new ResearchResourceStoreError(
-            "immutable-conflict",
-            "manifest identity, creation time, and legacy origin cannot change",
-          );
-        }
-        if (Date.parse(manifest.updatedAt) <= Date.parse(existing.updatedAt)) {
-          throw new ResearchResourceStoreError(
-            "revision-conflict",
-            "updatedAt must advance on every manifest revision",
-          );
-        }
-        assertUniqueManifest(records, manifest);
-        await verifyCurrentSnapshot(layout, manifest);
-        await publishReplace({
-          layout,
-          directory: layout.manifests,
-          target: manifestFile(layout, manifest.id),
-          bytes: recordBytes,
-          expectedBytes: new TextEncoder().encode(`${canonicalJson(existing)}\n`),
-          label: `manifest ${manifest.id}`,
-          maxBytes: MAX_MANIFEST_RECORD_BYTES,
-        });
-        return manifest;
-      });
+      manifestBytes(manifest);
+      return withManifestCatalogTransaction((transaction) =>
+        transaction.updateManifest({ ...input, manifest }));
     },
 
     async publishSnapshot(input) {
@@ -1094,7 +1468,7 @@ export function createResearchResourceStore(
     async deleteSnapshot(snapshotId) {
       assertSnapshotId(snapshotId);
       return withMutationLock(async (layout) => {
-        const manifests = await scanManifests(layout);
+        const { records: manifests } = await scanManifests(layout);
         if ([...manifests.values()].some((manifest) => manifest.currentSnapshotId === snapshotId)) {
           throw new ResearchResourceStoreError(
             "snapshot-conflict",

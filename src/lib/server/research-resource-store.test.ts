@@ -18,7 +18,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import type { ResourceSnapshotV1 } from "../research-resource-contracts.ts";
+import type {
+  ResourceManifestV1,
+  ResourceSnapshotV1,
+} from "../research-resource-contracts.ts";
 import {
   createResearchResourceStore,
   ResearchResourceStoreError,
@@ -50,6 +53,35 @@ function snapshot(input: {
     },
     sourceSelector: { type: "whole-resource" },
     createdAt: "2026-08-27T04:00:00Z",
+  };
+}
+
+function manifest(
+  id: string,
+  patch: Partial<ResourceManifestV1> = {},
+): ResourceManifestV1 {
+  return {
+    version: 1,
+    id,
+    revision: 1,
+    kind: "saved-resource",
+    canonicalIdentity: `https://example.com/${id}`,
+    title: `Resource ${id}`,
+    sourceUri: `https://example.com/${id}`,
+    sourceType: "saved-link",
+    category: "article",
+    legacySavedLink: {
+      id: `legacy-${id}`,
+      url: `https://example.com/${id}`,
+      addedAt: "2026-08-27T12:00:00Z",
+      source: "desk",
+    },
+    subject: {},
+    sensitivity: "private",
+    ingest: { desired: false, state: "metadata_only" },
+    createdAt: "2026-08-27T12:00:00Z",
+    updatedAt: "2026-08-27T12:00:00Z",
+    ...patch,
   };
 }
 
@@ -549,5 +581,306 @@ test("refuses symlinked roots and intermediate snapshot directories", async (t) 
     await rm(path.join(root, "snapshots"), { recursive: true });
     await symlink(outside, path.join(root, "snapshots"));
     await assert.rejects(() => store.readSnapshot(record.id), hasStoreCode("symlink"));
+  });
+});
+
+test("manifest catalog transaction keeps the process lock across coordinator I/O", async () => {
+  await fixture(async ({ root }) => {
+    const firstStore = createResearchResourceStore({ root });
+    const secondStore = createResearchResourceStore({ root });
+    let releaseIo!: () => void;
+    const ioGate = new Promise<void>((resolve) => {
+      releaseIo = resolve;
+    });
+    let entered = false;
+    const transaction = firstStore.withManifestCatalogTransaction(async (catalog) => {
+      entered = true;
+      assert.deepEqual(catalog.listManifests(), []);
+      await ioGate;
+      return catalog.createManifest(manifest("transaction_owner"));
+    });
+    while (!entered) await new Promise((resolve) => setTimeout(resolve, 1));
+
+    let readerSettled = false;
+    const reader = secondStore.readManifest("transaction_owner").finally(() => {
+      readerSettled = true;
+    });
+    let contenderSettled = false;
+    const contender = secondStore.createManifest(manifest("transaction_contender"))
+      .finally(() => {
+        contenderSettled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(readerSettled, false, "a detail read waits during callback I/O");
+    assert.equal(contenderSettled, false, "a competing writer waits during callback I/O");
+
+    releaseIo();
+    await transaction;
+    assert.deepEqual(await reader, manifest("transaction_owner"));
+    await contender;
+    assert.deepEqual(
+      (await firstStore.listManifests()).map((item) => item.id).sort(),
+      ["transaction_contender", "transaction_owner"],
+    );
+  });
+});
+
+test("manifest catalog transactions return detached snapshots and safely delete compatibility rows", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const original = manifest("compatibility_delete");
+    await store.createManifest(original);
+
+    await store.withManifestCatalogTransaction(async (catalog) => {
+      const listed = catalog.listManifests();
+      listed[0]!.title = "caller mutation";
+      assert.equal(catalog.listManifests()[0]?.title, original.title);
+      assert.deepEqual(await catalog.deleteCompatibilityManifest(original), {
+        deleted: true,
+        manifest: original,
+      });
+      assert.deepEqual(catalog.listManifests(), []);
+    });
+    assert.equal(await store.readManifest(original.id), null);
+    await assert.rejects(
+      () => lstat(path.join(root, "manifests", `${original.id}.json`)),
+      { code: "ENOENT" },
+    );
+  });
+});
+
+test("compatibility deletion refuses changed, current, ingested, and snapshot-referenced manifests", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const changed = manifest("changed_expected");
+    await store.createManifest(changed);
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction((catalog) =>
+        catalog.deleteCompatibilityManifest({ ...changed, title: "Wrong expected bytes" })),
+      hasStoreCode("revision-conflict"),
+    );
+
+    for (const [id, ingest] of [
+      ["desired_resource", { desired: true, state: "queued" as const }],
+      ["ingested_resource", { desired: false, state: "partial" as const }],
+    ] as const) {
+      const record = manifest(id, { ingest });
+      await store.createManifest(record);
+      await assert.rejects(
+        () => store.withManifestCatalogTransaction((catalog) =>
+          catalog.deleteCompatibilityManifest(record)),
+        hasStoreCode("immutable-conflict"),
+      );
+    }
+
+    const bytes = Buffer.from("compatibility snapshot", "utf8");
+    const referencedSnapshot = snapshot({
+      id: "compatibility_reference",
+      resourceId: "snapshot_referenced",
+      normalizedBlob: bytes,
+    });
+    await store.publishSnapshot({ snapshot: referencedSnapshot, normalizedBlob: bytes });
+    const referenced = manifest("snapshot_referenced");
+    await store.createManifest(referenced);
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction((catalog) =>
+        catalog.deleteCompatibilityManifest(referenced)),
+      hasStoreCode("snapshot-conflict"),
+    );
+
+    const currentBytes = Buffer.from("current compatibility snapshot", "utf8");
+    const currentSnapshot = snapshot({
+      id: "compatibility_current",
+      resourceId: "current_resource",
+      normalizedBlob: currentBytes,
+    });
+    await store.publishSnapshot({ snapshot: currentSnapshot, normalizedBlob: currentBytes });
+    const current = manifest("current_resource", {
+      currentSnapshotId: currentSnapshot.id,
+    });
+    await store.createManifest(current);
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction((catalog) =>
+        catalog.deleteCompatibilityManifest(current)),
+      hasStoreCode("snapshot-conflict"),
+    );
+
+    assert.deepEqual(
+      (await store.listManifests()).map((item) => item.id).sort(),
+      [
+        changed.id,
+        "current_resource",
+        "desired_resource",
+        "ingested_resource",
+        "snapshot_referenced",
+      ].sort(),
+      "every refused delete leaves the catalog intact",
+    );
+  });
+});
+
+test("compatibility replacement permits reviewed immutable changes and keeps ordinary updates strict", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const original = manifest("downgrade_replace");
+    await store.createManifest(original);
+    const replacement: ResourceManifestV1 = {
+      ...original,
+      revision: 2,
+      canonicalIdentity: "https://example.com/downgrade-rewritten",
+      sourceUri: "https://example.com/downgrade-rewritten",
+      legacySavedLink: {
+        ...original.legacySavedLink!,
+        url: "https://example.com/downgrade-rewritten",
+      },
+      title: "Downgrade rewrite",
+      updatedAt: "2026-08-27T12:01:00Z",
+    };
+    assert.deepEqual(
+      await store.withManifestCatalogTransaction(async (catalog) => {
+        await catalog.preflightCompatibilityMutation([{
+          kind: "replace",
+          expectedManifest: original,
+          manifest: replacement,
+        }]);
+        return catalog.replaceCompatibilityManifest({
+          expectedManifest: original,
+          manifest: replacement,
+        });
+      }),
+      replacement,
+    );
+    assert.deepEqual(await store.readManifest(original.id), replacement);
+
+    await assert.rejects(
+      () => store.updateManifest({
+        id: replacement.id,
+        expectedRevision: 2,
+        manifest: {
+          ...replacement,
+          revision: 3,
+          canonicalIdentity: "https://example.com/not-an-ordinary-update",
+          updatedAt: "2026-08-27T12:02:00Z",
+        },
+      }),
+      hasStoreCode("immutable-conflict"),
+    );
+    assert.deepEqual(await store.readManifest(original.id), replacement);
+  });
+});
+
+test("compatibility replacement validates identity conflicts before mutating either manifest", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const original = manifest("replace_source");
+    const owner = manifest("replace_identity_owner");
+    const wouldOtherwiseCreate = manifest("preflight_create");
+    await store.createManifest(original);
+    await store.createManifest(owner);
+    const conflicting: ResourceManifestV1 = {
+      ...original,
+      revision: 2,
+      canonicalIdentity: owner.canonicalIdentity,
+      updatedAt: "2026-08-27T12:01:00Z",
+    };
+
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction((catalog) =>
+        catalog.preflightCompatibilityMutation([
+          { kind: "create", manifest: wouldOtherwiseCreate },
+          {
+            kind: "replace",
+            expectedManifest: original,
+            manifest: conflicting,
+          },
+        ])),
+      hasStoreCode("identity-conflict"),
+    );
+    assert.deepEqual(await store.readManifest(original.id), original);
+    assert.deepEqual(await store.readManifest(owner.id), owner);
+    assert.equal(await store.readManifest(wouldOtherwiseCreate.id), null);
+  });
+});
+
+test("compatibility replacement is atomic and rejects same-byte target substitution", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const original = manifest("replace_cas", {
+      subject: { payload: "x".repeat(256 * 1024) },
+    });
+    await store.createManifest(original);
+    const replacement: ResourceManifestV1 = {
+      ...original,
+      revision: 2,
+      canonicalIdentity: "https://example.com/replace-cas-next",
+      sourceUri: "https://example.com/replace-cas-next",
+      legacySavedLink: {
+        ...original.legacySavedLink!,
+        url: "https://example.com/replace-cas-next",
+      },
+      updatedAt: "2026-08-27T12:01:00Z",
+    };
+    const target = path.join(root, "manifests", `${original.id}.json`);
+
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction(async (catalog) => {
+        const replacementPath = `${target}.replacement`;
+        await writeFile(replacementPath, await readFile(target), { mode: 0o600 });
+        await rename(replacementPath, target);
+        return catalog.replaceCompatibilityManifest({
+          expectedManifest: original,
+          manifest: replacement,
+        });
+      }),
+      hasStoreCode("revision-conflict"),
+    );
+    assert.deepEqual(await store.readManifest(original.id), original);
+
+    let observing = true;
+    let observedMissing = false;
+    let observations = 0;
+    const observer = (async () => {
+      while (observing) {
+        try {
+          await readFile(target);
+          observations += 1;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") observedMissing = true;
+          else throw error;
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    })();
+    await store.withManifestCatalogTransaction((catalog) =>
+      catalog.replaceCompatibilityManifest({
+        expectedManifest: original,
+        manifest: replacement,
+      }));
+    observing = false;
+    await observer;
+
+    assert.ok(observations > 0);
+    assert.equal(observedMissing, false, "same-id replacement is never externally absent");
+    assert.deepEqual(await store.readManifest(original.id), replacement);
+  });
+});
+
+test("compatibility deletion rejects same-byte target substitution", async () => {
+  await fixture(async ({ root }) => {
+    const store = createResearchResourceStore({ root });
+    const original = manifest("delete_cas");
+    await store.createManifest(original);
+    const target = path.join(root, "manifests", `${original.id}.json`);
+
+    await assert.rejects(
+      () => store.withManifestCatalogTransaction(async (catalog) => {
+        const replacementPath = `${target}.replacement`;
+        await writeFile(replacementPath, await readFile(target), { mode: 0o600 });
+        await rename(replacementPath, target);
+        return catalog.deleteCompatibilityManifest(original);
+      }),
+      hasStoreCode("revision-conflict"),
+    );
+    assert.deepEqual(await store.readManifest(original.id), original);
   });
 });
