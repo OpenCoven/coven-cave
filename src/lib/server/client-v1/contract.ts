@@ -109,6 +109,7 @@ export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([
   "invalid_request",
   "unauthorized",
   "scope_denied",
+  "ownership_refused",
   "not_found",
   "conflict",
   "rate_limited",
@@ -768,7 +769,7 @@ function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue
   });
 }
 
-function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
+export function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
   if (isClientV1JsonArray(value)) {
     return value.map((entry) => cloneClientV1JsonValue(entry)) as unknown as T;
   }
