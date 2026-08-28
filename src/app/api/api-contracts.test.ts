@@ -81,6 +81,7 @@ const contracts: RouteContract[] = [
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/rewrite", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
+  { route: "/chat/generate/[origin]", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },

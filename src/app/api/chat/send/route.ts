@@ -1609,7 +1609,25 @@ export async function __postChatForTests(
   return postChat(req, dependencies);
 }
 
-async function postChat(req: Request, dependencies: ChatSendRouteDependencies = {}) {
+/**
+ * Entry point for the dedicated generation surface (/api/chat/generate/<origin>,
+ * cave-cst0g). The route's path names the origin and the server stamps it —
+ * the request body's origin claim is never trusted. This is the ONLY path that
+ * may mint a projectless generation origin (canvas/journal/enhance) on a new
+ * conversation; /api/chat/send mints none.
+ */
+export async function postChatForGeneration(req: Request, origin: SessionOrigin) {
+  return postChat(req, {}, origin);
+}
+
+async function postChat(
+  req: Request,
+  dependencies: ChatSendRouteDependencies = {},
+  /** Server-minted origin for a brand-new conversation (cave-cst0g). The
+   *  dedicated generation surface passes the origin from its own route path;
+   *  the chat surface (/api/chat/send) passes nothing. */
+  surfaceOrigin?: SessionOrigin,
+) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
@@ -1639,6 +1657,17 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
   body.runId = normalizeChatAttentionOperationId(
     (body as { runId?: unknown }).runId,
   ) ?? undefined;
+  // Server-owned provenance (cave-cst0g): a brand-new conversation's origin is
+  // minted by the authenticated surface — the route that received the request —
+  // never by the request body. /api/chat/send is the chat surface: it mints no
+  // projectless origin, so a caller cannot label a new conversation as a hidden
+  // generation (canvas/journal/enhance) to suppress the knowledge vault or keep
+  // it out of the chat lists. The dedicated generation surface
+  // (/api/chat/generate/<origin>) is the only route allowed to mint a
+  // projectless origin, and it stamps the origin from its own path. Persisted
+  // conversations still own their provenance: every downstream read prefers
+  // existingConversation.origin over this value, so a resume never relabels.
+  body.origin = surfaceOrigin;
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
