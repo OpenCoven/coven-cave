@@ -203,11 +203,18 @@ protocol ProjectContextLoadingClient: Sendable {
     func projectGrants() async throws -> ProjectGrantsResponse
     func familiars() async throws -> [Familiar]
     func sessions() async throws -> [SessionRow]
+    /// The full session list including archived rows, for read-side flag
+    /// reconciliation: an archived session is excluded from `sessions()`, so
+    /// the client could never see that a thread was archived on another client.
+    func sessionsIncludingArchived() async throws -> [SessionRow]
     func tasks() async throws -> [BoardCard]
 }
 
 extension ProjectContextLoadingClient {
     func sessions() async throws -> [SessionRow] { [] }
+    /// Default: stubs may implement only `sessions()`; the archived-inclusive
+    /// read degrades to the plain list, which is exactly what a stub wants.
+    func sessionsIncludingArchived() async throws -> [SessionRow] { try await sessions() }
     func tasks() async throws -> [BoardCard] { [] }
 }
 
@@ -1038,7 +1045,11 @@ final class AppModel {
             generation: generation,
             scope: scope
         ) {
-            try await client.sessions()
+            // Fetch the archived-inclusive list so read-side reconciliation can
+            // see archive state: the active list excludes archived sessions, so
+            // a thread archived on the desktop would otherwise never surface.
+            // Display lists filter `archivedAt == nil` themselves.
+            try await client.sessionsIncludingArchived()
         }
         let output = await handle.task.value
         finishCoordinatedLoad(handle, state: &sessionsLoadState)
@@ -3865,7 +3876,10 @@ final class AppModel {
             sessionsLoadToken = loadedSessions.token
             switch loadedSessions.result {
             case .success(let nextSessions):
-                resolvedSessions = nextSessions
+                // Selection logic predates archived-inclusive fetches and counts
+                // any unassigned session as an unassigned artifact; archived
+                // rows must not tip a project-context decision.
+                resolvedSessions = nextSessions.filter { $0.archivedAt == nil }
                 fetchedSessions = nextSessions
             case .failure(let error):
                 sessionsError = handleSurfaceError(error)
@@ -5869,16 +5883,78 @@ final class AppModel {
         _ sessions: [SessionRow],
         refreshProjectContextSelection: Bool = true
     ) {
-        serverSessions = sessions
+        // The fetch is archived-inclusive (so reconciliation can see archive
+        // state), but `serverSessions` drives the active lists and must stay
+        // active-only — every consumer here already filters archivedAt == nil,
+        // and keeping the raw list would leak archived chats into them.
+        serverSessions = sessions.filter { $0.archivedAt == nil }
         sessionsError = nil
         sessionsLoaded = true
         lastSessionsLoadedAt = Date()
         let changed = backfillThreadProjectRoots(from: sessions)
+        let flagsChanged = reconcileThreadFlags(from: sessions)
         if refreshProjectContextSelection
-            && (changed || projectContext == nil || projectContext == .unassigned) {
+            && (changed || flagsChanged || projectContext == nil || projectContext == .unassigned) {
             refreshProjectContextSelectionFromCurrentData()
         }
         _ = resolvePendingProjectNavigationIntent()
+    }
+
+    /// Apply the server's archived/pinned flags back onto local threads.
+    ///
+    /// The write side fans a flag change out to every session a thread owns;
+    /// this is the read side of the same contract. A thread whose sessions all
+    /// agree with the server adopts the server's state, so a change made on
+    /// the desktop (another client) shows up here after refresh/restart. A
+    /// thread with no server session (never sent) or an in-flight flag write
+    /// keeps its local value — nothing to reconcile, and a write that is still
+    /// landing must not be clobbered by a list read mid-flight.
+    ///
+    /// Only a thread whose EVERY owned session row is present is reconciled,
+    /// and only when they agree: a missing row (sacrificed server-side) or a
+    /// mixed archive/pin state is not a signal to override local flags.
+    /// Returns true when any flag changed, so the caller can refresh derived
+    /// project-context state alongside the persisted change.
+    private func reconcileThreadFlags(from sessions: [SessionRow]) -> Bool {
+        let rowsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        var changed = false
+        for thread in threads {
+            let owned = serverSessionIds(thread)
+            guard !owned.isEmpty else { continue }
+            if threadFlagWrites[thread.id] != nil { continue }
+            // A session list fetched before the local write landed can still
+            // apply after it; within the staleness window the server's answer
+            // may predate the local change, so the optimistic flag wins until
+            // a fresh read settles it.
+            if let wroteAt = lastThreadFlagWriteAt[thread.id],
+               Date().timeIntervalSince(wroteAt) < Self.sessionsStaleAfter {
+                continue
+            }
+            let rows = owned.compactMap { rowsByID[$0] }
+            guard rows.count == owned.count else { continue }
+            let archived = rows.allSatisfy { $0.archivedAt != nil }
+            let unarchived = rows.allSatisfy { $0.archivedAt == nil }
+            if archived, !thread.archived {
+                thread.archived = true
+                changed = true
+            } else if unarchived, thread.archived {
+                thread.archived = false
+                changed = true
+            }
+            let pinned = rows.allSatisfy { $0.pinned == true }
+            let unpinned = rows.allSatisfy { $0.pinned != true }
+            if pinned, !thread.pinned {
+                thread.pinned = true
+                changed = true
+            } else if unpinned, thread.pinned {
+                thread.pinned = false
+                changed = true
+            }
+        }
+        if changed {
+            persistThreads()
+        }
+        return changed
     }
 
     private func shouldRefreshAuthoritativeSessionRow(_ sessionID: String) -> Bool {
@@ -7047,6 +7123,13 @@ final class AppModel {
     /// older result land last (same hazard as `statusWrites` for tasks).
     @ObservationIgnored private var threadFlagWrites: [String: Task<Void, Never>] = [:]
 
+    /// When each thread last changed a flag locally. Read-side reconciliation
+    /// consults this so a session list fetched BEFORE the write landed cannot
+    /// revert the optimistic flag AFTER the write completed: within the session
+    /// staleness window the server's answer may predate the local change, and
+    /// the next fresh read settles it.
+    @ObservationIgnored private var lastThreadFlagWriteAt: [String: Date] = [:]
+
     /// Push a thread-level flag to every session the thread owns.
     ///
     /// The caller has already applied the change locally, so this is the
@@ -7065,6 +7148,7 @@ final class AppModel {
         let ids = serverSessionIds(thread)
         guard !ids.isEmpty else { return }
         let threadId = thread.id
+        lastThreadFlagWriteAt[threadId] = Date()
         threadFlagWrites[threadId]?.cancel()
         threadFlagWrites[threadId] = Task { [weak self] in
             var failed = 0
