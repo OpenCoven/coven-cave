@@ -297,7 +297,7 @@ esac
   executable(
     path.join(bin, "coven"),
     `#!/usr/bin/env node
-const { readFileSync, writeFileSync } = require("node:fs");
+const { readFileSync, renameSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const stateFile = path.join(__dirname, "..", "state", "coven-maintenance.json");
 const state = (() => {
@@ -373,6 +373,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -464,6 +465,16 @@ function snapshotIntents(state) {
     : [];
   state.intentSnapshots.push(intents);
 }
+function advanceLocalGateHeartbeat(state) {
+  if (process.env.CAVE_TEST_ADVANCE_LOCAL_GATE_HEARTBEAT_ONCE !== "1" || state.localClockStep) return;
+  const gatePath = path.join(state.repo, ".git", "coven-maintenance-gate", "gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  const heartbeatAt = new Date(Date.now() + 3_500).toISOString();
+  const temporary = gatePath + ".fixture-clock-step-" + process.pid;
+  writeFileSync(temporary, JSON.stringify({ ...gate, heartbeatAt }));
+  renameSync(temporary, gatePath);
+  state.localClockStep = { heartbeatAt };
+}
 function sabotageRelease(state) {
   if (!state.config.releaseSabotage) return;
   const covenState = path.join(path.dirname(state.repo), "state", "coven-maintenance.json");
@@ -489,6 +500,7 @@ if (command === "show") {
     state.counts.show += 1;
     const issue = exactIssue(state, id);
     if (!issue) return { missing: true };
+    advanceLocalGateHeartbeat(state);
     if (state.config.mutateAtShow === state.counts.show) mutateIssue(state, issue);
     return {
       fail: state.config.showAlwaysFail ||
@@ -1133,6 +1145,26 @@ await withFixture({}, async (fixture) => {
     readJson(fixture.stateFile).counts.show,
     4,
     "successful persistence must be verified with an exact Bead reread",
+  );
+});
+
+await withFixture({}, async (fixture) => {
+  const result = runCreate(
+    fixture,
+    createArgs({ branch: "feat/cave-unit1-wsl-clock-step" }),
+    { CAVE_TEST_ADVANCE_LOCAL_GATE_HEARTBEAT_ONCE: "1" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const state = readJson(fixture.stateFile);
+  assert.match(
+    state.localClockStep?.heartbeatAt ?? "",
+    /^\d{4}-\d{2}-\d{2}T/,
+    "fixture advances the real local gate heartbeat after acquisition and before heartbeatBoth",
+  );
+  const covenFence = readJson(fixture.covenStateFile);
+  assert.ok(
+    covenFence.events.includes("heartbeat"),
+    "lifecycle-create heartbeats the stepped local fence rather than bypassing it",
   );
 });
 
