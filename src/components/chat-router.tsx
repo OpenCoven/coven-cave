@@ -6,7 +6,6 @@ import "@/styles/cave-composer.css";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
-import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-view";
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
@@ -45,11 +44,9 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   migrateOrganizationExpansionKeys,
-  normalizeSelection,
   projectSelectionKeys,
   readPersisted,
   PROJECT_SIDEBAR_EXPANSION_VERSION,
@@ -112,7 +109,6 @@ type Props = {
    *  the list keeps its full-width toolbar, unlike compact. */
   hideRail?: boolean;
   /** Jump from the in-chat project rail to the dedicated Projects tab. */
-  onOpenProjectsTab?: () => void;
   /** Reports the session the router's chat view is showing (null on the list
    *  or a not-yet-minted new chat). Lets the Workspace mirror the active
    *  session as state instead of reading the imperative handle during render,
@@ -193,7 +189,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     syncUrlHash,
     compact = false,
     hideRail = false,
-    onOpenProjectsTab,
     onActiveSessionChange,
     enableSplitPanes = false,
     composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY,
@@ -286,13 +281,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [view, pendingVoice]);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
-  const openProjectsTab = useCallback(() => {
-    if (onOpenProjectsTab) {
-      onOpenProjectsTab();
-      return;
-    }
-    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-  }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
   const sidebarOrganizationMigrationPendingRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
@@ -355,10 +343,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       );
     },
     [sidebarHydrated, sessions, projects, projectOverrides, projectIndex],
-  );
-  const effectiveSelection = useMemo(
-    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
-    [isMobile, selection, sidebarGroups],
   );
   const toggleSidebarExpanded = useCallback((key: string) => {
     sidebarDefaultExpandedRef.current = false;
@@ -1122,39 +1106,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && !hideRail && (
-      <ChatProjectSidebar
-        groups={sidebarGroups}
-        selection={effectiveSelection}
-        expandedKeys={expandedKeys}
-        activeSessionId={view.kind === "chat" ? view.sessionId : null}
-        onSelect={setSelection}
-        onToggleExpanded={toggleSidebarExpanded}
-        onOpenSession={(s) => {
-          const next = selectFamiliarForChat(s.familiarId);
-          setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
-        }}
-        onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
-        onNewChat={(projectRoot, runtimeHost) => {
-          if (onRequestNewChat) {
-            onRequestNewChat();
-            return;
-          }
-          const nextFamiliarId = familiar?.id ?? null;
-          if (!nextFamiliarId) return;
-          const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
-          advanceComposeInstance();
-          setView({
-            kind: "chat",
-            sessionId: null,
-            projectRoot: projectRoot ?? undefined,
-            ...(runtimeHost ? { initialControls: { runtimeHost } } : {}),
-            familiarId: next?.id ?? nextFamiliarId ?? null,
-          });
-        }}
-        onOpenProjectsTab={openProjectsTab}
-      />
-      )}
+      {/* The project-grouped rail that used to sit here is gone (cave-fh9so).
+          The chat surface now docks ONE threads rail beside the conversation
+          (chat-surface.tsx); keeping this one meant the chat page rendered
+          three chat lists at once — the sidebar rollup, the surface rail, and
+          this. ChatProjectSidebar itself is retained for other hosts. */}
       <div className="relative min-h-0 min-w-0 flex-1">
         <ChatSplitHost
           panes={splitPaneTiles}

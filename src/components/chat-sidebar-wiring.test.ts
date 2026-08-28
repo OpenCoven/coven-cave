@@ -12,22 +12,33 @@ const chatAttentionProjection = await readFile(new URL("../lib/chat-attention-pr
 
 // ── Chat-mode shell wiring: Chats replaces the global nav in the primary shell
 //    nav slot, including the mobile nav drawer. ────────────────────────────────
+// The separate chat rail element is retired: its list is embedded in
+// SidebarMinimal's Chats section and docked in the chat surface (cave-fh9so).
+assert.doesNotMatch(
+  workspace,
+  /const chatSidebar =/,
+  "workspace no longer builds a second sidebar element",
+)
+// There is no rail swap any more. One sidebar renders always; the chat surface
+// docks its own threads rail beside the conversation (cave-fh9so).
 assert.match(
   workspace,
-  /const chatSidebar =\s*\(\s*<WorkspaceSidebar/,
-  "workspace should define the chatSidebar element",
-);
-assert.match(
-  workspace,
-  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
-  "workspace selects the session-list rail across the Code section while expanded, and the destination rail once collapsed",
-);
+  /const contextualNav = sidebar;/,
+  "workspace renders one sidebar, with no section-driven swap",
+)
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/);
+// Chat no longer swaps a different nav into the rail, so it takes the same
+// remembered nav preference as every other surface (cave-fh9so).
 assert.match(
   workspace,
-  /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/,
-  "chat mode should activate the contextual nav policy",
+  /navPolicy="remembered"/,
+  "the shell nav uses the remembered preference on every surface",
 );
+assert.doesNotMatch(
+  workspace,
+  /navPolicy=\{mode === "chat"/,
+  "no surface-conditional nav policy remains",
+)
 assert.doesNotMatch(
   workspace,
   /listPolicy=\{mode === "chat" \? "persistent" : "collapsible"\}/,
@@ -41,22 +52,19 @@ assert.match(
 assert.match(workspace, /topBar=\{\(\{ navDrawerOpen \}\) =>/, "top bar should only receive nav drawer state");
 assert.match(workspace, /onToggleList=\{undefined\}/, "top bar should expose no list drawer toggle");
 assert.match(workspace, /listDrawerOpen=\{false\}/, "top bar should report no list drawer");
-const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
-assert.ok(chatSidebarBlock, "workspace should keep a distinct chatSidebar block");
-assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
-assert.ok(
-  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 5,
-  "chat sidebar actions should dismiss the mobile nav drawer",
-);
+// The distinct chatSidebar block is gone with the second rail. What still has
+// to hold is that the ONE new-chat action owns its mobile-nav dismissal, and
+// that the embedded list has no Home escape hatch of its own — Home is a
+// permanent row in the sidebar directly above it (cave-fh9so).
 assert.match(
   workspace,
   /const startWorkspaceChat = useCallback[\s\S]{0,160}dismissNavMobile/,
   "the shared actor-gated new-chat action owns its mobile-nav dismissal",
 );
-assert.match(
+assert.doesNotMatch(
   workspaceSidebar,
   /aria-label="Go to Home"/,
-  "the chat sidebar header control is explicitly a Go to Home button",
+  "the embedded chat list carries no duplicate Home control",
 );
 
 // ── Home-first boot: the app opens on Home; chat is one step away. ──
@@ -70,11 +78,13 @@ assert.doesNotMatch(workspace, /lastNonChatMode/, "workspace should not track a 
 
 // ── Subpanel removal: the in-surface thread rail is dropped in chat mode,
 //    because the contextual WorkspaceSidebar already owns the grouped threads. ─
-assert.match(
+// The surface shows its docked thread rail: suppressing it is what left the
+// chat page with no list at all (cave-fh9so).
+assert.doesNotMatch(
   workspace,
   /hideThreadRail/,
-  "the chat-mode ChatSurface should set hideThreadRail",
-);
+  "the chat-mode ChatSurface no longer suppresses its thread rail",
+)
 assert.match(chatSurface, /hideThreadRail = false/, "ChatSurface should accept a hideThreadRail prop");
 assert.match(
   chatSurface,

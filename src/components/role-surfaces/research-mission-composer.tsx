@@ -49,6 +49,7 @@ import {
   assembleBrief,
   parseBrief,
   promptStrength,
+  summarizeRecommendationTitle,
   type ResearchPromptRecommendation,
 } from "@/lib/research-prompt-brief";
 import { ResearchPromptBuilder } from "./research-prompt-builder";
@@ -660,10 +661,13 @@ export function ResearchMissionComposer({
                 key={chip.title}
                 type="button"
                 className="research-intake__angle"
-                title="Fill the prompt with a detailed brief"
+                // The seed is a whole pasted prompt, so the full text is the
+                // tooltip and the pill carries a headline. Rendering the seed
+                // raw put "## Report topic **…" markdown on the chip.
+                title={chip.title}
                 onClick={() => setIntent(chip.brief)}
               >
-                {chip.title}
+                {summarizeRecommendationTitle(chip.title)}
               </button>
             ))}
           </div>

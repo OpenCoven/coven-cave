@@ -427,3 +427,51 @@ test("all parsers reject non-canonical JSON containers before reading fields", (
   const sparse = { ...query(), filters: { projectIds: ["project_1", , "project_2"] } };
   expectError(parseResourceQueryV1(sparse), "$", "invalid_value");
 });
+
+// cave-fh9so. `paper.authors` is an ordered credit list, not a set, and the
+// manifest parser used to reject a repeated name. That is not a cosmetic
+// strictness question: listCompatibleResearchLinks validates every manifest on
+// the READ path, so ONE record carrying a duplicate author made the entire
+// Resources desk fail with "Couldn't load saved links." over an empty shelf —
+// observed live at `$.paper.authors[220]`, with 500 healthy links behind it.
+//
+// Repeats are ordinary in real metadata: a large collaboration lists the same
+// person under two affiliations, and arXiv/HF author strings collide once
+// normalized. The identity filters below still deduplicate, so this only
+// relaxes the field where duplication is meaningful.
+test("paper authors accept repeats, in order, without collapsing them (cave-fh9so)", () => {
+  const input = structuredClone(manifest()) as Record<string, unknown>;
+  input.paper = {
+    ...(input.paper as Record<string, unknown>),
+    authors: ["Ada Lovelace", "Grace Hopper", "Ada Lovelace"],
+  };
+  const parsed = expectOk(parseResourceManifestV1(input));
+  assert.deepEqual(parsed.paper?.authors, ["Ada Lovelace", "Grace Hopper", "Ada Lovelace"]);
+});
+
+// A large author list is exactly where the duplicate turned up, so cover the
+// shape that broke rather than only the two-element case.
+test("a long author list with a late duplicate parses (cave-fh9so)", () => {
+  const authors = Array.from({ length: 240 }, (_, index) => `Author ${index}`);
+  authors[220] = authors[7];
+  const input = structuredClone(manifest()) as Record<string, unknown>;
+  input.paper = { ...(input.paper as Record<string, unknown>), authors };
+  const parsed = expectOk(parseResourceManifestV1(input));
+  assert.equal(parsed.paper?.authors.length, 240);
+  assert.equal(parsed.paper?.authors[220], authors[7]);
+});
+
+// The relaxation is scoped. Identity lists are sets — a repeat there is a
+// caller bug, and letting it through would widen a query's blast radius.
+test("identity filters still reject duplicates (cave-fh9so)", () => {
+  expectError(
+    parseResourceQueryV1({ ...query(), filters: { projectIds: ["project_1", "project_1"] } }),
+    "$.filters.projectIds[1]",
+    "invalid_value",
+  );
+  expectError(
+    parseResourceQueryV1({ ...query(), filters: { familiarIds: ["familiar_1", "familiar_1"] } }),
+    "$.filters.familiarIds[1]",
+    "invalid_value",
+  );
+});

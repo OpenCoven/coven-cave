@@ -128,8 +128,8 @@ assert.match(
   /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
-const normalSidebarBlock = workspace.match(/const sidebar =[\s\S]*?const chatSidebar =/)?.[0] ?? "";
-assert.ok(normalSidebarBlock, "Workspace should keep the normal SidebarMinimal wiring together");
+const normalSidebarBlock = workspace.match(/const sidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
+assert.ok(normalSidebarBlock, "Workspace keeps the one SidebarMinimal wiring together");
 assert.match(
   normalSidebarBlock,
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
@@ -140,43 +140,29 @@ assert.doesNotMatch(
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
   "Normal mobile session taps should not target the absent Chat list drawer",
 );
-const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
-assert.ok(chatSidebarBlock, "Workspace should keep the contextual Chat nav wiring together");
-assert.doesNotMatch(
-  chatSidebarBlock,
-  /dismissListMobile/,
-  "Chat contextual-nav actions should never target the unused list drawer",
-);
-assert.match(
-  chatSidebarBlock,
-  /onOpenSession=\{\(session\) => \{[\s\S]*openFamiliarSession\(session\.id, session\.familiarId\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
-  "Chat session opens should dismiss the mobile contextual nav without changing desktop layout",
-);
-assert.match(
-  chatSidebarBlock,
-  /onNewChat=\{\(\) => startWorkspaceChat\(\)\}/,
-  "Chat new-chat actions should dismiss the mobile contextual nav without changing desktop layout",
-);
+// There is no second Chat nav to wire: the threads rail lives in the chat
+// surface now (cave-fh9so), so the mobile drawer hosts the one sidebar.
+assert.doesNotMatch(workspace, /const chatSidebar =/, "no second Chat nav element survives");
+// The per-action assertions below used to walk the chat sidebar's own block.
+// That rail is gone from mobile entirely — it lives in the chat surface and is
+// display:none under 1023px (cave-fh9so) — so what has to hold on mobile is
+// that the ONE sidebar's actions dismiss the drawer, plus the shared launcher.
 assert.match(
   workspace,
   /const startWorkspaceChat = useCallback\(\(request: AgentsNewChatRequest = \{\}\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);/,
   "the shared actor-gated launcher dismisses the mobile contextual nav",
 );
 assert.match(
-  chatSidebarBlock,
-  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
-  "Chat Home, Scheduled, and Plugins actions should dismiss the mobile contextual nav without changing desktop layout",
+  workspace,
+  /<SidebarMinimal[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?push\("\/settings"\)/,
+  "sidebar settings dismisses the mobile nav before routing",
 );
 assert.match(
-  chatSidebarBlock,
-  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
-  "Chat PR links should dismiss only the mobile contextual nav before opening",
+  workspace,
+  /<ChatSurface[\s\S]*?onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);/,
+  "PR links dismiss the mobile nav before opening the in-app browser",
 );
-assert.match(
-  chatSidebarBlock,
-  /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
-  "Chat settings should dismiss only the mobile contextual nav before routing",
-);
+assert.doesNotMatch(workspace, /dismissListMobile/, "nothing targets the unused list drawer");
 
 // The mobile-only dismissers must be gated on isMobile and must NOT call the
 // panel collapse() that closeNav/closeList use — that's what keeps the desktop

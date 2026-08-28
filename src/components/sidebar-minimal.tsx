@@ -1,12 +1,27 @@
 "use client";
 
 /**
- * SidebarMinimal -- the redesigned Cave sidebar.
+ * SidebarMinimal -- the one Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Home / Chat section tabs, familiar scope selector, and New chat CTA
- *   2. Grouped app destinations and role-surface rooms
- *   3. Footer: Dashboard, Settings
+ *   1. Familiar scope selector and New chat CTA
+ *   2. Navigation  — the daily destinations, Chat directly under Home
+ *   3. Explore     — the registry's `quiet` destinations (Marketplace, Memories)
+ *   4. Rooms       — registry-driven role surfaces
+ *   5. Footer: Dashboard, Settings
+ *
+ * Sections 2-4 are titled groups, not collapsible — the spacing above each
+ * heading is what separates them. The one collapsible thing on the chat screen
+ * is the threads rail, which is a whole column rather than a short list.
+ *
+ * There is deliberately NO chat list here. The full thread list is docked in
+ * the chat surface beside the conversation; carrying even a recent rollup here
+ * as well put three chat lists on screen at once.
+ *
+ * There is no longer a Home/Chat section toggle. It duplicated the Home row
+ * directly beneath it — both rendered active at once — and because it swapped
+ * this component for the chat rail wholesale, the chat list was reachable only
+ * from the Code room and every non-coding room only from Home (cave-fh9so).
  */
 
 import React from "react";
@@ -20,13 +35,8 @@ import {
   isSplittablePage,
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
-import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import { SidebarFooter } from "@/components/sidebar-footer";
-import {
-  DEFAULT_NAV_SECTION,
-  roomBelongsToSection,
-  type NavSection,
-} from "@/lib/nav-section";
+import { SidebarSection } from "@/components/sidebar-section";
 import { sidebarDestinations } from "@/lib/workspace-destination-policy";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -49,10 +59,6 @@ export type SidebarRoleSurfaceRow = {
 
 export type SidebarMinimalProps = {
   mode: string;
-  /** Active global section (Home | Chat). The shell owns it so deep links and
-   *  the ⌘K palette can move rooms; omitted falls back to Home. */
-  section?: NavSection;
-  onSectionChange?: (section: NavSection) => void;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
@@ -188,12 +194,9 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
-    section = DEFAULT_NAV_SECTION,
     onNewChat,
     onOpenSettings,
     onModeChange,
-    onOpenSession,
-    activeSessionId,
     familiars,
     activeFamiliarId,
     selectedFamiliarIds,
@@ -212,10 +215,35 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const handleModeSelect = (id: WorkspaceNavMode) => {
     onModeChange(id);
   };
-  // Rooms are registry-driven; each one shows in the section its mode maps to.
-  const sectionRooms = React.useMemo(
-    () => (props.roleSurfaces ?? []).filter((room) => roomBelongsToSection(room.mode, section)),
-    [props.roleSurfaces, section],
+  // Every registered room shows. They used to be filtered to the open section,
+  // which hid the coding workbench from Home and every other room from Chat.
+  const rooms = props.roleSurfaces ?? [];
+
+  // Split on the registry's own `quiet` flag rather than naming destinations
+  // here: whatever the policy marks quiet belongs in Explore, so adding one
+  // later needs no change in this component.
+  const allDestinations = sidebarDestinations();
+  const primaryDestinations = allDestinations.filter((entry) => entry.nav !== "quiet");
+  const exploreDestinations = allDestinations.filter((entry) => entry.nav === "quiet");
+
+  // One row shape for both sections. `quiet`/`quietLead` are gone: the heading
+  // now does what the visual step used to, and keeping both would indent the
+  // Explore rows away from their own title.
+  const renderDestination = (destination: (typeof allDestinations)[number]) => (
+    <FolderRow
+      key={destination.id}
+      id={destination.id}
+      label={destination.title}
+      iconName={destination.iconName}
+      // Active follows the primary mode (Roles/Capabilities keep the
+      // Marketplace hub lit); pages open as split tiles get a lighter
+      // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+      state={sidebarRowState(destination.id, mode, props.splitPageModes)}
+      badge={MODE_BADGES[destination.id]?.(props)}
+      kbd={destination.kbd}
+      description={destination.description}
+      onClick={() => handleModeSelect(destination.id)}
+    />
   );
 
   return (
@@ -251,80 +279,67 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         projectCrewError={props.projectCrewError}
         reloadProjectCrew={props.reloadProjectCrew}
         contextNotice={props.contextNotice}
-        contextMode="all"
+        // Mobile only. On desktop the project and familiar pickers live in the
+        // title bar (WorkspaceContextSwitcher, #4967) — rendering them here too
+        // put the same two controls on screen twice, one above the other. Below
+        // 1024px the title bar context is display:none, so the rail keeps its
+        // own copy and nothing is lost there.
+        contextMode="mobile"
       />
 
-      <div
-        className="sidebar-nav-scroll"
-        ref={navScrollRef}
-        role="tabpanel"
-        id={`nav-section-panel-${section}`}
-        aria-labelledby={`nav-section-tab-${section}`}
-      >
-          {sidebarDestinations(section).map((destination, i, rows) => {
-            const quiet = destination.nav === "quiet";
-            return (
-              <FolderRow
-                key={destination.id}
-                id={destination.id}
-                label={destination.title}
-                iconName={destination.iconName}
-                // Active follows the primary mode (Roles/Capabilities keep the
-                // Marketplace hub lit); pages open as split tiles get a lighter
-                // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-                state={sidebarRowState(destination.id, mode, props.splitPageModes)}
-                badge={MODE_BADGES[destination.id]?.(props)}
-                kbd={destination.kbd}
-                description={destination.description}
-                quiet={quiet}
-                // Index the rendered list — the policy selector already hides
-                // non-sidebar destinations, so the first quiet row still owns
-                // the visual step regardless of hidden companions.
-                quietLead={quiet && rows[i - 1]?.nav !== "quiet"}
-                onClick={() => handleModeSelect(destination.id)}
-              />
-            );
-          })}
-          {/* Role Surface rooms — the active familiar's or selected scope's
-            vocation workspaces, filtered to the open section (the coding
-            workbench belongs to Code; every other room to Home).
-            Registry-driven: the sidebar renders whatever it's handed and never
-            names a role. The cluster label keeps them reading as chambers of
-            the Cave rather than more app tabs. */}
-          {sectionRooms.length > 0 && (
-            <>
-              <div className="sidebar-rooms-label" aria-hidden>
-                Rooms
-              </div>
-              {sectionRooms.map((room) => (
-                <FolderRow
-                  key={room.mode}
-                  id={room.mode}
-                  label={room.label}
-                  iconName={room.iconName}
-                  state={sidebarRowState(room.mode, mode, props.splitPageModes)}
-                  description={room.description}
-                  onClick={() => {
-                    if (room.familiarId && room.familiarId !== activeFamiliarId) {
-                      onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
-                    }
-                    onModeChange(room.mode);
-                  }}
-                />
-              ))}
-            </>
-          )}
+      <div className="sidebar-nav-scroll" ref={navScrollRef}>
+          <SidebarSection id="navigation" label="Navigation">
+            {primaryDestinations.map((destination) => renderDestination(destination))}
+          </SidebarSection>
 
-          {/* The session list belongs to the Code room (cave-24d2r) — Home is
-            destinations, Code is live work. */}
-          {section === "code" ? (
-            <RecentActivityRollup
-              sessions={sessions}
-              selectedFamiliarIds={selectedFamiliarIds}
-              activeSessionId={activeSessionId}
-              onOpenSession={onOpenSession}
-            />
-          ) : null}
+          {/* Marketplace and Memories are their own category rather than a
+            silent gap at the end of Navigation. They were already marked
+            `quiet` in the registry — the visual step that separated them was
+            carrying the meaning a heading should carry, and a step with no
+            label leaves the reader to infer why the list pauses. */}
+          <SidebarSection
+            id="explore"
+            label="Explore"
+            hideWhenEmpty
+            isEmpty={exploreDestinations.length === 0}
+          >
+            {exploreDestinations.map((destination) => renderDestination(destination))}
+          </SidebarSection>
+
+          {/* Role Surface rooms — the active familiar's or selected scope's
+            vocation workspaces. Registry-driven: the sidebar renders whatever
+            it's handed and never names a role. The cluster keeps them reading
+            as chambers of the Cave rather than more app tabs. */}
+          <SidebarSection
+            id="rooms"
+            label="Rooms"
+            count={rooms.length}
+            hideWhenEmpty
+            isEmpty={rooms.length === 0}
+          >
+            {rooms.map((room) => (
+              <FolderRow
+                key={room.mode}
+                id={room.mode}
+                label={room.label}
+                iconName={room.iconName}
+                state={sidebarRowState(room.mode, mode, props.splitPageModes)}
+                description={room.description}
+                onClick={() => {
+                  if (room.familiarId && room.familiarId !== activeFamiliarId) {
+                    onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
+                  }
+                  onModeChange(room.mode);
+                }}
+              />
+            ))}
+          </SidebarSection>
+
+          {/* No chat list here at all (cave-fh9so). It lives beside the
+            conversation, docked in the chat surface, the way the Coding Desk
+            docks review beside the source. Even the lightweight recent rollup
+            is gone: with the surface rail in place it was a third list on
+            screen at once, and the sidebar's job is navigation. */}
       </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the

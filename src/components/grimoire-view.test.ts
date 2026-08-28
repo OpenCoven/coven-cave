@@ -33,8 +33,8 @@ assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the sh
 assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
 assert.match(
   sidebar,
-  /sidebarDestinations\(section\)/,
-  "the sidebar renders rows from the section-filtered shared destination policy",
+  /sidebarDestinations\(\)/,
+  "the sidebar renders rows from the shared destination policy",
 );
 assert.match(
   view,

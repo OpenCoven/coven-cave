@@ -1608,6 +1608,7 @@ function MetaLine({
   projectRoot,
   onSessionsChanged,
   generateTitle,
+  contextControls,
   readOnly = false,
   children,
 }: {
@@ -1630,6 +1631,10 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
+  /** Familiar / model / project pickers, rendered INLINE on the title row.
+   *  Their presence also suppresses the static identity text, which would
+   *  otherwise name the same familiar and model a second time. */
+  contextControls?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1692,7 +1697,13 @@ function MetaLine({
       ? `Task: ${task.title}`
       : null;
   return (
-    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} role="status" aria-live="polite" data-lifecycle={state}>
+    // The live region is the META SPAN, not this row. It used to be the row
+    // itself, which meant every interactive control on the header — the
+    // actions cluster, and now the inline pickers — sat inside an aria-live
+    // region and got re-announced on each lifecycle tick. Narrowing it to the
+    // text that actually changes keeps the announcements and takes the
+    // controls out of them (cave-fh9so).
+    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
       {/* Chat-revamp 1b: the session's familiar leads the header as a small
           circular avatar, so the title row reads avatar · title · meta. */}
@@ -1708,13 +1719,13 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
+      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
         {/* Chat-revamp 1b: the settled header carries a quiet, always-visible
             identity line — "· <familiar> · <model> · <branch>" — while the
             heavier provenance (cwd · duration · tokens · cost + meters) stays
             in the reveal-on-hover cluster below, so nothing is deleted, just
             demoted. Streaming/failed/offline states keep their live meta. */}
-        {state === "complete" ? (
+        {state === "complete" && !contextControls ? (
           <span className="cave-chat-meta-line__identity">
             {familiar.display_name}
             {metaModel ? ` · ${shortModelLabel(metaModel)}` : ""}
@@ -1758,6 +1769,15 @@ function MetaLine({
         {state === "streaming" ? " · esc to cancel" : null}
         {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
+      {/* Ultraminimal header (cave-fh9so): the familiar/model/project pickers
+          ride INLINE here instead of on a second line beneath the title. They
+          used to sit in their own `.cave-chat-header-context` strip, which
+          meant the header spent three stacked rows saying overlapping things —
+          the static identity text, the pickers, and the mono context band all
+          naming the same familiar and model. */}
+      {contextControls ? (
+        <span className="cave-chat-meta-line__controls">{contextControls}</span>
+      ) : null}
       {children}
     </div>
   );
@@ -7961,6 +7981,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitleFromTranscript}
           readOnly={offlineReadOnly}
+          contextControls={!inlineComposer && !offlineReadOnly ? chatContextControls : null}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -8036,6 +8057,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
+        {/* Mobile keeps the strip. `.cave-chat-meta-line` is display:none below
+            the breakpoint (transcript.css), so the inline copy above cannot
+            render there — without this the pickers would vanish on mobile
+            entirely. Same desktop/mobile double-mount pattern SidebarRailHeader
+            uses for its scope control; only one is ever visible. */}
         {!inlineComposer && !offlineReadOnly ? (
           <div className="cave-chat-header-context">{chatContextControls}</div>
         ) : null}

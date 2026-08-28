@@ -29,23 +29,27 @@ const chatSidebar = read("./workspace-sidebar.tsx");
 const railHeaderCss = read("../styles/globals/rail-header.css");
 const workspaceContextSwitcherCss = read("../styles/globals/workspace-context-switcher.css");
 const homeCss = read("../styles/sidebar-minimal/shell-chrome.css");
-const sectionTabsCss = read("../styles/sidebar-minimal/section-tabs.css");
 const homeRailCss = read("../styles/sidebar-minimal/activity-rail.css");
 const chatCss = read("../styles/globals/shell-navigation.css");
 const globals = read("../app/globals.css");
 
-// ── One component, rendered by both sections ─────────────────────────────────
-for (const [name, sidebar] of [
-  ["Home", homeSidebar],
-  ["Chat", chatSidebar],
-]) {
-  assert.match(
-    sidebar,
-    /import \{ SidebarRailHeader \} from "@\/components\/sidebar-rail-header";/,
-    `the ${name} rail imports the shared header instead of building its own`,
-  );
-  assert.match(sidebar, /<SidebarRailHeader/, `the ${name} rail renders the shared header`);
-}
+// ── One component, rendered ONCE ────────────────────────────────────────────
+// There used to be two sidebars, each mounting this header, and the guard was
+// that both used the shared component rather than forking it. They are one
+// sidebar now (cave-fh9so): SidebarMinimal renders the header, and the chat
+// list is embedded inside it as a section. So the guard becomes stronger —
+// exactly one host mounts it, and the embedded list must not grow a second.
+assert.match(
+  homeSidebar,
+  /import \{ SidebarRailHeader \} from "@\/components\/sidebar-rail-header";/,
+  "the sidebar imports the shared header instead of building its own",
+);
+assert.match(homeSidebar, /<SidebarRailHeader/, "the sidebar renders the shared header");
+assert.doesNotMatch(
+  chatSidebar,
+  /<SidebarRailHeader/,
+  "the embedded chat list does not mount a second header",
+);
 
 // The switcher and the primary action must not be re-mounted directly by either
 // sidebar — that is exactly how the two forked in the first place.
@@ -117,23 +121,20 @@ assert.match(
   /useEffect\(\(\) => \{\s*if \(disabled\) setOpen\(false\);\s*\}, \[disabled\]\);/,
   "disabling the selector clears stored open state so it cannot reopen after loading",
 );
-for (const [name, sidebar] of [
-  ["Home", homeSidebar],
-  ["Chat", chatSidebar],
-]) {
+// Only the one host that mounts the header carries contextMode. "mobile"
+// because the desktop project/familiar pickers live in the title bar (#4967)
+// and rendering them here as well showed the same two controls twice.
+for (const [name, sidebar] of [["Home", homeSidebar]]) {
   assert.match(
     sidebar,
-    /contextMode="all"/,
-    `the ${name} desktop rail enables the shared scope row`,
+    /contextMode="mobile"/,
+    `the ${name} rail scopes its context row to mobile`,
   );
 }
 
-// Chat's ⌘N hint rides the shared button's trailing slot rather than forking it.
-assert.match(
-  chatSidebar,
-  /newChatTrailing=\{<kbd className="rail-header__new-kbd">⌘N<\/kbd>\}/,
-  "Chat's shortcut hint uses the shared header's trailing slot, not a forked button",
-);
+// The ⌘N trailing slot still exists on the shared header for hosts that want
+// it; the embedded chat list no longer mounts the header at all, so it has no
+// hint of its own to fork (cave-fh9so).
 assert.match(
   railHeader,
   /\{newChatTrailing\}/,
@@ -242,10 +243,15 @@ assert.match(
   /sidebar-scope-selector__project[\s\S]*?>Project<[\s\S]*?\{projectLabel\}[\s\S]*?sidebar-scope-selector__familiar[\s\S]*?>Familiar<[\s\S]*?\{familiarLabel\}/,
   "the full-width trigger names project first and the active familiar second",
 );
+// The Home/Chat switcher is retired (cave-fh9so) and section-tabs.css became
+// sidebar-sections.css. What replaced it is a plain heading per group, so the
+// assertion is that the headings are NOT controls.
+const sidebarSectionsCss = read("../styles/sidebar-minimal/sidebar-sections.css");
+assert.doesNotMatch(sidebarSectionsCss, /\.nav-sections\b/, "the retired switcher leaves no styles behind");
 assert.match(
-  sectionTabsCss,
-  /\.nav-sections \{[\s\S]*?background: transparent;[\s\S]*?border: 0;/,
-  "the Home and Chat switcher integrates into the rail instead of floating in another card",
+  sidebarSectionsCss,
+  /\.sidebar-section__label \{[\s\S]*?text-transform: uppercase;/,
+  "a section heading is a quiet label rather than a control",
 );
 
 // ── One panel surface and one content inset ─────────────────────────────────

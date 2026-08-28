@@ -716,3 +716,46 @@ test("a retained A5 tombstone prevents a downgraded legacy projection from resur
     );
   });
 });
+
+// cave-fh9so — the whole-shelf outage. `listCompatibleResearchLinks` validates
+// every manifest it is about to write while migrating the legacy store, so a
+// single row the manifest parser rejected threw out of the READ and the
+// Resources desk rendered "Couldn't load saved links." with nothing behind it.
+// Measured live: 500 healthy links unreachable because ONE paper repeated an
+// author at index 220.
+//
+// The unit fix is in research-resource-contracts (authors is an ordered credit
+// list, not a set). This is the test that would have caught it, because the
+// defect only shows once a real row travels the migration path — the contract
+// test alone cannot fail the read.
+test("a repeated author does not fail the read for every other saved link (cave-fh9so)", async () => {
+  await fixture(async ({ legacyPath, options }) => {
+    const authors = Array.from({ length: 240 }, (_, index) => `Author ${index}`);
+    authors[220] = authors[7];
+    const initial = [
+      link("healthy-a"),
+      link("dupe-authors", {
+        category: "paper",
+        paper: {
+          arxivId: "2608.54321",
+          authors,
+          abstract: "A collaboration listing one member twice.",
+          publishedAt: "2026-08-20T00:00:00.000Z",
+        },
+      }),
+      link("healthy-b"),
+    ];
+    await writeResearchLinksVerified({ version: 1, links: initial }, { path: legacyPath });
+
+    const listed = await listCompatibleResearchLinks(options);
+    // Every row, not just the survivors: the point is that the bad record
+    // neither throws nor is silently dropped.
+    assert.deepEqual(
+      listed.map((item) => item.id).sort(),
+      ["dupe-authors", "healthy-a", "healthy-b"],
+    );
+    const paper = listed.find((item) => item.id === "dupe-authors");
+    assert.equal(paper?.paper?.authors.length, 240);
+    assert.equal(paper?.paper?.authors[220], authors[7]);
+  });
+});

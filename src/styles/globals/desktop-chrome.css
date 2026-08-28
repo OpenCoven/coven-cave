@@ -132,7 +132,20 @@ button:active > .edge-rail-chip {
    inset at standard macOS metrics. */
 :root[data-tauri-titlebar] {
   --titlebar-lights-inset: 78px;
-  --shell-native-titlebar-height: 34px;
+  /* The traffic lights are inset from the window's TOP edge as well as its
+     leading edge, and only the leading inset was ever accounted for. The
+     chrome row therefore sat a couple of pixels proud of the lights it shares
+     the row with. This nudges the row's content down onto the same baseline.
+     Applied as padding on the band rather than as a smaller band, and folded
+     into --shell-native-titlebar-height below, so every surface that reserves
+     space for the strip moves with it instead of drifting under it.
+     macOS-only by construction: [data-tauri-titlebar] is set on <html> by
+     tauri-titlebar-marker.tsx in the macOS shell alone, so Windows, Linux and
+     the browser keep a row centred in its own band, with no lights to match. */
+  --titlebar-content-top-nudge: 2px;
+  /* 34px band + the nudge. Kept a literal (not a calc) because
+     menu-bar-icon-size.test.ts pins this to a concrete pixel value. */
+  --shell-native-titlebar-height: 36px;
   --shell-nav-chrome-width: 56px;
 }
 
@@ -149,7 +162,10 @@ button:active > .edge-rail-chip {
   align-items: center;
   flex: 0 0 var(--shell-native-titlebar-height);
   min-height: var(--shell-native-titlebar-height);
-  padding: 0 var(--space-3) 0 var(--titlebar-lights-inset);
+  /* Top padding, not a shorter band: the strip must stay flush with the
+     window's top edge (it is the drag region), so the row is nudged INSIDE it
+     onto the traffic-light baseline. */
+  padding: var(--titlebar-content-top-nudge, 0px) var(--space-3) 0 var(--titlebar-lights-inset);
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-bottom: 0;
@@ -177,7 +193,10 @@ button:active > .edge-rail-chip {
 :root[data-tauri-titlebar] .shell-top {
   box-sizing: border-box;
   height: var(--shell-native-titlebar-height);
-  min-height: 34px;
+  /* min-height tracks the band so the nudge cannot be eaten by the old 34px
+     floor — border-box means the padding comes out of the declared height. */
+  min-height: var(--shell-native-titlebar-height);
+  padding-top: var(--titlebar-content-top-nudge, 0px);
   padding-left: var(--space-3);
   background: var(--bg-base);
   backdrop-filter: none;
@@ -225,7 +244,10 @@ button:active > .edge-rail-chip {
     position: absolute;
     inset: 0 0 auto 0;
     z-index: 142;
-    padding: 0 var(--space-3) 0 0;
+    /* Keeps the top nudge — a bare `0` here would silently undo it in exactly
+       the layout the desktop app runs in. The leading inset moves to the rail
+       child below, which is why it goes to 0 on this axis and not the top. */
+    padding: var(--titlebar-content-top-nudge, 0px) var(--space-3) 0 0;
   }
 
   :root[data-tauri-titlebar] .shell-window-titlebar__rail {

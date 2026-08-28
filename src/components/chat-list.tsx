@@ -40,7 +40,6 @@ import {
   withoutArchivedChatSessions,
 } from "@/lib/chat-list-grouping";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
-import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
@@ -185,7 +184,7 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, selection, expandedKeys, onSelectionChange, onToggleExpanded, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false, hideRail = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
   // out of "Today" from sitting under the wrong header until the list reloads.
@@ -286,6 +285,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // AND makes it the active one, skipping the NewChatLaunch picker that exists
   // precisely to ask (same defect as #4203/#4208).
   const scopedFamiliarId = familiar?.id ?? null;
+
   // The control stays live whenever a chat can start at all — the familiar is
   // chosen downstream, not defaulted here.
   const canStartChat = familiars.length > 0;
@@ -796,24 +796,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && !hideRail && (
-      <ChatProjectSidebar
-        groups={sidebarGroups}
-        selection={effectiveSelection}
-        expandedKeys={expandedKeys}
-        activeSessionId={activeId}
-        onSelect={onSelectionChange}
-        onToggleExpanded={onToggleExpanded}
-        onOpenSession={(s) => {
-          setActiveId(s.id);
-          onOpen(s.id, s.familiarId);
-        }}
-        onNewChat={(root) => {
-          const group = sidebarGroups.find((g) => g.projectRoot === root);
-          onNewChat(root ?? undefined, group?.defaultFamiliarId ?? scopedFamiliarId);
-        }}
-      />
-      )}
       <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Familiar dossier + command strip ── */}

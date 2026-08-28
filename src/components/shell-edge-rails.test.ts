@@ -42,7 +42,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<span className="shell-window-titlebar__title">Coven<\/span>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window" \/>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
   "the functional controls share one titlebar row from left toggle through search/actions to the right toggle",
 );
 // `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
@@ -293,17 +293,25 @@ assert.doesNotMatch(
   // connected rail segment while workspace controls begin at its live edge.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,360}?padding-left: max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);/,
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*padding-left: max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);/,
     "the connected rail header reserves the traffic-light inset",
   );
+  // Scoped to the rule body rather than a character budget from the selector:
+  // a budget silently turns any added comment into a test failure, which is how
+  // this assertion broke when the traffic-light top nudge was documented.
+  const nativeTitlebarRule = css.match(
+    /^:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[^}]*\}/m,
+  )?.[0];
+  assert.ok(nativeTitlebarRule, "the native titlebar has its own rule");
   assert.match(
-    css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,420}?border-bottom:\s*0;/,
+    nativeTitlebarRule,
+    /border-bottom:\s*0;/,
     "the native titlebar does not draw a horizontal seam through the connected rail",
   );
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,260}?border-bottom:\s*0;/,
+    // Rule-scoped for the same reason as the titlebar assertion above.
+    /^:root\[data-tauri-titlebar\] \.shell-top \{[^}]*border-bottom:\s*0;/m,
     "the workspace toolbar continues the titlebar surface without a second rule",
   );
   assert.match(
@@ -318,7 +326,7 @@ assert.doesNotMatch(
   );
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?padding-left: var\(--space-3\);/,
+    /^:root\[data-tauri-titlebar\] \.shell-top \{[^}]*padding-left: var\(--space-3\);/m,
     "the functional toolbar starts at the normal app inset below native chrome",
   );
   // Full-window route bands reserve the same inset…
@@ -340,7 +348,7 @@ assert.doesNotMatch(
   // and no-backdrop-filter fallbacks.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    /^:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/m,
     "the native identity strip carries subtle glass",
   );
   const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
@@ -394,12 +402,12 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,260}?flex: 0 0 var\(--shell-nav-chrome-width\);/,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*flex: 0 0 var\(--shell-nav-chrome-width\);/,
   "the native titlebar's left segment tracks the resizable navigation width",
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?left: var\(--shell-nav-chrome-width\);/,
+  /:root\[data-tauri-titlebar\] \.shell-top \{[^}]*left: var\(--shell-nav-chrome-width\);/,
   "workspace toolbar chrome begins at the connected rail edge",
 );
 assert.match(

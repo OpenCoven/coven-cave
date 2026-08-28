@@ -50,11 +50,13 @@ assert.match(
 );
 
 // 5. The chat-mode session navigator receives the same familiar scope.
+// The chat rail lives in the surface now, so the active familiar reaches it
+// through ChatSurface rather than a second sidebar element (cave-fh9so).
 assert.match(
   workspace,
-  /const chatSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "workspace must pass the active familiar id into the chat-mode WorkspaceSidebar",
-);
+  /<ChatSurface[\s\S]*?activeFamiliarId=\{activeId\}/,
+  "workspace passes the active familiar id into the chat surface",
+)
 
 // 6. WorkspaceSidebar scopes the sessions that drive its unified recency list
 //    and project metadata to the active familiar (null = show everything).

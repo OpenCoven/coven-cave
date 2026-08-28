@@ -850,7 +850,13 @@ assert.doesNotMatch(
 );
 assert.match(chatSurface, /const compactRail = hideThreadRail/, "ChatSurface compact mode is driven only by hideThreadRail");
 assert.match(chatSurface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "Chat keeps Projects as its second primary tab");
-assert.match(workspace, /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/, "the expanded Code section replaces the global nav with the contextual Chats sidebar");
+// The Code room and its rail swap are retired (cave-fh9so): one sidebar always,
+// with the chat surface docking its own threads rail beside the conversation.
+assert.match(
+  workspace,
+  /const contextualNav = sidebar;/,
+  "the shell receives one sidebar, with no section-driven swap",
+)
 assert.match(workspace, /nav=\{contextualNav\}\s*list=\{undefined\}/, "workspace mounts the contextual Chat nav without an independent list pane");
 assert.doesNotMatch(chatRouter, /surface\?:|surface=\{surface\}/, "ChatRouter must not forward a surface prop");
 assert.doesNotMatch(chatView, /surface\?:|surface === "code"|Ask for follow-up changes/, "ChatView must not carry Code-specific composer copy this phase");

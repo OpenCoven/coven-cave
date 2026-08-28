@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { Icon, type IconName } from "@/lib/icon";
-import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -37,38 +34,18 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
-import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
-import { type CreateProjectOptions } from "@/lib/chat-add-project";
-import type { NavSection } from "@/lib/nav-section";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import type { CaveProject } from "@/lib/cave-projects-types";
-
-type WorkspaceSidebarMode = "home";
+import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
 
 type Props = {
   sessions: SessionRow[];
-  /** Roster for the header switcher — familiar selection's one home. */
-  familiars: ResolvedFamiliar[];
-  /** Selected familiar (null = "All familiars"). Scopes the project list, the
-   *  per-project session rows, and the project grant when registering. */
+  /** Selected familiar (null = "All familiars"). Scopes the project list and
+   *  the per-project session rows. */
   activeFamiliarId?: string | null;
-  selectedFamiliarIds: ReadonlySet<string>;
   activeSessionId?: string | null;
-  responseNeeded?: Set<string>;
-  /** Change the familiar scope from the header switcher (`null` = All). */
-  onSelectFamiliar: (id: string | null) => void;
   onOpenSession: (session: SessionRow) => void;
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
-  /** The Home shortcut routes through Workspace so it can coordinate the mode
-   *  change with mobile drawer dismissal. Only rendered for standalone hosts
-   *  that mount this rail without the Home | Chat section tabs. */
-  onNavigate: (mode: WorkspaceSidebarMode) => void;
-  /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
-   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
-  onSectionChange?: (section: NavSection) => void;
-  onNewChat: () => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
    *  the row leaves (or re-enters) the live list without waiting a cycle. */
@@ -76,27 +53,15 @@ type Props = {
   /** Opens the thread's pull request in the in-app browser (PR badge click);
    *  without it the badge falls back to a new tab. Same chain as chat-list. */
   onOpenUrl?: (url: string) => void;
-  /** Opens Settings — powers the shared footer so Chat keeps the same
-   *  Dashboard/Settings footer as every other surface. */
-  onOpenSettings: () => void;
-  // ── Project / workspace context (Task 6) ──────────────────────────────────
-  projects: CaveProject[];
-  projectId: string | null;
-  project: CaveProject | null;
-  projectLoading: boolean;
-  projectError: string | null;
-  reloadProjects: () => void;
-  onProjectChange: (projectId: string | null) => void;
-  createProjectOrThrow?: (
-    name: string,
-    root: string,
-    options?: CreateProjectOptions,
-  ) => Promise<CaveProject>;
-  projectCrew: ResolvedFamiliar[];
-  projectCrewLoading: boolean;
-  projectCrewError: string | null;
-  reloadProjectCrew: () => void;
-  contextNotice: string | null;
+  /** What the title row's collapse control does. Defaults to toggling the
+   *  docked desktop rail. The mobile sheet passes its own dismiss instead —
+   *  there the row is closing an overlay, not collapsing a column, and firing
+   *  the rail toggle would silently flip the desktop preference as a side
+   *  effect of dismissing a sheet. */
+  onCollapse?: () => void;
+  /** Overrides the collapse control's label for hosts where "collapse" is the
+   *  wrong verb (the mobile sheet closes). */
+  collapseLabel?: string;
 };
 
 const THREADS_PREVIEW = 6;
@@ -465,42 +430,25 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
   );
 }
 
-export function WorkspaceSidebar({
+export function SidebarChatsSection({
   sessions,
-  familiars,
   activeFamiliarId = null,
-  selectedFamiliarIds,
   activeSessionId,
-  responseNeeded,
-  onSelectFamiliar,
   onOpenSession,
   onOpenSessionInSplit,
-  onNavigate,
-  onSectionChange,
-  onNewChat,
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
-  onOpenSettings,
-  projects: workspaceProjects,
-  projectId: workspaceProjectId,
-  project: workspaceProject,
-  projectLoading: workspaceProjectLoading,
-  projectError: workspaceProjectError,
-  reloadProjects: reloadWorkspaceProjects,
-  onProjectChange,
-  createProjectOrThrow: createWorkspaceProjectOrThrow,
-  projectCrew: workspaceProjectCrew,
-  projectCrewLoading: workspaceProjectCrewLoading,
-  projectCrewError: workspaceProjectCrewError,
-  reloadProjectCrew: reloadWorkspaceProjectCrew,
-  contextNotice: workspaceContextNotice,
+  onCollapse,
+  collapseLabel = "Collapse chat list",
 }: Props) {
   const { projects } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
   const minuteTick = useMinuteTick();
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  // Search was removed with the old search row (the header is a title row
+  // now), so this is constant. Kept as a binding rather than inlined because
+  // the grouping logic below branches on `hasSearch` in several places.
+  const query = "";
   const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
   // Pins come from the shared cross-surface store (chat list + thread rail +
   // this sidebar all read and write the same subscribable list).
@@ -508,17 +456,14 @@ export function WorkspaceSidebar({
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Archived rows are excluded server-side by /api/sessions/list; the Organize
-  // menu's "Show archived" option opts in with its own includeArchived fetch,
-  // mirroring the chat list's toggle (the workspace poll stays archive-free).
-  const [showArchived, setShowArchived] = useState(false);
+  // The Organize menu that toggled this went with the old search row, so
+  // archived threads stay excluded (as /api/sessions/list already does
+  // server-side). The archive/unarchive ACTIONS on each row are untouched.
+  const showArchived = false;
   const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuAnchorRef = useRef<HTMLButtonElement>(null);
-  const menuBodyRef = useRef<HTMLDivElement>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
     [sessions],
@@ -531,9 +476,6 @@ export function WorkspaceSidebar({
   // the older minuteTick-only dependency, so an in-between render could show
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
-
-  // Trap focus inside the sidebar options menu while it is open.
-  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
 
   // Archived sessions only load while "Show archived" is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change (same
@@ -674,103 +616,32 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
-      <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Desktop gets one compact scope row; mobile keeps the full controls. */}
-        <SidebarRailHeader
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onSelectFamiliar}
-          onNewChat={onNewChat}
-          newChatTitle="New chat (⌘N)"
-          newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
-          projects={workspaceProjects}
-          projectId={workspaceProjectId}
-          project={workspaceProject}
-          projectLoading={workspaceProjectLoading}
-          projectError={workspaceProjectError}
-          reloadProjects={reloadWorkspaceProjects}
-          onProjectChange={onProjectChange}
-          createProjectOrThrow={createWorkspaceProjectOrThrow}
-          projectCrew={workspaceProjectCrew}
-          projectCrewLoading={workspaceProjectCrewLoading}
-          projectCrewError={workspaceProjectCrewError}
-          reloadProjectCrew={reloadWorkspaceProjectCrew}
-          contextNotice={workspaceContextNotice}
-          contextMode="all"
-        />
-
-        <div className="cnav__search-wrap">
-          <label className="cnav__search">
-            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search chats…"
-              aria-label="Search chats"
-            />
-            {query ? (
-              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
-                <Icon name="ph:x-bold" width={9} aria-hidden />
-              </button>
-            ) : null}
-          </label>
-          {/* The Home tab above owns the exit now; the icon button only remains
-              when the section switcher is not mounted (standalone hosts). */}
-          {onSectionChange ? null : (
-            <button
-              type="button"
-              aria-label="Go to Home"
-              title="Home"
-              onClick={() => onNavigate("home")}
-              className="cnav__back focus-ring"
-            >
-              <Icon name="ph:house-bold" width={15} aria-hidden />
-            </button>
-          )}
-          <button
-            ref={menuAnchorRef}
-            type="button"
-            aria-label="Sidebar options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Sidebar options"
-            onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring"
-          >
-            <Icon name="ph:dots-three-bold" width={15} aria-hidden />
-          </button>
-          <Popover
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            anchorRef={menuAnchorRef}
-            placement="bottom-end"
-            minWidth={190}
-            ariaLabel="Sidebar options"
-          >
-            <div ref={menuBodyRef} tabIndex={-1}>
-              <PopoverBody role="menu" ariaLabel="Sidebar options">
-                <PopoverLabel>Chat visibility</PopoverLabel>
-                <PopoverItem
-                  icon="ph:archive"
-                  checked={showArchived}
-                  checkedRole="checkbox"
-                  onSelect={() => {
-                    setShowArchived((v) => !v);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Show archived
-                </PopoverItem>
-              </PopoverBody>
-            </div>
-          </Popover>
-        </div>
+    // Keep `workspace-sidebar chat-sidebar` on the root: at least eight
+    // Playwright specs select `.chat-sidebar` — including warmup.setup.ts,
+    // which every e2e run depends on — so dropping these class names would
+    // break the suite far outside this component (cave-fh9so).
+    <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
+        {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
+            else. It replaces the old search row, which also carried the
+            Organize menu. Search and "Show archived" went with it — the list
+            below is already grouped by attention and recency, and the row is
+            the rail's header, not a toolbar. */}
+        {/* The whole row is the control, mirroring the collapsed spine — the
+            icon is decoration inside it, not a nested <button> (which would be
+            invalid HTML and would swallow clicks aimed at the row). */}
+        <button
+          type="button"
+          className="cnav__title-row focus-ring"
+          aria-label={collapseLabel}
+          aria-expanded
+          title={collapseLabel}
+          onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
+        >
+          <span className="cnav__title">Sessions</span>
+          <span className="cnav__title-toggle" aria-hidden>
+            <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
+          </span>
+        </button>
         {deleteError ? (
           <div role="alert" className="cnav__error">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
@@ -934,12 +805,6 @@ export function WorkspaceSidebar({
           </>
           </nav>
         </div>
-
-        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
-            side-panel footer as every other surface; it sits below the scrolling
-            thread list because .cnav__scroll flexes and this stays put. */}
-        <SidebarFooter onOpenSettings={onOpenSettings} />
-      </div>
     </div>
   );
 }

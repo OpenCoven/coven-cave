@@ -34,8 +34,6 @@ type Props = {
   enrichProgress?: { done: number; total: number } | null;
   /** Jump to the Schedules surface (calendar + crons). */
   onViewSchedules: () => void;
-  /** Open Settings. */
-  onOpenSettings: () => void;
   /** Start a blank chat through the shell's acting-familiar gate. */
   onOpenQuickChat: () => void;
 };
@@ -46,7 +44,6 @@ const SEARCH_LABEL = "Search Cave";
 const NEW_CHAT_LABEL = "New chat";
 const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
 const RITUALS_LABEL = workspacePageDefinition("inbox")?.title ?? "Rituals";
-const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
 
 function fmtBadge(n: number): string {
   // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
@@ -76,13 +73,11 @@ export function FamiliarMenuBar({
   enrichingTasks,
   enrichProgress,
   onViewSchedules,
-  onOpenSettings,
   onOpenQuickChat,
 }: Props) {
   const keys = useKeySymbols();
   const searchShortcut = platformizeHint("⌘K", keys);
   const newChatShortcut = platformizeHint("⌘J", keys);
-  const settingsShortcut = platformizeHint("⌘,", keys);
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -177,16 +172,13 @@ export function FamiliarMenuBar({
             <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
         </button>
-        <button
-          type="button"
-          className="menu-bar__task focus-ring"
-          onClick={onOpenSettings}
-          aria-label={SETTINGS_LABEL}
-          title={`${SETTINGS_LABEL} (${settingsShortcut})`}
-        >
-          <Icon name="ph:user" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">{SETTINGS_LABEL}</span>
-        </button>
+        {/* The Settings button that used to close this cluster is gone. It was
+            drawn with `ph:user`, and because the task labels collapse to
+            icon-only on desktop, nothing corrected the misread — it looked like
+            an account/profile avatar while its click opened Settings. It
+            also duplicated SidebarFooter's Settings button, which carries a
+            visible label. Settings remains reachable from the sidebar footer,
+            the ⌘K palette and ⌘, (cave-fh9so). */}
       </div>
 
       {/* Right edge (chat-revamp phase D): the running-processes control

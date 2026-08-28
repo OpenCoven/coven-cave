@@ -13,16 +13,12 @@ const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), 
 const familiarMenuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const sidebarFooter = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.deepEqual(
-  sidebarDestinations("home").map(({ id }) => id),
-  ["home", "board", "inbox", "marketplace", "grimoire"],
-  "Home sidebar destinations stay policy-driven",
-);
-assert.deepEqual(
-  sidebarDestinations("code").map(({ id }) => id),
-  ["chat"],
-  "Code sidebar destinations stay policy-driven",
+  sidebarDestinations().map(({ id }) => id),
+  ["home", "chat", "board", "inbox", "marketplace", "grimoire"],
+  "sidebar destinations stay policy-driven, in one flat list with Chat under Home",
 );
 assert.match(
   sidebar,
@@ -31,8 +27,25 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /sidebarDestinations\(section\)\.map/,
-  "SidebarMinimal renders visible rows from sidebarDestinations(section)",
+  /const allDestinations = sidebarDestinations\(\);/,
+  "SidebarMinimal takes its rows from the shared sidebarDestinations() policy",
+);
+// The list is split into Navigation and Explore on the registry's own `quiet`
+// flag — not by naming destinations in the component (cave-fh9so).
+assert.match(
+  sidebar,
+  /primaryDestinations = allDestinations\.filter\(\(entry\) => entry\.nav !== "quiet"\)/,
+  "Navigation holds every non-quiet destination",
+);
+assert.match(
+  sidebar,
+  /exploreDestinations = allDestinations\.filter\(\(entry\) => entry\.nav === "quiet"\)/,
+  "Explore holds the quiet destinations, split on the registry flag",
+);
+assert.doesNotMatch(
+  sidebar,
+  /"marketplace"|"grimoire"/,
+  "the sidebar never names individual destinations to place them",
 );
 assert.match(
   sidebar,
@@ -105,17 +118,33 @@ for (const [source, label] of [
     /workspacePageDefinition\("board"\)/,
     `${label} derives the Tasks action from the shared page registry`,
   );
-  assert.match(
-    source,
-    /workspacePageDefinition\("settings"\)/,
-    `${label} derives the Settings action from the shared page registry`,
-  );
   assert.doesNotMatch(
     source,
     /\[[\s\S]{0,240}id:\s*"(?:board|settings)"/,
     `${label} does not keep a private destination array for Tasks or Settings`,
   );
 }
+
+// Mobile still carries Settings in its top bar — there is no sidebar footer
+// visible there. Desktop does NOT: that button was drawn with a `ph:user`
+// glyph, and because the task labels collapse to icon-only it read as an
+// account avatar while opening Settings. It also duplicated SidebarFooter's
+// labelled Settings button, so it was removed (cave-fh9so).
+assert.match(
+  topBar,
+  /workspacePageDefinition\("settings"\)/,
+  "Mobile chrome derives the Settings action from the shared page registry",
+);
+assert.doesNotMatch(
+  familiarMenuBar,
+  /onOpenSettings/,
+  "the desktop menu bar no longer carries a Settings action (SidebarFooter owns it)",
+);
+assert.match(
+  sidebarFooter,
+  /onOpenSettings/,
+  "SidebarFooter is where desktop Settings lives",
+);
 assert.match(
   familiarMenuBar,
   /aria-label=\{NEW_CHAT_LABEL\}/,

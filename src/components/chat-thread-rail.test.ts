@@ -183,11 +183,13 @@ assert.match(
   /selection: ProjectSelection;[\s\S]*expandedKeys: string\[\];[\s\S]*onSelectionChange: \(selection: ProjectSelection\) => void;[\s\S]*onToggleExpanded: \(key: string\) => void;/,
   "ChatList requires Router-owned project selection and disclosure props",
 );
+// The project-grouped rail is retired; ChatList still receives the router's
+// selection and disclosure state for its own grouping (cave-fh9so).
 assert.match(
-  chatList,
-  /<ChatProjectSidebar[\s\S]*selection=\{effectiveSelection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelect=\{onSelectionChange\}[\s\S]*onToggleExpanded=\{onToggleExpanded\}/,
-  "ChatList consumes Router-owned project selection and disclosure callbacks",
-);
+  chatSurface,
+  /<SidebarChatsSection[\s\S]*activeSessionId=\{railActiveSessionId\}/,
+  "the docked rail tracks the open session",
+)
 assert.doesNotMatch(
   chatList,
   /PROJECT_SIDEBAR_KEYS|migrateOrganizationExpansionKeys|useAutoExpandNewGroups/,

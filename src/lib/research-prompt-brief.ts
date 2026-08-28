@@ -289,6 +289,58 @@ function subject(mission: ResearchMission): string {
  * build on, and a run short of its source target. Missions the desk has none
  * of simply contribute no card.
  */
+/** Longest a recommendation card's headline may run before it is elided. */
+export const RECOMMENDATION_TITLE_MAX = 88;
+
+/**
+ * A one-line headline for a recommendation card.
+ *
+ * `subject()` recovers the reusable question, but it caps nothing: an
+ * explicitly-named mission returns its title verbatim, and these titles are
+ * frequently a whole pasted research prompt — markdown headings, objectives,
+ * methodology and all. The card then rendered several hundred words where a
+ * headline belonged.
+ *
+ * So: strip markdown chrome, take the first real sentence, and elide. The full
+ * text is untouched in the brief the card loads, so nothing is lost — only the
+ * headline is shortened.
+ */
+export function summarizeRecommendationTitle(value: string): string {
+  // Markdown chrome always goes: a leading heading marker or bold run is
+  // syntax, never part of the name.
+  const text = value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/\*\*/g, "")
+    .trim();
+
+  // A title that already fits is returned WHOLE. Summarizing one that fits was
+  // the first version's mistake: it stripped a leading label and cut at the
+  // first sentence, so "Research brief: Planning systems landscape. Focus on
+  // team workflows" lost two thirds of its meaning at 66 characters. Only text
+  // that genuinely overflows is worth rewriting.
+  if (text.length <= RECOMMENDATION_TITLE_MAX) return text;
+
+  // Over the cap: this is a pasted prompt rather than a name. Drop the label
+  // that prefixes those ("Research Prompt:", "Report topic"), then keep the
+  // first sentence if one lands early enough to serve as a headline.
+  let headline = text.replace(
+    /^(?:report\s+topic|research\s+prompt|research\s+brief|prompt|topic)\b\s*[:\-–—]?\s*/i,
+    "",
+  );
+  const stop = headline.search(/[.!?](?:\s|$)/);
+  if (stop !== -1 && stop <= RECOMMENDATION_TITLE_MAX) headline = headline.slice(0, stop);
+  headline = headline.replace(/[\s.…:;,–—-]+$/u, "").trim();
+  if (headline.length <= RECOMMENDATION_TITLE_MAX) return headline;
+
+  // Still long: elide on a word boundary so the cut never lands mid-word.
+  const cut = headline.slice(0, RECOMMENDATION_TITLE_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  const head = lastSpace > RECOMMENDATION_TITLE_MAX * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${head.replace(/[\s.…:;,–—-]+$/u, "")}…`;
+}
+
 export function promptRecommendations(
   missions: readonly ResearchMission[],
   limit = 4,
@@ -300,7 +352,7 @@ export function promptRecommendations(
   if (failed) {
     out.push({
       id: `rec-retry-${failed.id}`,
-      title: subject(failed),
+      title: summarizeRecommendationTitle(subject(failed)),
       why: "stopped run · rerun with a wider budget",
       tone: "danger",
       brief: {
@@ -316,7 +368,7 @@ export function promptRecommendations(
   if (checkpoint) {
     out.push({
       id: `rec-deepen-${checkpoint.id}`,
-      title: subject(checkpoint),
+      title: summarizeRecommendationTitle(subject(checkpoint)),
       why: "checkpoint waiting · split the open question into its own run",
       tone: "warning",
       brief: {
@@ -332,7 +384,7 @@ export function promptRecommendations(
   if (completed) {
     out.push({
       id: `rec-extend-${completed.id}`,
-      title: subject(completed),
+      title: summarizeRecommendationTitle(subject(completed)),
       why: "finished run · extend it with a comparison",
       tone: "success",
       brief: {
@@ -354,7 +406,7 @@ export function promptRecommendations(
   if (thin) {
     out.push({
       id: `rec-evidence-${thin.id}`,
-      title: subject(thin),
+      title: summarizeRecommendationTitle(subject(thin)),
       why: `thin evidence · ${thin.sources.length} of ${thin.bounds.sourceTarget} sources`,
       tone: "accent",
       brief: {

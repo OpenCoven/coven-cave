@@ -258,11 +258,13 @@ assert.match(
   /<SidebarMinimal[\s\S]*onNewChat=\{startWorkspaceChat\}/,
   "the Home rail uses the actor-gated launch",
 );
+// One sidebar now (cave-fh9so): the actor-gated launch is wired on
+// SidebarMinimal, which is the only rail workspace mounts.
 assert.match(
   workspaceSource,
-  /<WorkspaceSidebar[\s\S]*onNewChat=\{\(\) => startWorkspaceChat\(\)\}/,
-  "the Chat rail uses the actor-gated launch",
-);
+  /<SidebarMinimal[\s\S]*onNewChat=\{startWorkspaceChat\}/,
+  "the rail uses the actor-gated launch",
+)
 assert.match(
   workspaceSource,
   /e\.key\.toLowerCase\(\) === "n"[\s\S]{0,120}startWorkspaceChat\(\)/,
@@ -312,10 +314,13 @@ assert.match(
   /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,180}if \(onRequestNewChat\) \{[\s\S]{0,100}onRequestNewChat\(\);[\s\S]{0,100}return;/,
   "ChatRouter gates list launches before mutating its local view",
 );
+// The project-grouped rail is retired (cave-fh9so), but the gate it carried
+// moved intact onto ChatList's own new-chat path: ask the shell rather than
+// deriving an actor from historical sessions.
 assert.match(
   chatRouterSource,
-  /<ChatProjectSidebar[\s\S]{0,900}onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
-  "the project-group sidebar cannot derive a new actor from historical sessions",
+  /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
+  "the list's new-chat path cannot derive a new actor from historical sessions",
 );
 assert.match(
   chatRouterSource,
