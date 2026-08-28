@@ -83,6 +83,15 @@
   caret-color: var(--accent-presence);
 }
 
+.md-editor--reader .md-editor-visual .milkdown .ProseMirror {
+  --cave-reading-width: 74ch;
+  padding: var(--space-6) var(--space-6) var(--space-12);
+}
+
+.md-editor--reader .md-editor-visual .milkdown {
+  min-height: 100%;
+}
+
 .md-editor-visual .milkdown .ProseMirror:focus-visible {
   outline: none;
 }
@@ -153,4 +162,10 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .md-editor--reward { animation: none; }
+}
+
+@container grimoire (max-width: 720px) {
+  .md-editor--reader .md-editor-visual .milkdown .ProseMirror {
+    padding-inline: var(--space-4);
+  }
 }

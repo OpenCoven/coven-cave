@@ -13,7 +13,7 @@ import "@/styles/md-editor.css";
  * server and the chunk only ships when an editor mounts.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import { Crepe } from "@milkdown/crepe";
 import { caveCodeMirrorTheme } from "@/components/code-editor-theme";
 import "@milkdown/crepe/theme/common/style.css";
@@ -25,15 +25,31 @@ type Props = {
   onChange: (markdown: string) => void;
   /** Cmd/Ctrl+S inside the editor. */
   onSave?: () => void;
+  onReady?: () => void;
+  onError?: (message: string) => void;
+  /** Owned by MdEditor so keyed visual remounts cannot overlap teardown. */
+  lifecycleQueueRef: MutableRefObject<Promise<void>>;
 };
 
-export default function MdEditorVisual({ defaultValue, readOnly, onChange, onSave }: Props) {
+export default function MdEditorVisual({
+  defaultValue,
+  readOnly,
+  onChange,
+  onSave,
+  onReady,
+  onError,
+  lifecycleQueueRef,
+}: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const readOnlyRef = useRef(Boolean(readOnly));
   readOnlyRef.current = Boolean(readOnly);
   // Crepe normalizes the parsed document on mount (list markers, spacing…) and
@@ -42,45 +58,66 @@ export default function MdEditorVisual({ defaultValue, readOnly, onChange, onSav
   const interactedRef = useRef(false);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const crepe = new Crepe({
-      root,
-      defaultValue,
-      features: {
-        // Keep the surface lean: no AI affordances (the Cave has its own
-        // agents), no LaTeX (katex weight), no Crepe top bar (the shell owns
-        // the header chrome).
-        [Crepe.Feature.AI]: false,
-        [Crepe.Feature.Latex]: false,
-        [Crepe.Feature.TopBar]: false,
-      },
-      featureConfigs: {
-        // Code blocks use the Cave's CodeMirror theme (mood-c palette on the
-        // always-dark --code-surface) instead of Crepe's bundled one-dark
-        // colors, which don't adapt to app themes.
-        [Crepe.Feature.CodeMirror]: { theme: caveCodeMirrorTheme },
-      },
-    });
-    crepe.on((listener) => {
-      listener.markdownUpdated((_ctx, markdown) => {
-        if (!interactedRef.current) return;
-        onChangeRef.current(markdown);
-      });
-    });
     let disposed = false;
-    void crepe.create().then(() => {
-      if (!disposed && readOnlyRef.current) crepe.setReadonly(true);
+    let activeCrepe: Crepe | null = null;
+    const destroyActiveCrepe = async () => {
+      const crepe = activeCrepe;
+      activeCrepe = null;
+      if (!crepe) return;
+      try {
+        await crepe.destroy();
+      } catch {
+        // Cleanup must leave the shared queue usable for the next keyed mount.
+      }
+    };
+    const mounted = lifecycleQueueRef.current.catch(() => undefined).then(async () => {
+      if (disposed) return;
+      const root = rootRef.current;
+      if (!root) return;
+      const crepe = new Crepe({
+        root,
+        defaultValue,
+        features: {
+          // Keep the surface lean: no AI affordances (the Cave has its own
+          // agents), no LaTeX (katex weight), no Crepe top bar (the shell owns
+          // the header chrome).
+          [Crepe.Feature.AI]: false,
+          [Crepe.Feature.Latex]: false,
+          [Crepe.Feature.TopBar]: false,
+        },
+        featureConfigs: {
+          // Code blocks use the Cave's CodeMirror theme (mood-c palette on the
+          // always-dark --code-surface) instead of Crepe's bundled one-dark
+          // colors, which don't adapt to app themes.
+          [Crepe.Feature.CodeMirror]: { theme: caveCodeMirrorTheme },
+        },
+      });
+      activeCrepe = crepe;
+      crepe.on((listener) => {
+        listener.markdownUpdated((_ctx, markdown) => {
+          if (!interactedRef.current) return;
+          onChangeRef.current(markdown);
+        });
+      });
+      try {
+        await crepe.create();
+        if (disposed) return;
+        crepeRef.current = crepe;
+        if (readOnlyRef.current) crepe.setReadonly(true);
+        onReadyRef.current?.();
+      } catch {
+        await destroyActiveCrepe();
+        if (!disposed) onErrorRef.current?.("Unable to load the visual editor. Switch to Markdown and try again.");
+      }
     });
-    crepeRef.current = crepe;
     return () => {
       disposed = true;
       crepeRef.current = null;
-      void crepe.destroy();
+      lifecycleQueueRef.current = mounted.then(destroyActiveCrepe).catch(() => undefined);
     };
     // Mount-once by design: document identity changes remount via `key`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [lifecycleQueueRef]);
 
   useEffect(() => {
     crepeRef.current?.setReadonly(Boolean(readOnly));
