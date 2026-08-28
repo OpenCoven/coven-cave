@@ -361,6 +361,22 @@ assert.equal(productionThreadLab.trust, "official-local");
 assert.deepEqual(productionThreadLab.capabilities, ["read_files", "write_files", "network"]);
 assert.equal(productionThreadLab.skill.managed, "manual");
 
+const productionDaytona = productionCatalog.plugins.find((plugin) => plugin.name === "daytona");
+assert.ok(productionDaytona, "the production catalog includes Daytona Sandboxes");
+assert.equal(productionDaytona.version, "1.0.0");
+assert.equal(productionDaytona.license, "Apache-2.0");
+assert.equal(productionDaytona.trust, "official-remote");
+assert.deepEqual(productionDaytona.author, { name: "Daytona", url: "https://github.com/daytona" });
+assert.equal(productionDaytona.skill.managed, "manual");
+assert.deepEqual(productionDaytona.capabilities, ["read_files", "write_files", "shell", "network"]);
+assert.equal(productionDaytona.userConfig.daytona_api_key.sensitive, true);
+assert.equal(productionDaytona.userConfig.daytona_api_key.required, false);
+assert.ok(
+  productionDaytona.sourceRefs.includes(
+    "https://github.com/daytona/skills/tree/ad4d8e088582fc995def67474a03eabede30564e/skills/daytona",
+  ),
+);
+
 const productionThreadLabRoot = path.join(ROOT, "marketplace", "plugins", "tweet-thread-lab");
 const threadLabManifest = JSON.parse(readFileSync(path.join(productionThreadLabRoot, "plugin.json"), "utf8"));
 const threadLabCodexManifest = JSON.parse(
@@ -380,6 +396,44 @@ const memoryCodexManifest = JSON.parse(
 assert.equal(memoryManifest.name, "coven-memory");
 assert.equal(memoryManifest.skills, "./skills/");
 assert.equal(memoryCodexManifest.skills, "./skills/");
+
+const productionDaytonaRoot = path.join(ROOT, "marketplace", "plugins", "daytona");
+const daytonaManifest = JSON.parse(readFileSync(path.join(productionDaytonaRoot, "plugin.json"), "utf8"));
+const daytonaCodexManifest = JSON.parse(
+  readFileSync(path.join(productionDaytonaRoot, ".codex-plugin", "plugin.json"), "utf8"),
+);
+assert.equal(daytonaManifest.name, "daytona");
+assert.equal(daytonaManifest.version, "1.0.0");
+assert.equal(daytonaManifest.license, "Apache-2.0");
+assert.deepEqual(daytonaManifest.author, { name: "Daytona", url: "https://github.com/daytona" });
+assert.equal(daytonaManifest.homepage, "https://www.daytona.io");
+assert.equal(daytonaManifest.repository, "https://github.com/daytona/skills");
+assert.equal(daytonaManifest.skills, "./skills/");
+assert.equal(daytonaManifest["x-coven"].compatibility.mcp, false);
+assert.equal(daytonaCodexManifest.name, "daytona");
+assert.deepEqual(daytonaCodexManifest.author, { name: "Daytona", url: "https://github.com/daytona" });
+assert.equal(daytonaCodexManifest.interface.developerName, "Daytona");
+assert.equal(daytonaCodexManifest.interface.websiteURL, "https://www.daytona.io");
+assert.equal(daytonaCodexManifest.skills, "./skills/");
+for (const relative of [
+  "LICENSE",
+  "NOTICE",
+  "NOTES.md",
+  "skills/daytona/SKILL.md",
+  "skills/daytona/references/api/sandbox.md",
+  "skills/daytona/references/cli.md",
+  "skills/daytona/references/python-sdk/README.md",
+  "skills/daytona/references/typescript-sdk/README.md",
+  "skills/daytona/references/java-sdk/README.md",
+  "skills/daytona/references/go-sdk/README.md",
+  "skills/daytona/references/ruby-sdk/README.md",
+]) {
+  assert.ok(existsSync(path.join(productionDaytonaRoot, relative)), `missing Daytona file: ${relative}`);
+}
+const daytonaSkill = readFileSync(path.join(productionDaytonaRoot, "skills", "daytona", "SKILL.md"), "utf8");
+assert.match(daytonaSkill, /^name: daytona$/m);
+assert.match(daytonaSkill, /Never print its value or read unrelated environment files/i);
+assert.match(daytonaSkill, /Require specific confirmation before deleting a sandbox, snapshot, or volume/i);
 
 const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
 const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");

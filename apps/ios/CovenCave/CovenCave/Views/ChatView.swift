@@ -899,52 +899,11 @@ struct ChatView: View {
                     // interleaved with messages), so separator placement isn't
                     // recomputed — and no `enumerated()` array is allocated —
                     // on every body evaluation.
+                    // Each row renders through transcriptRow(_:) — extracted
+                    // so the compiler type-checks one row at a time instead of
+                    // the whole scroll view builder (cave-7nrp9).
                     ForEach(thread.transcriptRows) { row in
-                        switch row {
-                        case .day(_, let date):
-                            DaySeparator(date: date)
-                                // Track which day sections have scrolled past
-                                // the top edge: the transform runs per frame
-                                // but the action (a state write) only fires on
-                                // the Bool transition, keeping the hot scroll
-                                // path allocation-free.
-                                .onGeometryChange(for: Bool.self) { proxy in
-                                    proxy.frame(in: .scrollView).maxY < 0
-                                } action: { above in
-                                    if above { daysAboveTop.insert(date) }
-                                    else { daysAboveTop.remove(date) }
-                                }
-                        case .message(let message):
-                            if message.id == unreadDividerId {
-                                UnreadDividerView()
-                                    .id("unread-divider")
-                            }
-                            MessageBubble(message: message,
-                                          isGroup: thread.isGroup,
-                                          familiar: message.familiarId.flatMap(app.familiar),
-                                          isLast: message.id == thread.messages.last?.id,
-                                          onDelete: { deleteMessage(message) },
-                                          onSuggestion: { sendSuggestion($0) },
-                                          onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
-                                          onForward: { beginForward($0) },
-                                          onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
-                                          onReply: { beginReply($0) },
-                                          operatorName: app.operatorDisplayName,
-                                          operatorAvatarURL: app.operatorAvatarURL)
-                            .equatable()
-                            .id(message.id)
-                            // New bubbles settle in with a soft rise-and-fade
-                            // (native Messages behaviour) instead of popping;
-                            // queued-offline sends enter subdued (opacity
-                            // only) so they read as parked, not sent;
-                            // deletions fade out. Driven by the count-keyed
-                            // animation below; Reduce Motion turns it off.
-                            .transition(.asymmetric(
-                                insertion: message.isQueued
-                                    ? .opacity
-                                    : .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
-                                removal: .opacity))
-                        }
+                        transcriptRow(row)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -1062,6 +1021,74 @@ struct ChatView: View {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
+        }
+    }
+
+    /// Render one transcript row — a day divider or a message bubble. Extracted
+    /// from the scroll view builder so the compiler type-checks one row at a
+    /// time: the whole expression previously exceeded the type-checker budget
+    /// (cave-7nrp9).
+    @ViewBuilder
+    private func transcriptRow(_ row: TranscriptRow) -> some View {
+        switch row {
+        case .day(_, let date):
+            DaySeparator(date: date)
+                // Track which day sections have scrolled past
+                // the top edge: the transform runs per frame
+                // but the action (a state write) only fires on
+                // the Bool transition, keeping the hot scroll
+                // path allocation-free.
+                .onGeometryChange(for: Bool.self) { proxy in
+                    proxy.frame(in: .scrollView).maxY < 0
+                } action: { above in
+                    if above { daysAboveTop.insert(date) }
+                    else { daysAboveTop.remove(date) }
+                }
+        case .message(let message):
+            if message.id == unreadDividerId {
+                UnreadDividerView()
+                    .id("unread-divider")
+            }
+            // Hoisted into named bindings so the compiler can type-check
+            // the bubble call in steps instead of one oversized expression
+            // (cave-7nrp9: it previously exceeded the type-checker budget).
+            let bubbleFamiliar = message.familiarId.flatMap(app.familiar)
+            let bubbleOpenReader: ((String) -> Void)? = {
+                openReader(text: $0, familiar: bubbleFamiliar)
+            }
+            let bubbleRetry: (() -> Void)? = canRetry(message)
+                ? { retryAssistant(message) }
+                : nil
+            let bubbleRetryDelete: (() -> Void)? =
+                thread.canRetryPartialDelete(noteId: message.id)
+                    ? { retryPartialDelete(noteId: message.id) }
+                    : nil
+            MessageBubble(message: message,
+                          isGroup: thread.isGroup,
+                          familiar: bubbleFamiliar,
+                          isLast: message.id == thread.messages.last?.id,
+                          onDelete: { deleteMessage(message) },
+                          onSuggestion: { sendSuggestion($0) },
+                          onOpenReader: bubbleOpenReader,
+                          onForward: { beginForward($0) },
+                          onRetry: bubbleRetry,
+                          onReply: { beginReply($0) },
+                          onRetryDelete: bubbleRetryDelete,
+                          operatorName: app.operatorDisplayName,
+                          operatorAvatarURL: app.operatorAvatarURL)
+                .equatable()
+                .id(message.id)
+                // New bubbles settle in with a soft rise-and-fade
+                // (native Messages behaviour) instead of popping;
+                // queued-offline sends enter subdued (opacity
+                // only) so they read as parked, not sent;
+                // deletions fade out. Driven by the count-keyed
+                // animation below; Reduce Motion turns it off.
+                .transition(.asymmetric(
+                    insertion: message.isQueued
+                        ? .opacity
+                        : .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                    removal: .opacity))
         }
     }
 
@@ -2178,13 +2205,27 @@ struct ChatView: View {
         // `uniquingKeysWith:` rather than `uniqueKeysWithValues:` — the latter
         // traps on a repeated key, and a duplicated familiar id in a thread
         // must not turn a swipe into a crash.
-        let familiarNames = Dictionary(
+        thread.deleteMessage(message.id, client: app.client,
+                             familiarNames: deleteFamiliarNames()) { app.touch(thread) }
+    }
+
+    /// The display names the partial-delete report (and its retry) read back
+    /// to a person, keyed by familiar id. See `deleteMessage`.
+    private func deleteFamiliarNames() -> [String: String] {
+        Dictionary(
             thread.familiarIds.compactMap { id in
                 app.familiar(id).map { (id, $0.displayName) }
             },
             uniquingKeysWith: { first, _ in first })
-        thread.deleteMessage(message.id, client: app.client,
-                             familiarNames: familiarNames) { app.touch(thread) }
+    }
+
+    /// Retry a partial group delete from the note that reported it: the thread
+    /// re-deletes the surviving copies by the turn names the first attempt
+    /// already resolved, so a drifted transcript cannot refuse it again.
+    private func retryPartialDelete(noteId: String) {
+        guard let client = app.client else { return }
+        thread.retryPartialDelete(noteId: noteId, client: client,
+                                  familiarNames: deleteFamiliarNames()) { app.touch(thread) }
     }
 
     private func openReader(text: String, familiar: Familiar?) {
