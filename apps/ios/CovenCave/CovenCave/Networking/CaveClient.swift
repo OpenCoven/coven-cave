@@ -651,6 +651,12 @@ struct CaveClient {
         }
     }
 
+    /// `GET /api/sessions/list?includeArchived=1` — the full list including
+    /// archived rows, for read-side reconciliation of thread archive/pin flags.
+    func sessionsIncludingArchived() async throws -> [SessionRow] {
+        try await sessions(includeArchived: true)
+    }
+
     // MARK: - Tasks (board)
 
     func tasks() async throws -> [BoardCard] {
