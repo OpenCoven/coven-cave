@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DaemonResponse } from "@/lib/coven-daemon";
+import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import {
-  CovenAutomationsUnavailableError,
   createRoutine,
   deleteRoutine,
   getRoutine,
@@ -20,13 +20,11 @@ type CapturedRequest = {
   body?: unknown;
 };
 
-function transportWith(
-  handler: (request: CapturedRequest) => DaemonResponse<unknown>,
-) {
+function transportWith(handler: (request: CapturedRequest) => DaemonResponse<unknown>) {
   const calls: CapturedRequest[] = [];
-  const transport = async (request: CapturedRequest): Promise<DaemonResponse<unknown>> => {
+  const transport = async <T = unknown>(request: CapturedRequest): Promise<DaemonResponse<T>> => {
     calls.push(request);
-    return handler(request);
+    return handler(request) as DaemonResponse<T>;
   };
   return { calls, transport };
 }
