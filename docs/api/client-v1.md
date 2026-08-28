@@ -376,11 +376,11 @@ The `hpke-bound-v1` protected operation list is exactly `pairing.poll`,
 `conversations.list`, `conversations.read`, and `messages.list`.
 `health.read` and `pairing.create` carry no credential and remain unbound.
 
-The four administrator operations — `pairing.admin.list`,
-`pairing.admin.decide`, `credentials.admin.list`, and
-`credentials.admin.revoke` — are explicitly excluded. Their `admin` sidecar
-credential is not a pairing secret or bearer and is never carried by this
-mechanism.
+The five administrator operations — `pairing.admin.list`,
+`pairing.admin.decide`, `credentials.admin.list`,
+`credentials.admin.revoke`, and `status.admin.read` — are explicitly
+excluded. Their `admin` sidecar credential is not a pairing secret or bearer
+and is never carried by this mechanism.
 
 The normative deterministic interoperability artifacts are:
 
@@ -408,7 +408,7 @@ one shape, so a client parses once:
   "operations": [
     "health.read", "pairing.create", "pairing.poll", "pairing.exchange",
     "pairing.admin.list", "pairing.admin.decide",
-    "credentials.admin.list", "credentials.admin.revoke",
+    "credentials.admin.list", "credentials.admin.revoke", "status.admin.read",
     "familiars.list", "projects.list",
     "conversations.list", "conversations.read", "messages.list"
   ],
@@ -492,6 +492,7 @@ contract fixture, which carries the same records — rather than by probing path
 | `pairing.admin.decide` | `POST /api/client/v1/admin/pairing-requests/:id/decision` | admin | `admin` | `none` | — | `pairing` |
 | `credentials.admin.list` | `GET /api/client/v1/admin/credentials` | admin | `admin` | `none` | — | `credentials` |
 | `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | `admin` | `none` | — | `credentials` |
+| `status.admin.read` | `GET /api/client/v1/admin/status` | admin | `admin` | `none` | — | `health` |
 | `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiars`, `cursors` |
 | `projects.list` | `GET /api/client/v1/projects` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `projects`, `cursors` |
 | `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations`, `cursors` |
@@ -1592,6 +1593,23 @@ characters.
 
 Unlike every other id-bearing route here, `:id` is not parsed as a UUID; it is
 matched against the store as an opaque string.
+
+### `GET /api/client/v1/admin/status`
+
+The operational state of the client v1 surface itself, for the Settings screen
+that manages it. It answers the two degraded states that otherwise exist only
+on stderr: whether the discovery record was actually published (the
+`CLIENT V1 DISABLED` boot banner), and whether the unverified-ownership waiver
+is in force (the `SECURITY WAIVER` line).
+
+**200:** `{ "data": { "status": { "discovery": { "available": true },
+"ownershipWaiver": { "granted": false } } } }`. `discovery.available` is
+false — with `reason` — when no valid discovery record for a live process is
+on disk; `ownershipWaiver.granted` is true — with `reason` — when the
+operator has set `COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP` and
+`COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON`.
+
+**Errors:** 503 / 401 as above.
 
 ## Rate limits
 
