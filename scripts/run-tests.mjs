@@ -1897,6 +1897,7 @@ export const SUITES = {
     "scripts/ios-port-discovery.test.mjs",
     "scripts/ios-legacy-token-migration.test.mjs",
     "scripts/ios-offline-compose.test.mjs",
+    "scripts/ios-group-replay-dup.test.mjs",
     "scripts/ios-operator-profile.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-connect-screen-ux.test.mjs",

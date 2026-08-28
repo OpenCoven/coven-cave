@@ -536,6 +536,28 @@ final class ChatThread: Identifiable, Hashable {
                 guard !isActiveDelivery(userMessageId: queuedId, familiarId: familiarId) else {
                     return
                 }
+                // A target whose reply for this turn is already on screen must
+                // not be replayed: the shared user bubble stays queued only for
+                // the legs that still need delivery, and re-adopting the
+                // existing reply would insert a second bubble for one server
+                // turn (cave-bm3qq). The completed marker can lag the thread —
+                // a snapshot written between this target's success and its
+                // durable completed list — so the thread itself is the
+                // authority here, and the marker is healed in the same pass.
+                // Only a server-NAMED reply (one adopted from the transcript)
+                // is skipped: a partial bubble a cancelled stream left behind
+                // must still be reconciled on the next reconnect.
+                if let settled = replayPlaceholder(
+                    after: queuedId,
+                    familiarId: familiarId
+                ), !settled.streaming,
+                   settled.serverTurnId != nil {
+                    completed.insert(familiarId)
+                    mutate(queuedId) {
+                        $0.queuedCompletedFamiliarIds = completed.sorted()
+                    }
+                    continue
+                }
                 let existingPlaceholder = replayPlaceholder(
                     after: queuedId,
                     familiarId: familiarId
@@ -1741,26 +1763,50 @@ final class ChatThread: Identifiable, Hashable {
                     // of dead-ending in a red bubble. Ambiguous failures
                     // (timeouts, drops after first byte) stay on the error
                     // path — replaying those could double the turn.
+                    //
+                    // A group's shared user bubble is one message over several
+                    // sessions. If THIS familiar's reply for the turn already
+                    // sits in the thread settled — a re-attempt of a leg that
+                    // already produced its reply — removing it and re-queueing
+                    // the shared bubble would hand the next replay a duplicate
+                    // adoption target (cave-bm3qq). The leg is already done:
+                    // leave the reply where it is, and the queue clears when
+                    // the remaining legs settle.
+                    let alreadySettled = settledReplyExists(
+                        after: userMessageId,
+                        familiarId: familiarId,
+                        excluding: messageId
+                    )
                     messages.removeAll { $0.id == messageId }
-                    mutate(userMessageId) {
-                        $0.queued = true
-                        $0.queuedDispatchInFlight = false
-                        var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
-                        runIds.removeValue(forKey: familiarId)
-                        $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
-                        var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
-                        attemptedIds.remove(familiarId)
-                        $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
-                            ? nil
-                            : attemptedIds.sorted()
-                    }
-                    // The attempted marker was checkpointed before POST. This
-                    // transport class proves the POST never left the phone, so
-                    // make its removal durable immediately; degraded state
-                    // blocks AppModel's follow-up queue flush and iOS may suspend
-                    // before the ordinary 400ms onChange debounce fires.
-                    if let persistAfterProvablyUnsentRollback {
-                        _ = await persistAfterProvablyUnsentRollback()
+                    if !alreadySettled {
+                        mutate(userMessageId) {
+                            $0.queued = true
+                            $0.queuedDispatchInFlight = false
+                            var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+                            runIds.removeValue(forKey: familiarId)
+                            $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
+                            var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+                            attemptedIds.remove(familiarId)
+                            $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
+                                ? nil
+                                : attemptedIds.sorted()
+                        }
+                        // A leg whose reply already sits in the thread settled
+                        // must not be re-queued for replay: its bubble is
+                        // already on screen, and a fresh replay would re-adopt
+                        // it into a second bubble for the same server turn
+                        // (cave-bm3qq). The shared bubble stays queued only for
+                        // the legs still pending, and a settled leg never
+                        // re-enters the queue.
+                        // The attempted marker was checkpointed before POST.
+                        // This transport class proves the POST never left the
+                        // phone, so make its removal durable immediately;
+                        // degraded state blocks AppModel's follow-up queue
+                        // flush and iOS may suspend before the ordinary 400ms
+                        // onChange debounce fires.
+                        if let persistAfterProvablyUnsentRollback {
+                            _ = await persistAfterProvablyUnsentRollback()
+                        }
                     }
                     outcome = .queued
                 } else {
@@ -2113,6 +2159,28 @@ final class ChatThread: Identifiable, Hashable {
         }) else {
             return .pending
         }
+        // A familiar whose session already owns this exact server turn must
+        // never be re-adopted. The completion marker can lag the thread (a
+        // snapshot written between a sibling's success and its durable
+        // completed list, or a thread hydrated from a version that never
+        // recorded one), so ownership is read from the thread itself: a second
+        // bubble carrying `reply.id` would give this session's per-session
+        // projection two replies for one server turn, and the prefix walk that
+        // names later deletes would disagree forever (cave-bm3qq). The reply is
+        // already on screen; fold away the empty shell this adoption was about
+        // to fill and treat the leg as already settled.
+        if messages.contains(where: {
+            $0.id != messageId
+                && $0.role == .assistant
+                && $0.familiarId == familiarId
+                && $0.serverTurnId == reply.id
+        }) {
+            if let shell = messages.first(where: { $0.id == messageId }),
+               shell.serverTurnId == nil, shell.text.isEmpty, !shell.isError {
+                messages.removeAll { $0.id == messageId }
+            }
+            return .completed
+        }
         if let userMessageId {
             mutate(userMessageId) {
                 $0.recordRetryModel(
@@ -2189,6 +2257,28 @@ final class ChatThread: Identifiable, Hashable {
         return messages[replyStart..<replyEnd].last(where: {
             $0.role == .assistant && $0.familiarId == familiarId
         })
+    }
+
+    /// Does this thread already hold a settled assistant reply for this
+    /// familiar, after the given user turn? The completion marker can lag the
+    /// thread (a snapshot written between a sibling's success and its durable
+    /// completed list, or a thread hydrated from a version that never recorded
+    /// one), so the thread itself is the authority on whether a leg has already
+    /// produced its reply. `excluding` names the bubble being filled right now,
+    /// so a mid-flight stream's own shell is never read as a prior success.
+    private func settledReplyExists(after userMessageId: String,
+                                    familiarId: String,
+                                    excluding messageId: String?) -> Bool {
+        guard let userIndex = messages.firstIndex(where: { $0.id == userMessageId }),
+              userIndex + 1 <= messages.endIndex else { return false }
+        return messages[(userIndex + 1)...].contains { candidate in
+            guard candidate.id != messageId,
+                  candidate.role == .assistant,
+                  candidate.familiarId == familiarId,
+                  !candidate.streaming else { return false }
+            if candidate.serverTurnId != nil { return true }
+            return !candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     private func markQueuedFamiliarCompleted(_ userMessageId: String, familiarId: String) {
