@@ -85,6 +85,8 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Server-side keep pin (`pinned: true` when pinned, absent otherwise).
+    var pinned: Bool? = nil
     /// Launch provenance for first-turn continuity across clients.
     var projectRoot: String? = nil
     /// Provenance from /api/sessions/list — generator surfaces (journal,
@@ -99,6 +101,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case pinned
         case projectRoot = "project_root"
         case origin, generated
     }
