@@ -1608,7 +1608,6 @@ function MetaLine({
   projectRoot,
   onSessionsChanged,
   generateTitle,
-  contextControls,
   readOnly = false,
   children,
 }: {
@@ -1634,7 +1633,6 @@ function MetaLine({
   /** Familiar / model / project pickers, rendered INLINE on the title row.
    *  Their presence also suppresses the static identity text, which would
    *  otherwise name the same familiar and model a second time. */
-  contextControls?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1725,8 +1723,8 @@ function MetaLine({
             heavier provenance (cwd · duration · tokens · cost + meters) stays
             in the reveal-on-hover cluster below, so nothing is deleted, just
             demoted. Streaming/failed/offline states keep their live meta. */}
-        {state === "complete" && !contextControls ? (
-          <span className="cave-chat-meta-line__identity">
+        {state === "complete" ? (
+          <span className="cave-chat-meta-line__identity reveal-on-hover">
             {familiar.display_name}
             {metaModel ? ` · ${shortModelLabel(metaModel)}` : ""}
             {gitBranch ? (
@@ -1769,15 +1767,12 @@ function MetaLine({
         {state === "streaming" ? " · esc to cancel" : null}
         {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
-      {/* Ultraminimal header (cave-fh9so): the familiar/model/project pickers
-          ride INLINE here instead of on a second line beneath the title. They
-          used to sit in their own `.cave-chat-header-context` strip, which
-          meant the header spent three stacked rows saying overlapping things —
-          the static identity text, the pickers, and the mono context band all
-          naming the same familiar and model. */}
-      {contextControls ? (
-        <span className="cave-chat-meta-line__controls">{contextControls}</span>
-      ) : null}
+      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
+          project/model/context chips inline here to collapse three stacked
+          header rows into one; one row of five controls is still a toolbar.
+          Choosing a project or a model belongs to the composer, which is where
+          you are when the choice matters and which still carries them. The
+          header is a title and the verbs that act on this conversation. */}
       {children}
     </div>
   );
@@ -7247,9 +7242,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
   // Context controls follow the same pattern: constructed once as
-  // chatContextControls and placed adaptively — footer cluster for new chats
-  // (inlineComposer) and session header for active chats (!inlineComposer)
-  // so picker state is never duplicated.
+  // chatContextControls and rendered in exactly ONE place — the composer's
+  // footer cluster, for new and active chats alike (cave-zfmqm). They were
+  // placed adaptively before, which is how the session header ended up
+  // carrying a picker toolbar.
   // Tool-only commands such as /image and /auto can produce transcript turns
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
@@ -7895,11 +7891,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — carries linked work and new-chat context.
-                  Context controls ride here only for new chats (inlineComposer);
-                  active chats show them in the session header instead. */}
+              {/* Footer band — carries linked work and the context controls.
+                  They used to ride here for new chats ONLY, with active chats
+                  showing them in the session header; the header is a title and
+                  the verbs that act on the conversation now (cave-zfmqm), so
+                  this is their one home. That is also where they belong: you
+                  pick a project or a model at the moment you are composing, not
+                  while reading back a transcript.
+
+                  Gating this on `inlineComposer` again would silently strand an
+                  active chat with no way to change either. */}
               <div className="cave-composer-footer-band">
-                {inlineComposer ? (
+                {!offlineReadOnly ? (
                   <div className="cave-composer-footer-band__cluster">
                     {chatContextControls}
                   </div>
@@ -7981,7 +7984,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitleFromTranscript}
           readOnly={offlineReadOnly}
-          contextControls={!inlineComposer && !offlineReadOnly ? chatContextControls : null}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -8057,14 +8059,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
-        {/* Mobile keeps the strip. `.cave-chat-meta-line` is display:none below
-            the breakpoint (transcript.css), so the inline copy above cannot
-            render there — without this the pickers would vanish on mobile
-            entirely. Same desktop/mobile double-mount pattern SidebarRailHeader
-            uses for its scope control; only one is ever visible. */}
-        {!inlineComposer && !offlineReadOnly ? (
-          <div className="cave-chat-header-context">{chatContextControls}</div>
-        ) : null}
+        {/* No mobile header strip either. It existed as the counterpart to the
+            inline desktop copy, because `.cave-chat-meta-line` is display:none
+            below the breakpoint — with both retired the composer carries the
+            controls on every width, so there is nothing left to double-mount. */}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
