@@ -889,9 +889,15 @@ pub fn run() {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. })
                 && window.label() == PRIMARY_MAIN_WINDOW_LABEL
             {
-                shutdown_owned_processes(window.app_handle());
-                window.app_handle().exit(0);
-                return;
+                // Closing the primary main window quits only when it is the
+                // last live main window. With secondary main windows still
+                // open, let this window close on its own so the sidecar and
+                // supervisor keep serving the windows that remain.
+                if live_main_window_count() <= 1 {
+                    shutdown_owned_processes(window.app_handle());
+                    window.app_handle().exit(0);
+                    return;
+                }
             }
 
             if let tauri::WindowEvent::Destroyed = event {
@@ -903,7 +909,12 @@ pub fn run() {
                     pty::retire_window_sessions(window.label(), generation);
                     browser::retire_window_resources(window.app_handle(), window.label());
                 }
-                if window.label() == PRIMARY_MAIN_WINDOW_LABEL {
+                // Tear down the Cave runtime only once no live main window
+                // remains. Closing the primary (or any secondary) window while
+                // another main window is still open must leave the sidecar and
+                // supervisor running for the windows that remain; the final
+                // close stops them and hands off to the background daemon.
+                if main_webview_windows(window.app_handle()).is_empty() {
                     // Before the stop, never after: the supervisor polls every
                     // couple of seconds, and a flag set afterwards races it
                     // into respawning the sidecar we are deliberately killing.
