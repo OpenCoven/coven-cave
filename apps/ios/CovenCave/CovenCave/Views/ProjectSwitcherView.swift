@@ -228,8 +228,8 @@ struct ProjectContextButton: View {
 
     var body: some View {
         PillSelector(
-            label: primaryLabel,
-            sublabel: secondaryLabel,
+            label: "Projects",
+            sublabel: contextLabel,
             active: app.projectContext != nil,
             fillsWidth: true,
             accessibilityHint: "Opens the project switcher.",
@@ -240,12 +240,12 @@ struct ProjectContextButton: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: 44)
         .accessibilityIdentifier("Project context button")
-        .accessibilityLabel("Project context")
+        .accessibilityLabel("Projects")
         .accessibilityValue(accessibilityValue)
     }
 
     @MainActor
-    private var primaryLabel: String {
+    private var contextLabel: String {
         switch app.projectContextGateState {
         case .ready:
             return app.projectContext?.displayName ?? "Choose a project"
@@ -255,21 +255,6 @@ struct ProjectContextButton: View {
             return "Project access"
         case .noProjects:
             return "No projects"
-        }
-    }
-
-    @MainActor
-    private var secondaryLabel: String? {
-        switch app.projectContextGateState {
-        case .ready:
-            guard let context = app.projectContext else { return "Choose a project" }
-            return app.projectContextCounts(for: context).summary ?? "No cached activity yet"
-        case .loading:
-            return "Loading project access…"
-        case .retryableError:
-            return "Retry project access"
-        case .noProjects:
-            return "Set up on desktop"
         }
     }
 

@@ -125,6 +125,11 @@ export type ResourcePageBoundaryV1 = {
   end: number;
 } & UnknownFields;
 
+export type ResourceNormalizationReceiptV1 = {
+  extractorId: string;
+  extractorVersion: string;
+};
+
 export type ResourceSnapshotV1 = {
   version: 1;
   id: string;
@@ -134,6 +139,7 @@ export type ResourceSnapshotV1 = {
   normalizedBlobDigest: string;
   normalizedMediaType: string;
   normalizedBytes: number;
+  normalizationReceipt: ResourceNormalizationReceiptV1;
   sourceSelector: ContextSelectorV1;
   pageBoundaries?: ResourcePageBoundaryV1[];
   fetchedAt?: string;
@@ -155,6 +161,7 @@ export type ResourceIngestJobV1 = {
   availableAt: string;
   lease?: {
     owner: string;
+    token: string;
     expiresAt: string;
   } & UnknownFields;
   createdAt: string;
@@ -535,6 +542,24 @@ function parsePageBoundaries(value: unknown, path: string, normalizedBytes: numb
   return pass(boundaries);
 }
 
+function parseNormalizationReceipt(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<ResourceNormalizationReceiptV1> {
+  const parsedObject = object(value, path); if (!parsedObject.ok) return parsedObject;
+  const raw = parsedObject.value;
+  for (const key of Object.keys(raw)) {
+    if (key !== "extractorId" && key !== "extractorVersion") {
+      return fail("invalid_value", childPath(path, key), `Unknown normalization receipt field ${key}`);
+    }
+  }
+  const extractorIdField = required(raw, "extractorId", path); if (!extractorIdField.ok) return extractorIdField;
+  const extractorId = identifier(extractorIdField.value, childPath(path, "extractorId"), "extractorId"); if (!extractorId.ok) return extractorId;
+  const extractorVersionField = required(raw, "extractorVersion", path); if (!extractorVersionField.ok) return extractorVersionField;
+  const extractorVersion = identifier(extractorVersionField.value, childPath(path, "extractorVersion"), "extractorVersion"); if (!extractorVersion.ok) return extractorVersion;
+  return pass({ extractorId: extractorId.value, extractorVersion: extractorVersion.value });
+}
+
 export function parseResourceSnapshotV1(value: unknown): ProtocolParseResult<ResourceSnapshotV1> {
   const parsedObject = prepare(value, "$"); if (!parsedObject.ok) return parsedObject;
   const raw = parsedObject.value;
@@ -553,6 +578,8 @@ export function parseResourceSnapshotV1(value: unknown): ProtocolParseResult<Res
   const normalizedMediaType = stringValue(mediaField.value, "$.normalizedMediaType", "normalizedMediaType", { nonEmpty: true }); if (!normalizedMediaType.ok) return normalizedMediaType;
   const bytesField = required(raw, "normalizedBytes", "$"); if (!bytesField.ok) return bytesField;
   const normalizedBytes = integer(bytesField.value, "$.normalizedBytes", "normalizedBytes"); if (!normalizedBytes.ok) return normalizedBytes;
+  const receiptField = required(raw, "normalizationReceipt", "$"); if (!receiptField.ok) return receiptField;
+  const normalizationReceipt = parseNormalizationReceipt(receiptField.value, "$.normalizationReceipt"); if (!normalizationReceipt.ok) return normalizationReceipt;
   const selectorField = required(raw, "sourceSelector", "$"); if (!selectorField.ok) return selectorField;
   const sourceSelector = parseContextSelectorV1(selectorField.value, "$.sourceSelector"); if (!sourceSelector.ok) return sourceSelector;
   const pageBoundaries = optional(raw, "pageBoundaries", "$", (item, itemPath) => parsePageBoundaries(item, itemPath, normalizedBytes.value)); if (!pageBoundaries.ok) return pageBoundaries;
@@ -580,7 +607,7 @@ export function parseResourceSnapshotV1(value: unknown): ProtocolParseResult<Res
   const lastModified = optional(raw, "lastModified", "$", (item, itemPath) => stringValue(item, itemPath, "lastModified")); if (!lastModified.ok) return lastModified;
   const createdField = required(raw, "createdAt", "$"); if (!createdField.ok) return createdField;
   const createdAt = utc(createdField.value, "$.createdAt", "createdAt"); if (!createdAt.ok) return createdAt;
-  return pass({ ...raw, version: 1, id: id.value, resourceId: resourceId.value, resourceRevision: resourceRevision.value, normalizedBlobDigest: normalizedBlobDigest.value, normalizedMediaType: normalizedMediaType.value, normalizedBytes: normalizedBytes.value, sourceSelector: sourceSelector.value, createdAt: createdAt.value, ...(rawBlobDigest.value === undefined ? {} : { rawBlobDigest: rawBlobDigest.value }), ...(pageBoundaries.value === undefined ? {} : { pageBoundaries: pageBoundaries.value }), ...(fetchedAt.value === undefined ? {} : { fetchedAt: fetchedAt.value }), ...(finalUrl.value === undefined ? {} : { finalUrl: finalUrl.value }), ...(etag.value === undefined ? {} : { etag: etag.value }), ...(lastModified.value === undefined ? {} : { lastModified: lastModified.value }) });
+  return pass({ ...raw, version: 1, id: id.value, resourceId: resourceId.value, resourceRevision: resourceRevision.value, normalizedBlobDigest: normalizedBlobDigest.value, normalizedMediaType: normalizedMediaType.value, normalizedBytes: normalizedBytes.value, normalizationReceipt: normalizationReceipt.value, sourceSelector: sourceSelector.value, createdAt: createdAt.value, ...(rawBlobDigest.value === undefined ? {} : { rawBlobDigest: rawBlobDigest.value }), ...(pageBoundaries.value === undefined ? {} : { pageBoundaries: pageBoundaries.value }), ...(fetchedAt.value === undefined ? {} : { fetchedAt: fetchedAt.value }), ...(finalUrl.value === undefined ? {} : { finalUrl: finalUrl.value }), ...(etag.value === undefined ? {} : { etag: etag.value }), ...(lastModified.value === undefined ? {} : { lastModified: lastModified.value }) });
 }
 
 export function parseResourceIngestJobV1(value: unknown): ProtocolParseResult<ResourceIngestJobV1> {
@@ -604,13 +631,16 @@ export function parseResourceIngestJobV1(value: unknown): ProtocolParseResult<Re
   const attempt = integer(attemptField.value, "$.attempt", "attempt"); if (!attempt.ok) return attempt;
   const availableAtField = required(raw, "availableAt", "$"); if (!availableAtField.ok) return availableAtField;
   const availableAt = utc(availableAtField.value, "$.availableAt", "availableAt"); if (!availableAt.ok) return availableAt;
-  const lease = optional(raw, "lease", "$", (item, itemPath) => {
+  const lease = optional<Exclude<ResourceIngestJobV1["lease"], undefined>>(raw, "lease", "$", (item, itemPath) => {
     const leaseObject = object(item, itemPath); if (!leaseObject.ok) return leaseObject;
     const ownerField = required(leaseObject.value, "owner", itemPath); if (!ownerField.ok) return ownerField;
     const owner = identifier(ownerField.value, childPath(itemPath, "owner"), "lease owner"); if (!owner.ok) return owner;
+    const tokenField = required(leaseObject.value, "token", itemPath); if (!tokenField.ok) return tokenField;
+    const token = stringValue(tokenField.value, childPath(itemPath, "token"), "lease token", { nonEmpty: true }); if (!token.ok) return token;
+    if (!/^[a-f0-9]{32}$/.test(token.value)) return fail("invalid_value", childPath(itemPath, "token"), "lease token must be 128-bit lowercase hexadecimal");
     const expiresField = required(leaseObject.value, "expiresAt", itemPath); if (!expiresField.ok) return expiresField;
     const expiresAt = utc(expiresField.value, childPath(itemPath, "expiresAt"), "lease expiresAt"); if (!expiresAt.ok) return expiresAt;
-    return pass({ ...leaseObject.value, owner: owner.value, expiresAt: expiresAt.value });
+    return pass({ ...leaseObject.value, owner: owner.value, token: token.value, expiresAt: expiresAt.value });
   }); if (!lease.ok) return lease;
   if ((status.value === "claimed") !== (lease.value !== undefined)) {
     return fail("semantic_conflict", "$.lease", "lease must be present exactly when status is claimed");

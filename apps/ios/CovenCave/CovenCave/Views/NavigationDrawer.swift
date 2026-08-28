@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Global navigation from the Claude Design handoff. The current surface stays
 /// visible under a dimming scrim while this panel provides the primary
-/// destinations, current project context, and recent conversations.
+/// destinations, contextual resources, and recent conversations.
 struct CaveNavigationDrawer: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
@@ -51,14 +51,20 @@ struct CaveNavigationDrawer: View {
                 VStack(alignment: .leading, spacing: 4) {
                     DrawerNavRow(systemImage: "bubble.left", label: "Chats",
                                  active: app.selectedTab == .chats) { go(.chats) }
+                    DrawerNavRow(systemImage: "checkmark.square", label: "Tasks",
+                                 active: app.selectedTab == .tasks) { go(.tasks) }
+
+                    sectionLabel("Workspace")
+
+                    ProjectContextButton {
+                        close()
+                        openProjectSwitcher()
+                    }
+
                     DrawerNavRow(systemImage: "cat", label: "Familiars") {
                         close()
                         openFamiliars()
                     }
-                    DrawerNavRow(systemImage: "checkmark.square", label: "Tasks",
-                                 active: app.selectedTab == .tasks) { go(.tasks) }
-                    DrawerNavRow(systemImage: "gearshape", label: "Settings",
-                                 active: app.selectedTab == .settings) { go(.settings) }
 
                     if !recentThreads.isEmpty {
                         Button {
@@ -141,32 +147,24 @@ struct CaveNavigationDrawer: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Coven Cave")
-                    .font(.system(size: 26, weight: .semibold, design: .serif))
-                    .foregroundStyle(chrome.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-                Button {
-                    close()
-                    openSearch()
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.glassPress)
-                .accessibilityLabel("Search everything")
-            }
-            .padding(.horizontal, 20)
-
-            ProjectContextButton {
+        HStack {
+            Text("Coven Cave")
+                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .foregroundStyle(chrome.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            Button {
                 close()
-                openProjectSwitcher()
+                openSearch()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
             }
-            .padding(.horizontal, 8)
+            .buttonStyle(.glassPress)
+            .accessibilityLabel("Search everything")
         }
+        .padding(.horizontal, 20)
     }
 
     private var bottomBar: some View {
@@ -175,7 +173,7 @@ struct CaveNavigationDrawer: View {
                 close()
                 newChat()
             } label: {
-                Label("Chat", systemImage: "square.and.pencil")
+                Label("New Chat", systemImage: "square.and.pencil")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(chrome.bgBase)
                     .frame(minHeight: 44)
@@ -190,15 +188,15 @@ struct CaveNavigationDrawer: View {
                 Text(Theme.initials(app.operatorDisplayName))
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(chrome.accentForeground)
-                    .frame(minHeight: 44)
-                    .frame(maxWidth: .infinity)
+                    .frame(width: 44, height: 44)
                     .background(
                         chrome.accentGradient,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        in: Circle()
                     )
             }
             .buttonStyle(.glassPress)
             .accessibilityLabel("Profile and settings")
+            .accessibilityAddTraits(app.selectedTab == .settings ? [.isSelected] : [])
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -206,6 +204,16 @@ struct CaveNavigationDrawer: View {
         .overlay(alignment: .top) {
             Rectangle().fill(chrome.border.opacity(0.6)).frame(height: 1)
         }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 6)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func close() { isOpen = false }

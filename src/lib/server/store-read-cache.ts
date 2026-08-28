@@ -22,21 +22,22 @@
  *
  * The lock exists to keep a read from straddling a migration replacement. A
  * hit here proves the file has not been replaced since the value was read:
- * the stat triple is unchanged, and migration replacements land through
- * `writeJsonAtomic` + `rename`, which always change it. So a hit is not
- * "reading without the lock" — it is not reading at all. Every miss takes the
+ * its inode metadata and content digest are unchanged. Migration replacements
+ * land through `writeJsonAtomic` + `rename`, which changes the inode. A hit
+ * reads bytes once to verify that digest, but it still skips the reconciliation
+ * lock, migration journal reads, and JSON parsing. Every miss takes the
  * unchanged full path, lock included, and every write keeps it.
  *
- * ## Why nanoseconds, and why a TTL on top
+ * ## Why a content digest, and why a TTL on top
  *
- * `conversationSummaryCache` in `cave-conversations.ts` keys on millisecond
- * `mtimeMs`/`ctimeMs`/`size`. That is right for transcripts, which no one
- * rewrites twice in a millisecond. Config and state are rewritten by sweeps on
- * the response path, so this keys on `bigint` stat fields instead — `mtimeNs`
- * and `ctimeNs` are nanosecond-resolution on APFS and ext4 — and still caps
- * entries with a short TTL, for the filesystems that quantize coarser than they
- * report. Both guards are cheap; a wrong answer here is a config change the app
- * silently ignores.
+ * Node exposes nanosecond stat fields, but that does not mean the backing
+ * filesystem advances them every nanosecond. In WSL this test suite observed
+ * same-size rewrites in one host clock tick where every exposed stat identity
+ * field remained equal. No metadata-only key can detect that write. The cache
+ * therefore verifies a SHA-256 digest before serving a hit. This still avoids
+ * the reconciliation lock and JSON parsing that dominate these reads, while
+ * making an external rewrite visible immediately. A short TTL remains as a
+ * final bound on the lifetime of any cache entry.
  *
  * ## One asymmetry worth knowing about
  *
@@ -50,10 +51,11 @@
  *
  * ## Ordering
  *
- * The stat is taken BEFORE the load, deliberately. If the file changes during
- * the load, the value is stored under the older stat, so the next read misses
- * and reloads. Statting after the load would file a fresh-looking key against
- * possibly-older content, which is the one direction that can serve stale data.
+ * The identity is taken BEFORE the load, deliberately. If the file changes
+ * during the load, the value is stored under the older identity, so the next
+ * read misses and reloads. Inspecting after the load would file a fresh-looking
+ * key against possibly-older content, which is the one direction that can
+ * serve stale data.
  *
  * ## Every caller still gets its own object
  *
@@ -64,17 +66,18 @@
  * reader, which is a far worse bug than the one this file exists to fix. So a
  * hit returns a `structuredClone`, preserving the existing contract exactly. A
  * clone is pure CPU on an already-parsed object; the cost this removes is a
- * serialized lock cycle plus four file reads.
+ * serialized lock cycle, repeated journal reads, and JSON parsing.
  */
 
-import { stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { open } from "node:fs/promises";
 
 export type StoreReadCacheMetrics = {
   /** Reads served from cache without touching the reconciliation lock. */
   hits: number;
   /** Reads that fell through to the full locked loader. */
   misses: number;
-  /** Reads whose stat failed (ENOENT and friends); never cached. */
+  /** Reads whose identity probe failed (ENOENT and friends); never cached. */
   statFailures: number;
   /** Entries dropped to stay under a caller's `maxBytes`. */
   evictions: number;
@@ -85,20 +88,60 @@ export type StoreReadCacheMetrics = {
 };
 
 /**
- * Entries older than this are re-read even when the stat triple is unchanged.
- * Short because the only thing it defends against is a filesystem whose
- * timestamp resolution is coarser than the write rate; the stat key does the
- * real work.
+ * Entries older than this are re-read even when their identity is unchanged.
  */
 const DEFAULT_TTL_MS = 1_000;
 
 type Entry = {
+  dev: bigint;
+  ino: bigint;
   mtimeNs: bigint;
   ctimeNs: bigint;
   size: bigint;
+  digest: string;
   readAt: number;
   value: unknown;
 };
+
+type FileIdentity = Pick<Entry, "dev" | "ino" | "mtimeNs" | "ctimeNs" | "size" | "digest">;
+
+type StoreReadCacheOptions = {
+  ttlMs?: number;
+  now?: () => number;
+  maxBytes?: number;
+  /** Test seam for deterministic metadata-collision coverage. */
+  inspectFile?: (filePath: string) => Promise<FileIdentity>;
+};
+
+async function inspectStoreFile(filePath: string): Promise<FileIdentity> {
+  // Read through one descriptor so the metadata and bytes identify the same
+  // inode even when an atomic replacement races this probe. WSL filesystems
+  // can report identical timestamp nanoseconds for two writes in one host
+  // clock tick; the digest is the only truthful discriminator in that case.
+  const handle = await open(/* turbopackIgnore: true */ filePath, "r");
+  try {
+    const stats = await handle.stat({ bigint: true });
+    const hash = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+      if (bytesRead === 0) break;
+      hash.update(chunk.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return {
+      dev: stats.dev,
+      ino: stats.ino,
+      mtimeNs: stats.mtimeNs,
+      ctimeNs: stats.ctimeNs,
+      size: stats.size,
+      digest: hash.digest("base64url"),
+    };
+  } finally {
+    await handle.close();
+  }
+}
 
 /**
  * Unbounded by default, which is right for the handful of fixed `~/.coven`
@@ -162,7 +205,7 @@ export function resetStoreReadCacheMetrics(): void {
 /**
  * Drop one store's cached value. Call from every write path that replaces the
  * file, so a same-process mutation is visible on the next read instead of
- * waiting for the stat to be observed.
+ * waiting for the file identity to be observed.
  */
 export function invalidateCachedStore(filePath: string): void {
   dropEntry(filePath);
@@ -182,13 +225,13 @@ export function clearCaveStoreReadCache(): void {
 export async function readCachedStore<T>(
   filePath: string,
   load: () => Promise<T>,
-  options: { ttlMs?: number; now?: () => number; maxBytes?: number } = {},
+  options: StoreReadCacheOptions = {},
 ): Promise<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const now = options.now ?? Date.now;
   const maxBytes = options.maxBytes;
 
-  let stats: { mtimeNs: bigint; ctimeNs: bigint; size: bigint } | null = null;
+  let identity: FileIdentity;
   try {
     // `turbopackIgnore` because this path is a runtime value, and Turbopack
     // otherwise treats a dynamic filesystem access as a reason to trace the
@@ -198,11 +241,10 @@ export async function readCachedStore<T>(
     // store would inherit whole-project tracing — and in this checkout
     // `.worktrees` alone matches ~237k files. Same convention as
     // `server/agent-attachments.ts` and `server/assist-runner.ts`.
-    const raw = await stat(/* turbopackIgnore: true */ filePath, { bigint: true });
-    stats = { mtimeNs: raw.mtimeNs, ctimeNs: raw.ctimeNs, size: raw.size };
+    identity = await (options.inspectFile ?? inspectStoreFile)(filePath);
   } catch {
     // ENOENT is the ordinary cold-start shape: the loader returns defaults.
-    // A store with no file has no stat to key on, so it is never cached — the
+    // A store with no file has no identity to key on, so it is never cached — the
     // moment it appears, the very next read must see it.
     statFailures += 1;
     dropEntry(filePath);
@@ -212,9 +254,12 @@ export async function readCachedStore<T>(
   const cached = entries.get(filePath);
   if (
     cached &&
-    cached.mtimeNs === stats.mtimeNs &&
-    cached.ctimeNs === stats.ctimeNs &&
-    cached.size === stats.size &&
+    cached.dev === identity.dev &&
+    cached.ino === identity.ino &&
+    cached.mtimeNs === identity.mtimeNs &&
+    cached.ctimeNs === identity.ctimeNs &&
+    cached.size === identity.size &&
+    cached.digest === identity.digest &&
     now() - cached.readAt <= ttlMs
   ) {
     const copy = cloneStoreValue(cached.value);
@@ -246,8 +291,8 @@ export async function readCachedStore<T>(
     // rather than staying at its original insertion position, and so its old
     // size leaves the byte account before the new one joins.
     dropEntry(filePath);
-    entries.set(filePath, { ...stats, readAt: now(), value: stored.value });
-    cachedBytes += Number(stats.size);
+    entries.set(filePath, { ...identity, readAt: now(), value: stored.value });
+    cachedBytes += Number(identity.size);
     if (maxBytes !== undefined) evictToBytes(maxBytes);
   }
   return value;

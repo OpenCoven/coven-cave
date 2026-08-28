@@ -117,6 +117,7 @@ function snapshot() {
     normalizedBlobDigest: DIGEST_A,
     normalizedMediaType: "text/plain; charset=utf-8",
     normalizedBytes: 20,
+    normalizationReceipt: { extractorId: "pdf-text", extractorVersion: "1.4.0" },
     sourceSelector: { type: "pdf-page-span", page: 1, start: 0, end: 10, futureSelectorField: true },
     pageBoundaries: [
       { page: 1, start: 0, end: 10, extractorReceipt: "v1" },
@@ -132,8 +133,16 @@ function snapshot() {
 }
 
 test("snapshot delegates exact selectors to A0 and validates deterministic page boundaries", () => {
-  const parsed = expectOk(parseResourceSnapshotV1(snapshot()));
+  const input = structuredClone(snapshot());
+  const parsed = expectOk(parseResourceSnapshotV1(input));
   assert.equal(parsed.sourceSelector.type, "pdf-page-span");
+  assert.deepEqual(parsed.normalizationReceipt, {
+    extractorId: "pdf-text",
+    extractorVersion: "1.4.0",
+  });
+  (input.normalizationReceipt as { extractorVersion: string }).extractorVersion =
+    "changed-after-parse";
+  assert.equal(parsed.normalizationReceipt.extractorVersion, "1.4.0");
   assert.equal(parsed.sourceSelector.futureSelectorField, true);
   assert.equal(parsed.pageBoundaries?.[0]?.extractorReceipt, "v1");
   assert.equal(parsed.futureSnapshotField, "kept");
@@ -174,6 +183,50 @@ test("snapshot delegates exact selectors to A0 and validates deterministic page 
     "$.sourceSelector.end",
     "semantic_conflict",
   );
+  const { normalizationReceipt: _receipt, ...withoutReceipt } = snapshot();
+  expectError(
+    parseResourceSnapshotV1(withoutReceipt),
+    "$.normalizationReceipt",
+    "missing_field",
+  );
+  expectError(
+    parseResourceSnapshotV1({
+      ...snapshot(),
+      normalizationReceipt: { extractorId: " pdf-text", extractorVersion: "1.4.0" },
+    }),
+    "$.normalizationReceipt.extractorId",
+    "invalid_value",
+  );
+  for (const [field, value] of [
+    ["extractorId", ""],
+    ["extractorId", "pdf-text "],
+    ["extractorVersion", ""],
+    ["extractorVersion", " 1.4.0"],
+  ] as const) {
+    expectError(
+      parseResourceSnapshotV1({
+        ...snapshot(),
+        normalizationReceipt: {
+          extractorId: field === "extractorId" ? value : "pdf-text",
+          extractorVersion: field === "extractorVersion" ? value : "1.4.0",
+        },
+      }),
+      `$.normalizationReceipt.${field}`,
+      "invalid_value",
+    );
+  }
+  expectError(
+    parseResourceSnapshotV1({
+      ...snapshot(),
+      normalizationReceipt: {
+        extractorId: "pdf-text",
+        extractorVersion: "1.4.0",
+        localBinaryPath: "/tmp/extractor",
+      },
+    }),
+    "$.normalizationReceipt.localBinaryPath",
+    "invalid_value",
+  );
 });
 
 function ingestJob() {
@@ -187,7 +240,12 @@ function ingestJob() {
     stage: "extract",
     attempt: 1,
     availableAt: CREATED_AT,
-    lease: { owner: "worker_1", expiresAt: "2026-08-26T12:05:00Z", futureLeaseField: true },
+    lease: {
+      owner: "worker_1",
+      token: "0123456789abcdef0123456789abcdef",
+      expiresAt: "2026-08-26T12:05:00Z",
+      futureLeaseField: true,
+    },
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     futureJobField: true,
@@ -202,6 +260,17 @@ test("ingest jobs preserve operational intent and enforce lease truth", () => {
   const { lease: _lease, ...withoutLease } = ingestJob();
   expectError(parseResourceIngestJobV1(withoutLease), "$.lease", "semantic_conflict");
   expectError(parseResourceIngestJobV1({ ...ingestJob(), status: "queued" }), "$.lease", "semantic_conflict");
+  expectError(
+    parseResourceIngestJobV1({ ...ingestJob(), lease: { ...ingestJob().lease, token: "short" } }),
+    "$.lease.token",
+    "invalid_value",
+  );
+  const { token: _token, ...leaseWithoutToken } = ingestJob().lease;
+  expectError(
+    parseResourceIngestJobV1({ ...ingestJob(), lease: leaseWithoutToken }),
+    "$.lease.token",
+    "missing_field",
+  );
   expectError(parseResourceIngestJobV1({ ...ingestJob(), deletionRevision: -1 }), "$.deletionRevision", "invalid_value");
 });
 

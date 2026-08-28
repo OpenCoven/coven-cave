@@ -56,6 +56,42 @@ describe("Code Desk action popovers stay portalled (cave-cadp4)", () => {
     }
   });
 
+  it("never lets a Popover child position ITSELF (cave-7dktt)", () => {
+    // The clipping fix alone was not enough, and this guard is the reason to
+    // say so. GitHubActionPopover renders its root `absolute right-0 top-full`,
+    // which is out of flow — so the Popover wrapper measured ZERO height, its
+    // auto-flip saw room below that did not exist, and the dialog ran off the
+    // bottom of the viewport (measured: dialog bottom 1004 in a 900px view).
+    //
+    // A panel that is unclipped but off-screen is no better than a clipped one,
+    // and the assertions above all passed while that was true — they check
+    // clipping, which stayed fixed. So check placement ownership too.
+    const actionPopover = readFileSync(
+      path.join(root, "src/components/github-action-popover.tsx"),
+      "utf8",
+    );
+    assert.match(
+      actionPopover,
+      /positioned\s*=\s*true/,
+      "GitHubActionPopover takes a `positioned` prop, defaulting to its standalone behaviour",
+    );
+    assert.match(
+      actionPopover,
+      /positioned \? "absolute right-0 top-full/,
+      "and drops its own absolute placement when it is false",
+    );
+    // Every use inside a Popover must hand placement over.
+    const uses = view.split("<GitHubActionPopover").slice(1);
+    assert.equal(uses.length, 2, "two GitHubActionPopover call sites");
+    for (const use of uses) {
+      assert.match(
+        use.slice(0, 200),
+        /positioned=\{false\}/,
+        "a GitHubActionPopover inside a Popover must not position itself",
+      );
+    }
+  });
+
   it("leaves dismissal to the Popover rather than re-adding document listeners", () => {
     // Two hand-rolled outside-click/Escape effects were removed with the
     // migration; Popover owns dismissal for all four panels now.
