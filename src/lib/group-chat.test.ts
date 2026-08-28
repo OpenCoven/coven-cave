@@ -16,6 +16,7 @@ import {
   moveGroupParticipant,
   setGroupResponseMode,
   setGroupDetails,
+  setGroupTopicGoal,
   orderRoundRobinFamiliarIds,
   parseMentions,
   extractCovenDelegations,
@@ -23,6 +24,7 @@ import {
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   renderCovenRoster,
+  renderCovenBrief,
   renderCovenRoundtablePrompt,
   renderCovenRoundRobinPrompt,
   renderCovenContext,
@@ -369,6 +371,90 @@ test("group details round-trip through save/load; legacy groups without them sti
     if (previous) Object.defineProperty(globalThis, "localStorage", previous);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
   }
+});
+
+// --- shared brief (topic / goal) -------------------------------------------
+
+test("setGroupTopicGoal: sets topic/goal and bumps updatedAt; no-op returns the same object", () => {
+  const g = makeGroup("X", ["a"], "2026-06-24T00:00:00.000Z", "g1");
+  const withTopic = setGroupTopicGoal(g, { topic: "Q3 roadmap" }, "2026-06-24T01:00:00.000Z");
+  assert.equal(withTopic.topic, "Q3 roadmap");
+  assert.equal(withTopic.goal, undefined);
+  assert.equal(withTopic.updatedAt, "2026-06-24T01:00:00.000Z");
+  const withBoth = setGroupTopicGoal(withTopic, { goal: "Ship two features" }, "2026-06-24T02:00:00.000Z");
+  assert.equal(withBoth.topic, "Q3 roadmap");
+  assert.equal(withBoth.goal, "Ship two features");
+  // A no-change commit (blur without edits) returns the identical object so
+  // callers can skip the persist/reorder entirely.
+  assert.equal(setGroupTopicGoal(withBoth, { topic: "Q3 roadmap" }, "2026-06-24T03:00:00.000Z"), withBoth);
+  assert.equal(setGroupTopicGoal(withBoth, {}, "2026-06-24T03:00:00.000Z"), withBoth);
+});
+
+test("topic/goal round-trip through save/load; legacy groups without them still load", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    },
+  });
+  try {
+    const briefed = setGroupTopicGoal(
+      makeGroup("Echo & Sage", ["echo", "sage"], "2026-06-24T00:00:00.000Z", "g1"),
+      { topic: "Q3 roadmap", goal: "Pick the two features to ship" },
+      "2026-06-24T01:00:00.000Z",
+    );
+    const legacy = {
+      // A pre-brief stored group (no topic/goal keys at all).
+      id: "legacy",
+      name: "Legacy coven",
+      familiarIds: ["a"],
+      sessions: {},
+      createdAt: "t1",
+      updatedAt: "t2",
+    };
+    const garbage = {
+      // Non-string topic/goal garbage must be dropped, not crash the header.
+      id: "garbage",
+      name: "Odd coven",
+      familiarIds: ["a"],
+      sessions: {},
+      topic: 42,
+      goal: { nested: true },
+      createdAt: "t1",
+      updatedAt: "t1",
+    };
+    saveGroups([briefed, legacy as never, garbage as never]);
+    const loaded = loadGroups();
+    const byId = new Map(loaded.map((g) => [g.id, g]));
+    assert.equal(byId.get("g1")?.topic, "Q3 roadmap");
+    assert.equal(byId.get("g1")?.goal, "Pick the two features to ship");
+    assert.equal(byId.get("legacy")?.topic, undefined);
+    assert.equal(byId.get("legacy")?.goal, undefined);
+    assert.equal(byId.get("garbage")?.topic, undefined);
+    assert.equal(byId.get("garbage")?.goal, undefined);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});
+
+test("renderCovenBrief: empty without topic or goal", () => {
+  assert.equal(renderCovenBrief(undefined, undefined), "");
+  assert.equal(renderCovenBrief("  ", ""), "");
+});
+
+test("renderCovenBrief: lists topic and goal inside a coven_brief block", () => {
+  const out = renderCovenBrief("Q3 roadmap", "Ship two features");
+  assert.match(out, /<coven_brief>[\s\S]*<\/coven_brief>/);
+  assert.match(out, /Topic: Q3 roadmap/);
+  assert.match(out, /Goal: Ship two features/);
+  assert.match(out, /keep your reply relevant/i);
+  // A single field omits the other rather than rendering a dangling label.
+  assert.match(renderCovenBrief("Q3 roadmap"), /Topic: Q3 roadmap/);
+  assert.doesNotMatch(renderCovenBrief("Q3 roadmap"), /Goal:/);
 });
 
 // --- @mentions -------------------------------------------------------------
@@ -832,6 +918,45 @@ test("renderCovenRoundRobinPrompt: later recipients see settled peers and stay t
   assert.doesNotMatch(out, /Charm said:/);
   assert.doesNotMatch(out, /independent first-pass/);
   assert.match(out, /<coven:delegation target="familiar-id">/);
+});
+
+test("renderCovenRoundtablePrompt: relays the shared brief to every participant", () => {
+  const out = renderCovenRoundtablePrompt({
+    participants: COVEN,
+    receivingFamiliarId: "nova",
+    userText: "What should we do?",
+    targeted: false,
+    topic: "Q3 roadmap",
+    goal: "Ship two features",
+  });
+  assert.match(out, /<coven_brief>/);
+  assert.match(out, /Topic: Q3 roadmap/);
+  assert.match(out, /Goal: Ship two features/);
+  assert.match(out, /What should we do\?$/);
+  // Without a brief the roundtable prompt stays byte-identical (no empty block).
+  const bare = renderCovenRoundtablePrompt({
+    participants: COVEN,
+    receivingFamiliarId: "nova",
+    userText: "What should we do?",
+    targeted: false,
+  });
+  assert.doesNotMatch(bare, /<coven_brief>/);
+});
+
+test("renderCovenRoundRobinPrompt: relays the shared brief to later recipients", () => {
+  const out = renderCovenRoundRobinPrompt({
+    participants: COVEN,
+    receivingFamiliarId: "charm",
+    userText: "What should we do?",
+    targeted: false,
+    familiarNames: NAMES,
+    transcript: [],
+    topic: "Q3 roadmap",
+    goal: "Ship two features",
+  });
+  assert.match(out, /<coven_brief>/);
+  assert.match(out, /Topic: Q3 roadmap/);
+  assert.match(out, /Goal: Ship two features/);
 });
 
 function deferred<T>() {
