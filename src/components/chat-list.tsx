@@ -34,11 +34,16 @@ import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime
 import {
   createChatProjectIndex,
   filterVisibleChatSessions,
+  type ChatProjectGroup,
 } from "@/lib/chat-projects";
 import {
   deriveChatListProjectGroups,
   withoutArchivedChatSessions,
 } from "@/lib/chat-list-grouping";
+import {
+  NO_PROJECT_ORGANIZATION,
+  chatProjectOrganizationGroups,
+} from "@/lib/project-organizations";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import {
@@ -485,21 +490,43 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
         projectRoot: null,
         runtimeHost: null,
         projectName: null,
+        organization: NO_PROJECT_ORGANIZATION,
+        projectColor: null,
         sessions: rows,
         defaultFamiliarId: latest?.familiarId ?? scopedFamiliarId,
         updatedAt: latest ? (latest.updated_at || latest.created_at) : null,
       }];
     }
-    if (sessionOrder.length === 0) return sortPinnedFirst(scopedGroups, pinnedIds);
-    let changed = false;
-    const next = scopedGroups.map((group) => {
-      const ordered = applyManualOrder(group.sessions, sessionOrder);
-      if (ordered === group.sessions) return group;
-      changed = true;
-      return { ...group, sessions: ordered };
-    });
-    return changed ? next : scopedGroups;
+    let ordered: ChatProjectGroup[] = sessionOrder.length === 0
+      ? sortPinnedFirst(scopedGroups, pinnedIds)
+      : scopedGroups;
+    if (sessionOrder.length > 0) {
+      let changed = false;
+      const next = scopedGroups.map((group) => {
+        const manuallyOrdered = applyManualOrder(group.sessions, sessionOrder);
+        if (manuallyOrdered === group.sessions) return group;
+        changed = true;
+        return { ...group, sessions: manuallyOrdered };
+      });
+      ordered = changed ? next : scopedGroups;
+    }
+    // "Group by project" nests the project folders under their derived
+    // organization (cave-1vpy): org-major order with the "(no project)"
+    // bucket last. The flat "none"/"date" views keep their own headers.
+    if (groupBy === "project") {
+      ordered = chatProjectOrganizationGroups(ordered).flatMap((orgGroup) => orgGroup.items);
+    }
+    return ordered;
   }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, sessionSort, pinnedIds, scopedFamiliarId]);
+  // Project count per organization for the "Group by project" org headers.
+  const organizationProjectCounts = useMemo(() => {
+    if (groupBy !== "project") return null;
+    const counts = new Map<string, number>();
+    for (const group of displayGroups) {
+      counts.set(group.organization.key, (counts.get(group.organization.key) ?? 0) + 1);
+    }
+    return counts;
+  }, [groupBy, displayGroups]);
   // Calendar-day sections for the "Group by date" mode: header metadata keyed
   // by the first row index of each local day (Today / Yesterday / formatted).
   const daySectionsByIndex = useMemo(() => {
@@ -1297,7 +1324,14 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
           >
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {displayGroups.map(({ projectRoot, runtimeHost, projectName, sessions: rows }) => {
+            {displayGroups.map(({ projectRoot, runtimeHost, projectName, sessions: rows, organization }, groupIndex) => {
+              // Organization disclosure header — the second grouping level above
+              // project folders in "Group by project" mode (cave-1vpy). The
+              // list is org-major there, so the header renders once per org
+              // (and the "(no project)" bucket stays last, see the org sort).
+              const showOrganizationHeader =
+                groupBy === "project"
+                && (groupIndex === 0 || organization.key !== displayGroups[groupIndex - 1].organization.key);
               // Flat "All sessions" view (the phone surface): split the list into a
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
@@ -1308,7 +1342,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
               const firstPinnedIdx = pinnedFlags.indexOf(true);
               const firstRestIdx = pinnedFlags.indexOf(false);
               return (
-              <li key={selectionKey(null, projectRoot, runtimeHost)}>
+              <Fragment key={selectionKey(null, projectRoot, runtimeHost)}>
+                {showOrganizationHeader ? (
+                  <li className="chat-list-org-header" aria-label={organization.label}>
+                    <span className="truncate text-[length:var(--text-2xs)] font-bold uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                      {organization.label}
+                    </span>
+                    <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                      {organizationProjectCounts?.get(organization.key) ?? 0}
+                    </span>
+                    <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />
+                  </li>
+                ) : null}
+              <li>
                 {/* Project group header — uppercase label + count + fading rule
                     (rendered for every group in the "Group by project" mode,
                     including the no-project bucket). */}
@@ -1809,6 +1855,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                   })}
                 </ul>
               </li>
+              </Fragment>
               );
             })}
           </ul>
