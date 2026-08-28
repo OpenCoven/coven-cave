@@ -18,10 +18,33 @@ assert.match(
 assert.match(card, /familiar\.display_name/, "Card shows display name");
 assert.match(card, /familiar\.role \|\| familiar\.harness \|\| familiar\.id/, "Card shows role / harness / id fallback chain");
 
+// Growth health replaces the duplicated online/offline presence dot: the
+// roster card now shows healthLabel with the status-dot + word pattern
+// (design language §3 — color is never the only channel) (cave-mo4q).
 assert.match(
   card,
-  /daemonRunning \? "online" : "offline"/,
-  "Status row shows online/offline tied to daemonRunning",
+  /healthLabel,/, 
+  "Card accepts the growth healthLabel (destructured prop)",
+);
+assert.match(
+  source,
+  /healthLabel: "active" \| "steady" \| "quiet" \| "stalled"/,
+  "The card prop type names the four growth health states",
+);
+assert.match(
+  card,
+  /familiars-view__health-dot familiars-view__health-dot--\$\{healthLabel\}/,
+  "Card renders the growth-health dot",
+);
+assert.match(
+  card,
+  /\{healthLabel\}/,
+  "Card shows the health word beside the dot",
+);
+assert.doesNotMatch(
+  card,
+  /daemonRunning|"online" \? "offline"/,
+  "The duplicated online/offline presence dot is gone",
 );
 
 assert.match(
