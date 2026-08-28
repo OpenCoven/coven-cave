@@ -1590,6 +1590,9 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/origin-server-mint.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
+  // Imports the send route (which resolves Next's extensionless next/server
+  // entry) and the generation route (which resolves "@/lib/chat-origins").
+  "src/app/api/chat/send/origin-server-mint.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
     "src/app/api/chat/send/openclaw-gateway-outcome.test.ts",
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
