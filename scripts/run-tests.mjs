@@ -846,6 +846,7 @@ export const SUITES = {
     "src/lib/feature-flags.test.ts",
     "src/lib/research-resource-contracts.test.ts",
     "src/lib/research-context-pack.test.ts",
+    "src/lib/research-topic-discovery.test.ts",
     "src/lib/server/research-context-pack-store.test.ts",
     "src/lib/server/research-context-resource-adapters.test.ts",
     "src/lib/server/research-context-pack-builder.test.ts",
