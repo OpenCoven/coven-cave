@@ -80,6 +80,23 @@ export function publishedPublications(
     .sort((a, b) => (b.publishedAt ?? b.updatedAt).localeCompare(a.publishedAt ?? a.updatedAt));
 }
 
+/**
+ * Drafts that never went out, newest first, for the room's stranded-draft
+ * list. A draft is a record the composer itself made — "Review this wording"
+ * mints one on every confirmation — so a person who walked away without
+ * publishing has no way to know it is there from the published list, and
+ * nothing in the room can retire it. This is the list that makes both
+ * possible; `resolve` with outcome "abandoned" does the retiring and takes
+ * no network.
+ */
+export function draftPublications(
+  publications: readonly XPublicationRecord[],
+): XPublicationRecord[] {
+  return publications
+    .filter((publication) => publication.status === "draft")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 /** The confirmation the server minted, bound to the exact text it was for. */
 export type XComposerConfirmation = {
   publicationId: string;
