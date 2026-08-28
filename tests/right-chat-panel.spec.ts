@@ -210,48 +210,104 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
   // The drawer intentionally spans the full viewport width on narrow phones
   // (`.mobile-right-chat-drawer` under `@media (max-width: 480px)`), so on
   // Pixel 5 (393px) and iPhone 13 (390px) it covers the backdrop button at
-  // EVERY coordinate once its slide-in has settled — its own header is what
-  // sits at the top-left pixel.
+  // EVERY coordinate once its slide-in has settled. That made the backdrop a
+  // control no input modality could reach — invisible under the opaque
+  // drawer, un-hittable by pointer, and skipped by the focus trap's
+  // last→first wrap (cave-4snk9). Since then the backdrop is hidden for this
+  // slot and the drawer's own top close strip owns dismissal.
   //
-  // `force: true` does not rescue that, and believing it did is what kept
-  // this line flaky across three CI runs (cave-m1mgi). `force` only skips
-  // the actionability checks; Playwright still delivers a real mouse event
-  // at real viewport coordinates, so the click lands on whatever is topmost
-  // there, not on the located element. Whether that was the backdrop or the
-  // drawer depended on how far `mobile-right-chat-in` (translateX(100%) → 0
-  // over `--duration-base`, 180ms) had advanced at the instant the event was
-  // delivered: a fast round trip caught the drawer still off-screen and
-  // passed, a slow one hit the settled drawer and failed, which is why CI
-  // lost both the first attempt and the in-process retry but passed on a
-  // fresh job. Measured on this viewport with CDP CPU throttling, which is
-  // what a loaded runner looks like: 0/10 failures unthrottled, 7/10 at 2×,
-  // 10/10 at 4× and at 8×. The dispatch below was 0/40 across all four.
-  //
-  // So invoke the backdrop button's own click instead of aiming a pointer at
-  // a pixel this layout never exposes. The assertion below is unchanged —
-  // this is still "the backdrop's close handler dismisses the drawer" — it
-  // just no longer races an animation to ask the question.
+  // The strip is a GENUINE pointer target: `elementFromPoint` at its centre
+  // resolves to it, and a REAL click — no `force`, no `dispatchEvent` —
+  // closes the drawer. `force` would not be a valid escape hatch here
+  // anyway: it only skips Playwright's actionability checks while still
+  // delivering the mouse event at real viewport coordinates, so the click
+  // would land on whatever is actually topmost, not on the located element
+  // (the cave-m1mgi flake was exactly that race with the slide-in).
   await toggle.click();
   await expect(drawer).toBeVisible();
-  const backdrop = page.getByRole("button", { name: "Close drawer" });
+  const closeStrip = drawer.getByRole("button", { name: "Close drawer" });
+  await expect(page.locator(".mobile-drawer-backdrop")).toBeHidden();
+  await expect(closeStrip).toBeVisible();
+  const stripBox = await closeStrip.boundingBox();
+  if (!stripBox) throw new Error("Close strip did not render");
   await expect
-    .poll(
-      () =>
-        page.evaluate(
-          () => !!document.elementFromPoint(2, 2)?.closest("#shell-right-chat-drawer"),
-        ),
-      {
-        message:
-          "the full-width drawer should cover the backdrop at the top-left pixel; if it no longer does, a real pointer click on the backdrop is available again and should replace the dispatch below",
-      },
+    .poll(() =>
+      page.evaluate(
+        ([x, y]) =>
+          !!document.elementFromPoint(x, y)?.closest(".mobile-right-chat-drawer__close"),
+        [Math.round(stripBox.x + stripBox.width / 2), Math.round(stripBox.y + stripBox.height / 2)],
+      ),
     )
     .toBe(true);
-  await backdrop.dispatchEvent("click");
+  await closeStrip.click();
   await expect(drawer).toBeHidden();
-  await expect(backdrop).toHaveCount(0);
+  await expect(page.locator(".mobile-right-chat-drawer__close")).toBeHidden();
   await expect(toggle).toBeFocused();
 
   await toggle.click();
   await drawer.getByRole("button", { name: "Close Chat panel" }).click();
   await expect(drawer).toBeHidden();
+});
+
+test("full-bleed right drawer's close control is reachable by keyboard", async ({ page }, testInfo) => {
+  test.skip(!["pixel-5", "iphone-13"].includes(testInfo.project.name));
+  await boot(page);
+
+  const toggle = page.getByRole("button", { name: "Open Chat panel" });
+  await toggle.click();
+
+  const drawer = page.getByRole("dialog", { name: "Chat panel" });
+  await expect(drawer).toBeVisible();
+
+  // The close strip is the dialog's FIRST focusable, so the trap usually
+  // puts keyboard focus on it the moment the drawer opens. Don't depend on
+  // that landing: Tab through the trapped dialog — the trap wraps last→first,
+  // so a bounded loop visits every focusable, the close strip included — and
+  // prove we reached a real "Close drawer" control, not the phantom backdrop
+  // (which is display:none at this width and cannot be tabbed to at all).
+  for (let i = 0; i < 25; i += 1) {
+    const label = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    if (label === "Close drawer") break;
+    await page.keyboard.press("Tab");
+  }
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
+    .toBe("Close drawer");
+
+  // Activate the focused close control with the keyboard; focus returns to
+  // the toggle that opened the drawer.
+  await page.keyboard.press("Enter");
+  await expect(drawer).toBeHidden();
+  await expect(toggle).toBeFocused();
+});
+
+test("tablet-width right drawer keeps a genuinely pointer-reachable backdrop", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "tablet");
+  await boot(page);
+
+  const toggle = page.getByRole("button", { name: "Open Chat panel" });
+  await toggle.click();
+
+  const drawer = page.getByRole("dialog", { name: "Chat panel" });
+  await expect(drawer).toBeVisible();
+
+  // At 768px the drawer is capped at min(100vw, 480px), so the backdrop is
+  // exposed along the viewport's left edge — a real pointer target that no
+  // phone project can exercise (pixel-5/iphone-13 are both full-bleed;
+  // cave-4snk9). The full-bleed close strip stays hidden here.
+  const backdrop = page.locator(".mobile-drawer-backdrop");
+  await expect(backdrop).toBeVisible();
+  await expect(page.locator(".mobile-right-chat-drawer__close")).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() => !!document.elementFromPoint(2, 2)?.closest(".mobile-drawer-backdrop")),
+    )
+    .toBe(true);
+
+  // A genuine pointer delivery: click at the exposed (2,2) corner — Playwright
+  // hit-tests the real mouse event there — and the drawer closes.
+  await backdrop.click({ position: { x: 2, y: 2 } });
+  await expect(drawer).toBeHidden();
+  await expect(backdrop).toHaveCount(0);
+  await expect(toggle).toBeFocused();
 });

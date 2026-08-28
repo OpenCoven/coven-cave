@@ -117,6 +117,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
 - [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
+- [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
 ---
 

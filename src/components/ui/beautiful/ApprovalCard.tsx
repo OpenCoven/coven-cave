@@ -7,9 +7,18 @@ import { useState } from "react";
  * One question at a time; elongated pills show progress;
  * the circular arrow up top advances (↑ sends on the last).
  * Choices, paging, and submission are directly controlled.
+ *
+ * Variants select the question set to render inline:
+ *   Questions  the human-in-the-loop question queue (default)
  * ───────────────────────────────────────────────────────── */
 
-const QUESTIONS = [
+export type ApprovalQuestion = {
+  q: string;
+  type: "radio" | "check";
+  options: string[];
+};
+
+const QUESTIONS: ApprovalQuestion[] = [
   {
     q: "How many flavors should we launch?",
     type: "radio" as const,
@@ -27,14 +36,19 @@ const QUESTIONS = [
   },
 ];
 
-export function ApprovalCard() {
+const VARIANTS: Record<string, ApprovalQuestion[]> = {
+  Questions: QUESTIONS,
+};
+
+export function ApprovalCard({ variant = "Questions" }: { variant?: string }) {
+  const questions = VARIANTS[variant] ?? VARIANTS.Questions;
   const [qi, setQi] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
   const [open, setOpen] = useState(true);
-  const question = QUESTIONS[qi];
-  const last = qi === QUESTIONS.length - 1;
+  const question = questions[qi];
+  const last = qi === questions.length - 1;
   const selected = answers[qi] ?? [];
   const hasAnswer = selected.length > 0 || Boolean(custom[qi]?.trim());
 
@@ -52,8 +66,8 @@ export function ApprovalCard() {
       setCustom((current) => ({ ...current, [qi]: "" }));
       // single-choice auto-advances
       window.setTimeout(() => {
-        if (qi === QUESTIONS.length - 1) setSent(true);
-        else setQi((current) => Math.min(QUESTIONS.length - 1, current + 1));
+        if (qi === questions.length - 1) setSent(true);
+        else setQi((current) => Math.min(questions.length - 1, current + 1));
       }, 480);
     }
   };
@@ -165,7 +179,7 @@ export function ApprovalCard() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
             </button>
             <span className="flex items-center gap-1">
-              {QUESTIONS.map((_, i) => (
+              {questions.map((_, i) => (
                 <button
                   key={i}
                   type="button"
@@ -188,7 +202,7 @@ export function ApprovalCard() {
               type="button"
               aria-label="Next"
               disabled={last || sent}
-              onClick={() => setQi((current) => Math.min(QUESTIONS.length - 1, current + 1))}
+              onClick={() => setQi((current) => Math.min(questions.length - 1, current + 1))}
               className="flex size-6 items-center justify-center rounded-[5px] text-bui-ink-3 transition-colors duration-100 enabled:hover:bg-bui-hover enabled:hover:text-bui-ink-2 disabled:opacity-35"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
