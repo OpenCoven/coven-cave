@@ -4096,6 +4096,16 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             );
             if (ended) push({ kind: "tool_use", ...ended });
           },
+          onUsage: (ev) => {
+            // Terminal step_finish token counters (input/output/cache) plus
+            // cost, normalized by the shared defensive validators at the
+            // Cave boundary. A client that omits either leaves it un-emitted.
+            result = {
+              ...result,
+              usage: parseStreamJsonUsage(ev.usage),
+              costUsd: parseCostUsd(ev.totalCostUsd),
+            };
+          },
           onError: (ev) => {
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
@@ -4220,6 +4230,12 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             // stripped every payload from this event.
             result = { ...result, is_error: true };
             recordStdoutErrorTail("Codex reported a failure event", true);
+            return;
+          }
+          case "usage": {
+            // turn.completed token counters (input/output/cache). Codex reports
+            // no cost, so costUsd stays absent and the meter shows null for it.
+            result = { ...result, usage: parseStreamJsonUsage(event.usage) };
             return;
           }
           case "unknown": {
