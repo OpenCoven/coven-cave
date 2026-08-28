@@ -1383,10 +1383,67 @@
   to { transform: translateX(0); }
 }
 
+/* Full-bleed close strip (cave-4snk9): the drawer's own top dismiss bar,
+   rendered by <MobileDrawer/> as the dialog's FIRST child so the focus trap
+   reaches it. At ≤480px the drawer is width:100vw and covers the backdrop
+   button at every pixel, so the backdrop is a control no input modality can
+   operate — the strip replaces it as the close affordance for that case
+   (pointer AND keyboard: it is the first focusable inside the trapped
+   dialog). A child of the drawer (not a portal sibling like the backdrop),
+   so it rides the slide-in animation with the panel and needs no z-index
+   fight: it paints above the drawer's own content via position + z-index
+   within the drawer's stacking context. display:none at wider widths, where
+   the real backdrop (exposed beside the capped drawer) owns dismissal. */
+.mobile-right-chat-drawer__close {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: none;
+  height: var(--touch-target);
+  border: none;
+  border-bottom: 1px solid var(--border-hairline);
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  background: var(--bg-panel);
+  touch-action: manipulation;
+}
+/* A quiet grabber pill signals "pull/tap here to dismiss" without
+   competing with the drawer's own chrome. */
+.mobile-right-chat-drawer__close::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-muted);
+}
+
 @media (max-width: 480px) {
   .mobile-right-chat-drawer {
     width: 100vw;
     border-left: 0;
+    /* The close strip overlays the drawer's top var(--touch-target) band;
+       push the panel content below it so nothing interactive is covered. */
+    padding-top: calc(var(--sai-top) + var(--touch-target));
+  }
+  .mobile-right-chat-drawer__close {
+    display: block;
+  }
+  /* Full-bleed drawer: the backdrop is simultaneously invisible (the
+     opaque drawer covers it) and un-hittable, and the focus trap wraps
+     inside the drawer so Tab can never reach it either. Hiding it here
+     stops offering a control no input modality can operate — dismissal is
+     the strip's job at this width (cave-4snk9). Kept for nav/list and for
+     right-chat at wider mobile widths, where it is a real target. */
+  .mobile-drawer-backdrop[data-drawer-slot="right-chat"] {
+    display: none;
   }
 }
 

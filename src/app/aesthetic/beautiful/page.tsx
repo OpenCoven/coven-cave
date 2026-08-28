@@ -82,8 +82,8 @@ const ENTRIES: Entry[] = [
   {
     id: "approval-card",
     name: "Approval card",
-    note: "A permission/approval prompt with a question queue.",
-    render: () => <ApprovalCard />,
+    note: "A permission/approval prompt with a question queue. Questions variant.",
+    render: () => <ApprovalCard variant="Questions" />,
   },
   {
     id: "tool-chips",

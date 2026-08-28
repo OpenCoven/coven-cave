@@ -71,6 +71,21 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           persist-credentials: false
 
+      # This job IS the required check; a green from it that ran a stale tree
+      # is the hazard this guard exists for (cave-d9xfq #4934).
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -135,6 +150,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The path selector's verdict decides which jobs run at all; a stale
+      # tree here could silently skip a lane the PR actually touches
+      # (cave-d9xfq).
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to select paths from a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - id: paths
         name: Select path-aware validation
         env:
@@ -159,6 +190,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -324,6 +373,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -346,6 +413,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -389,6 +474,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -415,6 +518,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -480,6 +601,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 

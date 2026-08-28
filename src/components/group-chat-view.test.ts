@@ -507,6 +507,35 @@ test("Group surface follows the design handoff: SurfaceRail covens + details dra
   assert.doesNotMatch(view, /replying…/, "the ambiguous typing line is replaced by the stepper");
 });
 
+test("Group chat shows a shared, editable topic and goal (cave-o1za)", () => {
+  // The brief lives on the local group model and commits on blur through the
+  // same saveGroups path as every other group mutation, with the same no-op
+  // guard so an untouched blur neither persists nor reorders the rail.
+  assert.match(view, /setGroupTopicGoal\(group, patch, nowIso\(\)\)/, "topic/goal commits route through the pure helper");
+  assert.match(view, /announce\("Conversation brief saved\."\)/, "a topic/goal commit is announced");
+  // Two always-visible, labelled fields in the surface (not the inspector).
+  assert.match(view, /className="coven-tab__brief"/, "the shared brief strip renders in the group surface");
+  assert.match(view, /placeholder="Add a shared topic…"/, "topic field uses an intent-forward placeholder");
+  assert.match(view, /placeholder="Add a shared goal…"/, "goal field uses an intent-forward placeholder");
+  assert.match(view, /aria-label="Shared conversation topic"/, "topic field keeps a durable accessible name");
+  assert.match(view, /aria-label="Shared conversation goal"/, "goal field keeps a durable accessible name");
+  assert.match(view, /key=\{`\$\{activeGroup\.id\}:topic`\}/, "topic field re-seeds when the coven changes");
+  assert.match(view, /key=\{`\$\{activeGroup\.id\}:goal`\}/, "goal field re-seeds when the coven changes");
+  // The brief is relayed to every participant through every prompt builder
+  // (broadcast round-robin + roundtable, delegation child, retry round-robin +
+  // roundtable = five call sites).
+  assert.equal(
+    view.match(/topic: group\.topic,/g)?.length,
+    5,
+    "every prompt builder relays the shared topic",
+  );
+  assert.equal(
+    view.match(/goal: group\.goal,/g)?.length,
+    5,
+    "every prompt builder relays the shared goal",
+  );
+});
+
 test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // Smart autoscroll (cave-o8si): intent-based release via the shared hook —
   // scrolling up detaches, only the true bottom re-attaches. No position

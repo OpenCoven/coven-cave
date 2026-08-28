@@ -539,3 +539,30 @@
     transition: none;
   }
 }
+
+/* ── Prose-dimming hint (cave-4akqc) ────────────────────────────────────────
+   Below a CLOSED fold, the first visible turns sit slightly dimmed — the
+   "fade the first visible turns" hint from the frame. Purely visual: the
+   toggle already carries the count, and the hint is a second, quieter
+   signal that the transcript continues above. It restores to full contrast
+   on hover/focus (reading is never blocked) and is disabled entirely under
+   reduced-transparency, so the affordance never costs the reader legibility. */
+.cave-linear-turn--fold-faded {
+  opacity: 0.72;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.cave-linear-turn--fold-faded:hover,
+.cave-linear-turn--fold-faded:focus-within {
+  opacity: 1;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cave-linear-turn--fold-faded {
+    opacity: 1;
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-linear-turn--fold-faded {
+    transition: none;
+  }
+}
