@@ -125,7 +125,15 @@ test("cursor decoding refuses everything that is not a cursor this Cave minted",
     ["a JSON array", Buffer.from("[1,2,3]", "utf8").toString("base64url")],
     [
       "a future cursor version",
-      Buffer.from(JSON.stringify({ v: 2, s: "s", i: "i" }), "utf8").toString("base64url"),
+      Buffer.from(JSON.stringify({ v: 3, s: "s", i: "i" }), "utf8").toString("base64url"),
+    ],
+    [
+      // v1 is the pre-cave-fhjlu cursor whose sort half meant updatedAt; the
+      // /conversations key is now createdAt, so a v1 token must be refused
+      // outright rather than misread as a position in the new ordering
+      // (cave-apo6v).
+      "a past cursor version (pre-createdAt reorder)",
+      Buffer.from(JSON.stringify({ v: 1, s: "s", i: "i" }), "utf8").toString("base64url"),
     ],
     [
       "a missing id",
