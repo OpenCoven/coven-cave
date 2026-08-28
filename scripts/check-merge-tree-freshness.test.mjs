@@ -19,8 +19,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const SCRIPT = fileURLToPath(new URL("./check-merge-tree-freshness.mjs", import.meta.url));
 const PR_NUMBER = "7";
@@ -206,5 +208,41 @@ test("--help exits 0 with usage", () => {
   const res = runGuard(["--help"]);
   assert.equal(res.status, 0);
   assert.match(res.stdout, /--pr <pull-request-number>/);
+});
+
+// Wiring pin: every job that checks out the PR tree must run the guard, or a
+// future edit could silently re-expose a lane to the stale-merge hazard — the
+// same per-job gap #4922 demonstrated inside a single run.
+test("every job that checks out the PR tree runs the freshness guard", () => {
+  const ci = parse(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"));
+  const prTreeJobs = [
+    "pr-checks",
+    "paths",
+    "ios",
+    "frontend-validation",
+    "frontend-bundle",
+    "frontend-e2e",
+    "frontend-e2e-agentic",
+    "build",
+  ];
+  assert.deepEqual(
+    Object.keys(ci.jobs).sort(),
+    prTreeJobs.slice().sort(),
+    "the guard's job inventory must match the workflow's actual jobs",
+  );
+  for (const jobName of prTreeJobs) {
+    const steps = ci.jobs[jobName].steps;
+    const guard = steps.find((step) => step.name === "Refuse a stale merge-tree checkout");
+    assert.ok(guard, `${jobName} must run the stale merge-tree guard`);
+    assert.equal(guard.if, "github.event_name == 'pull_request'", `${jobName} guard must be PR-only`);
+    assert.equal(guard.env.PR_NUMBER, "${{ github.event.pull_request.number }}", `${jobName} guard needs the PR number`);
+    assert.equal(guard.env.HEAD_SHA, "${{ github.event.pull_request.head.sha }}", `${jobName} guard needs the head sha`);
+    assert.match(guard.run, /node scripts\/check-merge-tree-freshness\.mjs --pr "\$PR_NUMBER" --head "\$HEAD_SHA"/, `${jobName} guard must invoke the freshness script`);
+    // The guard must run before the job's verdict-producing steps, so a stale
+    // tree fails the job before anything expensive runs on it.
+    const checkoutIdx = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"));
+    const guardIdx = steps.indexOf(guard);
+    assert.ok(checkoutIdx >= 0 && guardIdx > checkoutIdx, `${jobName} guard must sit after its checkout`);
+  }
 });
 
