@@ -61,6 +61,15 @@ test("the CLI passes current evidence and records the summary lines", () => {
   assert.match(result.stdout, /Select validation: /);
 });
 
+test("the CLI accepts the gh api jobs envelope", () => {
+  const result = spawnSync(process.execPath, [SCRIPT, "--current-sha", CURRENT], {
+    input: JSON.stringify({ total_count: 1, jobs: [job("Select validation", CURRENT, 2)] }),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Select validation: /);
+});
+
 test("a malformed or missing --current-sha is a usage error", () => {
   const result = spawnSync(process.execPath, [SCRIPT], { input: "[]", encoding: "utf8" });
   assert.equal(result.status, 2);

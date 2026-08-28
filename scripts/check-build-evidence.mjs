@@ -79,14 +79,16 @@ export function main(argv = process.argv) {
   }
   let jobs;
   try {
-    jobs = JSON.parse(readFileSync(0, "utf8"));
+    const parsed = JSON.parse(readFileSync(0, "utf8"));
+    // `gh api .../jobs` returns the envelope { total_count, jobs: [...] }.
+    jobs = Array.isArray(parsed) ? parsed : parsed?.jobs;
   } catch (error) {
-    console.error("check-build-evidence: stdin must be the jobs JSON array:", error.message);
+    console.error("check-build-evidence: stdin must be the jobs JSON:", error.message);
     process.exitCode = 2;
     return;
   }
   if (!Array.isArray(jobs)) {
-    console.error("check-build-evidence: stdin must be the jobs JSON array");
+    console.error("check-build-evidence: stdin must be the jobs JSON (array or { jobs: [...] } envelope)");
     process.exitCode = 2;
     return;
   }
