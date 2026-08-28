@@ -1,6 +1,6 @@
 # Journal → Familiar Studio Tab; Canvas Surface → Feature Branch — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Move the Journal into a per-familiar tab in Settings → Familiars (Familiar Studio), redirect all old Journal entry points there, and retire the generated-canvas *surface* from `main` (preserved on `feature/journal-canvas-surface`). Backend (`/api/canvas`, `/api/journal`) and chat inline canvas artifacts stay.
 

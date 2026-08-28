@@ -10,6 +10,7 @@ import {
 } from "./auth.ts";
 import { CLIENT_V1_PUBLIC_ROUTES } from "./contract.ts";
 import { CLIENT_V1_OPERATION_DEFINITIONS } from "./operations.ts";
+import { ClientV1PathOwnershipError } from "./path-ownership.ts";
 import type {
   ClientV1CredentialRecord,
   CredentialStore,
@@ -61,7 +62,7 @@ function storeWithLookup(
 async function assertAuthFailure(
   result: ClientV1AuthResult,
   expectedStatus: number,
-  expectedCode: "unauthorized" | "scope_denied",
+  expectedCode: "unauthorized" | "scope_denied" | "ownership_refused",
 ): Promise<void> {
   assert.equal(result.ok, false);
   if (result.ok) return;
@@ -148,6 +149,44 @@ test("under-scoped bearer returns normalized scope_denied", async () => {
     await authenticator.requireScope({ bearer: "valid-bearer", scope: "chat:write" }),
     403,
     "scope_denied",
+  );
+});
+
+test("an unreadable store answers the distinct ownership_refused envelope (cave-e7xwk)", async () => {
+  // The credential boundary throws when the host cannot verify exclusive
+  // ownership of the store. Before the conversion this escaped requireScope
+  // and Next answered a bare non-envelope 500; it must now come back as the
+  // same normalized shape every other refusal on this surface answers.
+  const authenticator = createClientV1Authenticator({
+    credentialStore: storeWithLookup(async () => {
+      throw new ClientV1PathOwnershipError(
+        "Client v1 credential store root ownership could not be verified on Windows: spawn powershell.exe ENOENT. "
+        + "Refusing C:\\Users\\test\\.coven\\cave; inspect it with: icacls \"C:\\Users\\test\\.coven\\cave\".",
+      );
+    }),
+    loopbackSecret: "loopback-secret",
+  });
+
+  await assertAuthFailure(
+    await authenticator.requireScope({ bearer: "valid-bearer", scope: "chat:read" }),
+    403,
+    "ownership_refused",
+  );
+});
+
+test("a non-ownership store failure is not converted", async () => {
+  // Only the distinct class is caught: an unrelated store failure must
+  // still propagate so it surfaces as a bug, not as an ownership refusal.
+  const authenticator = createClientV1Authenticator({
+    credentialStore: storeWithLookup(async () => {
+      throw new Error("disk on fire");
+    }),
+    loopbackSecret: "loopback-secret",
+  });
+
+  await assert.rejects(
+    authenticator.requireScope({ bearer: "valid-bearer", scope: "chat:read" }),
+    /disk on fire/,
   );
 });
 

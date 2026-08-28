@@ -130,6 +130,14 @@ export function assertClientV1NoReadQuery(url: URL): void {
  * credential asked for a grant it does not hold, so it is charged to that
  * credential's own authenticated budget, where it cannot starve anyone else.
  *
+ * `ownership_refused` is metered against neither bucket: the credential
+ * boundary never even answered, so there is no credential to charge and no
+ * attacker-chosen key to bound — and the refusal is a host condition the
+ * operator must see, so converting it into a 429 after a few requests would
+ * hide the diagnosis the distinct envelope exists to carry (cave-e7xwk). The
+ * negative refusal TTL already bounds the probe work, so skipping the charge
+ * cannot amplify anything.
+ *
  * A caller that has exhausted its bucket is answered 429 instead of the
  * original refusal. That is deliberate: the refusal itself is the signal an
  * attacker is reading, so once the budget is gone it stops being served.
@@ -139,6 +147,7 @@ export function chargeClientV1AuthFailure(
   failure: Extract<ClientV1AuthResult, { ok: false }>,
   sourceIdentity: string,
 ): Response {
+  if (failure.reason === "ownership_refused") return failure.response;
   const budget = failure.reason === "scope_denied"
     ? runtime.rateLimiter.consumeAuthenticated(failure.credential.id)
     : runtime.rateLimiter.consumeInvalidBearer(sourceIdentity);

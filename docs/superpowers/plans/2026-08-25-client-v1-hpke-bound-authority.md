@@ -1,6 +1,6 @@
 # Client v1 HPKE-Bound Authority Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Add a compatibility-safe, SDK-consumable RFC 9180 `hpke-bound-v1` producer mechanism that atomically binds pairing-secret and bearer-bearing Client v1 requests and responses to one per-runtime Cave authority.
 
