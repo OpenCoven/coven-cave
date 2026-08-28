@@ -37,10 +37,14 @@ assert.match(
   "Desktop menu bar should accept the enrich action and progress state",
 );
 
+// The trailing "…next to Tasks" clause is gone with the Tasks button itself
+// (cave-l9slw). What this assertion was actually protecting — Enhance is
+// conditional, wired to onEnrichTasks, and DISABLED without a selected familiar
+// — is unchanged and is what remains pinned here.
 assert.match(
   menuBar,
-  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}[\s\S]*onClick=\{onViewTasks\}/,
-  "Desktop menu bar should place Enhance next to Tasks and disable it without a selected familiar",
+  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}/,
+  "Desktop menu bar should render Enhance and disable it without a selected familiar",
 );
 
 assert.match(

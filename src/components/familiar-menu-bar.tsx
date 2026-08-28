@@ -16,44 +16,24 @@ type Props = {
   /** Notification bell, rendered by the workspace (it owns the inbox state)
    *  so this bar stays markup-thin. Joins the right-side status controls. */
   bell?: ReactNode;
-  /** Open task count (board cards not yet done) — drives the Tasks badge. */
-  taskCount: number;
-  /** Schedule items needing attention — drives the Schedules badge. */
-  scheduleNeedsCount: number;
   /** Open the shared context-aware search palette. */
   onOpenSearch: () => void;
   /** Shared top-search query, mirrored with the mobile top bar and palette. */
   searchQuery: string;
   /** Update shared top-search query. */
   onSearchQueryChange: (query: string) => void;
-  /** Jump to the task board. */
-  onViewTasks: () => void;
   /** Enrich active tasks for the selected familiar. */
   onEnrichTasks?: () => void;
   enrichingTasks?: boolean;
   enrichProgress?: { done: number; total: number } | null;
-  /** Jump to the Schedules surface (calendar + crons). */
-  onViewSchedules: () => void;
   /** Open Settings. */
   onOpenSettings: () => void;
-  /** Start a blank chat through the shell's acting-familiar gate. */
-  onOpenQuickChat: () => void;
 };
 
 const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 const SEARCH_LABEL = "Search Cave";
-const NEW_CHAT_LABEL = "New chat";
-const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
-const RITUALS_LABEL = workspacePageDefinition("inbox")?.title ?? "Rituals";
 const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
-
-function fmtBadge(n: number): string {
-  // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
-  // in the corner — one glyph says "many" just as well, and the button's
-  // aria-label/tooltip still carries the exact count (cave-gf5l).
-  return n > 9 ? "9+" : String(n);
-}
 
 /**
  * A slim, always-visible desktop top menu bar with global search and
@@ -66,22 +46,16 @@ export function FamiliarMenuBar({
   activeFamiliarId,
   runningStatus,
   bell,
-  taskCount,
-  scheduleNeedsCount,
   onOpenSearch,
   searchQuery,
   onSearchQueryChange,
-  onViewTasks,
   onEnrichTasks,
   enrichingTasks,
   enrichProgress,
-  onViewSchedules,
   onOpenSettings,
-  onOpenQuickChat,
 }: Props) {
   const keys = useKeySymbols();
   const searchShortcut = platformizeHint("⌘K", keys);
-  const newChatShortcut = platformizeHint("⌘J", keys);
   const settingsShortcut = platformizeHint("⌘,", keys);
   const enrichLabel = enrichingTasks
     ? enrichProgress
@@ -120,18 +94,11 @@ export function FamiliarMenuBar({
         <kbd>{searchShortcut}</kbd>
       </form>
 
+      {/* No New chat trigger here (cave-l9slw). It opened the cluster while
+          ⌘J, the sidebar rail CTA, the chat project sidebar, the right-panel
+          dropdown and the mobile top bar all still offer it — this bar keeps
+          the destinations that have no other desktop home. */}
       <div className="menu-bar__group menu-bar__group--tasks">
-        <button
-          type="button"
-          data-quick-chat-trigger
-          className="menu-bar__task focus-ring"
-          onClick={onOpenQuickChat}
-          aria-label={NEW_CHAT_LABEL}
-          title={`${NEW_CHAT_LABEL} (${newChatShortcut})`}
-        >
-          <Icon name="ph:note-pencil" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">{NEW_CHAT_LABEL}</span>
-        </button>
         {onEnrichTasks ? (
           <button
             type="button"
@@ -149,34 +116,21 @@ export function FamiliarMenuBar({
             </span>
           </button>
         ) : null}
-        <button
-          type="button"
-          className="menu-bar__task focus-ring"
-          onClick={onViewTasks}
-          aria-label={taskCount > 0 ? `${TASKS_LABEL} — ${taskCount} open` : TASKS_LABEL}
-          title={taskCount > 0 ? `${TASKS_LABEL} — ${taskCount} open` : TASKS_LABEL}
-        >
-          <Icon name="ph:kanban" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">{TASKS_LABEL}</span>
-          {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
-        </button>
-        {/* This button lands on the Rituals surface (workspace mode "inbox"
-            is the Rituals view — calendar + crons), so it is labelled
-            Rituals and badged with the schedule needs-you count. There is no
-            dedicated Inbox surface; inbox items live in the notification bell. */}
-        <button
-          type="button"
-          className="menu-bar__task focus-ring"
-          onClick={onViewSchedules}
-          aria-label={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
-          title={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
-        >
-          <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">{RITUALS_LABEL}</span>
-          {scheduleNeedsCount > 0 ? (
-            <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
-          ) : null}
-        </button>
+        {/* No Tasks button here either (cave-l9slw). The sidebar navigation
+            already carries Tasks as a labelled destination, so this was a
+            second, icon-only route to the same board. Its open-task badge went
+            with it; the sidebar row still badges the same count from the same
+            source, so no signal was lost.
+
+            No Rituals button either. It landed on workspace mode "inbox" and
+            badged the schedule needs-you count; that surface is still reached
+            from the home dashboard cards, the mobile bottom tabs, the ⌘K
+            palette and the tray, and the needs-you count is still surfaced by
+            the dashboard and the bottom-tab badge.
+
+            With both badges gone this cluster no longer counts anything, which
+            is why fmtBadge went too rather than lingering as a helper with no
+            caller. */}
         <button
           type="button"
           className="menu-bar__task focus-ring"
