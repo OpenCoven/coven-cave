@@ -3638,9 +3638,12 @@ final class AppModel {
             tasksError = error.localizedDescription
             // CaveClient already retried the transient failure idempotently, so
             // reaching here means the delete did not land: offer a Retry that
-            // re-runs it (cave-ioswipe.1) instead of only reverting.
+            // re-runs it (cave-ioswipe.1) instead of only reverting. The retry
+            // closure is synchronous, so the async delete runs in its own task
+            // (same pattern as the thread-delete fan-out).
             reportRevert("delete the task") { [weak self] in
-                self?.deleteTask(removed)
+                guard let self else { return }
+                _ = Task { await self.deleteTask(removed) }
             }
         }
     }
