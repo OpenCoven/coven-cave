@@ -1141,7 +1141,7 @@ const AUTOLOCK_REASON_PREFIX = "auto-locked";
  * unit's admin directory for us, which reading `.git/worktrees/<id>/locked`
  * by hand would not. A bare `locked` line means locked without a reason.
  */
-function readWorktreeLocks(root: string): OperationFailure | { ok: true; locks: Map<string, string> } {
+export function readWorktreeLocks(root: string): OperationFailure | { ok: true; locks: Map<string, string> } {
   const listed = git(
     root,
     ["worktree", "list", "--porcelain"],
@@ -1179,7 +1179,7 @@ function readWorktreeLocks(root: string): OperationFailure | { ok: true; locks: 
  * quote strip: porcelain C-quotes a reason containing anything unusual, and the
  * hook's reason always does (an em dash).
  */
-function isAutoLockReason(reason: string): boolean {
+export function isAutoLockReason(reason: string): boolean {
   return reason.trim().replace(/^"/, "").startsWith(AUTOLOCK_REASON_PREFIX);
 }
 

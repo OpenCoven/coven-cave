@@ -216,6 +216,20 @@ export type WorktreeLifecycleSummary = {
 
 export type WorktreeLifecycleRenderOptions = {
   includeFooter?: boolean;
+  /**
+   * Lock reasons by absolute worktree path, as read from
+   * `git worktree list --porcelain`. Informational only: a lock never changes
+   * a lane, but naming it beside the unit's live verdict is what makes a lock
+   * whose stated risk no longer holds visible at a glance (cave-eg1ag).
+   */
+  lockReasons?: ReadonlyMap<string, string>;
+  /**
+   * Which lock reasons are the auto-lock hook's own (prefix-matched, the same
+   * way the retirement pipeline decides what it may release). Only used to
+   * phrase the distinct stale-lock line correctly: the hook's own locks
+   * self-heal or are resolved under --apply, foreign locks need a human.
+   */
+  isAutoLockReason?: (reason: string) => boolean;
 };
 
 // These thresholds serve two surfaces with deliberately different arithmetic.
@@ -1105,7 +1119,7 @@ export function renderWorktreeLifecycleReport(
   summary: WorktreeLifecycleSummary,
   options: WorktreeLifecycleRenderOptions = {},
 ): string {
-  const { includeFooter = true } = options;
+  const { includeFooter = true, lockReasons, isAutoLockReason } = options;
   const { counts } = summary;
   const { detached, registered } = summary.budgets.worktrees;
   // Say so when the assessed number is smaller than the registered one, so the
@@ -1181,6 +1195,30 @@ export function renderWorktreeLifecycleReport(
       // claiming it. Printed so the reader can still find the conversation.
       if (item.mentionTaskIds.length > 0) {
         lines.push(`  mentions (not blocking): ${item.mentionTaskIds.join(", ")}`);
+      }
+      // A lock is also informational, never a lane input — but it must be
+      // printed BESIDE the live verdict, because that pairing is the whole
+      // signal (cave-eg1ag). A lock whose stated risk still matches the unit's
+      // state reads as one plain line; a lock contradicted by a live verdict
+      // of clean + retained gets the distinct stale-lock lines, so an operator
+      // no longer has to diff lock reasons against merged PRs by hand.
+      if (item.path !== null && lockReasons?.has(item.path)) {
+        const lockReason = lockReasons.get(item.path) ?? "";
+        const quoted = lockReason.length > 0 ? `"${lockReason}"` : "(no reason recorded)";
+        lines.push(`  lock: ${quoted}`);
+        const provenCleanAndRetained =
+          item.lane === "retire-after-gate" || item.lane === "cooldown";
+        if (provenCleanAndRetained) {
+          const isAuto =
+            isAutoLockReason !== undefined &&
+            lockReason.length > 0 &&
+            isAutoLockReason(lockReason);
+          lines.push(
+            isAuto
+              ? `  stale auto-lock — the live verdict (clean + retained) contradicts its stated risk; the hook re-evaluates and releases its own locks, or --apply resolves it under the maintenance gate`
+              : `  STALE FOREIGN LOCK — the live verdict (clean + retained) contradicts its stated risk; confirm with its owner, then: git worktree unlock ${item.path}`,
+          );
+        }
       }
       for (const change of item.changes) lines.push(`  change: ${change}`);
       for (const ignoredPath of item.nonDisposableIgnoredPaths) {

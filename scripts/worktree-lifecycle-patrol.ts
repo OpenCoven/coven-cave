@@ -23,6 +23,8 @@ import {
   createGitRetirementOperations,
   parseMaxRetire,
   retireLifecycleUnits,
+  readWorktreeLocks,
+  isAutoLockReason,
 } from "./worktree-lifecycle-retirement.ts";
 import {
   createMetadataRepairOperations,
@@ -625,16 +627,26 @@ function formatMetadataRepairBlock(
   return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
 }
 
+type WorktreeLockReport =
+  | { ok: true; locks: Map<string, string> }
+  | { ok: false; reason: string };
+
 function renderPatrolReport(
   summary: PatrolSummary,
   inventory: PatrolInventory,
   nowMs: number = Date.now(),
+  lockReport?: WorktreeLockReport,
 ): string {
   // Annotate the budget line so expired-orphaned exceptions are not invisible
   // (cave-4oor6). Inventory still counts only unit-matched exceptions; the
   // third term is residue on beads whose worktrees are already gone.
   const expiredOrphaned = listExpiredOrphanedExceptions(inventory, nowMs);
-  let lifecycleReport = renderWorktreeLifecycleReport(summary, { includeFooter: false });
+  let lifecycleReport = renderWorktreeLifecycleReport(summary, {
+    includeFooter: false,
+    ...(lockReport?.ok === true
+      ? { lockReasons: lockReport.locks, isAutoLockReason }
+      : {}),
+  });
   if (expiredOrphaned.length > 0) {
     lifecycleReport = lifecycleReport.replace(
       /^(Managed exceptions: \d+ active \| \d+ expired)$/m,
@@ -642,6 +654,28 @@ function renderPatrolReport(
     );
   }
   const lines = [lifecycleReport];
+  if (lockReport) {
+    // Distinct surface for the lock census: each lock reason sits beside the
+    // unit's own verdict up in the lanes, and this section collects the
+    // stale-lock callouts where a human is the only actor that can clear a
+    // foreign lock (cave-eg1ag).
+    const lockedPaths = [...(lockReport.ok ? lockReport.locks.keys() : [])];
+    pushSection(
+      lines,
+      "Locked worktrees",
+      lockedPaths.length === 0
+        ? []
+        : lockedPaths
+            .sort()
+            .map(
+              (lockPath) =>
+                `- ${lockPath}: "${lockReport.locks.get(lockPath) || "(no reason recorded)"}"`,
+            ),
+    );
+    if (!lockReport.ok) {
+      lines.push("", `Lock census unavailable: ${lockReport.reason}`);
+    }
+  }
   pushSection(
     lines,
     "Expired, orphaned managed-creation exceptions (grants nothing; drop under --apply when gated)",
@@ -1131,6 +1165,21 @@ function main(argv = process.argv.slice(2)): number {
     nowMs: options.nowMs,
   });
   const summary = summarizeInventory(inventory);
+  // Lock census is a local, sub-second read; failing it must not fail the
+  // patrol, only mark the lock surface unavailable (cave-eg1ag).
+  const lockReport: WorktreeLockReport = readWorktreeLocks(options.root);
+  const jsonLockExtras =
+    lockReport.ok === true
+      ? {
+          worktreeLocks: [...lockReport.locks.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([path, reason]) => ({
+              path,
+              reason,
+              isAutoLock: reason.length > 0 && isAutoLockReason(reason),
+            })),
+        }
+      : { worktreeLocksUnavailable: lockReport.reason };
 
   if (options.apply) {
     const scopeRefusal = cooldownOverrideScopeRefusal(options, inventory.items);
@@ -1198,6 +1247,7 @@ function main(argv = process.argv.slice(2)): number {
             ...(warning ? { warning } : {}),
             inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
             ...(postInventoryError ? { postInventoryError } : {}),
+            ...jsonLockExtras,
             metadataRepair,
             exceptionDrop,
             retirement,
@@ -1216,8 +1266,8 @@ function main(argv = process.argv.slice(2)): number {
 
   console.log(
     options.json
-      ? renderJsonReport(options, inventory, summary)
-      : renderPatrolReport(summary, inventory, options.nowMs),
+      ? renderJsonReport(options, inventory, summary, jsonLockExtras)
+      : renderPatrolReport(summary, inventory, options.nowMs, lockReport),
   );
   return 0;
 }

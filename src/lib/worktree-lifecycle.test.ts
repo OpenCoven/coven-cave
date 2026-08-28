@@ -970,6 +970,84 @@ function legacyObservation(overrides = {}) {
   );
 }
 
+// cave-eg1ag: a lock reason is printed BESIDE the unit's live verdict. A lock
+// on a unit the classifier has already proven clean + retained is contradicted
+// by current state, and the report must say so distinctly — foreign locks need
+// a human, the hook's own auto-locks self-heal or resolve under --apply.
+{
+  const budgets = {
+    worktrees: { count: 3, registered: 3, detached: 0, warning: 28, exceeded: false },
+    branches: { count: 3, warning: 38, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  };
+  const foreignLocked = {
+    ...observation({
+      branch: "fix/cave-1c8zf-compact-tool-rollup-pr",
+      path: "/repo/.worktrees/cave-1c8zf",
+    }),
+    lane: "retire-after-gate",
+    reasons: [],
+  };
+  const autoLocked = {
+    ...observation({ branch: "feat/auto", path: "/repo/.worktrees/auto" }),
+    lane: "cooldown",
+    reasons: [],
+  };
+  const activeLocked = {
+    ...observation({ branch: "feat/live", path: "/repo/.worktrees/live" }),
+    lane: "active",
+    reasons: [],
+  };
+  const summary = summarizeWorktreeLifecycle(
+    [foreignLocked, autoLocked, activeLocked],
+    budgets,
+  );
+  const lockReasons = new Map([
+    ["/repo/.worktrees/cave-1c8zf", "active cave-1c8zf PR completion"],
+    ["/repo/.worktrees/auto", 'auto-locked — head on no remote ref'],
+    ["/repo/.worktrees/live", "active cave-other PR completion"],
+  ]);
+  const text = renderWorktreeLifecycleReport(summary, {
+    includeFooter: false,
+    lockReasons,
+    isAutoLockReason: (reason) => reason.trim().replace(/^"/, "").startsWith("auto-locked"),
+  });
+  assert.match(
+    text,
+    /lock: "active cave-1c8zf PR completion"/,
+    "every locked unit carries its lock reason beside its verdict",
+  );
+  assert.match(
+    text,
+    /STALE FOREIGN LOCK — the live verdict \(clean \+ retained\) contradicts its stated risk; confirm with its owner, then: git worktree unlock \/repo\/\.worktrees\/cave-1c8zf/,
+    "a foreign lock on a proven clean+retained unit is called out as stale, with the exact unlock command",
+  );
+  assert.match(
+    text,
+    /stale auto-lock — the live verdict \(clean \+ retained\) contradicts its stated risk/,
+    "the hook's own lock on a proven clean+retained unit is called out as stale and self-resolving",
+  );
+  assert.doesNotMatch(
+    text,
+    /STALE FOREIGN LOCK[\s\S]*feat\/auto/,
+    "an auto-lock never renders as a foreign lock",
+  );
+  assert.match(
+    text,
+    /lock: "active cave-other PR completion"/,
+    "a lock on a live unit still renders its reason",
+  );
+  const activeSection = text.split("feat/live")[1].split("feat/auto")[0];
+  assert.doesNotMatch(
+    activeSection,
+    /stale|STALE/,
+    "a lock whose stated risk may still hold gets no stale marker — only the live verdict can contradict it",
+  );
+
+  const without = renderWorktreeLifecycleReport(summary, { includeFooter: false });
+  assert.doesNotMatch(without, /lock:/, "omitting the lock census renders no lock lines");
+}
+
 // cave-we34s: a checkout-level probe failure is stated once, not once per unit.
 // It still fails every unit closed; what changes is that the report can no
 // longer be misread as N independent problems.
