@@ -141,7 +141,7 @@ assert.doesNotMatch(
   "no top-bar control claims to be an Inbox — there is no inbox surface to land on",
 );
 // Both counter buttons are gone, so this cluster no longer counts anything.
-// `menu-bar__badge` survives as a class — the workspace-owned running-sessions
+// `menu-bar__badge` survives as a class — the workspace-owned running-activity
 // control still uses it — but nothing in THIS file may render one, and the
 // fmtBadge helper that capped them went rather than lingering without a caller.
 // Targets rendered markup and the declaration, not the words: the comment
@@ -151,42 +151,43 @@ assert.doesNotMatch(
   /className="menu-bar__badge"|function fmtBadge|fmtBadge\(/,
   "the menu bar renders no count badge and keeps no orphaned badge formatter",
 );
-// The running-processes control is workspace-owned (it needs the sessions
-// state and chat navigation): the bar renders it as the `runningStatus` slot
+// The running-activity control is workspace-owned (it needs navigation and the
+// aggregated activity fetch): the bar renders it as the `runningStatus` slot
 // in the right status cluster, exactly like the bell — no hand-rolled markup.
 assert.match(
   source,
   /<div className="menu-bar__group menu-bar__group--status">\s*\{runningStatus\}\s*\{bell\}\s*<\/div>/,
-  "the status cluster hosts the workspace-owned running-processes control beside the bell",
+  "the status cluster hosts the workspace-owned running-activity control beside the bell",
 );
 assert.doesNotMatch(
   source,
   /menu-bar__status|runningCount|ph:waveform/,
-  "the bar no longer hand-rolls the running-status markup (it lives in RunningSessionsPopover)",
+  "the bar no longer hand-rolls the running-status markup (it lives in RunningActivityPopover)",
 );
 assert.doesNotMatch(
   source,
   /menu-bar__running-dot/,
   "the running status no longer uses a presence dot",
 );
-// Clicking the waveform trigger must SHOW the running processes: the workspace
-// feeds the popover the live running-session rows and the chat-open handler.
-const runningSessionsPopover = readFileSync(
-  new URL("./running-sessions-popover.tsx", import.meta.url),
+// Clicking the waveform trigger must SHOW the running activity: the workspace
+// feeds the popover the familiar roster plus navigation handlers, and the
+// popover fetches the aggregated activity itself.
+const runningActivityPopover = readFileSync(
+  new URL("./running-activity-popover.tsx", import.meta.url),
   "utf8",
 );
 assert.match(
   workspace,
-  /runningStatus=\{\s*<RunningSessionsPopover\s+sessions=\{runningSessions\}\s+familiars=\{familiars\}\s+onOpenSession=\{openFamiliarSession\}\s*\/>\s*\}/,
-  "workspace mounts RunningSessionsPopover in the menu bar's runningStatus slot, fed live running sessions and the session-open handler",
+  /runningStatus=\{\s*<RunningActivityPopover\s+familiars=\{familiars\}\s+onOpenItem=/,
+  "workspace mounts RunningActivityPopover in the menu bar's runningStatus slot with the familiar roster and item navigation",
 );
 assert.match(
   workspace,
-  /runningSessions = useMemo\(\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)/,
-  "running rows use the shared sessionStatusTone vocabulary and exclude archived sessions",
+  /onViewAll=\{\(\) => setMode\("inbox"\)\}/,
+  "View all lands on Rituals, the closest existing activity surface",
 );
 assert.match(
-  runningSessionsPopover,
+  runningActivityPopover,
   /className="menu-bar__status focus-ring"[\s\S]{0,200}?aria-haspopup="dialog"[\s\S]{0,120}?aria-expanded=\{open\}/,
   "the popover trigger keeps the menu-bar status chrome and announces the popover",
 );

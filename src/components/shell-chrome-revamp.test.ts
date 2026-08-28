@@ -95,17 +95,12 @@ assert.doesNotMatch(
   "the right cluster no longer uses the old running dot",
 );
 // Detailed waveform trigger, badge, zero-hide, popover, and accessibility
-// contracts live in running-sessions-popover.test.ts. This suite keeps only
+// contracts live in running-activity-popover.test.ts. This suite keeps only
 // the shell-level wiring.
 assert.match(
   workspace,
-  /const runningSessions = useMemo\(\s*\n\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\),\s*\n\s*\[sessions\],\s*\n\s*\);/,
-  "runningSessions derives from sessionStatusTone over the live sessions list",
-);
-assert.match(
-  workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
-  "the menu bar receives the active familiar id and the running-processes popover",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}[\s\S]{0,400}?<RunningActivityPopover\s*\n\s*familiars=\{familiars\}/,
+  "the menu bar receives the active familiar id and the running-activity popover",
 );
 assert.match(
   workspace,
