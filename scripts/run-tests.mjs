@@ -1272,6 +1272,7 @@ export const SUITES = {
     "src/components/dead-ui-removal.test.ts",
     "scripts/ui-consistency.test.mjs",
     "scripts/docs-index.test.mjs",
+    "scripts/plan-doc-checkbox-hygiene.test.mjs",
     "src/components/ui/select.test.ts",
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",

@@ -1,6 +1,6 @@
 # Group Chat Mentions Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Make desktop group-chat mentions finish cleanly after picker selection, visibly identify tagged familiars, and teach coven familiars to address one another with exact `@Display Name` tags.
 

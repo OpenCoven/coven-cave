@@ -1,6 +1,6 @@
 # Sidepanel Peel-Reveal Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** When the desktop nav is collapsed to its 56px rail, moving the cursor toward the left edge of the detail pane peels the page back (WebGL page-curl) revealing the sidebar beneath — on HTML-in-canvas browsers only; everywhere else stays byte-identical.
 

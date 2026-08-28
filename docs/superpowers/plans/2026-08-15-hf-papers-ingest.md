@@ -1,6 +1,6 @@
 # HF Paper Ingest with pdf.js Viewer — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Pasting `hf papers read 2401.12345` (or an HF papers / arXiv URL) into Research Desk resources saves one paper resource with real title, authors and abstract, and opening it renders the PDF inline with pdf.js.
 

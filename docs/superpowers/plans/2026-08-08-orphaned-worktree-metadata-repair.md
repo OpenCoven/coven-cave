@@ -1,6 +1,6 @@
 # Orphaned Worktree Metadata Repair Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Make lifecycle patrol discover and safely repair non-closed Beads whose structured worktree record points at a missing local branch and missing path.
 
