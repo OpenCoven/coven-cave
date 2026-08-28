@@ -22,6 +22,7 @@ function manifest(overrides: Partial<ResourceManifestV1>): ResourceManifestV1 {
     title: "Example",
     sourceType: "saved-link",
     sensitivity: "public",
+    subject: {},
     ingest: { desired: true, state: "ready" },
     currentSnapshotId: "snap-1",
     createdAt: "2026-08-20T00:00:00.000Z",
