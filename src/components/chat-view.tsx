@@ -121,6 +121,8 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
@@ -2039,6 +2041,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Open daily note" from the completed Reflect: pre-arm the Familiars
+  // surface preferences (same registry the detail panel reads), then switch
+  // modes — the roster mounts already on the familiar's Daily Notes tab.
+  const [, setFamiliarsSelectedId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
+  const [, setFamiliarsViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  const [, setFamiliarsDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  const openFamiliarDailyNote = useCallback((familiarId: string) => {
+    setThreadSignalReport(null);
+    setFamiliarsSelectedId(familiarId);
+    setFamiliarsViewMode("detail");
+    setFamiliarsDetailTab("daily-notes");
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
+  }, [setFamiliarsDetailTab, setFamiliarsSelectedId, setFamiliarsViewMode]);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
@@ -8288,6 +8303,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <ThreadSignalCard
             report={threadSignalReport}
             onDismiss={() => setThreadSignalReport(null)}
+            onOpenDailyNote={openFamiliarDailyNote}
             onViewFull={() => {
               const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
               window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;

@@ -2268,6 +2268,21 @@
       "roleAffinity": []
     },
     {
+      "name": "daytona",
+      "displayName": "Daytona Sandboxes",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/daytona"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
       "name": "browserbase",
       "displayName": "Browserbase",
       "category": "Browser & Web",
