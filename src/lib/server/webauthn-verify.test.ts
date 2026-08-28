@@ -494,7 +494,7 @@ function packedBasicRegistration(roots: readonly PinnedRoot[]) {
   const clientDataJSON = new Uint8Array(Buffer.from(APPLE_FIXTURE_CLIENT_DATA_JSON_HEX, "hex"));
   const clientDataHash = new Uint8Array(createHash("sha256").update(clientDataJSON).digest());
   const sig = new Uint8Array(
-    cryptoSign("sha256", concat(authData, clientDataHash), createPrivateKey(Buffer.from(PACKED_FIXTURE.leafPrivateKeyDerB64, "base64"))),
+    cryptoSign("sha256", concat(authData, clientDataHash), createPrivateKey({ key: Buffer.from(PACKED_FIXTURE.leafPrivateKeyDerB64, "base64"), format: "der", type: "sec1" })),
   );
   return {
     clientDataJSON,
