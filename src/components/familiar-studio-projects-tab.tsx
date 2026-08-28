@@ -16,6 +16,7 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
   accessLevelMeta,
+  accessRollupLabel,
   auditDecisionMeta,
   auditReasonLabel,
   grantChangeMeta,
@@ -28,6 +29,7 @@ import {
   isSupreme,
   nameResolver,
   proposalStatusMeta,
+  rollupAccessLevels,
   splitProposals,
   surfaceLabel,
   type ConsoleAccessGroup,
@@ -296,10 +298,6 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   const projectName = useMemo(() => nameResolver(projects, (p) => p.name), [projects]);
 
   const supreme = isSupreme(familiar.id, supremeFamiliarId);
-  const grantedCount = useMemo(
-    () => projects.reduce((n, p) => (granted.has(grantKey(familiar.id, p.id)) ? n + 1 : n), 0),
-    [projects, granted, familiar.id],
-  );
 
   // Effective access = union-max of the direct grant + this familiar's access
   // groups, resolved with the SAME helper the server enforces with.
@@ -312,6 +310,22 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
     });
     return new Map(rows.map((row) => [row.project.id, row.effective]));
   }, [projects, grantMeta, accessGroups, familiar.id]);
+
+  // Per-root read vs write, rolled up over every project the familiar can
+  // access (direct or through a group) at its EFFECTIVE level — the same
+  // levels the chat runtime-scope preamble annotates from
+  // listAccessibleProjects, so the header says what the preamble says.
+  const accessibleCount = useMemo(
+    () => projects.reduce((n, p) => (effectiveByProject.get(p.id)?.level ? n + 1 : n), 0),
+    [projects, effectiveByProject],
+  );
+  const accessRollup = useMemo(
+    () =>
+      rollupAccessLevels(
+        projects.map((project) => effectiveByProject.get(project.id)?.level ?? null),
+      ),
+    [projects, effectiveByProject],
+  );
   const memberGroups = useMemo(
     () => groupsForFamiliar(accessGroups, familiar.id),
     [accessGroups, familiar.id],
@@ -424,7 +438,11 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       ) : (
         <SettingsGroup
           label="Project access"
-          description={`${grantedCount} of ${projects.length} granted`}
+          description={
+            accessibleCount > 0
+              ? `${accessibleCount} of ${projects.length} accessible · ${accessRollupLabel(accessRollup)}`
+              : `${accessibleCount} of ${projects.length} accessible`
+          }
         >
           <div className="flex justify-end border-b border-[var(--border-hairline)] px-4 py-2">
             <Button variant="secondary" size="sm" leadingIcon="ph:plus-bold" onClick={addFlow.beginAddProject}>

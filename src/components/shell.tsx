@@ -507,7 +507,6 @@ function ShellInner({
         rightChatAutoCollapsedNavRef.current = true;
         rightChatNavOverrideRef.current = false;
         navRef.current?.collapse();
-        setNavOpen(false);
       }
       applyPreferredRightChatWidth();
       rightChatRef.current?.expand();
@@ -533,7 +532,6 @@ function ShellInner({
       rightChatNavOverrideRef.current = false;
       if (restoreNav) {
         navRef.current?.expand();
-        setNavOpen(true);
       }
     }
     setRightChatOpen(false);
@@ -553,12 +551,10 @@ function ShellInner({
       openNav: () => {
         if (isMobile) { setMobileDrawer("nav"); return; }
         navRef.current?.expand();
-        setNavOpen(true);
       },
       closeNav: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "nav" ? null : c)); return; }
         navRef.current?.collapse();
-        setNavOpen(false);
       },
       dismissNavMobile: () => {
         if (isMobile) setMobileDrawer((c) => (c === "nav" ? null : c));
@@ -567,8 +563,8 @@ function ShellInner({
         if (isMobile) { toggleDrawer("nav"); return; }
         const panel = navRef.current;
         if (!panel) return;
-        if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
-        else { panel.collapse(); setNavOpen(false); }
+        if (panel.isCollapsed()) panel.expand();
+        else panel.collapse();
       },
       openList: () => {
         if (isMobile) { setMobileDrawer("list"); return; }
@@ -836,7 +832,6 @@ function ShellInner({
         railAutoCollapsedNavRef.current = false;
         userOverrodeNavRef.current = false;
         applyPanelOpenState(navRef.current, rememberedNavOpen);
-        setNavOpen(rememberedNavOpen);
         minimizedGroupsRef.current.add(groupId);
         markShellMinimizeApplied(groupId);
       }
@@ -894,7 +889,6 @@ function ShellInner({
         chatContextualGroupRef.current !== groupId
       ) {
         chatContextualGroupRef.current = groupId;
-        setNavOpen(true);
       }
       previousNavPolicyRef.current = navPolicy;
       return;
@@ -916,7 +910,6 @@ function ShellInner({
       navPrefArmedGroupRef.current = null;
       visitCollapsedGroupRef.current = groupId;
       navRef.current?.collapse();
-      setNavOpen(false);
     }
     previousNavPolicyRef.current = navPolicy;
   }, [mounted, groupId, isMobile, navPolicy]);
@@ -935,10 +928,8 @@ function ShellInner({
     if (panel && !railAutoCollapsedNavRef.current) {
       if (pref && panel.isCollapsed()) {
         panel.expand();
-        setNavOpen(true);
       } else if (!pref && !panel.isCollapsed()) {
         panel.collapse();
-        setNavOpen(false);
       }
     }
     navPrefArmedGroupRef.current = groupId;
@@ -980,10 +971,8 @@ function ShellInner({
 
       if (panel.isCollapsed()) {
         panel.expand();
-        setNavOpen(true);
       } else {
         panel.collapse();
-        setNavOpen(false);
       }
     };
     const handler = (e: KeyboardEvent) => {
@@ -1260,6 +1249,13 @@ function ShellInner({
           const width = size.inPixels ?? 0;
           if (Number.isFinite(width)) setNavChromeWidth(width);
           const open = width > NAV_OPEN_THRESHOLD_PX;
+          // THE single writer of navOpen (cave-az3ha): imperative handlers
+          // drive the Panel itself (expand/collapse) and this measured-width
+          // callback converges aria-expanded from the panel's real state.
+          // Optimistic setNavOpen calls next to panel calls raced with these
+          // resize frames once the open threshold narrowed to 1px — an
+          // intermediate frame could land after the optimistic write and
+          // leave the toggle disagreeing with the settled panel.
           setNavOpen(open);
           // Persist user-driven changes only: the group must be armed (boot /
           // group-swap layout churn is programmatic) and the code rail must
@@ -1377,8 +1373,11 @@ function ShellInner({
   const toggleNavPanel = () => {
     const panel = navRef.current;
     if (!panel) return;
-    if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
-    else { panel.collapse(); setNavOpen(false); }
+    // No optimistic setNavOpen here: navOpen is derived from the panel's
+    // measured width by the Panel onResize callback, so the toggle drives
+    // the Panel and the callback converges the aria state (cave-az3ha).
+    if (panel.isCollapsed()) panel.expand();
+    else panel.collapse();
   };
   const navToggle = (
     <button

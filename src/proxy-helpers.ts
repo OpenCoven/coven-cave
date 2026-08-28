@@ -311,6 +311,49 @@ export function isRefusedClientV1Path(pathname: string) {
   return pathname.includes("%");
 }
 
+/**
+ * The presented credential may be at most this many characters. An issued
+ * bearer is 43 base64url characters (randomBytes(32).toString("base64url"));
+ * the cap exists so an attacker-controlled header cannot push an unbounded
+ * value into the token68 regex below. It is deliberately looser than the
+ * route-level cap (read-guard MAX_BEARER_CHARACTERS) because this gate is
+ * presentation-only: the route still verifies the credential and applies its
+ * own bounds.
+ */
+const CLIENT_V1_BEARER_CHARACTERS = 4096;
+const CLIENT_V1_BEARER_CREDENTIAL = /^[A-Za-z0-9._~+/-]+=*$/;
+
+/**
+ * True when Authorization presents a syntactically well-formed bearer
+ * credential (RFC 6750 token68) for client-v1 resource ingress.
+ *
+ * Presented, not verified: deciding whether a credential is real means
+ * findByBearer, which reads the on-disk credential store, and this module is
+ * kept free of node builtins so the proxy's import graph stays
+ * client-bundlable (proxy-helpers.ts is reachable from a "use client"
+ * component via research-media-ticket.ts). Presentation is the half the proxy
+ * can enforce, and enforcing it is what keeps an anonymous loopback process
+ * off a resource route — the routes' requireScope calls are otherwise the only
+ * layer, and a route whose author forgets one has none at all (cave-q5mwb,
+ * revived from cave-d1sjz). The 12-byte fake "Bearer AAAA" satisfies this
+ * check and still lands on the route's own 401, so this gate never excuses
+ * requireScope.
+ *
+ * Fail-closed by construction: no header, a bare credential with no scheme,
+ * a non-"bearer" scheme, an empty credential, a credential over the cap, or a
+ * credential outside the token68 alphabet all return false.
+ */
+export function presentsClientV1Bearer(headerValue: string | null) {
+  if (!headerValue) return false;
+  const separator = headerValue.indexOf(" ");
+  if (separator <= 0) return false;
+  if (headerValue.slice(0, separator).toLowerCase() !== "bearer") return false;
+  const credential = headerValue.slice(separator + 1).trim();
+  return credential.length > 0
+    && credential.length <= CLIENT_V1_BEARER_CHARACTERS
+    && CLIENT_V1_BEARER_CREDENTIAL.test(credential);
+}
+
 export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {
   if (isRefusedClientV1Path(pathname)) return null;
   if (CLIENT_V1_PUBLIC_PATHS.some((pattern) => pattern.test(pathname))) {
