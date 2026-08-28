@@ -169,9 +169,9 @@ The pilot publishers are:
 | --- | --- |
 | `board` | `cave-board.ts` mutators after the atomic board write |
 | `sessions` | conversation/session persistence and deletion boundaries |
-| `runs` | runner lifecycle transitions after persisted status changes |
+| `runs` | chat and automation runner lifecycle transitions after persisted status changes |
 | `familiars` | roster, summon, removal, runtime, and archive mutations after commit |
-| `daemon` | connection supervisor transitions after the classified state changes |
+| `daemon` | a server-owned daemon watcher after the classified state changes |
 
 Route handlers must not publish merely because they received a request. A
 rejected request, failed write, or no-op mutation emits nothing.
@@ -182,7 +182,7 @@ event socket does not claim to turn a pull-only provider into a push source.
 
 ## Discovery and dynamic creation
 
-The existing capabilities response advertises:
+A daemon-independent `GET /api/events/capability` response advertises:
 
 ```ts
 type CaveEventPlaneCapability = {
@@ -190,6 +190,10 @@ type CaveEventPlaneCapability = {
   protocolVersion: 1;
   path: "/api/events-ws";
   topics: CaveEventTopic[];
+  rolloutMode: {
+    web: "off" | "shadow" | "primary";
+    ios: "off" | "shadow" | "primary";
+  };
 };
 ```
 
@@ -197,7 +201,8 @@ Clients do not assume the endpoint exists. They create a socket only when:
 
 1. the capability is enabled;
 2. at least one supported topic has a subscriber; and
-3. the platform is in a state where network work is allowed.
+3. that platform's rollout mode is not `off`; and
+4. the platform is in a state where network work is allowed.
 
 The endpoint is always same-host. Browser and Tauri callers pass the advertised
 path through `websocketUrl()`. This yields:
@@ -302,6 +307,15 @@ topic. An unsupported protocol version is rejected during `hello` with the
 dedicated protocol close code; the server does not send a versioned envelope
 that the client has already declared it cannot understand.
 
+Protocol close codes are fixed across the server, TypeScript client, and Swift
+client:
+
+| Code | Meaning |
+| --- | --- |
+| `4400` | unsupported protocol |
+| `4402` | malformed, binary, oversized, or otherwise invalid frame |
+| `4408` | slow consumer; retryable with backoff |
+
 ## Subscription and snapshot data flow
 
 The client sequence is:
@@ -318,6 +332,11 @@ The client sequence is:
 
 `ready` is the subscription barrier. A client does not begin its authoritative
 initial fetch until the server has installed its subscription.
+
+`subscribe` replaces the complete topic set and the server answers with a new
+`ready` carrying that installed set and current versions. A newly added topic
+does not become healthy and cannot suppress polling until that later `ready`
+arrives.
 
 Each topic keeps a local invalidation generation. A snapshot fetch captures
 the generation at start. If an invalidation increments the generation while
@@ -354,7 +373,8 @@ optimistic state, interaction locks, and error presentation.
 
 When a surface is hidden, invalidations mark topics dirty but do not trigger
 REST reads. Foreground reconciliation performs one refresh for each dirty
-topic. The socket may remain connected while subscribers exist because tiny
+topic and no unconditional covered-topic refresh when the topic stayed clean.
+The socket may remain connected while subscribers exist because tiny
 invalidation frames are cheaper than repeated full snapshots.
 
 The sidecar auth bridge adds its token only when a WebSocket is:
@@ -477,9 +497,11 @@ payloads:
 - fallback activations; and
 - recurring polls avoided.
 
-The existing debug/performance reporting surfaces consume a bounded snapshot of
-these counters. Logging uses endpoint, close code, topic, and aggregate counts;
-it does not log bearer tokens, cookies, entity payloads, or complete client
+The server performance report consumes broker-side connection, publication,
+replay, acknowledgement, and backpressure counters. The browser/Tauri debug
+surface consumes client-side reconnect, coalescing, fallback, and avoided-poll
+counters. Logging uses endpoint, close code, topic, and aggregate counts; it
+does not log bearer tokens, cookies, entity payloads, or complete client
 messages.
 
 ## Capability and rollback controls
@@ -491,7 +513,7 @@ The server supports an event-plane kill switch. When disabled:
 - REST and existing SSE routes continue unchanged; and
 - all covered clients remain on their fallback polling paths.
 
-Client rollout modes are:
+Each platform has an independent client rollout mode:
 
 1. `off` - do not connect;
 2. `shadow` - connect, validate, and record invalidations while polling remains
@@ -643,14 +665,16 @@ flaky CI gate.
 ### Phase 2: browser and Tauri shadow mode
 
 - Add the demand-driven manager and pilot topic subscriptions.
-- Receive and compare invalidations while existing polls remain authoritative.
-- Measure replay gaps, reconnects, missed transitions, and duplicate refreshes.
+- Receive and record invalidations while existing polls remain authoritative.
+- Shadow mode performs no event-triggered REST read.
+- Measure replay gaps, reconnects, and observed topic/version transitions.
 
 ### Phase 3: browser and Tauri primary mode
 
 - Pause a topic's recurring poll only while that topic is subscribed and the
   socket is `ready`.
-- Retain fallback, focus refresh, and manual refresh.
+- Retain degraded fallback, dirty-topic foreground reconciliation, and manual
+  refresh.
 - Remove no fallback code in this phase.
 
 ### Phase 4: iOS shadow and primary modes
