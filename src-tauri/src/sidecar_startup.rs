@@ -716,7 +716,17 @@ fn navigate_sidecar_window(window: &tauri::WebviewWindow, url: Url) -> Result<()
 }
 
 #[cfg(desktop)]
+const SIDECAR_STARTUP_PAGE_PATH: &str = "/startup.html";
+
+#[cfg(desktop)]
 pub(super) fn refreshed_sidecar_window_url(startup_url: &Url, current_url: &Url) -> Url {
+    // The packaged Windows shell starts on a bundled splash page. It is not a
+    // sidecar route, so carrying it into the ready URL turns the first launch
+    // into a request for /startup.html on Next rather than the app root.
+    if current_url.path() == SIDECAR_STARTUP_PAGE_PATH {
+        return startup_url.clone();
+    }
+
     let presentation_query: Vec<_> = current_url
         .query_pairs()
         .filter(|(key, _)| key != "covenCaveToken" && key != "coven_access_token")
@@ -729,6 +739,26 @@ pub(super) fn refreshed_sidecar_window_url(startup_url: &Url, current_url: &Url)
         refreshed.query_pairs_mut().append_pair(&key, &value);
     }
     refreshed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_splash_is_replaced_by_the_sidecar_root() {
+        let startup = Url::parse(
+            "http://127.0.0.1:43123/?covenCaveToken=new-sidecar&coven_access_token=new-mobile",
+        )
+        .unwrap();
+        let current = Url::parse("tauri://localhost/startup.html").unwrap();
+
+        assert_eq!(
+            refreshed_sidecar_window_url(&startup, &current),
+            startup,
+            "the native splash path must not be copied to the authenticated sidecar URL"
+        );
+    }
 }
 
 #[cfg(desktop)]
