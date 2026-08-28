@@ -66,9 +66,15 @@ export async function DELETE(req: Request) {
   // Disconnecting clears stored credentials AND the normalized post cache.
   // The cache is the only place a post BODY is ever persisted; leaving it
   // behind meant post text, author id and handle outlived the disconnect that
-  // is supposed to remove them (cave-1tu16). Purge before dropping the bundle
-  // so a failure leaves the account connected rather than leaving orphaned
-  // content behind a disconnected account.
+  // is supposed to remove them (cave-1tu16).
+  //
+  // The purge is best-effort and must never abort the disconnect (cave-fspmd):
+  // the cache holds public post text while the bundle holds OAuth access and
+  // refresh tokens, so a purge failure — most plausibly a 15s cross-process
+  // cache-lock timeout — must not leave the tokens stored. A user who asks to
+  // disconnect is always disconnected; the purge error is surfaced separately
+  // (logged, and reported as purgeFailed in the response) instead of failing
+  // the request.
   //
   // Durable source identities, user notes, mission links and publish receipts
   // live in x-sources/ and x-publications/ and are deliberately untouched.
@@ -77,7 +83,25 @@ export async function DELETE(req: Request) {
   // keyed by flowId and only the owner of that flow may end it — DELETE
   // /api/x/oauth/start is the documented path for that, and guessing here
   // would let one caller abort another's flow.
-  await purgeXSourceCache();
+  let purgeError: unknown = null;
+  try {
+    await purgeXSourceCache();
+  } catch (error) {
+    purgeError = error;
+    console.error(
+      "api/x/connection: cache purge failed; the X account was still disconnected",
+      error,
+    );
+  }
   xCredentialService.disconnect();
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    ...(purgeError !== null
+      ? {
+          purgeFailed: true,
+          purgeError:
+            purgeError instanceof Error ? purgeError.message : String(purgeError),
+        }
+      : {}),
+  });
 }

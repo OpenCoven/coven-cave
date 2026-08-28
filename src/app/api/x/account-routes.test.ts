@@ -37,6 +37,22 @@ assert.match(connection, /xCredentialService\.disconnect\(\)/);
 // to remove it (cave-1tu16). Durable identities, notes, mission links and
 // receipts live elsewhere and stay.
 assert.match(connection, /purgeXSourceCache\(\)/);
+// The purge is best-effort: it must sit inside a try/catch and disconnect must
+// sit OUTSIDE that block, so a purge failure (e.g. a cross-process cache-lock
+// timeout) can never skip the token drop — a user who asks to disconnect is
+// always disconnected, and the failure is surfaced separately (cave-fspmd).
+// Behavioural proof lives in connection-route-behavior.test.ts; this pin stops
+// a later edit reverting to purge-then-throw.
+assert.match(connection, /try\s*\{[\s\S]*?purgeXSourceCache\(\)[\s\S]*?\}\s*catch/);
+// The brace-excluding class keeps this honest: the try block has no nested
+// braces, so a match would have to be exactly purge and disconnect sharing one
+// block — the trailing \} cannot drift onto the response object.
+assert.doesNotMatch(
+  connection,
+  /try\s*\{[^{}]*purgeXSourceCache\(\)[^{}]*xCredentialService\.disconnect\(\)[^{}]*\}/,
+  "disconnect must not live inside the purge's try block — a purge failure must not skip it",
+);
+assert.match(connection, /purgeFailed/);
 
 // Both callers reject the response unless these three are booleans, so they
 // are the contract rather than an implementation detail.
