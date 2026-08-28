@@ -43,23 +43,15 @@ assert.match(
   /Open Rituals/,
   "Notification bell routes users to the renamed Rituals surface",
 );
-// The desktop menu bar button that opens this surface (mode "inbox") says
-// Rituals — an "Inbox" label would be dishonest since the slim surface has
-// no inbox tab and inbox items live in the notification bell instead.
-assert.match(
-  menuBar,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">\{RITUALS_LABEL\}<\/span>/,
-  "Desktop menu bar names the surface Rituals with the calendar-check icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
-);
+// The desktop menu bar dropped its Rituals button (cave-l9slw); the surface is
+// reached from the home dashboard, the mobile bottom tabs, the ⌘K palette, the
+// /rituals slash command below and the tray. What still matters here is the
+// naming rule that button used to carry: nothing may advertise an "Inbox"
+// surface, because none exists — inbox items live in the notification bell.
 assert.doesNotMatch(
   menuBar,
-  /<span>Inbox<\/span>|"View inbox"/,
-  "Desktop menu bar no longer advertises a nonexistent Inbox surface",
-);
-assert.match(
-  workspace,
-  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
-  "Menu-bar Rituals button routes to the Rituals surface (mode id 'inbox')",
+  /<span>Inbox<\/span>|"View inbox"|ph:tray/,
+  "Desktop menu bar does not advertise a nonexistent Inbox surface",
 );
 assert.match(
   slashCommands,
