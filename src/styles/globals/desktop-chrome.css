@@ -316,8 +316,15 @@ button:active > .edge-rail-chip {
     padding-top: var(--shell-native-titlebar-height);
   }
 
+  /* Clear the absolutely-positioned toolbar and NOTHING more (cave-10kr8).
+     The extra --space-2 put a band of floor between the toolbar and the card,
+     which is the same seam the browser layout had — the top row reading as
+     something sitting above the container rather than as its first row.
+     shell-navigation.css drops the card's top border and top radius to match,
+     and that rule applies here too, so leaving the gutter would give the
+     native shell a floating card with a cut-off top edge. */
   :root[data-tauri-titlebar] .shell-detail-panel {
-    padding-top: calc(var(--shell-native-titlebar-height) + var(--space-2));
+    padding-top: var(--shell-native-titlebar-height);
   }
 
   /* Destination routes now render inside the same Shell as the workspace, so

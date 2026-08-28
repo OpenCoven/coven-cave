@@ -32,10 +32,36 @@ assert.match(
   /--shell-floor:\s*color-mix\(in oklch, var\(--bg-raised\) 88%, var\(--bg-panel\)\);/,
   "the frame token should be the flat equivalent of .shell-nav's 88% --bg-raised over --bg-panel",
 );
+// The inset is even on the SIDES and BOTTOM, and zero at the top (cave-10kr8).
+// The top gutter put a band of floor between the toolbar row and the card, so
+// the toolbar read as something sitting above the container rather than as its
+// first row. Measured before the change at 1440x900: .shell-top ended at y=34
+// and .shell-detail began at y=42; after, the card begins at y=34 and the two
+// paint the same surface.
 assert.match(
   shellCss,
-  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail-panel\s*\{[^}]*padding:\s*var\(--space-2\);[^}]*background:\s*var\(--shell-floor\);/,
-  "desktop detail should reserve an even tokenized inset around the main content, painted in the frame color",
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail-panel\s*\{[^}]*padding:\s*0 var\(--space-2\) var\(--space-2\);[^}]*background:\s*var\(--shell-floor\);/,
+  "desktop detail insets the sides and bottom in the frame color, and is flush at the top",
+);
+// The card's own top edge goes with that gutter — a border and radius there
+// would redraw the seam the padding change removed.
+assert.match(
+  shellCss,
+  /\.shell-detail\s*\{[^}]*border-top:\s*0;[^}]*border-radius:\s*0 0 var\(--radius-panel\) var\(--radius-panel\);/,
+  "the card drops its top edge so it continues the toolbar instead of starting under it",
+);
+// Native runs the same treatment: its clearance is the titlebar height alone,
+// with no extra gutter. Leaving --space-2 there would give the desktop shell a
+// floating card with a cut-off top edge, since the border rule above is not
+// scoped away from it.
+const desktopChromeCss = readFileSync(
+  new URL("../styles/globals/desktop-chrome.css", import.meta.url),
+  "utf8",
+);
+assert.match(
+  desktopChromeCss,
+  /:root\[data-tauri-titlebar\] \.shell-detail-panel \{\s*padding-top:\s*var\(--shell-native-titlebar-height\);/,
+  "the native shell clears its toolbar without re-adding a gutter above the card",
 );
 // With a backdrop up, the pane goes transparent so the image shows through the
 // content — which also handed the gutter to the fixed z-0 layer. The band is
@@ -63,10 +89,13 @@ assert.match(
   /@media \(min-width: 1024px\)\s*\{[\s\S]*?html\[data-backdrop-on\] \.shell-detail-panel\s*\{[^}]*position:\s*relative;[^}]*background:\s*transparent;/,
   "the positioned detail pane must paint nothing itself — the strips own the gutter",
 );
+// Still a rounded, elevated, hairline-bordered panel — but open at the top,
+// where it now continues the toolbar row rather than starting beneath it
+// (cave-10kr8). The side and bottom edges and the elevation are unchanged.
 assert.match(
   shellCss,
-  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail\s*\{[^}]*border:\s*1px solid var\(--border-hairline\);[^}]*border-radius:\s*var\(--radius-panel\);[^}]*box-shadow:/,
-  "desktop main content should read as a rounded elevated panel",
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail\s*\{[^}]*border:\s*1px solid var\(--border-hairline\);[^}]*border-radius:\s*0 0 var\(--radius-panel\) var\(--radius-panel\);[^}]*box-shadow:/,
+  "desktop main content should read as an elevated panel, rounded at the bottom",
 );
 assert.doesNotMatch(
   shellCss,
