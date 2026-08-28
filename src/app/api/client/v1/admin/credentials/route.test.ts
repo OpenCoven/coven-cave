@@ -3,7 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { createClientV1Authenticator } from "@/lib/server/client-v1/auth.ts";
+import { createClientV1AuthorityRuntimeFromGlobal } from "@/lib/server/client-v1/authority-runtime.ts";
+import { createCredentialStore } from "@/lib/server/client-v1/credential-store.ts";
+import { createPairingStore } from "@/lib/server/client-v1/pairing-store.ts";
+import { createClientV1RateLimiter } from "@/lib/server/client-v1/rate-limit.ts";
+import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import { TOKEN_HEADER } from "@/proxy-helpers.ts";
 
 import { createAdminCredentialsGetHandler } from "./route.ts";
@@ -68,6 +73,45 @@ test("lists persisted active and revoked credential metadata without bearer mate
     assert.equal(serialized.includes(active.bearer), false);
     assert.equal(serialized.includes(revoked.bearer), false);
     assert.equal(/bearerHash|secretHash/u.test(serialized), false);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a store whose ownership cannot be verified answers ownership_refused, not a bare 500 (cave-e7xwk)", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = () => 0;
+    const credentialStore = createCredentialStore({
+      root,
+      now,
+      ownership: {
+        platform: "win32",
+        getuid: null,
+        env: {},
+        warn: () => {},
+        probeWindowsAcl: async () => {
+          throw new Error("spawn powershell.exe ENOENT");
+        },
+      },
+    });
+    const runtime: ClientV1Runtime = {
+      authority: createClientV1AuthorityRuntimeFromGlobal({ now }),
+      authenticator: createClientV1Authenticator({ credentialStore, loopbackSecret: "loopback-secret" }),
+      credentialStore,
+      now,
+      pairingStore: createPairingStore({ now }),
+      rateLimiter: createClientV1RateLimiter({ now }),
+    };
+    const response = await createAdminCredentialsGetHandler(runtime)(
+      new Request("http://127.0.0.1:3020/api/client/v1/admin/credentials", {
+        headers: { [TOKEN_HEADER]: adminSecret },
+      }),
+    );
+    assert.equal(response.status, 403);
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(body.error.code, "ownership_refused");
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });

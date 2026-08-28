@@ -601,7 +601,7 @@ Changing from the previous declaration to this one:
 
 The mapping is total and canonical (`httpStatusForClientV1ErrorCode` in
 `responses.ts`); a route cannot serve `not_found` with a 200 or a 410. All
-thirteen codes are part of the contract, but only the ones marked *in use*
+fourteen codes are part of the contract, but only the ones marked *in use*
 are reachable on the thirteen routes that exist.
 
 | Code | HTTP | In use | What a client should do |
@@ -609,6 +609,7 @@ are reachable on the thirteen routes that exist.
 | `invalid_request` | 400 | yes | Fix the request. Never retry unchanged — the body or a field failed validation. On the canonical reads it also covers an unsupported or repeated query parameter, an out-of-range `limit`, and a cursor this Cave did not mint. |
 | `unauthorized` | 401 | yes | On pairing routes: the pairing secret is missing, malformed, or wrong, or the loopback stamp is absent. On the canonical reads: the bearer is missing, malformed, unknown, or revoked — or the loopback stamp is absent. On admin routes: the sidecar token is wrong. Do not retry with the same credential. |
 | `scope_denied` | 403 | yes | A credential that exists but was not granted the scope the route requires — `chat:read` on every canonical read. Also returned by admin mutations whose `Origin`/`Referer` is not same-origin. Re-pair with the scope; retrying is pointless. |
+| `ownership_refused` | 403 | yes | The Cave cannot verify exclusive ownership of the store a route must use — on Windows, the DACL probe failed or found another principal with access, and no waiver is in force. A host condition, not a client failure: do not retry; the operator must repair the store (`icacls <path> /reset`). Not retryable. |
 | `not_found` | 404 | yes | The id does not exist. For pairing this includes "expired long enough ago to have been evicted"; for a conversation it also covers an id that could never name one. |
 | `conflict` | 409 | yes | The resource is in a state that refuses this operation — a pairing already exchanged (`details.reason: "pairing_replayed"`) or already decided (`"pairing_already_decided"`). |
 | `pairing_pending` | 409 | yes | Retryable. Nobody has approved or denied yet. Poll. |
@@ -1011,6 +1012,11 @@ anything:
    granted `chat:read` is `scope_denied`.
 
 Both failures are metered, against different buckets — see *Rate limits*.
+`ownership_refused` is the one failure `requireScope` can return that is not
+metered at all: the credential boundary could not even answer, because the
+store is not exclusively owned. It is a host condition (cave-e7xwk), and the
+negative refusal TTL already bounds the probe work that would otherwise be
+what a bucket exists to limit.
 
 Only then is the store read. That ordering is part of the contract, not an
 implementation detail: it means an unauthenticated caller cannot use these

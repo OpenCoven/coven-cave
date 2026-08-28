@@ -7,8 +7,13 @@ import type { ConversationSummary } from "@/lib/cave-conversations.ts";
 import {
   CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
 } from "@/lib/server/client-v1/authority-contract.ts";
+import { createClientV1Authenticator } from "@/lib/server/client-v1/auth.ts";
+import { createClientV1AuthorityRuntimeFromGlobal } from "@/lib/server/client-v1/authority-runtime.ts";
 import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
+import { createCredentialStore } from "@/lib/server/client-v1/credential-store.ts";
+import { createPairingStore } from "@/lib/server/client-v1/pairing-store.ts";
 import { decodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
+import { createClientV1RateLimiter } from "@/lib/server/client-v1/rate-limit.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
@@ -459,6 +464,45 @@ test("a store that throws answers an envelope too", async () => {
     // The path the store named must not reach the wire.
     assert.equal(body.error.message.includes("/home/me"), false);
   });
+});
+
+test("a store whose ownership cannot be verified answers ownership_refused, not a bare 500 (cave-e7xwk)", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = () => 0;
+    const credentialStore = createCredentialStore({
+      root,
+      now,
+      ownership: {
+        platform: "win32",
+        getuid: null,
+        env: {},
+        warn: () => {},
+        probeWindowsAcl: async () => {
+          throw new Error("spawn powershell.exe ENOENT");
+        },
+      },
+    });
+    const runtime: ClientV1Runtime = {
+      authority: createClientV1AuthorityRuntimeFromGlobal({ now }),
+      authenticator: createClientV1Authenticator({ credentialStore, loopbackSecret: STAMP }),
+      credentialStore,
+      now,
+      pairingStore: createPairingStore({ now }),
+      rateLimiter: createClientV1RateLimiter({ now }),
+    };
+    const handler = createClientV1ConversationsGetHandler(runtime, sources());
+    const response = await handler(request("", { authorization: "Bearer some-bearer" }));
+    assert.equal(response.status, 403);
+    const body = await response.json() as { error: { code: string; retryable: boolean } };
+    assert.equal(body.error.code, "ownership_refused");
+    assert.equal(body.error.retryable, false);
+    // The refusal's operator-facing detail — path, SID, `icacls` remedy —
+    // must not reach the wire; the envelope is what a client can act on.
+    assert.equal(JSON.stringify(body).includes("icacls"), false);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });
 
 test("bound conversation lists encrypt results and reject downgrade or path drift before stores, budgets, and sources", async () => {

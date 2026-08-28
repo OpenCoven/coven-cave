@@ -167,6 +167,8 @@ export function httpStatusForClientV1ErrorCode(code: ClientV1ErrorCode): number 
       return 401;
     case "scope_denied":
       return 403;
+    case "ownership_refused":
+      return 403;
     case "pairing_denied":
       return 403;
     case "not_found":
@@ -254,6 +256,25 @@ export function clientV1RateLimitResponse(
     },
     retryable: true,
   });
+}
+
+/**
+ * The 403 an ownership refusal earns on the client-v1 surface.
+ *
+ * Before this existed the throw escaped the credential boundary and Next
+ * answered a bare non-envelope 500 (cave-e7xwk): the client saw a different
+ * shape for "this server will not serve you" than the unauthorized envelope
+ * the same surface answers an uncredentialed request, and a consumer parsing
+ * the envelope had nothing to act on. The refusal names no path and no SID
+ * on purpose — a paired client cannot repair the host, and the operator-facing
+ * detail is logged by the ownership probe instead (once per refusal, then
+ * suppressed while the negative cache holds).
+ */
+export function clientV1OwnershipRefusedResponse(): Response {
+  return clientV1ErrorResponse(
+    "ownership_refused",
+    "The Cave refuses to serve from a store another principal can write.",
+  );
 }
 
 export function clientV1AuthorityRequiredResponse(): Response {
