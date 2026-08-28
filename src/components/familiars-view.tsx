@@ -32,6 +32,10 @@ import {
 } from "@/lib/summon-events";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import {
+  deriveGrowthReport,
+  type FamiliarGrowthReport as GrowthReportModel,
+} from "@/lib/familiar-growth-signals";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import {
   emptyStats,
@@ -142,6 +146,9 @@ export function FamiliarsView({
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
   const [selectedFamiliarId, setSelectedFamiliarId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
   const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  // Detail-tab setter shares the SAME registry as the detail panel (cave-mo4q):
+  // the rite's "open daily notes" hint lands on the Daily Notes tab in one move.
+  const [, setDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
   const rejectedPendingSelectionRef =
     useRef<PendingCanonicalMemorySelection | null>(null);
   const memoryRequestGateRef = useRef<ReturnType<
@@ -371,6 +378,22 @@ export function FamiliarsView({
   );
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
+  // Growth health per familiar, derived from the SAME stats the roster already
+  // renders (retro state is null here — the dashboard owns retro runs). The
+  // roster card shows this as the status-dot + word pattern (cave-mo4q).
+  const healthByFamiliar = useMemo(() => {
+    const map = new Map<string, GrowthReportModel["healthLabel"]>();
+    for (const familiar of familiars) {
+      const cardStats = stats.get(familiar.id);
+      if (!cardStats) continue;
+      map.set(
+        familiar.id,
+        deriveGrowthReport({ familiar, stats: cardStats, retroState: null }).healthLabel,
+      );
+    }
+    return map;
+  }, [familiars, stats]);
+
   const visibleFamiliars = useMemo(
     () => resolvedFamiliars.filter((f) => familiarMatches(f, query)),
     [resolvedFamiliars, query],
@@ -442,6 +465,16 @@ export function FamiliarsView({
     setSelectedFamiliarId(id);
     setViewMode("detail");
   }, []);
+
+  // The Enhancement Rite's memory hint lands here: close the rite, open the
+  // familiar's detail panel on the Daily Notes tab (cave-mo4q).
+  const openDailyNotes = useCallback((id: string) => {
+    setCreateOpen(false);
+    setEnhanceTarget(null);
+    setSelectedFamiliarId(id);
+    setViewMode("detail");
+    setDetailTab("daily-notes");
+  }, [setDetailTab, setSelectedFamiliarId, setViewMode]);
 
   const backToRoster = useCallback(() => {
     setViewMode("roster");
@@ -628,7 +661,7 @@ export function FamiliarsView({
                     stats.get(familiar.id) ??
                     emptyStats(canonicalMemoryAvailability)
                   }
-                  daemonRunning={daemonRunning}
+                  healthLabel={healthByFamiliar.get(familiar.id) ?? "steady"}
                   responseNeeded={responseNeeded.has(familiar.id)}
                   memoryStatus={
                     canonicalMemoryAvailability === "ready"
@@ -675,6 +708,14 @@ export function FamiliarsView({
         onEnhanced={(id) => onFamiliarCreated?.(id)}
         daemonRunning={daemonRunning}
         onStartChat={onStartChat}
+        onOpenDailyNotes={openDailyNotes}
+        memoryCount={
+          enhanceTarget
+            ? stats.get(enhanceTarget.id)?.memoryAvailability === "ready"
+              ? stats.get(enhanceTarget.id)?.memoryCount ?? null
+              : null
+            : null
+        }
       />
     </div>
   );
