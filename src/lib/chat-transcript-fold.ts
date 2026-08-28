@@ -23,6 +23,32 @@ export const CHAT_FOLD_KEEP_GROUPS = 6;
 /** Below this, folding costs a divider and saves nothing. Hiding one or two
  *  turns behind a control is worse than just showing them. */
 export const CHAT_FOLD_MIN_HIDDEN_TURNS = 3;
+/** How many leading visible turns sit dimmed below a closed fold - the
+ *  prototype's "fade the first visible turns" prose-dimming hint. Two turns
+ *  read as "the conversation continues above" without hiding anything; the
+ *  count is in TURNS because a voice call is one group carrying several. */
+export const CHAT_FOLD_FADE_TURNS = 2;
+
+/** Which groups in the visible tail render dimmed below a closed fold: the
+ *  first CHAT_FOLD_FADE_TURNS turns, counted across groups so a voice call
+ *  consumes its whole turn count as one dimmed block. Empty whenever the fold
+ *  is open or absent - the hint exists only while a fold stands for the older
+ *  exchange. Pure and unit-tested; the render loop just asks
+ *  faded.has(groupIndex). */
+export function chatFoldFadedGroupIndexes(
+  visibleGroups: readonly TranscriptGroup[],
+  folded: boolean,
+): ReadonlySet<number> {
+  const faded = new Set<number>();
+  if (!folded) return faded;
+  let remaining = CHAT_FOLD_FADE_TURNS;
+  for (let i = 0; i < visibleGroups.length && remaining > 0; i += 1) {
+    const group = visibleGroups[i];
+    faded.add(i);
+    remaining -= group.kind === "call" ? group.turns.length : 1;
+  }
+  return faded;
+}
 
 export type ChatTranscriptFold = {
   /** Index into groupedTurns where the visible tail starts; 0 when nothing folds. */
