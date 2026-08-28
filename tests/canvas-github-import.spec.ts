@@ -106,8 +106,13 @@ async function openGitHubImport(
   }
   await startFromCode.click();
   await page.getByRole("menuitem", { name: /GitHub file/ }).click();
+  // The dialog's accessible name renders the breadcrumb without separator
+  // spaces in some Chromium builds; locate by content instead so the test
+  // pins the surface that matters (the import form) rather than the name.
   await expect(
-    page.getByRole("dialog", { name: /Canvas›?Import GitHub file/ }),
+    page.getByRole("dialog").filter({
+      has: page.locator("input[placeholder*='github.com/owner/repo']"),
+    }),
   ).toBeVisible({ timeout: 15_000 });
 }
 
@@ -125,8 +130,8 @@ test.describe("Canvas GitHub file import", () => {
     };
     await openGitHubImport(page, [linkedProject]);
 
-    const dialog = page.getByRole("dialog", {
-      name: /Canvas›?Import GitHub file/,
+    const dialog = page.getByRole("dialog").filter({
+      has: page.locator("input[placeholder*='github.com/owner/repo']"),
     });
     await expect(
       dialog.getByRole("heading", { name: "Connect a Cave project" }),
@@ -195,8 +200,8 @@ test.describe("Canvas GitHub file import", () => {
       });
     });
 
-    const dialog = page.getByRole("dialog", {
-      name: /Canvas›?Import GitHub file/,
+    const dialog = page.getByRole("dialog").filter({
+      has: page.locator("input[placeholder*='github.com/owner/repo']"),
     });
     await dialog.getByLabel("GitHub file URL").fill(FILE_URL);
     await expect(dialog.getByText("Register local checkout")).toBeVisible();
