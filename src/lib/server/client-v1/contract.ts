@@ -109,6 +109,7 @@ export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([
   "invalid_request",
   "unauthorized",
   "scope_denied",
+  "ownership_refused",
   "not_found",
   "conflict",
   "rate_limited",

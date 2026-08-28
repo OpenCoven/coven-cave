@@ -166,6 +166,7 @@ test("publishes the locked v1 metadata, capabilities, scopes, error codes, and i
     "invalid_request",
     "unauthorized",
     "scope_denied",
+    "ownership_refused",
     "not_found",
     "conflict",
     "rate_limited",
