@@ -1676,3 +1676,41 @@
 .research-gh__file:hover {
   background: var(--bg-subtle);
 }
+/* ── Browser-capable resource preview modal (cave-m13fh). ── */
+/* The portaled Modal owns focus/backdrop; this is the body content. The frame
+   matches the browser pane's own non-Tauri iframe fallback sandbox, so remote
+   content behaves the same inside a modal as it does in the in-app browser. */
+.research-resource-browser {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.research-resource-browser__frame {
+  display: block;
+  width: 100%;
+  height: 60vh;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+}
+.research-resource-browser__gated {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+}
+.research-resource-browser__gated strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.research-resource-browser__gated p {
+  margin: 0;
+  max-width: 40ch;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}

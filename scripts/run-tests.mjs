@@ -152,6 +152,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
     "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
+    "src/components/research-resource-browser-modal.test.tsx",
     "src/components/role-surfaces/use-research-resources.test.tsx",
     "src/lib/research-resource-client.test.ts",
     "src/components/role-surfaces/use-research-links.test.ts",
@@ -160,6 +161,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/lib/research-generations.test.ts",
     "src/lib/research-paper-view.test.ts",
+    "src/lib/research-resource-browser.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -2426,6 +2428,7 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
   "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
+  "src/components/research-resource-browser-modal.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
   "src/components/role-surfaces/research-topic-card.test.tsx",

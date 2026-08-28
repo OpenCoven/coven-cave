@@ -42,6 +42,17 @@ export function caveResearchContextPacks(): boolean {
     && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_CONTEXT_PACKS);
 }
 
+/**
+ * Browser-capable resource preview: loading a resource's source URL in the
+ * Research Desk browser modal. Maps 1:1 to the Context Pack
+ * `consent.allowRemoteContent` gate — remote content is opt-in, fail-closed,
+ * and requires the authoritative resource catalog (cave-m13fh).
+ */
+export function caveResearchRemoteContent(): boolean {
+  return caveResearchResources()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_REMOTE_CONTENT);
+}
+
 /** Topic Discovery cannot run until Context Packs are available. */
 export function caveResearchTopicDiscovery(): boolean {
   return caveResearchContextPacks()
