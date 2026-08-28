@@ -223,8 +223,9 @@ records the gap. Two stand today, both documentation-level — the gates
 themselves hold:
 
 1. **The backslash half of the escaped-target refusal is unreachable.**
-   `docs/api/client-v1.md` says a target inside `/api/client/v1` containing `%`
-   *or* `\` is answered `400 invalid client v1 path`. The `%` half holds. A `\`
+   `docs/api/client-v1.md` says malformed/noncanonical escapes, escaped
+   non-conversation targets, and backslash targets are answered
+   `400 invalid client v1 path`. The observable `%` cases hold. A `\`
    is normalised to `/` by Next in the request target and answered `308` to the
    normalised target before `proxy.ts` runs; that target is not a client-v1
    route and is refused `401`. Nothing is served and no handler is reached, so

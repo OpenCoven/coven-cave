@@ -478,6 +478,30 @@ test("client-v1 request-targets carrying an escape are refused, not classified",
   }
 });
 
+test("canonical encoded conversation ids remain authenticated ingress", () => {
+  for (const id of [
+    "conversation/one?#",
+    "conversation with spaces",
+    "会話-雪-☃️",
+  ]) {
+    for (const suffix of ["", "/messages"]) {
+      const pathname =
+        `/api/client/v1/conversations/${encodeURIComponent(id)}${suffix}`;
+      assert.equal(isClientV1Path(pathname), true, pathname);
+      assert.equal(isRefusedClientV1Path(pathname), false, pathname);
+      assert.equal(clientV1IngressKind(pathname), "authenticated", pathname);
+    }
+  }
+});
+
+test("raw URL path punctuation cannot alias its canonical encoded conversation id", () => {
+  for (const id of ["$value", "value:part", "value@host", "a+b=c&d"]) {
+    const pathname = `/api/client/v1/conversations/${id}`;
+    assert.equal(isRefusedClientV1Path(pathname), true, pathname);
+    assert.equal(clientV1IngressKind(pathname), null, pathname);
+  }
+});
+
 test("the client-v1 escape refusal is scoped to the client-v1 path prefix", () => {
   // An escape outside this surface is none of the refusal's business — every
   // other API family accepts encoded path segments, and widening the refusal to
