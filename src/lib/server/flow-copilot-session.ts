@@ -87,7 +87,8 @@ export class CopilotPromptTransportError extends Error {
   constructor(units: number, safeLimit: number) {
     super(
       `Copilot flow prompt is too large for a safe Windows launch (${units} UTF-16 command-line units; safe limit ${safeLimit}). ` +
-      "Shorten the Research mission intent or use a runtime with stdin prompt support. Copilot currently accepts this flow prompt only through argv; it was not truncated.",
+      "Shorten the Research mission intent, or launch without Coven's native process supervisor so the prompt rides stdin. " +
+      "This launch carried the prompt on the command line; it was not truncated.",
     );
     this.name = "CopilotPromptTransportError";
     this.units = units;
@@ -99,7 +100,7 @@ export class CopilotArgvTransportError extends Error {
   readonly status = 400;
 
   constructor(
-    token: "command" | `argument ${number}`,
+    token: "command" | "stdin prompt" | `argument ${number}`,
     reason: "empty" | "not a string" | "contains NUL" | "contains unpaired UTF-16 surrogate",
   ) {
     super(
@@ -737,30 +738,11 @@ export async function startCopilotFlowRun(
         .filter((root) => root && root !== launch.projectRoot),
     ),
   );
-  const args = buildCopilotStreamArgs({
-    spec: launch.spec,
-    prompt,
-    resumeSessionId: null,
-    newSessionId: sessionId,
-    model: launch.model ?? null,
-    // Flow runs are Cave-initiated one-shots with nobody at the prompt: they
-    // need pre-approved tools/URLs or the CLI auto-denies every write and the
-    // iteration "completes" with an untouched workspace (the research-mission
-    // "completed without artifacts/primary.md" failure). Path verification
-    // stays on — writes are confined to the spawn cwd plus addDirs.
-    // Webhook payloads are untrusted prompt data. Only a caller that has
-    // explicitly established a local automation boundary may pre-approve.
-    permissionMode: launch.permissionMode ?? "read",
-    addDirs,
-  });
-
   const command = launch.spawnCommand ?? launch.spec.launchCommand ?? {
     command: launch.spec.executable,
     fixedArgs: [],
   };
-  const spawnArgs = [...command.fixedArgs, ...args];
   const platform = runtime.platform ?? process.platform;
-  assertCopilotCommandLineFitsWindows(command.command, spawnArgs, platform);
   // The native supervisor is the supported transport, and on a current CLI it
   // is the one taken: @opencoven/cli 0.4.0's npm wrapper implements
   // `--print-native-binary-path`, so resolveCovenProcessSupervisorCommand()
@@ -795,6 +777,43 @@ export async function startCopilotFlowRun(
   if (globalThis.__covenCaveCopilotFlowShutdownStarted) {
     throw new Error("Cave is shutting down; a new direct Copilot flow cannot be started");
   }
+  // The prompt rides the transport that can actually carry it. The supervisor
+  // request frame (coven.process-supervisor.v1) has no stdin field, so a
+  // supervised launch keeps the prompt on argv. A direct spawn pipes the
+  // prompt as the child's complete stdin payload (cave-cwjof): argv then
+  // carries flags and paths only, and the Windows command-line guard stops
+  // bounding prompt size — RESEARCH_INTENT_MAX_LENGTH governs alone.
+  const promptTransport: "argv" | "stdin" = supervisorCommand ? "argv" : "stdin";
+  const args = buildCopilotStreamArgs({
+    spec: launch.spec,
+    prompt,
+    resumeSessionId: null,
+    newSessionId: sessionId,
+    model: launch.model ?? null,
+    // Flow runs are Cave-initiated one-shots with nobody at the prompt: they
+    // need pre-approved tools/URLs or the CLI auto-denies every write and the
+    // iteration "completes" with an untouched workspace (the research-mission
+    // "completed without artifacts/primary.md" failure). Path verification
+    // stays on — writes are confined to the spawn cwd plus addDirs.
+    // Webhook payloads are untrusted prompt data. Only a caller that has
+    // explicitly established a local automation boundary may pre-approve.
+    permissionMode: launch.permissionMode ?? "read",
+    addDirs,
+    promptTransport,
+  });
+  const spawnArgs = [...command.fixedArgs, ...args];
+  assertCopilotCommandLineFitsWindows(command.command, spawnArgs, platform);
+  if (promptTransport === "stdin") {
+    // The argv guard cannot see the stdin payload; fail closed before spawn
+    // rather than let UTF-8 encoding silently replace unpaired surrogates or
+    // let a NUL reach the CLI as part of a prompt it will execute.
+    if (prompt.includes("\0")) {
+      throw new CopilotArgvTransportError("stdin prompt", "contains NUL");
+    }
+    if (hasUnpairedUtf16Surrogate(prompt)) {
+      throw new CopilotArgvTransportError("stdin prompt", "contains unpaired UTF-16 surrogate");
+    }
+  }
   // Build the request frame only for the transport that consumes it. It is the
   // supervisor's wire format and it REJECTS a non-absolute program path, so
   // constructing it on the direct path would throw
@@ -817,12 +836,11 @@ export async function startCopilotFlowRun(
     // refuses. So keep the size refusal on both transports and skip only the
     // guard that genuinely belongs to the wire format — the absolute-program
     // requirement, which would reject a bare `copilot` resolved from PATH.
+    // With the stdin transport the prompt no longer rides this request, so the
+    // ceiling bounds flags and paths only; prompt size is governed upstream by
+    // RESEARCH_INTENT_MAX_LENGTH instead (cave-cwjof).
     assertCopilotSupervisorRequestFitsProvider(request);
   }
-  // Unsupervised runs carry the prompt in argv again, which is exactly the
-  // Windows command-line hazard #4524 moved into the request frame. The
-  // assertion above already ran unconditionally, so an oversized prompt still
-  // fails closed here instead of being silently truncated by the OS.
   const [spawnProgram, spawnProgramArgs] = supervisorCommand
     ? [supervisorCommand.command, supervisorCommand.fixedArgs]
     : [command.command, spawnArgs];
@@ -835,6 +853,24 @@ export async function startCopilotFlowRun(
     detached: false,
   });
   observeSupervisorClose(child);
+  if (promptTransport === "stdin") {
+    // Deliver the complete prompt as the child's stdin payload; EOF starts the
+    // turn. A fast-exiting child can close the pipe before the write lands
+    // (EPIPE) — the run then finalizes through the child's own non-zero close,
+    // so the delivery error needs no separate reporting.
+    const input = child.stdin;
+    if (input) {
+      input.on("error", () => {});
+      input.end(prompt, "utf8");
+    } else {
+      // Under these spawn options a started child always has a stdin pipe; a
+      // missing one means the spawn failed synchronously or an injected double
+      // diverged. Stop whatever exists and fail closed rather than claim the
+      // prompt was delivered.
+      child.kill();
+      throw new Error("Copilot stdin is unavailable; no prompt was delivered");
+    }
+  }
   const launchedThroughSupervisor = supervisorCommand !== null;
 
   const startedAt = new Date().toISOString();
