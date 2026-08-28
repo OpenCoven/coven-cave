@@ -11,6 +11,14 @@ export const runtime = "nodejs";
 const MAX_BODY_BYTES = 64 * 1024;
 
 /**
+ * Hard ceiling for one search request. The spec's targets are 150 ms warm and
+ * 500 ms for current-project files; a whole request crossing ten seconds means
+ * something is stuck, and the coordinator's signal handling turns whatever did
+ * not finish into an explicit timeout diagnostic rather than a hung request.
+ */
+const SEARCH_TIMEOUT_MS = 10_000;
+
+/**
  * POST /api/search — the search coordinator's HTTP surface (cave-ychtl.4).
  *
  * POST rather than GET because a query AST carries nested filters and scopes;
@@ -72,7 +80,9 @@ export async function POST(req: Request) {
       query: validated.query,
       context: setup.requesterContext,
       limit,
+      cursor: typeof payload.cursor === "string" ? payload.cursor : null,
       now: Date.now(),
+      signal: AbortSignal.any([req.signal, AbortSignal.timeout(SEARCH_TIMEOUT_MS)]),
     },
     {
       providers: setup.providers,

@@ -276,6 +276,17 @@ assert.match(css, /\.mobile-right-chat-drawer\s*\{[^}]*right:\s*0;[^}]*width:\s*
 assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*width:\s*100vw;/, "narrow phones use the available width");
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.mobile-right-chat-drawer[\s\S]*?animation:\s*none/, "drawer motion respects the global reduced-motion contract");
 
+// Full-bleed close strip (cave-4snk9): at ≤480px the drawer is width:100vw
+// and covers the backdrop at every pixel, so the backdrop is hidden for this
+// slot (a control no input modality can reach) and the drawer's own top
+// strip — absolute above the drawer's content, a child of the trapped
+// dialog — owns dismissal. The strip shows exactly when the drawer is
+// full-bleed; the exposed backdrop keeps owning dismissal everywhere else.
+assert.match(css, /\.mobile-right-chat-drawer__close\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*5;/, "the full-bleed close strip is an absolute bar above the drawer's own content");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer__close\s*\{[^}]*display:\s*block;/, "the close strip shows exactly when the right Chat drawer is full-bleed");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-drawer-backdrop\[data-drawer-slot="right-chat"\]\s*\{[^}]*display:\s*none;/, "the backdrop is hidden while the right Chat drawer is full-bleed — a control no input modality could reach (cave-4snk9)");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*padding-top:\s*calc\(var\(--sai-top\) \+ var\(--touch-target\)\);/, "the full-bleed drawer pushes its content below the close strip so nothing interactive is covered");
+
 // The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
   shell,

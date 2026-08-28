@@ -1277,6 +1277,7 @@ export const SUITES = {
 	    "src/app/aesthetic/aesthetic-fields.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/popover-submenu.test.ts",
+    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/lib/submenu-position.test.ts",
     "src/components/ui/overflow-menu.test.ts",
     "src/components/ui/surface-toolbar.test.ts",
@@ -1787,6 +1788,7 @@ export const SUITES = {
     "src/app/api/github/runs/route.test.ts",
     "src/app/api/salem/strip-mdx.test.ts",
     "src/app/api/salem/route.test.ts",
+    "src/app/api/search/route.test.ts",
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
@@ -2316,6 +2318,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/voice/session/route.test.ts",
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/salem/route.test.ts",
+  "src/app/api/search/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
   "src/app/api/chat/conversation/[id]/turns/[turnId]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
@@ -2344,6 +2347,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
   "src/components/project-picker-focus.test.tsx",
+  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",

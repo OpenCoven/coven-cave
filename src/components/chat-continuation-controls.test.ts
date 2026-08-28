@@ -47,3 +47,52 @@ assert.match(
 );
 
 console.log("chat-continuation-controls.test.ts OK");
+
+// ── Prose-dimming hint (cave-4akqc): the first visible turns below a closed
+//    fold sit slightly dimmed, suggesting the transcript continues above. The
+//    hint must be driven by the FOLD state (never the render cap), must stay
+//    purely visual, and must restore full contrast on hover/focus and under
+//    reduced-transparency — a dim that blocks reading is not an affordance.
+
+assert.match(
+  source,
+  /const fadedGroups = chatFoldFadedGroupIndexes\(renderGroups, folded\);/,
+  "the fade is computed over the rendered slice and only while the fold is closed",
+);
+assert.match(
+  source,
+  /foldFaded=\{fadedGroups\.has\(groupIndex\)\}/,
+  "every TurnRow (single and voice-call) receives the per-group fade flag",
+);
+assert.match(
+  source,
+  /\$\{foldFaded \? " cave-linear-turn--fold-faded" : ""\}/,
+  "the fade is a class on the turn row, not a wrapper or a text mutation",
+);
+assert.match(
+  source,
+  /prev\.foldFaded === next\.foldFaded/,
+  "the memo comparator includes the fade flag so opening the fold re-renders dimmed rows",
+);
+assert.match(
+  styles,
+  /\.cave-linear-turn--fold-faded \{[\s\S]{0,400}?opacity: 0\.72;/,
+  "a closed fold renders its first visible turns at reduced opacity",
+);
+assert.match(
+  styles,
+  /\.cave-linear-turn--fold-faded:hover,[\s\S]*?\.cave-linear-turn--fold-faded:focus-within \{[\s\S]*?opacity: 1;/,
+  "hover or focus restores full contrast so the hint never blocks reading",
+);
+assert.match(
+  styles,
+  /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*?\.cave-linear-turn--fold-faded \{[\s\S]*?opacity: 1;/,
+  "reduced-transparency disables the dim entirely",
+);
+assert.match(
+  styles,
+  /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.cave-linear-turn--fold-faded \{[\s\S]*?transition: none;/,
+  "reduced-motion kills the fade transition",
+);
+
+console.log("chat-continuation-controls.test.ts OK");
