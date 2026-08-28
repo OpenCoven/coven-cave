@@ -1109,10 +1109,11 @@ function finiteNonNegativeTokens(value: unknown): number | undefined {
 }
 
 /** Codex `turn.completed.usage` reports token counts as snake_case
- * (`input_tokens`, `output_tokens`, `cached_input_tokens`). Map the fields
- * Cave persists onto a `TurnUsage`; Codex has no cache-creation or cost
- * counter, and a malformed/absent usage block yields undefined so the turn
- * carries no meter rather than a fabricated zero. */
+ * (`input_tokens`, `output_tokens`, `cached_input_tokens`,
+ * `cache_write_input_tokens`). Map the fields Cave persists onto a `TurnUsage`
+ * (cached-input → cache read, cache-write-input → cache creation); Codex has no
+ * per-turn cost counter, and a malformed/absent usage block yields undefined
+ * so the turn carries no meter rather than a fabricated zero. */
 function parseCodexUsage(raw: unknown): TurnUsage | undefined {
   const usage = record(raw);
   if (!usage) return undefined;
@@ -1120,10 +1121,12 @@ function parseCodexUsage(raw: unknown): TurnUsage | undefined {
   const outputTokens = finiteNonNegativeTokens(usage.output_tokens);
   if (inputTokens === undefined && outputTokens === undefined) return undefined;
   const cacheReadTokens = finiteNonNegativeTokens(usage.cached_input_tokens);
+  const cacheCreationTokens = finiteNonNegativeTokens(usage.cache_write_input_tokens);
   return {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
   };
 }
 

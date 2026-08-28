@@ -147,11 +147,11 @@ assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never re
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
 assert.deepEqual(
   parseCodexStreamEvent(
-    { type: "turn.completed", usage: { input_tokens: 100, output_tokens: 50, cached_input_tokens: 10 } },
+    { type: "turn.completed", usage: { input_tokens: 100, output_tokens: 50, cached_input_tokens: 10, cache_write_input_tokens: 4 } },
     selected.schema,
   ),
-  { kind: "completed", usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10 } },
-  "a successful turn maps Codex's snake_case usage onto Cave's TurnUsage (cache read, no cache-creation/cost)",
+  { kind: "completed", usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10, cacheCreationTokens: 4 } },
+  "a successful turn maps Codex's snake_case usage onto Cave's TurnUsage (cached-input → cache read, cache-write-input → cache creation)",
 );
 assert.deepEqual(
   parseCodexStreamEvent(
@@ -159,7 +159,7 @@ assert.deepEqual(
     selected.schema,
   ),
   { kind: "completed", usage: { inputTokens: 80, outputTokens: 40 } },
-  "cached_input_tokens is optional and omitted when the CLI does not report it",
+  "cached_input_tokens and cache_write_input_tokens are optional and omitted when the CLI does not report them",
 );
 assert.deepEqual(
   parseCodexStreamEvent({ type: "turn.completed", secret: "never render" }, selected.schema),
