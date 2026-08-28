@@ -358,6 +358,7 @@ export const SUITES = {
     "src/lib/auto-mission-approval.test.ts",
     "src/lib/auto-mission-presence.test.ts",
     "src/components/running-sessions-mission-row.test.ts",
+    "src/components/auto-status-card.test.tsx",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
@@ -2334,6 +2335,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
+  "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
