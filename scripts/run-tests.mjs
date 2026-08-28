@@ -864,6 +864,8 @@ export const SUITES = {
     "src/app/api/research/topic-proposals/[id]/route.test.ts",
     "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
     "scripts/research-topic-discovery-eval.test.mjs",
+    "src/components/role-surfaces/research-topic-card.test.tsx",
+    "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
     "src/lib/research-resource-read-model.test.ts",
     "src/lib/research-recommendation-context.test.ts",
     "src/lib/research-topic-recommendations.test.ts",
@@ -2396,6 +2398,9 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
+  // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
+  "src/components/role-surfaces/research-topic-card.test.tsx",
+  "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
