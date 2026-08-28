@@ -140,6 +140,23 @@ export type WorktreeLifecycleObservation = {
   metadataGlobalErrors: string[];
   remoteRef: WorktreeRemoteRef | null;
   sessionIds: string[];
+  /**
+   * The worktree's lock reason, exactly as `git worktree list --porcelain`
+   * reports it. `null` means the worktree is not locked; an empty string means
+   * it is locked with no reason recorded.
+   *
+   * Deliberately NOT a classification input. A lock is a point-in-time claim
+   * the classifier cannot evaluate — a foreign reason like "active cave-1c8zf
+   * PR completion" says nothing about dirtiness or retention — so it never
+   * changes the lane. It is surfaced in the report alongside the unit's live
+   * cleanliness/retention verdict, so a lock contradicted by current state is
+   * visible at a glance instead of forcing an operator to diff lock reasons
+   * against merged PRs by hand (cave-eg1ag).
+   *
+   * Optional so legacy callers that never populate it keep their old behaviour;
+   * absent reads as "not locked".
+   */
+  lockReason?: string | null;
 };
 
 type LegacyWorktreeObservation = Pick<
@@ -183,6 +200,9 @@ type WorktreeObservationCompatibilityFields = Partial<
     // Optional because only a platform with a directory-hold probe can answer
     // it; absent reads as "no such evidence", never as "proven free".
     | "directoryHeldOpen"
+    // Optional so legacy observations that predate lock surfacing still parse;
+    // absent reads as "not locked".
+    | "lockReason"
   >
 >;
 
@@ -948,6 +968,7 @@ function normalizeWorktreeObservation(
       metadataGlobalErrors: observation.metadataGlobalErrors ?? [],
       remoteRef: observation.remoteRef ?? null,
       sessionIds: observation.sessionIds ?? [],
+      lockReason: observation.lockReason ?? null,
     },
   };
 }
@@ -1148,6 +1169,16 @@ export function renderWorktreeLifecycleReport(
       const location = item.kind === "branch-only" || !item.path ? "" : ` @ ${item.path}`;
       const kind = item.kind === "branch-only" ? " [branch-only]" : "";
       lines.push(`- ${labelFor(item)}${kind}${location}`);
+      // cave-eg1ag: surface a locked unit's lock reason alongside its live
+      // verdict, so a stale lock contradicted by the verdict (clean + retained,
+      // yet held by "active … PR completion") is visible at a glance. Printed
+      // first so it reads as the unit's most salient caveat, before the reasons
+      // that describe what the tree actually is. Never a lane input.
+      if (item.lockReason != null) {
+        lines.push(
+          `  worktree locked: ${item.lockReason.length > 0 ? item.lockReason : "(no reason recorded)"}`,
+        );
+      }
       // Drop the copies of a checkout-level failure that were already stated
       // above. `reasons` keeps them — this is presentation, not classification,
       // and every consumer reading the item still sees the full list.
