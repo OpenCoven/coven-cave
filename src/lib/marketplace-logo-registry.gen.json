@@ -6,9 +6,9 @@
     "license": "CC0-1.0",
     "package": "simple-icons"
   },
-  "catalogCount": 130,
+  "catalogCount": 129,
   "brandCount": 35,
-  "monogramCount": 95,
+  "monogramCount": 94,
   "entries": {
     "github": {
       "kind": "brand",
@@ -654,11 +654,6 @@
       "kind": "monogram",
       "title": "E2B Code Sandbox",
       "monogram": "ES"
-    },
-    "daytona": {
-      "kind": "monogram",
-      "title": "Daytona Sandboxes",
-      "monogram": "DS"
     },
     "browserbase": {
       "kind": "monogram",
