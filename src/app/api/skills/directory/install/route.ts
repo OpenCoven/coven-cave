@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
+import { resolveNpxLaunchCommand } from "@/lib/npx-bin";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   listSkillDirectoryEntriesWithLocal,
@@ -76,7 +77,10 @@ export async function POST(req: Request) {
   const args = buildInstallArgs(target, skill, agents);
 
   try {
-    const { stdout, stderr } = await execFileAsync("npx", args, {
+    // npx is an npm .cmd shim on Windows; resolve it without a shell because
+    // the args include user-supplied skill names (cave-4arof).
+    const launch = resolveNpxLaunchCommand();
+    const { stdout, stderr } = await execFileAsync(launch.command, [...launch.fixedArgs, ...args], {
       windowsHide: true,
       cwd: process.cwd(),
       timeout: INSTALL_TIMEOUT_MS,
