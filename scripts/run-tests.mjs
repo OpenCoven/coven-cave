@@ -1414,6 +1414,7 @@ export const SUITES = {
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/ci-paths.test.mjs",
+    "scripts/check-merge-tree-freshness.test.mjs",
     "scripts/export-client-v1-contract.test.mjs",
     "scripts/export-client-v1-hpke-vectors.test.mjs",
     "scripts/client-v1-doc-contract.test.mjs",
