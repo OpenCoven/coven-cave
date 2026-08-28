@@ -55,13 +55,13 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
     // through pairingStore.lookup and charges THIS bucket for its own
     // mismatches. Keep it that way — a second bucket for that route would
     // meter it while leaving the pair of them unbounded.
-    const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
+    const limit = runtime.rateLimiter.peekPairingComparisonFailure(id);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 
     const result = runtime.pairingStore.consumeForExchange(id, secret);
     switch (result.kind) {
       case "secret_mismatch":
-        runtime.rateLimiter.consumePairingExchangeFailure(id);
+        runtime.rateLimiter.consumePairingComparisonFailure(id);
         return clientV1ErrorResponse("unauthorized", "Unauthorized.");
       case "not_found":
         // Not charged: the store answers `not_found` only when no record and
