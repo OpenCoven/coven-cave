@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
+const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const familiarChangeEffect =
   source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
 
@@ -30,19 +31,25 @@ assert.match(
   "A familiar change that matches the chat view's own familiarId (router-initiated open) must keep the view — not wipe the sessionId",
 );
 
-assert.match(
+// The router no longer owns a rail. The chat surface docks ONE threads rail
+// beside the conversation (cave-fh9so), which is what "stays visible in chat
+// detail" was asking for — the router's own copy only ever rendered in the
+// chat branch and duplicated the list view's.
+assert.doesNotMatch(
   source,
   /import \{ ChatProjectSidebar \} from "@\/components\/chat-project-sidebar"/,
-  "ChatRouter should own the project sidebar so it can stay visible in chat detail, not only the chat list",
-);
+  "the router mounts no project rail of its own",
+)
 
+// "Visible next to the chat" is exactly the intent that survived — it just
+// moved up a level. The chat surface docks the rail as a sibling of the main
+// column, so it persists across BOTH the list and an open conversation, which
+// the router-owned copy never did (cave-fh9so).
 assert.match(
-  source,
-  // The chat surface renders through ChatSplitHost (multi-pane chat); the
-  // sidebar still sits beside it while a chat is open.
-  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatSplitHost/,
-  "ChatRouter should render the projects sidebar next to the chat surface while a chat is open",
-);
+  chatSurface,
+  /<aside className="chat-inner-rail"[\s\S]*<SidebarChatsSection/,
+  "the surface docks a threads rail beside the conversation",
+)
 
 assert.match(
   source,

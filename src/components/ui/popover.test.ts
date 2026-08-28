@@ -226,13 +226,26 @@ assert.doesNotMatch(
 // choice among mutually exclusive alternatives again. So the call sites are
 // pinned too — component behavior and adoption are different claims. Read the
 // TSX as JSX so the coverage survives formatting-only refactors in the callers.
-const workspaceSidebar = readFileSync(new URL("../workspace-sidebar.tsx", import.meta.url), "utf8");
+// "Show archived" moved with the Organize menu: the threads rail's header is a
+// single title row now (cave-fh9so), and the toggle lives on the full chat list
+// view, which still owns search and archived alongside it. The adoption claim
+// is unchanged — it just has a different call site.
+const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
 assert.ok(
-  jsxElements("workspace-sidebar.tsx", workspaceSidebar, "PopoverItem").some(
+  jsxElements("chat-list.tsx", chatList, "PopoverItem").some(
     ({ block, attributes }) =>
       block.includes("Show archived") && attributes.get("checkedRole") === "checkbox",
   ),
   "Show archived is an independent toggle, not one of a mutually exclusive set",
+);
+// And the rail must not quietly grow one back without the role.
+const workspaceSidebar = readFileSync(new URL("../workspace-sidebar.tsx", import.meta.url), "utf8");
+assert.ok(
+  jsxElements("workspace-sidebar.tsx", workspaceSidebar, "PopoverItem").every(
+    ({ block, attributes }) =>
+      !block.includes("Show archived") || attributes.get("checkedRole") === "checkbox",
+  ),
+  "if the rail ever regains Show archived it must arrive as a checkbox",
 );
 
 const sessionHeader = readFileSync(new URL("../chat-session-header.tsx", import.meta.url), "utf8");
@@ -249,7 +262,6 @@ assert.ok(
 // it. Their indentation differs, so a single edit silently covers only one of
 // them; that happened while writing this change, which is why the count is
 // asserted rather than a bare match.
-const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
 const chatListItems = jsxElements("chat-list.tsx", chatList, "PopoverItem");
 assert.equal(
   chatListItems.filter(

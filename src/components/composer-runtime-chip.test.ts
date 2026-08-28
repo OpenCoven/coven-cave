@@ -84,7 +84,7 @@ assert.match(
 assert.match(
   chatView,
   /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
-  "chatContextControls is constructed once with live runtime/model state; new chat (inlineComposer) mounts it in the footer cluster, active chat in cave-chat-header-context",
+  "chatContextControls is constructed once with live runtime/model state; new chat (inlineComposer) mounts it in the footer cluster, active chat inline on the title row (plus a mobile-only strip)",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──

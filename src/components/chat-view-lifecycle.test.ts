@@ -35,10 +35,21 @@ assert.match(
   "Lifecycle phases should map to user-facing labels in one place",
 );
 
+// The live region was narrowed from the whole meta-line row to the meta TEXT
+// span (cave-fh9so): the row also carries the title, the avatar and the inline
+// context controls, so as one region every lifecycle tick re-announced all of
+// it. The property under test is unchanged — the lifecycle is still announced
+// through the header meta line — so this asserts both halves rather than one
+// ordering of attributes on a single element.
 assert.match(
   source,
-  /function MetaLine[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*data-lifecycle=\{state\}/,
-  "In-flight chat lifecycle should be announced through the header meta line",
+  /function MetaLine[\s\S]*data-lifecycle=\{state\}/,
+  "the meta line still carries the lifecycle state",
+);
+assert.match(
+  source,
+  /function MetaLine[\s\S]*className="cave-chat-meta-line__meta"[^>]*role="status"[^>]*aria-live="polite"/,
+  "…and the meta text is the live region that announces it",
 );
 
 assert.match(

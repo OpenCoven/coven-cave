@@ -200,8 +200,15 @@ assert.match(
 );
 assert.match(
   source,
-  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "the context controls ride the header for writable active chats",
+  /contextControls=\{!inlineComposer && !offlineReadOnly \? chatContextControls : null\}/,
+  "the context controls ride the title row inline for writable active chats",
+);
+// The below-title strip survives for mobile only, where the whole meta line is
+// display:none and the inline copy therefore cannot render.
+assert.match(
+  source,
+  /!inlineComposer && !offlineReadOnly[\s\S]{0,400}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "a mobile-only context strip remains below the title",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 

@@ -1,0 +1,27 @@
+{
+  "name": "daytona",
+  "version": "1.0.0",
+  "description": "Create and manage isolated Daytona Cloud sandboxes with API, CLI, and SDK guidance for Python, TypeScript, Java, Go, and Ruby.",
+  "author": {
+    "name": "Daytona",
+    "url": "https://github.com/daytona"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Daytona Sandboxes",
+    "shortDescription": "Create and manage isolated Daytona Cloud sandboxes with API, CLI, and SDK guidance for Python, TypeScript, Java, Go, and Ruby.",
+    "longDescription": "Create and manage isolated Daytona Cloud sandboxes through its API, CLI, and Python, TypeScript, Java, Go, or Ruby SDKs.",
+    "developerName": "Daytona",
+    "category": "Developer Tools",
+    "capabilities": [
+      "daytona",
+      "sandbox",
+      "secure-compute",
+      "isolated-runtime",
+      "code-execution",
+      "sdk"
+    ],
+    "websiteURL": "https://www.daytona.io",
+    "defaultPrompt": "Help me use Daytona Sandboxes safely."
+  }
+}

@@ -28,10 +28,13 @@ assert.match(
   "GitHub task enrichment should not reintroduce locally deleted sessions",
 );
 
+// The thread rail moved into the chat surface (cave-fh9so), and its
+// one-at-a-time delete bridge moved with it. The fail-closed rule is unchanged:
+// throw before hiding a row or invalidating cache.
 assert.match(
-  workspace,
-  /if \(!res\.ok \|\| !json\.ok\) \{[\s\S]*?throw new Error\(json\.error \?\? "delete failed"\)/,
-  "Workspace delete should fail closed before hiding a row or invalidating cache",
+  chatSurface,
+  /if \(!res\.ok \|\| !json\.ok\) throw new Error\(json\.error \?\? "delete failed"\)/,
+  "the rail's delete bridge fails closed before hiding a row or invalidating cache",
 );
 
 assert.match(
@@ -46,7 +49,11 @@ assert.match(
   "Workspace should invalidate confirmed ids and then refresh once in the background",
 );
 
-assert.match(workspace, /handleSessionsDeleted\(\[session\.id\]\)/, "sidebar deletion uses the shared boundary");
+assert.match(
+  chatSurface,
+  /onSessionsDeleted\(\[session\.id\]\)/,
+  "the rail's delete bridge reports through the shared deletion boundary",
+)
 assert.match(workspace, /onSessionsDeleted=\{handleSessionsDeleted\}/, "nested chat surfaces receive the shared boundary");
 
 assert.equal(

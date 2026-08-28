@@ -9,6 +9,7 @@ const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url)
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const familiarStyles = readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
+const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 
 // ── Familiar selection is dropdown-only ───────────────────────────────────────
 // The one-tap avatar strip (and its avatars/dropdown style preference) is
@@ -24,25 +25,32 @@ assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains f
 
 // ── Familiar selection stays in shared workspace context ────────────────────
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.match(sidebar, /<SidebarRailHeader[\s\S]*?contextMode="all"/, "the Chats list header enables desktop and mobile scope controls");
+// Desktop scope controls live in the title bar (#4967); the rail's copy is
+// mobile-only, or the same two pickers render twice (cave-fh9so).
+assert.match(
+  sidenav,
+  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
+  "the rail's scope row is mobile-only",
+)
 assert.match(railHeader, /<SidebarScopeSelector/, "the shared header mounts the compact desktop selector");
 assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header mounts the project-and-crew context switcher");
 assert.match(contextSwitcher, /<FamiliarSwitcher[\s\S]*?labeled/, "the context switcher mounts the crew switcher in its labeled form");
-const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?contextMode="all"/,
-  "the normal sidenav header also enables desktop and mobile scope controls",
-);
+  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
+  "the sidenav header scopes its context row to mobile (desktop reads the title bar)",
+)
 assert.match(
   workspace,
   /<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
   "Workspace owns the persistent title-bar familiar selector",
 );
+// No rail swap survives: one sidebar renders always, and the chat surface
+// docks its own threads rail beside the conversation (cave-fh9so).
 assert.match(
   workspace,
-  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;[\s\S]*nav=\{contextualNav\}\s*list=\{undefined\}/,
-  "WorkspaceSidebar replaces the normal sidenav in an expanded Code room; SidebarMinimal returns outside it and when collapsed",
-);
+  /const contextualNav = sidebar;[\s\S]*nav=\{contextualNav\}/,
+  "the shell always receives the one sidebar",
+)
 
 console.log("familiar-quick-switch component: all assertions passed");

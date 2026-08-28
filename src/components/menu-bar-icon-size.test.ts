@@ -81,7 +81,53 @@ assert.match(
   /^:root\[data-tauri-titlebar\] \{[^}]*--shell-native-titlebar-height:\s*\d+px;/m,
   "--shell-native-titlebar-height resolves to a concrete height under the native titlebar",
 );
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 34px/, "the functional toolbar keeps its compact 34px row below the title strip");
+// The toolbar row shares its row with the macOS traffic lights, which are
+// inset from the window's TOP edge as well as its leading edge. Only the
+// leading inset was accounted for, so the row sat proud of the lights.
+//
+// Three things have to hold together or the nudge is silently undone:
+// the band grows by it, the row pads by it, and min-height tracks the band —
+// a leftover `min-height: 34px` floor under border-box would eat the padding
+// and leave the row exactly where it started.
+const toolbarRule = css.match(/^:root\[data-tauri-titlebar\] \.shell-top \{[^}]*\}/m)?.[0];
+assert.ok(toolbarRule, "the native toolbar row has its own rule");
+assert.match(
+  toolbarRule,
+  /padding-top: var\(--titlebar-content-top-nudge, 0px\);/,
+  "the toolbar row is nudged onto the traffic-light baseline",
+);
+assert.match(
+  toolbarRule,
+  /min-height: var\(--shell-native-titlebar-height\);/,
+  "…and its floor tracks the band, so border-box cannot eat the nudge",
+);
+assert.match(
+  css,
+  /^:root\[data-tauri-titlebar\] \{[^}]*--titlebar-content-top-nudge:\s*\d+px;/m,
+  "the nudge is a concrete pixel value",
+);
+
+// Scope. The nudge exists to match a native control that only macOS draws, and
+// [data-tauri-titlebar] is set on <html> by the macOS shell alone. Windows,
+// Linux and the browser must keep a row centred in its own band — so every
+// reference to the token has to sit under that attribute, and the fallback
+// keeps it at 0 anywhere the variable is not defined.
+for (const [index, line] of css.split("\n").entries()) {
+  if (!line.includes("--titlebar-content-top-nudge")) continue;
+  if (line.includes("--titlebar-content-top-nudge:")) continue;
+  assert.match(
+    line,
+    /var\(--titlebar-content-top-nudge, 0px\)/,
+    `line ${index + 1} reads the nudge without a 0px fallback`,
+  );
+}
+const nudgeDeclaringSelectors = [...css.matchAll(/([^{}]*)\{[^}]*--titlebar-content-top-nudge:/g)]
+  .map((match) => match[1].trim().split("\n").pop()?.trim() ?? "");
+assert.deepEqual(
+  nudgeDeclaringSelectors,
+  [":root[data-tauri-titlebar]"],
+  "only the macOS shell defines the nudge, so no other platform inherits it",
+);
 assert.match(
   css,
   /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status,\s*\n\.menu-bar__group--status \.notification-bell__trigger \{[^}]*width:\s*28px;[^}]*height:\s*28px;/,

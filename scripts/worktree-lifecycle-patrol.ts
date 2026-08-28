@@ -26,6 +26,8 @@ import {
 } from "./worktree-lifecycle-retirement.ts";
 import {
   createMetadataRepairOperations,
+  dropExpiredOrphanedExceptions,
+  expiredOrphanedExceptionCandidates,
   repairOrphanedWorktreeMetadata,
 } from "./worktree-lifecycle-metadata-repair.ts";
 
@@ -69,6 +71,7 @@ type PatrolSummary = ReturnType<typeof summarizeWorktreeLifecycle>;
 type MaintenanceCapabilities = ReturnType<typeof repositoryMaintenanceCapabilities>;
 type RetirementReport = ReturnType<typeof retireLifecycleUnits>;
 type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
+type ExceptionDropReport = ReturnType<typeof dropExpiredOrphanedExceptions>;
 type PatrolItem = PatrolSummary["items"][number];
 type RetirementBlock = RetirementReport["blocked"][number];
 type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
@@ -105,6 +108,13 @@ type RetirementApplyDependencies = {
   retireLifecycleUnits: typeof retireLifecycleUnits;
   createMetadataRepairOperations: typeof createMetadataRepairOperations;
   repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
+  /**
+   * Optional for the same reason {@link createFenceRenewal} is: the existing
+   * apply tests build explicit dependency literals, so a required field would
+   * arrive undefined in every one of them and fail inside the try/catch as a
+   * confusing postInventoryError. Defaults to the real sweep.
+   */
+  dropExpiredOrphanedExceptions?: typeof dropExpiredOrphanedExceptions;
   collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
   /**
    * Optional, and injected so a test can observe renewal without waiting out
@@ -136,12 +146,14 @@ const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
   retireLifecycleUnits,
   createMetadataRepairOperations,
   repairOrphanedWorktreeMetadata,
+  dropExpiredOrphanedExceptions,
   collectWorktreeLifecycleInventory,
   createFenceRenewal,
 };
 
 type RetirementApplyResult = {
   metadataRepair: MetadataRepairReport;
+  exceptionDrop: ExceptionDropReport;
   retirement: RetirementReport;
   postInventory?: PatrolInventory;
   postInventoryError?: string;
@@ -150,6 +162,7 @@ type RetirementApplyResult = {
 
 type ApplyFailureReason =
   | "metadata-repair-blocked"
+  | "exception-drop-blocked"
   | "retirement-blocked"
   | "maintenance-gate-release-failed"
   | "post-apply-inventory-failed";
@@ -443,7 +456,7 @@ export function evaluateRetirementApplyOutcome(
   result: Pick<
     RetirementApplyResult,
     "retirement" | "metadataRepair" | "warning" | "postInventoryError"
-  > & { metadataRepair?: MetadataRepairReport },
+  > & { metadataRepair?: MetadataRepairReport; exceptionDrop?: ExceptionDropReport },
 ): RetirementApplyOutcome {
   const failures: ApplyFailureReason[] = [];
   if (
@@ -452,6 +465,13 @@ export function evaluateRetirementApplyOutcome(
       result.metadataRepair.partial.length > 0)
   ) {
     failures.push("metadata-repair-blocked");
+  }
+  if (
+    result.exceptionDrop &&
+    (result.exceptionDrop.blocked.length > 0 ||
+      result.exceptionDrop.partial.length > 0)
+  ) {
+    failures.push("exception-drop-blocked");
   }
   if (result.retirement.blocked.length > 0) failures.push("retirement-blocked");
   if (result.warning) failures.push("maintenance-gate-release-failed");
@@ -472,9 +492,11 @@ export function renderApplyReport(
   warning?: string,
   postInventoryError?: string,
   metadataRepair: MetadataRepairReport = emptyMetadataRepairReport(),
+  exceptionDrop: ExceptionDropReport = emptyExceptionDropReport(),
 ) {
   const outcome = evaluateRetirementApplyOutcome({
     metadataRepair,
+    exceptionDrop,
     retirement,
     warning,
     postInventoryError,
@@ -491,6 +513,10 @@ export function renderApplyReport(
   const blockedMetadata = metadataRepair.blocked.map(formatMetadataRepairBlock);
   const partialMetadata = metadataRepair.partial.map(formatMetadataRepairBlock);
   const pendingMetadata = metadataRepair.pending.map(formatMetadataRepairCandidate);
+  const droppedExceptions = exceptionDrop.dropped.map(formatExceptionDrop);
+  const blockedExceptionDrops = [...exceptionDrop.blocked, ...exceptionDrop.partial].map(
+    formatExceptionDropBlock,
+  );
   const lines = [
     ...(postInventoryError
       ? [
@@ -504,6 +530,8 @@ export function renderApplyReport(
     `Apply result: ${outcome.ok ? "ok" : `failed (${outcome.reason})`}`,
     `Metadata repaired: ${metadataRepair.repaired.length}`,
     `Metadata blocked: ${metadataRepair.blocked.length + metadataRepair.partial.length}`,
+    `Exceptions dropped: ${exceptionDrop.dropped.length}`,
+    `Exception drops blocked: ${exceptionDrop.blocked.length + exceptionDrop.partial.length}`,
     `Retired: ${retirement.retired.length}`,
     `Blocked: ${retirement.blocked.length}`,
     `Cleanup-ready remaining: ${
@@ -514,6 +542,8 @@ export function renderApplyReport(
   pushSection(lines, "Orphaned metadata blocked", blockedMetadata);
   pushSection(lines, "Orphaned metadata partial", partialMetadata);
   pushSection(lines, "Orphaned metadata pending", pendingMetadata);
+  pushSection(lines, "Expired, orphaned exceptions dropped", droppedExceptions);
+  pushSection(lines, "Expired, orphaned exception drops blocked", blockedExceptionDrops);
   pushSection(lines, "Locally retired", retired);
   pushSection(lines, "Cleanup-ready but not processed", cleanupReady);
   pushSection(lines, "Blocked during apply", blocked);
@@ -560,6 +590,27 @@ function emptyMetadataRepairReport(): MetadataRepairReport {
     partial: [],
     pending: [],
   };
+}
+
+function emptyExceptionDropReport(): ExceptionDropReport {
+  return {
+    dropped: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+}
+
+function formatExceptionDrop(drop: ExceptionDropReport["dropped"][number]): string {
+  return `- ${drop.beadId} ${drop.branch} @ ${drop.path} (owner ${drop.owner}; expired ${drop.expiresAt})`;
+}
+
+function formatExceptionDropBlock(
+  blocked:
+    | ExceptionDropReport["blocked"][number]
+    | ExceptionDropReport["partial"][number],
+): string {
+  return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
 }
 
 function formatMetadataRepairCandidate(
@@ -723,6 +774,7 @@ export function runRetirementApply(
   }
 
   let metadataRepair: MetadataRepairReport | undefined;
+  let exceptionDrop: ExceptionDropReport | undefined;
   let retirement: RetirementReport | undefined;
   let postInventory: PatrolInventory | undefined;
   let postInventoryError: string | undefined;
@@ -730,6 +782,14 @@ export function runRetirementApply(
   try {
     const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
       (candidate) => candidate.repairable,
+    );
+    // Expired-orphaned exceptions are the residue the metadata-repair sweep
+    // will never remove: repairable orphans have their whole record removed
+    // (exception included), so this pass is scoped to the non-repairable ones
+    // (cave-4oor6). See expiredOrphanedExceptionCandidates.
+    const expiredOrphanedExceptions = expiredOrphanedExceptionCandidates(
+      inventory.orphanedMetadata ?? [],
+      options.nowMs,
     );
     // Reserve a retirement slot before metadata repair spends the budget.
     //
@@ -769,16 +829,38 @@ export function runRetirementApply(
       Math.max(0, options.maxRetire - retirementReservation),
       repairableOrphans.length,
     );
+    // The exception drop is the same class of mutation as a metadata repair —
+    // a `bd update --metadata` under the same fence — so it shares the one
+    // maxRetire allowance rather than inventing a second budget. It is served
+    // after repair (repair unblocks bead creation, the more urgent job) and
+    // before retirement, and its candidates never overlap the repair's: this
+    // pass only sees non-repairable records, which repairOrphanedWorktreeMetadata
+    // skips, so the exact-match discipline of both stays intact (cave-4oor6).
+    const dropLimit = Math.min(
+      Math.max(0, options.maxRetire - repairLimit - retirementReservation),
+      expiredOrphanedExceptions.length,
+    );
+    const metadataOperations = dependencies.createMetadataRepairOperations({
+      root: options.root,
+    });
     metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
       candidates: inventory.orphanedMetadata ?? [],
       maxRepairs: repairLimit,
       gateHandle: acquired.handle,
       repositoryRoot: options.root,
-      operations: dependencies.createMetadataRepairOperations({
-        root: options.root,
-      }),
+      operations: metadataOperations,
     });
-    const gitLimit = options.maxRetire - repairLimit;
+    const dropExpiredOrphanedExceptionsImpl =
+      dependencies.dropExpiredOrphanedExceptions ?? dropExpiredOrphanedExceptions;
+    exceptionDrop = dropExpiredOrphanedExceptionsImpl({
+      candidates: expiredOrphanedExceptions,
+      maxDrops: dropLimit,
+      gateHandle: acquired.handle,
+      repositoryRoot: options.root,
+      nowMs: options.nowMs,
+      operations: metadataOperations,
+    });
+    const gitLimit = options.maxRetire - repairLimit - dropLimit;
     const operations = dependencies.createGitRetirementOperations({
       root: options.root,
       repo: options.repo!,
@@ -880,10 +962,26 @@ export function runRetirementApply(
                   candidate.path === repaired.path,
               ),
             );
+            // A dropped exception must be gone from the post-apply inventory
+            // too: if it still rides the fresh orphaned record, the persistence
+            // did not take and the report must not claim a clean sweep.
+            const unreconciledDrops = exceptionDrop.dropped.filter((dropped) =>
+              (candidatePostInventory.orphanedMetadata ?? []).some(
+                (candidate) =>
+                  candidate.beadId === dropped.beadId &&
+                  candidate.location === dropped.location &&
+                  candidate.record.exception?.expiresAt === dropped.expiresAt,
+              ),
+            );
             if (unreconciled.length > 0) {
               postInventoryError =
                 `post-apply inventory still reports repaired orphaned metadata: ${unreconciled
                   .map((candidate) => `${candidate.beadId}:${candidate.location}`)
+                  .join(", ")}`;
+            } else if (unreconciledDrops.length > 0) {
+              postInventoryError =
+                `post-apply inventory still reports dropped expired-orphaned exceptions: ${unreconciledDrops
+                  .map((drop) => `${drop.beadId}:${drop.location}`)
                   .join(", ")}`;
             } else {
               postInventory = candidatePostInventory;
@@ -918,12 +1016,17 @@ export function runRetirementApply(
     throw thrown;
   }
 
-  if (metadataRepair === undefined || retirement === undefined) {
-    throw new Error("apply completed without metadata repair and retirement results");
+  if (
+    metadataRepair === undefined ||
+    exceptionDrop === undefined ||
+    retirement === undefined
+  ) {
+    throw new Error("apply completed without metadata repair, exception drop, and retirement results");
   }
 
   return {
     metadataRepair,
+    exceptionDrop,
     retirement,
     ...(postInventory ? { postInventory } : {}),
     ...(postInventoryError ? { postInventoryError } : {}),
@@ -1072,6 +1175,7 @@ function main(argv = process.argv.slice(2)): number {
   if (options.apply) {
     const {
       metadataRepair,
+      exceptionDrop,
       retirement,
       postInventory,
       postInventoryError,
@@ -1079,6 +1183,7 @@ function main(argv = process.argv.slice(2)): number {
     } = runRetirementApply(options, inventory);
     const outcome = evaluateRetirementApplyOutcome({
       metadataRepair,
+      exceptionDrop,
       retirement,
       postInventoryError,
       warning,
@@ -1094,6 +1199,7 @@ function main(argv = process.argv.slice(2)): number {
             inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
             ...(postInventoryError ? { postInventoryError } : {}),
             metadataRepair,
+            exceptionDrop,
             retirement,
           })
         : `${renderApplyReport(
@@ -1102,6 +1208,7 @@ function main(argv = process.argv.slice(2)): number {
             warning,
             postInventoryError,
             metadataRepair,
+            exceptionDrop,
           )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;

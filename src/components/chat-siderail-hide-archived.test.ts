@@ -78,8 +78,8 @@ assert.doesNotMatch(
 //    fetch is gated behind the same toggle.
 assert.match(
   workspaceSidebar,
-  /const \[showArchived, setShowArchived\] = useState\(false\);/,
-  "the sidepanel's Show-archived option must default off (archive-free)",
+  /const showArchived = false;/,
+  "the embedded list is archive-free — its Show-archived option went with the search row (ChatList keeps one)",
 );
 assert.match(
   workspaceSidebar,

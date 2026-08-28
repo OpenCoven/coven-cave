@@ -287,7 +287,9 @@ vi.mock("@/components/ui/tabs", async () => {
   };
 });
 
-import { WorkspaceSidebar } from "./workspace-sidebar";
+// Renamed in cave-fh9so: the component is the embedded chat list now, mounted
+// inside SidebarMinimal's Chats section and docked in the chat surface.
+import { SidebarChatsSection } from "./workspace-sidebar";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -358,12 +360,6 @@ function attentionCueLabels(section: ReturnType<typeof sectionByLabel>) {
     .map((node) => textContent(node.children));
 }
 
-function searchInput(renderer: ReactTestRenderer) {
-  return renderer.root.find(
-    (node) => node.type === "input" && node.props["aria-label"] === "Search chats",
-  );
-}
-
 /** Extracts a single balanced-brace CSS block starting at `marker` — lets a
  *  source test assert on a container-query rule's *contents* without a fragile
  *  regex trying to guess where the block ends. */
@@ -413,7 +409,7 @@ test("legacy sessions without attention render as neutral rows", async () => {
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -450,7 +446,7 @@ test("attention rows keep the visible state in the button name and move the deta
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -501,7 +497,7 @@ test("pinned and full attention rows keep the same accessible description while 
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -600,7 +596,7 @@ test("recent view shows the visible Awaiting you count and keeps promoted rows o
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [ordinary, leftHanging, archivedAttention, awaiting, overdue],
         familiars: [],
         responseNeeded: new Set(),
@@ -668,7 +664,7 @@ test("attention show-more keeps the flat modifier, focus ring, and click handler
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions,
         familiars: [],
         responseNeeded: new Set(),
@@ -735,7 +731,7 @@ test("search drops the Awaiting you section but rows keep their visible label an
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [ordinary, overdue],
         familiars: [],
         responseNeeded: new Set(),
@@ -750,13 +746,13 @@ test("search drops the Awaiting you section but rows keep their visible label an
     await Promise.resolve();
   });
 
-  await act(async () => {
-    searchInput(renderer).props.onChange({ target: { value: "search target" } });
-    await Promise.resolve();
-  });
-
+  // The search field went with the old search row (cave-fh9so), so there is no
+  // longer a way to collapse the grouping from the UI. What this test is really
+  // about is the attention data on the row, which is asserted below and is
+  // unaffected — so the grouping expectation simply flips: "Awaiting you" is
+  // always present now.
   const labels = sectionsByLabel(renderer).map((node) => node.props["aria-label"]);
-  expect(labels).not.toContain("Awaiting you");
+  expect(labels).toContain("Awaiting you");
 
   const row = rowContainerFor(renderer.root, "Overdue search target");
   expect(row.props["data-attention"]).toBe("overdue-human");
@@ -788,7 +784,7 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
   const railTitle = "Pinned and awaiting - PR #7 open";
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -877,7 +873,7 @@ test("a failed run with a PR badge keeps its danger runtime tick alongside a sep
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -935,7 +931,7 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),
@@ -979,147 +975,46 @@ test("a paused run with a branch glyph keeps its runtime tick alongside a separa
   await act(async () => renderer.unmount());
 });
 
-test("a pinned archived session mutes to is-archived in the Pinned rail and drops its attention cue", async () => {
-  let renderer!: ReactTestRenderer;
-  const session = makeSession({
-    id: "session-pinned-archived",
+test("the embedded chat list never surfaces archived sessions", async () => {
+  // These two tests used to flip the rail's own "Show archived" option and then
+  // assert how an archived-but-pinned row renders. That option went with the
+  // search row (cave-fh9so), and `showArchived` is a constant `false` here now,
+  // so the opt-in state is unreachable in this component. The contract it
+  // replaces is stronger and worth pinning: the embedded list never shows an
+  // archived session at all.
+  //
+  // Archived chats stay reachable — ChatList keeps its own showArchived state
+  // and includeArchived fetch on the Sessions list view. What was removed was
+  // the rail's duplicate of that control, not the capability.
+  const archivedPinned = makeSession({
+    id: "archived-pinned",
     title: "Archived but pinned",
-    status: "idle",
-    archived_at: "2026-08-05T18:00:00.000Z",
-    updated_at: "2026-08-05T18:00:00.000Z",
-    attention: { state: "awaiting-human", since: "2026-08-05T17:00:00.000Z", reason: "approval" },
-  });
-  sidebarPrefs.pinnedIds = [session.id];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [session] }) })),
-  );
-
-  await act(async () => {
-    renderer = create(
-      createElement(WorkspaceSidebar, {
-        sessions: [],
-        familiars: [],
-        responseNeeded: new Set(),
-        onSelectFamiliar: () => undefined,
-        onOpenSession: () => undefined,
-        onNavigate: () => undefined,
-        onNewChat: () => undefined,
-        onDeleteSession: async () => undefined,
-        onOpenSettings: () => undefined,
-      }),
-    );
-    await Promise.resolve();
+    archived_at: new Date().toISOString(),
+    attention: { state: "none", since: null, reason: null },
   });
 
-  // Flip the sidepanel's own "Show archived" option (the Popover mocks render
-  // their children unconditionally, so the menu item is reachable without
-  // simulating the trigger click first) — this is what makes an archived
-  // pinned row's visibility possible at all: pinnedSessions only ever derives
-  // from visibleSessions, which drops archived_at rows unless this is on.
-  const showArchivedItem = renderer.root.find(
-    (node) => typeof node.type === "string" && node.props.onSelect && textContent(node.children) === "Show archived",
-  );
-  await act(async () => {
-    showArchivedItem.props.onSelect();
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-
-  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
-  expect(sectionThreadTitles(pinnedSection)).toEqual(["Archived but pinned"]);
-
-  // Same regression guard as the pinned-attention test above: pin the
-  // archive class and cue-suppression directly against the Pinned section's
-  // own row, not a ThreadRow stand-in — a pinned session reaching "Show
-  // archived" must read exactly as muted/settled as its full ThreadRow twin
-  // does (cave-zs85n Task 6 gap-fix).
-  const pinnedRow = rowContainerFor(pinnedSection, "Archived but pinned");
-  expect(pinnedRow.props.className.split(" ")).toEqual(
-    expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-archived"]),
-  );
-  expect(pinnedRow.props["data-attention"]).toBe("none");
-  expect(attentionCueLabels(pinnedRow)).toEqual([]);
-  expect(
-    pinnedRow.findAll(
-      (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.includes("cnav__tick"),
-    ),
-  ).toHaveLength(1);
-
-  await act(async () => renderer.unmount());
-});
-
-test("an archived PR session shows archive semantics instead of a live PR badge in both pinned and full rows", async () => {
   let renderer!: ReactTestRenderer;
-  const session = makeSession({
-    id: "session-archived-pr",
-    title: "Archived PR thread",
-    status: "idle",
-    project_root: "/repo/alpha",
-    archived_at: "2026-08-05T18:00:00.000Z",
-    updated_at: "2026-08-05T18:00:00.000Z",
-    pullRequest: { repo: "o/r", number: 42, state: "open" },
-    attention: { state: "awaiting-human", since: "2026-08-05T17:00:00.000Z", reason: "approval" },
-  });
-  sidebarPrefs.pinnedIds = [session.id];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [session] }) })),
-  );
-
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
-        sessions: [],
-        familiars: [],
-        responseNeeded: new Set(),
-        onSelectFamiliar: () => undefined,
+      createElement(SidebarChatsSection, {
+        sessions: [archivedPinned],
         onOpenSession: () => undefined,
-        onNavigate: () => undefined,
-        onNewChat: () => undefined,
         onDeleteSession: async () => undefined,
-        onOpenSettings: () => undefined,
       }),
     );
     await Promise.resolve();
   });
 
-  const showArchivedItem = renderer.root.find(
-    (node) => typeof node.type === "string" && node.props.onSelect && textContent(node.children) === "Show archived",
-  );
-  await act(async () => {
-    showArchivedItem.props.onSelect();
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+  expect(
+    renderer.root.findAll(
+      (node) => typeof node.type === "string" && node.props.onSelect && textContent(node.children) === "Show archived",
+    ),
+  ).toHaveLength(0);
 
-  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
-  const todaySection = sectionByLabel(renderer, "Today");
-  expect(sectionThreadTitles(pinnedSection)).toEqual(["Archived PR thread"]);
-  expect(sectionThreadTitles(todaySection)).toEqual(["Archived PR thread"]);
-
-  for (const row of [
-    rowContainerFor(pinnedSection, "Archived PR thread"),
-    rowContainerFor(todaySection, "Archived PR thread"),
-  ]) {
-    expect(row.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "is-archived"]));
-    expect(row.props["data-attention"]).toBe("none");
-    expect(attentionCueLabels(row)).toEqual([]);
-    expect(
-      row.findAll(
-        (node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge"),
-      ),
-    ).toHaveLength(0);
-    expect(
-      row.findAll(
-        (node) =>
-          typeof node.type === "string" &&
-          typeof node.props.className === "string" &&
-          node.props.className.split(" ").includes("cnav__lead") &&
-          node.props["data-icon-name"] === "ph:archive",
-      ),
-    ).toHaveLength(1);
-  }
+  const titles = renderer.root
+    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
+    .map((node) => textContent(node.children));
+  expect(titles).not.toContain("Archived but pinned");
 
   await act(async () => renderer.unmount());
 });

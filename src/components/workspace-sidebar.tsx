@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { SidebarRailHeader } from "@/components/sidebar-rail-header";
+import { useMultiSelect } from "@/lib/use-multi-select";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
+import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import { Icon, type IconName } from "@/lib/icon";
-import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -37,38 +38,18 @@ import {
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
-import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
-import { type CreateProjectOptions } from "@/lib/chat-add-project";
-import type { NavSection } from "@/lib/nav-section";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import type { CaveProject } from "@/lib/cave-projects-types";
-
-type WorkspaceSidebarMode = "home";
+import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
 
 type Props = {
   sessions: SessionRow[];
-  /** Roster for the header switcher — familiar selection's one home. */
-  familiars: ResolvedFamiliar[];
-  /** Selected familiar (null = "All familiars"). Scopes the project list, the
-   *  per-project session rows, and the project grant when registering. */
+  /** Selected familiar (null = "All familiars"). Scopes the project list and
+   *  the per-project session rows. */
   activeFamiliarId?: string | null;
-  selectedFamiliarIds: ReadonlySet<string>;
   activeSessionId?: string | null;
-  responseNeeded?: Set<string>;
-  /** Change the familiar scope from the header switcher (`null` = All). */
-  onSelectFamiliar: (id: string | null) => void;
   onOpenSession: (session: SessionRow) => void;
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
-  /** The Home shortcut routes through Workspace so it can coordinate the mode
-   *  change with mobile drawer dismissal. Only rendered for standalone hosts
-   *  that mount this rail without the Home | Chat section tabs. */
-  onNavigate: (mode: WorkspaceSidebarMode) => void;
-  /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
-   *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
-  onSectionChange?: (section: NavSection) => void;
-  onNewChat: () => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
    *  the row leaves (or re-enters) the live list without waiting a cycle. */
@@ -76,27 +57,15 @@ type Props = {
   /** Opens the thread's pull request in the in-app browser (PR badge click);
    *  without it the badge falls back to a new tab. Same chain as chat-list. */
   onOpenUrl?: (url: string) => void;
-  /** Opens Settings — powers the shared footer so Chat keeps the same
-   *  Dashboard/Settings footer as every other surface. */
-  onOpenSettings: () => void;
-  // ── Project / workspace context (Task 6) ──────────────────────────────────
-  projects: CaveProject[];
-  projectId: string | null;
-  project: CaveProject | null;
-  projectLoading: boolean;
-  projectError: string | null;
-  reloadProjects: () => void;
-  onProjectChange: (projectId: string | null) => void;
-  createProjectOrThrow?: (
-    name: string,
-    root: string,
-    options?: CreateProjectOptions,
-  ) => Promise<CaveProject>;
-  projectCrew: ResolvedFamiliar[];
-  projectCrewLoading: boolean;
-  projectCrewError: string | null;
-  reloadProjectCrew: () => void;
-  contextNotice: string | null;
+  /** What the title row's collapse control does. Defaults to toggling the
+   *  docked desktop rail. The mobile sheet passes its own dismiss instead —
+   *  there the row is closing an overlay, not collapsing a column, and firing
+   *  the rail toggle would silently flip the desktop preference as a side
+   *  effect of dismissing a sheet. */
+  onCollapse?: () => void;
+  /** Overrides the collapse control's label for hosts where "collapse" is the
+   *  wrong verb (the mobile sheet closes). */
+  collapseLabel?: string;
 };
 
 const THREADS_PREVIEW = 6;
@@ -215,6 +184,14 @@ type ThreadRowProps = {
   onOpen: () => void;
   /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
   onOpenInSplit?: () => void;
+  /** Broadcast select mode (cave-g7yg6). The row becomes a checkbox and its
+   *  click picks instead of opens. Both split-pane affordances stand down —
+   *  ⌥-click and drag-to-split would otherwise fire from inside a picker. */
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  /** Transient per-row outcome after a broadcast: "sent" | "failed". */
+  broadcast?: "sent" | "failed" | null;
   onTogglePin: () => void;
   /** Archive/unarchive via the sessions PATCH (same endpoint as chat-list). */
   onToggleArchive: () => void;
@@ -238,6 +215,10 @@ function ThreadRow({
   onOpenUrl,
   onOpen,
   onOpenInSplit,
+  selectMode = false,
+  selected = false,
+  onToggleSelect,
+  broadcast = null,
   onTogglePin,
   onToggleArchive,
   archiving,
@@ -280,9 +261,20 @@ function ThreadRow({
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
-        aria-current={active ? "page" : undefined}
+        // Same markup contract the board and the chat list already use for
+        // select mode, so assistive tech reads one pattern across surfaces.
+        role={selectMode ? "checkbox" : undefined}
+        aria-checked={selectMode ? selected : undefined}
+        aria-current={!selectMode && active ? "page" : undefined}
         aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
         onClick={(e) => {
+          // Select mode intercepts FIRST. This row's click is overloaded —
+          // ⌥-click opens a split pane — so without this the modifier path
+          // would still fire from inside a picker.
+          if (selectMode) {
+            onToggleSelect?.();
+            return;
+          }
           // ⌥-click opens beside the current chat instead of replacing it.
           if (e.altKey && onOpenInSplit) {
             onOpenInSplit();
@@ -293,6 +285,7 @@ function ThreadRow({
         onKeyDown={(e) => {
           // ⌥↵ opens in a split pane (keyboard twin of drag-to-split); stop
           // the native button activation so onClick doesn't also fire.
+          if (selectMode) return;
           if (e.key === "Enter" && e.altKey && onOpenInSplit) {
             e.preventDefault();
             onOpenInSplit();
@@ -300,7 +293,7 @@ function ThreadRow({
         }}
         // Dragging the row onto the chat surface snaps it into a split pane
         // (chat-split-host's drop zone; same protocol as the project rail).
-        draggable={Boolean(onOpenInSplit)}
+        draggable={Boolean(onOpenInSplit) && !selectMode}
         onDragStart={(e) => {
           if (!onOpenInSplit) return;
           e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, session.id);
@@ -313,7 +306,18 @@ function ThreadRow({
         }}
         className="cnav__thread-main focus-ring"
       >
-        {prStatus ? null : leadGlyph ? (
+        {/* In select mode the leading slot IS the checkbox — the status dot,
+            PR badge and heuristic glyph all describe the thread, and none of
+            them says whether it is picked. Colour is not the only channel:
+            role=checkbox + aria-checked carry the same state (cave-g7yg6). */}
+        {selectMode ? (
+          <span
+            aria-hidden
+            className={`cnav__lead cnav__select-box${selected ? " is-on" : ""}`}
+          >
+            <Icon name="ph:check-bold" width={9} aria-hidden />
+          </span>
+        ) : prStatus ? null : leadGlyph ? (
           <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
         ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
@@ -327,7 +331,15 @@ function ThreadRow({
         <span className="cnav__thread-copy">
           <span className="cnav__thread-line">
             <span className="cnav__thread-title" title={title}>{title}</span>
-            {confirming ? null : (
+            {/* Broadcast outcome replaces the timestamp while it shows: a
+                failed target must be visible on its own row, since a
+                broadcast that half-worked and said nothing is worse than one
+                that failed outright. */}
+            {broadcast ? (
+              <span className="cnav__broadcast" data-state={broadcast}>
+                {broadcast === "sent" ? "Sent" : "Failed"}
+              </span>
+            ) : confirming ? null : (
               <span className="cnav__time">{bareTimeAt(session.updated_at || session.created_at, now)}</span>
             )}
           </span>
@@ -465,42 +477,25 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
   );
 }
 
-export function WorkspaceSidebar({
+export function SidebarChatsSection({
   sessions,
-  familiars,
   activeFamiliarId = null,
-  selectedFamiliarIds,
   activeSessionId,
-  responseNeeded,
-  onSelectFamiliar,
   onOpenSession,
   onOpenSessionInSplit,
-  onNavigate,
-  onSectionChange,
-  onNewChat,
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
-  onOpenSettings,
-  projects: workspaceProjects,
-  projectId: workspaceProjectId,
-  project: workspaceProject,
-  projectLoading: workspaceProjectLoading,
-  projectError: workspaceProjectError,
-  reloadProjects: reloadWorkspaceProjects,
-  onProjectChange,
-  createProjectOrThrow: createWorkspaceProjectOrThrow,
-  projectCrew: workspaceProjectCrew,
-  projectCrewLoading: workspaceProjectCrewLoading,
-  projectCrewError: workspaceProjectCrewError,
-  reloadProjectCrew: reloadWorkspaceProjectCrew,
-  contextNotice: workspaceContextNotice,
+  onCollapse,
+  collapseLabel = "Collapse chat list",
 }: Props) {
   const { projects } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
   const minuteTick = useMinuteTick();
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  // Search was removed with the old search row (the header is a title row
+  // now), so this is constant. Kept as a binding rather than inlined because
+  // the grouping logic below branches on `hasSearch` in several places.
+  const query = "";
   const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
   // Pins come from the shared cross-surface store (chat list + thread rail +
   // this sidebar all read and write the same subscribable list).
@@ -508,17 +503,14 @@ export function WorkspaceSidebar({
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Archived rows are excluded server-side by /api/sessions/list; the Organize
-  // menu's "Show archived" option opts in with its own includeArchived fetch,
-  // mirroring the chat list's toggle (the workspace poll stays archive-free).
-  const [showArchived, setShowArchived] = useState(false);
+  // The Organize menu that toggled this went with the old search row, so
+  // archived threads stay excluded (as /api/sessions/list already does
+  // server-side). The archive/unarchive ACTIONS on each row are untouched.
+  const showArchived = false;
   const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuAnchorRef = useRef<HTMLButtonElement>(null);
-  const menuBodyRef = useRef<HTMLDivElement>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
     [sessions],
@@ -531,9 +523,6 @@ export function WorkspaceSidebar({
   // the older minuteTick-only dependency, so an in-between render could show
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
-
-  // Trap focus inside the sidebar options menu while it is open.
-  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
 
   // Archived sessions only load while "Show archived" is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change (same
@@ -631,6 +620,51 @@ export function WorkspaceSidebar({
     [recentSessions, now],
   );
 
+  // ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────
+  //
+  // `visibleThreads` is what select-all acts on and what the hook keys its
+  // reset to. It is the rows actually ON SCREEN — a section collapsed behind
+  // "Show N more" is excluded, so Select all can never pick a chat the user
+  // cannot see and then broadcast into it.
+  const visibleThreads = useMemo(() => {
+    const rows: SessionRow[] = [];
+    const seen = new Set<string>();
+    const push = (list: SessionRow[], key: string, previewed: boolean) => {
+      const shown = previewed && !showAllByKey.has(key) ? list.slice(0, THREADS_PREVIEW) : list;
+      for (const session of shown) {
+        if (seen.has(session.id)) continue;
+        seen.add(session.id);
+        rows.push(session);
+      }
+    };
+    push(pinnedSessions, "pinned", false);
+    push(attentionSessions, "attention", true);
+    for (const bucket of recentBuckets) push(bucket.sessions, `bucket:${bucket.key}`, true);
+    return rows;
+  }, [pinnedSessions, attentionSessions, recentBuckets, showAllByKey]);
+
+  const select = useMultiSelect(visibleThreads, (session) => session.id);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [broadcastState, setBroadcastState] = useState<Record<string, "sent" | "failed">>({});
+
+  // A broadcast's outcome is per row, and it clears itself: the markers say
+  // "this just happened", not "this is what this chat is". Failures are why the
+  // selection is not simply dropped — a retry must target only the failures,
+  // since nothing about a send is idempotent.
+  function applyBroadcastResults(results: BroadcastResult[]) {
+    const next: Record<string, "sent" | "failed"> = {};
+    for (const r of results) next[r.sessionId] = r.ok ? "sent" : "failed";
+    setBroadcastState(next);
+    const failures = failedTargets(results).map((t) => t.sessionId);
+    select.exit();
+    if (failures.length > 0) {
+      // Re-enter select mode holding exactly the failures, so the obvious next
+      // action — press Broadcast again — retries those and nothing else.
+      select.setSelectMode(true);
+      for (const id of failures) select.toggle(id);
+    }
+  }
+
   const togglePin = (sessionId: string) => {
     toggleStoredPinnedSession(sessionId);
   };
@@ -674,103 +708,65 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
-      <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Desktop gets one compact scope row; mobile keeps the full controls. */}
-        <SidebarRailHeader
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onSelectFamiliar}
-          onNewChat={onNewChat}
-          newChatTitle="New chat (⌘N)"
-          newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
-          projects={workspaceProjects}
-          projectId={workspaceProjectId}
-          project={workspaceProject}
-          projectLoading={workspaceProjectLoading}
-          projectError={workspaceProjectError}
-          reloadProjects={reloadWorkspaceProjects}
-          onProjectChange={onProjectChange}
-          createProjectOrThrow={createWorkspaceProjectOrThrow}
-          projectCrew={workspaceProjectCrew}
-          projectCrewLoading={workspaceProjectCrewLoading}
-          projectCrewError={workspaceProjectCrewError}
-          reloadProjectCrew={reloadWorkspaceProjectCrew}
-          contextNotice={workspaceContextNotice}
-          contextMode="all"
-        />
-
-        <div className="cnav__search-wrap">
-          <label className="cnav__search">
-            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search chats…"
-              aria-label="Search chats"
-            />
-            {query ? (
-              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
-                <Icon name="ph:x-bold" width={9} aria-hidden />
-              </button>
-            ) : null}
-          </label>
-          {/* The Home tab above owns the exit now; the icon button only remains
-              when the section switcher is not mounted (standalone hosts). */}
-          {onSectionChange ? null : (
-            <button
-              type="button"
-              aria-label="Go to Home"
-              title="Home"
-              onClick={() => onNavigate("home")}
-              className="cnav__back focus-ring"
-            >
-              <Icon name="ph:house-bold" width={15} aria-hidden />
-            </button>
-          )}
+    // Keep `workspace-sidebar chat-sidebar` on the root: at least eight
+    // Playwright specs select `.chat-sidebar` — including warmup.setup.ts,
+    // which every e2e run depends on — so dropping these class names would
+    // break the suite far outside this component (cave-fh9so).
+    <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
+        {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
+            else. It replaces the old search row, which also carried the
+            Organize menu. Search and "Show archived" went with it — the list
+            below is already grouped by attention and recency, and the row is
+            the rail's header, not a toolbar. */}
+        {/* The whole row is the control, mirroring the collapsed spine — the
+            icon is decoration inside it, not a nested <button> (which would be
+            invalid HTML and would swallow clicks aimed at the row). */}
+        <button
+          type="button"
+          className="cnav__title-row focus-ring"
+          aria-label={collapseLabel}
+          aria-expanded
+          title={collapseLabel}
+          onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
+        >
+          <span className="cnav__title">Sessions</span>
+          <span className="cnav__title-toggle" aria-hidden>
+            <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
+          </span>
+        </button>
+        {/* Entering select mode is its own control rather than a row gesture:
+            the rows are already overloaded (⌥-click splits, drag splits), and
+            a long-press or modifier would be a fourth meaning on one target. */}
+        {!select.selectMode && visibleThreads.length > 1 ? (
           <button
-            ref={menuAnchorRef}
             type="button"
-            aria-label="Sidebar options"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="Sidebar options"
-            onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring"
+            className="cnav__select-enter focus-ring"
+            title="Select chats to broadcast a message to"
+            onClick={() => select.setSelectMode(true)}
           >
-            <Icon name="ph:dots-three-bold" width={15} aria-hidden />
+            <Icon name="ph:list-checks-bold" width={13} aria-hidden />
+            <span>Select</span>
           </button>
-          <Popover
-            open={menuOpen}
-            onOpenChange={setMenuOpen}
-            anchorRef={menuAnchorRef}
-            placement="bottom-end"
-            minWidth={190}
-            ariaLabel="Sidebar options"
-          >
-            <div ref={menuBodyRef} tabIndex={-1}>
-              <PopoverBody role="menu" ariaLabel="Sidebar options">
-                <PopoverLabel>Chat visibility</PopoverLabel>
-                <PopoverItem
-                  icon="ph:archive"
-                  checked={showArchived}
-                  checkedRole="checkbox"
-                  onSelect={() => {
-                    setShowArchived((v) => !v);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Show archived
-                </PopoverItem>
-              </PopoverBody>
-            </div>
-          </Popover>
-        </div>
+        ) : null}
+        {select.selectMode ? (
+          <div className="cnav__select-bar">
+            <SelectionToolbar
+              allSelected={select.allSelected(visibleThreads)}
+              count={select.selectedCount}
+              onToggleSelectAll={() => select.toggleSelectAll(visibleThreads)}
+              onCancel={select.exit}
+            >
+              <button
+                type="button"
+                className="focus-ring cnav__broadcast-open"
+                disabled={select.selectedCount === 0}
+                onClick={() => setComposerOpen(true)}
+              >
+                Broadcast
+              </button>
+            </SelectionToolbar>
+          </div>
+        ) : null}
         {deleteError ? (
           <div role="alert" className="cnav__error">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
@@ -844,6 +840,10 @@ export function WorkspaceSidebar({
                           onOpenInSplit={
                             onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                           }
+                          selectMode={select.selectMode}
+                          selected={select.isSelected(session.id)}
+                          onToggleSelect={() => select.toggle(session.id)}
+                          broadcast={broadcastState[session.id] ?? null}
                           onTogglePin={() => togglePin(session.id)}
                           onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
                           archiving={archivingId !== null}
@@ -905,6 +905,10 @@ export function WorkspaceSidebar({
                             onOpenInSplit={
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                             }
+                            selectMode={select.selectMode}
+                            selected={select.isSelected(session.id)}
+                            onToggleSelect={() => select.toggle(session.id)}
+                            broadcast={broadcastState[session.id] ?? null}
                             onTogglePin={() => togglePin(session.id)}
                             onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
                             archiving={archivingId !== null}
@@ -934,12 +938,14 @@ export function WorkspaceSidebar({
           </>
           </nav>
         </div>
-
-        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
-            side-panel footer as every other surface; it sits below the scrolling
-            thread list because .cnav__scroll flexes and this stays put. */}
-        <SidebarFooter onOpenSettings={onOpenSettings} />
-      </div>
+        {composerOpen ? (
+          <ChatBroadcastComposer
+            count={select.selectedCount}
+            targets={[...select.selectedIds]}
+            onClose={() => setComposerOpen(false)}
+            onSent={applyBroadcastResults}
+          />
+        ) : null}
     </div>
   );
 }

@@ -379,7 +379,7 @@ function parseStringArray(
   value: unknown,
   path: string,
   label: string,
-  { nonEmpty = false }: { nonEmpty?: boolean } = {},
+  { nonEmpty = false, unique = true }: { nonEmpty?: boolean; unique?: boolean } = {},
 ): ProtocolParseResult<string[]> {
   if (!Array.isArray(value)) return fail("invalid_type", path, `${label} must be an array`);
   if (nonEmpty && value.length === 0) return fail("invalid_value", path, `${label} must not be empty`);
@@ -388,8 +388,10 @@ function parseStringArray(
   for (const [index, item] of value.entries()) {
     const parsed = identifier(item, indexPath(path, index), `${label} item`);
     if (!parsed.ok) return parsed;
-    if (seen.has(parsed.value)) return fail("invalid_value", indexPath(path, index), `${label} must not contain duplicates`);
-    seen.add(parsed.value);
+    if (unique) {
+      if (seen.has(parsed.value)) return fail("invalid_value", indexPath(path, index), `${label} must not contain duplicates`);
+      seen.add(parsed.value);
+    }
     result.push(parsed.value);
   }
   return pass(result);
@@ -448,7 +450,13 @@ function parsePaper(
   const arxivField = required(raw, "arxivId", path); if (!arxivField.ok) return arxivField;
   const arxivId = identifier(arxivField.value, childPath(path, "arxivId"), "arXiv id"); if (!arxivId.ok) return arxivId;
   const authorsField = required(raw, "authors", path); if (!authorsField.ok) return authorsField;
-  const authors = parseStringArray(authorsField.value, childPath(path, "authors"), "authors"); if (!authors.ok) return authors;
+  // Authors is an ordered credit list, NOT a set. Two entries can carry the
+  // same normalized string — collaborations repeat a name across affiliations,
+  // and arXiv/HF metadata simply contains repeats. Rejecting them made ONE bad
+  // record fail the whole read: the Resources desk showed "Couldn't load saved
+  // links." with an empty shelf, because listCompatibleResearchLinks validates
+  // every manifest on the read path (`$.paper.authors[220]`, cave-fh9so).
+  const authors = parseStringArray(authorsField.value, childPath(path, "authors"), "authors", { unique: false }); if (!authors.ok) return authors;
   const abstract = optional(raw, "abstract", path, (item, itemPath) => stringValue(item, itemPath, "abstract")); if (!abstract.ok) return abstract;
   const publishedAt = optional(raw, "publishedAt", path, (item, itemPath) => utc(item, itemPath, "publishedAt")); if (!publishedAt.ok) return publishedAt;
   return pass({ ...raw, arxivId: arxivId.value, authors: authors.value, ...(abstract.value === undefined ? {} : { abstract: abstract.value }), ...(publishedAt.value === undefined ? {} : { publishedAt: publishedAt.value }) });

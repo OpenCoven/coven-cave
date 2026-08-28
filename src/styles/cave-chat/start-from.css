@@ -115,11 +115,33 @@
   min-width: 0;
 }
 
+/* The deck was a fixed 4-up grid, so a band holding two items filled two
+   columns and left the other half of the row empty — half the band was dead
+   space (cave-fh9so).
+ *
+ * The count is keyed off `data-count` rather than `repeat(auto-fit, minmax())`
+   on purpose: auto-fit derives the column count from available width, so the
+   same two cards would size differently at different pane widths and a
+   three-item band could break as 2+1 with an orphan on its own row. An
+   explicit count says exactly how many columns to make, and the cards always
+   span the full width evenly. */
 .cave-sf__deck {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
   min-width: 0;
+}
+
+.cave-sf__deck[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cave-sf__deck[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cave-sf__deck[data-count="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .cave-sf__deck > :not(.cave-sf__tile) {

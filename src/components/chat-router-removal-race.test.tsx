@@ -65,7 +65,7 @@ const noProjects = { projects: [] as never[] };
 vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => noProjectOverrides }));
 vi.mock("@/lib/cave-familiar-archive", () => ({ useArchivedFamiliars: () => noArchivedFamiliars }));
 vi.mock("@/lib/use-projects", () => ({ useProjects: () => noProjects }));
-vi.mock("@/lib/use-auto-expand-new-groups", () => ({ useAutoExpandNewGroups: () => {} }));
+
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: vi.fn() }) }));
 
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
@@ -151,7 +151,6 @@ describe("ChatRouter onBack is conditional on the removed session still being di
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -207,7 +206,6 @@ describe("ChatRouter onBack is conditional on the removed session still being di
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -254,7 +252,6 @@ describe("ChatRouter onBack is conditional on the removed session still being di
           sessions={[sessionS]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -292,7 +289,6 @@ describe("ChatRouter onVoiceSessionDiscarded is conditional the same way (cave-r
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -344,7 +340,6 @@ describe("ChatRouter onVoiceSessionDiscarded is conditional the same way (cave-r
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -389,7 +384,6 @@ describe("ChatRouter onVoiceSessionDiscarded is conditional the same way (cave-r
           sessions={[sessionS]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -436,7 +430,6 @@ describe("stale-removal guards stay atomic even when a switch and the stale comp
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -476,7 +469,6 @@ describe("stale-removal guards stay atomic even when a switch and the stale comp
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -514,7 +506,6 @@ describe("stale-removal guards stay atomic even when a switch and the stale comp
           sessions={[sessionS, sessionT]}
           onSessionsDeleted={vi.fn()}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -567,7 +558,6 @@ describe("ChatRouter reports every distinct compose attempt even when sessionId 
           onSessionsDeleted={vi.fn()}
           onActiveSessionChange={onActiveSessionChange}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,
@@ -616,7 +606,6 @@ describe("ChatRouter reports every distinct compose attempt even when sessionId 
           onSessionsDeleted={vi.fn()}
           onActiveSessionChange={onActiveSessionChange}
           compact
-          hideRail
           syncUrlHash={false}
           enableSplitPanes={false}
         />,

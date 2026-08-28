@@ -638,6 +638,76 @@ first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
 "is it pushed" check on these branches: the upstream ref is gone, so the command
 errors and a naive `| wc -l` reports a reassuring `0`.
 
+### A worktree parked outside your granted roots is de-registered, not removed
+
+Some agent sessions run inside a filesystem boundary that grants only named
+roots. `git worktree remove` **deletes the target directory**, so it is refused
+outright when the worktree lives somewhere the session cannot write. The usual
+offender is a raw `git worktree add` run from another agent's state folder,
+which parks a checkout at a path like
+`~/.copilot/session-state/<id>/files/<name>` — outside this repository and
+outside every granted root.
+
+**A chat approval does not widen a filesystem boundary.** So the approval a
+session obtains for the removal changes nothing, the removal is never performed,
+and the same blocker is re-reported by every thread that meets it. Verified
+2026-08-28 (`cave-iqz90`): `.copilot/session-state/33c071ed-…/files/cave-2a0ff923`
+survived at least one approved-but-unexecuted removal for exactly this reason.
+
+**The registration is not in the worktree.** It lives at `.git/worktrees/<name>/`
+inside this repository, which *is* in the primary root. Deleting that admin
+directory is precisely what `git worktree prune` does internally, so it
+de-registers the unit without touching the external path — the budget stops
+counting it and the patrol stops reporting it.
+
+Three preconditions, all fail-closed, because you cannot read the tree you are
+about to disown:
+
+1. **Prove the head is retained.** Salvage is unavailable to you, so
+   uncommitted work there is invisible and would be orphaned silently.
+
+   ```bash
+   head=$(cat .git/worktrees/<name>/HEAD)
+   git branch -r --contains "$head" | head
+   git merge-base --is-ancestor "$head" origin/main && echo "ancestor of main"
+   git tag --contains "$head" | grep -E 'archive/|retention/'
+   ```
+
+   None of those hold ⇒ **stop and report it**; leave the entry in place.
+2. **Prove the owning session is dead.** The session id is normally a path
+   segment of the worktree, so match it against live processes — a running
+   owner makes the unit live work, whatever its path:
+
+   ```bash
+   ps -eo pid,command | grep -o -- '--session-id [0-9a-f-]*' | sort -u
+   ```
+3. **Confirm no bead owns it.** A unit with `metadata.coven.worktree` naming
+   that path goes through the normal lifecycle route instead.
+
+Then, from the primary checkout:
+
+```bash
+mkdir -p ~/.coven/cave/worktree-admin-backups
+cp -R .git/worktrees/<name> ~/.coven/cave/worktree-admin-backups/<name>
+rm -rf .git/worktrees/<name>
+git worktree prune -v
+git worktree list        # the entry is gone
+```
+
+Keep that backup inside a granted root — `/tmp` is usually outside the boundary
+and the copy is refused there. To undo, copy the admin directory back and run
+`git worktree repair <external-path>`.
+
+⚠️ **Say what you actually did.** The orphaned directory remains on disk; you
+de-registered it, you did not delete it. That is the outcome the repository
+needs, but reporting it as a removal is a claim nobody can check. Deleting the
+directory itself requires an actor whose boundary covers that path.
+
+⚠️ **This is not a licence to hand-remove managed units.** It applies only to a
+worktree whose *directory* is unreachable from your boundary. Anything under
+`.worktrees/` is reachable and goes through the patrol or the archive-tag route
+above.
+
 ### Reading worktree state fast — `pnpm wt:status`
 
 `scripts/worktree-status.mjs` is the network-free companion to the patrol. The

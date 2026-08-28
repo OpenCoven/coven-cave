@@ -203,10 +203,19 @@ assert.match(
 );
 // Interactive controls must not be nested inside MetaLine's live region —
 // the context div is placed *after* </MetaLine>, not inside it.
+// The controls ride the title row inline now (cave-fh9so). The guard this
+// assertion exists for is unchanged and stronger: they must not sit inside an
+// aria-live region. The row is no longer one — the live region was narrowed to
+// the meta text span that actually changes.
 assert.doesNotMatch(
-  source.match(/<MetaLine(?![A-Za-z])[\s\S]*?<\/MetaLine>/)?.[0] ?? "",
-  /chatContextControls/,
-  "chatContextControls is not nested inside MetaLine's live region",
+  source,
+  /className=\{`cave-chat-meta-line[^`]*`\}[^>]*aria-live/,
+  "the meta-line row is not an aria-live region, so inline controls are not announced",
+);
+assert.match(
+  source,
+  /className="cave-chat-meta-line__meta"[^>]*aria-live="polite"/,
+  "the live region is the meta text span",
 );
 
 // ── Band chrome: attached underside strip, one tone deeper ──────────────────
