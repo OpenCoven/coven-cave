@@ -85,7 +85,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]*?onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/,
+  /<ChatSurface[\s\S]*?onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/,
   "workspace wraps chat-sidebar PR opens so the mobile contextual nav dismisses before the GitHub-aware app opener runs",
 );
 

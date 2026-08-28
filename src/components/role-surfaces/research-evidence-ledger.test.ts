@@ -34,6 +34,22 @@ test("sources triage at scale: filters, quiet attach, title-open affordance", ()
   assert.match(source, /<span className="sr-only">Status of \{source\.title\}<\/span>/);
 });
 
+test("attach source validates the URL scheme with an accessible inline error", () => {
+  // Only http(s) URLs may be submitted as web sources; the gate lives next to
+  // the empty-field guard so a bad scheme is refused before any action call.
+  assert.match(source, /isValidResearchSourceUrl/);
+  assert.match(source, /setUrlError\("Source URL must start with http:\/\/ or https:\/\/"\)/);
+  // The error is an inline field error: the input is marked invalid and points
+  // at the message via aria-describedby, and the message itself announces.
+  assert.match(source, /aria-invalid=\{urlError \? true : undefined\}/);
+  assert.match(source, /aria-describedby=\{urlError \? SOURCE_URL_ERROR_ID : undefined\}/);
+  assert.match(source, /role="alert"/);
+  assert.match(source, /SOURCE_URL_ERROR_ID = "research-source-url-error"/);
+  // Typing clears the error; a mission switch resets it with the other draft state.
+  assert.match(source, /if \(urlError\) setUrlError\(null\);/);
+  assert.match(source, /setUrlError\(null\);/);
+});
+
 test("artifact rejection is explicit and append-preserving", () => {
   assert.match(source, /reject-artifact/);
   assert.match(source, /Reject artifact/);
@@ -45,7 +61,7 @@ test("mission switches reset every piece of local ledger state", () => {
   // bleeds into the next mission's ledger.
   assert.match(
     source,
-    /missionIdRef\.current = mission\.id;\s*setTitle\(""\);\s*setUrl\(""\);\s*setRejection\(\{\}\);\s*setBusy\(false\);\s*setError\(null\);\s*setSourceFilter\("all"\);\s*\}, \[mission\.id\]\)/,
+    /missionIdRef\.current = mission\.id;\s*setTitle\(""\);\s*setUrl\(""\);\s*setRejection\(\{\}\);\s*setBusy\(false\);\s*setError\(null\);\s*setUrlError\(null\);\s*setSourceFilter\("all"\);\s*\}, \[mission\.id\]\)/,
   );
   // Panels remount per mission so uncontrolled disclosure state cannot ride
   // colliding artifact/source key shapes onto the wrong mission's rows.

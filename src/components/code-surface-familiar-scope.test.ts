@@ -29,8 +29,8 @@ assert.match(
 //    compact chat-mode path — without the familiar prop the list can't scope.
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?sessions=\{sessions\}[\s\S]*?hideRail=\{compactRail\}/,
-  "ChatSurface must forward activeFamiliar + sessions into ChatRouter (rail hidden on the chat-mode ChatSidebar path; toolbar stays)",
+  /<ChatRouter[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?sessions=\{sessions\}/,
+  "ChatSurface must forward activeFamiliar + sessions into ChatRouter so the thread list can scope",
 );
 
 // 3. ChatRouter scopes the sidebar/thread list to the familiar (null = show all,
@@ -50,11 +50,13 @@ assert.match(
 );
 
 // 5. The chat-mode session navigator receives the same familiar scope.
+// The chat rail lives in the surface now, so the active familiar reaches it
+// through ChatSurface rather than a second sidebar element (cave-fh9so).
 assert.match(
   workspace,
-  /const chatSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "workspace must pass the active familiar id into the chat-mode WorkspaceSidebar",
-);
+  /<ChatSurface[\s\S]*?activeFamiliarId=\{activeId\}/,
+  "workspace passes the active familiar id into the chat surface",
+)
 
 // 6. WorkspaceSidebar scopes the sessions that drive its unified recency list
 //    and project metadata to the active familiar (null = show everything).

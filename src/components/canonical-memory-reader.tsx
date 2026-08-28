@@ -14,6 +14,7 @@ import {
   CanonicalMemoryRequestError,
   fetchCanonicalMemoryDetail,
 } from "@/lib/canonical-memory-client";
+import { canonicalMemoryErrorHeadline } from "@/lib/canonical-memory";
 import type {
   CanonicalMemoryDetail,
   CanonicalMemoryErrorCode,
@@ -48,22 +49,22 @@ export function canonicalMemoryErrorCopy(
   switch (code) {
     case "local_access_required":
       return {
-        headline: "Local access required",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle: "Canonical memory is available only from Cave on this host.",
       };
     case "local_daemon_required":
       return {
-        headline: "Local daemon required",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle: "Switch Cave to Local daemon to read canonical memory.",
       };
     case "daemon_update_required":
       return {
-        headline: "Daemon update required",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle: "Update Coven, restart the daemon, then retry.",
       };
     case "canonical_memory_unavailable":
       return {
-        headline: "Canonical memory unavailable",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle: (
           <>
             Start the local daemon with <code>coven daemon start</code>, then
@@ -73,18 +74,18 @@ export function canonicalMemoryErrorCopy(
       };
     case "invalid_daemon_payload":
       return {
-        headline: "Incompatible daemon response",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle:
           "The daemon returned an incompatible daemon response. Update Coven, restart the daemon, then retry.",
       };
     case "invalid_memory_id":
       return {
-        headline: "Invalid memory selection",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle: "Return to the list and choose this memory again.",
       };
     case "memory_not_found":
       return {
-        headline: "Memory not found",
+        headline: canonicalMemoryErrorHeadline(code),
         subtitle:
           "This canonical memory is no longer available. Return to the list, then refresh.",
       };

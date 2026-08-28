@@ -40,8 +40,10 @@ assert.doesNotMatch(
   /taskCount|scheduleNeedsCount/,
   "no counter button remains in the desktop menu bar to need a tooltip",
 );
-// The surviving icon-only controls still owe a sighted tooltip apiece.
-for (const label of ["ENRICH_TASKS_TITLE", "SETTINGS_LABEL"]) {
+// The surviving icon-only controls still owe a sighted tooltip apiece. Settings
+// left the bar in cave-fh9so (SidebarFooter owns it, with a visible label), so
+// Enhance is the only one left holding this rule.
+for (const label of ["ENRICH_TASKS_TITLE"]) {
   assert.ok(
     new RegExp(`title=\\{[^}]*${label}`).test(menuBar),
     `${label} control exposes a hover tooltip, not just an aria-label`,

@@ -1200,12 +1200,25 @@
   flex: 1 1 auto;
 }
 
+/* The thread switcher is a StandardSelect, whose trigger hard-codes
+   `inline-flex … justify-between … text-left` utilities. Those are the same
+   specificity as this rule and land later in the cascade, so they won: with
+   `showCaret={false}` the trigger holds a single child, and `justify-between`
+   put that lone glyph at flex-start — left of the avatar above it and the
+   plus below it, both of which centre correctly. The two-class selector below
+   outranks the utilities and restores the column's shared centre line
+   (cave-fh9so). */
+.right-chat__rail .right-chat__thread-switcher,
 .right-chat__thread-switcher {
   display: grid;
   flex: 0 0 var(--touch-target);
   width: 100%;
   height: var(--touch-target);
   place-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;

@@ -197,6 +197,20 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       families: ["credentials"],
     }),
     freezeDefinition({
+      id: "status.admin.read",
+      method: "GET",
+      path: "/api/client/v1/admin/status",
+      ingress: "admin",
+      scope: null,
+      credential: "admin",
+      binding: "none",
+      // The operational-state family: like health.read, this answers what
+      // state the surface is in, never user data. It is administrator-only —
+      // the discovery record and the ownership waiver are host configuration —
+      // so a paired bearer can never read it.
+      families: ["health"],
+    }),
+    freezeDefinition({
       id: "familiars.list",
       method: "GET",
       path: "/api/client/v1/familiars",

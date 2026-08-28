@@ -1,0 +1,55 @@
+{
+  "name": "daytona",
+  "version": "1.0.0",
+  "description": "Create and manage isolated Daytona Cloud sandboxes with API, CLI, and SDK guidance for Python, TypeScript, Java, Go, and Ruby.",
+  "author": {
+    "name": "Daytona",
+    "url": "https://github.com/daytona"
+  },
+  "homepage": "https://www.daytona.io",
+  "repository": "https://github.com/daytona/skills",
+  "license": "Apache-2.0",
+  "keywords": [
+    "daytona",
+    "sandbox",
+    "secure-compute",
+    "isolated-runtime",
+    "code-execution",
+    "sdk"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "skills": "./skills/",
+  "marketplaceId": "opencoven/daytona",
+  "x-coven": {
+    "displayName": "Daytona Sandboxes",
+    "category": "Developer Tools",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/daytona/skills",
+      "https://github.com/daytona/skills/tree/ad4d8e088582fc995def67474a03eabede30564e/skills/daytona"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "userConfig": {
+    "daytona_api_key": {
+      "type": "string",
+      "title": "Daytona API Key",
+      "description": "API key used by Daytona SDK and CLI operations.",
+      "required": false,
+      "sensitive": true,
+      "env": "DAYTONA_API_KEY"
+    }
+  }
+}

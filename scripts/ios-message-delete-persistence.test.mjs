@@ -26,6 +26,7 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const view = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
+const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 
 /** Extract a brace-balanced block starting at `marker` (which ends at its `{`). */
 function blockAfter(src, marker) {
@@ -156,7 +157,7 @@ assert.match(
 );
 assert.match(
   body,
-  /messages\.remove\(at: index\)\n\s*updatedAt = Date\(\)\n\s*onChange\(\)/,
+  /messages\.remove\(at: index\)\n(\s*\/\/.*\n)*\s*absentForSession\.removeValue\(forKey: messageId\)\n\s*pendingPartialDeleteRetry\.removeValue\(forKey: messageId\)\n\s*updatedAt = Date\(\)\n\s*onChange\(\)/,
   "the removal must be optimistic — a delete that waits on the tailnet reads as a broken swipe",
 );
 assert.match(
@@ -360,8 +361,9 @@ assert.doesNotMatch(
 );
 assert.match(
   deleteLoop,
-  /failures\.append\(\(deletion\.familiarId, error\.localizedDescription\)\)/,
-  "a refusal must be recorded against the familiar whose chat still holds the message",
+  /failures\.append\(\(deletion\.familiarId, deletion\.sessionId, deletion\.turnId,\s*\n\s*error\.localizedDescription\)\)/,
+  "a refusal must record the session and the NAMED turn it still holds, not just the " +
+    "familiar — the retry re-deletes by name without touching the matcher again",
 );
 
 // Total failure and partial failure are different states and must stay so.
@@ -373,8 +375,9 @@ assert.match(
 );
 assert.match(
   persist,
-  /reportPartialDelete\(failures, familiarNames: familiarNames, onChange: onChange\)/,
-  "a delete that landed in some sessions and not others must be reported, not swallowed",
+  /reportPartialDelete\(failures, at: index, familiarNames: familiarNames, onChange: onChange\)/,
+  "a delete that landed in some sessions and not others must be reported, not swallowed — " +
+    "and the note needs the deleted message's index to sit near it",
 );
 assert.ok(
   persist.indexOf("if failures.count == deletions.count") < persist.indexOf("reportPartialDelete"),
@@ -434,37 +437,40 @@ assert.match(
 );
 assert.match(
   resolve,
-  /case \.ambiguous:[\s\S]*?return \.unresolved\(\s*\n?\s*isGroup/,
+  /case \.ambiguous:[\s\S]*?return \.unresolved\(/,
   "a transcript that DISAGREES says nothing about where this message is — keeping the " +
     "removal there is a silent local-only delete, which is the bug being fixed",
 );
-// "Refresh and try again" is only advice a DIRECT chat can act on. `reload`
-// opens with `guard !isGroup`, so pull-to-refresh is a no-op for a group and
-// the transcript can never re-acquire the server turn ids that would let the
-// retry skip the matcher. Telling a group's user to refresh is sending them to
-// pull at a list that cannot change.
+// "Refresh and try again" is advice a DIRECT chat and a GROUP chat can both
+// act on now: `reload` re-syncs a group from every session's transcript
+// (re-acquiring the server turn ids that let the retry skip the matcher, and
+// repairing the very drift that caused the refusal), so the refusal no longer
+// has to hide that the gesture is a no-op.
 assert.match(
   resolve,
-  /\?\s*"the desktop's copy of this chat has changed and a group chat can't be refreshed to catch up"\s*\n\s*:\s*"the desktop's copy of this chat has changed; refresh and try again"\)/,
-  "only a direct chat may be told to refresh — `reload` refuses groups, so that advice " +
-    "cannot work there and the refusal must say something true instead",
+  /return \.unresolved\("the desktop's copy of this chat has changed; refresh and try again"\)/,
+  "the refusal must tell the user to refresh — `reload` now re-syncs a group, so the " +
+    "advice is true there too",
+);
+assert.doesNotMatch(
+  resolve,
+  /can't be refreshed|can\'t be refreshed/,
+  "the group-specific 'can't be refreshed' refusal is gone with the gap it papered over — " +
+    "refresh IS the recovery gesture the refusal was missing",
 );
 assert.match(
   thread,
-  /func reload\(client: CaveClient\) async throws \{\s*\n\s*guard !isGroup/,
-  "the assertion above is only worth anything while `reload` really does refuse groups — " +
-    "if that changes, the refusal copy should change with it",
+  /func reload\(client: CaveClient\) async throws \{\s*\n\s*guard !isStreaming else \{ return \}\s*\n\s*if isGroup \{/,
+  "reload must no longer refuse groups — the group re-sync is the recovery gesture, and " +
+    "the guard that made the old copy true is what changed",
 );
 
 // -- A partial group delete is stated, never undone and never hidden --------
-const partial = blockAfter(
-  thread,
-  "private func reportPartialDelete(_ failures: [(familiarId: String, reason: String)],",
-);
+const partial = blockAfter(thread, "private func reportPartialDelete(");
 assert.ok(partial, "reportPartialDelete must exist");
 assert.doesNotMatch(
   partial,
-  /messages\.insert/,
+  /messages\.insert\(message/,
   "a partial delete must NOT put the message back. The turn really is gone from at least one " +
     "session and the route has no undelete, so re-inserting asserts copies the server has " +
     "already destroyed — and those sessions' transcripts have moved, so the next swipe is " +
@@ -472,21 +478,55 @@ assert.doesNotMatch(
 );
 assert.match(
   partial,
-  /appendSystem\([\s\S]*?isError: true\)/,
-  "an unreported partial delete is the silent local-only delete this bead exists to end, " +
-    "just with fewer sessions holding the evidence",
+  /insertSystem\(\s*\n\s*Self\.partialDeleteSentence\(/,
+  "the note must be placed at the deleted message's position, not appended at the transcript " +
+    "end — a report at the far end never connects to the swipe that produced it, and it is " +
+    "the only record the partial delete leaves",
 );
 assert.match(
   partial,
-  /familiarNames\[\$0\.familiarId\] \?\? \$0\.familiarId/,
-  "the report must name the chats the message survived in, by display name where the view " +
-    "knows one and by familiar id when it does not",
+  /at: index, isError: true\)/,
+  "the report needs the deleted message's index to sit near it — the message was removed, so " +
+    "the note takes its place",
+);
+assert.match(
+  partial,
+  /pendingPartialDeleteRetry\[noteId\] = PartialDeleteRetryState\(/,
+  "the report must remember the surviving sessions by the NAMED turn each still holds — the " +
+    "retry the note offers re-deletes by name, so a drifted transcript cannot refuse it again",
+);
+assert.doesNotMatch(
+  partial,
+  /failures\[0\]/,
+  "the report must not read every listed chat's reason off the first failure — each chat and " +
+    "its reason are independent facts, and one desktop refusing while another went away is " +
+    "exactly the case that needs both reasons",
 );
 assert.match(
   partial,
   /onChange\(\)/,
   "the note is the ONLY record a partial delete leaves — unpersisted it is gone at the next " +
     "launch, which is the silent local-only delete again with an extra step",
+);
+
+const sentence = blockAfter(thread, "nonisolated static func partialDeleteSentence(");
+assert.ok(sentence, "partialDeleteSentence must exist");
+assert.match(
+  sentence,
+  /familiarNames\[failure\.familiarId\] \?\? failure\.familiarId/,
+  "the report must name each surviving chat by display name where the view knows one and by " +
+    "familiar id when it does not",
+);
+assert.match(
+  sentence,
+  /failure\.reason\.hasSuffix\("\."\)\s*\n\s*\? String\(failure\.reason\.dropLast\(\)\)\s*\n\s*: failure\.reason/,
+  "each chat's OWN reason must be trimmed of its trailing full stop — not a shared first " +
+    "failure's, since the chats can have failed for different reasons",
+);
+assert.doesNotMatch(
+  sentence,
+  /failures\[0\]/,
+  "the sentence must not read every survivor's reason off the first failure",
 );
 
 const matcher = blockAfter(thread, "nonisolated private static func turnMatch(for message: DisplayMessage,");
@@ -553,10 +593,110 @@ assert.match(
   "a failed delete must be visible; a silent local-only delete is the bug being fixed",
 );
 
+// -- The group re-sync (the refusal's recovery gesture) ----------------------
+const reconcile = blockAfter(
+  thread,
+  "nonisolated static func reconciledGroupTranscript(",
+);
+assert.ok(reconcile, "reconciledGroupTranscript must exist");
+assert.match(
+  reconcile,
+  /for transcript in transcripts \{\s*\n\s*let projection: \[\(id: String, message: DisplayMessage\)\] = current\.compactMap/,
+  "every session's transcript must be walked against THIS thread's projection for that " +
+    "session — the same per-session view the delete matcher uses",
+);
+assert.match(
+  reconcile,
+  /if let id = adoptions\[message\.id\] \{\s*\n\s*kept\.serverTurnId = id/,
+  "a local message a server turn agrees with must adopt that turn's id — that is what lets " +
+    "the next swipe delete by name instead of guessing",
+);
+assert.match(
+  reconcile,
+  /absentFrom\[message\.id, default: \[\]\] == projected/,
+  "a local message EVERY session it projects into cleanly skipped never reached the server — " +
+    "a phantom everywhere — and must be dropped rather than left to shift every later ordinal",
+);
+assert.match(
+  reconcile,
+  /insertions\.append\(\(anchorId: lastMatchedId,/,
+  "a server turn the local list never showed (a retry's re-appended pair) must be restored in " +
+    "place, anchored after the last matched message",
+);
+assert.match(
+  reconcile,
+  /absentFrom\[local\.id, default: \[\]\]\.insert\(transcript\.familiarId\)/,
+  "the walk must record, per session, the local messages that session provably never received — " +
+    "the fan-out that reached three of four must not be allowed to refuse the whole delete",
+);
+assert.match(
+  reconcile,
+  /return \(rebuilt, absentFrom\)/,
+  "the reconciliation must hand back the rebuilt transcript AND the absent-for-session proof",
+);
+assert.match(
+  thread,
+  /guard let convo = try\? await client\.conversation\(sessionId: sessionId\) else \{ continue \}/,
+  "one unreachable session must not abort the whole group re-sync — re-syncing the sessions " +
+    "that DO answer is still progress",
+);
+assert.match(
+  thread,
+  /if let absent = absentForSession\[session\.message\.id\],\s*\n\s*absent\.contains\(session\.familiarId\) \{\s*\n\s*return \.absent/,
+  "the delete path must skip a session a re-sync PROVED never received the message — the " +
+    "matcher's `ambiguous` on its behalf would keep the message alive in the sessions that DO " +
+    "hold it",
+);
+
+// -- The partial delete can be retried -------------------------------------
+assert.match(
+  thread,
+  /func canRetryPartialDelete\(noteId: String\) -> Bool \{\s*\n\s*pendingPartialDeleteRetry\[noteId\] != nil/,
+  "the view must be able to ask whether a note still has a retryable survivor, so it can " +
+    "offer the button on exactly the note that reported the partial delete",
+);
+const retryPartial = blockAfter(thread, "func retryPartialDelete(noteId: String, client: CaveClient?,");
+assert.ok(retryPartial, "retryPartialDelete must exist");
+assert.match(
+  retryPartial,
+  /pendingServerDelete = Task \{ \[weak self\] in[\s\S]*?await self\?\.retryPartialDeleteLegs\(/,
+  "the retry must run behind the same per-thread delete chain, so it never lands inside " +
+    "another delete's conversation read",
+);
+const retryLegs = blockAfter(thread, "private func retryPartialDeleteLegs(noteId: String, client: CaveClient,");
+assert.ok(retryLegs, "retryPartialDeleteLegs must exist");
+assert.match(
+  retryLegs,
+  /deleteConversationTurn\(sessionId: leg\.sessionId,\s*\n\s*turnId: leg\.turnId\)/,
+  "the retry must re-delete by the turn id resolved before the first attempt — no matching, " +
+    "so a drifted transcript cannot refuse it a second time",
+);
+assert.match(
+  retryLegs,
+  /messages\.removeAll \{ \$0\.id == noteId \}/,
+  "when the last surviving copy finally lands, the warning note's job is done and it must go — " +
+    "a stale 'still in this chat with …' note would be a lie",
+);
+assert.match(
+  retryLegs,
+  /updateText\(\s*\n\s*noteId,/,
+  "a retry that still fails must rewrite the note with the surviving chats that remain, not " +
+    "append a second one",
+);
+
+const insertSystem = blockAfter(thread, "func insertSystem(_ text: String, at index: Int, isError: Bool = false) -> String {");
+assert.ok(insertSystem, "insertSystem must exist");
+assert.match(
+  insertSystem,
+  /messages\.insert\(message, at: min\(max\(index, 0\), messages\.count\)\)/,
+  "a note placed near a message must clamp to the transcript — the list can have moved while " +
+    "the delete was in flight",
+);
+
 // -- The view hands the client (and the familiar names) through --------------
 assert.match(
   view,
-  /thread\.deleteMessage\(message\.id, client: app\.client,\s*\n\s*familiarNames: familiarNames\) \{ app\.touch\(thread\) \}/,
+  /thread\.deleteMessage\(message\.id, client: app\.client,\s*\n\s*familiarNames: deleteFamiliarNames\(\)\) \{ app\.touch\(thread\) \}/,
   "the swipe action must go through the server-backed path, not the old local splice",
 );
 assert.match(
@@ -564,6 +704,33 @@ assert.match(
   /uniquingKeysWith: \{ first, _ in first \}\)/,
   "`uniqueKeysWithValues:` traps on a repeated key — a duplicated familiar id in a thread must " +
     "not turn a swipe into a crash",
+);
+assert.match(
+  view,
+  /let bubbleRetryDelete: \(\(\) -> Void\)\? =\s*\n\s*thread\.canRetryPartialDelete\(noteId: message\.id\)/,
+  "the view must offer the retry on the note that reported the partial delete — the note " +
+    "carries the only record of the surviving copies",
+);
+assert.match(
+  view,
+  /onRetryDelete: bubbleRetryDelete,/,
+  "the hoisted retry binding must still be handed to the bubble as its retry action",
+);
+assert.match(
+  view,
+  /thread\.retryPartialDelete\(noteId: noteId, client: client,/,
+  "the view must route the retry back through the thread's server-backed path with the client",
+);
+assert.match(
+  bubble,
+  /var onRetryDelete: \(\(\) -> Void\)\? = nil/,
+  "the bubble must expose the retry action so the report note can carry a button",
+);
+assert.match(
+  bubble,
+  /if let onRetryDelete \{[\s\S]*?Label\("Retry delete", systemImage: "arrow\.clockwise"\)/,
+  "the report note must render a visible retry button — a recovery the user cannot see is no " +
+    "recovery at all",
 );
 
 console.log("ios-message-delete-persistence: ok");

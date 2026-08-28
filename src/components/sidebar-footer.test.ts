@@ -56,14 +56,28 @@ assert.match(
 // Each alternate nav host renders it, so the active footer cannot drift…
 assert.match(minimal, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "SidebarMinimal imports the shared footer");
 assert.match(minimal, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "SidebarMinimal renders the shared footer");
-assert.match(chatNav, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "the chat nav imports the shared footer");
-assert.match(chatNav, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "the chat nav (WorkspaceSidebar) renders the shared footer so Chat keeps it");
+// One sidebar renders the footer now; the embedded chat list must NOT mount a
+// second copy (cave-fh9so).
+assert.doesNotMatch(
+  chatNav,
+  /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/,
+  "the embedded chat list does not mount a second footer",
+)
+assert.doesNotMatch(chatNav, /<SidebarFooter/, "the embedded chat list renders no footer of its own");
 // …and neither hand-rolls its own copy anymore.
 assert.doesNotMatch(minimal, /className="sidebar-foot"[\s\S]{0,40}href="\/dashboard"/, "SidebarMinimal no longer inlines the footer markup");
 
 // WorkspaceSidebar takes onOpenSettings, and workspace threads it through to the
 // chat nav so the Settings button is wired on Chat too.
-assert.match(chatNav, /onOpenSettings: \(\) => void;/, "WorkspaceSidebar declares an onOpenSettings prop");
-assert.match(workspace, /<WorkspaceSidebar[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/, "workspace wires onOpenSettings into the chat nav");
+assert.doesNotMatch(
+  chatNav,
+  /onOpenSettings: \(\) => void;/,
+  "the embedded chat list declares no settings prop — the sidebar footer owns it",
+)
+assert.match(
+  workspace,
+  /<SidebarMinimal[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/,
+  "workspace wires onOpenSettings into the one sidebar",
+)
 
 console.log("sidebar-footer.test.ts: ok");

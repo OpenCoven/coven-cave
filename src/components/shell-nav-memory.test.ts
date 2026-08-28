@@ -491,7 +491,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*setNavOpen\(rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
   "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
 );
 assert.match(
@@ -571,7 +571,6 @@ assert.equal(
           chatContextualGroupRef.current !== groupId
         ) {
           chatContextualGroupRef.current = groupId;
-          setNavOpen(true);
         }
         previousNavPolicyRef.current = navPolicy;
         return;
@@ -593,7 +592,6 @@ assert.equal(
         navPrefArmedGroupRef.current = null;
         visitCollapsedGroupRef.current = groupId;
         navRef.current?.collapse();
-        setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
     }, [mounted, groupId, isMobile, navPolicy]);
@@ -650,13 +648,19 @@ assert.match(
   "Chat still never seeds the remembered nav-open preference",
 );
 
-// The session list has no collapsed form, so the hidden Code room keeps the
-// destination sidebar mounted inertly for state continuity.
+// No room swaps the rail's contents any more (cave-fh9so): the session list
+// moved into the chat surface as a docked rail, so every surface — Code
+// included, open or collapsed — mounts the one destination sidebar.
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 assert.match(
   workspace,
-  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
-  "the collapsed Code room keeps the destination sidebar mounted, not the session list",
+  /const contextualNav = sidebar;/,
+  "every room mounts the same destination sidebar",
+);
+assert.doesNotMatch(
+  workspace,
+  /contextualNav =[^;]*\?[^;]*:/,
+  "the rail's contents are not conditional on the active room",
 );
 assert.match(
   workspace,

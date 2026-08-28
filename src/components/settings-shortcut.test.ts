@@ -50,10 +50,15 @@ assert.doesNotMatch(
   /platformizeHint\("⌘J", keys\)/,
   "FamiliarMenuBar has no New chat hint left to platformize",
 );
-assert.match(
+// Settings left the desktop menu bar in cave-fh9so, for the same reason New
+// chat left in cave-l9slw: it duplicated a better-labelled home (SidebarFooter)
+// and, drawn with a `ph:user` glyph beside icon-only labels, read as an account
+// avatar. So there is no hint here to platformize either. TopBar still carries
+// Settings — mobile has no sidebar footer — and it is asserted above.
+assert.doesNotMatch(
   familiarMenuBar,
   /platformizeHint\("⌘,", keys\)/,
-  "FamiliarMenuBar platformizes the Settings shortcut hint",
+  "FamiliarMenuBar has no Settings hint left to platformize",
 );
 
 // ⌘/Ctrl+, is handled in the global keydown handler and opens settings.

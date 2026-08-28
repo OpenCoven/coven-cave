@@ -8,7 +8,7 @@ const shellCss = await readFile(new URL("../styles/globals/shell-navigation.css"
 assert.match(source, /<aside[^>]+aria-label="Chat panel"/, "desktop content is a named complementary landmark");
 assert.match(
   source,
-  /compact[\s\S]*hideRail[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
+  /compact[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
   "the auxiliary router remains compact, hash-neutral, and single-pane",
 );
 assert.match(

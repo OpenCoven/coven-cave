@@ -140,6 +140,7 @@ export function ProjectPickerPopover({
   ariaLabel,
   allProjectsLabel,
   onSelectAllProjects,
+  familiarLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -163,6 +164,10 @@ export function ProjectPickerPopover({
   /** When both are provided, renders an "All projects" row before the No project row. */
   allProjectsLabel?: string;
   onSelectAllProjects?: () => void;
+  /** Display name of the familiar currently in scope. Its presence enables the
+   *  familiar-scoped section between Recent and the A-Z list; omit it (or pass
+   *  null in an All-familiars scope) and that section is not rendered. */
+  familiarLabel?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [showAllProjects, setShowAllProjects] = useState(false);
@@ -208,6 +213,25 @@ export function ProjectPickerPopover({
     ).recent;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `open` is the sampling edge.
   }, [open, sortedProjects, query]);
+
+  // The scoped familiar's own projects, between Recent and the A-Z list.
+  // `access` is only populated on familiar-scoped reads (see CaveProject), so
+  // its presence IS the "this familiar can reach this project" signal — there
+  // is no separate membership list to consult.
+  //
+  // Sampled on the same `open` edge as Recent so the two sections cannot
+  // reshuffle independently mid-interaction, and suppressed while filtering for
+  // the same reason Recent is: a query is already the narrower answer.
+  //
+  // Recent entries are excluded here (unlike the A-Z list, which deliberately
+  // stays complete) purely to stop the top of the popover repeating itself two
+  // rows apart. A-Z below still holds every project.
+  const familiarProjects = useMemo(() => {
+    if (!open || query.trim() || !familiarLabel) return [];
+    const recentIds = new Set(recent.map((entry) => entry.id));
+    return sortedProjects.filter((entry) => entry.access && !recentIds.has(entry.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `open` is the sampling edge.
+  }, [open, sortedProjects, query, familiarLabel, recent]);
 
   const renderProjectRow = (entry: CaveProject, key: string) => (
     <PopoverItem
@@ -320,8 +344,17 @@ export function ProjectPickerPopover({
             <PopoverLabel>Recent</PopoverLabel>
             {recent.map((entry) => renderProjectRow(entry, `recent-${entry.id}`))}
             <PopoverSeparator />
-            <PopoverLabel>All projects</PopoverLabel>
           </>
+        ) : null}
+        {familiarProjects.length > 0 ? (
+          <>
+            <PopoverLabel>{`${familiarLabel}'s projects`}</PopoverLabel>
+            {familiarProjects.map((entry) => renderProjectRow(entry, `familiar-${entry.id}`))}
+            <PopoverSeparator />
+          </>
+        ) : null}
+        {recent.length > 0 || familiarProjects.length > 0 ? (
+          <PopoverLabel>All projects</PopoverLabel>
         ) : null}
         {displayedProjects.map((entry) => renderProjectRow(entry, entry.id))}
         {!query.trim() && (showAllProjects || hiddenProjectCount > 0) ? (
@@ -395,6 +428,7 @@ export function ProjectPicker({
   className,
   allProjectsLabel,
   onSelectAllProjects,
+  familiarLabel,
 }: {
   projects: CaveProject[];
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
@@ -422,6 +456,8 @@ export function ProjectPicker({
   /** When both are provided, renders an "All projects" row before the No project row. */
   allProjectsLabel?: string;
   onSelectAllProjects?: () => void;
+  /** Scoped familiar's display name — enables the familiar-scoped section. */
+  familiarLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -495,6 +531,7 @@ export function ProjectPicker({
         ariaLabel={ariaLabel}
         allProjectsLabel={allProjectsLabel}
         onSelectAllProjects={onSelectAllProjects}
+        familiarLabel={familiarLabel}
       />
       {addFlow.addError ? (
         <span className="cave-project-picker__error" role="alert">

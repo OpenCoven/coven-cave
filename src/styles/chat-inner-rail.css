@@ -1,0 +1,392 @@
+/* Chat's inner threads rail (cave-fh9so).
+ *
+ * Component-imported by chat-surface.tsx, NOT added to the globals.css facade:
+ * this is surface-gated chrome that only the chat screen mounts, and the root
+ * CSS bundle runs at essentially zero headroom against BUNDLE_MAX_HOME_CSS_KB
+ * (see the "New surface CSS goes in its own sheet" rule in CLAUDE.md).
+ *
+ * Geometry mirrors the Coding Desk's docked rail: a fixed-width column beside
+ * the main content with its own scroll, a hairline divider, and no chrome of
+ * its own — the list inside brings its own header. */
+
+.chat-inner-rail {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 280px;
+  min-width: 280px;
+  min-height: 0;
+  overflow: hidden;
+  border-inline-end: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+
+/* The list owns its own scrolling region; the rail just bounds it. Without
+   min-height:0 on both, the inner scroller grows the column instead of
+   scrolling inside it. */
+.chat-inner-rail > * {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Narrow panes have no room for a third column. The chat surface already
+   collapses its code rail below this breakpoint for the same reason; the
+   threads list stays reachable from the conversation view itself. */
+@media (max-width: 1023px) {
+  .chat-inner-rail {
+    display: none;
+  }
+}
+
+/* Header: the rail's title row — "Sessions" plus the collapse affordance, and
+   nothing else. It replaced a search row that also carried an Organize menu.
+ *
+ * The row IS the button (the icon inside is decoration), so the click target
+ * matches the collapsed spine: whole header collapses, whole spine expands.
+ * `width: 100%` + `text-align: start` because a <button> centres its content
+   and shrink-wraps by default, which would leave most of the row dead. */
+.cnav__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.cnav__title-row:hover {
+  background: var(--bg-hover);
+}
+
+.cnav__title-row:hover .cnav__title,
+.cnav__title-row:hover .cnav__title-toggle {
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cnav__title-row {
+    transition: none;
+  }
+}
+
+.cnav__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Decoration inside the row button (and a real button on the collapsed spine,
+   where it is the only child) — so this styles the glyph box, not a control. */
+.cnav__title-toggle {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+/* Collapsed: a full-height spine that IS the control. Without it the toggle
+   would collapse along with the rail and there would be no way to reopen —
+   it lives inside the rail, not on the title bar.
+ *
+ * The whole column is one button rather than a small icon target floating in
+ * dead space: at 40×full-height the affordance is unmissable, and the vertical
+ * wordmark tells you what it opens without a hover. */
+.chat-inner-rail__spine {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 40px;
+  min-height: 0;
+  padding-block: var(--space-3);
+  border: 0;
+  border-inline-end: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.chat-inner-rail__spine:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-inner-rail__spine-icon {
+  flex: none;
+}
+
+/* Sideways wordmark, rotated a quarter turn clockwise so the glyph baselines
+   face LEFT and the word reads top-to-bottom. Bare `vertical-rl` is exactly
+   that rotation; `rotate(180deg)` would flip it to read bottom-to-top with the
+   baselines facing right, which is the mirror of what we want.
+ *
+ * Auto top/bottom margins centre it: in a flex column they absorb the free
+   space above and below, so the word sits in the middle of the bar with the
+   icon still pinned at the top — no absolute positioning, and it cannot
+   overlap the icon on a short viewport.
+ *
+ * ⚠️ These must be the PHYSICAL properties. `margin-block` is logical and
+   resolves against the element's OWN writing mode, and this element is
+   `vertical-rl` — so `margin-block: auto` becomes left/right here and centres
+   nothing. Measured before the fix: the label sat 9.1% down the bar.
+ *
+ * Title case rather than all-caps, so the tracking is eased off: heavy letter
+   spacing is what makes small uppercase legible, and it only makes mixed case
+   look gappy. */
+.chat-inner-rail__spine-label {
+  writing-mode: vertical-rl;
+  flex: 0 1 auto;
+  min-height: 0;
+  margin-top: auto;
+  margin-bottom: auto;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-inner-rail__spine {
+    transition: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .chat-inner-rail__spine {
+    display: none;
+  }
+}
+
+/* Mobile route to the same list (cave-fh9so).
+ *
+ * The rail and its spine are both hidden below 1024px, so without this the
+ * session list would be unreachable on a phone — it no longer lives in the app
+ * sidebar either. The trigger sits at the header's leading edge because the
+ * sheet enters from the left; the code rail's own toggle is on the trailing
+ * edge for the same reason.
+ *
+ * Hidden above the breakpoint, in the SAME stylesheet as the rail it stands in
+ * for, so the two cannot drift apart. */
+.mobile-threads-toggle {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-inline-end: calc(var(--space-1) * -1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.mobile-threads-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-threads-toggle {
+    transition: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mobile-threads-toggle {
+    display: none;
+  }
+}
+
+/* The sheet's list fills the panel and scrolls inside it, exactly as the rail
+   does — the list brings its own header and scroller, so the panel only bounds
+   it. */
+.chat-threads-sheet__panel > .chat-sidebar {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────────
+ *
+ * The rail is 280px wide, so the shared SelectionToolbar — built for the board
+ * and the chat list, where a row is the width of the page — needs its type and
+ * padding brought down rather than being dropped in at full size. */
+.cnav__select-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  margin-inline: var(--space-3);
+  margin-block-start: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.cnav__select-enter:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.cnav__select-bar {
+  flex: none;
+  padding-inline: var(--space-2);
+  padding-block-start: var(--space-2);
+}
+
+/* The toolbar's own margin assumes a page-width list; inside the rail it would
+   push the first thread out of view. */
+.cnav__select-bar [role="toolbar"] {
+  margin-bottom: var(--space-2);
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+}
+
+.cnav__broadcast-open {
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 2px var(--space-2);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cnav__broadcast-open:disabled {
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Checkbox in the row's leading slot — the same box-and-tick the chat list
+   uses, so select mode reads identically on both surfaces. */
+.cnav__select-box {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 4px);
+  color: transparent;
+}
+
+.cnav__select-box.is-on {
+  border-color: var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+
+/* Per-row broadcast outcome. Sits where the timestamp does, so it reads as
+   "what just happened to this row" rather than as new chrome. Failed carries
+   the danger tone because it is the one that needs acting on. */
+.cnav__broadcast {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.cnav__broadcast[data-state="sent"] {
+  color: var(--color-success);
+}
+
+.cnav__broadcast[data-state="failed"] {
+  color: var(--color-danger);
+}
+
+/* The broadcast composer — one textarea and one verb. Deliberately not a chat
+   view: replies land in each target's own thread, never here. */
+.chat-broadcast__title {
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 650;
+}
+
+.chat-broadcast__note {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.chat-broadcast__input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.chat-broadcast__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
+.chat-broadcast__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-broadcast__cancel {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.chat-broadcast__send {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--accent-presence);
+  padding: var(--space-1) var(--space-3);
+  color: var(--accent-presence-foreground);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-broadcast__send:disabled {
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-muted);
+  cursor: default;
+}

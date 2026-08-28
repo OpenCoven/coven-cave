@@ -9,7 +9,9 @@ import { SettingsGroup } from "@/components/ui/settings-group";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   accessLevelMeta,
+  accessRollupLabel,
   isSupreme,
+  rollupAccessLevels,
   type ConsoleAccessGroup,
   type ConsoleProject,
 } from "@/lib/permissions-console";
@@ -211,6 +213,12 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
         {groups.map((group) => {
           const open = expanded === group.id;
           const groupBusy = busy.has(group.id);
+          // The group's own base-project grants, rolled up into read vs write
+          // (legacy level-less grants mean write). Shown in the header so a
+          // collapsed group still answers "read-only or mixed?" at a glance.
+          const grantRollup = rollupAccessLevels(
+            group.projectGrants.map((grant) => (grant.access === "read" ? "read" : "write")),
+          );
           return (
             <div key={group.id}>
               <button
@@ -231,6 +239,9 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                       {group.projectGrants.length === 1
                         ? "1 project"
                         : `${group.projectGrants.length} projects`}
+                      {group.projectGrants.length > 0
+                        ? ` · ${accessRollupLabel(grantRollup)}`
+                        : ""}
                     </span>
                   </span>
                 </span>

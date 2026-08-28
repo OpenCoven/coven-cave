@@ -413,3 +413,45 @@ export function groupsForFamiliar(
     .filter((group) => group.memberFamiliarIds.includes(familiarId))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
+/**
+ * A familiar's (or access group's) granted roots, split by read vs write. The
+ * two counts are what the UI rollup lines render — the at-a-glance answer to
+ * "can this familiar write anywhere?" that the chat runtime-scope preamble
+ * spells out root by root.
+ */
+export type AccessRollup = { read: number; write: number };
+
+/**
+ * Roll up per-root access levels into read vs write counts. Levels are the
+ * EFFECTIVE levels (union-max of direct + group grants) — the same levels the
+ * chat runtime-scope preamble annotates from listAccessibleProjects — so the
+ * UI and the preamble tell the same story. Non-grants (null/undefined) are
+ * skipped: the rollup counts the access a familiar holds, not the whole
+ * registry.
+ */
+export function rollupAccessLevels(
+  levels: Iterable<ProjectAccessLevel | null | undefined>,
+): AccessRollup {
+  let read = 0;
+  let write = 0;
+  for (const level of levels) {
+    if (level === "read") read += 1;
+    else if (level === "write") write += 1;
+  }
+  return { read, write };
+}
+
+/**
+ * At-a-glance summary of a rollup, in the preamble's own vocabulary:
+ * "3 read-only · 2 read + write". Zero-count levels are dropped so a fully
+ * read-only familiar reads as "3 read-only" rather than "3 read-only · 0 read
+ * + write"; an empty rollup reads as "no access".
+ */
+export function accessRollupLabel(rollup: AccessRollup): string {
+  const parts: string[] = [];
+  if (rollup.read > 0) parts.push(`${rollup.read} read-only`);
+  if (rollup.write > 0) parts.push(`${rollup.write} read + write`);
+  if (parts.length === 0) return "no access";
+  return parts.join(" · ");
+}
+

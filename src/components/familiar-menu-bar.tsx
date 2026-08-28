@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { workspacePageDefinition } from "@/lib/workspace-page-registry";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
@@ -26,19 +25,16 @@ type Props = {
   onEnrichTasks?: () => void;
   enrichingTasks?: boolean;
   enrichProgress?: { done: number; total: number } | null;
-  /** Open Settings. */
-  onOpenSettings: () => void;
 };
 
 const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 const SEARCH_LABEL = "Search Cave";
-const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
 
 /**
  * A slim, always-visible desktop top menu bar: centered global search, the
- * Enhance action, Settings, and the workspace-owned status slots (running
- * processes + notification bell).
+ * Enhance action, and the workspace-owned status slots (running processes +
+ * notification bell).
  *
  * It carries NO counters. The Tasks and Rituals buttons and their badges were
  * removed in cave-l9slw because the sidebar navigation already lists both as
@@ -62,11 +58,9 @@ export function FamiliarMenuBar({
   onEnrichTasks,
   enrichingTasks,
   enrichProgress,
-  onOpenSettings,
 }: Props) {
   const keys = useKeySymbols();
   const searchShortcut = platformizeHint("⌘K", keys);
-  const settingsShortcut = platformizeHint("⌘,", keys);
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -141,16 +135,11 @@ export function FamiliarMenuBar({
             With both badges gone this cluster no longer counts anything, which
             is why fmtBadge went too rather than lingering as a helper with no
             caller. */}
-        <button
-          type="button"
-          className="menu-bar__task focus-ring"
-          onClick={onOpenSettings}
-          aria-label={SETTINGS_LABEL}
-          title={`${SETTINGS_LABEL} (${settingsShortcut})`}
-        >
-          <Icon name="ph:user" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">{SETTINGS_LABEL}</span>
-        </button>
+        {/* No Settings button either (cave-fh9so). It closed this cluster
+            wearing a `ph:user` glyph, so it read as an account/profile avatar
+            while its click opened Settings — and it duplicated SidebarFooter's
+            Settings entry, which carries a visible label. Settings is still
+            reachable from the sidebar footer and ⌘,. */}
       </div>
 
       {/* Right edge (chat-revamp phase D): the running-processes control

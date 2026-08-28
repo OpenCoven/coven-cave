@@ -77,7 +77,9 @@ vi.mock("@/lib/chat-split", () => ({
   emitChatSessionDragEnd: dragSignals.end,
 }));
 
-import { WorkspaceSidebar } from "./workspace-sidebar";
+// Renamed in cave-fh9so: the component is the embedded chat list now, mounted
+// inside SidebarMinimal's Chats section and docked in the chat surface.
+import { SidebarChatsSection } from "./workspace-sidebar";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -178,7 +180,7 @@ test("workspace sidebar row timestamps update when the shared minute tick fires"
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [makeSession()],
         familiars: [],
         responseNeeded: new Set(),
@@ -248,7 +250,7 @@ test("recency bucket and row bare time share one clock: an unrelated re-render n
   };
 
   await act(async () => {
-    renderer = create(createElement(WorkspaceSidebar, props));
+    renderer = create(createElement(SidebarChatsSection, props));
     await Promise.resolve();
   });
 
@@ -261,7 +263,7 @@ test("recency bucket and row bare time share one clock: an unrelated re-render n
   // regression would still read the same frozen instant here, but this
   // pins the "no drift from rendering alone" half of the contract.
   await act(async () => {
-    renderer.update(createElement(WorkspaceSidebar, { ...props, onOpenUrl: () => undefined }));
+    renderer.update(createElement(SidebarChatsSection, { ...props, onOpenUrl: () => undefined }));
     await Promise.resolve();
   });
   expect(bucketLabels(renderer)).toContain("Today");
@@ -309,7 +311,7 @@ test("promoted Awaiting you rows keep open, split, row actions, PR badge, active
 
   await act(async () => {
     renderer = create(
-      createElement(WorkspaceSidebar, {
+      createElement(SidebarChatsSection, {
         sessions: [session],
         familiars: [],
         responseNeeded: new Set(),

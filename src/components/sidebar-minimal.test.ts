@@ -28,7 +28,6 @@ const destinationPolicy = readFileSync(
 );
 // The Home/Code split itself — the sidebar reaches the registry only through
 // this module, so a committed artifact here breaks the rail just as badly.
-const navSection = readFileSync(new URL("../lib/nav-section.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
@@ -98,10 +97,14 @@ assert.match(
 );
 
 assert.doesNotMatch(source, /<NavSectionTabs/, "sidebar destinations no longer duplicate the title-bar section switcher");
-assert.match(source, /sidebarDestinations\(section\)\.map/, "the active tab filters destination rows through the shared destination policy");
-assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
+assert.match(source, /primaryDestinations\.map/, "Navigation renders the non-quiet rows from the shared destination policy");
+assert.match(source, /rooms\.map\(\(room\) =>/, "dynamic role-surface rooms all render (no section filter)");
 assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
-assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-\$\{section\}`\}/, "the destination list is labeled by its active tab");
+// The Home/Chat tabs are retired (cave-fh9so): the sidebar is one list, so the
+// destination column is no longer a tabpanel labelled by an active tab.
+assert.doesNotMatch(source, /role="tabpanel"/, "the destination list is not a tabpanel any more");
+assert.match(source, /<SidebarSection id="navigation" label="Navigation">/, "destinations sit under a Navigation heading");
+assert.match(source, /<SidebarSection\s+id="explore"/, "quiet destinations sit under their own Explore heading");
 // Retiring the SidebarSection assertions took this rule's only coverage with
 // them. Its section-heading half is dead — nothing emits sidebar-section*
 // anymore — but the recent-activity half is live: RecentActivityRollup still
@@ -134,8 +137,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
-  "Coding Desk remains registry-driven through the active familiar's rooms",
+  /const rooms = props\.roleSurfaces \?\? \[\];/,
+  "rooms stay registry-driven through the active familiar's surfaces",
 );
 assert.match(
   source,
@@ -406,23 +409,13 @@ assert.doesNotMatch(
   "Code is no longer a static folder row — the Coding familiar's room row arrives via roleSurfaces (cave-cc5r)",
 );
 
-// Recent Activity items must navigate: RecentActivityRollup's onClick calls
-// onOpenSession, so the sidebar must forward the prop (and activeSessionId for
-// the active-row accent) or clicking a recent session silently does nothing.
-assert.match(
+// Recent Activity is no longer mounted here at all (cave-fh9so). The full
+// thread list is docked in the chat surface beside the conversation, and a
+// second rollup in the sidebar meant three chat lists on screen at once.
+assert.doesNotMatch(
   source,
-  /<RecentActivityRollup\b[\s\S]{0,220}\bsessions=\{sessions\}[\s\S]{0,180}\bonOpenSession=\{onOpenSession\}/,
-  "Recent Activity must receive onOpenSession so selecting an item navigates to it",
-);
-assert.match(
-  source,
-  /<RecentActivityRollup\b[\s\S]{0,220}\bactiveSessionId=\{activeSessionId\}/,
-  "Recent Activity must receive activeSessionId to highlight the open session",
-);
-assert.match(
-  source,
-  /<RecentActivityRollup\b[\s\S]{0,220}\bselectedFamiliarIds=\{selectedFamiliarIds\}/,
-  "Recent Activity must receive the persistent familiar selection so multi-scope stays honest",
+  /<RecentActivityRollup\b/,
+  "the sidebar mounts no chat list — the docked rail owns that",
 );
 
 // "New chat" is the left panel's top CTA: it sits directly under the wordmark
@@ -609,10 +602,17 @@ assert.match(
   /const splitPageModes = useMemo\([\s\S]{0,220}\.map\(\(request\) => request\.requestedPageId\)[\s\S]{0,160}\.filter\(\(pageId\): pageId is WorkspaceMode => isWorkspaceMode\(pageId\)\)[\s\S]{0,100}\[splitTargets\],?\s*\n\s*\)/,
   "workspace derives splitPageModes from the live split tiles",
 );
+// The section props are gone with the Home/Chat rooms (cave-fh9so); what the
+// workspace still threads is the split-tile state.
 assert.match(
   workspace,
-  /<SidebarMinimal\s+mode=\{mode\}\s+section=\{navSection\}\s+onSectionChange=\{handleSectionChange\}\s+splitPageModes=\{splitPageModes\}/,
-  "workspace threads the section and splitPageModes into the sidebar",
+  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads mode and splitPageModes into the one sidebar",
+);
+assert.doesNotMatch(
+  workspace,
+  /section=\{navSection\}|onSectionChange=/,
+  "no section props survive — there is one sidebar, not two rooms",
 );
 assert.match(
   styles,
@@ -640,7 +640,6 @@ for (const [name, text, loader] of [
   ["sidebar-minimal.tsx", source, "tsx"],
   ["sidebar-rail-header.tsx", railHeaderSource, "tsx"],
   ["sidebar-footer.tsx", footer, "tsx"],
-  ["nav-section.ts", navSection, "ts"],
   ["workspace-navigation.ts", navigation, "ts"],
 ]) {
   assert.doesNotThrow(
@@ -670,7 +669,6 @@ for (const [name, text] of [
   ["sidebar-minimal.tsx", source],
   ["sidebar-rail-header.tsx", railHeaderSource],
   ["sidebar-footer.tsx", footer],
-  ["nav-section.ts", navSection],
   ["workspace-navigation.ts", navigation],
   ["the sidebar stylesheets", styles],
   ["rail-header.css", railHeaderCss],
@@ -694,20 +692,31 @@ assert.doesNotMatch(
   /VISIBLE_WORKSPACE_NAV_ITEMS/,
   "the sidebar must not reach the unsplit visible navigation list directly",
 );
+// The section split is retired (cave-fh9so). The equivalent guard now: the
+// policy must still DERIVE its list from the canonical registry rather than
+// hand-listing ids, or the sidebar could drift from the palette silently.
 assert.match(
   destinationPolicy,
-  /home:\s*Object\.freeze\([\s\S]{0,240}navSectionForMode\(definition\.id\) === "home"[\s\S]{0,240}code:\s*Object\.freeze\([\s\S]{0,240}navSectionForMode\(definition\.id\) === "code"/,
-  "sidebarDestinations must keep filtering canonical destinations by section — a passthrough would un-split the rail without failing a row assertion",
+  /WORKSPACE_NAVIGATION_PAGE_DEFINITIONS\.map\(attachDestinationMetadata\)/,
+  "sidebarDestinations derives from the canonical page registry, not a hand-written list",
+);
+assert.doesNotMatch(
+  destinationPolicy,
+  /navSectionForMode/,
+  "no section partition survives in the destination policy",
 );
 
 // Recent Activity is Code-only (cave-24d2r): Home is destinations, Code is live
 // work. The prop assertions above fire wherever the rollup is mounted, so
 // without this the section gate could be dropped and every one of them would
 // still pass.
-assert.match(
+// The section gate this used to gate on is gone with the Home/Chat rooms, and
+// so is the rollup itself. What replaces the guard: the sidebar renders NO
+// session list of any kind, so it cannot regrow one silently.
+assert.doesNotMatch(
   source,
-  /section === "code" \? \(\s*<RecentActivityRollup/,
-  "Recent Activity renders only in the Code section — Home stays destinations-only",
+  /sessions\.map|<RecentActivityRollup|SidebarChatsSection/,
+  "the sidebar renders no session list — the docked chat rail owns that surface",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

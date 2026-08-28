@@ -99,10 +99,13 @@ assert.match(
   "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
 );
 
-assert.match(
+// The router no longer mounts ChatProjectSidebar (the project-grouped rail is
+// retired there — cave-fh9so); the rail keeps its own CHAT_OPEN_PROJECTS_EVENT
+// fallback for hosts that omit the callback.
+assert.doesNotMatch(
   chatRouter,
-  /onOpenProjectsTab=\{openProjectsTab\}/,
-  "ChatRouter should pass the concrete Projects-tab handler to the rail",
+  /<ChatProjectSidebar|onOpenProjectsTab/,
+  "ChatRouter should not render the retired project rail or wire its Projects-tab handler",
 );
 
 assert.match(

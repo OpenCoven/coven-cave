@@ -157,9 +157,14 @@ describe("Profile card wiring (cave-ujbr)", () => {
 
       assert.equal(data.memoryAvailability, "unavailable");
       assert.equal(memoryTile?.value, "—");
-      assert.ok(
-        viewModel.errors.some((message) => message.includes("memory unavailable")),
-      );
+      // Availability is reported as a NOTICE, never as an error. `errors` is
+      // what makes ProfileCard abort a refresh and keep stale data, so an
+      // enrichment landing there meant that off Cave's own host every refresh
+      // failed permanently — "Refresh failed: memory unavailable
+      // (local_access_required)" over data that had loaded fine.
+      assert.deepEqual(viewModel.errors, []);
+      assert.equal(data.memoryNotice, "Canonical memory unavailable");
+      assert.equal(viewModel.memoryNotice, "Canonical memory unavailable");
     } finally {
       globalThis.fetch = originalFetch;
       clearCanonicalMemoryResources();

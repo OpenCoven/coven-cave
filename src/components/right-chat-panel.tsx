@@ -724,7 +724,6 @@ export function RightChatPanel(props: Props) {
             onActiveSessionChange={handleActiveSessionChange}
             composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
             compact
-            hideRail
             syncUrlHash={false}
             enableSplitPanes={false}
             activeFamiliarId={activeFamiliar.id}
