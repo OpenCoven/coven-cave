@@ -36,11 +36,21 @@ const SEARCH_LABEL = "Search Cave";
 const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
 
 /**
- * A slim, always-visible desktop top menu bar with global search and
- * task/schedule counters. It is the desktop counterpart to the mobile
- * `.top-bar` (which stays hidden ≥1024px); this bar is hidden below 1024px so
- * the two never both render. Familiar selection lives in the chat sidebar's
- * header switcher, not here.
+ * A slim, always-visible desktop top menu bar: centered global search, the
+ * Enhance action, Settings, and the workspace-owned status slots (running
+ * processes + notification bell).
+ *
+ * It carries NO counters. The Tasks and Rituals buttons and their badges were
+ * removed in cave-l9slw because the sidebar navigation already lists both as
+ * labelled destinations and badges the same counts from the same sources —
+ * this bar is for what has no other desktop home. New chat went with them
+ * (⌘J and four other entry points remain).
+ *
+ * It is the desktop counterpart to the mobile `.top-bar` (which stays hidden
+ * ≥1024px); this bar is hidden below 1024px so the two never both render.
+ * Note the mobile bar is NOT a mirror — it keeps its own New chat trigger and
+ * Tasks row, because those alternatives are not at hand on a phone. Familiar
+ * selection lives in the chat sidebar's header switcher, not here.
  */
 export function FamiliarMenuBar({
   activeFamiliarId,
