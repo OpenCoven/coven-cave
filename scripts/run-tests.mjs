@@ -126,6 +126,7 @@ export const SUITES = {
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
     "src/lib/research-artifact-contract.test.ts",
+    "src/lib/research-source-url.test.ts",
     "src/lib/document-reader.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
@@ -295,6 +296,8 @@ export const SUITES = {
     "src/lib/cave-inbox-create.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
+    "src/lib/session-finished-inbox.test.ts",
+    "src/lib/session-finished-inbox-emit.test.ts",
     "src/lib/project-permissions.test.ts",
     "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
@@ -390,6 +393,7 @@ export const SUITES = {
     "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
     "src/lib/marketplace-logo.test.ts",
+    "src/lib/marketplace-logo-plate.test.ts",
     "src/lib/craft-draft.test.ts",
     "src/lib/craft-arrival.test.ts",
     "src/lib/role-craft-composition.test.ts",
@@ -673,6 +677,7 @@ export const SUITES = {
     "src/components/chat-start-from-bands.test.ts",
     "src/components/chat-start-from-deadspace.test.ts",
     "src/components/chat-inline-composer.test.ts",
+    "src/lib/chat-broadcast.test.ts",
     "src/lib/chat-new-session-defaults.test.ts",
     "src/components/chat-new-dashboard.test.ts",
     "src/components/user-chat-avatar.test.ts",
@@ -1471,6 +1476,7 @@ export const SUITES = {
     "src/lib/server/client-v1/rate-limit.test.ts",
     "src/lib/server/client-v1/discovery.test.ts",
     "src/lib/server/client-v1/path-ownership.test.ts",
+    "src/lib/server/client-v1/status.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
@@ -1480,6 +1486,7 @@ export const SUITES = {
     "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
     "src/app/api/client/v1/admin/credentials/route.test.ts",
     "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    "src/app/api/client/v1/admin/status/route.test.ts",
     "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/lib/server/client-v1/pagination.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
@@ -1894,6 +1901,7 @@ export const SUITES = {
     "scripts/ios-port-discovery.test.mjs",
     "scripts/ios-legacy-token-migration.test.mjs",
     "scripts/ios-offline-compose.test.mjs",
+    "scripts/ios-group-replay-dup.test.mjs",
     "scripts/ios-operator-profile.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-connect-screen-ux.test.mjs",
@@ -2000,6 +2008,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
   "src/app/api/client/v1/admin/credentials/route.test.ts",
   "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  "src/app/api/client/v1/admin/status/route.test.ts",
   "src/app/api/client/v1/admin/security.e2e.test.ts",
   // The Phase 2 canonical reads: the route modules resolve "@/lib/server/..."
   // and "@/proxy-helpers" as runtime values, and their suites import the same
@@ -2058,6 +2067,10 @@ const ALIAS_LOADER = new Set([
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",
+  // the session-finished emit test loads session-finished-inbox-emit.ts,
+  // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
+  // runtime values; the suite cannot load without the alias resolver.
+  "src/lib/session-finished-inbox-emit.test.ts",
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",

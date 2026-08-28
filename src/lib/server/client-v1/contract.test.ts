@@ -136,6 +136,7 @@ test("publishes the locked v1 metadata, capabilities, scopes, error codes, and i
     "pairing.admin.decide",
     "credentials.admin.list",
     "credentials.admin.revoke",
+    "status.admin.read",
     "familiars.list",
     "projects.list",
     "conversations.list",
