@@ -2213,4 +2213,62 @@ await withFixture({}, async (fixture) => {
   assert.equal(report.head, ref.oid);
 });
 
+// cave-7bfpz. A `coven` stored as a JSON STRING on some OTHER bead used to
+// refuse creation for every bead in the checkout.
+//
+// The mechanism: an unreadable coven yields no records, and a record is what
+// carries the branch and path that errors are scoped by (cave-g9byt). With
+// nothing to name, the error lands in `globalErrors` — explicitly the only
+// bucket allowed to abort an operation on someone else's unit — and every
+// `--bead` fails with "lifecycle inventory is incomplete". Observed 2026-08-27
+// on two closed, already-archived beads; it blocked all three live sessions
+// until their records were normalised by hand, which is the one repair the
+// worktree rules forbid.
+//
+// Decoding removes the unreadability rather than reclassifying the error.
+// Reclassifying would have meant ignoring a record that might claim your path;
+// a blob that genuinely cannot be read still fails closed, and still global.
+await withFixture(
+  {
+    issues: [
+      defaultIssue("cave-unit1"),
+      {
+        id: "cave-encoded",
+        status: "closed",
+        title: "Double-encoded record on an unrelated bead",
+        description: "",
+        notes: "",
+        external_ref: null,
+        // The real shape: an extra JSON.stringify around a valid record.
+        metadata: {
+          coven: JSON.stringify({
+            worktree: {
+              branch: "feat/cave-encoded-elsewhere",
+              path: "/nowhere/cave-encoded-elsewhere",
+              owner: "kitty",
+              purpose: "Double encoded fixture",
+              createdAt: "2026-08-01T00:00:00.000Z",
+              disposition: "archive",
+            },
+          }),
+        },
+      },
+    ],
+  },
+  async (fixture) => {
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      `a decodable coven on an unrelated bead must not abort creation: ${created.stderr}`,
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "and the requested branch really exists",
+    );
+  },
+);
+
 console.log("worktree-lifecycle-create.test.mjs: ok");
