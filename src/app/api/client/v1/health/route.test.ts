@@ -151,6 +151,7 @@ test("declares only what this build can actually be asked to perform", async () 
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
       ],
     );
   });
