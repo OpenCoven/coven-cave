@@ -57,6 +57,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { AccessGroupsSection } from "@/components/access-groups-section";
 import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
 import { ProjectSettingsModal } from "@/components/project-settings-modal";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { useAddProjectFlow } from "@/components/project-picker";
 
 /**
@@ -1277,9 +1278,11 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           </div>
         ) : null}
         {addFlow.addError && pane === "access" ? (
-          <p className="projects-access-error" role="alert">
-            {addFlow.addError}
-          </p>
+          <ProjectRootWorkspaceNotice
+            className="projects-access-error"
+            code={addFlow.addErrorCode}
+            error={addFlow.addError}
+          />
         ) : null}
 
         <div

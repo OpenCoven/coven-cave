@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import {
   RECENT_SECTION_SIZE,
   loadFrecencyStore,
@@ -38,6 +39,8 @@ export type AddProjectFlow = {
   addProjectModal: ReactNode;
   adding: boolean;
   addError: string | null;
+  /** Stable server code of the last add failure, when the API returned one. */
+  addErrorCode: string | null;
 };
 
 /**
@@ -65,12 +68,14 @@ export function useAddProjectFlow(args: {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [addErrorCode, setAddErrorCode] = useState<string | null>(null);
 
   const registerRoot = async (dir: string) => {
     const root = dir.trim();
     if (!root) return;
     setAdding(true);
     setAddError(null);
+    setAddErrorCode(null);
     const existing = args.projects.find((project) => project.root === root);
     const result = await addChatProject({
       root,
@@ -81,7 +86,10 @@ export function useAddProjectFlow(args: {
     });
     setAdding(false);
     if (result.ok) args.onAdded(result.projectId);
-    else setAddError(result.error);
+    else {
+      setAddError(result.error);
+      setAddErrorCode(result.code ?? null);
+    }
   };
 
   const beginAddProject = () => {
@@ -112,7 +120,7 @@ export function useAddProjectFlow(args: {
     />
   );
 
-  return { beginAddProject, addProjectModal, adding, addError };
+  return { beginAddProject, addProjectModal, adding, addError, addErrorCode };
 }
 
 
@@ -534,9 +542,12 @@ export function ProjectPicker({
         familiarLabel={familiarLabel}
       />
       {addFlow.addError ? (
-        <span className="cave-project-picker__error" role="alert">
-          {addFlow.addError}
-        </span>
+        <ProjectRootWorkspaceNotice
+          as="span"
+          className="cave-project-picker__error"
+          code={addFlow.addErrorCode}
+          error={addFlow.addError}
+        />
       ) : null}
       {canAddProject ? addFlow.addProjectModal : null}
     </>

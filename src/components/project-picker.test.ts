@@ -65,7 +65,11 @@ assert.match(
   "and pick() is what changes the selection and closes the picker",
 );
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
-assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
+assert.match(
+  src,
+  /addFlow\.addError \? \([\s\S]*<ProjectRootWorkspaceNotice[\s\S]*cave-project-picker__error/,
+  "add-flow failures surface inline through the shared assertive notice",
+);
 assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");
 assert.doesNotMatch(src, /if \(!q\) return projects;/, "unfiltered picker must not expose raw API order");
 assert.match(src, /projectAccessLabel/, "picker uses the shared Read/Full access copy");

@@ -1024,6 +1024,7 @@ export const SUITES = {
     "src/components/project-picker.test.ts",
     "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
+    "src/components/project-root-workspace-notice.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/lib/directory-picker-pins.test.ts",
