@@ -6,7 +6,7 @@
 > Research Desk surfaces; see their current specs before starting new work.
 
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Add a new Flow template (`content-generation`) to `FLOW_TEMPLATES` that automates long-form content generation across blog, Twitter thread, and Discord surfaces from one research run, gated by a human approval after research synthesis.
 

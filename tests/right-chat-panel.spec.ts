@@ -136,13 +136,26 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   }
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
 
-  const chatTab = page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Chat" });
+  // Chat is a sidebar DESTINATION now, not a section tab — the Home/Chat
+  // switcher above the rail is gone (cave-fh9so), so the tablist this used to
+  // drive no longer exists.
+  //
+  // The tablist lived in the title bar and was reachable whatever the rail was
+  // doing. A destination is not: a collapsed sidebar is `inert aria-hidden`,
+  // which getByRole skips entirely, so this opens the rail first if the
+  // resize above (or a remembered preference) left it shut.
+  const sidebar = page.locator('aside[aria-label="Sidebar"]');
+  if ((await sidebar.getAttribute("aria-hidden")) === "true") {
+    await page.keyboard.press("ControlOrMeta+b");
+    await expect(sidebar).not.toHaveAttribute("aria-hidden", "true");
+  }
+  const chatDestination = sidebar.getByRole("button", { name: /^Chat\b/ }).first();
   // The keyboard resize above can leave the separator's expanded pointer
   // target armed, so the first pointerdown here is swallowed as a zero-delta
-  // drag. A harmless first click (still on "Home", a no-op) clears that state
-  // so the real navigation click below lands normally.
-  await chatTab.click();
-  await chatTab.click();
+  // drag. A harmless first click clears that state so the real navigation
+  // click below lands normally.
+  await chatDestination.click();
+  await chatDestination.click();
   await expect(page.locator(".chat-surface")).toBeVisible();
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("Newest Cody chat");

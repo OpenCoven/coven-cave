@@ -1,4 +1,3 @@
-import { navSectionForMode, type NavSection } from "./nav-section.ts";
 import {
   WORKSPACE_NAV_ITEMS,
   type WorkspaceNavItem,
@@ -57,25 +56,22 @@ const PALETTE_DESTINATIONS = Object.freeze(
     .map(attachDestinationMetadata),
 );
 
-const SIDEBAR_DESTINATIONS = Object.freeze({
-  home: Object.freeze(
-    WORKSPACE_NAVIGATION_PAGE_DEFINITIONS
-      .filter((definition) => navSectionForMode(definition.id) === "home")
-      .map(attachDestinationMetadata),
-  ),
-  code: Object.freeze(
-    WORKSPACE_NAVIGATION_PAGE_DEFINITIONS
-      .filter((definition) => navSectionForMode(definition.id) === "code")
-      .map(attachDestinationMetadata),
-  ),
-} satisfies Record<NavSection, readonly WorkspaceDestinationDefinition[]>);
+// One ordered list, in registry order (cave-fh9so). The sidebar used to split
+// these into a Home room and a Code room behind a titlebar toggle, which meant
+// half the destinations were unreachable at any moment and Home was rendered
+// twice — once as a tab, once as the first row. The registry order already
+// reads correctly top to bottom (Home, Chat, Tasks, Rituals, …), so removing
+// the partition is all it took to put Chat directly under Home.
+const SIDEBAR_DESTINATIONS: readonly WorkspaceDestinationDefinition[] = Object.freeze(
+  WORKSPACE_NAVIGATION_PAGE_DEFINITIONS.map(attachDestinationMetadata),
+);
 
 export function paletteDestinations(): readonly WorkspaceDestinationDefinition[] {
   return PALETTE_DESTINATIONS;
 }
 
-export function sidebarDestinations(section: NavSection): readonly WorkspaceDestinationDefinition[] {
-  return SIDEBAR_DESTINATIONS[section];
+export function sidebarDestinations(): readonly WorkspaceDestinationDefinition[] {
+  return SIDEBAR_DESTINATIONS;
 }
 
 export function statusContextPolicy(pageId: string): WorkspaceStatusContext {

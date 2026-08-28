@@ -88,4 +88,24 @@ assert.match(
 );
 assert.match(section, /role="checkbox"/, "member chips are accessible checkboxes");
 
+// ── Per-root read/write rollup in the group header (cave-fydri) ─────────────
+// Each group's base-project grants roll up into a read vs write line beside
+// the member/project counts, so a collapsed group still answers "read-only or
+// mixed?" at a glance.
+assert.match(
+  section,
+  /rollupAccessLevels\(/,
+  "the group header rolls its base-project grants into read vs write counts",
+);
+assert.match(
+  section,
+  /grant\.access === "read" \? "read" : "write"/,
+  "legacy level-less group grants count as write, matching the row badges",
+);
+assert.match(
+  section,
+  /· \$\{accessRollupLabel\(grantRollup\)\}/,
+  "the header appends the read/write rollup line",
+);
+
 console.log("access-groups-section.test.ts: ok");

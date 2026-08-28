@@ -14,6 +14,36 @@ export type CanonicalMemoryErrorCode =
   | "invalid_memory_id"
   | "memory_not_found";
 
+/**
+ * The one-line name for each failure code, in the reader's words.
+ *
+ * Lives here rather than beside the full copy in canonical-memory-reader.tsx
+ * because non-React callers need it too — the profile card reports memory
+ * availability as a notice, and pulling a client component into a data module
+ * to read one string is the wrong dependency. The reader composes its
+ * subtitles (which are JSX) on top of this.
+ */
+export function canonicalMemoryErrorHeadline(
+  code: CanonicalMemoryErrorCode,
+): string {
+  switch (code) {
+    case "local_access_required":
+      return "Local access required";
+    case "local_daemon_required":
+      return "Local daemon required";
+    case "daemon_update_required":
+      return "Daemon update required";
+    case "canonical_memory_unavailable":
+      return "Canonical memory unavailable";
+    case "invalid_daemon_payload":
+      return "Incompatible daemon response";
+    case "invalid_memory_id":
+      return "Invalid memory selection";
+    case "memory_not_found":
+      return "Memory not found";
+  }
+}
+
 export type CanonicalMemorySource = {
   kind: string;
   label: string;

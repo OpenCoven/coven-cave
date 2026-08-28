@@ -142,6 +142,20 @@ assert.ok(
   "Thread Signal should render after the transcript tail rather than inside the conversation log",
 );
 
+// cave-mo4q: a completed Reflect offers "Open daily note" — the card's action
+// pre-arms the Familiars surface preferences (same registry the detail panel
+// reads), dismisses the card, and switches the shell to the Familiars surface.
+assert.match(
+  source,
+  /const openFamiliarDailyNote = useCallback\(\(familiarId: string\) => \{[\s\S]*setThreadSignalReport\(null\);\s*setFamiliarsSelectedId\(familiarId\);\s*setFamiliarsViewMode\("detail"\);\s*setFamiliarsDetailTab\("daily-notes"\);\s*window\.dispatchEvent\(new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "agents" \} \}\)\);/,
+  "Open daily note pre-arms familiars.selectedId/detail/daily-notes and navigates to the Familiars surface",
+);
+assert.match(
+  source,
+  /onOpenDailyNote=\{openFamiliarDailyNote\}/,
+  "The ThreadSignalCard receives the daily-note action",
+);
+
 assert.match(
   source,
   /onOpenUrl\?: \(url: string\) => void/,

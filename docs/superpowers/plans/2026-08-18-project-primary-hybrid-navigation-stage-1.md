@@ -1,6 +1,6 @@
 # Project-primary Hybrid Navigation Stage 1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Add the project/crew/actor context contract, render the hybrid selector in the shared desktop rail, and migrate Home and new-chat launch to that shell-owned context without changing non-pilot surface filtering.
 

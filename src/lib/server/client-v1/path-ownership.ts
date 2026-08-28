@@ -43,7 +43,7 @@ const UNVERIFIED_OWNERSHIP_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_RE
 const UNVERIFIED_OWNERSHIP_TOKEN = "i-accept-unverified-path-ownership";
 const UNVERIFIED_OWNERSHIP_MIN_REASON = 12;
 
-type UnverifiedOwnershipWaiver =
+export type UnverifiedOwnershipWaiver =
   | { granted: true; reason: string }
   | { granted: false; note: string };
 
@@ -69,7 +69,7 @@ type UnverifiedOwnershipWaiver =
  * the artifact it produces (cave-yp21x). The disclosure here is the warning the
  * caller prints, once per waived path, plus the boot banner in server.ts.
  */
-function resolveUnverifiedOwnershipWaiver(
+export function resolveUnverifiedOwnershipWaiver(
   env: Record<string, string | undefined>,
 ): UnverifiedOwnershipWaiver {
   const requested = env[UNVERIFIED_OWNERSHIP_ENV]?.trim() ?? "";
@@ -191,6 +191,12 @@ export interface ClientV1PathOwnershipOptions {
    * unreachable on the Linux runners.
    */
   env?: Record<string, string | undefined>;
+  /**
+   * Clock for the negative-refusal cache. Injectable for the same reason as
+   * everything else here: the refusal TTL is the cave-okfb2 change, and a
+   * test that cannot advance the clock cannot assert expiry without sleeping.
+   */
+  now?: () => number;
 }
 
 /**
@@ -398,12 +404,45 @@ function exclusivityFindings(report: ClientV1WindowsAclReport): string[] {
 }
 
 /**
+ * The refusal a client v1 ownership check answers with.
+ *
+ * Distinct from the plain `Error` the guard used to throw so the auth
+ * boundary can tell "this host cannot verify its own store" apart from every
+ * other failure, and answer the normalized `ownership_refused` envelope
+ * instead of letting the throw escape into a bare non-envelope 500
+ * (cave-e7xwk). The message stays the operator-facing text this module
+ * always built — path, finding, and the `icacls` remedy — but that text is
+ * logged, not shipped to a paired client.
+ */
+export class ClientV1PathOwnershipError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ClientV1PathOwnershipError";
+  }
+}
+
+/**
+ * How long a refused path stays refused before the probe runs again.
+ *
+ * Failures used to be uncached BY DESIGN (cave-okfb2 R6): a refused path was
+ * re-probed on every authenticated request so an out-of-band repair took
+ * effect without a restart. That made a host where the check cannot pass
+ * fork a doomed ~290 ms PowerShell per request. The negative TTL is the
+ * deliberate trade: refusals are now cached, so the probe runs at most once
+ * per path per window — a degraded host answers every request from the cache
+ * and re-drives the probe only after the window lapses, which is also when an
+ * out-of-band `icacls /reset` takes effect.
+ */
+export const CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS = 30_000;
+
+/**
  * Successful verifications, keyed by path.
  *
  * A probe costs ~290 ms, and `verify`/`findByBearer` run it once per
  * authenticated request, so caching is what keeps the Windows branch off the
- * hot path. Only successes are cached: a path that fails is re-probed, so
- * repairing the ACL out of band does not require a restart. Cached success is
+ * hot path. Failures are cached separately, with a short negative TTL
+ * (`refusedWindowsPaths`), so a path that fails is re-probed only after the
+ * window lapses and an out-of-band repair needs no restart. Cached success is
  * per process, so unlike the POSIX branch this does not re-detect a DACL
  * loosened mid-run — the symlink and realpath guards at the same call sites
  * still do run every time.
@@ -423,10 +462,29 @@ const verifiedWindowsPaths = new Map<string, ClientV1WindowsAclReport>();
  */
 const waivedWindowsPaths = new Map<string, string>();
 
-/** Test seam: drop cached verifications so a suite can re-drive the probe. */
+/**
+ * Refusals, keyed by path, until their negative TTL lapses.
+ *
+ * The cave-okfb2 half: a path that failed is re-probed only after
+ * `CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS` expires, so a host whose probe cannot
+ * pass stops forking a ~290 ms subprocess per request and starts answering
+ * from the cache. The stored `Error` is re-thrown on a hit, so a cache hit
+ * refuses exactly as the miss that populated it did. An out-of-band repair is
+ * picked up at the first probe after the window lapses.
+ */
+const refusedWindowsPaths = new Map<
+  string,
+  { expiresAt: number; error: ClientV1PathOwnershipError }
+>();
+
+/**
+ * Test seam: drop cached verifications, waivers, and refusals so a suite can
+ * re-drive the probe from a clean slate.
+ */
 export function resetClientV1PathOwnershipCache(): void {
   verifiedWindowsPaths.clear();
   waivedWindowsPaths.clear();
+  refusedWindowsPaths.clear();
 }
 
 /**
@@ -488,6 +546,14 @@ export async function assertExclusivePathOwnership(
 
   if (verifiedWindowsPaths.has(path) || waivedWindowsPaths.has(path)) return;
 
+  const now = options.now ?? Date.now;
+  const cachedRefusal = refusedWindowsPaths.get(path);
+  if (cachedRefusal !== undefined) {
+    if (cachedRefusal.expiresAt > now()) throw cachedRefusal.error;
+    // Expired: an out-of-band repair may have landed. Re-probe once.
+    refusedWindowsPaths.delete(path);
+  }
+
   const warn = options.warn ?? console.warn;
   const waiver = resolveUnverifiedOwnershipWaiver(options.env ?? process.env);
   const probe = options.probeWindowsAcl ?? probeWindowsAcl;
@@ -498,10 +564,20 @@ export async function assertExclusivePathOwnership(
     // The ONE condition the waiver covers: the host cannot answer the
     // question. Everything below this point had an answer.
     if (!waiver.granted) {
-      throw new Error(
+      const error = new ClientV1PathOwnershipError(
         unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
         { cause },
       );
+      refusedWindowsPaths.set(path, {
+        expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
+        error,
+      });
+      // Logged once per refusal, then suppressed while the negative cache
+      // holds: the probe failure is what an operator needs to see, and a
+      // request storm re-reading the same sentence is the noise cave-okfb2
+      // exists to bound.
+      warn(error.message);
+      throw error;
     }
     waivedWindowsPaths.set(path, waiver.reason);
     warn(unverifiedOwnershipDisclosure(subject, path, cause as Error, waiver.reason));
@@ -510,7 +586,15 @@ export async function assertExclusivePathOwnership(
 
   const findings = exclusivityFindings(report);
   if (findings.length > 0) {
-    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
+    const error = new ClientV1PathOwnershipError(
+      sharedOwnershipRefusal(subject, path, findings, waiver),
+    );
+    refusedWindowsPaths.set(path, {
+      expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
+      error,
+    });
+    warn(error.message);
+    throw error;
   }
 
   if (report.repaired) {

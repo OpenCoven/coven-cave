@@ -1,6 +1,6 @@
 # Calm Streaming Chat Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Make Main Chat and Quick Chat render live familiar replies as stable Markdown blocks with one current activity line, trustworthy result rows, explicit interrupted/failed states, and user-controlled stream following.
 

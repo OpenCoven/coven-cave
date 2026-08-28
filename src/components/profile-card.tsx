@@ -199,6 +199,17 @@ export function ProfileCard({
         </p>
       ) : null}
 
+      {/* Canonical memory is an enrichment, so its absence is a note, not an
+          alert: no role="alert", no warning glyph, and it never blocks or
+          fails a refresh. Off Cave's own host `local_access_required` is the
+          permanent, expected answer — as an error it made every refresh fail
+          forever and threw away the data that HAD loaded. */}
+      {vm.memoryNotice ? (
+        <p className="pfc-callout pfc-callout--note">
+          <Icon name="ph:info" aria-hidden /> {vm.memoryNotice}
+        </p>
+      ) : null}
+
       <article className="pfc-card" data-kind={vm.kind}>
         <aside className="pfc-rail">
           <div className="pfc-wordmark">{vm.kind}</div>

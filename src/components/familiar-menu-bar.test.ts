@@ -102,15 +102,15 @@ assert.match(
   /const searchShortcut = platformizeHint\("⌘K", keys\);[\s\S]*title=\{`Search everything in your Cave \(\$\{searchShortcut\} opens the command palette\)`\}/,
   "the menu bar platformizes the Search shortcut hint",
 );
-assert.match(
+// The Settings button is gone from this cluster (cave-fh9so). It sat at the
+// far right of the title row reading as an account/profile avatar while its
+// click opened Settings, and it duplicated SidebarFooter's Settings entry,
+// which carries a visible label. Assert its ABSENCE so it cannot drift back in
+// without the naming and shortcut wiring the removed assertions used to check.
+assert.doesNotMatch(
   source,
-  /workspacePageDefinition\("settings"\)/,
-  "Settings naming comes from the shared page registry",
-);
-assert.match(
-  source,
-  /const settingsShortcut = platformizeHint\("⌘,", keys\);[\s\S]*onClick=\{onOpenSettings\}[\s\S]{0,180}title=\{`\$\{SETTINGS_LABEL\} \(\$\{settingsShortcut\}\)`\}/,
-  "the menu bar exposes Settings through the existing shell handler",
+  /onClick=\{onOpenSettings\}/,
+  "the menu bar no longer duplicates the sidebar footer's Settings entry",
 );
 
 // cave-l9slw: the right group is down to Enhance and Settings. Tasks went

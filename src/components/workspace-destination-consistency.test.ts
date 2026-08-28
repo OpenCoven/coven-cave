@@ -13,16 +13,12 @@ const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), 
 const familiarMenuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const sidebarFooter = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.deepEqual(
-  sidebarDestinations("home").map(({ id }) => id),
-  ["home", "board", "inbox", "marketplace", "grimoire"],
-  "Home sidebar destinations stay policy-driven",
-);
-assert.deepEqual(
-  sidebarDestinations("code").map(({ id }) => id),
-  ["chat"],
-  "Code sidebar destinations stay policy-driven",
+  sidebarDestinations().map(({ id }) => id),
+  ["home", "chat", "board", "inbox", "marketplace", "grimoire"],
+  "sidebar destinations stay policy-driven, in one flat list with Chat under Home",
 );
 assert.match(
   sidebar,
@@ -31,8 +27,25 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /sidebarDestinations\(section\)\.map/,
-  "SidebarMinimal renders visible rows from sidebarDestinations(section)",
+  /const allDestinations = sidebarDestinations\(\);/,
+  "SidebarMinimal takes its rows from the shared sidebarDestinations() policy",
+);
+// The list is split into Navigation and Explore on the registry's own `quiet`
+// flag — not by naming destinations in the component (cave-fh9so).
+assert.match(
+  sidebar,
+  /primaryDestinations = allDestinations\.filter\(\(entry\) => entry\.nav !== "quiet"\)/,
+  "Navigation holds every non-quiet destination",
+);
+assert.match(
+  sidebar,
+  /exploreDestinations = allDestinations\.filter\(\(entry\) => entry\.nav === "quiet"\)/,
+  "Explore holds the quiet destinations, split on the registry flag",
+);
+assert.doesNotMatch(
+  sidebar,
+  /"marketplace"|"grimoire"/,
+  "the sidebar never names individual destinations to place them",
 );
 assert.match(
   sidebar,
@@ -96,12 +109,19 @@ assert.doesNotMatch(
   "CommandPalette does not silently filter out destinations when metadata is missing",
 );
 
-// Tasks is only asserted for mobile now: cave-l9slw removed the desktop menu
-// bar's Tasks button because the sidebar navigation already carries that
-// destination with a label. The rule is unchanged — a surface that DOES expose
-// a destination must name it from the shared registry, never a private array.
+// Two independent thinnings of the same strip landed together, so the desktop
+// menu bar now exposes NEITHER destination: cave-l9slw removed Tasks (the
+// sidebar navigation already carries it, labelled), and cave-fh9so removed
+// Settings (it was drawn with a `ph:user` glyph, so with task labels collapsed
+// to icon-only it read as an account avatar, and it duplicated SidebarFooter's
+// labelled Settings entry).
+//
+// The rule itself is untouched, which is why this is a list and not a deletion:
+// a surface that DOES expose a destination must name it from the shared
+// registry, never a private array. Mobile still exposes both — there is no
+// sidebar footer at that width.
 for (const [source, label, destinations] of [
-  [familiarMenuBar, "Desktop chrome", ["settings"]],
+  [familiarMenuBar, "Desktop chrome", []],
   [topBar, "Mobile chrome", ["board", "settings"]],
 ] as const) {
   for (const destination of destinations) {
@@ -117,10 +137,23 @@ for (const [source, label, destinations] of [
     `${label} does not keep a private destination array for Tasks or Settings`,
   );
 }
-// Desktop chrome deliberately stopped exposing New chat (cave-l9slw): the
-// menu bar is for destinations with no other desktop home, and New chat has
-// ⌘J, the sidebar rail CTA, the chat project sidebar and the right-panel
-// dropdown. Mobile keeps its trigger, where those alternatives are not at hand.
+
+// Desktop exposes neither, and each absence is asserted with the handler that
+// would betray a half-removal — a dead prop left wired to nothing still fails.
+assert.doesNotMatch(
+  familiarMenuBar,
+  /onOpenSettings/,
+  "the desktop menu bar no longer carries a Settings action (SidebarFooter owns it)",
+);
+assert.match(
+  sidebarFooter,
+  /onOpenSettings/,
+  "SidebarFooter is where desktop Settings lives",
+);
+// New chat left for the same reason (cave-l9slw): the menu bar is for
+// destinations with no other desktop home, and New chat has ⌘J, the sidebar
+// rail CTA, the chat project sidebar and the right-panel dropdown. Mobile keeps
+// its trigger, where none of those are at hand.
 assert.doesNotMatch(
   familiarMenuBar,
   /NEW_CHAT_LABEL/,

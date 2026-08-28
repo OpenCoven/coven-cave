@@ -1,6 +1,6 @@
 # Research Protocol Unit 0 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Implement the provider-neutral Research Run Protocol v1 as authoritative JSON Schemas, hand-written TypeScript parsers, canonical SHA-256 digests, shared fixtures, and a cross-environment conformance suite.
 

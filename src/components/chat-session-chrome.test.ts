@@ -18,6 +18,7 @@ const contextRow = readFileSync(new URL("./chat-session-context-row.tsx", import
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
+const sidebarMinimal = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 // Facade sheets resolve to their effective content: run-tests.mjs loads
 // scripts/css-source-contract-hook.cjs, which patches readFileSync so
 // cave-chat.css yields everything it @imports. Run these files through the
@@ -251,7 +252,9 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     /\.cnav__tick\.cnav__dot--running \{[\s\S]*?animation: none;/,
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
-  assert.match(sidebar, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  // The hint moved with the New-chat button: the chat sidebar's rail header is
+  // gone and SidebarMinimal's is the one that is always mounted (cave-fh9so).
+  assert.match(sidebarMinimal, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {

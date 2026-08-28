@@ -82,6 +82,15 @@
   font-size: var(--text-sm);
 }
 
+/* A note, not a warning: canonical memory being unreadable off this host is
+   the expected answer, not a fault. Amber would claim otherwise, so the note
+   variant drops to the neutral hairline/secondary pair. */
+.pfc-callout--note {
+  border-color: var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
 /* ── Card frame ─────────────────────────────────────────────────────── */
 
 .pfc-card {

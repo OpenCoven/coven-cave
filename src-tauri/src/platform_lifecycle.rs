@@ -363,13 +363,21 @@ unsafe extern "system" fn windows_main_close_subclass(
     reference_data: usize,
 ) -> LRESULT {
     if is_windows_main_close_message(message, wparam) {
-        if !signal_windows_main_close(reference_data as HANDLE) {
-            terminate_current_process_now();
+        // Closing the primary main window force-quits only when it is the last
+        // live main window. With secondary main windows still open, pass the
+        // message through so Tauri closes just this window and the Cave
+        // runtime keeps serving the rest. `live_main_window_count` is a
+        // lock-free atomic: this callback must not lock, log, allocate, spawn,
+        // or enter Tauri.
+        if crate::main_window::live_main_window_count() <= 1 {
+            if !signal_windows_main_close(reference_data as HANDLE) {
+                terminate_current_process_now();
+            }
+            // Consume the native close here so neither a JavaScript listener nor a
+            // nested WRY message pump can defer it. The pre-spawned cleanup waiter
+            // owns graceful app.exit; the hard waiter owns the deadline.
+            return 0;
         }
-        // Consume the native close here so neither a JavaScript listener nor a
-        // nested WRY message pump can defer it. The pre-spawned cleanup waiter
-        // owns graceful app.exit; the hard waiter owns the deadline.
-        return 0;
     }
 
     if message == WM_NCDESTROY {

@@ -1,6 +1,6 @@
 # iOS iPad/macOS Adaptivity + Seamless Onboarding Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Every screen of the native app lays out properly on iPad landscape and macOS ("Designed for iPad") windows, and pairing a device with a token-gated desktop is a paste/scan/tap affair with actionable errors and silent renewal.
 

@@ -134,6 +134,10 @@ export function ChatStartFromBands({
           id={`cave-sf-panel-${activeBand.meta.kind}`}
           aria-labelledby={`cave-sf-tab-${activeBand.meta.kind}`}
           data-kind={activeBand.meta.kind}
+          // Column count follows the item count so a short deck fills the row
+          // instead of leaving the remainder of a fixed 4-up grid empty. A
+          // status message spans the full width on its own, so it reads as 1.
+          data-count={activeBand.status ? 1 : Math.min(pageItems.length, 4)}
         >
           {activeBand.status ?? pageItems.map((item) => (
             item.type === "tile" ? (
