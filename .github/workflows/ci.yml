@@ -38,6 +38,9 @@ concurrency:
 
 permissions:
   contents: read
+  # The Frontend build gate reads the run's job list to refuse carried-forward
+  # upstream evidence (cave-38aud).
+  actions: read
 
 jobs:
   # This context is introduced alongside Frontend build during the protection
@@ -484,6 +487,22 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Refuse carried-forward upstream evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # A `rerun --failed` carries successful upstream jobs forward with
+          # their original head_sha, so a green gate could otherwise be built
+          # on hours-old results produced against a different merge ref
+          # (cave-38aud). Compare each evidence job's latest head_sha with the
+          # one this attempt actually checks out, refuse on any mismatch, and
+          # record the evidence in the summary either way.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > /tmp/cave-build-evidence-jobs.json
+          node scripts/check-build-evidence.mjs --current-sha "$CURRENT_SHA" < /tmp/cave-build-evidence-jobs.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Runs without pnpm install: the test imports only node builtins, so a
       # documentation-only PR — which skips the frontend step entirely — still
