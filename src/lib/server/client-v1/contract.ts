@@ -839,8 +839,9 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
   const cursor: ClientV1Cursor = {
     // Keep contract.ts data-only for the proxy import graph. contract.test.ts
     // verifies these reviewed literals against the runtime cursor encoder.
-    current: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
-    next: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
+    // v2 since cave-apo6v: the /conversations sort half became createdAt.
+    current: "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+    next: "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
     hasMore: true,
   };
 
