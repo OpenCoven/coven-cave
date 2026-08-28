@@ -1970,6 +1970,7 @@ async function runFamiliarsLeg(client, recorder, bearer) {
   if (response.status !== 200) failures.push(`answered ${response.status}, expected 200`);
   failures.push(...checkEnvelope(response.json, { kind: "success" }));
   const familiars = response.json?.data?.familiars ?? [];
+  const byRosterId = new Map(FIXTURE_ROSTER.map((entry) => [entry.id, entry]));
   const ids = familiars.map((entry) => entry.id);
   const expected = FIXTURE_ROSTER.map((entry) => entry.id).sort();
   if (ids.join(",") !== expected.join(",")) {
@@ -1977,6 +1978,21 @@ async function runFamiliarsLeg(client, recorder, bearer) {
   }
   for (const familiar of familiars) {
     failures.push(...checkRecordShape(familiar, RECORD_SHAPES.familiar, `familiar ${familiar.id}`));
+    // Values as well as keys: a projection serving `displayName: entry.role`
+    // keeps every key and was measured passing a whole run (cave-icyyg). Only
+    // the fields this fixture seeds are checked, so a sparser roster row is
+    // not judged against fields it never declared.
+    const seeded = byRosterId.get(familiar.id);
+    if (seeded) {
+      const expected = {
+        displayName: seeded.display_name,
+        role: seeded.role,
+        ...(seeded.description === undefined ? {} : { description: seeded.description }),
+        ...(seeded.pronouns === undefined ? {} : { pronouns: seeded.pronouns }),
+        ...(seeded.status === undefined ? {} : { status: seeded.status }),
+      };
+      failures.push(...checkRecordValues(familiar, expected, `familiar ${familiar.id}`));
+    }
   }
   const archivist = familiars.find((entry) => entry.id === "archivist");
   if (archivist?.lastSeenAt !== "not-an-instant") {
@@ -2075,12 +2091,24 @@ async function runProjectsLeg(client, recorder, bearer, caveHomeDir) {
     await writeProjects(caveHomeDir, projects.filter((project) => project.id !== deletedId));
     const resumed = await client.read(`/projects?limit=3&cursor=${encodeURIComponent(strandedToken)}`, bearer);
     const resumedIds = (resumed.json?.data?.projects ?? []).map((project) => project.id);
+    // Probe that the deletion actually landed: the resumed page above reads
+    // rows AFTER the deleted one, so it is identical whether or not the write
+    // took effect — the vacuity cave-fhjlu closed for conversations, and this
+    // leg's own half of it (cave-icyyg). cave-projects.ts has no stat cache,
+    // so the residual risk is a write that never reached the server at all.
+    const probe = await client.read("/projects?limit=100", bearer);
+    const probeIds = (probe.json?.data?.projects ?? []).map((project) => project.id);
     recorder.expect(
       "reads.cursor-survives-deletion",
-      resumed.status === 200 && resumedIds.join(",") === partial[1]?.ids.join(",")
+      resumed.status === 200
+        && resumedIds.join(",") === partial[1]?.ids.join(",")
+        && probe.status === 200
+        && !probeIds.includes(deletedId)
         ? []
-        : [`after deleting ${deletedId} (the row the cursor names) the walk served [${resumedIds}], expected [${partial[1]?.ids}]`],
-      "the token records a position in the ordering, not an index",
+        : [
+          `after deleting ${deletedId} (the row the cursor names) the walk served [${resumedIds}], expected [${partial[1]?.ids}], and the probe served [${probeIds}] where ${deletedId} must be absent`,
+        ],
+      "the token records a position in the ordering, not an index, and the deletion provably landed",
     );
     await writeProjects(caveHomeDir, projects);
   } else {
@@ -2847,10 +2875,17 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
         ? []
         : [`conversationId is ${JSON.stringify(mixedCase.json?.data?.messages?.[0]?.conversationId)}, expected the transcript's own "branched"`],
     );
-  } else {
+  } else if (mixedCase.status === 404) {
     recorder.skip(
       "reads.messages-canonical-conversation-id",
-      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered ${mixedCase.status}`,
+      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered 404`,
+    );
+  } else {
+    // A 5xx (or a 429) is never a filesystem property, and reporting it as one
+    // would let a broken server pass the whole run (cave-icyyg).
+    recorder.expect(
+      "reads.messages-canonical-conversation-id",
+      [`/conversations/BRANCHED/messages answered ${mixedCase.status}, expected 200 or 404`],
     );
   }
 }
