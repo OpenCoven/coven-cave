@@ -8,26 +8,33 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "beads-create.ts");
 const SCRATCH_ROOT = join(HERE, ".scratch-beads-create-test");
 
-function makeFixture(name) {
-  mkdirSync(SCRATCH_ROOT, { recursive: true });
-  const root = join(SCRATCH_ROOT, `${name}-${process.pid}-${Date.now()}`);
-  const bin = join(root, "bin");
-  const log = join(root, "bd-log.jsonl");
-  mkdirSync(bin, { recursive: true });
-  writeFileSync(
-    join(bin, "bd"),
-    `#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+const FIXTURE_JS = `import { appendFileSync } from "node:fs";
 
 appendFileSync(
   process.env.BD_FAKE_LOG,
   JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + "\\n",
 );
 process.exit(Number(process.env.BD_FAKE_EXIT_STATUS ?? "0"));
-`,
-    "utf8",
-  );
-  chmodSync(join(bin, "bd"), 0o755);
+`;
+
+function makeFixture(name) {
+  mkdirSync(SCRATCH_ROOT, { recursive: true });
+  const root = join(SCRATCH_ROOT, `${name}-${process.pid}-${Date.now()}`);
+  const bin = join(root, "bin");
+  const log = join(root, "bd-log.jsonl");
+  mkdirSync(bin, { recursive: true });
+  if (process.platform === "win32") {
+    // Windows cannot execute an extensionless shebang script. Write the JS
+    // entry plus an npm-style bd.cmd shim the resolver already understands —
+    // its shim parser follows the quoted %~dp0 target into a shell-free node
+    // spawn, and BD_WINDOWS_LAUNCHER_NAMES tries bd.cmd ahead of the bare
+    // name (cave-vhmv1).
+    writeFileSync(join(bin, "bd.js"), FIXTURE_JS, "utf8");
+    writeFileSync(join(bin, "bd.cmd"), `@ECHO OFF\r\nnode "%~dp0bd.js" %*\r\n`, "utf8");
+  } else {
+    writeFileSync(join(bin, "bd"), `#!/usr/bin/env node\n${FIXTURE_JS}`, "utf8");
+    chmodSync(join(bin, "bd"), 0o755);
+  }
   return { root, bin, log };
 }
 
