@@ -19,6 +19,7 @@ export const RESEARCH_LEXICAL_SCHEMA_VERSION = 1;
 export const RESEARCH_LEXICAL_CHUNKER_VERSION = "utf8-fixed-16384-v1";
 export const RESEARCH_LEXICAL_CHUNK_BYTES = 16 * 1024;
 export const MAX_RESEARCH_LEXICAL_BYTES = 64 * 1024 * 1024;
+export const RESEARCH_LEXICAL_RESTORE_MARKER = ".restore-in-progress";
 
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -27,6 +28,8 @@ const WINDOWS_DEVICE_IDS = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 const REQUIRED_TABLES = new Set(["chunks", "chunks_fts", "publications"]);
 const REQUIRED_TRIGGERS = new Set(["chunks_ad", "chunks_ai"]);
+type CanonicalHandleController = { closeForRestore(): void };
+const canonicalHandleControllers = new Map<string, Set<CanonicalHandleController>>();
 
 export type ResearchLexicalAuthority = {
   resourceId: string;
@@ -232,6 +235,32 @@ function ensurePrivateFile(file: string): boolean {
   return false;
 }
 
+function canonicalRestoreMarker(file: string): string | null {
+  return path.basename(file) === "research-resources.sqlite"
+    ? path.join(path.dirname(file), RESEARCH_LEXICAL_RESTORE_MARKER)
+    : null;
+}
+
+function unavailableDuringRestore(): ResearchResourceLexicalIndexError {
+  return new ResearchResourceLexicalIndexError(
+    "corrupt",
+    "Research lexical index is unavailable while backup restore recovery is incomplete",
+  );
+}
+
+export function closeCanonicalResearchResourceLexicalHandlesForRestore(fileInput: string): void {
+  const file = path.resolve(fileInput);
+  let firstError: unknown;
+  for (const controller of [...(canonicalHandleControllers.get(file) ?? [])]) {
+    try {
+      controller.closeForRestore();
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  if (firstError) throw firstError;
+}
+
 function hardenSqliteFiles(file: string): void {
   for (const candidate of [file, `${file}-wal`, `${file}-shm`]) {
     if (!existsSync(candidate)) continue;
@@ -346,7 +375,10 @@ function quotedFtsPhrase(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
+async function openAt(
+  file: string,
+  options: { observeRestoreMarker?: boolean } = {},
+): Promise<ResearchResourceLexicalIndex> {
   if (!path.isAbsolute(file)) {
     throw new ResearchResourceLexicalIndexError("unsafe-path", "lexical index path must be absolute");
   }
@@ -367,7 +399,69 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
     });
   }
 
-  const currentPublication = (resourceId: string): ResearchLexicalAuthority | null => {
+  const restoreMarker = options.observeRestoreMarker ? canonicalRestoreMarker(file) : null;
+  const openedIdentity = restoreMarker ? lstatSync(file) : null;
+  let closedForRestore = false;
+  let watcher: ReturnType<typeof setInterval> | null = null;
+  const controller: CanonicalHandleController | null = restoreMarker ? {
+    closeForRestore() {
+      if (!database) return;
+      closedForRestore = true;
+      try {
+        database.close();
+      } finally {
+        database = null;
+        if (watcher) clearInterval(watcher);
+        watcher = null;
+        const controllers = canonicalHandleControllers.get(file);
+        controllers?.delete(controller!);
+        if (controllers?.size === 0) canonicalHandleControllers.delete(file);
+      }
+    },
+  } : null;
+  if (controller) {
+    const controllers = canonicalHandleControllers.get(file) ?? new Set<CanonicalHandleController>();
+    controllers.add(controller);
+    canonicalHandleControllers.set(file, controllers);
+    watcher = setInterval(() => {
+      if (restoreMarker && existsSync(restoreMarker)) {
+        try { controller.closeForRestore(); } catch { /* the next operation reports unavailability */ }
+      }
+    }, 25);
+    watcher.unref();
+    if (restoreMarker && existsSync(restoreMarker)) {
+      controller.closeForRestore();
+      throw unavailableDuringRestore();
+    }
+  }
+
+  const assertHandleAvailable = (): void => {
+    if (!database || closedForRestore) throw unavailableDuringRestore();
+    if (!restoreMarker) return;
+    if (existsSync(restoreMarker)) {
+      controller!.closeForRestore();
+      throw unavailableDuringRestore();
+    }
+    let current;
+    try {
+      current = lstatSync(file);
+    } catch {
+      controller!.closeForRestore();
+      throw unavailableDuringRestore();
+    }
+    if (
+      !openedIdentity
+      || !current.isFile()
+      || current.isSymbolicLink()
+      || current.dev !== openedIdentity.dev
+      || current.ino !== openedIdentity.ino
+    ) {
+      controller!.closeForRestore();
+      throw unavailableDuringRestore();
+    }
+  };
+
+  const currentPublicationUnchecked = (resourceId: string): ResearchLexicalAuthority | null => {
     assertId(resourceId, "resource id");
     return publicationFromRow(database!.prepare(
       `SELECT resource_id, resource_revision, deletion_revision, snapshot_id, snapshot_digest,
@@ -376,9 +470,17 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
     ).get(resourceId));
   };
 
+  const currentPublication = (resourceId: string): ResearchLexicalAuthority | null => {
+    assertHandleAvailable();
+    const publication = currentPublicationUnchecked(resourceId);
+    assertHandleAvailable();
+    return publication;
+  };
+
   return {
     file,
     replace(input) {
+      assertHandleAvailable();
       assertAuthority(input);
       const chunks = chunkResearchResourceUtf8(input.normalizedBytes, input);
       database!.exec("BEGIN IMMEDIATE");
@@ -423,6 +525,7 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
         }
         database!.exec("COMMIT");
         hardenSqliteFiles(file);
+        assertHandleAvailable();
         return chunks.map((chunk) => ({ ...chunk }));
       } catch (error) {
         try { database!.exec("ROLLBACK"); } catch { /* original error wins */ }
@@ -431,18 +534,21 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
     },
 
     remove(authority) {
+      assertHandleAvailable();
       assertAuthority(authority);
       database!.exec("BEGIN IMMEDIATE");
       try {
-        const current = currentPublication(authority.resourceId);
+        const current = currentPublicationUnchecked(authority.resourceId);
         if (!current || !sameAuthority(current, authority)) {
           database!.exec("ROLLBACK");
+          assertHandleAvailable();
           return false;
         }
         database!.prepare("DELETE FROM chunks WHERE resource_id = ?").run(authority.resourceId);
         database!.prepare("DELETE FROM publications WHERE resource_id = ?").run(authority.resourceId);
         database!.exec("COMMIT");
         hardenSqliteFiles(file);
+        assertHandleAvailable();
         return true;
       } catch (error) {
         try { database!.exec("ROLLBACK"); } catch { /* original error wins */ }
@@ -453,17 +559,22 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
     publication: currentPublication,
 
     probe(authority, query, limit = 20) {
+      assertHandleAvailable();
       assertAuthority(authority);
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) failInput("probe limit is invalid");
-      const current = currentPublication(authority.resourceId);
+      const current = currentPublicationUnchecked(authority.resourceId);
       if (!current || !sameAuthority(current, authority)) {
+        assertHandleAvailable();
         return { usable: false, chunkCount: 0, hits: [] };
       }
       const count = Number(database!.prepare(
         "SELECT COUNT(*) AS count FROM chunks WHERE resource_id = ? AND snapshot_id = ?",
       ).get(authority.resourceId, authority.snapshotId)?.count ?? 0);
       const trimmed = query.trim();
-      if (!trimmed) return { usable: true, chunkCount: count, hits: [] };
+      if (!trimmed) {
+        assertHandleAvailable();
+        return { usable: true, chunkCount: count, hits: [] };
+      }
       const rows = database!.prepare(
         `SELECT c.chunk_id, c.ordinal, c.byte_start, c.byte_end, c.text,
                 bm25(chunks_fts) AS rank
@@ -473,7 +584,7 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
          ORDER BY rank ASC, c.ordinal ASC
          LIMIT ?`,
       ).all(quotedFtsPhrase(trimmed), authority.resourceId, authority.snapshotId, limit);
-      return {
+      const result = {
         usable: true,
         chunkCount: count,
         hits: rows.map((row) => ({
@@ -485,16 +596,27 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
           rank: Number(row.rank),
         })),
       };
+      assertHandleAvailable();
+      return result;
     },
 
     purgeResidualFiles() {
+      assertHandleAvailable();
       compactDeletedContent(database!);
       hardenSqliteFiles(file);
       purgeResidualFiles(file);
+      assertHandleAvailable();
     },
 
     close() {
       if (!database) return;
+      if (watcher) clearInterval(watcher);
+      watcher = null;
+      if (controller) {
+        const controllers = canonicalHandleControllers.get(file);
+        controllers?.delete(controller);
+        if (controllers?.size === 0) canonicalHandleControllers.delete(file);
+      }
       database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
       database.close();
       database = null;
@@ -506,7 +628,10 @@ async function openAt(file: string): Promise<ResearchResourceLexicalIndex> {
 export async function openResearchResourceLexicalIndex(
   options: { file?: string } = {},
 ): Promise<ResearchResourceLexicalIndex> {
-  return openAt(path.resolve(options.file ?? lexicalIndexPath()));
+  const file = path.resolve(options.file ?? lexicalIndexPath());
+  const marker = canonicalRestoreMarker(file);
+  if (marker && existsSync(marker)) throw unavailableDuringRestore();
+  return openAt(file, { observeRestoreMarker: marker !== null });
 }
 
 export async function rebuildResearchResourceLexicalIndex(
@@ -556,6 +681,6 @@ export async function rebuildResearchResourceLexicalIndex(
     throw error;
   }
   hardenSqliteFiles(file);
-  const index = await openAt(file);
+  const index = await openAt(file, { observeRestoreMarker: false });
   return { index, quarantinePath };
 }

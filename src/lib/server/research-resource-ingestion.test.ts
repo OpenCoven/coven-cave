@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -81,6 +81,59 @@ async function fixture(
     await rm(parent, { recursive: true, force: true });
   }
 }
+
+async function writeRestoreMarker(
+  root: string,
+  phase: "preparing" | "authority-ready",
+): Promise<string> {
+  const marker = path.join(root, "index", ".restore-in-progress");
+  await mkdir(path.dirname(marker), { recursive: true, mode: 0o700 });
+  await writeFile(marker, `${JSON.stringify({ version: 1, phase })}\n`, { mode: 0o600 });
+  return marker;
+}
+
+test("an immediate ingestion request recovers authority-ready state before enqueue", async () => {
+  await fixture(async ({ root, store }) => {
+    await store.createManifest(manifest("startup-ingest"));
+    const marker = await writeRestoreMarker(root, "authority-ready");
+    const { index } = memoryIndex();
+    const ingestion = createResearchResourceIngestion({
+      root,
+      store,
+      index,
+      enabled: () => true,
+      repairCompatibilityProjection: async () => {},
+      now: () => new Date("2026-08-27T13:00:00.000Z"),
+    });
+
+    assert.equal((await ingestion.enqueue("startup-ingest"))?.status, "queued");
+    await assert.rejects(() => lstat(marker), /ENOENT/);
+    await ingestion.close();
+  });
+});
+
+test("an immediate ingestion request remains fail-closed for a preparing restore", async () => {
+  await fixture(async ({ root, store }) => {
+    await store.createManifest(manifest("preparing-ingest"));
+    const marker = await writeRestoreMarker(root, "preparing");
+    const { index } = memoryIndex();
+    const ingestion = createResearchResourceIngestion({
+      root,
+      store,
+      index,
+      enabled: () => true,
+      repairCompatibilityProjection: async () => {},
+    });
+
+    await assert.rejects(
+      () => ingestion.enqueue("preparing-ingest"),
+      /resubmit the backup archive/,
+    );
+    assert.equal((await lstat(marker)).isFile(), true);
+    assert.equal((await store.readManifest("preparing-ingest"))?.ingest.state, "metadata_only");
+    await ingestion.close();
+  });
+});
 
 test("enqueue and run publish one fenced verified snapshot, lexical authority, and ready manifest", async () => {
   await fixture(async ({ root, store }) => {

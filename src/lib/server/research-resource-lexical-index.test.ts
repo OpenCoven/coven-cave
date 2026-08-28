@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   chunkResearchResourceUtf8,
   openResearchResourceLexicalIndex,
+  RESEARCH_LEXICAL_RESTORE_MARKER,
   rebuildResearchResourceLexicalIndex,
   ResearchResourceLexicalIndexError,
   type ResearchLexicalAuthority,
@@ -98,6 +99,34 @@ test("private SQLite publication replaces one authority transactionally and prob
     }
     const reopened = await openResearchResourceLexicalIndex({ file });
     assert.equal(reopened.probe(sibling, "sibling").hits.length, 1);
+    reopened.close();
+  });
+});
+
+test("canonical handles opened before restore fail every operation while the marker is present", async () => {
+  await fixture(async (file) => {
+    const current = authority();
+    const handles = await Promise.all(Array.from({ length: 5 }, () =>
+      openResearchResourceLexicalIndex({ file })));
+    handles[0]!.replace({
+      ...current,
+      normalizedBytes: new TextEncoder().encode("stale pre-restore evidence"),
+    });
+    await writeFile(path.join(path.dirname(file), RESEARCH_LEXICAL_RESTORE_MARKER), "restore\n");
+    const unavailable = /unavailable while backup restore recovery is incomplete/;
+    assert.throws(() => handles[0]!.publication(current.resourceId), unavailable);
+    assert.throws(() => handles[1]!.probe(current, "stale"), unavailable);
+    assert.throws(() => handles[2]!.replace({
+      ...current,
+      normalizedBytes: new TextEncoder().encode("must not publish"),
+    }), unavailable);
+    assert.throws(() => handles[3]!.remove(current), unavailable);
+    assert.throws(() => handles[4]!.purgeResidualFiles(), unavailable);
+    for (const handle of handles) handle.close();
+
+    await rm(path.join(path.dirname(file), RESEARCH_LEXICAL_RESTORE_MARKER));
+    const reopened = await openResearchResourceLexicalIndex({ file });
+    assert.equal(reopened.probe(current, "stale").hits.length, 1);
     reopened.close();
   });
 });

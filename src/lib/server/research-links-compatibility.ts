@@ -66,6 +66,8 @@ export type ResearchLinksCompatibilityOptions = {
   legacyPath?: string;
   resourceRoot?: string;
   now?: () => Date;
+  /** @internal Recovery already owns the maintenance lease and must not recurse. */
+  recoveryAlreadyHeld?: boolean;
   /** Test-only durable-boundary fault injection; production callers omit it. */
   testFailpoint?: (point: ResearchLinksCompatibilityFailpoint) => void | Promise<void>;
 };
@@ -629,6 +631,19 @@ async function runCompatibility<T>(
   mutate?: (links: SavedLink[]) => Promise<ResearchLinksMutationResult<T>> | ResearchLinksMutationResult<T>,
 ): Promise<{ links: SavedLink[]; result?: T }> {
   const root = resourceRoot(options);
+  if (!options.recoveryAlreadyHeld) {
+    const { recoverInterruptedResearchResourceRestore } = await import(
+      "./research-resource-recovery.ts"
+    );
+    await recoverInterruptedResearchResourceRestore({
+      root,
+      reconcileProjection: () => listCompatibleResearchLinks({
+        ...options,
+        resourceRoot: root,
+        recoveryAlreadyHeld: true,
+      }),
+    });
+  }
   const store = createResearchResourceStore({ root });
   return store.withOperationalTransaction(async (transaction) => {
     const paths = await ensureMigrationDirectory(root);

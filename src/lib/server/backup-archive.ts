@@ -1,18 +1,41 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, chmod } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { writeFileAtomic } from "@/lib/server/atomic-write";
+import { writeFileAtomic as writeGenericFileAtomic } from "@/lib/server/atomic-write";
 import {
   backupRoots,
   createBackupManifest,
   isAllowedBackupEntry,
   listBackupFiles,
   normalizeBackupPath,
+  RESEARCH_BACKUP_EXCLUSIONS,
   resolveBackupEntryPath,
+  type BackupSourceFile,
   type BackupEntry,
   type BackupManifest,
   type BackupRoot,
 } from "@/lib/server/backup-manifest";
+import {
+  reconcileRestoredResearchResources,
+  researchResourceRestoreMarkerPath,
+  type ResearchResourceRecoveryResult,
+} from "@/lib/server/research-resource-recovery";
+import {
+  fsyncResearchRestoreDirectory,
+  removeResearchRestoreDirectoryDurably,
+  unlinkResearchRestoreFileDurably,
+  writeResearchRestoreFileDurably,
+  type ResearchRestoreDurabilityObserver,
+} from "@/lib/server/research-resource-restore-durability";
+import {
+  createResearchResourceStore,
+  withResearchResourceMaintenanceLock,
+} from "@/lib/server/research-resource-store";
+import {
+  closeCanonicalResearchResourceLexicalHandlesForRestore,
+  RESEARCH_LEXICAL_RESTORE_MARKER,
+} from "@/lib/server/research-resource-lexical-index";
 
 
 export const BACKUP_ARCHIVE_MAGIC = "COVEN-CAVE-BACKUP";
@@ -47,10 +70,224 @@ export type ArchivePlaintext = {
 export type RestoredBackup = {
   manifest: BackupManifest;
   restored: Array<{ root: BackupRoot; path: string; bytes: number; secret: boolean }>;
+  researchRecovery?: ResearchResourceRecoveryResult;
 };
+
+export type RestoreBackupOptions = {
+  reconcileResearch?: (root: string) => Promise<ResearchResourceRecoveryResult>;
+  researchFailpoint?: (phase: "lexical-unavailable") => void | Promise<void>;
+  researchDurabilityObserver?: ResearchRestoreDurabilityObserver;
+};
+
+export type BuildBackupOptions = {
+  /** Test-only seam for deterministic scan/read race coverage. */
+  beforeSourceRead?: (file: BackupSourceFile) => void | Promise<void>;
+};
+
+function sameBackupSourceIdentity(
+  expected: NonNullable<BackupSourceFile["identity"]>,
+  actual: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["stat"]>>,
+): boolean {
+  return actual.isFile() && actual.nlink === 1
+    && actual.dev === expected.dev && actual.ino === expected.ino
+    && actual.size === expected.size && actual.mtimeMs === expected.mtimeMs
+    && actual.ctimeMs === expected.ctimeMs;
+}
+
+async function assertBackupSourceAncestors(file: BackupSourceFile): Promise<void> {
+  for (const expected of file.ancestorIdentities ?? []) {
+    const actual = await lstat(expected.path);
+    if (
+      !actual.isDirectory()
+      || actual.isSymbolicLink()
+      || actual.dev !== expected.dev
+      || actual.ino !== expected.ino
+    ) {
+      throw new Error("Research backup directory identity changed before the file could be read safely");
+    }
+  }
+}
+
+async function readBackupSource(file: BackupSourceFile): Promise<Buffer> {
+  if (!file.identity) return readFile(file.fullPath);
+  await assertBackupSourceAncestors(file);
+  const noFollow = process.platform === "win32" || typeof constants.O_NOFOLLOW !== "number"
+    ? 0
+    : constants.O_NOFOLLOW;
+  const handle = await open(file.fullPath, constants.O_RDONLY | noFollow);
+  try {
+    const before = await handle.stat();
+    if (!sameBackupSourceIdentity(file.identity, before)) {
+      throw new Error("Research backup entry changed before it could be read safely");
+    }
+    const data = await handle.readFile();
+    const after = await handle.stat();
+    if (!sameBackupSourceIdentity(file.identity, after)) {
+      throw new Error("Research backup entry changed while it was being read");
+    }
+    await assertBackupSourceAncestors(file);
+    return data;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function hardenResearchRestorePath(target: string, researchRoot: string): Promise<void> {
+  let directory = path.dirname(target);
+  while (directory === researchRoot || directory.startsWith(`${researchRoot}${path.sep}`)) {
+    await chmod(directory, 0o700).catch((error) => {
+      if (process.platform !== "win32") throw error;
+    });
+    if (directory === researchRoot) break;
+    directory = path.dirname(directory);
+  }
+  await chmod(target, 0o600).catch((error) => {
+    if (process.platform !== "win32") throw error;
+  });
+  const metadata = await lstat(target);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
+    throw new Error("Research backup restore target is unsafe");
+  }
+}
+
+async function prepareResearchRestorePath(
+  target: string,
+  researchRoot: string,
+  observer?: ResearchRestoreDurabilityObserver,
+): Promise<void> {
+  const createdRoot = await mkdir(researchRoot, { recursive: true, mode: 0o700 });
+  if (createdRoot) await fsyncResearchRestoreDirectory(path.dirname(researchRoot), observer);
+  const relativeParent = path.relative(researchRoot, path.dirname(target));
+  if (relativeParent === ".." || relativeParent.startsWith(`..${path.sep}`) || path.isAbsolute(relativeParent)) {
+    throw new Error("Research backup restore path escapes its root");
+  }
+  const directories = [researchRoot];
+  let directory = researchRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    directory = path.join(directory, segment);
+    let created = false;
+    await mkdir(directory, { mode: 0o700 }).then(() => { created = true; }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    });
+    if (created) await fsyncResearchRestoreDirectory(path.dirname(directory), observer);
+    directories.push(directory);
+  }
+  for (const current of directories) {
+    const metadata = await lstat(current);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error("Research backup restore directory is unsafe");
+    }
+  }
+}
+
+const RESEARCH_AUTHORITATIVE_DIRECTORIES = [
+  "manifests", "snapshots", "blobs", "tombstones", "migration",
+] as const;
+
+async function pruneResearchAuthority(
+  researchRoot: string,
+  archivedPaths: ReadonlySet<string>,
+  observer?: ResearchRestoreDurabilityObserver,
+): Promise<void> {
+  const structuralDirectories = new Set([
+    path.join(researchRoot, "blobs", "sha256"),
+  ]);
+  for (const relativeDirectory of RESEARCH_AUTHORITATIVE_DIRECTORIES) {
+    const directory = path.join(researchRoot, relativeDirectory);
+    await prepareResearchRestorePath(
+      path.join(directory, ".restore-placeholder"),
+      researchRoot,
+      observer,
+    );
+    const walk = async (current: string): Promise<void> => {
+      for (const entry of await readdir(current, { withFileTypes: true })) {
+        const candidate = path.join(current, entry.name);
+        const metadata = await lstat(candidate);
+        if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
+          throw new Error("Research backup restore entry is unsafe");
+        }
+        if (metadata.isDirectory()) {
+          await walk(candidate);
+          if (!structuralDirectories.has(candidate) && (await readdir(candidate)).length === 0) {
+            await removeResearchRestoreDirectoryDurably(candidate, observer);
+          }
+          continue;
+        }
+        const archivePath = `research-resources/${path.relative(researchRoot, candidate).split(path.sep).join("/")}`;
+        if (!archivedPaths.has(archivePath)) {
+          await unlinkResearchRestoreFileDurably(candidate, observer);
+        }
+      }
+    };
+    await walk(directory);
+  }
+}
 
 function sha256(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
+}
+
+function assertStringArray(value: unknown, label: string): asserts value is string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`backup archive ${label} are invalid`);
+  }
+}
+
+function hasResearchMarker(manifest: BackupManifest): boolean {
+  return RESEARCH_BACKUP_EXCLUSIONS.every((entry) => manifest.excluded.includes(entry));
+}
+
+async function makeResearchLexicalUnavailable(
+  researchRoot: string,
+  observer?: ResearchRestoreDurabilityObserver,
+): Promise<string> {
+  const indexDirectory = path.join(researchRoot, "index");
+  const createdIndex = await mkdir(indexDirectory, { recursive: true, mode: 0o700 });
+  if (createdIndex) await fsyncResearchRestoreDirectory(path.dirname(indexDirectory), observer);
+  const info = await lstat(indexDirectory);
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error("Research lexical restore directory is unsafe");
+  }
+  const marker = researchResourceRestoreMarkerPath(researchRoot);
+  await writeResearchRestoreFileDurably(
+    marker,
+    `${JSON.stringify({ version: 1, phase: "preparing" })}\n`,
+    observer,
+  );
+  await chmod(marker, 0o600).catch((error) => {
+    if (process.platform !== "win32") throw error;
+  });
+  closeCanonicalResearchResourceLexicalHandlesForRestore(
+    path.join(indexDirectory, "research-resources.sqlite"),
+  );
+  const removeLexicalFile = async (candidate: string): Promise<void> => {
+    const deadline = Date.now() + 15_000;
+    while (true) {
+      try {
+        await rm(candidate, { force: true });
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? "";
+        if (!new Set(["EACCES", "EBUSY", "EPERM"]).has(code) || Date.now() >= deadline) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+    }
+  };
+  for (const entry of await readdir(indexDirectory, { withFileTypes: true })) {
+    if (entry.name === RESEARCH_LEXICAL_RESTORE_MARKER) continue;
+    if (
+      entry.name === "research-resources.sqlite"
+      || entry.name.startsWith("research-resources.sqlite-")
+      || entry.name.startsWith("research-resources.sqlite.")
+      || entry.name.startsWith(".research-lexical-")
+      || entry.name.startsWith(".restore-recovery-")
+    ) {
+      if (!entry.isFile()) throw new Error("Research lexical restore entry is unsafe");
+      await removeLexicalFile(path.join(indexDirectory, entry.name));
+    }
+  }
+  await fsyncResearchRestoreDirectory(indexDirectory, observer);
+  return marker;
 }
 
 
@@ -205,27 +442,15 @@ function aadFor(header: Omit<BackupArchiveHeader, "tag">): Buffer {
   return Buffer.from(JSON.stringify(header), "utf8");
 }
 
-export async function buildBackupArchive(passphrase: string): Promise<{ archive: Buffer; manifest: BackupManifest }> {
-  assertPassphrase(passphrase);
-  const files = [] as ArchiveFile[];
-  const entries = [] as BackupEntry[];
-  for (const file of await listBackupFiles()) {
-    const data = await readFile(file.fullPath);
-    const digest = sha256(data);
-    const entry = { root: file.root, path: file.rel, bytes: data.byteLength, sha256: digest, secret: file.secret, optional: file.optional };
-    entries.push(entry);
-    files.push({ ...entry, data: data.toString("base64") });
-  }
-
-  const manifest = createBackupManifest(entries);
-  const plaintext = createTar({ manifest, files });
+async function encryptArchivePlaintext(archive: ArchivePlaintext, passphrase: string): Promise<Buffer> {
+  const plaintext = createTar(archive);
   const salt = randomBytes(16);
   const iv = randomBytes(12);
   const key = await deriveKey(passphrase, salt);
   const headerWithoutTag = {
     magic: BACKUP_ARCHIVE_MAGIC,
     version: BACKUP_ARCHIVE_VERSION,
-    createdAt: manifest.createdAt,
+    createdAt: archive.manifest.createdAt,
     kdf: { ...KDF, salt: salt.toString("base64") },
     cipher: CIPHER,
     iv: iv.toString("base64"),
@@ -234,7 +459,36 @@ export async function buildBackupArchive(passphrase: string): Promise<{ archive:
   cipher.setAAD(aadFor(headerWithoutTag));
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const header = { ...headerWithoutTag, tag: cipher.getAuthTag().toString("base64") } satisfies BackupArchiveHeader;
-  return { archive: encode(header, ciphertext), manifest };
+  return encode(header, ciphertext);
+}
+
+/** Test-only helper for proving validation of authenticated malformed payloads. */
+export async function encryptBackupPlaintextForTest(
+  archive: ArchivePlaintext,
+  passphrase: string,
+): Promise<Buffer> {
+  assertPassphrase(passphrase);
+  return encryptArchivePlaintext(archive, passphrase);
+}
+
+export async function buildBackupArchive(
+  passphrase: string,
+  options: BuildBackupOptions = {},
+): Promise<{ archive: Buffer; manifest: BackupManifest }> {
+  assertPassphrase(passphrase);
+  const files = [] as ArchiveFile[];
+  const entries = [] as BackupEntry[];
+  for (const file of await listBackupFiles()) {
+    await options.beforeSourceRead?.(file);
+    const data = await readBackupSource(file);
+    const digest = sha256(data);
+    const entry = { root: file.root, path: file.rel, bytes: data.byteLength, sha256: digest, secret: file.secret, optional: file.optional };
+    entries.push(entry);
+    files.push({ ...entry, data: data.toString("base64") });
+  }
+
+  const manifest = createBackupManifest(entries);
+  return { archive: await encryptArchivePlaintext({ manifest, files }, passphrase), manifest };
 }
 
 export async function decryptBackupArchive(archive: Uint8Array, passphrase: string): Promise<ArchivePlaintext> {
@@ -262,6 +516,39 @@ export async function decryptBackupArchive(archive: Uint8Array, passphrase: stri
 
 export function validateArchivePlaintext(archive: ArchivePlaintext): void {
   if (archive?.manifest?.version !== 1 || !Array.isArray(archive.files)) throw new Error("backup archive payload is invalid");
+  const manifest = archive.manifest as BackupManifest;
+  if (
+    typeof manifest.createdAt !== "string" || !Number.isFinite(Date.parse(manifest.createdAt))
+    || typeof manifest.roots !== "object" || manifest.roots === null
+    || typeof manifest.roots.cave !== "string" || typeof manifest.roots.coven !== "string"
+    || !Array.isArray(manifest.entries)
+    || typeof manifest.totals !== "object" || manifest.totals === null
+    || !Number.isSafeInteger(manifest.totals.files) || manifest.totals.files < 0
+    || !Number.isSafeInteger(manifest.totals.bytes) || manifest.totals.bytes < 0
+    || typeof manifest.secretsPolicy !== "object" || manifest.secretsPolicy === null
+    || manifest.secretsPolicy.vaultKey !== "include-passphrase-wrapped"
+    || manifest.secretsPolicy.plaintextSecrets !== "encrypted-envelope-only"
+  ) throw new Error("backup archive manifest is invalid");
+  assertStringArray(manifest.excluded, "manifest exclusions");
+  assertStringArray(manifest.knownGaps, "manifest known gaps");
+  if (new Set(manifest.excluded).size !== manifest.excluded.length) {
+    throw new Error("backup archive manifest exclusions are invalid");
+  }
+  const hasAnyResearchMarker = RESEARCH_BACKUP_EXCLUSIONS.some((entry) => manifest.excluded.includes(entry));
+  if (hasAnyResearchMarker && !hasResearchMarker(manifest)) {
+    throw new Error("backup archive Research marker is incomplete");
+  }
+  for (const entry of manifest.entries) {
+    if (
+      typeof entry !== "object" || entry === null
+      || (entry.root !== "cave" && entry.root !== "coven")
+      || typeof entry.path !== "string"
+      || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0
+      || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256)
+      || typeof entry.secret !== "boolean"
+      || (entry.optional !== undefined && typeof entry.optional !== "boolean")
+    ) throw new Error("backup archive manifest entry is invalid");
+  }
   const manifestEntries = new Map(archive.manifest.entries.map((entry) => [`${entry.root}:${entry.path}`, entry]));
   if (manifestEntries.size !== archive.manifest.entries.length || archive.files.length !== archive.manifest.entries.length) {
     throw new Error("backup archive manifest does not match payload");
@@ -283,22 +570,79 @@ export function validateArchivePlaintext(archive: ArchivePlaintext): void {
     }
     totalBytes += data.byteLength;
   }
+  const hasResearchFiles = archive.files.some((file) =>
+    file.root === "cave" && file.path.startsWith("research-resources/"));
+  if (hasResearchFiles && !hasResearchMarker(manifest)) {
+    throw new Error("backup archive Research marker is missing");
+  }
   if (archive.manifest.totals.files !== archive.files.length || archive.manifest.totals.bytes !== totalBytes) {
     throw new Error("backup archive totals are invalid");
   }
 }
 
-export async function restoreBackupArchive(archiveBytes: Uint8Array, passphrase: string): Promise<RestoredBackup> {
+export async function restoreBackupArchive(
+  archiveBytes: Uint8Array,
+  passphrase: string,
+  options: RestoreBackupOptions = {},
+): Promise<RestoredBackup> {
   const archive = await decryptBackupArchive(archiveBytes, passphrase);
   const restored: RestoredBackup["restored"] = [];
   const roots = backupRoots();
-  for (const file of archive.files) {
-    const target = resolveBackupEntryPath(file.root, file.path, roots);
-    const data = Buffer.from(file.data, "base64");
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFileAtomic(target, data);
-    if (file.secret) await chmod(target, 0o600).catch(() => {});
-    restored.push({ root: file.root, path: file.path, bytes: data.byteLength, secret: file.secret });
+  const researchRoot = path.join(roots.cave, "research-resources");
+  const hasResearchResources = archive.files.some((file) =>
+    file.root === "cave" && file.path.startsWith("research-resources/"))
+    || hasResearchMarker(archive.manifest);
+  const writeArchiveFiles = async (): Promise<void> => {
+    for (const file of archive.files) {
+      const target = resolveBackupEntryPath(file.root, file.path, roots);
+      const data = Buffer.from(file.data, "base64");
+      const researchFile = file.root === "cave" && file.path.startsWith("research-resources/");
+      if (researchFile) {
+        await prepareResearchRestorePath(target, researchRoot, options.researchDurabilityObserver);
+      }
+      else await mkdir(path.dirname(target), { recursive: true });
+      if (researchFile) {
+        await writeResearchRestoreFileDurably(target, data, options.researchDurabilityObserver);
+      } else {
+        await writeGenericFileAtomic(target, data);
+      }
+      if (researchFile) await hardenResearchRestorePath(target, researchRoot);
+      else if (file.secret) await chmod(target, 0o600).catch(() => {});
+      restored.push({ root: file.root, path: file.path, bytes: data.byteLength, secret: file.secret });
+    }
+  };
+  if (!hasResearchResources) {
+    await writeArchiveFiles();
+    return { manifest: archive.manifest, restored };
   }
-  return { manifest: archive.manifest, restored };
+
+  return withResearchResourceMaintenanceLock(researchRoot, async () => {
+    const store = createResearchResourceStore({ root: researchRoot });
+    const lexicalMarker = await makeResearchLexicalUnavailable(
+      researchRoot,
+      options.researchDurabilityObserver,
+    );
+    await options.researchFailpoint?.("lexical-unavailable");
+    await writeArchiveFiles();
+    await pruneResearchAuthority(
+      researchRoot,
+      new Set(archive.files.filter((file) => file.root === "cave").map((file) => file.path)),
+      options.researchDurabilityObserver,
+    );
+    await writeResearchRestoreFileDurably(
+      lexicalMarker,
+      `${JSON.stringify({ version: 1, phase: "authority-ready" })}\n`,
+      options.researchDurabilityObserver,
+    );
+    const researchRecovery = await (
+      options.reconcileResearch
+        ?? ((root) => reconcileRestoredResearchResources({ root, store, resetOperationalState: true }))
+    )(researchRoot);
+    await unlinkResearchRestoreFileDurably(
+      lexicalMarker,
+      options.researchDurabilityObserver,
+      { missingOk: true },
+    );
+    return { manifest: archive.manifest, restored, researchRecovery };
+  });
 }
