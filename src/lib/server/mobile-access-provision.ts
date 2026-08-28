@@ -31,6 +31,7 @@ import path from "node:path";
 import { CAVE_PORTS, CAVE_PORT_ENV, parsePort } from "../../../scripts/ports.mjs";
 import {
   assertExclusivePathOwnership,
+  assertExclusivePathOwnershipSync,
   type ClientV1PathOwnershipOptions,
 } from "./client-v1/path-ownership.ts";
 
@@ -80,7 +81,18 @@ export function loadPersistedMobileAccessSecret(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   try {
-    const secret = readFileSync(mobileAccessSecretFile(env), "utf8").trim();
+    const file = mobileAccessSecretFile(env);
+    // This reader is sync and cannot run the Windows DACL probe, so it uses
+    // the sync guard: POSIX verifies owner/mode/symlink, and a platform that
+    // cannot answer synchronously refuses — the secret is treated as
+    // unreadable rather than trusted silently (cave-8pd39).
+    const stats = lstatSync(file);
+    assertExclusivePathOwnershipSync(
+      file,
+      { uid: stats.uid, mode: stats.mode, isSymbolicLink: stats.isSymbolicLink() },
+      "The persisted mobile access secret",
+    );
+    const secret = readFileSync(file, "utf8").trim();
     return secret.length > 0 ? secret : null;
   } catch {
     return null;

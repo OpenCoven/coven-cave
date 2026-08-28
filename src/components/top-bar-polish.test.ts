@@ -10,10 +10,13 @@ const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 // ── Badge caps at 9+ ─────────────────────────────────────────────────────────
 // Two adjacent three-glyph "99+" pills (Tasks + Schedules) read as duplicate
 // noise; one glyph says "many" and the exact count lives in the tooltip.
-assert.match(
+// The desktop menu bar no longer badges anything (cave-l9slw) — both counter
+// buttons moved to surfaces that carry a label — so there is no cap to assert
+// here. The rule below still binds the mobile top bar, which does badge.
+assert.doesNotMatch(
   menuBar,
-  /return n > 9 \? "9\+" : String\(n\);/,
-  "Desktop menu-bar badge caps at 9+",
+  /className="menu-bar__badge"|function fmtBadge/,
+  "Desktop menu bar renders no count badge",
 );
 assert.match(
   topBar,
@@ -28,16 +31,22 @@ assert.match(
 );
 
 // ── Counter buttons carry sighted tooltips, not just aria-labels ────────────
-assert.match(
+// Both of the desktop bar's counter buttons — Tasks and Rituals — were removed
+// in cave-l9slw, so this rule now has no subject on that surface. It is kept as
+// a NEGATIVE: if a counted destination ever returns to the bar it must arrive
+// with the tooltip, and this fails until the assertion above it is restored.
+assert.doesNotMatch(
   menuBar,
-  /aria-label=\{taskCount > 0 \? `\$\{TASKS_LABEL\} — \$\{taskCount\} open` : TASKS_LABEL\}\s*\n\s*title=\{taskCount > 0 \? `\$\{TASKS_LABEL\} — \$\{taskCount\} open` : TASKS_LABEL\}/,
-  "Tasks button exposes the exact count as a hover tooltip",
+  /taskCount|scheduleNeedsCount/,
+  "no counter button remains in the desktop menu bar to need a tooltip",
 );
-assert.match(
-  menuBar,
-  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}\s*\n\s*title=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
-  "Rituals button exposes the exact count as a hover tooltip",
-);
+// The surviving icon-only controls still owe a sighted tooltip apiece.
+for (const label of ["ENRICH_TASKS_TITLE", "SETTINGS_LABEL"]) {
+  assert.ok(
+    new RegExp(`title=\\{[^}]*${label}`).test(menuBar),
+    `${label} control exposes a hover tooltip, not just an aria-label`,
+  );
+}
 
 // ── Brand string: user-visible chrome says "CovenCave" (the product name) ───
 for (const [file, label] of [

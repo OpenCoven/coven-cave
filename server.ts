@@ -115,10 +115,30 @@ if (
   !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()
 ) {
   try {
-    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    const file = persistedMobileAccessSecretFile();
+    const stats = lstatSync(file);
+    // The boot re-arm reads a plaintext credential with no ownership check in
+    // the versions before this guard, and this server cannot import the async
+    // guard (it runs unbundled). Verify synchronously on POSIX: the file must
+    // not be a symlink, must be owned by the current user, and must not be
+    // writable by group or others. Windows cannot answer synchronously, so the
+    // pairing route re-verifies the armed value with the async DACL guard
+    // before trusting it (cave-8pd39); here the read proceeds and is announced.
+    if (stats.isSymbolicLink()) throw new Error("the persisted mobile access secret must not be a symbolic link");
+    if (typeof process.getuid === "function") {
+      if (stats.uid !== process.getuid()) throw new Error("the persisted mobile access secret must be owned by the current user");
+      if ((stats.mode & 0o022) !== 0) throw new Error("the persisted mobile access secret must not be writable by group or others");
+    } else {
+      console.warn(
+        "[cave] boot re-arm reads the persisted mobile access secret without an ownership check on "
+        + process.platform + "; the pairing route re-verifies it with the async guard (cave-8pd39).",
+      );
+    }
+    const persisted = readFileSync(file, "utf8").trim();
     if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
   } catch {
-    // No provisioned secret — stay tokenless, exactly as before.
+    // No provisioned (or unverifiable) secret — stay tokenless, exactly as
+    // before. A refusal here never crashes boot.
   }
 }
 

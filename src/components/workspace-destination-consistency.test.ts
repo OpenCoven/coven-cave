@@ -96,30 +96,35 @@ assert.doesNotMatch(
   "CommandPalette does not silently filter out destinations when metadata is missing",
 );
 
-for (const [source, label] of [
-  [familiarMenuBar, "Desktop chrome"],
-  [topBar, "Mobile chrome"],
-]) {
-  assert.match(
-    source,
-    /workspacePageDefinition\("board"\)/,
-    `${label} derives the Tasks action from the shared page registry`,
-  );
-  assert.match(
-    source,
-    /workspacePageDefinition\("settings"\)/,
-    `${label} derives the Settings action from the shared page registry`,
-  );
+// Tasks is only asserted for mobile now: cave-l9slw removed the desktop menu
+// bar's Tasks button because the sidebar navigation already carries that
+// destination with a label. The rule is unchanged — a surface that DOES expose
+// a destination must name it from the shared registry, never a private array.
+for (const [source, label, destinations] of [
+  [familiarMenuBar, "Desktop chrome", ["settings"]],
+  [topBar, "Mobile chrome", ["board", "settings"]],
+] as const) {
+  for (const destination of destinations) {
+    assert.match(
+      source,
+      new RegExp(`workspacePageDefinition\\("${destination}"\\)`),
+      `${label} derives the ${destination} action from the shared page registry`,
+    );
+  }
   assert.doesNotMatch(
     source,
     /\[[\s\S]{0,240}id:\s*"(?:board|settings)"/,
     `${label} does not keep a private destination array for Tasks or Settings`,
   );
 }
-assert.match(
+// Desktop chrome deliberately stopped exposing New chat (cave-l9slw): the
+// menu bar is for destinations with no other desktop home, and New chat has
+// ⌘J, the sidebar rail CTA, the chat project sidebar and the right-panel
+// dropdown. Mobile keeps its trigger, where those alternatives are not at hand.
+assert.doesNotMatch(
   familiarMenuBar,
-  /aria-label=\{NEW_CHAT_LABEL\}/,
-  "Desktop chrome exposes a New chat action",
+  /NEW_CHAT_LABEL/,
+  "Desktop menu bar does not duplicate a New chat action",
 );
 assert.match(
   topBar,
