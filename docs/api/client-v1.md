@@ -661,7 +661,10 @@ in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 `authenticated` rather than public. That classification is a **demotion**, not a
 promotion: `proxy()` skips the mobile-access gate and returns *before* the
 sidecar-token block, so on those paths the route's own bearer check is the only
-credential check in the request. See *When the authenticated routes land*.
+check that *verifies* the credential. The proxy still demands a well-formed
+`Authorization: Bearer` *presentation* first (cave-q5mwb) — presentation, not
+verification: a syntactically valid fake passes the proxy and is refused by the
+route's `requireScope`. See *When the authenticated routes land*.
 
 Eight of the thirteen routes re-check the stamp in the route itself, via
 `runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the
@@ -1834,12 +1837,16 @@ adding a route here.
 `CLIENT_V1_AUTHENTICATED_PATHS` now holds exactly those five paths. **Matching
 it is a demotion, not a promotion**: `proxy()` computes the ingress kind before
 the mobile-access gate, skips that gate for any client-v1 match, and returns
-before the sidecar-token block ever runs — so for a listed path the *only*
-credential check left is the one the route performs on itself. That is a sound
-trade for a route that really calls `requireScope`, and a hole for a path that
-does not exist yet: a handler landing later would inherit an exemption it never
-opted into. The list previously named thirteen Phase 2 paths against zero
-handlers, which is why it was emptied before any of them existed.
+before the sidecar-token block ever runs. The proxy still requires a
+well-formed `Authorization: Bearer` *presentation* on a listed path
+(cave-q5mwb, revived from cave-d1sjz) — presentation only, so a 12-byte fake
+`Bearer AAAA` passes it and lands on the route's own `requireScope` — which
+means for a listed path the *only* check that verifies the credential is the
+one the route performs on itself. That is a sound trade for a route that really
+calls `requireScope`, and a hole for a path that does not exist yet: a handler
+landing later would inherit an exemption it never opted into. The list
+previously named thirteen Phase 2 paths against zero handlers, which is why it
+was emptied before any of them existed.
 
 **But absence is a decision too, and it costs something.** Both of the
 client-v1-only protections described under *Reaching the API at all* are gated
