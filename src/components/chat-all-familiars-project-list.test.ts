@@ -99,10 +99,14 @@ assert.match(
   "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
 );
 
-assert.match(
+// The router mounts no rail of its own any more (cave-fh9so), so it has no
+// handler to pass. The assertions above still hold — they read
+// chat-project-sidebar.tsx directly, and the component's own contract is
+// unchanged — but the wiring one had nothing left to assert about.
+assert.doesNotMatch(
   chatRouter,
-  /onOpenProjectsTab=\{openProjectsTab\}/,
-  "ChatRouter should pass the concrete Projects-tab handler to the rail",
+  /<ChatProjectSidebar/,
+  "the router mounts no project rail, so it wires no Projects-tab handler",
 );
 
 assert.match(

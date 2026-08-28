@@ -34,7 +34,11 @@ assert.match(
 );
 assert.match(surface, /onNewChat=\{startProjectChat\}/, "projects panel wires onNewChat to startProjectChat");
 assert.match(surface, /addEventListener\(CHAT_OPEN_PROJECTS_EVENT/, "listens for the reroute event");
-assert.match(surface, /onOpenProjectsTab=\{\(\) => setScope\("projects"\)\}/, "chat project rail can jump directly to the Projects tab");
+// The chat project rail is retired (cave-fh9so), so the surface has no rail to
+// hand a Projects-tab jump to. The route it was a shortcut FOR is untouched and
+// still asserted on the line above: CHAT_OPEN_PROJECTS_EVENT reroutes into the
+// Projects scope from anywhere.
+assert.doesNotMatch(surface, /onOpenProjectsTab=/, "no retired rail is still wired for a Projects-tab jump");
 
 assert.doesNotMatch(surface, /isCodeSurface|CodeInlineToolbar/, "retired Code surface should not gate alternate chat tabs");
 

@@ -153,15 +153,7 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
       const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
-    if (await chatDestination.isVisible().catch(() => false)) {
-      await chatDestination.click();
-    } else {
-      await page
-        .getByRole("tablist", { name: "Workspace sections" })
-        .getByRole("tab", { name: "Chat", exact: true })
-        .first()
-        .click();
-    }
+    await chatDestination.click();
     await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
   if (expectRail) await page.waitForSelector(RAIL, { timeout: 30_000 });

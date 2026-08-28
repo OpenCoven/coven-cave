@@ -266,6 +266,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         responseNeeded={responseNeeded}
         onSelectFamiliar={onFamiliarScopeChange}
         onNewChat={onNewChat}
+        // The ⌘N hint used to ride the chat sidebar's own rail header. That
+        // header is gone with the swap (cave-fh9so), and the shortcut is not —
+        // so it moves onto the one rail that is now always mounted, rather
+        // than disappearing with the component that happened to host it.
+        newChatTitle="New chat (⌘N)"
+        newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
         projects={props.projects}
         projectId={props.projectId}
         project={props.project}
