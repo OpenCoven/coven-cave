@@ -29,6 +29,7 @@ import {
   isClientV1AdminPath,
   isClientV1Path,
   isRefusedClientV1Path,
+  presentsClientV1Bearer,
 } from "../../../proxy-helpers.ts";
 
 const ACTIVE_CREDENTIAL: ClientV1CredentialRecord = {
@@ -270,6 +271,16 @@ function contractPublicPaths(): string[] {
   );
   return paths.filter((path, index) => paths.indexOf(path) === index);
 }
+
+/**
+ * A syntactically well-formed presented credential for the proxy-level tests.
+ *
+ * Deliberately NOT a real credential: an issued bearer is
+ * randomBytes(32).toString("base64url"), and the proxy gate is presentation-
+ * only, so a fake that is well-formed must pass the proxy and be refused by
+ * the route's own requireScope. 43 characters mirrors the real length.
+ */
+const PRESENTED_BEARER = "a".repeat(43);
 
 test("client-v1 ingress allowlists only the reviewed public routes", () => {
   const publicRoutes = [
@@ -666,18 +677,29 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
     for (const route of [
       "/api/client/v1/pairing/requests",
       "/api/client/v1/pairing/requests/request-1/exchange",
-      // The canonical reads pass the proxy with no sidecar token, which is
-      // exactly the demotion CLIENT_V1_AUTHENTICATED_PATHS buys and the reason
-      // each of these routes calls requireScope for itself (cave-jfa9y). What
-      // reaches the handler here is an unauthenticated request; the route
-      // tests assert it is refused there.
+    ]) {
+      const response = await proxy(proxyRequest(route, { headers }));
+      assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
+    }
+
+    // The canonical reads pass the proxy with no sidecar token and no bearer
+    // check on their own, which is exactly the demotion
+    // CLIENT_V1_AUTHENTICATED_PATHS buys and the reason each of these routes
+    // calls requireScope for itself (cave-jfa9y). The revived bearer gate
+    // (cave-q5mwb) makes a well-formed presented credential a condition of
+    // that pass-through — the bearer test below covers the refusals — so these
+    // present one. What reaches the handler is still an UNVERIFIED credential;
+    // the route tests assert the route refuses the fake for itself.
+    for (const route of [
       "/api/client/v1/familiars",
       "/api/client/v1/projects",
       "/api/client/v1/conversations",
       "/api/client/v1/conversations/conversation-1",
       "/api/client/v1/conversations/conversation-1/messages",
     ]) {
-      const response = await proxy(proxyRequest(route, { headers }));
+      const response = await proxy(proxyRequest(route, {
+        headers: { ...headers, authorization: `Bearer ${PRESENTED_BEARER}` },
+      }));
       assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
     }
 
@@ -697,6 +719,151 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
     // outside Client v1's separately reviewed ingress and admin boundaries.
     const appResponse = await proxy(proxyRequest("/api/chat/conversation", { headers }));
     assert.equal(passedThrough(appResponse), true);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("presentsClientV1Bearer accepts only well-formed RFC 6750 token68", () => {
+  // Well-formed presentations pass, whatever the case of the scheme.
+  assert.equal(presentsClientV1Bearer(`Bearer ${PRESENTED_BEARER}`), true);
+  assert.equal(presentsClientV1Bearer(`bearer ${PRESENTED_BEARER}`), true);
+  assert.equal(presentsClientV1Bearer(`BEARER ${PRESENTED_BEARER}`), true);
+  // A real minted bearer is 43 base64url characters (randomBytes(32)
+  // .toString("base64url")); the token68 alphabet and RFC 6750's tolerated
+  // trailing padding are accepted, and surrounding whitespace is trimmed.
+  assert.equal(presentsClientV1Bearer(`Bearer ${"A".repeat(43)}`), true);
+  assert.equal(presentsClientV1Bearer(`Bearer ${"A-Za-z0-9._~+/-".repeat(3)}a`), true);
+  assert.equal(presentsClientV1Bearer(`Bearer ${PRESENTED_BEARER}==`), true);
+  assert.equal(presentsClientV1Bearer(`Bearer  ${PRESENTED_BEARER}`), true);
+  assert.equal(presentsClientV1Bearer(`Bearer ${PRESENTED_BEARER} `), true);
+  assert.equal(presentsClientV1Bearer(`Bearer ${"a".repeat(4096)}`), true);
+
+  // Fail-closed: absent or empty header.
+  assert.equal(presentsClientV1Bearer(null), false);
+  assert.equal(presentsClientV1Bearer(""), false);
+
+  // A bare credential with no scheme, and a scheme with no space.
+  assert.equal(presentsClientV1Bearer(PRESENTED_BEARER), false);
+  assert.equal(presentsClientV1Bearer("Bearer"), false);
+
+  // A non-bearer scheme is refused (a Basic credential is not a bearer).
+  assert.equal(presentsClientV1Bearer(`Basic ${PRESENTED_BEARER}`), false);
+  assert.equal(presentsClientV1Bearer(`BearerToken ${PRESENTED_BEARER}`), false);
+
+  // Empty or whitespace-only credentials.
+  assert.equal(presentsClientV1Bearer("Bearer "), false);
+  assert.equal(presentsClientV1Bearer("Bearer   "), false);
+
+  // Whitespace inside the credential makes it two words.
+  assert.equal(presentsClientV1Bearer("Bearer two words"), false);
+
+  // Characters outside the token68 alphabet.
+  assert.equal(presentsClientV1Bearer(`Bearer ${PRESENTED_BEARER}!`), false);
+  assert.equal(presentsClientV1Bearer(`Bearer ${PRESENTED_BEARER}@`), false);
+  assert.equal(presentsClientV1Bearer(`Bearer ab\u0000cd`), false);
+
+  // A tab, vertical-tab, form-feed or NBSP as the ONLY separator fails: the
+  // gate requires the literal ASCII space RFC 6750's ABNF uses.
+  assert.equal(presentsClientV1Bearer(`Bearer\t${PRESENTED_BEARER}`), false);
+  assert.equal(presentsClientV1Bearer(`Bearer\u000B${PRESENTED_BEARER}`), false);
+  assert.equal(presentsClientV1Bearer(`Bearer\u000C${PRESENTED_BEARER}`), false);
+  assert.equal(presentsClientV1Bearer(`Bearer\u00A0${PRESENTED_BEARER}`), false);
+
+  // Duplicate Authorization headers join to "a, Bearer …" before the gate
+  // sees them, which fails the scheme check (cave-d1sjz review).
+  assert.equal(presentsClientV1Bearer(`a, Bearer ${PRESENTED_BEARER}`), false);
+
+  // The credential is attacker-controlled and reaches a regex, so its length
+  // is capped. An issued bearer is 43 characters; 4097 is the far side.
+  assert.equal(presentsClientV1Bearer(`Bearer ${"a".repeat(4097)}`), false);
+});
+
+test("client-v1 resource ingress refuses a request that presents no bearer", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const headers = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    // The gate below only exists for RESOURCE ingress, and every assertion in
+    // this test would still pass if these paths stopped classifying that way:
+    // a path that classifies null falls through to the ordinary sidecar-token
+    // gate, whose refusal is byte-identical — same 401, same
+    // {ok:false,error:"unauthorized"} — so the whole test would go green while
+    // never reaching the code it is about. Measured, not hypothetical: emptying
+    // CLIENT_V1_AUTHENTICATED_PATHS turned three tests in this file red and
+    // left the bearer test green (cave-d1sjz). State the classification as a
+    // precondition so that stops being a silent pass (cave-q5mwb).
+    const resourceRoutes = [
+      "/api/client/v1/familiars",
+      "/api/client/v1/projects",
+      "/api/client/v1/conversations",
+      "/api/client/v1/conversations/conversation-1",
+      "/api/client/v1/conversations/conversation-1/messages",
+    ];
+    for (const route of resourceRoutes) {
+      assert.equal(clientV1IngressKind(route), "authenticated", route);
+    }
+
+    // Resource ingress skips the sidecar token, so without the bearer gate the
+    // only thing between a loopback process and the handler is the handler's
+    // own requireScope call.
+    for (const route of resourceRoutes) {
+      const response = await proxy(proxyRequest(route, { headers }));
+      assert.equal(passedThrough(response), false, route);
+      assert.equal(response.status, 401, route);
+      assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
+    }
+
+    // Malformed presentations are refused the same way: a bare credential with
+    // no scheme, a non-bearer scheme, no credential, a credential with a space,
+    // a character outside token68, and a credential over the length cap.
+    for (const authorization of [
+      PRESENTED_BEARER,
+      `Basic ${PRESENTED_BEARER}`,
+      "Bearer",
+      "Bearer ",
+      "Bearer two words",
+      `Bearer ${PRESENTED_BEARER}!`,
+      // The credential is attacker-controlled and reaches a regex, so its
+      // length is capped. An issued bearer is 43 characters; 4097 is the far
+      // side of the cap.
+      `Bearer ${"a".repeat(4097)}`,
+    ]) {
+      const response = await proxy(proxyRequest("/api/client/v1/conversations", {
+        headers: { ...headers, authorization },
+      }));
+      assert.equal(response.status, 401, authorization);
+      assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
+    }
+
+    // The gate is presentation-only: a WELL-FORMED credential — even the fake
+    // 12-byte "Bearer AAAA" — passes the proxy, and the route's own requireScope
+    // is what refuses it. Assert the pass-through so the proxy gate cannot
+    // silently start rejecting every resource request.
+    for (const route of resourceRoutes) {
+      const response = await proxy(proxyRequest(route, {
+        headers: { ...headers, authorization: `Bearer ${PRESENTED_BEARER}` },
+      }));
+      assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
+    }
+    const fakeTwelveByte = await proxy(proxyRequest("/api/client/v1/conversations", {
+      headers: { ...headers, authorization: "Bearer AAAA" },
+    }));
+    assert.equal(passedThrough(fakeTwelveByte), true, "presentation-only gate must admit a well-formed fake");
+
+    // The public set stays credential-free: pairing is how a client gets one.
+    for (const path of contractPublicPaths()) {
+      const response = await proxy(proxyRequest(path, { headers }));
+      assert.equal(passedThrough(response), true, `${path} returned ${response.status}`);
+    }
   } finally {
     restoreProxyEnv();
   }
