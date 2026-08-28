@@ -274,12 +274,24 @@ test("an unauthenticated probe cannot learn whether a conversation exists", asyn
   });
 });
 
-test("bound conversation detail encrypts the result and rejects downgrade or query drift before stores, budgets, and sources", async () => {
+test("bound conversation detail preserves an encoded slash, query punctuation, spaces, and Unicode", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     await withClientV1HpkeRouteTestAuthority(
       { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 81 },
       async (authority) => {
+        const conversationId = "conversation/one?# with snow 雪";
+        const encodedPath =
+          `/api/client/v1/conversations/${encodeURIComponent(conversationId)}`;
+        const boundLedger: ConversationSummary[] = [
+          ...LEDGER,
+          {
+            sessionId: conversationId,
+            familiarId: "scribe",
+            createdAt: "2026-08-07T00:00:00.000Z",
+            updatedAt: "2026-08-08T00:00:00.000Z",
+          },
+        ];
         const runtime = createClientV1Runtime({
           authority: authority.runtime,
           credentialRoot: root,
@@ -311,17 +323,17 @@ test("bound conversation detail encrypts the result and rejects downgrade or que
           sources({
             listConversations: async () => {
               sourceCalls += 1;
-              return LEDGER;
+              return boundLedger;
             },
           }),
         );
 
         const downgrade = await handler(
           request(
-            "conversation-1",
+            conversationId,
             { authorization: ["Bearer", issued.bearer].join(" ") },
           ),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(downgrade.status, 426);
         assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
@@ -335,7 +347,7 @@ test("bound conversation detail encrypts the result and rejects downgrade or que
           instanceId: INSTANCE_ID,
           runtimeNonce: authority.runtimeNonce,
           operation: "conversations.read",
-          url: "http://127.0.0.1:3020/api/client/v1/conversations/conversation-1",
+          url: `http://127.0.0.1:3020${encodedPath}`,
           method: "GET",
           issuedAt: BOUND_NOW,
           requestNonce: new Uint8Array(32).fill(15),
@@ -345,7 +357,7 @@ test("bound conversation detail encrypts the result and rejects downgrade or que
         headers.set(LOCAL_PEER_HEADER, STAMP);
         const valid = await handler(
           new Request(prepared.request, { headers }),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(valid.status, 200);
         assert.equal(
@@ -358,8 +370,9 @@ test("bound conversation detail encrypts the result and rejects downgrade or que
           (JSON.parse(new TextDecoder().decode(opened.body)) as {
             data: { conversation: { id: string } };
           }).data.conversation.id,
-          "conversation-1",
+          conversationId,
         );
+        assert.equal(new URL(prepared.request.url).pathname, encodedPath);
         assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
           findCalls: 1,
           chargeCalls: 1,
@@ -369,10 +382,10 @@ test("bound conversation detail encrypts the result and rejects downgrade or que
         const beforeQueryDrift = { findCalls, chargeCalls, sourceCalls };
         const wrongQuery = await handler(
           new Request(
-            "http://127.0.0.1:3020/api/client/v1/conversations/conversation-1?limit=1",
+            `http://127.0.0.1:3020${encodedPath}?limit=1`,
             { headers },
           ),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(wrongQuery.status, 400);
         assert.deepEqual(
