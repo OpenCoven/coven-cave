@@ -151,6 +151,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+    "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
     "src/components/role-surfaces/use-research-resources.test.tsx",
     "src/lib/research-resource-client.test.ts",
     "src/components/role-surfaces/use-research-links.test.ts",
@@ -457,6 +458,7 @@ export const SUITES = {
     "src/lib/server/research-links-legacy-store.test.ts",
     "src/lib/server/research-link-materialization.test.ts",
     "src/lib/server/hf-paper-metadata.test.ts",
+    "src/lib/server/research-github-repo.test.ts",
     "src/lib/server/x-article-ingest.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-mission-lock.test.ts",
@@ -1126,6 +1128,7 @@ export const SUITES = {
     "src/lib/familiar-studio-context.test.ts",
     "src/lib/html-sanitize.test.ts",
     "src/lib/github-repo-link.test.ts",
+    "src/lib/research-github-repo.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
     "src/lib/hf-papers.test.ts",
@@ -1383,6 +1386,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
     "src/app/api/research/links/ingest-urls.test.ts",
     "src/app/api/research/links/route.test.ts",
+    "src/app/api/research/github-repo/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
     "src/app/api/research/resources/route.test.ts",
     "src/app/api/research/resources/[id]/route.test.ts",
@@ -2051,6 +2055,8 @@ const ALIAS_LOADER = new Set([
   // through runtime @/lib imports.
   "src/lib/server/x-article-ingest.test.ts",
   "src/app/api/research/links/route.test.ts",
+  // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
+  "src/app/api/research/github-repo/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -2359,6 +2365,7 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+  "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   // drives the Studio config + review dialogs through react-test-renderer
