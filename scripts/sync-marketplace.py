@@ -61,6 +61,20 @@ def _require_text(mapping: dict[str, Any], key: str, label: str) -> str:
     return value
 
 
+def publisher_author(plugin: dict[str, Any]) -> dict[str, str]:
+    author = plugin.get("author", {"name": "OpenCoven"})
+    if not isinstance(author, dict):
+        raise ValueError(f'Plugin "{plugin.get("name", "<unnamed>")}" author must be an object')
+    name = _require_text(author, "name", f'Plugin "{plugin.get("name", "<unnamed>")}" author')
+    normalized = {"name": name}
+    if author.get("url") is not None:
+        url = _require_text(author, "url", f'Plugin "{plugin.get("name", "<unnamed>")}" author')
+        if not url.startswith("https://"):
+            raise ValueError(f'Plugin "{plugin.get("name", "<unnamed>")}" author URL must be https')
+        normalized["url"] = url
+    return normalized
+
+
 def validate_craft(
     plugin: dict[str, Any],
     plugins_by_name: dict[str, dict[str, Any]],
@@ -329,6 +343,12 @@ def validate_catalog(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLAC
         raise ValueError(f"Duplicate marketplace plugin names: {', '.join(duplicates)}")
     plugins_by_name = {plugin["name"]: plugin for plugin in plugins}
     for plugin in plugins:
+        publisher_author(plugin)
+        for key in ("homepage", "repository"):
+            if plugin.get(key) is not None:
+                value = _require_text(plugin, key, f'Plugin "{plugin["name"]}"')
+                if not value.startswith("https://"):
+                    raise ValueError(f'Plugin "{plugin["name"]}" {key} must be https')
         if plugin.get("kind") == "craft":
             validate_craft(plugin, plugins_by_name, marketplace_dir)
             if plugin.get("knowledgePack") is not None:
@@ -451,13 +471,14 @@ def bundles_skills(plugin: dict[str, Any]) -> bool:
 
 
 def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
+    author = publisher_author(plugin)
     manifest: dict[str, Any] = {
         "name": plugin["name"],
         "version": plugin["version"],
         "description": plugin["description"],
-        "author": {"name": "OpenCoven"},
-        "homepage": "https://opencoven.ai",
-            "repository": "https://github.com/OpenCoven/coven-cave",
+        "author": author,
+        "homepage": plugin.get("homepage", "https://opencoven.ai"),
+        "repository": plugin.get("repository", "https://github.com/OpenCoven/coven-cave"),
         "license": plugin.get("license", "GPL-3.0"),
         "keywords": plugin.get("keywords", []),
         "capabilities": plugin.get("capabilities", []),
@@ -539,19 +560,21 @@ def codex_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         if craft.get("mcpServers"):
             manifest["mcpServers"] = "./.mcp.json"
         return manifest
+    author = publisher_author(plugin)
     return {
         "name": plugin["name"],
         "version": plugin["version"],
         "description": plugin["description"],
-        "author": {"name": "OpenCoven"},
+        "author": author,
         "skills": "./skills/",
         "interface": {
             "displayName": plugin["displayName"],
             "shortDescription": plugin["description"],
             "longDescription": plugin.get("skill", {}).get("description", plugin["description"]),
-            "developerName": "OpenCoven",
+            "developerName": author["name"],
             "category": plugin["category"],
             "capabilities": plugin.get("keywords", []),
+            **({"websiteURL": plugin["homepage"]} if plugin.get("homepage") else {}),
             "defaultPrompt": f"Help me use {plugin['displayName']} safely.",
         },
     }
