@@ -2059,6 +2059,10 @@ const ALIAS_LOADER = new Set([
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",
+  // the session-finished emit test loads session-finished-inbox-emit.ts,
+  // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
+  // runtime values; the suite cannot load without the alias resolver.
+  "src/lib/session-finished-inbox-emit.test.ts",
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
