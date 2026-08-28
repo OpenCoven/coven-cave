@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { Icon, type IconName } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -218,8 +218,8 @@ function ThreadRow({
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
-  // Archived rows (visible via the "Show archived" option) read muted, and the
-  // leading slot shows the archive glyph so they can't pass for live threads.
+  // Archived rows read muted, and the leading slot shows the archive glyph so
+  // they can't pass for live threads.
   const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
@@ -365,9 +365,9 @@ type PinnedThreadRowProps = {
 // with ThreadRow so the two row shapes can't render divergent attention state
 // for the same session — only the surrounding chrome differs. Same rule for
 // the runtime tick/archive semantics below: a pinned session can still be
-// running, failed, or (once "Show archived" is on) archived, so this row
-// reuses ThreadRow's own tick class and archive-glyph derivation rather than
-// re-deriving them — see cave-zs85n Task 6 gap-fix notes.
+// running or failed, so this row reuses ThreadRow's own tick class and
+// archive-glyph derivation rather than re-deriving them — see cave-zs85n
+// Task 6 gap-fix notes.
 function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
   const archived = Boolean(session.archived_at);
@@ -456,13 +456,12 @@ export function SidebarChatsSection({
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // The Organize menu that toggled this went with the old search row, so
-  // archived threads stay excluded (as /api/sessions/list already does
-  // server-side). The archive/unarchive ACTIONS on each row are untouched.
-  const showArchived = false;
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  // Archive visibility lives on the Sessions list (ChatList) — this rail is
+  // archive-free. /api/sessions/list already excludes archived threads
+  // server-side, so the rail never fetches or renders them; the per-row
+  // archive/unarchive ACTIONS stay (once a session is archived from the rail,
+  // the normal session refresh removes it).
   const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
@@ -477,45 +476,10 @@ export function SidebarChatsSection({
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
 
-  // Archived sessions only load while "Show archived" is on; archive/unarchive
-  // bumps archiveNonce so the opt-in list refetches after each change (same
-  // idiom as the chat list's toggle).
-  useEffect(() => {
-    if (!showArchived) {
-      setArchivedRows([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Scope archived rows to the active familiar's projects, same as the
-        // live list — keeps forbidden-project sessions out of the archive view.
-        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
-        const json = await res.json().catch(() => ({ ok: false }));
-        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows(
-          (json.sessions as SessionRow[])
-            .filter((session) => session.archived_at)
-            .map(normalizeSessionAttention),
-        );
-      } catch {
-        // keep whatever archived rows we already have
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showArchived, archiveNonce, activeFamiliarId]);
-
-  const visibleSessions = useMemo(() => {
-    let rows: SessionRow[] = normalizedSessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(normalizedSessions.map((session) => session.id));
-      rows = [...normalizedSessions, ...archivedRows.filter((session) => !seen.has(session.id))];
-    }
-    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
-  }, [normalizedSessions, showArchived, archivedRows, activeFamiliarId]);
+  const visibleSessions = useMemo(
+    () => filterVisibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
+    [normalizedSessions, activeFamiliarId],
+  );
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
@@ -591,7 +555,8 @@ export function SidebarChatsSection({
   }
 
   // Archive/unarchive rides the same undo-safe sessions PATCH as the chat
-  // list; a success refreshes both the workspace poll and the opt-in list.
+  // list; a success refreshes the workspace poll so the row leaves or
+  // re-enters the live list without waiting a cycle.
   async function setSessionArchived(session: SessionRow, archived: boolean) {
     setArchivingId(session.id);
     setArchiveError(null);
@@ -606,7 +571,6 @@ export function SidebarChatsSection({
         setArchiveError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
         return;
       }
-      setArchiveNonce((n) => n + 1);
       onSessionsChanged?.();
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
@@ -623,9 +587,9 @@ export function SidebarChatsSection({
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
         {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
             else. It replaces the old search row, which also carried the
-            Organize menu. Search and "Show archived" went with it — the list
-            below is already grouped by attention and recency, and the row is
-            the rail's header, not a toolbar. */}
+            Organize menu. Search and the archived-visibility toggle went with
+            it — the list below is already grouped by attention and recency,
+            and the row is the rail's header, not a toolbar. */}
         {/* The whole row is the control, mirroring the collapsed spine — the
             icon is decoration inside it, not a nested <button> (which would be
             invalid HTML and would swallow clicks aimed at the row). */}
