@@ -1601,6 +1601,7 @@ export const SUITES = {
     "src/app/api/sessions/list/route.test.ts",
     "src/lib/server/sessions-list.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
+    "src/app/api/chat/send/origin-server-mint.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
     "src/app/api/chat/send/openclaw-gateway-outcome.test.ts",
@@ -2138,6 +2139,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
   "src/app/api/chat/send/chat-send-runtime.test.ts",
   "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
+  // Imports the send route (which resolves Next's extensionless next/server
+  // entry) and the generation route (which resolves "@/lib/chat-origins").
+  "src/app/api/chat/send/origin-server-mint.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
   "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",
