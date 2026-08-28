@@ -70,6 +70,12 @@ test("the local-only gate runs before feature or catalog access", async () => {
     headers: { host: "cave.example.com" },
   }));
   assert.equal(response.status, 403);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    code: "local_request_required",
+    error: "forbidden",
+  });
   assert.equal(enabledReads, 0);
   assert.equal(catalogReads, 0);
 });

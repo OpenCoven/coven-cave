@@ -35,6 +35,207 @@
   color: var(--text-muted);
 }
 
+/* ── Local evidence: dense authority-first rows, not a second card shelf. ── */
+.research-res__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block: 1px solid var(--border-hairline);
+}
+.research-res__evidence-head,
+.research-res-evidence__identity,
+.research-res-evidence footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.research-res__evidence-head h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.research-res__evidence-head p,
+.research-res__evidence-head > span,
+.research-res__evidence-state,
+.research-res__evidence-error,
+.research-res__status-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-res__evidence-error,
+.research-res__evidence-error > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.research-res__evidence-error {
+  justify-content: space-between;
+  color: var(--danger-text);
+}
+.research-res__evidence-list {
+  display: flex;
+  flex-direction: column;
+}
+.research-res-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-hairline);
+}
+.research-res-evidence__identity strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-res-evidence__identity span,
+.research-res-evidence footer > span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-res-evidence > p {
+  margin: 0;
+  max-width: 66ch;
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+/* ── Durable local catalog: every manifest remains visible and operable. ── */
+.research-res__catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-block: 1px solid var(--border-hairline);
+}
+.research-res__catalog-head,
+.research-res-catalog-row__summary,
+.research-res-catalog-row__actions,
+.research-res-catalog-row__details,
+.research-res-catalog-row__confirm,
+.research-res__catalog-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.research-res__catalog-head {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.research-res__catalog-head h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.research-res__catalog-head p,
+.research-res__catalog-head > span,
+.research-res__catalog-empty,
+.research-res__catalog-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-res__catalog-error {
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+}
+.research-res__catalog-list {
+  display: flex;
+  flex-direction: column;
+}
+.research-res-catalog-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+.research-res-catalog-row__summary {
+  min-width: 0;
+}
+.research-res-catalog-row__identity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.research-res-catalog-row__identity strong {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-res-catalog-row__identity span,
+.research-res-catalog-row__state {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-res-catalog-row__state {
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--research-accent) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--research-accent) 34%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.research-res-catalog-row__details {
+  justify-content: space-between;
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.research-res-catalog-row__details dl {
+  display: flex;
+  margin: 0;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.research-res-catalog-row__details dl > div {
+  display: flex;
+  gap: var(--space-1);
+}
+.research-res-catalog-row__details dt,
+.research-res-catalog-row__details dd {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.research-res-catalog-row__details dt { color: var(--text-muted); }
+.research-res-catalog-row__details dd {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.research-res-catalog-row__confirm {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+}
+.research-res-catalog-row__confirm > span {
+  margin-right: auto;
+  font-size: var(--text-xs);
+}
+
 /* ── Grab from X: explicit reads and familiar-scoped saved identities. ── */
 .research-x {
   display: flex;
@@ -1226,10 +1427,23 @@
     flex-direction: column;
   }
   .research-res__intake-footer,
-  .research-res-card__footer {
+  .research-res-card__footer,
+  .research-res__evidence-head,
+  .research-res__evidence-error,
+  .research-res-evidence__identity,
+  .research-res-evidence footer,
+  .research-res__catalog-head,
+  .research-res-catalog-row__summary,
+  .research-res-catalog-row__details {
     align-items: stretch;
     flex-direction: column;
   }
+  .research-res-catalog-row__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .research-res-catalog-row__actions .ui-btn { flex: 1; }
+  .research-res-catalog-row__state { align-self: flex-start; }
   .research-res__intake-footer .ui-btn { width: 100%; }
   .research-res__items[data-view="grid"] { grid-template-columns: 1fr; }
   /* Single column already: capping here would re-create the gap this fixes. */

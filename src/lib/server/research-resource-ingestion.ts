@@ -22,6 +22,7 @@ import {
   type ResearchLexicalAuthority,
   type ResearchResourceLexicalIndex,
 } from "./research-resource-lexical-index.ts";
+import { removeResearchResourceSemanticPublication } from "./research-resource-semantic-index.ts";
 import { listCompatibleResearchLinks } from "./research-links-compatibility.ts";
 import {
   createResearchResourceStore,
@@ -59,6 +60,7 @@ export type ResearchResourceIngestionOptions = {
     sourceUrl?: string;
   }) => Promise<ExtractedResearchResource>;
   repairCompatibilityProjection?: () => Promise<unknown>;
+  removeSemanticDerivatives?: (resourceId: string) => Promise<void>;
   failpoint?: (point: ResearchIngestionFailpoint) => void | Promise<void>;
 };
 
@@ -204,6 +206,11 @@ export function createResearchResourceIngestion(
     ?? (() => listCompatibleResearchLinks({
       resourceRoot: options.root,
       recoveryAlreadyHeld: options.recoveryAlreadyHeld,
+    }));
+  const removeSemanticDerivatives = options.removeSemanticDerivatives
+    ?? ((resourceId: string) => removeResearchResourceSemanticPublication({
+      root: options.root,
+      resourceId,
     }));
   const failpoint = options.failpoint ?? (() => {});
 
@@ -648,6 +655,8 @@ export function createResearchResourceIngestion(
               updatedAt: laterTimestamp(clock(), job.updatedAt),
             });
           }
+          const embeddingTask = transaction.readEmbeddingTask(resourceId);
+          if (embeddingTask) await transaction.removeEmbeddingTask(resourceId, embeddingTask);
           await advance(transaction, expected, "jobs_cancelled", clock());
         });
         continue;
@@ -673,6 +682,7 @@ export function createResearchResourceIngestion(
             if (published) lexical.remove(published);
             lexical.purgeResidualFiles();
           }, transaction);
+          await removeSemanticDerivatives(resourceId);
           await advance(transaction, expected, "derivatives_removed", clock());
         });
         continue;

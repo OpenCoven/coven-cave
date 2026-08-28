@@ -10,6 +10,7 @@
 // imports are type-only and therefore erased), so pulling it in here costs the
 // proxy no runtime dependency.
 import { CLIENT_V1_PUBLIC_ROUTES } from "./lib/server/client-v1/contract.ts";
+import { canonicalClientV1Pathname } from "./lib/server/client-v1/canonical-path.ts";
 
 export function timingSafeEqualString(a: string, b: string) {
   const encoder = new TextEncoder();
@@ -192,47 +193,6 @@ export function isClientV1Path(pathname: string) {
 }
 
 /**
- * True for a Client v1 request-target proxy() must refuse outright (cave-f1xki,
- * #4854).
- *
- * The defect: Next does not route a `%` in a static segment, but it DOES route
- * one in a dynamic segment — it percent-decodes the segment for `[id]` matching
- * while middleware still reads the raw `%` in `nextUrl.pathname`. So
- * `GET /api/client/v1/pairing/requests/<uuid with %34>` reached the handler
- * while classifying as *not* client-v1 ingress, which skipped the direct-
- * loopback gate AND the 411/413/64 KiB body rules, both of which hang off that
- * classification. Measured against a production build: the plain path answered
- * `403 forbidden peer` to a forwarded caller holding the sidecar token, and the
- * percent-written one answered `200` with the pairing record.
- *
- * Refusal rather than normalization, deliberately:
- *
- *   - Decoding is the thing that would have to be exactly right. Next decodes a
- *     segment ONCE (`%2534` arrives at the route as `%34`, measured) and does
- *     NOT treat a decoded `%2F` as a separator (`aaa%2Fbbb` routes as ONE `[id]`
- *     segment, measured). A classifier that decoded the whole pathname would
- *     split that into two segments and go on returning null — the same hole —
- *     and a classifier that decoded twice would open the `%252e` class instead.
- *     Refusing decodes nothing, so it stays correct without tracking Next's
- *     decoding rules across versions.
- *   - No legitimate client needs it. Every Client v1 path segment is either a
- *     fixed literal or a UUID (`parseClientV1PairingRequestId`), and the pairing
- *     secret travels in a header, so nothing a real client sends contains a `%`
- *     or a `\`.
- *   - It generalises. The check is scoped by PREFIX, not by the two ingress
- *     lists, so it covers admin and any future dynamic-segmented route the day
- *     that route lands — including one nobody remembers to add to a list. Fixing
- *     only the classifier would have left `/api/client/v1/admin/*` (which
- *     classifies null by design) and every unlisted path exactly as they were.
- *   - `\` earns the same treatment for the same reason: never legitimate, and
- *     leaving it to classify null was the other half of the same silent bail.
- */
-export function isRefusedClientV1Path(pathname: string) {
-  return isClientV1Path(pathname)
-    && (pathname.includes("%") || pathname.includes("\\"));
-}
-
-/**
  * True for the Client v1 administrative family — the credential list, the
  * pairing-approval queue, and the decisions taken on it.
  */
@@ -327,15 +287,32 @@ export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [
   "/api/client/v1/conversations/:id/messages",
 ].map(clientV1PathPattern);
 
+/**
+ * True for a Client v1 request target proxy() must refuse outright.
+ *
+ * Pairing and admin IDs remain UUID-only. Conversation IDs may require one
+ * canonical encodeURIComponent-style pass, so only those authenticated route
+ * patterns accept validated escapes. Everything malformed, aliased, nested, or
+ * backslash-bearing still fails before ingress classification.
+ */
+export function isRefusedClientV1Path(pathname: string) {
+  if (!isClientV1Path(pathname)) return false;
+  if (pathname.includes("\\")) return true;
+  if (
+    CLIENT_V1_AUTHENTICATED_PATHS.some((pattern) => pattern.test(pathname))
+  ) {
+    try {
+      canonicalClientV1Pathname(pathname);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  return pathname.includes("%");
+}
+
 export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {
-  // Kept, and no longer load-bearing. proxy() refuses such a target through
-  // isRefusedClientV1Path before it ever asks for a classification, so this
-  // line is now the second of two layers rather than the only one. It stays
-  // because dropping it would make a classifier that someone calls from a new
-  // site silently PROMOTE an escaped path into the public set — `%2534` in an
-  // id already matches the `[^/]+` id pattern by raw bytes — which is the one
-  // direction a bail-out to null must never take.
-  if (pathname.includes("%") || pathname.includes("\\")) return null;
+  if (isRefusedClientV1Path(pathname)) return null;
   if (CLIENT_V1_PUBLIC_PATHS.some((pattern) => pattern.test(pathname))) {
     return CLIENT_V1_PUBLIC_INGRESS;
   }
