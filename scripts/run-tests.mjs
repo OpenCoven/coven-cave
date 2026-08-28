@@ -849,6 +849,8 @@ export const SUITES = {
     "src/lib/research-topic-discovery.test.ts",
     "src/lib/server/research-model-task-executor.test.ts",
     "src/lib/server/research-topic-discovery-store.test.ts",
+    "src/lib/server/research-topic-discovery-runner.test.ts",
+    "src/lib/server/research-topic-discovery-authority.test.ts",
     "src/lib/server/research-context-pack-store.test.ts",
     "src/lib/server/research-context-resource-adapters.test.ts",
     "src/lib/server/research-context-pack-builder.test.ts",
