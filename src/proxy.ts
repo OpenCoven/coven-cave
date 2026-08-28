@@ -28,7 +28,9 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
+  presentsClientV1Bearer,
   isClientV1AdminPath,
   isClientV1Path,
   isRefusedClientV1Path,
@@ -521,6 +523,22 @@ export async function proxy(req: NextRequest) {
   if (clientV1Ingress) {
     if (!trustedLocalPeer || remoteIngress) {
       return jsonError(403, "forbidden peer: client v1 requires direct loopback");
+    }
+    // Resource ingress returns below without ever reaching the sidecar-token
+    // block, so a route reached this way is guarded by its own requireScope
+    // call and nothing else. Demanding a well-formed presented bearer here
+    // makes the paired credential a condition of arrival rather than a
+    // courtesy each handler pays separately, which is what the first author to
+    // forget one would otherwise cost (cave-q5mwb, revived from cave-d1sjz).
+    // Presentation, not verification: a 12-byte fake "Bearer AAAA" satisfies
+    // this check and still lands on the route's own 401, so requireScope stays
+    // mandatory. Public ingress is exempt by definition: pairing is how a
+    // client obtains the credential.
+    if (
+      clientV1Ingress !== CLIENT_V1_PUBLIC_INGRESS
+      && !presentsClientV1Bearer(req.headers.get("authorization"))
+    ) {
+      return jsonError(401, "unauthorized");
     }
     return nextWithInternalAuthMarkers(req, false);
   }

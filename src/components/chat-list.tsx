@@ -94,6 +94,8 @@ import {
   type ChatSessionStatusFilter,
 } from "@/lib/chat-session-status";
 import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
+import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
+import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import {
   CHAT_SESSION_KIND,
   CHAT_SESSION_KIND_ORDER,
@@ -247,6 +249,12 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Broadcast (cave-g7yg6) — one message into every selected chat. The fan-out,
+  // its concurrency ceiling and the per-target result all live on
+  // /api/chat/broadcast; this surface only picks the targets and renders the
+  // outcome.
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [broadcastState, setBroadcastState] = useState<Record<string, "sent" | "failed">>({});
   // Bulk delete is deferred + undoable: rows hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores the batch.
   const { pending: deletePending, scheduleDelete: scheduleBulkDelete, undo: undoBulkDelete, commit: commitBulkDelete } = useUndoDelete<SessionRow[]>();
@@ -1266,6 +1274,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                 <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
               </div>
               <div className="flex items-center gap-1">
+                {/* Broadcast (cave-g7yg6) leads the cluster: it is the only
+                    action here that writes into the selected chats rather
+                    than filing them, so it does not belong beside Archive and
+                    Delete as if it were another disposition. */}
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:broadcast"
+                  disabled={bulkBusy || selectedVisibleCount === 0}
+                  onClick={() => setBroadcastOpen(true)}
+                >
+                  Broadcast
+                </Button>
                 <Button
                   variant="secondary"
                   size="xs"
@@ -1620,6 +1641,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 full line. What survives is what the pill does
                                 NOT say: whether the chat is kept, deferred or
                                 archived. */}
+                            {/* Broadcast outcome (cave-g7yg6). Transient, and
+                                per row: a failed target has to be visible on
+                                the row it failed for, because a broadcast that
+                                half-worked and said nothing is worse than one
+                                that failed outright. */}
+                            {broadcastState[s.id] ? (
+                              <span
+                                className="chat-list-row-broadcast"
+                                data-state={broadcastState[s.id]}
+                              >
+                                {broadcastState[s.id] === "sent" ? "Sent" : "Failed"}
+                              </span>
+                            ) : null}
                             {retentionMark ? (
                               <span className="chat-list-row-preview truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
                                 {s.keep ? (
@@ -1880,6 +1914,26 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
           undoAriaLabel="Undo delete"
           onUndo={undoBulkDelete}
           onDismiss={commitBulkDelete}
+        />
+      ) : null}
+      {broadcastOpen ? (
+        <ChatBroadcastComposer
+          count={selectedVisibleCount}
+          // The VISIBLE selection, matching every other bulk action here: a row
+          // hidden behind a collapsed section must not receive a broadcast it
+          // was never shown to be selected for (chat-list-collapse.test.ts).
+          targets={visibleIds.filter((id) => selectedIds.has(id))}
+          onClose={() => setBroadcastOpen(false)}
+          onSent={(results: BroadcastResult[]) => {
+            const next: Record<string, "sent" | "failed"> = {};
+            for (const r of results) next[r.sessionId] = r.ok ? "sent" : "failed";
+            setBroadcastState(next);
+            // Keep only the failures selected — a retry re-sends to those and
+            // nothing else, since a send is not idempotent.
+            const failures = new Set(failedTargets(results).map((t) => t.sessionId));
+            setSelectedIds(failures);
+            if (failures.size === 0) exitSelect();
+          }}
         />
       ) : null}
     </div>
