@@ -529,3 +529,47 @@ export async function assertExclusivePathOwnership(
 
   verifiedWindowsPaths.set(path, report);
 }
+
+/**
+ * Synchronous ownership check for boot-time readers that cannot await the
+ * Windows DACL probe (cave-8pd39).
+ *
+ * POSIX answers completely: the owner uid must be the current user, the group
+ * and other write bits must be clear, and the path must not be a symlink
+ * (metadata must therefore come from lstat, never stat). Windows cannot
+ * answer synchronously — chmod is a no-op there and the DACL needs a
+ * subprocess probe — so the Windows branch REFUSES; a caller that cannot take
+ * the async path must treat the refusal as "unreadable" and stay tokenless
+ * rather than trust silently.
+ */
+export function assertExclusivePathOwnershipSync(
+  path: string,
+  metadata: { uid: number | bigint; mode?: number; isSymbolicLink?: boolean },
+  subject: string,
+  options: ClientV1PathOwnershipOptions = {},
+): void {
+  const platform = options.platform ?? process.platform;
+  const getuid = options.getuid === undefined ? process.getuid : options.getuid;
+
+  if (metadata.isSymbolicLink) {
+    throw new Error(`${subject} must not be a symbolic link.`);
+  }
+
+  if (typeof getuid === "function") {
+    if (metadata.uid !== getuid()) {
+      throw new Error(`${subject} must be owned by the current user.`);
+    }
+    if (metadata.mode !== undefined && (metadata.mode & 0o022) !== 0) {
+      throw new Error(
+        `${subject} must not be writable by group or others `
+        + `(mode ${(metadata.mode & 0o7777).toString(8)}).`,
+      );
+    }
+    return;
+  }
+
+  throw new Error(
+    `${subject} ownership cannot be verified synchronously on ${platform}: `
+    + `${path} is refused. Use the async guard where the platform probe can run.`,
+  );
+}

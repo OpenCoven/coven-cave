@@ -1917,6 +1917,7 @@ export const SUITES = {
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "src/components/mobile-handoff.test.ts",
+    "src/app/api/mobile-handoff/route.test.ts",
     "src/components/shell-drawer-smoke.test.ts",
     "src/components/mobile-drawer-inert-focus-order.test.tsx",
     "src/components/mobile-drawer-nav-list-focus.test.tsx",
