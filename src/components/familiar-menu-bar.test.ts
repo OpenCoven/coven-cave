@@ -81,15 +81,21 @@ assert.doesNotMatch(
   /computePresence\(|<FamiliarAvatar/,
   "presence/avatar computation does not live in the menu bar",
 );
-assert.match(
+// cave-l9slw: New chat no longer opens this cluster. It was one of six ways to
+// start a chat on desktop, and the bar is for destinations that have no other
+// desktop home. Assert the removal is COMPLETE — a stale trigger attribute or
+// an unused ⌘J hint left behind is the failure mode worth catching.
+assert.doesNotMatch(
   source,
-  /data-quick-chat-trigger[\s\S]{0,180}onClick=\{onOpenQuickChat\}[\s\S]{0,180}aria-label=\{NEW_CHAT_LABEL\}/,
-  "the menu bar keeps a shell-owned New chat action",
+  /data-quick-chat-trigger|onOpenQuickChat|NEW_CHAT_LABEL/,
+  "the menu bar carries no New chat trigger, prop, or label",
 );
-assert.match(
+// Targets the derivation, not the string: the file's prose still names ⌘J when
+// explaining where New chat went, and that reference is the point.
+assert.doesNotMatch(
   source,
-  /const newChatShortcut = platformizeHint\("⌘J", keys\);[\s\S]*title=\{`\$\{NEW_CHAT_LABEL\} \(\$\{newChatShortcut\}\)`\}/,
-  "the menu bar platformizes the New chat shortcut hint",
+  /newChatShortcut|platformizeHint\("⌘J"/,
+  "the ⌘J hint derivation went with the button rather than lingering unused",
 );
 assert.match(
   source,
@@ -107,51 +113,43 @@ assert.doesNotMatch(
   "the menu bar no longer duplicates the sidebar footer's Settings entry",
 );
 
-// Right group — tasks. A Tasks button (board) and a Schedules button, each
-// with a live count badge that is hidden at zero.
-assert.match(
+// cave-l9slw: the right group is down to Enhance and Settings. Tasks went
+// because the sidebar navigation already carries it as a labelled destination
+// (id "board", ⌘3) — this was a second, icon-only route to the same board, and
+// its badge duplicated the sidebar row's badge from the same source.
+assert.doesNotMatch(
   source,
-  /className="menu-bar__task focus-ring"[\s\S]*onClick=\{onViewTasks\}/,
-  "the Tasks button jumps to the board",
+  /onViewTasks|taskCount|TASKS_LABEL|ph:kanban|workspacePageDefinition\("board"\)/,
+  "the menu bar carries no Tasks button, count, label, or registry lookup",
 );
-assert.match(
+// cave-l9slw: the Rituals button is gone from this bar. The surface it landed
+// on (workspace mode "inbox" — calendar + crons) is unchanged and still reached
+// from the home dashboard, the mobile bottom tabs, the ⌘K palette and the tray.
+// Assert the removal is complete, including the needs-you count it badged: a
+// prop still threaded in to feed a button that no longer exists is dead wiring.
+assert.doesNotMatch(
   source,
-  /workspacePageDefinition\("board"\)/,
-  "Tasks naming comes from the shared page registry",
+  /onViewSchedules|scheduleNeedsCount|RITUALS_LABEL|ph:calendar-check/,
+  "the menu bar carries no Rituals button, badge count, or label",
 );
-assert.match(
-  source,
-  /taskCount > 0 \? <span className="menu-bar__badge">\{fmtBadge\(taskCount\)\}<\/span> : null/,
-  "the Tasks badge shows the open-task count and hides at zero",
-);
-// The old "Inbox" button was dishonest: workspace mode "inbox" IS the
-// Schedules surface (calendar + crons) and no dedicated inbox surface exists
-// (inbox items live in the notification bell). The button now says what it
-// does: Schedules, calendar icon, schedule needs-you badge.
-assert.match(
-  source,
-  /onClick=\{onViewSchedules\}/,
-  "the Schedules button jumps to the Schedules surface",
-);
-assert.match(
-  source,
-  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
-  "the Rituals button is announced as rituals, not inbox",
-);
-assert.match(
-  source,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">\{RITUALS_LABEL\}<\/span>/,
-  "the Rituals button matches the sidebar's Rituals label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
-);
+// Still true, and still worth pinning: whatever this bar does carry must not
+// claim to be an Inbox, because no inbox surface exists to land on (inbox
+// items live in the notification bell).
 assert.doesNotMatch(
   source,
   /"View inbox"|<span>Inbox<\/span>|ph:tray/,
   "no top-bar control claims to be an Inbox — there is no inbox surface to land on",
 );
-assert.match(
+// Both counter buttons are gone, so this cluster no longer counts anything.
+// `menu-bar__badge` survives as a class — the workspace-owned running-sessions
+// control still uses it — but nothing in THIS file may render one, and the
+// fmtBadge helper that capped them went rather than lingering without a caller.
+// Targets rendered markup and the declaration, not the words: the comment
+// above the cluster names fmtBadge while explaining why it went.
+assert.doesNotMatch(
   source,
-  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
-  "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
+  /className="menu-bar__badge"|function fmtBadge|fmtBadge\(/,
+  "the menu bar renders no count badge and keeps no orphaned badge formatter",
 );
 // The running-processes control is workspace-owned (it needs the sessions
 // state and chat navigation): the bar renders it as the `runningStatus` slot
@@ -240,20 +238,26 @@ assert.match(
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
 // real scope/navigation handlers and live counts.
-assert.match(
+// Bounded to the element: workspace still hands taskCount/onViewTasks to OTHER
+// components (the status rail, the mobile top bar), so an unbounded search
+// would find those and this assertion would never fail.
+assert.doesNotMatch(
   workspace,
-  /onViewTasks=\{\(\) => setMode\("board"\)\}/,
-  "View tasks switches to the board surface",
+  /<FamiliarMenuBar(?:(?!\/>)[\s\S])*(?:taskCount|onViewTasks)/,
+  "workspace no longer feeds the desktop menu bar a task count or board handler",
 );
+// The count itself is untouched — the surfaces that still badge Tasks keep it.
 assert.match(
   workspace,
-  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
-  "View schedules switches to the Schedules surface (workspace mode id 'inbox')",
+  /taskCount=\{boardTaskCount\}/,
+  "the live board task count survives for the surfaces that still show it",
 );
+// scheduleNeedsCount is still DERIVED in workspace — the sidebar Schedules
+// badge consumes it — it is just no longer handed to this bar (cave-l9slw).
 assert.match(
   workspace,
-  /taskCount=\{boardTaskCount\}[\s\S]*scheduleNeedsCount=\{scheduleNeedsCount\}/,
-  "the bar is fed the live board task count and the schedule needs-you count (same source as the sidebar Schedules badge)",
+  /const scheduleNeedsCount = inboxNeedsYou\.length;/,
+  "the schedule needs-you count survives for the surfaces that still badge it",
 );
 assert.match(
   workspace,
@@ -306,21 +310,30 @@ assert.match(
   "menu bar shows on desktop (≥1024px)",
 );
 
-// Desktop quick-chat entry point: the bar carries the quick-chat trigger (the
-// mobile top bar's copy is hidden ≥1024px), tagged so the popover anchors under
-// it as a dropdown from this menubar.
-assert.match(
+// cave-l9slw: the desktop menu bar no longer carries a quick-chat trigger.
+assert.doesNotMatch(
   source,
-  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label=\{NEW_CHAT_LABEL\}/,
-  "the desktop menu bar renders a New chat trigger wired to onOpenQuickChat",
+  /data-quick-chat-trigger/,
+  "no quick-chat trigger remains in the desktop menu bar",
 );
-// cave-xsq.6 + project-primary navigation: the quick-chat trigger enters the
-// shared shell launch path, which resolves project and acting-familiar authority
-// instead of opening a duplicate mini-chat popover or bypassing the actor gate.
+// cave-xsq.6 + project-primary navigation, unchanged in substance: whichever
+// surface owns a New chat trigger must enter the SHARED shell launch path,
+// which resolves project and acting-familiar authority, rather than opening a
+// duplicate mini-chat popover or bypassing the actor gate. The mobile top bar
+// is now the only chrome trigger, so it is the one that has to prove it.
+// Both patterns are bounded to a SINGLE element by refusing to cross the
+// self-closing `/>`. A plain lazy `[\s\S]*?` runs straight past the end of
+// <FamiliarMenuBar> into the <TopBar> that follows it, so the negative
+// assertion below would match TopBar's handler and never fail.
 assert.match(
   workspace,
-  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{startWorkspaceChat\}/,
-  "workspace wires the desktop menu bar's quick-chat trigger to the shell-owned launch path",
+  /<TopBar(?:(?!\/>)[\s\S])*onOpenQuickChat=\{startWorkspaceChat\}/,
+  "workspace wires the surviving chrome quick-chat trigger to the shell-owned launch path",
+);
+assert.doesNotMatch(
+  workspace,
+  /<FamiliarMenuBar(?:(?!\/>)[\s\S])*onOpenQuickChat/,
+  "workspace no longer hands the desktop menu bar a quick-chat handler",
 );
 assert.doesNotMatch(
   workspace,

@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome, covenHome } from "@/lib/coven-paths";
 
@@ -11,6 +11,30 @@ export type BackupEntry = {
   sha256: string;
   secret: boolean;
   optional?: boolean;
+};
+
+export type BackupSourceIdentity = {
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+};
+
+export type BackupSourceDirectoryIdentity = {
+  path: string;
+  dev: number;
+  ino: number;
+};
+
+export type BackupSourceFile = {
+  root: BackupRoot;
+  rel: string;
+  secret: boolean;
+  optional?: boolean;
+  fullPath: string;
+  identity?: BackupSourceIdentity;
+  ancestorIdentities?: BackupSourceDirectoryIdentity[];
 };
 
 export type BackupManifest = {
@@ -66,6 +90,11 @@ const CAVE_DIRS = [
   "workflows",
   "flows",
   "run-histories",
+  "research-resources/manifests",
+  "research-resources/snapshots",
+  "research-resources/blobs",
+  "research-resources/tombstones",
+  "research-resources/migration",
 ] as const;
 
 const COVEN_FILES = [
@@ -166,12 +195,16 @@ export function isAllowedBackupEntry(root: BackupRoot, rel: string): boolean {
 
 async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, string>): Promise<Array<{ root: BackupRoot; rel: string; secret: boolean; optional?: boolean }>> {
   const full = resolveBackupEntryPath(candidate.root, candidate.rel, roots);
+  const privateResearch = candidate.root === "cave" && candidate.rel.startsWith("research-resources/");
   let s;
   try {
-    s = await stat(full);
-  } catch {
+    s = privateResearch ? await lstat(full) : await stat(full);
+  } catch (error) {
+    if (privateResearch && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return [];
   }
+  if (privateResearch && s.isSymbolicLink()) throw new Error("Research backup path is unsafe");
+  if (privateResearch && !s.isDirectory()) throw new Error("Research backup path is unsafe");
   if (s.isFile()) return [{ root: candidate.root, rel: normalizeBackupPath(candidate.rel), secret: candidate.secret === true, optional: candidate.optional }];
   if (!s.isDirectory()) return [];
 
@@ -182,6 +215,15 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
       const childRel = normalizeBackupPath(`${dirRel}/${entry.name}`);
       if (isExcludedRel(childRel)) continue;
       const child = resolveBackupEntryPath(candidate.root, childRel, roots);
+      if (privateResearch) {
+        const metadata = await lstat(child);
+        if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
+          throw new Error("Research backup entry is unsafe");
+        }
+        if (metadata.isDirectory()) await walk(childRel);
+        else out.push({ root: candidate.root, rel: childRel, secret: candidate.secret === true });
+        continue;
+      }
       if (entry.isDirectory()) await walk(childRel);
       else if (entry.isFile()) out.push({ root: candidate.root, rel: childRel, secret: candidate.secret === true });
       else await stat(child).catch(() => null);
@@ -191,20 +233,73 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
   return out.sort((a, b) => `${a.root}/${a.rel}`.localeCompare(`${b.root}/${b.rel}`));
 }
 
-export async function listBackupFiles(roots = backupRoots()): Promise<Array<{ root: BackupRoot; rel: string; secret: boolean; optional?: boolean; fullPath: string }>> {
+async function researchAncestorIdentities(
+  fullPath: string,
+  caveRoot: string,
+): Promise<BackupSourceDirectoryIdentity[]> {
+  const relativeParent = path.relative(caveRoot, path.dirname(fullPath));
+  if (relativeParent === ".." || relativeParent.startsWith(`..${path.sep}`) || path.isAbsolute(relativeParent)) {
+    throw new Error("Research backup entry escapes its root");
+  }
+  const directories = [caveRoot];
+  let current = caveRoot;
+  for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
+    current = path.join(current, segment);
+    directories.push(current);
+  }
+  const identities: BackupSourceDirectoryIdentity[] = [];
+  for (const directory of directories) {
+    const metadata = await lstat(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error("Research backup directory is unsafe");
+    }
+    identities.push({ path: directory, dev: metadata.dev, ino: metadata.ino });
+  }
+  return identities;
+}
+
+export async function listBackupFiles(roots = backupRoots()): Promise<BackupSourceFile[]> {
   const seen = new Set<string>();
-  const files = [] as Array<{ root: BackupRoot; rel: string; secret: boolean; optional?: boolean; fullPath: string }>;
+  const files: BackupSourceFile[] = [];
   for (const candidate of baseCandidates()) {
     for (const file of await collectFiles(candidate, roots)) {
       if (!isAllowedBackupEntry(file.root, file.rel)) continue;
       const key = `${file.root}:${file.rel}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      files.push({ ...file, fullPath: resolveBackupEntryPath(file.root, file.rel, roots) });
+      const fullPath = resolveBackupEntryPath(file.root, file.rel, roots);
+      const privateResearch = file.root === "cave" && file.rel.startsWith("research-resources/");
+      const metadata = privateResearch ? await lstat(fullPath) : null;
+      if (metadata && (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1)) {
+        throw new Error("Research backup entry is unsafe");
+      }
+      files.push({
+        ...file,
+        fullPath,
+        ...(metadata ? {
+          identity: {
+            dev: metadata.dev,
+            ino: metadata.ino,
+            size: metadata.size,
+            mtimeMs: metadata.mtimeMs,
+            ctimeMs: metadata.ctimeMs,
+          },
+          ancestorIdentities: await researchAncestorIdentities(
+            fullPath,
+            roots.cave,
+          ),
+        } : {}),
+      });
     }
   }
   return files.sort((a, b) => `${a.root}/${a.rel}`.localeCompare(`${b.root}/${b.rel}`));
 }
+
+export const RESEARCH_BACKUP_EXCLUSIONS = [
+  "research-resources/jobs/", "research-resources/failures/",
+  "research-resources/fences/", "research-resources/deletions/",
+  "research-resources/locks/", "research-resources/index/",
+] as const;
 
 export function createBackupManifest(entries: BackupEntry[], roots = backupRoots(), createdAt = new Date().toISOString()): BackupManifest {
   const sorted = [...entries].sort((a, b) => `${a.root}/${a.path}`.localeCompare(`${b.root}/${b.path}`));
@@ -218,7 +313,11 @@ export function createBackupManifest(entries: BackupEntry[], roots = backupRoots
       vaultKey: "include-passphrase-wrapped",
       plaintextSecrets: "encrypted-envelope-only",
     },
-    excluded: ["coven.sqlite3", "workspaces/", "logs/", "sockets/", "archives/", "*.sock", "*.lock", "*.log"],
+    excluded: [
+      "coven.sqlite3", "workspaces/", "logs/", "sockets/", "archives/",
+      "*.sock", "*.lock", "*.log",
+      ...RESEARCH_BACKUP_EXCLUSIONS,
+    ],
     knownGaps: BACKUP_KNOWN_GAPS,
   };
 }

@@ -574,6 +574,15 @@ function strictLiveProcesses(target) {
     process.env.WT_GUARD_TEST_MODE === "1" && process.env.WT_GUARD_TEST_LSOF_BIN
       ? process.env.WT_GUARD_TEST_LSOF_BIN
       : "lsof";
+  // Windows has no lsof, so the live-cwd-holder probe cannot answer there and
+  // the strict removal path must fail closed instead of silently skipping the
+  // liveness check (cave-1wus5). A test-mode override still runs: it models a
+  // supplied probe, never the missing POSIX tool.
+  if (process.platform === "win32" && testLsof === "lsof") {
+    throw new Error(
+      "live-worktree detection needs lsof, which Windows does not provide; strict removal is refused (fail closed)",
+    );
+  }
   const probe = spawnSync(testLsof, ["-d", "cwd", "-F", "pcn"], {
     cwd: path.parse(process.cwd()).root || path.sep,
     encoding: "utf8",

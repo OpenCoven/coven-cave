@@ -22,6 +22,7 @@ import {
   type ResearchLexicalAuthority,
   type ResearchResourceLexicalIndex,
 } from "./research-resource-lexical-index.ts";
+import { removeResearchResourceSemanticPublication } from "./research-resource-semantic-index.ts";
 import { listCompatibleResearchLinks } from "./research-links-compatibility.ts";
 import {
   createResearchResourceStore,
@@ -47,6 +48,8 @@ export type ResearchResourceIngestionOptions = {
   root?: string;
   store?: ResearchResourceStore;
   index?: ResearchResourceLexicalIndex;
+  /** @internal Recovery already owns the maintenance lease and must not recurse. */
+  recoveryAlreadyHeld?: boolean;
   enabled?: () => boolean;
   now?: () => Date;
   token?: () => string;
@@ -57,6 +60,7 @@ export type ResearchResourceIngestionOptions = {
     sourceUrl?: string;
   }) => Promise<ExtractedResearchResource>;
   repairCompatibilityProjection?: () => Promise<unknown>;
+  removeSemanticDerivatives?: (resourceId: string) => Promise<void>;
   failpoint?: (point: ResearchIngestionFailpoint) => void | Promise<void>;
 };
 
@@ -190,21 +194,53 @@ export function createResearchResourceIngestion(
   const indexFile = options.root
     ? path.join(options.root, "index", "research-resources.sqlite")
     : undefined;
-  let lexicalPromise = options.index
+  let lexicalPromise: Promise<ResearchResourceLexicalIndex> | null = options.index
     ? Promise.resolve(options.index)
-    : openResearchResourceLexicalIndex(indexFile ? { file: indexFile } : undefined);
-  // A corrupt database can reject before startup reconciliation reaches its
-  // rebuild path. Attach a handler immediately; withLexical still observes and
-  // repairs the original rejection.
-  void lexicalPromise.catch(() => {});
+    : null;
   const enabled = options.enabled ?? caveResearchLocalIngestion;
   const clock = options.now ?? (() => new Date());
   const makeToken = options.token ?? (() => randomBytes(16).toString("hex"));
   const fetcher = options.fetch ?? fetchResearchResource;
   const extractor = options.extract ?? extractResearchResource;
   const repairProjection = options.repairCompatibilityProjection
-    ?? (() => listCompatibleResearchLinks({ resourceRoot: options.root }));
+    ?? (() => listCompatibleResearchLinks({
+      resourceRoot: options.root,
+      recoveryAlreadyHeld: options.recoveryAlreadyHeld,
+    }));
+  const removeSemanticDerivatives = options.removeSemanticDerivatives
+    ?? ((resourceId: string) => removeResearchResourceSemanticPublication({
+      root: options.root,
+      resourceId,
+    }));
   const failpoint = options.failpoint ?? (() => {});
+
+  async function ensureStartupRecovery(): Promise<void> {
+    if (options.recoveryAlreadyHeld) return;
+    const { recoverInterruptedResearchResourceRestore } = await import(
+      "./research-resource-recovery.ts"
+    );
+    await recoverInterruptedResearchResourceRestore({
+      root: options.root,
+      reconcileProjection: options.repairCompatibilityProjection
+        ?? (() => listCompatibleResearchLinks({
+          resourceRoot: options.root,
+          recoveryAlreadyHeld: true,
+        })),
+    });
+  }
+
+  function getLexical(): Promise<ResearchResourceLexicalIndex> {
+    if (!lexicalPromise) {
+      lexicalPromise = openResearchResourceLexicalIndex(
+        indexFile ? { file: indexFile } : undefined,
+      );
+      // A corrupt database can reject before reconciliation reaches its
+      // rebuild path. Observe it immediately; withLexical repairs the same
+      // rejected promise on first use.
+      void lexicalPromise.catch(() => {});
+    }
+    return lexicalPromise;
+  }
 
   async function populateLexical(
     transaction: ResourceOperationalTransaction,
@@ -247,13 +283,13 @@ export function createResearchResourceIngestion(
   ): Promise<T> {
     let lexical: ResearchResourceLexicalIndex;
     try {
-      lexical = await lexicalPromise;
+      lexical = await getLexical();
       return await operation(lexical);
     } catch (error) {
       if (!(error instanceof ResearchResourceLexicalIndexError) || error.code !== "corrupt") {
         throw error;
       }
-      try { (await lexicalPromise).close(); } catch { /* corruption error wins */ }
+      try { (await getLexical()).close(); } catch { /* corruption error wins */ }
       lexicalPromise = rebuildLexical(transaction);
       lexical = await lexicalPromise;
       return operation(lexical);
@@ -262,6 +298,7 @@ export function createResearchResourceIngestion(
 
   async function enqueue(resourceId: string, enqueueOptions: { refresh?: boolean } = {}) {
     if (!enabled()) return null;
+    await ensureStartupRecovery();
     const now = clock();
     return store.withOperationalTransaction(async (transaction) => {
       const existing = manifestById(transaction, resourceId);
@@ -444,6 +481,7 @@ export function createResearchResourceIngestion(
 
   async function runNext(workerId: string): Promise<ResearchIngestionOutcome> {
     if (!enabled()) return { kind: "disabled" };
+    await ensureStartupRecovery();
     let claimed = await claimNext(workerId);
     if (!claimed) return { kind: "idle" };
     const token = claimed.lease!.token;
@@ -617,6 +655,8 @@ export function createResearchResourceIngestion(
               updatedAt: laterTimestamp(clock(), job.updatedAt),
             });
           }
+          const embeddingTask = transaction.readEmbeddingTask(resourceId);
+          if (embeddingTask) await transaction.removeEmbeddingTask(resourceId, embeddingTask);
           await advance(transaction, expected, "jobs_cancelled", clock());
         });
         continue;
@@ -642,6 +682,7 @@ export function createResearchResourceIngestion(
             if (published) lexical.remove(published);
             lexical.purgeResidualFiles();
           }, transaction);
+          await removeSemanticDerivatives(resourceId);
           await advance(transaction, expected, "derivatives_removed", clock());
         });
         continue;
@@ -679,10 +720,12 @@ export function createResearchResourceIngestion(
   }
 
   async function deleteResource(resourceId: string): Promise<boolean> {
+    await ensureStartupRecovery();
     return resumeDeletion(resourceId);
   }
 
   async function reconcileStartup(): Promise<void> {
+    await ensureStartupRecovery();
     const journalIds = await store.withOperationalTransaction(async (transaction) =>
       transaction.listDeletionJournals().map((journal) => journal.resourceId).sort());
     for (const resourceId of journalIds) await resumeDeletion(resourceId);
@@ -784,7 +827,9 @@ export function createResearchResourceIngestion(
     runNext,
     deleteResource,
     reconcileStartup,
-    close: async () => (await lexicalPromise).close(),
+    close: async () => {
+      if (lexicalPromise) (await lexicalPromise).close();
+    },
   };
 }
 

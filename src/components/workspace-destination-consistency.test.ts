@@ -109,15 +109,28 @@ assert.doesNotMatch(
   "CommandPalette does not silently filter out destinations when metadata is missing",
 );
 
-for (const [source, label] of [
-  [familiarMenuBar, "Desktop chrome"],
-  [topBar, "Mobile chrome"],
-]) {
-  assert.match(
-    source,
-    /workspacePageDefinition\("board"\)/,
-    `${label} derives the Tasks action from the shared page registry`,
-  );
+// Two independent thinnings of the same strip landed together, so the desktop
+// menu bar now exposes NEITHER destination: cave-l9slw removed Tasks (the
+// sidebar navigation already carries it, labelled), and cave-fh9so removed
+// Settings (it was drawn with a `ph:user` glyph, so with task labels collapsed
+// to icon-only it read as an account avatar, and it duplicated SidebarFooter's
+// labelled Settings entry).
+//
+// The rule itself is untouched, which is why this is a list and not a deletion:
+// a surface that DOES expose a destination must name it from the shared
+// registry, never a private array. Mobile still exposes both — there is no
+// sidebar footer at that width.
+for (const [source, label, destinations] of [
+  [familiarMenuBar, "Desktop chrome", []],
+  [topBar, "Mobile chrome", ["board", "settings"]],
+] as const) {
+  for (const destination of destinations) {
+    assert.match(
+      source,
+      new RegExp(`workspacePageDefinition\\("${destination}"\\)`),
+      `${label} derives the ${destination} action from the shared page registry`,
+    );
+  }
   assert.doesNotMatch(
     source,
     /\[[\s\S]{0,240}id:\s*"(?:board|settings)"/,
@@ -125,16 +138,8 @@ for (const [source, label] of [
   );
 }
 
-// Mobile still carries Settings in its top bar — there is no sidebar footer
-// visible there. Desktop does NOT: that button was drawn with a `ph:user`
-// glyph, and because the task labels collapse to icon-only it read as an
-// account avatar while opening Settings. It also duplicated SidebarFooter's
-// labelled Settings button, so it was removed (cave-fh9so).
-assert.match(
-  topBar,
-  /workspacePageDefinition\("settings"\)/,
-  "Mobile chrome derives the Settings action from the shared page registry",
-);
+// Desktop exposes neither, and each absence is asserted with the handler that
+// would betray a half-removal — a dead prop left wired to nothing still fails.
 assert.doesNotMatch(
   familiarMenuBar,
   /onOpenSettings/,
@@ -145,10 +150,14 @@ assert.match(
   /onOpenSettings/,
   "SidebarFooter is where desktop Settings lives",
 );
-assert.match(
+// New chat left for the same reason (cave-l9slw): the menu bar is for
+// destinations with no other desktop home, and New chat has ⌘J, the sidebar
+// rail CTA, the chat project sidebar and the right-panel dropdown. Mobile keeps
+// its trigger, where none of those are at hand.
+assert.doesNotMatch(
   familiarMenuBar,
-  /aria-label=\{NEW_CHAT_LABEL\}/,
-  "Desktop chrome exposes a New chat action",
+  /NEW_CHAT_LABEL/,
+  "Desktop menu bar does not duplicate a New chat action",
 );
 assert.match(
   topBar,

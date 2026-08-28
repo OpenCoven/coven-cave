@@ -62,6 +62,8 @@ type Props = {
   onSave: () => void;
   /** Escape inside the editor. */
   onCancel: () => void;
+  /** Called once CodeMirror has created its scrollable view. */
+  onReady?: () => void;
 };
 
 /**
@@ -70,7 +72,7 @@ type Props = {
  * plain textarea. Cmd/Ctrl+S saves and Escape cancels via an editor keymap so
  * the shortcuts work with the editor focused.
  */
-export function CodeEditor({ value, filename, onChange, onSave, onCancel }: Props) {
+export function CodeEditor({ value, filename, onChange, onSave, onCancel, onReady }: Props) {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
 
   const extensions = useMemo<Extension[]>(() => {
@@ -95,6 +97,7 @@ export function CodeEditor({ value, filename, onChange, onSave, onCancel }: Prop
     <CodeMirror
       value={value}
       onChange={onChange}
+      onCreateEditor={() => onReady?.()}
       theme={appTheme}
       height="100%"
       className="cave-code-editor h-full"

@@ -25,12 +25,22 @@ assert.doesNotMatch(
 );
 assert.match(
   instrumentation,
-  /void migration\.migrateCaveHomeOnce\(\)\.catch/,
-  "startup reconciliation begins in the background",
+  /let caveHomeReady: Promise<unknown> = Promise\.resolve\(\);/,
+  "startup recovery has a settled fallback when migration cannot be imported",
+);
+assert.match(
+  instrumentation,
+  /caveHomeReady = migration\.migrateCaveHomeOnce\(\);[\s\S]*void caveHomeReady\.catch/,
+  "startup reconciliation is captured and handled in the background",
+);
+assert.match(
+  instrumentation,
+  /void caveHomeReady\s*\.then\(\(\) => resources\.recoverInterruptedResearchResourceRestore\(\)\)\s*\.catch/,
+  "Research Resource recovery starts only after Cave-home reconciliation completes",
 );
 assert.doesNotMatch(
   instrumentation,
-  /await migration\.migrateCaveHomeOnce/,
+  /await (?:migration\.migrateCaveHomeOnce|caveHomeReady)/,
   "Next route registration never waits for reconciliation",
 );
 assert.match(

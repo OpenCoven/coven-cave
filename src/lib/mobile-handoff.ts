@@ -14,11 +14,13 @@ export function shouldAllowMagicDnsFallback({
   serveOk: boolean;
   statusOk: boolean;
 }) {
-  // A successful `serve` mutation proves the requested backend was published,
-  // even when a follow-up status read is unavailable. A failed mutation,
-  // including macOS CLIError 3, needs a matching route in status before it can
-  // be used; a MagicDNS name only identifies the machine, not a Serve route.
-  return serveOk && !statusOk;
+  // An acknowledged `serve --bg <backend>` mutation is authoritative evidence
+  // that Tailscale accepted the requested route. A follow-up status read is
+  // corroboration only: its schema/parser may drift independently and must not
+  // veto a successful mutation. When mutation fails, callers still require a
+  // matching parsed route before they may claim the backend is published.
+  void statusOk;
+  return serveOk;
 }
 
 export function serveRouteFailure({

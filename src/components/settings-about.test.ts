@@ -116,14 +116,41 @@ test("About follows the revised handoff artwork and full-width release rail", ()
   );
 });
 
-test("About podcast fills the default four-column row remainder", () => {
+test("About podcast closes the default three-column grid", () => {
+  // Four columns did not divide six cards: the three small links filled three
+  // of four and podcast's span-2 left two more tracks empty, so the section
+  // ended on a ragged column of holes. Dense flow could not fix it — podcast
+  // needs two adjacent tracks and only one was ever free.
   const defaultCss =
     css.split("@container settings-about (max-width: 55rem)")[0] ?? "";
 
   assert.match(
     defaultCss,
-    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 2;/,
+    /\.settings-about-link-card--podcast\s*\{[\s\S]*?grid-column:\s*span 3;/,
   );
+  assert.match(
+    defaultCss,
+    /\.settings-about-link-card--grimoire\s*\{[\s\S]*?grid-column:\s*span 2;/,
+  );
+});
+
+test("About has exactly six link cards, which is what the grid is sized for", () => {
+  // The 3-column grid closes every row only because the count is 2+1, 1+1+1, 3.
+  // A seventh card would silently reopen the gap this layout exists to close,
+  // and the section header says "6 places" out loud.
+  for (const modifier of ["grimoire", "github", "podcast"]) {
+    assert.ok(
+      component.includes(`settings-about-link-card--${modifier}`),
+      `${modifier} card is declared inline`,
+    );
+  }
+  const smallLinks = /const SMALL_LINKS[^=]*=\s*\[([\s\S]*?)\n\];/.exec(component)?.[1] ?? "";
+  assert.equal(
+    (smallLinks.match(/label:/g) ?? []).length,
+    3,
+    "docs, X and discord come from SMALL_LINKS",
+  );
+  assert.match(component, /6 places/, "and the section header still says six");
 });
 
 test("About podcast shares the intermediate two-column row", () => {
@@ -143,7 +170,7 @@ test("About podcast shares the intermediate two-column row", () => {
 test("About CSS follows the token, focus, motion, and narrow-pane contracts", () => {
   assert.match(css, /\.settings-about\s*\{[\s\S]*container-type:\s*inline-size/);
   assert.match(css, /\.settings-about-control-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2/);
-  assert.match(css, /\.settings-about-links-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(4/);
+  assert.match(css, /\.settings-about-links-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/);
   assert.match(css, /@container settings-about/);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /var\(--accent-presence\)/);

@@ -20,7 +20,7 @@
  * Reused by the memory reader's edit mode and the Grimoire surface.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
@@ -37,6 +37,8 @@ export function MemoryMdEditor({
   onCancel,
   onSaved,
   onDirtyChange,
+  readerMode = false,
+  visualLifecycleQueueRef,
 }: {
   path: string;
   sourceLabel?: string;
@@ -45,6 +47,8 @@ export function MemoryMdEditor({
   onSaved?: (text: string) => void;
   /** Forwarded to the inner editor (unsaved-edits indicator). */
   onDirtyChange?: (dirty: boolean) => void;
+  readerMode?: boolean;
+  visualLifecycleQueueRef: MutableRefObject<Promise<void>>;
 }) {
   // Bumping the token re-fetches (and re-mounts) the editor with disk state.
   const [refreshToken, setRefreshToken] = useState(0);
@@ -198,6 +202,8 @@ export function MemoryMdEditor({
         <MdEditor
           key={`${path}:${refreshToken}`}
           value={text}
+          readerMode={readerMode}
+          visualLifecycleQueueRef={visualLifecycleQueueRef}
           sourceLabel={sourceLabel}
           onSave={save}
           onCancel={onCancel}

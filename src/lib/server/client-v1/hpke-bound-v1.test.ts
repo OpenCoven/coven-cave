@@ -16,6 +16,7 @@ import {
   type ClientV1HpkeAuthorization,
   type ClientV1HpkeBinding,
 } from "./authority-contract.ts";
+import { canonicalClientV1Pathname } from "./canonical-path.ts";
 import {
   CLIENT_V1_HPKE_REQUEST_INFO,
   CLIENT_V1_HPKE_RESPONSE_INFO,
@@ -313,7 +314,7 @@ test("canonicalizes query pairs by deterministic encoded wire order", () => {
       + "&z=plain",
   );
   assert.throws(
-    () => canonicalClientV1Route(new URL("http://127.0.0.1:3020/api/%25")),
+    () => canonicalClientV1Route(new URL("http://127.0.0.1:3020/api/%252F")),
     /path is not canonical/u,
   );
   assert.throws(
@@ -322,6 +323,110 @@ test("canonicalizes query pairs by deterministic encoded wire order", () => {
         new URL(`http://127.0.0.1:3020/${"a".repeat(2050)}`),
       ),
     /route is too long/u,
+  );
+});
+
+test("preserves canonical encoded pathname segments without decoding separators", () => {
+  const cases = [
+    {
+      id: "conversation/one?#",
+      pathname:
+        "/api/client/v1/conversations/conversation%2Fone%3F%23",
+    },
+    {
+      id: "conversation with spaces",
+      pathname:
+        "/api/client/v1/conversations/conversation%20with%20spaces",
+    },
+    {
+      id: "会話-雪-☃️",
+      pathname:
+        "/api/client/v1/conversations/"
+        + "%E4%BC%9A%E8%A9%B1-%E9%9B%AA-%E2%98%83%EF%B8%8F",
+    },
+    {
+      id: "$value!",
+      pathname: "/api/client/v1/conversations/%24value!",
+    },
+    {
+      id: "100% ready",
+      pathname: "/api/client/v1/conversations/100%25%20ready",
+    },
+  ] as const;
+
+  for (const { id, pathname } of cases) {
+    const url = new URL(
+      `http://127.0.0.1:3020/api/client/v1/conversations/${encodeURIComponent(id)}`,
+    );
+    assert.equal(url.pathname, pathname, id);
+    assert.equal(canonicalClientV1Route(url), pathname, id);
+  }
+});
+
+test("rejects malformed, noncanonical, nested, and backslash pathname escapes", () => {
+  for (const pathname of [
+    "/api/client/v1/conversations/conversation%2fone",
+    "/api/client/v1/conversations/conversation%3fone",
+    "/api/client/v1/conversations/%e4%bc%9a%e8%a9%b1",
+    "/api/client/v1/conversations/conversation%2Done",
+    "/api/client/v1/conversations/%21",
+    "/api/client/v1/conversations/$value",
+    "/api/client/v1/conversations/conversation%252Fone",
+    "/api/client/v1/conversations/conversation%255Cone",
+    "/api/client/v1/conversations/conversation%5Cone",
+    "/api/client/v1/conversations/conversation%",
+    "/api/client/v1/conversations/conversation%GG",
+    "/api/client/v1/conversations/%E9",
+  ]) {
+    assert.throws(
+      () =>
+        canonicalClientV1Route(
+          new URL(`http://127.0.0.1:3020${pathname}`),
+        ),
+      /path is not canonical/u,
+      pathname,
+    );
+  }
+});
+
+test("rejects raw dot segments and empty path aliases before routing", () => {
+  for (const pathname of [
+    "api/client/v1/projects",
+    "/api/client/v1/",
+    "/api//client/v1/projects",
+    "/api/client/v1/conversations/.",
+    "/api/client/v1/conversations/..",
+    "/api/client/v1/conversations/%2E",
+    "/api/client/v1/conversations/%2e%2E",
+  ]) {
+    assert.throws(
+      () => canonicalClientV1Pathname(pathname),
+      /path is not canonical/u,
+      pathname,
+    );
+  }
+});
+
+test("WHATWG preserves escape spelling but normalizes slash, backslash, and dot aliases", () => {
+  assert.equal(
+    new URL("http://127.0.0.1:3020/a/%2f/%2F/%c3%a9/%C3%A9").pathname,
+    "/a/%2f/%2F/%c3%a9/%C3%A9",
+  );
+  assert.equal(
+    new URL("http://127.0.0.1:3020/a\\b").pathname,
+    "/a/b",
+  );
+  assert.equal(
+    new URL("http://127.0.0.1:3020/a/%2E/b").pathname,
+    "/a/b",
+  );
+  assert.equal(
+    new URL("http://127.0.0.1:3020/a/%2e%2e/b").pathname,
+    "/b",
+  );
+  assert.equal(
+    new URL("http://127.0.0.1:3020/a/value%2Fpart/b").pathname,
+    "/a/value%2Fpart/b",
   );
 });
 

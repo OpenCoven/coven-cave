@@ -280,10 +280,18 @@ assert.match(
   /case "\/new":[\s\S]{0,80}startWorkspaceChat\(\)/,
   "the slash-command blank chat uses shell context",
 );
-assert.ok(
-  (workspaceSource.match(/onOpenQuickChat=\{startWorkspaceChat\}/g) ?? []).length === 2,
-  "both desktop and mobile quick-chat controls use shell context",
-);
+// One, not two, since cave-l9slw removed the desktop menu bar's New chat
+// trigger; the mobile top bar is the only chrome control left. The invariant is
+// unchanged and is what the count enforces: EVERY onOpenQuickChat handed to
+// chrome is startWorkspaceChat, so no control can route around the actor gate.
+{
+  const wired = (workspaceSource.match(/onOpenQuickChat=\{startWorkspaceChat\}/g) ?? []).length;
+  const total = (workspaceSource.match(/onOpenQuickChat=\{/g) ?? []).length;
+  assert.ok(
+    wired === 1 && total === wired,
+    `the surviving quick-chat control uses shell context and no other handler is wired (${wired} via startWorkspaceChat of ${total} total)`,
+  );
+}
 assert.doesNotMatch(
   workspaceSource,
   /startFamiliarChat\(activeId\)/,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { APP_VERSION } from "@/lib/app-version";
 
@@ -27,8 +28,8 @@ export function SidebarFooter({
       {/* Bottom: Dashboard + Settings */}
       <div className="sidebar-foot">
         {/* Dashboard is a standalone Next route (/dashboard), not a workspace
-            mode — navigate with a real link rather than onModeChange. */}
-        <a
+            mode — preserve that route while using Next client navigation. */}
+        <Link
           className={`sidebar-foot-btn${activeDestination === "dashboard" ? " sidebar-foot-btn--active" : ""}`}
           href="/dashboard"
           aria-label="Dashboard"
@@ -39,7 +40,7 @@ export function SidebarFooter({
             <Icon name="ph:squares-four" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
-        </a>
+        </Link>
         <button
           type="button"
           className={`sidebar-foot-btn${activeDestination === "settings" ? " sidebar-foot-btn--active" : ""}`}
@@ -59,17 +60,17 @@ export function SidebarFooter({
           shortest path to what it's about. "Which version am I on, and is
           there a newer one?" is answered in Settings → About (version,
           updates, project links), so the line links there instead of being
-          the one dead label in the footer. A real <a> to the standalone
+          the one dead label in the footer. A client-side link to the standalone
           /settings route, matching the Dashboard link above; the #about hash
           is the section deep-link the settings shell already honours. */}
-      <a
+      <Link
         className="sidebar-version"
         href="/settings#about"
         title={`CovenCave v${APP_VERSION} — version, updates and project links`}
         aria-label={`CovenCave v${APP_VERSION} — open About in Settings`}
       >
         v{APP_VERSION}
-      </a>
+      </Link>
     </>
   );
 }

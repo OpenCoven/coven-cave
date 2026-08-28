@@ -12,7 +12,7 @@ import {
 } from "@/lib/server/client-v1/credential-store.ts";
 import {
   CLIENT_V1_PAIRING_CREATE_LIMIT,
-  CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+  CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
 } from "@/lib/server/client-v1/rate-limit.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import {
@@ -406,7 +406,7 @@ test("polling a pending-then-approved pairing with the correct secret is never r
     // holder nothing at all.
     const polls = 150;
     assert.ok(polls > CLIENT_V1_PAIRING_CREATE_LIMIT);
-    assert.ok(polls > CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT);
+    assert.ok(polls > CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT);
     for (let poll = 0; poll < polls; poll += 1) {
       const pending = await handler(request(issued.id, issued.secret), context(issued.id));
       assert.equal(pending.status, 409, `poll ${poll} must stay pending, not rate limited`);
@@ -453,7 +453,7 @@ test("wrong pairing secrets are bounded per pairing request and leave other pair
 
     for (
       let attempt = 0;
-      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt < CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT;
       attempt += 1
     ) {
       const rejected = await handler(
@@ -489,6 +489,45 @@ test("wrong pairing secrets are bounded per pairing request and leave other pair
       context(bystander.id),
     );
     assert.equal(untouched.status, 200);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a replayed exchange reports conflict without charging the comparison budget (cave-ngro8)", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 13_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+
+    const first = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(first.status, 200);
+    const remainingAfterExchange = runtime.rateLimiter.peekPairingComparisonFailure(issued.id).remaining;
+
+    // The replayed exchange walks the 'consumed' branch: it must answer the
+    // conflict WITHOUT spending the holder's failure budget — charging there
+    // would turn a crashed client's retry into a lockout of the legitimate
+    // holder, and no test caught it (cave-ngro8).
+    const replay = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(replay.status, 409);
+    const replayBody = await replay.json() as {
+      error: { code: string; details: { reason: string } };
+    };
+    assert.equal(replayBody.error.code, "conflict");
+    assert.equal(replayBody.error.details.reason, "pairing_replayed");
+    assert.equal(
+      runtime.rateLimiter.peekPairingComparisonFailure(issued.id).remaining,
+      remainingAfterExchange,
+      "a replay must not charge the shared comparison budget",
+    );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });

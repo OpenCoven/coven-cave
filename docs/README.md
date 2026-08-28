@@ -104,7 +104,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 
 Point-in-time records. Read for intent, not for current behavior.
 
-- [`content-gen-flow-spec.md`](content-gen-flow-spec.md) and [`content-gen-flow-plan.md`](content-gen-flow-plan.md) — ⚠️ both target `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which no longer exists; the symbol appears nowhere in the tree (removed in #3902)
+- [`content-gen-flow-spec.md`](content-gen-flow-spec.md) and [`content-gen-flow-plan.md`](content-gen-flow-plan.md) — ⚠️ tombstoned 2026-08-28 (cave-a6zmc): both target `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which no longer exists; the symbol appears nowhere in the tree (removed in #3902). Content generation continues in the Research Desk surfaces.
 - [`ios-native-rebuild.md`](ios-native-rebuild.md) — the multi-phase rebuild plan; its tokenless tailnet-trust model was replaced by pair-once mobile access tokens (#3310)
 - [`ios-connection-cloud-plan.md`](ios-connection-cloud-plan.md) — draft planning anchor for onboarding, constant connection, and cloud persistence
 - [`nav-history-tracking.md`](nav-history-tracking.md) — the read-only inventory (PR #4407)

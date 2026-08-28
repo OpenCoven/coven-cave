@@ -3091,7 +3091,7 @@ export const FINDINGS = [
   {
     id: "backslash-refusal-is-unreachable",
     where: "docs/api/client-v1.md — Reaching the API at all",
-    says: 'a request target inside /api/client/v1 containing "%" or "\\" is answered 400 {"ok":false,"error":"invalid client v1 path"}',
+    says: 'a malformed/noncanonical escaped target, backslash target, or escaped non-conversation target is answered 400 {"ok":false,"error":"invalid client v1 path"}',
     measured: 'the "%" half holds; a "\\" is normalised to "/" by Next and answered 308 to the normalised target before proxy.ts runs, and that target is then refused 401 by the ordinary gate',
     severity: "documentation",
     why: "no handler is reached and nothing is served, so the gate still holds; the doc describes an answer no client will observe",

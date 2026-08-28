@@ -516,7 +516,7 @@ assert.match(
 // minimal-height muted line, still the bottommost element.
 assert.match(
   footer,
-  /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/a>/,
+  /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/Link>/,
   "the version line is the bottommost element of the shared footer",
 );
 // The shared footer is the bottommost element of the nav in BOTH states. The

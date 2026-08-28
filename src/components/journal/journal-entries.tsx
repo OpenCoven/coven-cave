@@ -77,6 +77,7 @@ export function JournalEntries({
   const [editing, setEditing] = useState(false);
   const [draftReflection, setDraftReflection] = useState("");
   const [saving, setSaving] = useState(false);
+  const visualLifecycleQueueRef = useRef<Promise<void>>(Promise.resolve());
   // Deferred + undoable delete: the day reads as empty immediately, the DELETE
   // fires only after the undo window, and Undo restores the reflection.
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string>();
@@ -654,6 +655,7 @@ export function JournalEntries({
                   <div className="journal-entry__md-editor">
                     <MdEditor
                       value={draftReflection}
+                      visualLifecycleQueueRef={visualLifecycleQueueRef}
                       showHeader={false}
                       onChange={(raw) => setDraftReflection(raw)}
                       onSave={async (raw) => {

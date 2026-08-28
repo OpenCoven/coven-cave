@@ -328,7 +328,8 @@ const contracts: RouteContract[] = [
   // interpolated into a hard-coded host, so there is no filesystem path to deny.
   { route: "/research/papers/pdf", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/resources", methods: ["GET"], kind: "json", localOriginGuard: true },
-  { route: "/research/resources/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/resources/[id]", methods: ["GET", "POST", "DELETE"], kind: "json", localOriginGuard: true },
+  { route: "/research/resources/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },

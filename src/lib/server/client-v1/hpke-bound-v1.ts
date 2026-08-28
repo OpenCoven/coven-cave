@@ -20,6 +20,7 @@ import {
   type ClientV1HpkeBoundResponseEnvelope,
   type ClientV1HpkeBoundResponsePlaintext,
 } from "./authority-contract.ts";
+import { canonicalClientV1Pathname } from "./canonical-path.ts";
 
 const UTF8 = new TextEncoder();
 const UTF8_FATAL = new TextDecoder("utf-8", { fatal: true });
@@ -163,9 +164,7 @@ function asciiCompare(left: string, right: string): number {
 }
 
 export function canonicalClientV1Route(url: URL): string {
-  if (url.pathname.includes("%") || url.pathname.includes("\\")) {
-    throw new Error("Client v1 authority path is not canonical.");
-  }
+  const pathname = canonicalClientV1Pathname(url.pathname);
   const pairs = [...url.searchParams.entries()]
     .map(([name, value]) => [
       rfc3986Component(name),
@@ -177,7 +176,7 @@ export function canonicalClientV1Route(url: URL): string {
         : asciiCompare(leftName, rightName),
     );
   const query = pairs.map(([name, value]) => `${name}=${value}`).join("&");
-  const route = query ? `${url.pathname}?${query}` : url.pathname;
+  const route = query ? `${pathname}?${query}` : pathname;
   if (
     UTF8.encode(route).byteLength
     > CLIENT_V1_HPKE_LIMITS.canonicalRouteBytes

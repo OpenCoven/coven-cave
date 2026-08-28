@@ -27,11 +27,31 @@ import {
   createResearchResourceStore,
   ResearchResourceStoreError,
   type ResourceDeletionJournalV1,
+  type ResourceEmbeddingTaskRecordV1,
   type ResourceIngestFailureV1,
 } from "./research-resource-store.ts";
 
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function embeddingTask(
+  resourceId: string,
+  patch: Partial<ResourceEmbeddingTaskRecordV1> = {},
+): ResourceEmbeddingTaskRecordV1 {
+  return {
+    version: 1,
+    resourceId,
+    snapshotId: `snapshot-${resourceId}`,
+    lexicalRevision: 1,
+    providerId: "local-openai",
+    modelId: "nomic-embed-text",
+    dimensions: 3,
+    modelRevision: "a".repeat(64),
+    status: "queued",
+    updatedAt: "2026-08-27T12:00:01Z",
+    ...patch,
+  };
 }
 
 function snapshot(input: {
@@ -165,6 +185,59 @@ test("publishes and verifies an immutable snapshot with private storage modes", 
         assert.equal((await lstat(file)).mode & 0o777, 0o600, `${file} is private`);
       }
     }
+  });
+});
+
+test("embedding tasks persist privately and serialize strict replayable transitions", async () => {
+  await fixture(async ({ root }) => {
+    const resourceId = "semantic_resource";
+    const normalizedBlob = Buffer.from("semantic source", "utf8");
+    const record = snapshot({
+      id: `snapshot-${resourceId}`,
+      normalizedBlob,
+      resourceId,
+      resourceRevision: 1,
+    });
+    const store = createResearchResourceStore({ root });
+    await store.publishSnapshot({ snapshot: record, normalizedBlob });
+    await store.createManifest(manifest(resourceId, {
+      ingest: { desired: true, state: "ready" },
+      currentSnapshotId: record.id,
+    }));
+
+    const queued = embeddingTask(resourceId);
+    await store.withOperationalTransaction(async (transaction) => {
+      await assert.rejects(
+        transaction.createEmbeddingTask({ ...queued, modelRevision: "not-a-digest" }),
+        hasStoreCode("invalid-operational-record"),
+      );
+      assert.equal((await transaction.createEmbeddingTask(queued)).created, true);
+      assert.equal((await transaction.createEmbeddingTask(queued)).created, false);
+      assert.deepEqual(transaction.listEmbeddingTasks(), [queued]);
+      assert.deepEqual(transaction.readEmbeddingTask(resourceId), queued);
+      const building = await transaction.replaceEmbeddingTask(queued, {
+        ...queued,
+        status: "building",
+        updatedAt: "2026-08-27T12:00:02Z",
+      });
+      const replayed = await transaction.replaceEmbeddingTask(building, {
+        ...building,
+        status: "queued",
+        updatedAt: "2026-08-27T12:00:03Z",
+      });
+      assert.equal(replayed.status, "queued");
+    });
+
+    if (process.platform !== "win32") {
+      assert.equal((await lstat(path.join(root, "embedding-tasks"))).mode & 0o777, 0o700);
+      assert.equal((await lstat(path.join(root, "embedding-tasks", `${resourceId}.json`))).mode & 0o777, 0o600);
+    }
+
+    await store.withOperationalTransaction(async (transaction) => {
+      const current = transaction.readEmbeddingTask(resourceId)!;
+      assert.equal(await transaction.removeEmbeddingTask(resourceId, current), true);
+      assert.equal(await transaction.removeEmbeddingTask(resourceId), false);
+    });
   });
 });
 

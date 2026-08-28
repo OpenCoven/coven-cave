@@ -12,6 +12,7 @@ const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
+const grimoireCss = await readFile(new URL("../styles/grimoire-launcher.css", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
@@ -42,6 +43,8 @@ assert.match(
   "Memories exposes its nested protected-memory Weaves destination",
 );
 assert.match(view, /<span>Weaves<\/span>/, "the protected-memory destination has a visible overflow label");
+assert.match(view, /readerTriggerRef\.current\?\.focus\(\)/, "leaving Reader restores focus to its stable trigger");
+assert.match(view, /<PopoverItem icon="ph:push-pin" onSelect=\{\(\) => openStitchNew\(\)\}>\s*New stitch/, "New stitch remains reachable from overflow when narrow chrome hides its direct control");
 
 // ── Library navigator: stitches + familiar memory ────────────────────────────
 
@@ -101,7 +104,7 @@ assert.match(
 );
 assert.match(
   view,
-  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[264px\]"/,
   "collapsed navigator becomes a compact rail instead of disappearing",
 );
 assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
@@ -114,7 +117,7 @@ assert.match(
 );
 assert.match(
   view,
-  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[264px\]"/,
   "the rail width uses the search-aware display state",
 );
 assert.match(
@@ -215,7 +218,7 @@ assert.match(view, /@container\/grimoire/, "layout adapts via container queries"
 // hides when the graph is showing, and the graph pane gets its own back row.
 assert.match(
   view,
-  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  /selection \|\| view !== "docs"[\s\S]{0,120}"grimoire-navigator--detail"/,
   "the rail yields to the graph/journal tabs on narrow widths",
 );
 assert.match(
@@ -290,7 +293,7 @@ assert.match(
   /closeTab\(selectionKey\(selection\)\);\s*invalidateGrimoireLanding\(\);\s*void load\(true\)/,
   "a successful delete invalidates and reloads the navigator",
 );
-assert.match(view, /deleteError \? \(\s*<span role="alert"/, "delete failures are announced");
+assert.match(view, /deleteError \? \(\s*<div role="alert"/, "delete failures are announced in a persistent desktop-visible row");
 // (cave-mglw) successful deletes are announced too — the row vanishing was the
 // only confirmation, silent to screen readers.
 assert.match(view, /announce\(\s*\n\s*selection\.kind === "memory"\s*\n\s*\? "Memory file moved to trash"/, "successful deletes announce per document kind");
@@ -318,6 +321,34 @@ assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id,[\s\S]{
 assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
 assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
+// ── Reader mode: one document, no editing chrome ───────────────────────────
+assert.match(view, /const \[readerMode, setReaderMode\] = useState\(false\)/, "Reader mode is explicit surface state");
+assert.match(view, /selectedKnowledgeEntry[\s\S]{0,400}readerEligible[\s\S]{0,300}selection\.kind !== "knowledge-new"[\s\S]{0,160}selection\.kind !== "knowledge" \|\| selectedKnowledgeEntry !== null/, "Reader mode is limited to loaded persisted documents");
+assert.match(view, /event\.key !== "Escape"[\s\S]{0,120}leaveReader\(\)/, "Escape exits Reader mode through the focus-restoring path");
+assert.match(view, /aria-hidden \/>[\s\S]{0,80}Reader\s*<\/button>/, "the document command band exposes Reader mode");
+assert.match(view, /className="grimoire-reader-header"/, "Reader mode replaces the surface chrome with a compact document bar");
+assert.match(view, /const readerTitle =[\s\S]{0,500}knowledgeDrafts/, "Reader mode derives its label from the live knowledge draft");
+assert.match(view, /<h1[^>]*>[\s\S]{0,120}\{readerTitle\}[\s\S]{0,40}<\/h1>/, "Reader mode retains a live level-one document heading");
+assert.match(view, /ref=\{readerEditRef\}/, "Reader mode moves focus to its stable Edit action");
+assert.match(view, /if \(readerMode\) readerEditRef\.current\?\.focus\(\);\s*\n\s*\}, \[readerMode, selectedKey\]\)/, "Reader link navigation restores focus to the next document's Edit action");
+assert.match(view, /onClick=\{leaveReader\}/, "Reader mode keeps an explicit focus-restoring return-to-edit action");
+assert.match(view, /<Icon name="ph:pencil-simple"[\s\S]{0,80}Edit/, "the return action is visibly labelled Edit");
+assert.match(view, /const tabReaderMode = readerMode && key === selectedKey/, "only the active mounted editor enters Reader mode");
+assert.match(view, /readerMode=\{tabReaderMode\}/, "the active document editor receives Reader mode without remounting its tab");
+assert.match(view, /visualLifecycleQueuesRef[\s\S]{0,900}visualLifecycleQueueFor/, "each persistent Grimoire tab owns a stable visual lifecycle queue");
+assert.match(view, /visualLifecycleQueuesRef\.current\.set\(nextKey, queue\)/, "draft-to-saved tab replacement preserves its lifecycle queue");
+assert.match(view, /openTabKeysRef\.current\.has\(key\)[\s\S]{0,500}visualLifecycleQueuesRef\.current\.delete\(key\)/, "closed and evicted tabs release settled visual lifecycle queues");
+assert.match(view, /visualLifecycleQueuesRef\.current\.get\(key\) !== queue/, "queue cleanup cannot delete a replacement queue for a reopened tab");
+assert.match(view, /setKnowledgeDrafts[\s\S]{0,500}openTabKeys\.has\(key\)/, "closed and evicted tabs discard their live knowledge drafts");
+assert.match(view, /const draft = previous\[fromKey\][\s\S]{0,300}\[nextKey\]: draft/, "draft-to-saved tab replacement preserves its live markdown");
+assert.match(view, /readerMode \? "hidden" : "flex shrink-0 items-center/, "the open-document tab strip is suppressed while reading");
+assert.match(view, /selection && selection\.kind !== "knowledge-new" && selection\.kind !== "stitch-new"/, "document links remain reachable beneath the reading canvas");
+assert.match(view, /liveMarkdown=\{selection\.kind === "knowledge"[\s\S]{0,180}knowledgeDrafts\[selectedKey\]/, "Reader links resolve from the active live knowledge draft");
+assert.match(view, /liveMarkdown \?\? knowledge\.find/, "persisted knowledge remains the outgoing-link fallback");
+assert.match(view, /@min-\[480px\]\/grimoire:inline/, "Reader keyboard guidance follows the Grimoire container instead of the viewport");
+assert.match(view, /!readerMode \? \(\s*<div className="grimoire-mobile-back/, "narrow persisted and new-document views retain an explicit way back to the document list");
+assert.match(grimoireCss, /@container grimoire \(max-width: 760px\)[\s\S]{0,700}grimoire-tabs[\s\S]{0,300}overflow-x: auto[\s\S]{0,700}@container grimoire \(max-width: 480px\)[\s\S]{0,160}grimoire-newstitch/, "narrow document chrome scrolls its tabs so primary and overflow actions remain reachable");
+
 // ── cave-xr0 slice 2: outgoing [[wiki-link]] chips ──────────────────────────
 // The open doc's resolved wiki-links render as a chip row below the editor,
 // resolved against the loaded doc lists (no server index); resolved chips
@@ -332,7 +363,7 @@ assert.match(
 );
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
 assert.match(view, /title="No matching Memories doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
-assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,500}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
 // ── Knowledge collections + continuity flags ────────────────────────────────
 assert.match(view, /"cave:grimoire:stitch-groups-collapsed"/, "stitch collection collapse overrides persist");
@@ -350,7 +381,7 @@ assert.match(view, /Create in \$\{collection\.meta\?\.name \?\? collection\.id\}
 // ("Mentions"); mention-sourced chips render dashed to read as inferred.
 assert.match(view, /backlinks = useMemo<GrimoireBacklink\[\]>/, "backlinks derive from the doc graph");
 assert.match(view, /e\.target !== activeKey \|\| e\.type === "tag"/, "backlinks keep link+mention edges targeting the active doc (tags excluded)");
-assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}backlinks=\{backlinks\}/, "the chip row receives the backlinks");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,500}backlinks=\{backlinks\}/, "the chip row receives the backlinks");
 assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : "Links to this doc"/, "chips distinguish inferred mentions from explicit links");
 
 // ── The doc graph (cave-hand): full-corpus scan + Obsidian-style canvas ──────
@@ -411,7 +442,7 @@ assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is o
 // the rail is then hidden.
 assert.match(
   view,
-  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  /readerMode[\s\S]{0,120}"grimoire-navigator--reader"[\s\S]{0,160}"grimoire-navigator--detail"/,
   "the rail hides on narrow when a doc is open OR a non-docs tab is up",
 );
 assert.match(
@@ -446,11 +477,7 @@ assert.match(view, /onClick=\{\(\) => void requestCloseTab\(key, tabTitle\(tab\)
 // 10px (--text-2xs) is reserved for uppercase eyebrow labels and count chips.
 // Prose hints, alerts, and rail-row meta were bumped and must not creep back
 // down: sentences read at 12px (--text-sm), secondary UI text at 11px.
-assert.match(
-  view,
-  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*Tip: type/,
-  "the links-strip tip sentence reads at --text-sm, not 10px",
-);
+assert.doesNotMatch(view, /Tip: type/, "documents without links no longer lose reading space to a persistent syntax tip");
 assert.match(
   view,
   /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*“\{unresolvedHint\}”/,
@@ -458,8 +485,8 @@ assert.match(
 );
 assert.match(
   view,
-  /role="alert" className="min-w-0 truncate text-\[length:var\(--text-sm\)\]/,
-  "the footer delete-error alert reads at --text-sm",
+  /role="alert" className="shrink-0 border-b[^\"]+text-\[length:var\(--text-sm\)\]/,
+  "the persistent delete-error alert reads at --text-sm",
 );
 assert.match(
   view,

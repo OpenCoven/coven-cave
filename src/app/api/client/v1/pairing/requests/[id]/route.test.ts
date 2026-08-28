@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/client-v1/authority-contract.ts";
 import { base64UrlEncode } from "@/lib/server/client-v1/hpke-bound-v1.ts";
 import { PAIRING_TTL_MS } from "@/lib/server/client-v1/pairing-store.ts";
-import { CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT } from "@/lib/server/client-v1/rate-limit.ts";
+import { CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT } from "@/lib/server/client-v1/rate-limit.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
 import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
@@ -208,7 +208,7 @@ test("poll meters wrong pairing secrets against the exchange's own budget", asyn
     assert.notEqual(guess, attacked.secret);
     for (
       let attempt = 0;
-      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt < CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT;
       attempt += 1
     ) {
       const rejected = await poll(request(attacked.id, guess), context(attacked.id));
@@ -260,7 +260,7 @@ test("poll refuses once exchange failures alone have spent the shared budget", a
     const guess = nearMiss(attacked.secret);
     for (
       let attempt = 0;
-      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt < CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT;
       attempt += 1
     ) {
       const rejected = await exchange(
@@ -306,7 +306,7 @@ test("poll checks the loopback stamp before it reads the rate-limit budget", asy
     const guess = nearMiss(attacked.secret);
     for (
       let attempt = 0;
-      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt < CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT;
       attempt += 1
     ) {
       const rejected = await exchange(
@@ -358,7 +358,7 @@ test("polling with the correct secret is never rate limited", async () => {
     // limit: presenting the correct secret must cost the holder nothing, or the
     // fix would lock out the one caller it exists to protect.
     const polls = 150;
-    assert.ok(polls > CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT);
+    assert.ok(polls > CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT);
     for (let attempt = 0; attempt < polls; attempt += 1) {
       const pending = await poll(request(issued.id, issued.secret), context(issued.id));
       assert.equal(pending.status, 200, `poll ${attempt} must answer, not rate limit`);
@@ -371,8 +371,8 @@ test("polling with the correct secret is never rate limited", async () => {
     // Not merely unthrottled — never charged, so the budget is still whole for
     // an attacker who shows up after the holder has been polling for minutes.
     assert.equal(
-      runtime.rateLimiter.peekPairingExchangeFailure(issued.id).remaining,
-      CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+      runtime.rateLimiter.peekPairingComparisonFailure(issued.id).remaining,
+      CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
     );
 
     // A `not_found` is not charged either: no record carries that id, so there
@@ -383,8 +383,8 @@ test("polling with the correct secret is never rate limited", async () => {
     const notFound = await poll(request(unknownId, issued.secret), context(unknownId));
     assert.equal(notFound.status, 404);
     assert.equal(
-      runtime.rateLimiter.peekPairingExchangeFailure(unknownId).remaining,
-      CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+      runtime.rateLimiter.peekPairingComparisonFailure(unknownId).remaining,
+      CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
     );
 
     // The already-exchanged branch presents a CORRECT secret too, so it has to
@@ -414,8 +414,8 @@ test("polling with the correct secret is never rate limited", async () => {
       "conflict",
     );
     assert.equal(
-      runtime.rateLimiter.peekPairingExchangeFailure(spent.id).remaining,
-      CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+      runtime.rateLimiter.peekPairingComparisonFailure(spent.id).remaining,
+      CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
     );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
@@ -438,9 +438,9 @@ test("bound poll encrypts pending and approved status and rejects downgrade or r
         const pairing = runtime.pairingStore.create(pairingInput);
         const originalLookup = runtime.pairingStore.lookup.bind(runtime.pairingStore);
         const originalPeek =
-          runtime.rateLimiter.peekPairingExchangeFailure.bind(runtime.rateLimiter);
+          runtime.rateLimiter.peekPairingComparisonFailure.bind(runtime.rateLimiter);
         const originalConsume =
-          runtime.rateLimiter.consumePairingExchangeFailure.bind(runtime.rateLimiter);
+          runtime.rateLimiter.consumePairingComparisonFailure.bind(runtime.rateLimiter);
         let lookupCalls = 0;
         let peekCalls = 0;
         let consumeCalls = 0;
@@ -448,11 +448,11 @@ test("bound poll encrypts pending and approved status and rejects downgrade or r
           lookupCalls += 1;
           return originalLookup(id, secret);
         };
-        runtime.rateLimiter.peekPairingExchangeFailure = (id) => {
+        runtime.rateLimiter.peekPairingComparisonFailure = (id) => {
           peekCalls += 1;
           return originalPeek(id);
         };
-        runtime.rateLimiter.consumePairingExchangeFailure = (id) => {
+        runtime.rateLimiter.consumePairingComparisonFailure = (id) => {
           consumeCalls += 1;
           return originalConsume(id);
         };
@@ -520,8 +520,8 @@ test("bound poll encrypts pending and approved status and rejects downgrade or r
         assert.equal(peekCalls, 1);
         assert.equal(consumeCalls, 0);
         assert.equal(
-          runtime.rateLimiter.peekPairingExchangeFailure(pairing.id).remaining,
-          CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+          runtime.rateLimiter.peekPairingComparisonFailure(pairing.id).remaining,
+          CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
         );
 
         assert.equal(

@@ -132,6 +132,29 @@ function parse(file, text) {
  */
 const asKey = (file) => file.split(path.sep).join("/").replace(/\\/g, "/");
 
+/**
+ * Resolve a relative first-party import against a forward-slash key directory.
+ *
+ * Keys keep a Windows drive prefix (`C:/Users/…`) that `path.posix` treats as
+ * relative, so `path.posix.resolve` re-anchors the candidate to the process cwd
+ * and the lookup silently misses — the analyzer failed open on Windows
+ * (cave-0f8tk). Resolve `./` and `../` against the key's own directory instead,
+ * pinning the leading drive/root segment (`C:` or "") so `..` can never escape
+ * above the key's own root.
+ */
+const resolveKeySpecifier = (directory, specifier) => {
+  const segments = directory.split("/");
+  for (const part of specifier.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (segments.length > 1) segments.pop();
+      continue;
+    }
+    segments.push(part);
+  }
+  return segments.join("/");
+};
+
 /** `new Date()` — the live clock, taken now. */
 function isLiveDateConstruction(node) {
   return ts.isNewExpression(node)
@@ -502,10 +525,11 @@ export function analyzeTestSource(file, text, registry, relativeTo = root) {
     if (!specifier.startsWith(".")) continue; // a package, not first-party
     const bindingsNode = statement.importClause?.namedBindings;
     if (!bindingsNode || !ts.isNamedImports(bindingsNode)) continue;
-    // Resolved in POSIX space against the already-normalized path. `path.resolve`
-    // is wrong here on Windows: given a POSIX-rooted path it prepends the current
-    // drive, so the candidate never equals the key the scanner stored.
-    const base = path.posix.resolve(path.posix.dirname(asKey(file)), specifier);
+    // Resolved in key space against the already-normalized path. The key keeps
+    // its Windows drive prefix, which path.posix treats as relative, so
+    // path.posix.resolve re-anchored the candidate to the cwd and the lookup
+    // missed — the analyzer failed open on Windows (cave-0f8tk).
+    const base = resolveKeySpecifier(path.posix.dirname(asKey(file)), specifier);
     // `./x-sources.ts`, `./x-sources`, `./x-sources/index.ts` all appear here.
     const candidates = [
       base,
