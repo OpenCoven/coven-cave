@@ -863,6 +863,7 @@ export const SUITES = {
     "src/app/api/research/topic-proposals/route.test.ts",
     "src/app/api/research/topic-proposals/[id]/route.test.ts",
     "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
+    "scripts/research-topic-discovery-eval.test.mjs",
     "src/lib/research-resource-read-model.test.ts",
     "src/lib/research-recommendation-context.test.ts",
     "src/lib/research-topic-recommendations.test.ts",
@@ -1996,6 +1997,8 @@ const STRIP_TYPES_MJS = new Set([
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
   "scripts/worktree-lifecycle-windows-cwd.test.mjs",
+  // imports the Topic Discovery runner/store TypeScript modules
+  "scripts/research-topic-discovery-eval.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
