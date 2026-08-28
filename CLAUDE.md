@@ -1057,6 +1057,59 @@ precedents. Note the facade order is also pinned by
 `src/app/css-module-order.test.ts`, so adding an import there is a two-file
 change with a test to update — another sign it is the wrong move for surface CSS.
 
+## `bd --metadata` takes an OBJECT — never a pre-serialized string
+
+**Rule:** when you write lifecycle metadata by hand, pass `--metadata` a JSON
+object whose `coven` value is itself an **object**. Never serialize `coven`
+first and nest the string.
+
+```bash
+# RIGHT — coven is an object inside the payload
+bd update <id> --metadata '{"coven":{"worktree":{"branch":"…","path":"…"}}}'
+
+# WRONG — coven is a STRING containing JSON. bd accepts this silently.
+bd update <id> --metadata '{"coven":"{\"worktree\":{…}}"}'
+```
+
+**Why this is worth a section.** `bd` does not validate the shape. Verified on a
+throwaway bead: handed an object it stores an object; handed a pre-serialized
+string it stores that string **verbatim**. So the mistake is invisible at write
+time and only surfaces later, somewhere else.
+
+What it cost on 2026-08-27: two beads — `cave-bnay4` and `cave-16uo9`, both
+already **closed and archived** — carried a string-valued `coven`, and
+`pnpm beads:worktrees:create` then refused for **every bead in the checkout**,
+across three live sessions:
+
+```text
+worktree-lifecycle-create: lifecycle inventory is incomplete:
+Bead cave-bnay4 coven metadata: coven must be an object
+```
+
+An unreadable `coven` produces no records, and a *record* is what carries the
+branch and path that errors are scoped by — so with nothing to name, the error
+is repository-wide. The only way out was hand-editing another owner's lifecycle
+record, which is the one repair [the worktree rules forbid](#worktree-convention).
+
+`cave-7bfpz` now decodes a double-encoded value, so a recurrence degrades to a
+per-unit problem rather than a checkout-wide outage. That is containment, not a
+fix: the record is still wrong, and every one still needs repairing by hand.
+
+**No script does this.** `worktree-lifecycle-create.ts` and
+`worktree-lifecycle-metadata-repair.ts` both emit `JSON.stringify({ coven: <object> })`,
+retirement writes no metadata at all, and the copy of these scripts under
+`sdk/.worktrees/` is byte-identical. Both corrupted records carried
+`mergeCommit`, `pr` and `reason` — fields **no script here writes** — so they
+were hand-authored during session close. That is why this rule is addressed to
+you rather than fixed in code.
+
+**Check before you write**, not after:
+
+```bash
+bd show <id> --json | python3 -c "import sys,json;d=json.load(sys.stdin);d=d[0] if isinstance(d,list) else d;c=(d.get('metadata') or {}).get('coven');print(type(c).__name__)"
+# expect: dict   (str means you double-encoded it)
+```
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
 
