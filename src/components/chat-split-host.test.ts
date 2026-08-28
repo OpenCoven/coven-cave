@@ -202,7 +202,6 @@ assert.match(
 assert.match(router, /e\.code === "KeyW"/, "close matches on e.code (⌥ composes e.key on macOS)");
 assert.match(router, /closest\?\.\('\[aria-modal="true"\]'\)/, "modals own the keyboard");
 assert.match(router, /chatSplitKeyboardZone\(split\)/, "keyboard split lands on the current axis");
-assert.match(router, /onOpenSessionInSplit=\{enableSplit \? handleOpenSessionInSplit : undefined\}/, "the thread rail gets the split opener only when splits are on");
 assert.match(router, /announce\(/, "split changes are announced to the live region");
 assert.match(router, /focusedPaneId=\{effectiveFocusedPane\}/, "the host renders the reconciled focus");
 
@@ -224,6 +223,21 @@ const shellNav = await readFile(new URL("./workspace-sidebar.tsx", import.meta.u
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const surface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
+// The thread rail moved out of ChatRouter and into the chat surface, where it
+// persists beside an open conversation instead of only on the list view
+// (cave-fh9so). The split opener moved with it; ChatRouter still exposes
+// openSessionInSplit on its handle, which is what the rail calls.
+assert.match(
+  surface,
+  /onOpenSessionInSplit=\{\(session: SessionRow\) => routerRef\.current\?\.openSessionInSplit\(session\.id\)\}/,
+  "the surface's thread rail opens a session in a split through the router handle",
+);
+assert.match(
+  router,
+  /openSessionInSplit: \(sessionId: string\) => void;/,
+  "ChatRouter still publishes openSessionInSplit on its imperative handle",
+);
+
 assert.match(shellNav, /emitChatSessionDragStart\(\{ sessionId: session\.id, title \}\)/, "shell nav rows announce drags");
 assert.match(shellNav, /setData\(CHAT_SESSION_DRAG_MIME, session\.id\)/, "shell nav drags carry the session MIME");
 assert.match(shellNav, /if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\) \{/, "shell nav rows handle ⌥↵");
@@ -235,7 +249,21 @@ assert.equal(
   "thread rows receive the split opener",
 );
 
-assert.match(workspace, /kind: "open-split", sessionId: session\.id/, "the workspace files an open-split pending action");
+// The split opener no longer routes through a pending action. The thread rail
+// moved into the chat surface (cave-fh9so), which holds the router handle
+// directly, so the chain is: ThreadRow onOpenInSplit -> SidebarChatsSection
+// prop -> chat-surface -> routerRef.openSessionInSplit. The pending-action
+// hop existed because the producer used to live outside the surface.
+assert.doesNotMatch(
+  workspace,
+  /kind: "open-split"/,
+  "the workspace no longer files an open-split pending action (the rail calls the handle)",
+);
+assert.match(
+  surface,
+  /kind === "open-split"/,
+  "the surface still honours an open-split pending action if one is ever filed",
+);
 assert.match(surface, /pendingChatAction\.kind === "open-split"/, "the chat surface routes open-split");
 assert.match(surface, /openSessionInSplit\(pendingChatAction\.sessionId\)/, "open-split reaches the router handle");
 assert.match(surface, /enableSplitPanes\b/, "the main chat surface opts into split panes");

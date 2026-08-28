@@ -850,18 +850,55 @@ details[open] > .cave-tool-summary::before {
   cursor: default;
 }
 
-/* Active-chat header context strip: sits beneath MetaLine and contains the
-   adaptive context controls without widening the pane or nesting in the
-   live region. */
+/* Inline context controls on the title row (cave-fh9so).
+ *
+ * These used to sit in a `.cave-chat-header-context` strip BENEATH MetaLine,
+ * which made the chat header three stacked rows deep — the static identity
+ * text, this picker strip, and the mono context band below it all naming the
+ * same familiar and model. The pickers are the only interactive copy, so they
+ * moved up onto the title row and the static text stands down.
+ *
+ * `flex: 0 1 auto` + `min-width: 0` keeps them yielding to the title rather
+ * than pushing the actions cluster off the end. */
+/* Desktop hides the below-title strip; the inline copy on the title row is the
+   visible one. Mobile does the reverse (transcript.css already hides the whole
+   meta line there and re-shows this strip with touch targets), so exactly one
+   of the two mounts is ever on screen. */
 .cave-chat-header-context {
-  min-width: 0;
-  overflow: hidden;
-  padding-inline-start: calc(var(--space-6) + var(--space-2));
+  display: none;
 }
 
-.cave-chat-header-context .cave-context-chip {
-  height: var(--space-6);
+.cave-chat-meta-line__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cave-chat-meta-line__controls .cave-context-chip {
+  height: var(--space-5);
+  max-width: 148px;
   font-size: var(--text-xs);
+}
+
+/* The chip label is what absorbs the shrink; without min-width: 0 it holds the
+   chip open at its min-content width and the ellipsis never engages. */
+.cave-chat-meta-line__controls .cave-context-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Narrow panes: the title and the actions are the irreducible part of the row,
+   so the pickers stand down rather than wrapping the header to two lines
+   again. The same controls remain in the mono context band below. */
+@media (max-width: 900px) {
+  .cave-chat-meta-line__controls {
+    display: none;
+  }
 }
 
 .cave-chat-session-actions {

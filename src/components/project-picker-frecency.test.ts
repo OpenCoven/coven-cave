@@ -27,11 +27,20 @@ assert.doesNotMatch(
   /visible[\s\S]{0,80}rankProjectsByFrecency/,
   "frecency must never feed the main list",
 );
-assert.match(
-  picker,
-  /<PopoverLabel>Recent<\/PopoverLabel>[\s\S]{0,200}<PopoverLabel>All projects<\/PopoverLabel>/,
-  "the Recent section is labelled and the full list keeps its own heading",
-);
+// Three sections now, in this order: Recent, then the active familiar's pinned
+// projects, then the full list (cave-fh9so). A character-budget between the
+// first and last heading only held while they were adjacent, so this asserts
+// the ORDER — which is the thing that matters — via the index of each label.
+for (const [earlier, later] of [
+  ["<PopoverLabel>Recent</PopoverLabel>", "'s projects`}</PopoverLabel>"],
+  ["'s projects`}</PopoverLabel>", "<PopoverLabel>All projects</PopoverLabel>"],
+] as const) {
+  const a = picker.indexOf(earlier);
+  const b = picker.indexOf(later);
+  assert.ok(a !== -1, `missing section heading: ${earlier}`);
+  assert.ok(b !== -1, `missing section heading: ${later}`);
+  assert.ok(a < b, `${earlier} must come before ${later}`);
+}
 
 // ── when the section appears ────────────────────────────────────────────────
 assert.match(
@@ -78,8 +87,8 @@ assert.equal(
 );
 assert.equal(
   (picker.match(/renderProjectRow\(entry,/g) ?? []).length,
-  2,
-  "and both sections call it — Recent and All",
+  3,
+  "and every section calls it — Recent, the familiar's pinned projects, and All",
 );
 
 assert.match(

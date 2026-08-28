@@ -1470,9 +1470,13 @@ function ShellInner({
       {/* Keyboard/SR users can jump straight past the chrome to the active
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
-      <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
-        <span className="shell-window-titlebar__title">Coven</span>
-      </div>
+      {/* No wordmark here. It sat at flex-start of this strip and rendered
+          UNDERNEATH the macOS traffic lights — the 78px reserve lives on
+          .shell-window-titlebar__rail, an element this markup never had, so
+          the inset never applied to the title. An app-name label in the
+          titlebar is redundant anyway (the menu bar names the app), so the
+          strip is now purely a drag region. */}
+      <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window" />
       {/* `deep` (not the bare attribute) matters: drag.js's bare value only
           drags on DIRECT presses on the attributed element, so empty chrome
           inside .menu-bar / .top-bar wrappers would short-circuit the walk and

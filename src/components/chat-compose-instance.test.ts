@@ -56,10 +56,12 @@ assert.match(
 
 // ── 4. ChatProjectSidebar delegates to shell New, with a safe fallback ───────
 
+// The project-grouped rail is retired (cave-fh9so); its new-chat handler moved
+// intact onto ChatList's own onNewChat, which is the path the router keeps.
 const sidebarOnNewChat =
-  routerSource.match(/onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]*?\n        \}\}\s*\n        onOpenProjectsTab=/)?.[0] ?? "";
+  routerSource.match(/onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]*?\n        \}\}/)?.[0] ?? "";
 
-assert.ok(sidebarOnNewChat.length > 0, "ChatProjectSidebar onNewChat handler must be present in router");
+assert.ok(sidebarOnNewChat.length > 0, "the list's onNewChat handler must be present in router");
 
 assert.match(
   sidebarOnNewChat,

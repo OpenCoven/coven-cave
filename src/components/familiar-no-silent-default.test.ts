@@ -58,7 +58,7 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatProjectSidebar[\s\S]*onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);/,
+  /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);/,
   "the project-grouped new-chat path asks through the shell gate rather than defaulting",
 );
 assert.doesNotMatch(

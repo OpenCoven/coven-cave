@@ -84,13 +84,24 @@ assert.match(
   /ariaLabel=\{inlineComposer \? "New chat context" : "Session context"\}/,
   'chatContextControls passes ariaLabel={inlineComposer ? "New chat context" : "Session context"}',
 );
-// The context div must be immediately after </MetaLine> — interactive controls
-// must not be nested inside MetaLine's live region. Offline history is read-only,
-// so it must not expose session-context mutations.
+// Interactive controls must not sit inside an aria-live region. They now ride
+// the title row inline (cave-fh9so), so the guard is on the live region itself:
+// the meta-line ROW must not carry aria-live — only the meta text span does.
+// Offline history is read-only, so it must not expose context mutations.
+assert.doesNotMatch(
+  source,
+  /className=\{`cave-chat-meta-line[^`]*`\}[^>]*aria-live/,
+  "the meta-line row is not an aria-live region (controls and actions live in it)",
+);
 assert.match(
   source,
-  /<\/MetaLine>\s*\{!inlineComposer && !offlineReadOnly \? \(\s*<div className="cave-chat-header-context">\{chatContextControls\}<\/div>/,
-  ".cave-chat-header-context appears immediately after </MetaLine>, outside the live region",
+  /className="cave-chat-meta-line__meta"[^>]*aria-live="polite"/,
+  "the live region is narrowed to the meta text span that actually changes",
+);
+assert.match(
+  source,
+  /contextControls=\{!inlineComposer && !offlineReadOnly \? chatContextControls : null\}/,
+  "context controls ride the title row inline, and stay off read-only history",
 );
 assert.match(
   source,

@@ -10,6 +10,7 @@ import {
   type ProfileCardModel,
   type ProfileKind,
 } from "@/lib/profile-card";
+import { canonicalMemoryErrorHeadline } from "@/lib/canonical-memory";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import type { UserProfile } from "@/lib/user-profile-shared";
@@ -35,6 +36,9 @@ export type ProfileCardData = {
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
   memoryAvailability: CanonicalMemoryAvailability;
+  /** Why canonical memory is missing, in the reader's own words — a NOTICE,
+   *  not an error. See the note on `errors` below. */
+  memoryNotice: string | null;
   userProfile: UserProfile | null;
   errors: string[];
 };
@@ -70,12 +74,26 @@ export async function loadProfileCardData(
       : Promise.resolve<ProfileResponse>({ ok: true, profile: {} }),
   ]);
 
+  // Canonical memory is an ENRICHMENT, and every one of its failure codes is a
+  // state the reader already has copy for — `local_access_required` most of
+  // all, which is not a failure at all but the expected answer whenever Cave is
+  // reached from anywhere other than its own host.
+  //
+  // It used to land in `errors`, and the cost was not cosmetic: the card aborts
+  // a refresh whenever `errors` is non-empty and KEEPS THE STALE DATA. So off
+  // the local host every refresh failed permanently, throwing away freshly
+  // loaded familiars, sessions and profile because an optional read was gated —
+  // reported as "Refresh failed: memory unavailable (local_access_required)".
+  //
+  // `errors` now means "the refresh genuinely failed". Memory availability
+  // travels as a notice beside it.
+  const memoryNotice = memoryJson.state === "error"
+    ? canonicalMemoryErrorHeadline(memoryJson.error.code)
+    : null;
+
   const errors = [
     responseError(familiarsJson, "familiars unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
-    memoryJson.state === "error"
-      ? `memory unavailable (${memoryJson.error.code})`
-      : null,
     kind === "human" ? responseError(profileJson, "profile unavailable") : null,
   ].filter((error): error is string => Boolean(error));
 
@@ -87,6 +105,7 @@ export async function loadProfileCardData(
     covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
     memoryAvailability:
       memoryJson.state === "ready" ? "ready" : "unavailable",
+    memoryNotice,
     userProfile: profileJson.ok ? profileJson.profile ?? {} : null,
     errors,
   };
@@ -100,6 +119,10 @@ export type ProfileCardViewModel = {
   userProfile: UserProfile | null;
   model: ProfileCardModel;
   errors: string[];
+  /** Canonical memory's state, when it is not readable. Rendered as a quiet
+   *  note rather than an alert — it explains a "—" in the memories tile, it
+   *  does not mean anything failed. */
+  memoryNotice: string | null;
 };
 
 export function buildProfileCardViewModel(
@@ -132,5 +155,6 @@ export function buildProfileCardViewModel(
       now,
     }),
     errors: data.errors,
+    memoryNotice: data.memoryNotice,
   };
 }

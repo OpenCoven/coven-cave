@@ -84,8 +84,8 @@ assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-op
 assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
 assert.match(
   sidebar,
-  /sidebarDestinations\(section\)/,
-  "the sidebar consumes the section-filtered shared destination policy",
+  /sidebarDestinations\(\)/,
+  "the sidebar consumes the shared destination policy",
 );
 
 // ── Journal is a registered Memories variant, so split requests preserve it ─

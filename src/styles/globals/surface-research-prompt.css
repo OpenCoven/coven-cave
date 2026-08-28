@@ -220,23 +220,29 @@
 .research-intake__angles {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border-hairline, var(--border));
 }
+/* The seed behind a pill is a whole pasted prompt. The label is summarized in
+   the component, and the width is capped here so one long headline cannot take
+   a whole row on its own and leave the next pill stranded — the pills read as a
+   set rather than as ragged full-width bars. */
 .research-intake__angle {
   min-width: 0;
-  max-width: 100%;
+  max-width: 34ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 6px var(--space-3);
+  padding: var(--space-2) var(--space-4);
   font-size: var(--text-2xs);
+  line-height: 1.4;
   color: var(--text-secondary);
   border: 1px dashed var(--border);
   border-radius: var(--radius-pill);
   background: none;
   cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .research-intake__angle:hover {
   color: var(--text-primary);
