@@ -144,15 +144,15 @@ export async function runRoutine(
   id: string,
   transport: AutomationTransport = callDaemon,
 ): Promise<CovenAutomationsRunPayload> {
-  const payload = await invokeAction<CovenAutomationsRunPayload>(
+  // A run that FAILED is a legitimate outcome, not an action rejection: the
+  // daemon reports it in the run payload (status "failed" + error), and the
+  // caller decides how to present it. Only transport failures and rejected
+  // actions throw (inside invokeAction).
+  return invokeAction<CovenAutomationsRunPayload>(
     "coven.automations.run",
     { id },
     transport,
   );
-  if (payload.error) {
-    throw new CovenAutomationsUnavailableError(payload.error, false);
-  }
-  return payload;
 }
 
 export async function listRoutineRuns(
