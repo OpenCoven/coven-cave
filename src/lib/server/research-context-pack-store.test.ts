@@ -9,6 +9,7 @@ import type { ContextPackBuildReceiptV1 } from "@/lib/research-context-pack.ts";
 import {
   ContextPackStoreError,
   createContextPackStore,
+  reconcileRestoredContextPacks,
   type ContextPackStore,
 } from "@/lib/server/research-context-pack-store.ts";
 
@@ -201,6 +202,22 @@ test("store layout refuses a symlinked manifests directory", async () => {
     () => store.listPacks(),
     (err: unknown) => err instanceof ContextPackStoreError && (err.code === "symlink" || err.code === "unsafe-path"),
   );
+});
+
+test("restore reconciliation validates every pack before exposure", async () => {
+  const root = tempRoot();
+  const store = createContextPackStore({ root });
+  const fixture = buildPackFixture();
+  await store.publishPack(fixture.pack);
+
+  const good = await reconcileRestoredContextPacks({ root });
+  assert.deepEqual(good, { validated: 1, invalid: 0 });
+
+  // Tamper with the pack-owned blob: reconciliation must report it invalid.
+  const blobFile = path.join(root, "blobs", "sha256", fixture.blobDigest.slice(0, 2), fixture.blobDigest);
+  await writeFile(blobFile, "tampered\n");
+  const bad = await reconcileRestoredContextPacks({ root });
+  assert.deepEqual(bad, { validated: 0, invalid: 1 });
 });
 
 test("root directories are private (0700)", async () => {

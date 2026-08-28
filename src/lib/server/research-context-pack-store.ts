@@ -611,6 +611,40 @@ export function createContextPackStore(options: { root?: string } = {}): Context
   };
 }
 
+/**
+ * Restore-time validation coordinator (program §8 step 6): enumerates every
+ * manifest under `manifests/` and runs the full digest-verified validation.
+ * Returns counts; a pack whose blobs failed verification is never surfaced
+ * as valid — the caller fails or quarantines the restore.
+ */
+export async function reconcileRestoredContextPacks(options: {
+  root?: string;
+} = {}): Promise<{ validated: number; invalid: number }> {
+  const layout = await openLayout(options.root ?? path.join(caveHome(), "research-context-packs"));
+  let entries: string[] = [];
+  try {
+    entries = await readdir(layout.manifestsDir);
+  } catch {
+    return { validated: 0, invalid: 0 };
+  }
+  let validated = 0;
+  let invalid = 0;
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    const id = entry.slice(0, -".json".length);
+    try {
+      const pack = await parseManifestFile(layout, id);
+      await verifyPack(layout, pack);
+      await verifyReceipt(layout, pack);
+      await verifyRedactionMap(layout, pack);
+      validated += 1;
+    } catch {
+      invalid += 1;
+    }
+  }
+  return { validated, invalid };
+}
+
 export function withContextPackMaintenanceLock<T>(
   rootInput: string,
   operation: () => Promise<T>,
