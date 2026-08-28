@@ -86,15 +86,10 @@ assert.doesNotMatch(
   "the chat-mode ChatSurface no longer suppresses its thread rail",
 )
 assert.match(chatSurface, /hideThreadRail = false/, "ChatSurface should accept a hideThreadRail prop");
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /const compactRail = hideThreadRail/,
-  "ChatSurface should fold hideThreadRail into the compact rail flag",
-);
-assert.match(
-  chatSurface,
-  /hideRail=\{compactRail\}/,
-  "ChatRouter should receive the rail-only flag — the outer sidebar owns chats, but the full-width toolbar must stay (hideRail, not compact)",
+  /hideRail=/,
+  "ChatRouter no longer takes a rail flag — the retired in-list project rail is gone, so ChatSurface's hideThreadRail only gates its own docked thread rail",
 );
 
 // ── Contextual sidepanel: one recency list with project identity on each row. ─

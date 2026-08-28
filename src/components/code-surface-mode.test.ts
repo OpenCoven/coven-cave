@@ -848,7 +848,7 @@ assert.doesNotMatch(
   /surface\s*=\s*"chat"|surface === "code"|isCodeSurface|CodeInlineToolbar|data-surface=\{surface\}/,
   "ChatSurface must not regrow a code-surface branch",
 );
-assert.match(chatSurface, /const compactRail = hideThreadRail/, "ChatSurface compact mode is driven only by hideThreadRail");
+assert.match(chatSurface, /hideThreadRail = false/, "ChatSurface's docked thread rail is driven only by hideThreadRail");
 assert.match(chatSurface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "Chat keeps Projects as its second primary tab");
 // The Code room and its rail swap are retired (cave-fh9so): one sidebar always,
 // with the chat surface docking its own threads rail beside the conversation.

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   composerGate,
+  draftPublications,
   publishedPublications,
   unresolvedPublications,
   unresolvedSummary,
@@ -142,6 +143,21 @@ test("unresolved and published partitions are exactly the two statuses they name
     publishedPublications(all).map((p) => p.id),
     ["e", "c"],
     "sent posts read newest first",
+  );
+});
+
+test("the draft partition is saved-but-never-sent, newest touched first", () => {
+  const all = [
+    record({ id: "a", status: "draft", updatedAt: "2026-08-01T00:00:00.000Z" }),
+    record({ id: "b", status: "uncertain" }),
+    record({ id: "c", status: "published" }),
+    record({ id: "d", status: "abandoned" }),
+    record({ id: "e", status: "draft", updatedAt: "2026-08-03T00:00:00.000Z" }),
+  ];
+  assert.deepEqual(
+    draftPublications(all).map((p) => p.id),
+    ["e", "a"],
+    "drafts read newest touched first, like sent posts read newest sent first",
   );
 });
 

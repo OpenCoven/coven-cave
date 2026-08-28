@@ -1,7 +1,9 @@
 import { clientV1CredentialMetadata } from "@/lib/server/client-v1/credential-store.ts";
 import { requireClientV1Admin } from "@/lib/server/client-v1/admin-auth.ts";
+import { ClientV1PathOwnershipError } from "@/lib/server/client-v1/path-ownership.ts";
 import {
   clientV1ErrorResponse,
+  clientV1OwnershipRefusedResponse,
   clientV1SuccessResponse,
 } from "@/lib/server/client-v1/responses.ts";
 import {
@@ -59,14 +61,24 @@ export function createAdminCredentialDeleteHandler(runtime: ClientV1Runtime) {
     const reason = parseReason(body);
     if (!reason) return invalidReason();
 
-    const before = await runtime.credentialStore.reload();
-    if (!before.has(id)) return credentialNotFound();
-    await runtime.credentialStore.revoke(id, reason);
-    const credential = (await runtime.credentialStore.reload()).get(id);
-    if (!credential) return credentialNotFound();
-    return clientV1SuccessResponse({
-      credential: clientV1CredentialMetadata(credential),
-    });
+    try {
+      const before = await runtime.credentialStore.reload();
+      if (!before.has(id)) return credentialNotFound();
+      await runtime.credentialStore.revoke(id, reason);
+      const credential = (await runtime.credentialStore.reload()).get(id);
+      if (!credential) return credentialNotFound();
+      return clientV1SuccessResponse({
+        credential: clientV1CredentialMetadata(credential),
+      });
+    } catch (error) {
+      // Same shape as the list route: a store the host cannot verify as
+      // exclusively owned is a host condition answered with the normalized
+      // refusal, never a bare 500 (cave-e7xwk).
+      if (error instanceof ClientV1PathOwnershipError) {
+        return clientV1OwnershipRefusedResponse();
+      }
+      throw error;
+    }
   };
 }
 

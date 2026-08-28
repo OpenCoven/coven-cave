@@ -99,14 +99,13 @@ assert.match(
   "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
 );
 
-// The router mounts no rail of its own any more (cave-fh9so), so it has no
-// handler to pass. The assertions above still hold — they read
-// chat-project-sidebar.tsx directly, and the component's own contract is
-// unchanged — but the wiring one had nothing left to assert about.
+// The router no longer mounts ChatProjectSidebar (the project-grouped rail is
+// retired there — cave-fh9so); the rail keeps its own CHAT_OPEN_PROJECTS_EVENT
+// fallback for hosts that omit the callback.
 assert.doesNotMatch(
   chatRouter,
-  /<ChatProjectSidebar/,
-  "the router mounts no project rail, so it wires no Projects-tab handler",
+  /<ChatProjectSidebar|onOpenProjectsTab/,
+  "ChatRouter should not render the retired project rail or wire its Projects-tab handler",
 );
 
 assert.match(

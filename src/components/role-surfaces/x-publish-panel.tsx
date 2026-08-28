@@ -45,6 +45,7 @@ import { Icon } from "@/lib/icon";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
   composerGate,
+  draftPublications,
   publishedPublications,
   unresolvedSummary,
   weightedPostLength,
@@ -152,6 +153,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     [text, confirmation, publications],
   );
   const published = useMemo(() => publishedPublications(publications), [publications]);
+  const drafts = useMemo(() => draftPublications(publications), [publications]);
   const weighted = weightedPostLength(text);
 
   /**
@@ -285,6 +287,23 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       announce(outcome === "published" ? "Recorded as posted." : "Recorded as not posted.");
     }),
     [announce, familiarId, postIdDrafts, run],
+  );
+
+  // Retire a stranded draft. This is the same resolve the uncertain records
+  // use, with the outcome that means "never sending this": the server accepts
+  // it for a `draft` and it takes no network. A draft has no post id — nothing
+  // was ever dispatched — so the resolve-form guards above do not apply.
+  const retire = useCallback(
+    (publicationId: string) => run(async () => {
+      await postPublishAction({
+        action: "resolve",
+        familiarId,
+        publicationId,
+        outcome: "abandoned",
+      });
+      announce("Draft retired.");
+    }),
+    [announce, familiarId, run],
   );
 
   /**
@@ -545,7 +564,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       )}
 
       {published.length > 0 && (
-        <ul className="role-surface-list">
+        <ul className="role-surface-list" aria-label="Sent posts">
           {published.map((publication) => (
             <li key={publication.id} className="role-surface-list-row">
               <span className="role-surface-memory-excerpt">{publication.text}</span>
@@ -564,6 +583,29 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {drafts.length > 0 && (
+        <>
+          <p className="role-surface-hint">
+            Saved but never sent. Retire a draft when it is no longer wanted.
+          </p>
+          <ul className="role-surface-list" aria-label="Saved drafts">
+            {drafts.map((publication) => (
+              <li key={publication.id} className="role-surface-list-row">
+                <span className="role-surface-memory-excerpt">{publication.text}</span>
+                <button
+                  type="button"
+                  className="role-surface-chip focus-ring"
+                  disabled={busy}
+                  onClick={() => void retire(publication.id)}
+                >
+                  Retire
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );

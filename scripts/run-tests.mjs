@@ -368,7 +368,6 @@ export const SUITES = {
     "src/lib/chat-sse.test.ts",
     "src/lib/chat-stream-health.test.ts",
     "src/lib/chat-project-selection.test.ts",
-    "src/lib/use-auto-expand-new-groups.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-session-grouping.test.ts",
     "src/lib/chat-session-status.test.ts",
@@ -1271,6 +1270,7 @@ export const SUITES = {
     "src/components/dead-ui-removal.test.ts",
     "scripts/ui-consistency.test.mjs",
     "scripts/docs-index.test.mjs",
+    "scripts/plan-doc-checkbox-hygiene.test.mjs",
     "src/components/ui/select.test.ts",
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",
@@ -1458,6 +1458,7 @@ export const SUITES = {
     "src/lib/server/client-v1/authority-replay.test.ts",
     "src/lib/server/client-v1/authority-runtime.test.ts",
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
+    "src/lib/server/client-v1/json-clone.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
@@ -2071,8 +2072,6 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/recommendations/route.test.ts",
   "src/app/api/research/recommendations-x-capability.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
-  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
-  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",

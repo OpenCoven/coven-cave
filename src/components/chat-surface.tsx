@@ -152,10 +152,6 @@ export function ChatSurface({
   initialScope = "conversation",
   scopeHistoryId = "chat:scope",
 }: Props) {
-  // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
-  // already owns chats beside the surface.
-  const compactRail = hideThreadRail;
-
   // The rail highlights the open thread. ChatRouter reports it upward already;
   // mirror it locally so the rail can render the active row without ChatSurface
   // reaching into the router for state it is handed anyway.
@@ -679,7 +675,6 @@ export function ChatSurface({
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
                   onRequestNewChat={onRequestNewChat}
-                  hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
