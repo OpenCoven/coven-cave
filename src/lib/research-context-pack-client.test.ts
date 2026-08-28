@@ -29,9 +29,9 @@ test("fetchContextPack throws on a missing pack", async () => {
 });
 
 test("sealContextPack posts the selection and returns the pack", async () => {
-  let captured: Request | null = null;
+  const box: { value: { method: string; url: string } | null } = { value: null };
   const request = async (input: RequestInfo | URL): Promise<Response> => {
-    captured = new Request(new URL(input as string, "http://localhost"), { method: "POST", body: "{}" });
+    box.value = { method: "POST", url: String(input) };
     return jsonResponse({ ok: true, pack: { id: "ctx_sealed", digest: "ab".repeat(32) } }, 201);
   };
   const pack = await sealContextPack(
@@ -40,8 +40,9 @@ test("sealContextPack posts the selection and returns the pack", async () => {
     request as unknown as typeof fetch,
   );
   assert.equal(pack.id, "ctx_sealed");
-  assert.equal(captured?.method, "POST");
-  assert.match(captured?.url ?? "", /\/api\/research\/context-packs$/);
+  if (box.value === null) throw new Error("seal request must have been issued");
+  assert.equal(box.value.method, "POST");
+  assert.match(box.value.url, /\/api\/research\/context-packs$/);
 });
 
 test("errors surface the API error message", async () => {
