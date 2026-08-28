@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { StandardSelect } from "@/components/ui/select";
 import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 import { fetchContextPacks } from "@/lib/research-context-pack-client";
 import type { ContextPackV1 } from "@/lib/research-protocol/context-pack";
@@ -67,22 +68,17 @@ export function ResearchTopicDiscovery({ familiarId, onUseTopic }: ResearchTopic
           <p>Mine a sealed context pack for grounded research topics.</p>
         </div>
         <div className="research-topic-discovery__controls">
-          <select
-            aria-label="Context pack"
+          <StandardSelect<string>
+            label="Context pack"
             value={packId}
-            onChange={(event) => setPackId(event.target.value)}
-            disabled={packs.length === 0}
-          >
-            {packs.length === 0 ? (
-              <option value="">No sealed packs</option>
-            ) : (
-              packs.map((pack) => (
-                <option key={pack.id} value={pack.id}>
-                  {pack.id}
-                </option>
-              ))
-            )}
-          </select>
+            onChange={setPackId}
+            className="research-topic-discovery__pack"
+            options={
+              packs.length === 0
+                ? [{ value: "", label: "No sealed packs" }]
+                : packs.map((pack) => ({ value: pack.id, label: pack.id }))
+            }
+          />
           <Button size="sm" variant="primary" disabled={!packId || discovery.loading} onClick={() => void runDiscovery()}>
             Run discovery
           </Button>
