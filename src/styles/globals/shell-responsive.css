@@ -185,19 +185,30 @@
   color: var(--color-warning);
 }
 
-/* Live-presence dot pulses gently; static under reduced motion. */
-.familiars-view__status-dot--live {
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-presence) 70%, transparent);
-  animation: familiars-status-pulse 2.4s ease-in-out infinite;
+/* Growth-health dot — the status-dot + word pattern (design language §3):
+   a 6px dot colored by semantic token, always paired with its label text so
+   color is never the only channel. Replaces the online/offline presence dot:
+   growth health (active/steady/quiet/stalled) is the live state that matters
+   on the roster (cave-mo4q). */
+.familiars-view__health-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
 }
-@keyframes familiars-status-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+.familiars-view__health-dot--active {
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-success) 16%, transparent);
 }
-@media (prefers-reduced-motion: reduce) {
-  .familiars-view__status-dot--live {
-    animation: none;
-  }
+.familiars-view__health-dot--steady {
+  background: var(--color-info);
+}
+.familiars-view__health-dot--quiet {
+  background: var(--color-warning);
+}
+.familiars-view__health-dot--stalled {
+  background: var(--color-danger);
 }
 
 /* ────────────────────────────────────────────────
