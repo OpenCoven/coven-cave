@@ -30,7 +30,10 @@ import {
 import { probeRecordedPathAbsence } from "./worktree-lifecycle-inventory.ts";
 import {
   createMetadataRepairOperations,
+  dropExpiredOrphanedExceptions,
+  expiredOrphanedExceptionCandidates,
   probeMetadataRepairPathPresence,
+  removeLifecycleException,
   removeLifecycleRecord,
   repairOrphanedWorktreeMetadata,
 } from "./worktree-lifecycle-metadata-repair.ts";
@@ -299,6 +302,156 @@ try {
         ),
       /ambiguous/,
       "the transform rejects a fresh branch/path identity collision",
+    );
+  }
+
+  {
+    // cave-4oor6: the exception sweep removes ONLY the exception sub-object,
+    // never the worktree record — the record is the retirement gate's evidence
+    // and hand-editing it is forbidden (cave-l52dt).
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const recordWithException = { ...orphanRecord, exception };
+    assert.deepEqual(
+      removeLifecycleException(
+        { theme: "moon", worktree: recordWithException },
+        "primary",
+        exception,
+      ),
+      { theme: "moon", worktree: orphanRecord },
+      "dropping an exception leaves the record and every sibling field intact",
+    );
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-next",
+      path: "/repo/.worktrees/cave-next",
+      exception,
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-last",
+      path: "/repo/.worktrees/cave-last",
+    };
+    assert.deepEqual(
+      removeLifecycleException(
+        { worktree: orphanRecord, worktrees: [firstAdditional, secondAdditional] },
+        "additional:0",
+        exception,
+      ),
+      {
+        worktree: orphanRecord,
+        worktrees: [
+          { ...orphanRecord, branch: "fix/cave-next", path: "/repo/.worktrees/cave-next" },
+          secondAdditional,
+        ],
+      },
+      "dropping an additional-record exception preserves the record itself",
+    );
+    assert.throws(
+      () => removeLifecycleException({ worktree: orphanRecord }, "primary", exception),
+      /exception changed at primary/,
+      "an exception that is absent where the sweep expects it blocks as changed",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          {},
+          "primary",
+          exception,
+        ),
+      /record is missing at primary/,
+      "a record that vanished blocks instead of guessing",
+    );
+    const movedException = {
+      ...orphanRecord,
+      exception: { ...exception, owner: "Moved" },
+    };
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          { worktree: movedException, worktrees: [firstAdditional] },
+          "primary",
+          exception,
+        ),
+      /exception moved from primary to additional:0/,
+      "an exception that moved locations is named as moved, not changed",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          { worktree: { ...recordWithException, exception: { ...exception, owner: "X" } } },
+          "primary",
+          exception,
+        ),
+      /exception changed at primary/,
+      "an exception whose fields drifted blocks as changed",
+    );
+  }
+
+  {
+    // cave-4oor6: the apply sweep targets only the residue the metadata-repair
+    // sweep cannot touch — non-repairable orphaned records whose exceptions
+    // have expired. Repairable records are removed wholesale by the repair
+    // (exception included), so dropping there first would double-spend a slot
+    // and break the repair's exact-match discipline.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const nowMs = Date.parse("2026-08-12T00:00:00.000Z");
+    const expiredNonRepairable = repairCandidate({
+      repairable: false,
+      reasons: ["branch cave-x appears in 2 structured metadata records"],
+      record: { ...orphanRecord, exception },
+    });
+    const expiredRepairable = repairCandidate({
+      record: { ...orphanRecord, exception },
+    });
+    const liveException = {
+      ...exception,
+      expiresAt: "2026-08-15T00:00:00.000Z",
+    };
+    const liveNonRepairable = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception: liveException },
+    });
+    const noException = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+    });
+    const malformedExpiry = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        exception: { ...exception, expiresAt: "not-a-timestamp" },
+      },
+    });
+    assert.deepEqual(
+      expiredOrphanedExceptionCandidates(
+        [
+          expiredNonRepairable,
+          expiredRepairable,
+          liveNonRepairable,
+          noException,
+          malformedExpiry,
+        ],
+        nowMs,
+      ),
+      [expiredNonRepairable],
+      "only expired exceptions on non-repairable orphaned records are dropped",
+    );
+    assert.deepEqual(
+      expiredOrphanedExceptionCandidates([expiredRepairable], nowMs),
+      [],
+      "repairable records are left to the whole-record repair, not the drop",
     );
   }
 
@@ -781,6 +934,291 @@ try {
     );
   }
 
+  // ── cave-4oor6 apply side: drop expired exceptions from orphaned records ──
+  //
+  // The drop is the surgical sibling of the whole-record repair: it deletes
+  // ONLY the exception sub-object, keeps the worktree record, and re-verifies
+  // fresh (same exception, still expired, unit still orphaned) before it
+  // persists. These tests drive it with the same fake operations the repair
+  // tests use.
+  {
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, [
+      {
+        beadId: "cave-orphan",
+        location: "primary",
+        branch: candidate.branch,
+        path: candidate.path,
+        owner: "Kitty",
+        expiresAt: "2026-08-08T00:00:00.000Z",
+      },
+    ]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(
+      fixture.storedCoven,
+      { theme: "moon", worktree: orphanRecord },
+      "the exception is removed while the worktree record survives",
+    );
+    assert.deepEqual(fixture.calls, [
+      "gate",
+      "read:cave-orphan",
+      "branch",
+      "registered",
+      "gate",
+      "persist:cave-orphan",
+      "gate",
+      "read:cave-orphan",
+    ]);
+  }
+
+  {
+    // The drop shares the one maxRetire mutation budget: a maxDrops cap
+    // leaves the rest pending, exactly like maxRepairs.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const first = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const second = repairCandidate({
+      beadId: "cave-second",
+      branch: "fix/cave-second-old",
+      path: "/repo/.worktrees/cave-second-old",
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-second-old",
+        path: "/repo/.worktrees/cave-second-old",
+        exception,
+      },
+    });
+    const fixture = repairOperations({
+      coven: {
+        theme: "moon",
+        worktree: { ...orphanRecord, exception },
+      },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [first, second],
+      maxDrops: 1,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.equal(report.dropped.length, 1);
+    assert.deepEqual(report.pending, [second]);
+    assert.equal(
+      fixture.calls.filter((call) => call === "persist:cave-orphan").length,
+      1,
+      "the batch cap permits exactly one exception drop",
+    );
+  }
+
+  {
+    // A bead that closed between inventory and apply is left alone.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+      statuses: ["closed"],
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /closed before exception drop/);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a closed bead is never mutated",
+    );
+  }
+
+  {
+    // Fail-closed probes: if the branch or the registered path came back
+    // between inventory and apply, the exception stays — the pairing of an
+    // expired grant on a LIVE unit is deliberately kept visible.
+    for (const [probe, reason] of [
+      ["branch", /exact local branch still exists/],
+      ["registered", /registered path still exists/],
+    ]) {
+      const exception = {
+        owner: "Kitty",
+        reason: "over budget",
+        expiresAt: "2026-08-08T00:00:00.000Z",
+        additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+      };
+      const candidate = repairCandidate({
+        repairable: false,
+        reasons: ["contested"],
+        record: { ...orphanRecord, exception },
+      });
+      const fixture = repairOperations({
+        coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+        branch: probe === "branch" ? { ok: true, present: true } : undefined,
+        registered:
+          probe === "registered" ? { ok: true, present: true } : undefined,
+      });
+      const report = dropExpiredOrphanedExceptions({
+        candidates: [candidate],
+        maxDrops: 3,
+        gateHandle: { generation: 7, token: "token" },
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+        operations: fixture.operations,
+      });
+      assert.deepEqual(report.dropped, []);
+      assert.equal(report.blocked.length, 1);
+      assert.match(report.blocked[0].reason, reason);
+      assert.equal(
+        fixture.calls.includes("persist:cave-orphan"),
+        false,
+        "a unit that came back alive is never mutated",
+      );
+    }
+  }
+
+  {
+    // The drop re-verifies expiry from the FRESH read: a candidate handed in
+    // with a live exception is blocked, never dropped, even though the caller
+    // already pre-filtered.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-15T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /no longer expired/);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a grant that is still live is never dropped",
+    );
+  }
+
+  {
+    // Gate failure before the first read halts the whole drop run: no
+    // further mutation is attempted once the fence is in doubt.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+      gateResults: [{ ok: false, reason: "fixture gate down" }],
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /fixture gate down/);
+    assert.equal(
+      fixture.calls.includes("read:cave-orphan"),
+      false,
+      "a dead fence stops the sweep before its first remote read",
+    );
+  }
+
+  {
+    // The exception drop is NOT a whole-record repair: an exception missing
+    // from the fresh read blocks the drop (something changed) instead of
+    // treating the record as repairable residue.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: orphanRecord },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /exception is missing at primary/);
+  }
+
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
@@ -1202,6 +1640,75 @@ process.exit(2);
           ok: true,
         });
       }
+    }
+        // Same adapter, same gate, one floor lower: the exception drop is
+    // exercised through the production bd stub and a REAL maintenance gate,
+    // proving the whole chain (reread, probes, persist, verify) works end to
+    // end — and that only the exception sub-object lands in the state file.
+    const dropState = path.join(fixtureRoot, "metadata-drop-state.json");
+    const dropException = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: [adapterRecord.path],
+    };
+    const dropRecord = { ...adapterRecord, exception: dropException };
+    writeFileSync(
+      dropState,
+      JSON.stringify({
+        id: "cave-adapter",
+        status: "open",
+        metadata: {
+          unrelated: "preserved",
+          coven: { sibling: "preserved", worktree: dropRecord },
+        },
+      }),
+    );
+    const originalRepairState = process.env.METADATA_REPAIR_STATE;
+    process.env.METADATA_REPAIR_STATE = dropState;
+    const acquiredDropGate = acquireMaintenanceGate({
+      ownerId: "metadata-drop-adapter-test",
+      purpose: "verify production exception drop gate handling",
+      repoDir: repairGateRepo,
+    });
+    assert.equal(acquiredDropGate.ok, true);
+    try {
+      const productionDrop = dropExpiredOrphanedExceptions({
+        candidates: [
+          repairCandidate({
+            beadId: "cave-adapter",
+            branch: adapterRecord.branch,
+            path: adapterRecord.path,
+            repairable: false,
+            reasons: ["contested"],
+            record: dropRecord,
+            rawRecord: dropRecord,
+          }),
+        ],
+        maxDrops: 1,
+        gateHandle: acquiredDropGate.handle,
+        repositoryRoot: repo,
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+        operations,
+      });
+      assert.deepEqual(
+        productionDrop.dropped.map((drop) => drop.beadId),
+        ["cave-adapter"],
+        "production operations drop the exception through the real bd stub",
+      );
+      const after = JSON.parse(readFileSync(dropState, "utf8"));
+      assert.deepEqual(
+        after.metadata.coven.worktree,
+        adapterRecord,
+        "only the exception sub-object is removed; the worktree record survives",
+      );
+    } finally {
+      if (acquiredDropGate.ok) {
+        assert.deepEqual(releaseMaintenanceGate(acquiredDropGate.handle), {
+          ok: true,
+        });
+      }
+      process.env.METADATA_REPAIR_STATE = originalRepairState;
     }
     const invalidGate = operations.heartbeatAndVerifyGate({
       root: maintenanceGateRoot(repairGateRepo),
@@ -4354,6 +4861,12 @@ exit 0
     partial: [],
     pending: [],
   };
+  const emptyExceptionDrop = {
+    dropped: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
   const metadataApplyDependencies = {
     createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
     repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
@@ -4604,6 +5117,7 @@ exit 0
     });
     assert.deepEqual(result, {
       metadataRepair: emptyMetadataRepair,
+      exceptionDrop: emptyExceptionDrop,
       retirement: fakeRetirement,
       postInventory: fakePostInventory,
     });
@@ -4951,6 +5465,156 @@ exit 0
       applyOptions.maxRetire,
       "no reservation is taken when nothing is retirable",
     );
+  // ── cave-4oor6: the apply path drops expired-orphaned exceptions ──────────
+  //
+  // The drop runs under the same maintenance gate as repair and retirement,
+  // shares the one maxRetire mutation budget, and only ever sees the
+  // non-repairable residue (repairable records are removed wholesale by the
+  // repair). A blocked drop is a run failure, exactly like a blocked repair.
+  {
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const expiredOrphaned = repairCandidate({
+      beadId: "cave-oenag",
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-oenag-detached-budget",
+        path: "/repo/.worktrees/cave-oenag-detached-budget",
+        exception,
+      },
+    });
+    const dropReport = {
+      dropped: [
+        {
+          beadId: "cave-oenag",
+          location: "primary",
+          branch: "fix/cave-oenag-detached-budget",
+          path: "/repo/.worktrees/cave-oenag-detached-budget",
+          owner: "Kitty",
+          expiresAt: "2026-08-08T00:00:00.000Z",
+        },
+      ],
+      blocked: [],
+      partial: [],
+      pending: [],
+    };
+    const events = [];
+    const result = runRetirementApply(
+      {
+        ...applyOptions,
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      },
+      {
+        ...applyInventory,
+        orphanedMetadata: [expiredOrphaned],
+      },
+      {
+        ...metadataApplyDependencies,
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createGitRetirementOperations: () => ({ fixture: "ops" }),
+        retireLifecycleUnits: () => fakeRetirement,
+        dropExpiredOrphanedExceptions: ({ candidates, maxDrops, operations }) => {
+          events.push("drop");
+          assert.deepEqual(candidates, [expiredOrphaned]);
+          assert.equal(
+            maxDrops,
+            1,
+            "the drop shares the maxRetire budget after the retirement reservation",
+          );
+          assert.deepEqual(operations, { fixture: "metadata-ops" });
+          return dropReport;
+        },
+        collectWorktreeLifecycleInventory: () => ({
+          ...fakePostInventory,
+          orphanedMetadata: [],
+        }),
+      },
+    );
+    assert.deepEqual(result.exceptionDrop, dropReport);
+    assert.deepEqual(events, ["drop"], "the drop runs inside the same apply");
+    assert.deepEqual(evaluateRetirementApplyOutcome({
+      metadataRepair: emptyMetadataRepair,
+      exceptionDrop: dropReport,
+      retirement: fakeRetirement,
+    }), {
+      ok: true,
+      status: 0,
+    });
+  }
+
+  {
+    // A drop that blocks must fail the run: an expired-orphaned exception
+    // that could not be removed is residue that remains, so the report must
+    // not read as a clean sweep.
+    const result = evaluateRetirementApplyOutcome({
+      metadataRepair: emptyMetadataRepair,
+      exceptionDrop: {
+        dropped: [],
+        blocked: [{ beadId: "cave-oenag", location: "primary", reason: "fixture" }],
+        partial: [],
+        pending: [],
+      },
+      retirement: fakeRetirement,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      status: 1,
+      reason: "exception-drop-blocked",
+    });
+    assert.match(
+      renderApplyReport(
+        report,
+        fakeRetirement,
+        undefined,
+        undefined,
+        emptyMetadataRepair,
+        {
+          dropped: [],
+          blocked: [{ beadId: "cave-oenag", location: "primary", reason: "fixture" }],
+          partial: [],
+          pending: [],
+        },
+      ),
+      /Exception drops blocked: 1/,
+      "the human apply report counts blocked exception drops",
+    );
+    assert.match(
+      renderApplyReport(
+        report,
+        fakeRetirement,
+        undefined,
+        undefined,
+        emptyMetadataRepair,
+        {
+          dropped: [
+            {
+              beadId: "cave-oenag",
+              location: "primary",
+              branch: "fix/cave-oenag-detached-budget",
+              path: "/repo/.worktrees/cave-oenag-detached-budget",
+              owner: "Kitty",
+              expiresAt: "2026-08-08T00:00:00.000Z",
+            },
+          ],
+          blocked: [],
+          partial: [],
+          pending: [],
+        },
+      ),
+      /Expired, orphaned exceptions dropped \(1\)/,
+      "the human apply report enumerates dropped exceptions",
+    );
+  }
+
     assert.equal(retirementRan, false, "and retirement is not invoked for an empty candidate set");
   }
 
