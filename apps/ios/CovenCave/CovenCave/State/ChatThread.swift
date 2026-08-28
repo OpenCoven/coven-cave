@@ -806,6 +806,11 @@ final class ChatThread: Identifiable, Hashable {
             return
         }
         messages.remove(at: index)
+        // A re-sync's absent-for-session proof dies with the message it was
+        // about, and so does a partial-delete report's retry record when the
+        // note itself is the message being removed.
+        absentForSession.removeValue(forKey: messageId)
+        pendingPartialDeleteRetry.removeValue(forKey: messageId)
         updatedAt = Date()
         onChange()
 
@@ -829,6 +834,17 @@ final class ChatThread: Identifiable, Hashable {
     /// The tail of this thread's serialized server deletes. Nothing renders
     /// it, so it stays out of observation. See `deleteMessage`.
     @ObservationIgnored private var pendingServerDelete: Task<Void, Never>?
+
+    /// Sessions this thread's last re-sync PROVED never received a message — a
+    /// fan-out that reached some familiars and not others. Keyed by message
+    /// id; the delete path skips these sessions instead of letting one of them
+    /// refuse the whole delete on its behalf. In-memory only: a snapshot never
+    /// stores it, and `reload` recomputes it from the server.
+    @ObservationIgnored private var absentForSession: [String: Set<String>] = [:]
+
+    /// Partial-delete reports that still have a surviving copy, keyed by the
+    /// report note's message id so the view can offer a retry on that note.
+    @ObservationIgnored private var pendingPartialDeleteRetry: [String: PartialDeleteRetryState] = [:]
 
     /// Where a message lives on the server, when it lives there at all — one
     /// entry per session that can be holding a copy of it.
@@ -1003,7 +1019,10 @@ final class ChatThread: Identifiable, Hashable {
                 return
             }
         }
-        var failures: [(familiarId: String, reason: String)] = []
+        // A leg carries the session and the NAMED turn it still holds: the
+        // retry re-deletes by name, so a drifted transcript cannot refuse it
+        // a second time.
+        var failures: [(familiarId: String, sessionId: String, turnId: String, reason: String)] = []
         for deletion in deletions {
             do {
                 try await client.deleteConversationTurn(sessionId: deletion.sessionId,
@@ -1011,7 +1030,8 @@ final class ChatThread: Identifiable, Hashable {
             } catch {
                 // Keep going: every session that still answers is one fewer
                 // surviving copy, and the report below wants the whole list.
-                failures.append((deletion.familiarId, error.localizedDescription))
+                failures.append((deletion.familiarId, deletion.sessionId, deletion.turnId,
+                                 error.localizedDescription))
             }
         }
         guard let firstFailure = failures.first else { return }
@@ -1023,7 +1043,7 @@ final class ChatThread: Identifiable, Hashable {
             rollBack(message, to: index, reason: firstFailure.reason, onChange: onChange)
             return
         }
-        reportPartialDelete(failures, familiarNames: familiarNames, onChange: onChange)
+        reportPartialDelete(failures, at: index, familiarNames: familiarNames, onChange: onChange)
     }
 
     /// What one session says about where this message is, if anywhere.
@@ -1039,6 +1059,18 @@ final class ChatThread: Identifiable, Hashable {
     /// Name this message's turn inside one session, without deleting anything.
     private func resolveTurn(in session: ServerDeleteTarget.Session,
                              client: CaveClient) async -> ServerTurnResolution {
+        // A re-sync can PROVE this session never received the message — a
+        // fan-out that reached three of four familiars. The matcher's answer
+        // for that session is `ambiguous` (its transcript disagrees at the
+        // message's position), and refusing the whole delete on its behalf
+        // would keep the message alive in the sessions that DO hold it. The
+        // proof is a server transcript that cleanly skipped the message, so it
+        // is the same evidence as a transcript that simply ends before it: the
+        // local removal is already the whole delete for this session.
+        if let absent = absentForSession[session.message.id],
+           absent.contains(session.familiarId) {
+            return .absent
+        }
         if let known = session.message.serverTurnId, !known.isEmpty { return .named(known) }
         // A message composed in this session has no server-assigned id yet,
         // and nothing in the send path hands one back. Reading the
@@ -1077,17 +1109,15 @@ final class ChatThread: Identifiable, Hashable {
             // silent local-only delete, which is the bug this whole path
             // exists to end, not a success.
             //
-            // "Refresh and try again" is real advice in a DIRECT chat and only
-            // there: pull-to-refresh calls `reload`, the transcript comes back
-            // from the server with a `serverTurnId` on every message, and the
-            // next swipe deletes by name without the matcher at all. `reload`
-            // opens with `guard !isGroup`, so a group has no such route — the
-            // gesture is a no-op and the sentence would be sending someone to
-            // pull at a list that cannot change. Say what is true instead.
-            return .unresolved(
-                isGroup
-                    ? "the desktop's copy of this chat has changed and a group chat can't be refreshed to catch up"
-                    : "the desktop's copy of this chat has changed; refresh and try again")
+            // "Refresh and try again" is real advice in a DIRECT chat and a
+            // GROUP chat alike now: pull-to-refresh calls `reload`, which
+            // re-syncs a group from every session's transcript — dropping
+            // local bubbles no session holds, restoring turns this phone never
+            // showed, and re-acquiring the server turn ids that let the next
+            // swipe delete by name. That is exactly the repair a drifted
+            // session needs; the alternative — refusing forever with nothing
+            // the user can do — is the standing cost this bead exists to end.
+            return .unresolved("the desktop's copy of this chat has changed; refresh and try again")
         }
     }
 
@@ -1104,25 +1134,126 @@ final class ChatThread: Identifiable, Hashable {
     /// swipe's prefix walk finds them disagreeing, refuses as `ambiguous`, and
     /// the copies that DID survive can never be deleted at all. Keeping the
     /// removal is the description that is true of most sessions and leaves the
-    /// user somewhere to go.
+    /// user somewhere to go — and this report is that somewhere: it sits where
+    /// the deleted message was rather than at the end of a long transcript,
+    /// names each surviving chat with ITS OWN reason, and remembers the named
+    /// turns so the view's retry button on this very note can re-delete them
+    /// by name.
     ///
     /// The one thing never done here is nothing. An unreported partial delete
     /// is the silent local-only delete this whole path exists to end, just with
     /// fewer sessions holding the evidence.
-    private func reportPartialDelete(_ failures: [(familiarId: String, reason: String)],
-                                     familiarNames: [String: String],
-                                     onChange: @escaping () -> Void) {
-        let names = failures.map { familiarNames[$0.familiarId] ?? $0.familiarId }
-        let reason = failures[0].reason
-        // Most `localizedDescription`s already end in a full stop, and
-        // "… status 404.." is a shabby thing to read back to someone.
-        let detail = reason.hasSuffix(".") ? String(reason.dropLast()) : reason
-        appendSystem(
-            "That message was deleted, but it is still in this chat with "
-                + "\(names.joined(separator: ", ")) — \(detail).",
-            isError: true)
+    private func reportPartialDelete(
+        _ failures: [(familiarId: String, sessionId: String, turnId: String, reason: String)],
+        at index: Int,
+        familiarNames: [String: String],
+        onChange: @escaping () -> Void
+    ) {
+        let noteId = insertSystem(
+            Self.partialDeleteSentence(
+                failures.map { (familiarId: $0.familiarId, reason: $0.reason) },
+                familiarNames: familiarNames),
+            at: index, isError: true)
+        pendingPartialDeleteRetry[noteId] = PartialDeleteRetryState(
+            noteId: noteId,
+            legs: failures.map {
+                (familiarId: $0.familiarId, sessionId: $0.sessionId,
+                 turnId: $0.turnId, reason: $0.reason)
+            })
         updatedAt = Date()
         onChange()
+    }
+
+    /// One failed leg of a partial group delete, kept so the user can retry it.
+    /// The turn was already NAMED by the resolve phase before the first
+    /// attempt, so a retry re-deletes by name — no matching, and no refusal a
+    /// drifted transcript can re-provoke.
+    private struct PartialDeleteRetryState {
+        /// The system note that reported the partial delete; removed when the
+        /// last surviving copy finally lands.
+        var noteId: String
+        /// The sessions the delete did not reach, with the named turn each
+        /// still holds. Each leg keeps its OWN failure reason — a desktop that
+        /// went away and a desktop that refused are different facts about
+        /// different chats.
+        var legs: [(familiarId: String, sessionId: String, turnId: String, reason: String)]
+    }
+
+    /// Whether a system note is a partial-delete report with a surviving copy
+    /// that can still be deleted — the view offers a retry button when true.
+    func canRetryPartialDelete(noteId: String) -> Bool {
+        pendingPartialDeleteRetry[noteId] != nil
+    }
+
+    /// Re-attempt the deletes a partial group delete failed to land. Each
+    /// surviving session's turn was named before the first attempt, so this
+    /// re-deletes by name. Serialized behind the same per-thread delete chain,
+    /// so a retry never lands inside another delete's conversation read.
+    func retryPartialDelete(noteId: String, client: CaveClient?,
+                            familiarNames: [String: String],
+                            onChange: @escaping () -> Void) {
+        guard pendingPartialDeleteRetry[noteId] != nil else { return }
+        guard let client else { return }
+        let previous = pendingServerDelete
+        pendingServerDelete = Task { [weak self] in
+            _ = await previous?.value
+            await self?.retryPartialDeleteLegs(noteId: noteId, client: client,
+                                               familiarNames: familiarNames,
+                                               onChange: onChange)
+        }
+    }
+
+    private func retryPartialDeleteLegs(noteId: String, client: CaveClient,
+                                        familiarNames: [String: String],
+                                        onChange: @escaping () -> Void) async {
+        guard var state = pendingPartialDeleteRetry[noteId] else { return }
+        var stillFailing: [(familiarId: String, sessionId: String, turnId: String, reason: String)] = []
+        for leg in state.legs {
+            do {
+                try await client.deleteConversationTurn(sessionId: leg.sessionId,
+                                                        turnId: leg.turnId)
+            } catch {
+                stillFailing.append(leg)
+            }
+        }
+        if stillFailing.isEmpty {
+            // Every surviving copy is really gone now — the warning note's
+            // job is done, so it goes with the record.
+            pendingPartialDeleteRetry[noteId] = nil
+            messages.removeAll { $0.id == noteId }
+        } else {
+            state.legs = stillFailing
+            pendingPartialDeleteRetry[noteId] = state
+            updateText(
+                noteId,
+                Self.partialDeleteSentence(
+                    stillFailing.map { (familiarId: $0.familiarId, reason: $0.reason) },
+                    familiarNames: familiarNames),
+                isError: true)
+        }
+        updatedAt = Date()
+        onChange()
+    }
+
+    /// The sentence that names which chats still hold a partially-deleted
+    /// message and, for EACH one, why its copy survived. A chat and its reason
+    /// are independent facts — one desktop refused, another went away — so
+    /// reading every survivor's reason off the first failure is a lie whenever
+    /// they differ.
+    nonisolated static func partialDeleteSentence(
+        _ failures: [(familiarId: String, reason: String)],
+        familiarNames: [String: String]
+    ) -> String {
+        let detail = failures.map { failure -> String in
+            let name = familiarNames[failure.familiarId] ?? failure.familiarId
+            // Most `localizedDescription`s already end in a full stop, and
+            // "… status 404.." is a shabby thing to read back to someone.
+            let reason = failure.reason.hasSuffix(".")
+                ? String(failure.reason.dropLast())
+                : failure.reason
+            return "\(name) — \(reason)"
+        }.joined(separator: "; ")
+        return "That message was deleted, but it is still in this chat with \(detail)."
     }
 
     /// What the server's transcript says about a message it never named.
@@ -1295,6 +1426,18 @@ final class ChatThread: Identifiable, Hashable {
         return message.id
     }
 
+    /// Insert an inline system note at a specific position — a delete report
+    /// sits where the deleted message was, so the swipe and its outcome are
+    /// the same place in the transcript rather than the far end of it.
+    /// Returns the note's id.
+    @discardableResult
+    func insertSystem(_ text: String, at index: Int, isError: Bool = false) -> String {
+        let message = DisplayMessage(role: .system, familiarId: nil, text: text, isError: isError)
+        messages.insert(message, at: min(max(index, 0), messages.count))
+        updatedAt = Date()
+        return message.id
+    }
+
     /// Replace the text of a previously-appended message (by id).
     func updateText(_ messageId: String, _ text: String, isError: Bool = false) {
         mutate(messageId) { $0.text = text; if isError { $0.isError = true } }
@@ -1304,24 +1447,219 @@ final class ChatThread: Identifiable, Hashable {
     /// Remove every message, keeping the thread (mirrors web `/clear`).
     func clearMessages() {
         messages.removeAll()
+        absentForSession.removeAll()
+        pendingPartialDeleteRetry.removeAll()
         updatedAt = Date()
     }
 
     /// Re-fetch this thread's conversation from the server and replace the local
     /// messages — backs pull-to-refresh, so a chat advanced on another device
-    /// catches up. Direct threads only: a group is N independent sessions with no
-    /// shared turn ordering to merge. Skipped while streaming (and when there's no
-    /// server session yet) so an in-flight reply is never clobbered.
-    /// Re-sync a direct chat from the server. No-ops for groups / streaming /
-    /// unsent threads; THROWS on a real fetch failure so the caller (pull to
-    /// refresh) can surface it instead of failing silently.
+    /// catches up. A group is N independent sessions with no shared turn
+    /// ordering, so it re-syncs every session and reconciles the merged view
+    /// from their transcripts (see `reconciledGroupTranscript`) instead of
+    /// replacing it wholesale — the recovery gesture a drifted group delete
+    /// was missing. Skipped while streaming (and when there's no server session
+    /// yet) so an in-flight reply is never clobbered. THROWS on a real fetch
+    /// failure so the caller (pull to refresh) can surface it instead of
+    /// failing silently.
     func reload(client: CaveClient) async throws {
-        guard !isGroup, !isStreaming,
-              let familiarId = familiarIds.first,
+        guard !isStreaming else { return }
+        if isGroup {
+            try await reloadGroup(client: client)
+            return
+        }
+        guard let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId] else { return }
         guard let convo = try await client.conversation(sessionId: sessionId) else { return }
         messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId)
         updatedAt = Date()
+    }
+
+    /// Re-sync a GROUP thread from the server: fetch every session's transcript
+    /// and reconcile the merged view against them. A session that cannot be
+    /// reached is skipped, not fatal — re-syncing the sessions that DO answer
+    /// is still progress, and if none answer the reload is a no-op (the old
+    /// `guard !isGroup` behaviour, reached honestly).
+    private func reloadGroup(client: CaveClient) async throws {
+        var transcripts: [(familiarId: String, turns: [ChatTurn])] = []
+        for familiarId in familiarIds {
+            guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { continue }
+            guard let convo = try? await client.conversation(sessionId: sessionId) else { continue }
+            transcripts.append((familiarId: familiarId, turns: convo.turns))
+        }
+        guard !transcripts.isEmpty else { return }
+        let reconciled = Self.reconciledGroupTranscript(current: messages,
+                                                        transcripts: transcripts)
+        messages = reconciled.messages
+        let keptIds = Set(messages.map(\.id))
+        absentForSession = reconciled.absentForSession.filter { keptIds.contains($0.key) }
+        updatedAt = Date()
+    }
+
+    /// Rebuild this thread's merged group transcript from each session's
+    /// server truth, and record which sessions provably never received which
+    /// messages.
+    ///
+    /// A group is N independent server sessions presented as one merged list,
+    /// and the merged list is the only transcript the phone keeps — so when a
+    /// session's server copy drifts from it (a reply cancelled before it
+    /// landed, a retried bubble the server re-appended, a fan-out that reached
+    /// some familiars and not others), the phone cannot see the truth until it
+    /// asks. This is that ask: each session's transcript is walked against
+    /// THIS thread's projection for that session — the same per-session view
+    /// the delete matcher uses — and the merged list is reconciled three ways:
+    ///
+    ///  - a local message a server turn agrees with adopts that turn's id, so
+    ///    a later delete names it instead of guessing;
+    ///  - a server turn the local list never showed (a retry's re-appended
+    ///    prompt+reply pair, a reply that landed while this device was away)
+    ///    is restored in place, so the session's transcript stops disagreeing
+    ///    at that position;
+    ///  - a local message EVERY session it projects into cleanly skipped never
+    ///    reached the server — a phantom everywhere — and is dropped rather
+    ///    than left to shift every later ordinal and refuse every later
+    ///    delete in the thread.
+    ///
+    /// The third outcome is recorded per session too: a message some sessions
+    /// hold and one provably does not (the fan-out that reached three of
+    /// four) keeps its place in the merged list, and the delete path learns
+    /// which session to skip instead of refusing the whole delete on its
+    /// behalf. A session whose walk could not say (neither side lined up) is
+    /// left unreconciled — nothing is dropped or adopted on its say-so, since
+    /// guessing is how a delete removes a stranger's turn.
+    ///
+    /// Pure over its inputs, so the delete recovery is testable without a
+    /// desktop.
+    nonisolated static func reconciledGroupTranscript(
+        current: [DisplayMessage],
+        transcripts: [(familiarId: String, turns: [ChatTurn])]
+    ) -> (messages: [DisplayMessage], absentForSession: [String: Set<String>]) {
+        var adoptions: [String: String] = [:]
+        var matchedBy: [String: Set<String>] = [:]
+        var absentFrom: [String: Set<String>] = [:]
+        var projectedInto: [String: Set<String>] = [:]
+        var insertions: [(anchorId: String?, familiarId: String, turn: ChatTurn)] = []
+
+        for transcript in transcripts {
+            let projection: [(id: String, message: DisplayMessage)] = current.compactMap { message in
+                guard let projected = sessionTurn(message, in: transcript.familiarId, isGroup: true) else {
+                    return nil
+                }
+                return (message.id, projected)
+            }
+            for (id, _) in projection {
+                projectedInto[id, default: []].insert(transcript.familiarId)
+            }
+
+            var p = 0
+            var t = 0
+            var lastMatchedId: String? = nil
+            var clean = true
+            while p < projection.count, t < transcript.turns.count {
+                let local = projection[p]
+                if Self.turn(transcript.turns[t], is: local.message) {
+                    adoptions[local.id] = transcript.turns[t].id
+                    matchedBy[local.id, default: []].insert(transcript.familiarId)
+                    lastMatchedId = local.id
+                    p += 1
+                    t += 1
+                    continue
+                }
+                // The server may hold turns the local list never showed (a
+                // retry re-appends its prompt+reply pair; a reply can land
+                // while this device is away). Look a little way ahead for the
+                // local message before declaring either side extra — the bound
+                // keeps a repeated short turn ("ok") from pulling the walk
+                // onto a stranger's copy of it.
+                var skipped = 0
+                var found = false
+                while skipped < 3, t + skipped + 1 < transcript.turns.count {
+                    skipped += 1
+                    if Self.turn(transcript.turns[t + skipped], is: local.message) {
+                        found = true
+                        break
+                    }
+                }
+                if found {
+                    for k in 0..<skipped {
+                        insertions.append((anchorId: lastMatchedId,
+                                           familiarId: transcript.familiarId,
+                                           turn: transcript.turns[t + k]))
+                    }
+                    adoptions[local.id] = transcript.turns[t + skipped].id
+                    matchedBy[local.id, default: []].insert(transcript.familiarId)
+                    lastMatchedId = local.id
+                    p += 1
+                    t += skipped + 1
+                    continue
+                }
+                // Otherwise the local message may be one this session never
+                // received — a phantom here — if the NEXT local message lines
+                // up with the current server turn.
+                if p + 1 < projection.count,
+                   Self.turn(transcript.turns[t], is: projection[p + 1].message) {
+                    absentFrom[local.id, default: []].insert(transcript.familiarId)
+                    p += 1
+                    continue
+                }
+                // Neither side lines up: the walk cannot say what happened.
+                // Stop and leave the rest of this session unreconciled.
+                clean = false
+                break
+            }
+            if clean {
+                // The walk ran off one end of the transcript. Local messages
+                // past the end were never received by this session; server
+                // turns past the end were never shown locally.
+                for i in p..<projection.count {
+                    absentFrom[projection[i].id, default: []].insert(transcript.familiarId)
+                }
+                for k in t..<transcript.turns.count {
+                    insertions.append((anchorId: lastMatchedId,
+                                       familiarId: transcript.familiarId,
+                                       turn: transcript.turns[k]))
+                }
+            }
+        }
+
+        var rebuilt: [DisplayMessage] = []
+        rebuilt += insertions
+            .filter { $0.anchorId == nil }
+            .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId) }
+        for message in current {
+            let projected = projectedInto[message.id] ?? []
+            if projected.isEmpty {
+                // Not in any session's projection — a queued send, inline
+                // slash output, or an unattributed group reply. The server
+                // never held it; the local copy is the whole truth.
+                rebuilt.append(message)
+            } else if let matched = matchedBy[message.id], !matched.isEmpty {
+                // At least one session's transcript holds it. Adopt the turn
+                // id the walk matched — the last session to walk wins, and the
+                // id is inert for fanned-out user turns anyway (sessionTurn
+                // strips it before it could name a stranger's session).
+                var kept = message
+                if let id = adoptions[message.id] {
+                    kept.serverTurnId = id
+                }
+                rebuilt.append(kept)
+            } else if absentFrom[message.id, default: []] == projected {
+                // Every session it projects into cleanly proved it never
+                // received it — a phantom everywhere. Dropping it is the
+                // repair: kept, it shifts every later ordinal and refuses
+                // every later delete in the thread.
+                continue
+            } else {
+                // At least one session's walk could not say (it bailed before
+                // this message). Guessing is how a delete removes a stranger's
+                // turn — keep it and let the delete path refuse honestly.
+                rebuilt.append(message)
+            }
+            rebuilt += insertions
+                .filter { $0.anchorId == message.id }
+                .map { DisplayMessage.restored(from: $0.turn, familiarId: $0.familiarId) }
+        }
+        return (rebuilt, absentFrom)
     }
 
     private var replayingQueued = false
