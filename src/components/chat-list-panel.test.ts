@@ -88,7 +88,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /<label[\s\S]{0,240}?chat-list-search-control[\s\S]{0,1400}?aria-label="Search sessions"/,
+  /<label[\s\S]{0,240}?chat-list-search-control[\s\S]{0,1400}?aria-label="Filter sessions"/,
   "the session search keeps the full control surface clickable through its label",
 );
 assert.match(

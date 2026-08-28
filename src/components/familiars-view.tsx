@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { requestGlobalSearch } from "@/lib/global-search-request";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -497,7 +498,7 @@ export function FamiliarsView({
             <input
               ref={searchRef}
               type="search"
-              aria-label="Search familiars"
+              aria-label="Filter familiars"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -506,7 +507,7 @@ export function FamiliarsView({
                   setQuery("");
                 }
               }}
-              placeholder="Search familiars…"
+              placeholder="Filter familiars…"
               className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 font-mono text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
             {!query && (
@@ -518,6 +519,15 @@ export function FamiliarsView({
               </kbd>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => requestGlobalSearch("type:familiar")}
+            aria-label="Search all familiars globally"
+            title="Search all familiars globally (type:familiar)"
+            className="focus-ring ml-2 shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            Search all familiars
+          </button>
           {memoryError ? (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2 py-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
               <Icon name="ph:warning-circle" width={12} />

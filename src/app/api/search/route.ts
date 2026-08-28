@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { readJsonBody } from "@/lib/server/api-security";
 import { runSearch, validateQuery, MAX_PAGE } from "@/lib/search-coordinator";
+import { createServerSearchSetup } from "@/lib/server/search-runtime";
+import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,9 +23,9 @@ const MAX_BODY_BYTES = 64 * 1024;
  * because collapsing them into one empty array is what makes a search surface
  * feel broken rather than honest.
  *
- * Registration of real providers is deliberately NOT here: this route wires the
- * coordinator to HTTP and nothing else, so the provider set and the index
- * remain injectable and testable without a server.
+ * Provider registration lives in @/lib/server/search-runtime (cave-ychtl.6):
+ * this route wires the coordinator to HTTP and to that registry, keeping the
+ * provider set and the index injectable and testable without a server.
  */
 export async function POST(req: Request) {
   // The shared helper, not a hand-rolled req.json(): it enforces
@@ -50,26 +52,31 @@ export async function POST(req: Request) {
   const limitInput = Number(payload.limit);
   const limit = Number.isFinite(limitInput) ? Math.max(1, Math.min(limitInput, MAX_PAGE)) : MAX_PAGE;
 
+  // Unit 6 wires the real registry and the index reader: providers built from
+  // the saved project/board/conversation/familiar stores plus the live file
+  // provider, and a lazy per-process FTS5 index that refreshes only when a
+  // provider fingerprint moves. Allowed project ids are resolved server-side
+  // from the saved project store — never trusted from the body — and the
+  // coordinator re-applies them before ranking.
+  //
+  // Familiar access is roster-wide (the local user owns their whole roster):
+  // resolved from the visible roster rather than trusted from the body, so a
+  // familiar-scoped row is never readable because a client CLAIMED a familiar.
+  // The optional body familiar id only selects the single-familiar pin for
+  // scoped surfaces; roster access keeps global broadening inclusive.
+  const roster = await loadVisibleFamiliarRoster();
+  const familiarIds = roster.ok ? roster.roster.map((familiar) => familiar.id) : [];
+  const setup = await createServerSearchSetup(validated.query, { familiarIds });
   const outcome = await runSearch(
     {
       query: validated.query,
-      context: {
-        // Resolved by the caller's session, never trusted from the body. Until
-        // the session plumbing lands (unit 6), an unrestricted context is only
-        // safe because no provider is registered below.
-        allowedProjectIds: null,
-        allowedProjectRoots: null,
-        familiarId: null,
-      },
+      context: setup.requesterContext,
       limit,
       now: Date.now(),
     },
     {
-      // No providers registered yet — units 3/3b built them, unit 6 wires the
-      // real registry and the index reader. An empty set returns a truthful
-      // filtered-empty rather than pretending to have searched.
-      providers: [],
-      readIndexed: async () => ({ rows: [], stale: false }),
+      providers: setup.providers,
+      readIndexed: setup.readIndexed,
     },
   );
 

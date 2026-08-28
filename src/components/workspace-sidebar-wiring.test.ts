@@ -103,7 +103,7 @@ assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rai
 // search on the Sessions list view.
 assert.doesNotMatch(
   workspaceSidebar,
-  /placeholder="Search chats…"/,
+  /placeholder="Filter chats…"/,
   "the embedded list carries no search field of its own",
 )
 
