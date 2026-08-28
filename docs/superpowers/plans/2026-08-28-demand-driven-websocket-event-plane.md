@@ -1,6 +1,6 @@
 # Demand-driven WebSocket Event Plane Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax as working notes; checkbox state is not evidence of completion — code and merged PRs are authoritative.
 
 **Goal:** Add a demand-driven, authenticated WebSocket invalidation/control plane that replaces recurring polling for sessions, board cards, run status, familiar roster state, and daemon connectivity when the socket is healthy.
 
