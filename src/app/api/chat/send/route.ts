@@ -3350,6 +3350,37 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         usage?: TurnUsage;
         costUsd?: number;
       } = {};
+      // Copilot reports per-message token usage on assistant.message frames;
+      // its terminal result frame only carries duration metrics. Accumulate
+      // the turn's usage here and merge it into the persisted/done result
+      // through the shared defensive parser (CHAT-D12-02 / cave-0osmn).
+      let copilotUsage: {
+        input_tokens: number;
+        output_tokens: number;
+        cache_read_input_tokens?: number;
+        cache_creation_input_tokens?: number;
+      } | undefined;
+      // The CLI can re-emit a full message frame for the same id (e.g. a
+      // correction); its usage block would then be counted twice. Count each
+      // message id once, first-wins.
+      const copilotUsageMessageIds = new Set<string>();
+      const accumulateCopilotUsage = (raw: {
+        input_tokens: number;
+        output_tokens: number;
+        cache_read_input_tokens?: number;
+        cache_creation_input_tokens?: number;
+      }) => {
+        copilotUsage = {
+          input_tokens: (copilotUsage?.input_tokens ?? 0) + raw.input_tokens,
+          output_tokens: (copilotUsage?.output_tokens ?? 0) + raw.output_tokens,
+          ...(raw.cache_read_input_tokens !== undefined || copilotUsage?.cache_read_input_tokens !== undefined
+            ? { cache_read_input_tokens: (copilotUsage?.cache_read_input_tokens ?? 0) + (raw.cache_read_input_tokens ?? 0) }
+            : {}),
+          ...(raw.cache_creation_input_tokens !== undefined || copilotUsage?.cache_creation_input_tokens !== undefined
+            ? { cache_creation_input_tokens: (copilotUsage?.cache_creation_input_tokens ?? 0) + (raw.cache_creation_input_tokens ?? 0) }
+            : {}),
+        };
+      };
       // Launch-integrity flag (#3856): set when the pre-spawn availability
       // gate or the post-spawn error handler proves the harness never
       // actually ran. Downstream it suppresses the empty-output diagnostic
@@ -3785,6 +3816,10 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
                   if (toolEv) push({ kind: "tool_use", ...toolEv });
                   settlePendingCopilotToolCompletion(req.toolCallId);
                 }
+                if (ev.usage && !copilotUsageMessageIds.has(ev.messageId)) {
+                  copilotUsageMessageIds.add(ev.messageId);
+                  accumulateCopilotUsage(ev.usage);
+                }
                 break;
               }
               case "tool_start": {
@@ -3819,6 +3854,7 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
                 result = {
                   duration_ms: ev.durationMs,
                   is_error: ev.isError,
+                  ...(copilotUsage ? { usage: parseStreamJsonUsage(copilotUsage) } : {}),
                 };
                 break;
               }
@@ -4001,6 +4037,11 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
       };
 
       const handleOpenCodeLine = (line: string) => {
+        // Token usage (cave-0osmn): OpenCode's `run --format json` stream
+        // exposes only text/tool/step/error parts; per-message token and
+        // cost counters live in message metadata that the CLI does not emit
+        // on this transport, so no usage is forwarded and the meter stays
+        // absent rather than inventing a number nothing measured.
         // Current OpenCode can write a human-oriented permission control
         // notice to stdout. Only structured mode has framing sufficient to
         // recognize it without risking a valid assistant-text loss.
@@ -4213,6 +4254,16 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             if (started) push({ kind: "tool_use", ...started });
             const ended = toolTracker.envelopeToolResult(event.id, event.output, event.isError);
             if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          case "completed": {
+            // Terminal Codex success (`turn.completed`) carries whole-turn
+            // token usage (CHAT-D12-02 / cave-0osmn). The stream's final
+            // failure state, if one arrives later, stays authoritative.
+            result = {
+              ...result,
+              ...(event.usage ? { usage: parseStreamJsonUsage(event.usage) } : {}),
+            };
             return;
           }
           case "failure": {
@@ -4716,7 +4767,14 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
                   hermesResponseId = event.id;
                   if (!sessionId) announceSession(event.id);
                 }
-                result = { ...result, is_error: event.isError };
+                // The Responses terminal can carry whole-turn token usage
+                // (CHAT-D12-02 / cave-0osmn); merge it through the shared
+                // defensive parser so it persists and reaches the done event.
+                result = {
+                  ...result,
+                  is_error: event.isError,
+                  ...(event.usage ? { usage: parseStreamJsonUsage(event.usage) } : {}),
+                };
                 if (event.isError) recordStdoutErrorTail("Hermes API stream failed", true);
                 if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
                 return true;
@@ -5379,6 +5437,8 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
         result = {};
+        copilotUsage = undefined;
+        copilotUsageMessageIds.clear();
         resetToolTrackerForRetry();
         openCodeModelRejected = false;
         copilotText.reset();
@@ -5439,6 +5499,8 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
         result = {};
+        copilotUsage = undefined;
+        copilotUsageMessageIds.clear();
         resetToolTrackerForRetry();
         openCodeModelRejected = false;
         copilotText.reset();

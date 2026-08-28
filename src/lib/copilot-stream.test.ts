@@ -513,6 +513,67 @@ assert.deepEqual(
   "the parser preserves the schema-declared frame identity for replay suppression",
 );
 
+// ── assistant.message token usage (cave-0osmn) ───────────────────────────────
+// Copilot reports OpenAI-style counters on message frames when its runtime
+// has them; Cave normalises them onto the stream-json wire contract so the
+// route can sum a turn's messages through the shared defensive parser.
+
+assert.deepEqual(
+  parseCopilotChatEvent({
+    type: "assistant.message",
+    data: {
+      messageId: "m-usage",
+      content: "done",
+      toolRequests: [],
+      usage: {
+        prompt_tokens: 10200,
+        completion_tokens: 2150,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 1200,
+      },
+    },
+  }),
+  {
+    kind: "message",
+    messageId: "m-usage",
+    content: "done",
+    toolRequests: [],
+    model: undefined,
+    usage: {
+      input_tokens: 10200,
+      output_tokens: 2150,
+      cache_read_input_tokens: 5000,
+      cache_creation_input_tokens: 1200,
+    },
+  },
+  "a message frame with OpenAI-style usage maps onto the stream-json wire contract",
+);
+assert.deepEqual(
+  parseCopilotChatEvent({
+    type: "assistant.message",
+    data: { messageId: "m-min", content: "hi", toolRequests: [], usage: { prompt_tokens: 12, completion_tokens: 34 } },
+  }),
+  {
+    kind: "message",
+    messageId: "m-min",
+    content: "hi",
+    toolRequests: [],
+    model: undefined,
+    usage: { input_tokens: 12, output_tokens: 34 },
+  },
+  "cache counters stay optional when Copilot omits them",
+);
+const noUsageMessage = parseCopilotChatEvent({
+  type: "assistant.message",
+  data: { messageId: "m-nousage", content: "hi", toolRequests: [] },
+});
+assert.equal(noUsageMessage?.kind === "message" ? noUsageMessage.usage : undefined, undefined, "messages without a usage block stay usage-free");
+const badUsageMessage = parseCopilotChatEvent({
+  type: "assistant.message",
+  data: { messageId: "m-bad", content: "hi", toolRequests: [], usage: { prompt_tokens: "12k", completion_tokens: NaN } },
+});
+assert.equal(badUsageMessage?.kind === "message" ? badUsageMessage.usage : undefined, undefined, "malformed usage counters fail closed rather than inventing a meter");
+
 const resultEv = parseCopilotChatEvent(JSON.parse(FIXTURE[14]));
 assert.deepEqual(resultEv, {
   kind: "result",

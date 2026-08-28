@@ -566,6 +566,21 @@ export type CopilotToolRequest = {
   input?: unknown;
 };
 
+/**
+ * Copilot per-message token usage normalised onto the stream-json wire
+ * contract (CHAT-D12-02): Copilot reports OpenAI-style counters
+ * (`prompt_tokens`/`completion_tokens`/`cache_read_input_tokens`/
+ * `cache_creation_input_tokens`) on `assistant.message` frames; Cave maps
+ * them to the shared contract so the route can sum a turn's messages and
+ * persist the total through `parseStreamJsonUsage` unchanged.
+ */
+export type CopilotStreamUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+};
+
 export type CopilotChatEvent =
   | { kind: "text_delta"; messageId: string; text: string; frameId?: string; model?: string }
   | {
@@ -576,6 +591,8 @@ export type CopilotChatEvent =
       /** The message content is usable, but one or more declared tool calls were not. */
       malformedToolRequests?: boolean;
       model?: string;
+      /** Token usage this assistant message's model call reported, when the CLI emits it. */
+      usage?: CopilotStreamUsage;
     }
   | {
       kind: "tool_start";
@@ -608,6 +625,29 @@ function field(source: Record<string, unknown> | null, aliases: string[]): unkno
 function textField(source: Record<string, unknown> | null, aliases: string[]): string | undefined {
   const value = field(source, aliases);
   return typeof value === "string" && value ? value : undefined;
+}
+
+function finiteNonNegative(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function copilotMessageUsage(data: Record<string, unknown> | null, protocol: RuntimeEventProtocolSchema): CopilotStreamUsage | undefined {
+  const raw = record(field(data, protocol.fields.usage));
+  if (!raw) return undefined;
+  // Copilot reports OpenAI-style counters on assistant.message frames; a
+  // declared-but-malformed block is protocol drift, not permission to
+  // reinterpret the message as usage-free.
+  const inputTokens = finiteNonNegative(raw.prompt_tokens);
+  const outputTokens = finiteNonNegative(raw.completion_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const cacheRead = finiteNonNegative(raw.cache_read_input_tokens);
+  const cacheWrite = finiteNonNegative(raw.cache_creation_input_tokens);
+  return {
+    input_tokens: inputTokens ?? 0,
+    output_tokens: outputTokens ?? 0,
+    ...(cacheRead !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
+  };
 }
 
 function typeIs(type: string, aliases: string[]): boolean {
@@ -706,6 +746,7 @@ export function parseCopilotChatEvent(
           });
         }
       }
+      const usage = copilotMessageUsage(data, protocol);
       return {
         kind: "message",
         messageId,
@@ -713,6 +754,7 @@ export function parseCopilotChatEvent(
         toolRequests,
         ...(malformedToolRequests ? { malformedToolRequests: true } : {}),
         model: asModel(field(data, protocol.fields.model)),
+        ...(usage ? { usage } : {}),
       };
   }
   if (typeIs(type, protocol.eventTypes.toolStart)) {

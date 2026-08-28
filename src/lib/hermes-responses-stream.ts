@@ -9,13 +9,26 @@
 // incomplete data.  The normalised events are fed to ToolCallTracker by the
 // chat route, retaining Cave's stable-id, persistence, and resume semantics.
 
+/**
+ * Hermes Responses terminal token usage normalised onto the stream-json
+ * wire contract (CHAT-D12-02): the OpenAI-compatible Responses API reports
+ * `input_tokens`/`output_tokens` with `input_tokens_details.cached_tokens`;
+ * Cave maps the cached count onto cache reads so its shared
+ * `parseStreamJsonUsage` can persist and render it unchanged.
+ */
+export type HermesStreamUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+};
+
 export type HermesResponsesEvent =
   | { kind: "text"; text: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown; itemId?: string }
   | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
-  | { kind: "done"; isError: boolean; id?: string; message?: string; invalidPreviousResponseId?: boolean }
+  | { kind: "done"; isError: boolean; id?: string; message?: string; invalidPreviousResponseId?: boolean; usage?: HermesStreamUsage }
   | { kind: "error"; message: string; invalidPreviousResponseId?: boolean }
   | { kind: "ignore" };
 
@@ -82,6 +95,28 @@ function toolFailed(value: RecordValue, item: RecordValue | null): boolean {
   return hasError(value.error) || hasError(item?.error) ||
     failedStatuses.has(string(value.status) ?? "") ||
     failedStatuses.has(string(item?.status) ?? "");
+}
+
+function finiteNonNegative(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Responses `usage` block → stream-json wire contract (CHAT-D12-02). */
+function responsesUsage(value: RecordValue | null): HermesStreamUsage | undefined {
+  const response = record(value?.response) ?? value;
+  const raw = record(response?.usage) ?? record(value?.usage);
+  if (!raw) return undefined;
+  const inputTokens = finiteNonNegative(raw.input_tokens);
+  const outputTokens = finiteNonNegative(raw.output_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  // OpenAI Responses nests cache hits under input_tokens_details.cached_tokens.
+  const details = record(raw.input_tokens_details);
+  const cacheRead = finiteNonNegative(details?.cached_tokens) ?? finiteNonNegative(raw.cached_input_tokens);
+  return {
+    input_tokens: inputTokens ?? 0,
+    output_tokens: outputTokens ?? 0,
+    ...(cacheRead !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
+  };
 }
 
 /** A fresh retry is safe only when the API explicitly rejects the stored
@@ -209,18 +244,26 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
 
   if (type === "response.completed") {
     const id = responseId(value);
-    return { kind: "done", isError: false, ...(id ? { id } : {}) };
+    const usage = responsesUsage(value);
+    return {
+      kind: "done",
+      isError: false,
+      ...(id ? { id } : {}),
+      ...(usage ? { usage } : {}),
+    };
   }
   if (type === "response.failed" || type === "response.incomplete") {
     const response = record(value.response);
     const error = record(response?.error) ?? record(value.error);
     const message = string(error?.message) ?? string(value.message);
     const id = responseId(value);
+    const usage = responsesUsage(value);
     return {
       kind: "done",
       isError: true,
       ...(id ? { id } : {}),
       ...(message ? { message } : {}),
+      ...(usage ? { usage } : {}),
       ...(isHermesInvalidPreviousResponseIdError(value) ? { invalidPreviousResponseId: true } : {}),
     };
   }

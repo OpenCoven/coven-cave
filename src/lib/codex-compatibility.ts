@@ -1063,11 +1063,26 @@ export function peekCachedCodexRuntime(
   return cached.report;
 }
 
+/**
+ * Codex turn token usage normalised onto the stream-json wire contract
+ * (CHAT-D12-02): `cached_input_tokens` maps to cache reads and
+ * `cache_write_input_tokens` to cache writes so Cave's shared
+ * `parseStreamJsonUsage` can consume the terminal event unchanged.
+ */
+export type CodexTurnUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+};
+
 export type CodexStreamEvent =
   | { kind: "text"; text: string }
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
+  /** Terminal Codex success (`turn.completed`) with optional token usage. */
+  | { kind: "completed"; usage?: CodexTurnUsage }
   /** Terminal Codex failure with no untrusted payload attached. */
   | { kind: "failure" }
   | { kind: "unknown"; fingerprint: string }
@@ -1100,6 +1115,26 @@ function eventFingerprint(value: Record<string, unknown>): string {
   return createHash("sha256").update(shape).digest("hex").slice(0, 12);
 }
 
+function finiteNonNegative(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function codexTurnUsage(value: Record<string, unknown>): CodexTurnUsage | undefined {
+  const raw = record(value.usage);
+  if (!raw) return undefined;
+  const inputTokens = finiteNonNegative(raw.input_tokens);
+  const outputTokens = finiteNonNegative(raw.output_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const cacheRead = finiteNonNegative(raw.cached_input_tokens);
+  const cacheWrite = finiteNonNegative(raw.cache_write_input_tokens);
+  return {
+    input_tokens: inputTokens ?? 0,
+    output_tokens: outputTokens ?? 0,
+    ...(cacheRead !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
+  };
+}
+
 export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema): CodexStreamEvent | null {
   const event = record(value);
   if (!event || typeof event.type !== "string") return null;
@@ -1112,8 +1147,17 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   if (event.type === "turn.failed" || event.type === "error") {
     return { kind: "failure" };
   }
-  if (event.type === "turn.started" || event.type === "turn.completed") {
+  if (event.type === "turn.started") {
     return { kind: "ignored" };
+  }
+  if (event.type === "turn.completed") {
+    // The Codex CLI reports whole-turn token usage on its terminal success
+    // event (`codex exec --json`), normalised onto the stream-json contract
+    // so Cave's shared defensive parser can persist and render it unchanged
+    // (CHAT-D12-02 / cave-0osmn). A declared-but-malformed usage block is
+    // protocol drift, not permission to reinterpret the frame.
+    const usage = codexTurnUsage(event);
+    return usage ? { kind: "completed", usage } : { kind: "completed" };
   }
   const item = record(event.item);
   if (!item) return { kind: "unknown", fingerprint: eventFingerprint(event) };

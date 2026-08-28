@@ -231,11 +231,21 @@ try {
   const done = events.findLast((event) => event.kind === "done");
   assert.ok(done, "the direct stream completes");
   assert.ok(!done.isError, "a completed fixture turn is not an error");
+  assert.deepEqual(
+    done.usage,
+    { inputTokens: 10200, outputTokens: 2150, cacheReadTokens: 5000, cacheCreationTokens: 1200 },
+    "the done event carries turn.completed token usage on the stream-json contract (cave-0osmn)",
+  );
 
   const conversation = await loadConversation(done.sessionId);
   const assistantTurn = conversation?.turns.at(-1);
   assert.equal(assistantTurn?.role, "assistant");
   assert.equal(assistantTurn?.text, "Fixture assistant response.");
+  assert.deepEqual(
+    assistantTurn?.usage,
+    { inputTokens: 10200, outputTokens: 2150, cacheReadTokens: 5000, cacheCreationTokens: 1200 },
+    "turn.completed usage persists on the saved assistant turn (cave-0osmn)",
+  );
   assert.equal(conversation?.harnessSessionId, "thread-current", "the native thread id persists for resume");
   const persistedTools = assistantTurn?.tools ?? [];
   assert.deepEqual(

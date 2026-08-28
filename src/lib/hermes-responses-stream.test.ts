@@ -49,6 +49,36 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
     parseHermesResponsesEvent("response.completed", { response: { id: "resp-terminal" } }),
     { kind: "done", isError: false, id: "resp-terminal" },
   );
+  // Terminal usage (cave-0osmn): OpenAI-compatible Responses usage maps onto
+  // the stream-json wire contract so the route persists and renders it.
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.completed", {
+      response: {
+        id: "resp-usage",
+        usage: {
+          input_tokens: 10200,
+          input_tokens_details: { cached_tokens: 5000 },
+          output_tokens: 2150,
+          total_tokens: 12350,
+        },
+      },
+    }),
+    {
+      kind: "done",
+      isError: false,
+      id: "resp-usage",
+      usage: { input_tokens: 10200, output_tokens: 2150, cache_read_input_tokens: 5000 },
+    },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.completed", {
+      response: { id: "resp-min", usage: { input_tokens: 12, output_tokens: 34 } },
+    }),
+    { kind: "done", isError: false, id: "resp-min", usage: { input_tokens: 12, output_tokens: 34 } },
+    "cache counters stay optional when the server omits them",
+  );
+  const malformedUsageDone = parseHermesResponsesEvent("response.completed", { response: { id: "resp-nousage", usage: { input_tokens: "12", output_tokens: NaN } } });
+  assert.equal(malformedUsageDone.kind === "done" ? malformedUsageDone.usage : undefined, undefined, "malformed usage fails closed rather than inventing a meter");
   assert.deepEqual(
     parseHermesResponsesEvent("response.failed", { response: { id: "resp-failed", error: { message: "invalid model" } } }),
     { kind: "done", isError: true, id: "resp-failed", message: "invalid model" },

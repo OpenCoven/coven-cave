@@ -341,6 +341,21 @@ assert.match(
   /if \(copilotStream\) \{[\s\S]*?handleCopilotLine\(line, isJson \|\| line\.trimStart\(\)\.startsWith\("\{"\)\);[\s\S]*?return;/,
   "Complete and truncated Copilot JSONL frames route through the redacted protocol handler, never the AssistantFilter",
 );
+assert.match(
+  chatRoute,
+  /let copilotUsage: \{[\s\S]*?cache_creation_input_tokens\?: number;[\s\S]*?\} \| undefined;[\s\S]*?const accumulateCopilotUsage = \(raw: \{[\s\S]*?\}\) => \{[\s\S]*?input_tokens: \(copilotUsage\?\.input_tokens \?\? 0\) \+ raw\.input_tokens,/,
+  "Copilot turns accumulate per-message token usage across the stream (cave-0osmn)",
+);
+assert.match(
+  chatRoute,
+  /if \(ev\.usage && !copilotUsageMessageIds\.has\(ev\.messageId\)\) \{[\s\S]*?accumulateCopilotUsage\(ev\.usage\);/,
+  "Copilot assistant.message frames feed the turn usage accumulator, deduped per message id (cave-0osmn)",
+);
+assert.match(
+  chatRoute,
+  /\.\.\.\(copilotUsage \? \{ usage: parseStreamJsonUsage\(copilotUsage\) \} : \{\}\),/,
+  "Copilot accumulated usage reaches the terminal result through the shared defensive parser (cave-0osmn)",
+);
 
 assert.match(
   chatRoute,

@@ -1157,6 +1157,16 @@ assert.match(
   /if \(ev\.type === "result"\) \{[\s\S]*?usage: parseStreamJsonUsage\(ev\.usage\),[\s\S]*?costUsd: parseCostUsd\(ev\.total_cost_usd\),/,
   "The result-event parse must capture usage and total_cost_usd through the defensive validators (CHAT-D12-02)",
 );
+assert.match(
+  chatRoute,
+  /case "completed": \{[\s\S]*?\.\.\.\(event\.usage \? \{ usage: parseStreamJsonUsage\(event\.usage\) \} : \{\}\),/,
+  "Codex turn.completed must merge its usage through the shared defensive parser (cave-0osmn)",
+);
+assert.match(
+  chatRoute,
+  /case "done":[\s\S]*?is_error: event\.isError,[\s\S]*?\.\.\.\(event\.usage \? \{ usage: parseStreamJsonUsage\(event\.usage\) \} : \{\}\),/,
+  "Hermes Responses terminal events must merge their usage through the shared defensive parser (cave-0osmn)",
+);
 
 assert.match(
   chatRoute,

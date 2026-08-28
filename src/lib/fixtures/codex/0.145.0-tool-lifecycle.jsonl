@@ -4,3 +4,4 @@
 {"type":"item.completed","item":{"id":"call-current","type":"command_execution","command":"git status --short","aggregated_output":""}}
 {"type":"item.started","item":{"id":"call-failed","type":"mcp_tool_call","server":"example","tool":"lookup","arguments":{"query":"sanitized fixture"}}}
 {"type":"item.completed","item":{"id":"call-failed","type":"mcp_tool_call","server":"example","tool":"lookup","status":"failed","error":{"message":"fixture failure"}}}
+{"type":"turn.completed","usage":{"input_tokens":10200,"cached_input_tokens":5000,"cache_write_input_tokens":1200,"output_tokens":2150,"reasoning_output_tokens":300}}

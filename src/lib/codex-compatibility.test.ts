@@ -145,6 +145,48 @@ const unknownTool = parseCodexStreamEvent({ type: "item.completed", item: { id: 
 assert.equal(unknownTool?.kind, "unknown", "known outer events with an unknown tool type fail closed too");
 assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never render" }, selected.schema), { kind: "failure" }, "terminal turn failures retain no payload");
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed" }, selected.schema),
+  { kind: "completed" },
+  "a turn.completed without usage confirms terminal success without inventing a meter",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({
+    type: "turn.completed",
+    usage: {
+      input_tokens: 10200,
+      cached_input_tokens: 5000,
+      cache_write_input_tokens: 1200,
+      output_tokens: 2150,
+      reasoning_output_tokens: 300,
+    },
+  }, selected.schema),
+  {
+    kind: "completed",
+    usage: {
+      input_tokens: 10200,
+      output_tokens: 2150,
+      cache_read_input_tokens: 5000,
+      cache_creation_input_tokens: 1200,
+    },
+  },
+  "turn.completed usage maps Codex counters onto the stream-json wire contract (cave-0osmn)",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: 7, output_tokens: -3, cached_input_tokens: -1 } }, selected.schema),
+  { kind: "completed", usage: { input_tokens: 7, output_tokens: 0 } },
+  "negative counters drop; partial blocks keep the valid fields",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: "12", output_tokens: NaN } }, selected.schema),
+  { kind: "completed" },
+  "malformed turn usage fails closed rather than fabricating a meter",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", secret: "never render" }, selected.schema),
+  { kind: "completed" },
+  "turn.completed payloads never leak into the usage block",
+);
 
 const decoder = new CodexJsonlDecoder();
 const preambleJson = decoder.push('{"type":"error","message":"assistant JSON, not protocol"}\n{"type":"thread.started","thread_id":"example-thread"}\n{"type":"item.started","item":{"id":"example","type":"command_execution"}}\n', selected.schema);
@@ -258,7 +300,7 @@ await assert.rejects(
   "a registry which lies about Content-Length is still bounded while streaming",
 );
 
-for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 6]] as const) {
+for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 7]] as const) {
   const fixtureSchema = resolveCodexSchema({ version, capabilities: { jsonEvents: true, resume: true } });
   assert.ok(fixtureSchema.ok, `${version} fixture selects a compatible schema`);
   if (!fixtureSchema.ok) continue;
@@ -271,6 +313,17 @@ for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 6]] as cons
       fixtureEvents.events.some((event) => event.kind === "tool_end" && event.isError),
       true,
       "the observed 0.145 completed-item failure fixture settles its tool as an error",
+    );
+    const completed = fixtureEvents.events.find((event) => event.kind === "completed");
+    assert.deepEqual(
+      completed?.usage,
+      {
+        input_tokens: 10200,
+        output_tokens: 2150,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 1200,
+      },
+      "the 0.145 fixture terminal turn.completed carries normalised usage (cave-0osmn)",
     );
   }
 }
