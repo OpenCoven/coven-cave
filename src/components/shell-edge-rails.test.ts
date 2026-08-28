@@ -105,8 +105,17 @@ assert.match(
 );
 assert.match(
   shell,
-  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
+  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\);[\s\S]*?panel\.collapse\(\);/,
   "nav toggle collapses and expands the nav panel",
+);
+// The toggle must NOT write navOpen optimistically: the nav Panel's onResize
+// callback derives it from the measured width (the single writer), so an
+// optimistic setNavOpen next to the panel call races the resize frames and
+// leaves the toggle disagreeing with the settled panel (cave-az3ha).
+assert.doesNotMatch(
+  shell.match(/const toggleNavPanel = \(\) => \{[\s\S]{0,400}?\n  \};/)?.[0] ?? "",
+  /setNavOpen\(/,
+  "the nav toggle drives the Panel only - the Panel onResize callback is the single navOpen writer",
 );
 // The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
@@ -246,8 +255,13 @@ assert.match(
 );
 assert.match(
   shell,
-  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?setNavOpen\(true\);[\s\S]*?panel\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
-  "left panel shortcut toggles the resolved panel and synchronizes its visible state",
+  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?panel\.collapse\(\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
+  "left panel shortcut toggles the resolved panel and defers navOpen to the measured-width callback",
+);
+assert.doesNotMatch(
+  shell.match(/const toggleDesktopNav = \(\) => \{[\s\S]{0,240}?\n    \};/)?.[0] ?? "",
+  /setNavOpen\(/,
+  "the shortcut toggle also defers navOpen to the Panel onResize callback",
 );
 assert.doesNotMatch(
   shell,
