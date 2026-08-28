@@ -260,6 +260,38 @@ test("repair B — a frozen write read back through the same instant passes", ()
   );
 });
 
+test("a Windows-style key still resolves static first-party imports (cave-0f8tk)", () => {
+  // On Windows the scanner stores keys like C:/Users/…/cache.test.ts. The old
+  // path.posix.resolve treated that drive prefix as relative, re-anchored the
+  // candidate to the cwd, missed the registry key, and silently dropped the
+  // import — so this same bomb passed with zero findings (fail open).
+  const windowsRegistry = collectTtlBearingApis([
+    { file: "C:/Users/dev/repo/src/lib/cache.ts", text: PRODUCTION },
+    { file: "C:/Users/dev/repo/src/lib/other.ts", text: OTHER_MODULE },
+  ]);
+  const found = analyzeTestSource(
+    "C:/Users/dev/repo/src/lib/cache.test.ts",
+    `import { seedCache } from "./cache.ts";\n`
+      + wrap(`  await seedCache([post], new Date("${stillLive()}"));`),
+    windowsRegistry,
+    "C:/Users/dev/repo",
+  );
+  assert.equal(found.length, 1, "the frozen seed must still be flagged through a Windows-style key");
+  assert.equal(found[0].kind, "bomb");
+  assert.equal(found[0].file, "src/lib/cache.test.ts", "the finding names the normalized relative path");
+
+  // A live-clock repair through the same key shape must still pass — the fix
+  // must not turn Windows keys into blanket findings.
+  const clean = analyzeTestSource(
+    "C:/Users/dev/repo/src/lib/cache.test.ts",
+    `import { seedCache } from "./cache.ts";\n`
+      + wrap(`  await seedCache([post], new Date(Date.now() - 25 * 60 * 60 * 1000));`),
+    windowsRegistry,
+    "C:/Users/dev/repo",
+  );
+  assert.deepEqual(clean, [], "a live-clock repair through a Windows-style key stays clean");
+});
+
 test("a block that pins the expiry boundary deliberately passes", () => {
   // The disjunction. `x-sources.test.ts` seeds at `fetched` and reads one
   // millisecond past the TTL at `expiredAt`, asserting the entry is gone. That
