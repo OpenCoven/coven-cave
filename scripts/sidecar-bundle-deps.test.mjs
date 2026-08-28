@@ -26,6 +26,12 @@ const [
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 
+assert.match(
+  smokeSource,
+  /const covenHome = await realpath\(\s*await mkdtemp\(/,
+  "the packaged smoke must give COVEN_HOME its physical path on symlinked temp roots",
+);
+
 function sourceSection(source, startMarker, endMarker, label) {
   const startIndex = source.indexOf(startMarker);
   const endIndex = source.indexOf(endMarker);

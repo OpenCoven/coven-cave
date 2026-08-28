@@ -1,29 +1,29 @@
 import XCTest
 @testable import CovenCave
 
-/// The three primary drawer destinations and their keyboard order.
+/// The focused drawer hierarchy and its broader keyboard destination order.
 final class DrawerDestinationOrderTests: XCTestCase {
 
-    func testEveryDestinationIsPlacedExactlyOnce() {
-        let placed = AppTab.drawerDestinations
-        XCTAssertEqual(placed.count, Set(placed).count, "a drawer destination is placed twice")
-        XCTAssertEqual(Set(placed), Set(AppTab.allCases),
-                       "every AppTab case must be placed in the drawer IA")
+    func testDrawerKeepsOnlyChatsAndTasksAsPrimaryDestinations() {
+        XCTAssertEqual(AppTab.drawerDestinations, [.chats, .tasks])
+        XCTAssertEqual(AppTab.drawerDestinations.count, Set(AppTab.drawerDestinations).count,
+                       "a drawer destination is placed twice")
+        XCTAssertFalse(AppTab.drawerDestinations.contains(.settings),
+                       "Settings is reached from the profile avatar, not a primary row")
     }
 
-    /// ⌘1–3 must cover every destination exactly once so every primary surface
+    /// ⌘1–3 must cover every destination exactly once so every application surface
     /// remains keyboard-reachable.
     func testShortcutOrderCoversAllDestinationsExactlyOnce() {
         XCTAssertEqual(AppTab.shortcutOrder.count, AppTab.allCases.count)
         XCTAssertEqual(Set(AppTab.shortcutOrder), Set(AppTab.allCases))
     }
 
-    func testShortcutOrderMatchesDrawerDestinations() {
-        XCTAssertEqual(AppTab.shortcutOrder, AppTab.drawerDestinations)
+    func testShortcutOrderKeepsSettingsReachable() {
+        XCTAssertEqual(AppTab.shortcutOrder, [.chats, .tasks, .settings])
     }
 
-    /// Raw values are persisted (restored destination) and used in deep links —
-    /// they must never change spelling.
+    /// Raw values are persisted and used by deterministic launch selectors.
     func testRawValuesAreStable() {
         let expected: [AppTab: String] = [
             .chats: "chats", .tasks: "tasks", .settings: "settings",

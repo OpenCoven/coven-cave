@@ -1,11 +1,26 @@
 ---
 name: beads
-description: Use when working in a repository that uses bd or Beads for durable project task tracking, issue dependencies, blocker management, multi-session handoff, or shared work memory. Trigger when the user asks to find ready work, claim or close tasks, create follow-up work, inspect blockers, recover project context, or choose between local planning and persistent project tracking.
+description: Use when the user asks to manage durable project work with bd or Beads: find ready work, claim or close tasks, create shared follow-up work, inspect dependencies or blockers, recover cross-session context, or choose between local planning and persistent tracking. Do not load merely because a repository uses Beads, or for routine one-turn coding, styling, explanation, or review work that needs no task-tracker operation.
 ---
 
 # Beads
 
 Use Beads as the shared project task system. Local plans, scratch files, and personal memories are useful, but they are not the durable source of truth for project work.
+
+## When to Load
+
+Load this skill when the current request needs a Beads operation or durable shared task state, including:
+
+- finding, claiming, updating, or closing project work
+- creating follow-up work, dependencies, or blocker records
+- preserving a handoff or recovering context across sessions
+- deciding whether work belongs in local planning or the project tracker
+
+## When Not to Load
+
+Do not load this skill merely because the repository uses Beads. Skip it for routine one-turn implementation, styling, explanation, review, search, or test requests unless the user also needs a task-tracker operation, blocker or dependency management, durable handoff, or context recovery.
+
+Repository workflow may still require running `bd` commands around implementation. Following that workflow does not by itself make Beads expertise part of the user's request.
 
 ## First Step
 

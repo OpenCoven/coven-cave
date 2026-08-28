@@ -521,6 +521,7 @@ function OpenChatAction({
       >
         <div onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
+            positioned={false}
             mode="chat"
             item={item}
             familiars={familiars}
@@ -741,6 +742,7 @@ function AddToBoardAction({
       >
         <div onClick={(e) => e.stopPropagation()}>
           {mode ? <GitHubActionPopover
+            positioned={false}
             mode={mode}
             item={item}
             familiars={familiars}

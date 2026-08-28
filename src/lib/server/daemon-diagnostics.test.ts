@@ -183,6 +183,33 @@ assert.equal(
   "native evidence is sanitized again at the export boundary",
 );
 
+clearDaemonDiagnosticEventsForTests();
+const regressedClockContext = createDaemonDiagnosticContext({
+  correlationId: "22222222-2222-4222-8222-222222222222",
+  generation: 8,
+});
+recordDaemonDiagnosticEvent(regressedClockContext, {
+  component: "next",
+  operation: "daemon-start",
+  phase: "startup",
+  outcome: "started",
+  timestamp: "2026-08-27T12:00:01.000Z",
+});
+recordDaemonDiagnosticEvent(regressedClockContext, {
+  component: "next",
+  operation: "daemon-start",
+  phase: "startup",
+  outcome: "succeeded",
+  timestamp: "2026-08-27T12:00:00.000Z",
+});
+assert.deepEqual(
+  listDaemonDiagnosticEvents()
+    .filter((event) => event.correlationId === regressedClockContext.correlationId)
+    .map((event) => event.outcome),
+  ["started", "succeeded"],
+  "one publisher's lifecycle order survives a backwards wall-clock step",
+);
+
 const diagnosticsRoute = await readFile(
   new URL("../../app/api/daemon/diagnostics/route.ts", import.meta.url),
   "utf8",

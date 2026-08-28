@@ -18,3 +18,42 @@ export function caveCrafts(): boolean {
 export function caveAgenticRecommendations(): boolean {
   return envFlag(process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS);
 }
+
+/** Root rollout gate for the Cave-owned local Research Resource catalog. */
+export function caveResearchResources(): boolean {
+  return envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_RESOURCES);
+}
+
+/** Local ingestion cannot run without the authoritative resource catalog. */
+export function caveResearchLocalIngestion(): boolean {
+  return caveResearchResources()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_LOCAL_INGESTION);
+}
+
+/** Semantic retrieval is optional and never gates lexical resource search. */
+export function caveResearchSemantic(): boolean {
+  return caveResearchLocalIngestion()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_SEMANTIC);
+}
+
+/** Context Packs depend on local resources, but not on semantic retrieval. */
+export function caveResearchContextPacks(): boolean {
+  return caveResearchResources()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_CONTEXT_PACKS);
+}
+
+/** Topic Discovery cannot run until Context Packs are available. */
+export function caveResearchTopicDiscovery(): boolean {
+  return caveResearchContextPacks()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_TOPIC_DISCOVERY);
+}
+
+/**
+ * Hosted runs fail closed until Gate C0 supplies a server-only authority that
+ * can prove cloud account, repository, bindings, and authentication-policy
+ * readiness. The public environment variable records rollout intent only and
+ * cannot enable this getter in A1.
+ */
+export function caveResearchHostedRuns(): boolean {
+  return false;
+}

@@ -170,17 +170,32 @@ assert.match(root, /struct MainShellView/, "the connected root uses MainShellVie
 assert.match(
   root,
   /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
-  "the shell mounts exactly the selected primary destination",
+  "the shell mounts exactly the selected application destination",
 );
 assert.match(
   root,
   /if app\.selectedTab == \.settings \{\s*SettingsView\(\)\s*\} else \{[\s\S]*switch app\.projectContextGateState/s,
   "settings stays reachable even when the project context is gated",
 );
-for (const label of ["Chats", "Tasks", "Settings"]) {
+for (const label of ["Chats", "Tasks"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
   assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
 }
+assert.doesNotMatch(
+  drawer,
+  /DrawerNavRow\([\s\S]*?label: "Settings"/,
+  "Settings is not duplicated as a primary drawer row",
+);
+assert.match(
+  drawer,
+  /sectionLabel\("Workspace"\)[\s\S]*ProjectContextButton[\s\S]*label: "Familiars"/,
+  "Projects and Familiars are grouped as contextual workspace resources",
+);
+assert.match(
+  drawer,
+  /Label\("New Chat", systemImage: "square\.and\.pencil"\)[\s\S]*Button \{ go\(\.settings\) \}[\s\S]*accessibilityLabel\("Profile and settings"\)/,
+  "the footer pairs New Chat with the sole profile-driven Settings entry",
+);
 assert.match(
   drawer,
   /geo\.size\.width \* 0\.70/,
@@ -188,8 +203,8 @@ assert.match(
 );
 assert.match(
   drawer,
-  /ProjectContextButton[\s\S]{0,160}\.padding\(\.horizontal, 8\)/,
-  "the project selector aligns to the primary navigation row gutter",
+  /sectionLabel\("Workspace"\)[\s\S]{0,180}ProjectContextButton/,
+  "the project selector follows the contextual workspace heading",
 );
 assert.match(
   projectSwitcher,

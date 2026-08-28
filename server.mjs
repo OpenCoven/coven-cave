@@ -233,6 +233,7 @@ if (-not (Test-Exclusive $state)) {
   $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
+  $acl.SetOwner($me)
   $acl.SetAccessRuleProtection($true, $false)
   foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
   $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
@@ -292,7 +293,7 @@ function assertStandaloneWindowsExclusive(path, label) {
         env: probeEnv,
         encoding: "utf8",
         windowsHide: true,
-        timeout: 15e3,
+        timeout: 6e4,
         maxBuffer: 1024 * 1024
       }
     ));
