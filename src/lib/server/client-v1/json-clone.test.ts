@@ -1,52 +1,50 @@
-import { describe, expect, test } from "vitest";
+import assert from "node:assert/strict";
+import test from "node:test";
 
 import { cloneClientV1JsonValue, defineEnumerableValue } from "./json-clone.ts";
 
-describe("defineEnumerableValue", () => {
-  test("stores an own __proto__ key as plain data without touching the prototype", () => {
-    const target: Record<string, unknown> = {};
-    defineEnumerableValue(target, "__proto__", { hostile: true });
-    expect(Object.getPrototypeOf(target)).toBe(Object.prototype);
-    expect(target.__proto__).toEqual({ hostile: true });
-    expect(Object.keys(target)).toEqual(["__proto__"]);
-  });
+test("defineEnumerableValue stores an own __proto__ key as plain data without touching the prototype", () => {
+  const target: Record<string, unknown> = {};
+  defineEnumerableValue(target, "__proto__", { hostile: true });
+  assert.equal(Object.getPrototypeOf(target), Object.prototype);
+  assert.deepEqual(target.__proto__, { hostile: true });
+  assert.deepEqual(Object.keys(target), ["__proto__"]);
 });
 
-describe("cloneClientV1JsonValue", () => {
-  test("returns scalars as-is", () => {
-    expect(cloneClientV1JsonValue(null)).toBe(null);
-    expect(cloneClientV1JsonValue(7)).toBe(7);
-    expect(cloneClientV1JsonValue("s")).toBe("s");
-    expect(cloneClientV1JsonValue(true)).toBe(true);
-  });
-
-  test("deep-clones arrays and objects without sharing references", () => {
-    const source = { a: [1, { b: 2 }] };
-    const clone = cloneClientV1JsonValue(source);
-    expect(clone).toEqual(source);
-    expect(clone).not.toBe(source);
-    expect(clone.a).not.toBe(source.a);
-    expect((clone.a as unknown[])[1]).not.toBe(source.a[1]);
-  });
-
-  test("preserves the prototype of class instances", () => {
-    class Custom extends Object {
-      marker = "kept";
-    }
-    const source = new Custom();
-    const clone = cloneClientV1JsonValue(source);
-    expect(clone).toBeInstanceOf(Custom);
-    expect(clone).not.toBe(source);
-    expect(clone.marker).toBe("kept");
-  });
-
-  test("keeps an own __proto__ payload key enumerable and inert", () => {
-    const source = JSON.parse('{"__proto__": {"polluted": true}}');
-    const clone = cloneClientV1JsonValue(source);
-    expect(Object.getPrototypeOf(clone)).toBe(Object.prototype);
-    expect(clone.__proto__).toEqual({ polluted: true });
-    expect(Object.keys(clone)).toEqual(["__proto__"]);
-    // The clone must not have been mutated into an instance of the payload.
-    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
-  });
+test("cloneClientV1JsonValue returns scalars as-is", () => {
+  assert.equal(cloneClientV1JsonValue(null), null);
+  assert.equal(cloneClientV1JsonValue(7), 7);
+  assert.equal(cloneClientV1JsonValue("s"), "s");
+  assert.equal(cloneClientV1JsonValue(true), true);
 });
+
+test("cloneClientV1JsonValue deep-clones arrays and objects without sharing references", () => {
+  const source = { a: [1, { b: 2 }] };
+  const clone = cloneClientV1JsonValue(source);
+  assert.deepEqual(clone, source);
+  assert.notEqual(clone, source);
+  assert.notEqual(clone.a, source.a);
+  assert.notEqual((clone.a as unknown[])[1], source.a[1]);
+});
+
+test("cloneClientV1JsonValue preserves the prototype of class instances", () => {
+  class Custom extends Object {
+    marker = "kept";
+  }
+  const source = new Custom();
+  const clone = cloneClientV1JsonValue(source);
+  assert.ok(clone instanceof Custom);
+  assert.notEqual(clone, source);
+  assert.equal(clone.marker, "kept");
+});
+
+test("cloneClientV1JsonValue keeps an own __proto__ payload key enumerable and inert", () => {
+  const source = JSON.parse('{"__proto__": {"polluted": true}}');
+  const clone = cloneClientV1JsonValue(source);
+  assert.equal(Object.getPrototypeOf(clone), Object.prototype);
+  assert.deepEqual(clone.__proto__, { polluted: true });
+  assert.deepEqual(Object.keys(clone), ["__proto__"]);
+  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
+});
+
+console.log("client-v1 JSON clone helpers: ok");
