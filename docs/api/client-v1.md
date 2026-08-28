@@ -169,12 +169,45 @@ operations require an empty body.
 ### Canonical route and binary AAD
 
 The canonical route mode is `rfc3986-sorted-query-v1`. Cave takes the actual
-request URL, refuses `%` or `\` in the pathname, decodes query names and values
-with `URLSearchParams`, then RFC 3986-encodes each component with uppercase hex,
-`%20` for spaces, and escaping for `!'()*`. Each name and value is encoded before sorting.
-The already-encoded ASCII pairs are sorted by encoded name and
-then encoded value using byte/code-unit order, joined with `=` and `&`, and
-never encoded a second time.
+request URL and validates the serialized `URL.pathname` segment by segment.
+Implementations MUST:
+
+1. Require a leading `/`. `/` is valid; otherwise empty segments, including a
+   trailing empty segment, are invalid.
+2. Split on literal `/` **before** decoding. An encoded slash such as `%2F`
+   therefore remains part of one segment and never becomes a separator.
+3. Percent-decode each segment exactly once as UTF-8. Malformed escapes and
+   invalid UTF-8 are invalid.
+4. Reject a decoded segment equal to `.` or `..`, containing `\`, or containing
+   `%` followed by two ASCII hexadecimal digits. The last rule excludes
+   nested/double-encoded escape spellings while permitting an ordinary literal
+   percent such as the `%25` in `100%25`.
+5. Re-encode the decoded segment from UTF-8, leaving only ASCII letters,
+   digits, `-._~`, and `!'()*` literal. Every other byte is `%HH` with uppercase
+   hexadecimal. The result MUST equal the original serialized segment byte for
+   byte. Thus `%2f`, `%63`, `%21`, and a raw `$` are invalid aliases, while
+   `%2F`, `%20`, `%23`, `%3F`, `%24`, `100%25`, and canonical uppercase UTF-8
+   escapes are valid.
+6. Preserve the validated serialized pathname exactly in the canonical route;
+   do not render it from the decoded value.
+
+This is the language-neutral equivalent of decoding one segment with
+`decodeURIComponent`, rejecting the values above, re-encoding it with
+`encodeURIComponent`, and comparing for exact equality. WHATWG URL parsing
+preserves percent-escape hex case and even a malformed `%` in `pathname`, so
+those spellings remain observable and rejectable. It normalizes literal
+backslashes and whole `.` / `..` segments, including percent-encoded dot
+segments, before `pathname` is observable; producers MUST therefore construct
+paths from canonical encoded segments rather than accept an arbitrary
+pre-parse request-target spelling. Both Cave and SDK consumers bind the
+serialized pathname they actually route.
+
+Query handling is unchanged: decode names and values with `URLSearchParams`,
+then RFC 3986-encode each component with uppercase hex, `%20` for spaces, and
+escaping for `!'()*`. Each name and value is encoded before sorting. The
+already-encoded ASCII pairs are sorted by encoded name and then encoded value
+using byte/code-unit order, joined with `=` and `&`, and never encoded a second
+time.
 
 AAD uses `u32be-length-prefixed-v1`, not JSON. Every variable field is a
 four-byte unsigned big-endian byte length followed by its bytes; `issuedAt` is
@@ -639,28 +672,31 @@ routes because `proxy.ts` gives that family its own hard direct-loopback gate
 than a check inside each handler.
 
 **The poll route did not always re-check, and that gap is what made
-`cave-f1xki` (#4854) exploitable.** `clientV1IngressKind` returns `null` for any
-pathname containing `%` or `\`, while Next still percent-decodes a *dynamic*
-segment before matching it — so a pairing id written with one percent-escaped
-character classified as *not* client-v1 ingress and reached the handler anyway,
-skipping both the direct-loopback branch above and the body rules below. A
-caller already holding the sidecar token or the mobile access credential could
-use that to read `GET /pairing/requests/:id` from **off the machine**, which the
-403 above otherwise forbids. Measured against a production build: the plain path
+`cave-f1xki` (#4854) exploitable.** The old classifier returned `null` for any
+pathname containing `%` or `\`, while Next still percent-decoded a *dynamic*
+segment before matching it. A pairing id written with one percent-escaped
+unreserved character therefore skipped both the direct-loopback branch above
+and the body rules below. A caller already holding the sidecar token or mobile
+access credential could use that to read `GET /pairing/requests/:id` from
+**off the machine**. Measured against a production build: the plain path
 answered `403 forbidden peer` and the percent-written one answered `200` with
 the pairing record.
 
-**Fixed by refusing such a target outright.** `proxy.ts` answers any request
-whose pathname is inside `/api/client/v1` and contains a `%` or a `\` with
+`proxy.ts` still answers a malformed or noncanonical conversation target,
+every backslash-bearing target, and every escaped pairing or admin target with
 
 ```
 400 {"ok":false,"error":"invalid client v1 path"}
 ```
 
-before anything is classified. Nothing a correct client sends is affected: every
-segment of this surface is a fixed literal or a UUID, and the pairing secret
-travels in a header — so no legitimate path needs an escape. Percent-encoding in
-the **query string** is untouched.
+before anything is classified. The narrow exception is a canonical
+percent-encoded segment on
+`/api/client/v1/conversations/:id` or
+`/api/client/v1/conversations/:id/messages`. Conversation IDs can contain `/`,
+`?`, `#`, spaces, and Unicode; those paths are validated with the normative
+algorithm above and classified as authenticated ingress without decoding an
+encoded separator. Pairing/admin IDs remain UUID-only. Percent-encoding in the
+**query string** is untouched.
 
 ⚠️ **In practice only the `%` half of that is a 400 you will ever see.** Measured
 over a real socket by
@@ -676,15 +712,14 @@ normalizing, and removing it would trade a live defence for tidier prose.
 
 The refusal is scoped by path prefix rather than by the ingress lists, so it
 covers the admin family and any dynamic-segmented route added later, including
-one nobody remembers to add to a list. Refusal was chosen over normalizing the
-pathname before classifying it because Next decodes a dynamic segment exactly
-once and does *not* treat a decoded `%2F` as a separator (both measured), so a
-normalizing fix would have to reproduce those rules exactly and keep reproducing
-them across Next versions — while decoding twice would open the `%252e` class
-instead. The poll route's own stamp check, added in the same change, is the
-second layer: no route that serves *user data* takes its locality from the proxy
-branch alone any more. `GET /health` still does, and deliberately — it answers
-the same compatibility envelope to everyone and carries nothing to leak.
+one nobody remembers to add to a list. The validator splits before decoding and
+compares a one-pass decode/re-encode, so `%2F` preserves one dynamic segment
+while `%252F` is refused rather than decoded twice. Non-conversation escaped
+targets remain refused instead of normalized. The poll route's own stamp check
+remains the second layer: no route that serves *user data* takes its locality
+from the proxy branch alone. `GET /health` still does, deliberately — it
+answers the same compatibility envelope to everyone and carries nothing to
+leak.
 
 ### Body and content-type rules on the public routes
 
