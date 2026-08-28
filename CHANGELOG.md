@@ -7,7 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-08-27
+
+> Streamlines iOS navigation, adds packaged mobile recovery, and strengthens
+> local Research, authenticated clients, and everyday workspace reliability.
+
+Patch release on top of v0.3.11. Native iOS now keeps Chats and Tasks focused
+as primary destinations while grouping project and familiar context beneath
+them. Cave also gains packaged mobile transport recovery, local Research
+resource contracts, stronger authenticated-client authority, and a collection
+of focused Chat, Code, Calendar, and maintenance fixes.
+
 ### Changes
+- Simplify the iOS navigation drawer (#5058)
+- Plan the simplified Canvas GitHub import modal (#5057)
+- Clarify Beads skill trigger boundary (#5030)
+- Stop GitHubActionPopover positioning itself inside a Popover (#5047)
+- Define local Research resource contracts (#5054)
+- Retry blank failed Copilot resumes (#5052)
+- Add packaged Cave mobile transport recovery
+- Define the Cave mobile recovery contract
+- Match OpenClaw profiles to real Gateway discovery (#5050)
+- Remove stale hydration test helper (#5049)
+- Portal the Code Desk action popovers so the drawer cannot clip them (cave-cadp4) (#5046)
+- Bind authenticated client requests to Cave authority (#5044)
+- Say which calendar cells are short when a projection is truncated (cave-fdcd4) (#5043)
+- Scope --allow-cooldown-override to named units (#5041)
+- Add a focus-first Research PDF reader (#5039)
+- Credit worktree-retention tags by OID rather than only local tag name (#5040)
+- Adopt the shared surface toolbar
+- Keep X hydration cache fixtures fresh (cave-290os)
+- Restore focused sidebar contracts
 - Correct the port-claim occupant docs and harden the two contracts that pin them (#4980)
 
 ## [0.3.11] - 2026-08-25

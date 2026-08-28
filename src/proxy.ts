@@ -339,14 +339,10 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  // A Client v1 request-target carrying a percent-escape or a backslash is
-  // refused before anything is classified (cave-f1xki, #4854). It cannot be a
-  // real client — every segment of this surface is a fixed literal or a UUID —
-  // and leaving it to the classifier is exactly how it slipped the gate: the
-  // classifier answered null, so the direct-loopback branch and the
-  // 411/413/64 KiB body rules below, which both hang off a non-null answer,
-  // never ran. See isRefusedClientV1Path for why this refuses rather than
-  // normalizes.
+  // Reject noncanonical conversation path spellings and every escaped
+  // pairing/admin target before classification (cave-f1xki, #4854).
+  // Canonically encoded conversation IDs are the narrow exception; the helper
+  // validates them before the authenticated matcher can apply the gates below.
   if (isRefusedClientV1Path(req.nextUrl.pathname)) {
     return jsonError(400, "invalid client v1 path");
   }

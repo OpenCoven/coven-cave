@@ -449,12 +449,19 @@ test("an unprojectable turn answers an envelope, not a Next error page", async (
   });
 });
 
-test("bound messages encrypt results and reject downgrade or AAD drift before stores, budgets, and sources", async () => {
+test("bound messages preserve encoded query punctuation, spaces, and Unicode", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     await withClientV1HpkeRouteTestAuthority(
       { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 91 },
       async (authority) => {
+        const conversationId = "conversation one?# with snow 雪";
+        const encodedPath =
+          `/api/client/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
+        const boundConversation: ConversationFile = {
+          ...BRANCHED,
+          sessionId: conversationId,
+        };
         const runtime = createClientV1Runtime({
           authority: authority.runtime,
           credentialRoot: root,
@@ -486,17 +493,17 @@ test("bound messages encrypt results and reject downgrade or AAD drift before st
           sources({
             loadConversation: async (id) => {
               sourceCalls += 1;
-              return id === "conversation-1" ? BRANCHED : null;
+              return id === conversationId ? boundConversation : null;
             },
           }),
         );
 
         const downgrade = await handler(
           request(
-            "conversation-1",
+            conversationId,
             { authorization: ["Bearer", issued.bearer].join(" ") },
           ),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(downgrade.status, 426);
         assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
@@ -510,7 +517,7 @@ test("bound messages encrypt results and reject downgrade or AAD drift before st
           instanceId: INSTANCE_ID,
           runtimeNonce: authority.runtimeNonce,
           operation: "messages.list",
-          url: "http://127.0.0.1:3020/api/client/v1/conversations/conversation-1/messages",
+          url: `http://127.0.0.1:3020${encodedPath}`,
           method: "GET",
           issuedAt: BOUND_NOW,
           requestNonce: new Uint8Array(32).fill(16),
@@ -520,7 +527,7 @@ test("bound messages encrypt results and reject downgrade or AAD drift before st
         headers.set(LOCAL_PEER_HEADER, STAMP);
         const valid = await handler(
           new Request(prepared.request, { headers }),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(valid.status, 200);
         assert.equal(
@@ -535,6 +542,7 @@ test("bound messages encrypt results and reject downgrade or AAD drift before st
           }).data.messages.map(({ id }) => id),
           ["t1", "t3", "t4"],
         );
+        assert.equal(new URL(prepared.request.url).pathname, encodedPath);
         assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
           findCalls: 1,
           chargeCalls: 1,
@@ -549,7 +557,7 @@ test("bound messages encrypt results and reject downgrade or AAD drift before st
         const beforeAadDrift = { findCalls, chargeCalls, sourceCalls };
         const wrongAad = await handler(
           new Request(prepared.request, { headers: aadHeaders }),
-          context("conversation-1"),
+          context(conversationId),
         );
         assert.equal(wrongAad.status, 400);
         assert.deepEqual(

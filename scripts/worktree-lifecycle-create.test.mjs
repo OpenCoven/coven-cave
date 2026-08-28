@@ -297,7 +297,7 @@ esac
   executable(
     path.join(bin, "coven"),
     `#!/usr/bin/env node
-const { readFileSync, writeFileSync } = require("node:fs");
+const { readFileSync, renameSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const stateFile = path.join(__dirname, "..", "state", "coven-maintenance.json");
 const state = (() => {
@@ -373,6 +373,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -464,6 +465,16 @@ function snapshotIntents(state) {
     : [];
   state.intentSnapshots.push(intents);
 }
+function advanceLocalGateHeartbeat(state) {
+  if (process.env.CAVE_TEST_ADVANCE_LOCAL_GATE_HEARTBEAT_ONCE !== "1" || state.localClockStep) return;
+  const gatePath = path.join(state.repo, ".git", "coven-maintenance-gate", "gate.json");
+  const gate = JSON.parse(readFileSync(gatePath, "utf8"));
+  const heartbeatAt = new Date(Date.now() + 3_500).toISOString();
+  const temporary = gatePath + ".fixture-clock-step-" + process.pid;
+  writeFileSync(temporary, JSON.stringify({ ...gate, heartbeatAt }));
+  renameSync(temporary, gatePath);
+  state.localClockStep = { heartbeatAt };
+}
 function sabotageRelease(state) {
   if (!state.config.releaseSabotage) return;
   const covenState = path.join(path.dirname(state.repo), "state", "coven-maintenance.json");
@@ -489,6 +500,7 @@ if (command === "show") {
     state.counts.show += 1;
     const issue = exactIssue(state, id);
     if (!issue) return { missing: true };
+    advanceLocalGateHeartbeat(state);
     if (state.config.mutateAtShow === state.counts.show) mutateIssue(state, issue);
     return {
       fail: state.config.showAlwaysFail ||
@@ -1133,6 +1145,26 @@ await withFixture({}, async (fixture) => {
     readJson(fixture.stateFile).counts.show,
     4,
     "successful persistence must be verified with an exact Bead reread",
+  );
+});
+
+await withFixture({}, async (fixture) => {
+  const result = runCreate(
+    fixture,
+    createArgs({ branch: "feat/cave-unit1-wsl-clock-step" }),
+    { CAVE_TEST_ADVANCE_LOCAL_GATE_HEARTBEAT_ONCE: "1" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const state = readJson(fixture.stateFile);
+  assert.match(
+    state.localClockStep?.heartbeatAt ?? "",
+    /^\d{4}-\d{2}-\d{2}T/,
+    "fixture advances the real local gate heartbeat after acquisition and before heartbeatBoth",
+  );
+  const covenFence = readJson(fixture.covenStateFile);
+  assert.ok(
+    covenFence.events.includes("heartbeat"),
+    "lifecycle-create heartbeats the stepped local fence rather than bypassing it",
   );
 });
 
@@ -2212,5 +2244,63 @@ await withFixture({}, async (fixture) => {
   assert.equal(report.fullRef, fullRef);
   assert.equal(report.head, ref.oid);
 });
+
+// cave-7bfpz. A `coven` stored as a JSON STRING on some OTHER bead used to
+// refuse creation for every bead in the checkout.
+//
+// The mechanism: an unreadable coven yields no records, and a record is what
+// carries the branch and path that errors are scoped by (cave-g9byt). With
+// nothing to name, the error lands in `globalErrors` — explicitly the only
+// bucket allowed to abort an operation on someone else's unit — and every
+// `--bead` fails with "lifecycle inventory is incomplete". Observed 2026-08-27
+// on two closed, already-archived beads; it blocked all three live sessions
+// until their records were normalised by hand, which is the one repair the
+// worktree rules forbid.
+//
+// Decoding removes the unreadability rather than reclassifying the error.
+// Reclassifying would have meant ignoring a record that might claim your path;
+// a blob that genuinely cannot be read still fails closed, and still global.
+await withFixture(
+  {
+    issues: [
+      defaultIssue("cave-unit1"),
+      {
+        id: "cave-encoded",
+        status: "closed",
+        title: "Double-encoded record on an unrelated bead",
+        description: "",
+        notes: "",
+        external_ref: null,
+        // The real shape: an extra JSON.stringify around a valid record.
+        metadata: {
+          coven: JSON.stringify({
+            worktree: {
+              branch: "feat/cave-encoded-elsewhere",
+              path: "/nowhere/cave-encoded-elsewhere",
+              owner: "kitty",
+              purpose: "Double encoded fixture",
+              createdAt: "2026-08-01T00:00:00.000Z",
+              disposition: "archive",
+            },
+          }),
+        },
+      },
+    ],
+  },
+  async (fixture) => {
+    const created = runCreate(fixture, createArgs());
+    assert.doesNotMatch(
+      created.stderr,
+      /lifecycle inventory is incomplete/,
+      `a decodable coven on an unrelated bead must not abort creation: ${created.stderr}`,
+    );
+    assert.equal(created.status, 0, `create must succeed: ${created.stderr}`);
+    assert.equal(
+      refState(fixture.repo, "refs/heads/feat/cave-unit1-example") !== null,
+      true,
+      "and the requested branch really exists",
+    );
+  },
+);
 
 console.log("worktree-lifecycle-create.test.mjs: ok");

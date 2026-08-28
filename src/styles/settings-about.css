@@ -359,9 +359,18 @@
   min-width: 0;
 }
 
+/* Three columns, not four, because there are exactly SIX cards and four does
+   not divide them: Docs/X/Discord filled three of four and Podcast spanned two
+   of the remaining four, so the section ended on a ragged pair of holes down
+   the right-hand side. `grid-auto-flow: dense` cannot rescue that — Podcast
+   needs two adjacent tracks and only one was ever free.
+
+   At three, every row closes: Grimoire(2)+GitHub(1), then the three small
+   cards, then Podcast across the full width. The card count is asserted in
+   settings-about.test.ts so a seventh link cannot silently reopen the gap. */
 .settings-about-links-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-flow: dense;
   grid-auto-rows: minmax(8rem, auto);
   gap: var(--space-2);
@@ -432,7 +441,7 @@
 }
 
 .settings-about-link-card--grimoire {
-  grid-column: span 3;
+  grid-column: span 2;
   grid-row: span 2;
   min-height: 20rem;
   justify-content: flex-end;
@@ -619,7 +628,9 @@
 }
 
 .settings-about-link-card--podcast {
-  grid-column: span 2;
+  /* Full width: it is the last row, and a row card with a trailing action reads
+     better across the whole measure than stranded beside empty tracks. */
+  grid-column: span 3;
   min-height: 10rem;
   flex-direction: row;
   align-items: flex-end;

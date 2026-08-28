@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 
@@ -29,6 +29,7 @@ const {
   listSavedLinkSummaries,
   MAX_LINKS_PER_SAVE,
   MAX_SAVED_LINKS,
+  prependSavedLinksAtCap,
   removeSavedLink,
   reserveXArticleCandidates,
   saveResearchLinks,
@@ -37,6 +38,31 @@ const {
 
 test("saved Research resources retain a 10,000-item searchable catalog", () => {
   assert.equal(MAX_SAVED_LINKS, 10_000);
+});
+
+test("the 10,000-row cap prepends one batch in request order and evicts only the oldest tail", () => {
+  const existing = Array.from({ length: MAX_SAVED_LINKS }, (_, index) => ({
+    id: `existing-${index}`,
+    url: `https://example.com/existing/${index}`,
+    category: "article" as const,
+    title: `Existing ${index}`,
+    addedAt: new Date(Date.parse("2026-08-27T20:00:00.000Z") - index).toISOString(),
+    source: "desk" as const,
+  }));
+  const added = ["first", "second", "third"].map((id, index) => ({
+    id,
+    url: `https://example.com/${id}`,
+    category: "article" as const,
+    title: id,
+    addedAt: new Date(Date.parse("2026-08-27T21:00:00.000Z") - index).toISOString(),
+    source: "chat" as const,
+  }));
+
+  const capped = prependSavedLinksAtCap(added, existing);
+  assert.equal(capped.length, MAX_SAVED_LINKS);
+  assert.deepEqual(capped.slice(0, 3).map((item) => item.id), ["first", "second", "third"]);
+  assert.equal(capped.at(-1)?.id, `existing-${MAX_SAVED_LINKS - 4}`);
+  assert.ok(!capped.some((item) => item.id === `existing-${MAX_SAVED_LINKS - 1}`));
 });
 
 const STORE_PATH = () => process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
@@ -93,6 +119,7 @@ function storedLink(
 
 async function writeStore(file: unknown): Promise<void> {
   await writeFile(STORE_PATH(), JSON.stringify(file, null, 2), "utf8");
+  await chmod(STORE_PATH(), 0o600);
 }
 
 async function readStoreJson<T>(): Promise<T> {
@@ -138,6 +165,28 @@ test("saving organizes, dedupes, and persists newest-first", async () => {
   const onDisk = await readStoreJson<{ version: number; links: unknown[] }>();
   assert.equal(onDisk.version, 1);
   assert.equal(onDisk.links.length, 3);
+});
+
+test("one batch remains prepended in request order when the save clock is fixed", async () => {
+  await saveResearchLinks(["https://example.com/existing"], "desk");
+
+  const realNow = Date.now;
+  Date.now = () => Date.parse("2026-08-27T20:00:00.000Z");
+  try {
+    const urls = [
+      "https://example.com/first",
+      "https://example.com/second",
+      "https://example.com/third",
+    ];
+    const result = await saveResearchLinks(urls, "chat");
+    assert.deepEqual(result.added.map((link) => link.url), urls);
+    assert.deepEqual(
+      (await listSavedLinks()).map((link) => link.url),
+      [...urls, "https://example.com/existing"],
+    );
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("invalid inputs are reported, never stored", async () => {
@@ -355,7 +404,7 @@ test("valid X Article snapshots survive a disk reload", async () => {
   assert.deepEqual(listed[0].xArticle, snapshot);
 });
 
-test("an xArticle block with a mismatched body hash is dropped while the base link remains", async () => {
+test("migration rejects an xArticle block with a mismatched body hash without rewriting it", async () => {
   await writeStore({
     version: 1,
     links: [
@@ -370,15 +419,11 @@ test("an xArticle block with a mismatched body hash is dropped while the base li
     ],
   });
 
-  const listed = await listSavedLinks();
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].id, "broken-article");
-  assert.equal(listed[0].title, "Broken article snapshot");
-  assert.equal(listed[0].category, "article");
-  assert.equal(listed[0].xArticle, undefined);
+  await assert.rejects(() => listSavedLinks(), /xArticle is invalid/);
+  assert.match(await readFile(STORE_PATH(), "utf8"), /Mutated body keeps the old hash/);
 });
 
-test("a valid xArticle block on a non-X URL is dropped while preserving the base category fallback", async () => {
+test("migration rejects an xArticle block attached to a non-X URL", async () => {
   await writeStore({
     version: 1,
     links: [
@@ -390,15 +435,10 @@ test("a valid xArticle block on a non-X URL is dropped while preserving the base
     ],
   });
 
-  const listed = await listSavedLinks();
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].id, "non-x-article");
-  assert.equal(listed[0].title, "Non-X article snapshot");
-  assert.equal(listed[0].category, "article");
-  assert.equal(listed[0].xArticle, undefined);
+  await assert.rejects(() => listSavedLinks(), /xArticle is invalid/);
 });
 
-test("malformed xArticle field groups are dropped during normalization", async () => {
+test("migration fails closed on malformed xArticle field groups", async () => {
   const tooLongBody = "🧙".repeat(MAX_X_ARTICLE_BODY_CHARS + 1);
   const cases = [
     { name: "version", xArticle: { ...makeXArticleSnapshot(), version: 2 } },
@@ -450,15 +490,11 @@ test("malformed xArticle field groups are dropped during normalization", async (
       links: [storedLink({ id: entry.name, xArticle: entry.xArticle })],
     });
 
-    const listed = await listSavedLinks();
-    assert.equal(listed.length, 1, entry.name);
-    assert.equal(listed[0].id, entry.name);
-    assert.equal(listed[0].xArticle, undefined, entry.name);
-    assert.equal(listed[0].category, "article", entry.name);
+    await assert.rejects(() => listSavedLinks(), /invalid/, entry.name);
   }
 });
 
-test("a malformed xArticle block cannot strand an X status URL in the article category", async () => {
+test("migration rejects a malformed xArticle block on an X status URL", async () => {
   await writeStore({
     version: 1,
     links: [
@@ -472,11 +508,7 @@ test("a malformed xArticle block cannot strand an X status URL in the article ca
     ],
   });
 
-  const listed = await listSavedLinks();
-  assert.equal(listed.length, 1);
-  assert.equal(listed[0].xArticle, undefined);
-  assert.equal(listed[0].category, categorizeLink(ARTICLE_URL));
-  assert.equal(listed[0].category, "social");
+  await assert.rejects(() => listSavedLinks(), /xArticle is invalid/);
 });
 
 test("legacy links without xArticle still normalize unchanged", async () => {
@@ -503,67 +535,36 @@ test("legacy links without xArticle still normalize unchanged", async () => {
 
 // ── corruption safety (review finding on 972bf1cd) ───────────────────────────
 
-test("a corrupt store file is preserved aside, never silently wiped by a save", async () => {
+test("a corrupt store file fails closed and is never silently wiped by a save", async () => {
   const target = STORE_PATH();
   await saveResearchLinks(["https://example.com/pre-corruption"], "desk");
-  // Hand-edit the file into invalid JSON (trailing comma).
   const valid = await readFile(target, "utf8");
-  await writeFile(target, valid.replace(/\}\s*$/, "},"), "utf8");
+  const malformed = valid.replace(/\}\s*$/, "},");
+  await writeFile(target, malformed, "utf8");
 
-  const result = await saveResearchLinks(["https://example.com/post-corruption"], "desk");
-  assert.equal(result.added.length, 1);
-
-  // The malformed bytes were snapshotted beside the store before the rewrite.
-  const siblings = await readdir(path.dirname(target));
-  const backups = siblings.filter((name) => name.includes(".corrupt-"));
-  assert.ok(backups.length >= 1, "malformed file preserved as .corrupt-<ts>");
-  const backup = await readFile(path.join(path.dirname(target), backups[0]), "utf8");
-  assert.match(backup, /pre-corruption/, "the backup holds the pre-corruption content");
+  await assert.rejects(
+    () => saveResearchLinks(["https://example.com/post-corruption"], "desk"),
+    /not valid JSON/,
+  );
+  assert.equal(await readFile(target, "utf8"), malformed);
 });
 
-test("same-millisecond corruption events keep distinct aside captures", async () => {
+test("repeated corrupt reads remain fail-closed and preserve each current byte sequence", async () => {
   const target = STORE_PATH();
-  const dir = path.dirname(target);
   await saveResearchLinks(["https://example.com/pre-corruption"], "desk");
-  const valid = await readFile(target, "utf8");
-  const before = new Set((await readdir(dir)).filter((name) => name.includes(".corrupt-")));
-
-  // Freeze the clock: the aside name's timestamp is millisecond-resolution,
-  // so without the random suffix both captures below would target the SAME
-  // path and copyFile would clobber the first (see corruptAsidePath).
-  const RealDate = Date;
-  const frozenMs = new RealDate("2026-01-01T00:00:00.000Z").getTime();
-  globalThis.Date = class extends RealDate {
-    constructor() {
-      super(frozenMs);
-    }
-  } as DateConstructor;
-  try {
-    await writeFile(target, "{ corrupt take one", "utf8");
-    assert.deepEqual(await listSavedLinks(), [], "a corrupt store reads as empty");
-    await writeFile(target, "{ corrupt take two", "utf8");
-    assert.deepEqual(await listSavedLinks(), [], "the second corruption also reads as empty");
-  } finally {
-    globalThis.Date = RealDate;
+  for (const malformed of ["{ corrupt take one", "{ corrupt take two"]) {
+    await writeFile(target, malformed, "utf8");
+    await assert.rejects(() => listSavedLinks(), /not valid JSON/);
+    assert.equal(await readFile(target, "utf8"), malformed);
   }
-
-  const fresh = (await readdir(dir)).filter(
-    (name) => name.includes(".corrupt-") && !before.has(name),
-  );
-  assert.equal(fresh.length, 2, "each corruption event keeps its own capture");
-  const captured = await Promise.all(fresh.map((name) => readFile(path.join(dir, name), "utf8")));
-  assert.ok(captured.includes("{ corrupt take one"), "the first capture survives");
-  assert.ok(captured.includes("{ corrupt take two"), "the second capture survives");
-
-  await writeFile(target, valid, "utf8");
 });
 
 test("unreadable stores surface errors instead of reading as empty", async () => {
   const previous = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
-  // Point the store AT A DIRECTORY: reads fail with EISDIR (not ENOENT).
+  // Point the store at a directory: strict migration refuses non-regular paths.
   process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = tmp;
   try {
-    await assert.rejects(() => listSavedLinks(), /EISDIR|illegal operation/i);
+    await assert.rejects(() => listSavedLinks(), /not a safe regular file/i);
     await assert.rejects(() => saveResearchLinks(["https://example.com/x"], "desk"));
   } finally {
     process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = previous;
@@ -572,7 +573,7 @@ test("unreadable stores surface errors instead of reading as empty", async () =>
 
 // ── paper metadata (cave-cbz28) ──────────────────────────────────────────────
 
-test("a well-formed paper block survives, a malformed one is dropped without discarding the link", async () => {
+test("a malformed paper row blocks migration without discarding either legacy row", async () => {
   await writeStore({
     version: 1,
     links: [
@@ -602,15 +603,10 @@ test("a well-formed paper block survives, a malformed one is dropped without dis
     ],
   });
 
-  const listed = await listSavedLinks();
-  const linkA = listed.find((link) => link.id === "paper-a");
-  const linkB = listed.find((link) => link.id === "paper-b");
-
-  assert.equal(linkA?.paper?.arxivId, "2401.12345");
-  assert.deepEqual(linkA?.paper?.authors, ["A. Author"]);
-
-  assert.ok(linkB, "the link with the malformed paper block still survives");
-  assert.equal(linkB?.paper, undefined);
+  await assert.rejects(() => listSavedLinks(), /paper is invalid/);
+  const raw = await readFile(STORE_PATH(), "utf8");
+  assert.match(raw, /paper-a/);
+  assert.match(raw, /paper-b/);
 });
 
 // ── saveResearchLinks enrichment parameter (cave-cbz28) ─────────────────────

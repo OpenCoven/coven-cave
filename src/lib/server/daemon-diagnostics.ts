@@ -482,14 +482,51 @@ function readNativeDaemonDiagnosticEvents(
 
 export function listDaemonDiagnosticEvents(): DaemonDiagnosticEvent[] {
   seedNativeDaemonDiagnosticEvents();
-  const eventsById = new Map<string, DaemonDiagnosticEvent>();
-  for (const event of [...readNativeDaemonDiagnosticEvents(), ...store().events]) {
-    eventsById.set(event.eventId, event);
-  }
+  type PublishedEvent = {
+    event: DaemonDiagnosticEvent;
+    publisher: "native" | "next";
+    publicationOrder: number;
+    sortTimestamp: string;
+  };
+  const eventsById = new Map<string, PublishedEvent>();
+  const addPublishedEvents = (
+    publisher: PublishedEvent["publisher"],
+    events: DaemonDiagnosticEvent[],
+  ) => {
+    let sortTimestamp = "";
+    for (const [publicationOrder, event] of events.entries()) {
+      // Preserve the reported timestamp, but never let one publisher's sort
+      // clock move backwards across its publication stream.
+      sortTimestamp = sortTimestamp.localeCompare(event.timestamp) > 0
+        ? sortTimestamp
+        : event.timestamp;
+      eventsById.set(event.eventId, {
+        event,
+        publisher,
+        publicationOrder,
+        sortTimestamp,
+      });
+    }
+  };
+  addPublishedEvents("native", readNativeDaemonDiagnosticEvents());
+  addPublishedEvents("next", store().events);
   return [...eventsById.values()]
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .sort((left, right) => {
+      // A publisher appends events synchronously, so its publication order is
+      // stronger lifecycle evidence than wall time. WSL and host clock
+      // synchronization can step backwards between a `started` event and its
+      // terminal event; sorting those events by timestamp would falsely show
+      // completion before start. Timestamps remain the only common ordering
+      // signal between the independent native and Next publishers.
+      const timestampOrder = left.sortTimestamp.localeCompare(right.sortTimestamp);
+      if (timestampOrder !== 0) return timestampOrder;
+      if (left.publisher === right.publisher) {
+        return left.publicationOrder - right.publicationOrder;
+      }
+      return left.publisher === "native" ? -1 : 1;
+    })
     .slice(-DAEMON_DIAGNOSTIC_MAX_EVENTS)
-    .map((event) => structuredClone(event));
+    .map(({ event }) => structuredClone(event));
 }
 
 export function clearDaemonDiagnosticEventsForTests(): void {

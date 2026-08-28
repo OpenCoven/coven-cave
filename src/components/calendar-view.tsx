@@ -323,7 +323,14 @@ function RunDensityStrip({
           runs
         </span>
       </div>
-      <div className="flex flex-1 min-w-[560px] divide-x divide-[var(--border-hairline)]">
+      {/* Sized to the column count, following AllDayStrip: Week needs the wide
+          minimum to stay readable across seven days, but stretching it across
+          Day's single column would spread six bands over 560px. */}
+      <div
+        className={`flex flex-1 divide-x divide-[var(--border-hairline)] ${
+          columns.length > 1 ? "min-w-[560px]" : "min-w-[180px]"
+        }`}
+      >
         {columns.map((col, i) => {
           const bands = runDensityBands(col.runs, col.date);
           const count = runCountOn(col.runs, col.date);
@@ -331,10 +338,16 @@ function RunDensityStrip({
             ? dayProjectionIsPartial(projectionCompleteness, col.date)
             : false;
           const label = runCountLabel(count, "ritual runs", partial);
-          if (!label) return <div key={i} className="flex-1 min-w-[80px] p-1" />;
+          if (!label) return <div key={i} className="flex-1 min-w-[80px] max-w-[320px] p-1" />;
           const Cell = onOpenDay ? "button" : "div";
           return (
-            <div key={i} className="flex-1 min-w-[80px] p-1">
+            // Capped, not just min-width'd. A single-column strip is `flex-1`
+            // inside a full-width row, so in Day it stretched to 1366px and the
+            // six bands became long horizontal BARS — which reads as a timeline
+            // being filled rather than a histogram of when the load falls. The
+            // cap keeps Day's cell the same chart Week draws; Week's columns
+            // never approach it.
+            <div key={i} className="flex-1 min-w-[80px] max-w-[320px] p-1">
               <Cell
                 {...(onOpenDay
                   ? {
@@ -879,6 +892,7 @@ function DayView({
   items,
   deadlines,
   projectedRuns,
+  projectionCompleteness,
   anchor,
   onAddEntry,
   onOpenItem,
@@ -889,6 +903,8 @@ function DayView({
   deadlines?: CalendarDeadline[];
   /** Cron occurrences projected onto this day — see calendar-cron-projection. */
   projectedRuns?: readonly ProjectedCronRun[];
+  /** Whether those runs are complete for the day — see cave-fdcd4. */
+  projectionCompleteness?: ProjectionCompleteness;
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
@@ -967,6 +983,17 @@ function DayView({
           maxVisible={Infinity}
         />
       )}
+      {/* Cron density for the day.
+          Not a duplicate of the markers below it: HOUR_HEIGHT is 56, so a full
+          day is 1344px of grid and roughly half of it is scrolled out of view
+          at any time. The markers say what runs and exactly when; this says
+          what the whole day looks like, which the grid cannot.
+          No onOpenDay — "open day" is a no-op when you are already in it, so
+          the strip renders as a plain div rather than a dead button. */}
+      <RunDensityStrip
+        columns={[{ date: anchor, runs: dayRuns }]}
+        projectionCompleteness={projectionCompleteness}
+      />
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} maxLanes={DAY_MAX_LANES} />
@@ -2095,6 +2122,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             items={scopedItems}
             deadlines={scopedDeadlines}
             projectedRuns={projection.runs}
+            projectionCompleteness={projection}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onReschedule={onReschedule}
