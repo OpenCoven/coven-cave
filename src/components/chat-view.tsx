@@ -105,6 +105,7 @@ import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import {
   chatFoldAriaLabel,
+  chatFoldFadedGroupIndexes,
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
@@ -8800,6 +8801,14 @@ const TranscriptRows = memo(function TranscriptRows({
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
   const latestAssistantId =
     allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
+  // Prose-dimming hint ("Chat Session - Prototype.dc.html", cave-4akqc): below
+  // a CLOSED fold the first visible turns sit slightly dimmed, suggesting the
+  // transcript continues above. Purely visual - the DOM and accessibility
+  // tree are unchanged - so it must also be a hover/focus restore, and the
+  // reduced-transparency preference disables it entirely (see
+  // session-chrome.css). Computed over the rendered slice so the cap path
+  // never fades anything either: the hint belongs to the fold alone.
+  const fadedGroups = chatFoldFadedGroupIndexes(renderGroups, folded);
   const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
@@ -8840,6 +8849,7 @@ const TranscriptRows = memo(function TranscriptRows({
           turn={t}
           familiar={familiar}
           announceLifecycle={t.id === latestAssistantId}
+          foldFaded={fadedGroups.has(groupIndex)}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
           onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8909,6 +8919,7 @@ const TranscriptRows = memo(function TranscriptRows({
               turn={t}
               familiar={familiar}
               announceLifecycle={t.id === latestAssistantId}
+              foldFaded={fadedGroups.has(groupIndex)}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
               onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8965,6 +8976,7 @@ function TurnRowImpl({
   announceLifecycle,
   showTimestamp = true,
   found = false,
+  foldFaded = false,
   onEdit,
   onRegenerate,
   onReply,
@@ -8991,6 +9003,10 @@ function TurnRowImpl({
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
    *  applies the temporary cave-turn-found highlight flash. */
   found?: boolean;
+  /** Prose-dimming hint (cave-4akqc): first visible turns below a closed fold
+   *  render slightly dimmed. Visual only; hover/focus and reduced-transparency
+   *  restore full contrast. */
+  foldFaded?: boolean;
   /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
@@ -9080,7 +9096,7 @@ function TurnRowImpl({
     return (
       <div
         data-turn-id={turn.id}
-        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}`}
+        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
       >
         <div className="cave-linear-turn-content cave-linear-turn-content--with-avatar">
           {turn.role === "user" ? (
@@ -9396,7 +9412,7 @@ function TurnRowImpl({
   return (
     <div
       data-turn-id={turn.id}
-      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
+      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
     >
       <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
@@ -10164,6 +10180,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.announceLifecycle === next.announceLifecycle &&
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
+    prev.foldFaded === next.foldFaded &&
     prev.expanded === next.expanded &&
     prev.handlersRef === next.handlersRef &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
