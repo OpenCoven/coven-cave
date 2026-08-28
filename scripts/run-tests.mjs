@@ -1548,6 +1548,7 @@ export const SUITES = {
     "src/lib/server/canonical-memory-gateway.test.ts",
     "src/lib/coven-bin.test.ts",
     "src/lib/bd-bin.test.ts",
+    "src/lib/npx-bin.test.ts",
     "src/lib/harness-version.test.ts",
     "src/lib/hermes-shim.test.ts",
     "src/lib/hermes-responses-stream.test.ts",
