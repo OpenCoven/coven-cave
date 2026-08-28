@@ -32,10 +32,11 @@ import { assertExclusivePathOwnership } from "./client-v1/path-ownership.ts";
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";
 
 export const MAX_RESEARCH_RESOURCE_BLOB_BYTES = 512 * 1024 * 1024;
+export const MAX_RESEARCH_RESOURCE_MANIFESTS = 100_000;
 const MAX_SNAPSHOT_RECORD_BYTES = 1024 * 1024;
 const MAX_SNAPSHOT_RECORDS = 100_000;
 const MAX_MANIFEST_RECORD_BYTES = 1024 * 1024;
-const MAX_MANIFEST_RECORDS = 100_000;
+const MAX_MANIFEST_RECORDS = MAX_RESEARCH_RESOURCE_MANIFESTS;
 const MAX_OPERATIONAL_RECORD_BYTES = 1024 * 1024;
 const MAX_OPERATIONAL_RECORDS = 100_000;
 const DIRECTORY_MODE = 0o700;

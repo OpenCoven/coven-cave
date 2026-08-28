@@ -64,6 +64,9 @@ function memoryIndex() {
         hits: [],
       };
     },
+    search() {
+      return [];
+    },
     purgeResidualFiles() { residuePurges += 1; },
     close() {},
   };

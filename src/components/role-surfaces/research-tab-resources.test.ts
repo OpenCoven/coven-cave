@@ -77,14 +77,16 @@ test("add-to-run uses the evidence ledger's attach-source candidate mechanism", 
   assert.match(source, /selectedMission\.sources\.some\(\s*\(source\) => source\.url && savedLinkDedupeKey\(source\.url\) === key/);
 });
 
-test("remove is a two-step inline confirm wired to useResearchLinks.remove", () => {
+test("remove is a two-step inline confirm wired to durable resources with compatibility fallback", () => {
   assert.match(source, /Remove from saves/);
-  assert.match(source, /Remove this save\? It leaves Resources and quick saves\./);
-  assert.match(source, /Yes, remove/);
+  assert.match(source, /permanently deletes its durable local snapshots and evidence/);
+  assert.match(source, /This can’t be undone/);
+  assert.match(source, /Delete resource/);
+  assert.match(source, /Remove save/);
   assert.match(source, /\{confirmingRemove \?/);
   assert.match(source, />\s*Keep\s*<\/Button>/);
   assert.match(source, /setConfirmingRemove\(true\)/);
-  assert.match(source, /await remove\(openLink\.id\)/);
+  assert.match(source, /resource \? await local\.remove\(resource\.id\) : await remove\(openLink\.id\)/);
   // Opening a different resource never inherits a pending confirm — nor an
   // already-expanded paper viewer, which would otherwise show paper A's
   // document under paper B's title and start its fetch unasked.
@@ -92,6 +94,38 @@ test("remove is a two-step inline confirm wired to useResearchLinks.remove", () 
     source,
     /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setReaderExpanded\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
   );
+});
+
+test("local evidence search is authoritative, truthful, and operational", () => {
+  assert.match(source, /useResearchResources\(\)/);
+  assert.match(source, /void local\.search\(trimmedQuery\)/);
+  assert.match(source, /Exact and full-text matches from verified local snapshots\./);
+  assert.match(source, /Semantic unavailable/);
+  assert.match(source, /hit\.resourceRevision/);
+  assert.match(source, /resourceForQueryHit\(local\.resources, hit\)/);
+  assert.match(source, /catalog metadata changed/);
+  assert.match(source, /=== 1 \? "match" : "matches"/);
+  assert.match(source, /Retry ingestion/);
+  assert.match(source, /await local\.retry\(resource\.id\)/);
+  assert.match(source, /finally \{\s*setResourceMutationBusy\(null\)/);
+  assert.match(source, /"Couldn’t retry ingestion\.", ok \? "polite" : "assertive"/);
+  assert.match(styles, /Local evidence: dense authority-first rows/);
+  assert.match(styles, /@container research-desk \(max-width: 560px\)/);
+});
+
+test("the durable local catalog renders every manifest with truthful operations", () => {
+  assert.match(source, /local\.resources\.map\(\(resource, index\) =>/);
+  assert.match(source, /Ingest status and controls for every durable local resource\./);
+  assert.match(source, /resource\.ingest\.state === "failed" && resource\.ingest\.retryable !== false/);
+  assert.match(source, /await local\.retry\(resource\.id\)/);
+  assert.match(source, /await local\.remove\(resource\.id\)/);
+  assert.match(source, /aria-expanded=\{expanded\}/);
+  assert.match(source, /context\.openUrl\(resource\.sourceUri!\)/);
+  assert.match(source, /Delete this resource\? This permanently deletes its durable local snapshots and/);
+  assert.match(source, /role="alert"[\s\S]{0,200}\{local\.error\}/);
+  assert.match(source, /onClick=\{\(\) => void local\.load\(\)\}>Retry/);
+  assert.match(styles, /Durable local catalog: every manifest remains visible and operable/);
+  assert.match(styles, /\.research-res-catalog-row__confirm/);
 });
 
 test("grid/rows view persists under cave:research:res-view with an SSR guard", () => {
@@ -251,7 +285,11 @@ test("resources filter by type before workflow-first grouping", () => {
   assert.match(source, /link\.xArticle\?\.excerpt/);
   assert.match(source, /link\.xArticle\?\.publishedAt/);
   assert.match(source, /linkSearchText\(link\)\.includes\(q\)/);
-  assert.match(source, /setQuery\(""\);\s*setFilter\("all"\)/);
+  assert.match(
+    source,
+    /updateResourceQuery\(""\);\s*setFilter\("all"\)/,
+    "clearing legacy filters synchronously invalidates local evidence before the debounce",
+  );
   assert.match(source, />\s*Clear filters\s*<\/Button>/);
 });
 

@@ -112,7 +112,10 @@ export function createResearchResourcesRouteHandlers(
   return {
     async GET(req: Request) {
       const forbidden = rejectNonLocalRequest(req);
-      if (forbidden) return forbidden;
+      if (forbidden) {
+        forbidden.headers.set("cache-control", "no-store");
+        return forbidden;
+      }
       if (!enabled()) return resourceNotFoundResponse();
 
       try {
