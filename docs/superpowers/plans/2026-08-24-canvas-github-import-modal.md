@@ -1,6 +1,6 @@
 # Canvas GitHub Import Modal Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Replace the dense Canvas GitHub importer with a progressive, truthful flow that asks for a file URL first, automatically connects a compatible Cave project, and requests a local checkout only when registration is necessary.
 
