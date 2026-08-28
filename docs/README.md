@@ -24,6 +24,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`branch-cleanup-relaxation.md`](branch-cleanup-relaxation.md) — design for retiring clean landed branches/worktrees despite missing lifecycle metadata or stale bead paperwork: clean/dirty/active definitions, evidence, safety checks, review command shape, phased rollout (`cave-jcdgb`)
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
 - [`workflows/`](workflows) — branching, release, and PR mechanics
