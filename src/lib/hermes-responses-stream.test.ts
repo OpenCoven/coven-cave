@@ -50,6 +50,30 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
     { kind: "done", isError: false, id: "resp-terminal" },
   );
   assert.deepEqual(
+    parseHermesResponsesEvent("response.completed", {
+      response: {
+        id: "resp-usage",
+        usage: { input_tokens: 1200, output_tokens: 340, input_tokens_details: { cached_tokens: 800 } },
+      },
+    }),
+    { kind: "done", isError: false, id: "resp-usage", usage: { inputTokens: 1200, outputTokens: 340, cacheReadTokens: 800 } },
+    "a completed response maps OpenAI-style usage (cached tokens → cache read) onto the done event",
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.completed", {
+      response: { id: "resp-usage-no-cache", usage: { input_tokens: 100, output_tokens: 50 } },
+    }),
+    { kind: "done", isError: false, id: "resp-usage-no-cache", usage: { inputTokens: 100, outputTokens: 50 } },
+    "cached tokens are optional and omitted when the provider does not report them",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(parseHermesResponsesEvent("response.completed", {
+      response: { id: "resp-malformed", usage: { input_tokens: "secret-leak", output_tokens: -5 } },
+    })),
+    /secret-leak/,
+    "Hermes usage payloads never leak into parsed events",
+  );
+  assert.deepEqual(
     parseHermesResponsesEvent("response.failed", { response: { id: "resp-failed", error: { message: "invalid model" } } }),
     { kind: "done", isError: true, id: "resp-failed", message: "invalid model" },
   );

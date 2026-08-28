@@ -9,13 +9,15 @@
 // incomplete data.  The normalised events are fed to ToolCallTracker by the
 // chat route, retaining Cave's stable-id, persistence, and resume semantics.
 
+import type { TurnUsage } from "./usage-format.ts";
+
 export type HermesResponsesEvent =
   | { kind: "text"; text: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown; itemId?: string }
   | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
-  | { kind: "done"; isError: boolean; id?: string; message?: string; invalidPreviousResponseId?: boolean }
+  | { kind: "done"; isError: boolean; id?: string; message?: string; usage?: TurnUsage; invalidPreviousResponseId?: boolean }
   | { kind: "error"; message: string; invalidPreviousResponseId?: boolean }
   | { kind: "ignore" };
 
@@ -108,6 +110,30 @@ export function isHermesResponsesEventName(eventName: string): boolean {
     "response.completed", "response.failed", "response.incomplete", "hermes.tool.progress",
     "hermes.tool.completed", "error",
   ]).has(eventName);
+}
+
+function finiteNonNegativeTokens(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Hermes's Responses-compatible `response.completed` reports `response.usage`
+ * as `{ input_tokens, output_tokens, input_tokens_details: { cached_tokens } }`.
+ * Map those onto Cave's `TurnUsage` (cached tokens → cache read); Hermes has no
+ * cache-creation or cost counter in this stream, and an absent/malformed block
+ * yields undefined so the turn shows no meter instead of a fabricated zero. */
+function parseHermesUsage(raw: unknown): TurnUsage | undefined {
+  const usage = record(raw);
+  if (!usage) return undefined;
+  const inputTokens = finiteNonNegativeTokens(usage.input_tokens);
+  const outputTokens = finiteNonNegativeTokens(usage.output_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const details = record(usage.input_tokens_details);
+  const cacheReadTokens = finiteNonNegativeTokens(details?.cached_tokens);
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+  };
 }
 
 /** Parse one complete SSE frame. Unknown/future frame types are safely ignored. */
@@ -209,7 +235,8 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
 
   if (type === "response.completed") {
     const id = responseId(value);
-    return { kind: "done", isError: false, ...(id ? { id } : {}) };
+    const usage = parseHermesUsage(record(value.response)?.usage ?? value.usage);
+    return { kind: "done", isError: false, ...(id ? { id } : {}), ...(usage ? { usage } : {}) };
   }
   if (type === "response.failed" || type === "response.incomplete") {
     const response = record(value.response);

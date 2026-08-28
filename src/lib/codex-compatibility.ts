@@ -14,6 +14,7 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { TurnUsage } from "./usage-format.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCHEMA_DOCUMENT_BYTES = 1_048_576;
@@ -1068,6 +1069,9 @@ export type CodexStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
+  /** Terminal Codex success (`turn.completed`), carrying token usage when the
+   * CLI reported it. Codex does not report a per-turn cost, so none is emitted. */
+  | { kind: "completed"; usage?: TurnUsage }
   /** Terminal Codex failure with no untrusted payload attached. */
   | { kind: "failure" }
   | { kind: "unknown"; fingerprint: string }
@@ -1100,6 +1104,29 @@ function eventFingerprint(value: Record<string, unknown>): string {
   return createHash("sha256").update(shape).digest("hex").slice(0, 12);
 }
 
+function finiteNonNegativeTokens(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Codex `turn.completed.usage` reports token counts as snake_case
+ * (`input_tokens`, `output_tokens`, `cached_input_tokens`). Map the fields
+ * Cave persists onto a `TurnUsage`; Codex has no cache-creation or cost
+ * counter, and a malformed/absent usage block yields undefined so the turn
+ * carries no meter rather than a fabricated zero. */
+function parseCodexUsage(raw: unknown): TurnUsage | undefined {
+  const usage = record(raw);
+  if (!usage) return undefined;
+  const inputTokens = finiteNonNegativeTokens(usage.input_tokens);
+  const outputTokens = finiteNonNegativeTokens(usage.output_tokens);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const cacheReadTokens = finiteNonNegativeTokens(usage.cached_input_tokens);
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+  };
+}
+
 export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema): CodexStreamEvent | null {
   const event = record(value);
   if (!event || typeof event.type !== "string") return null;
@@ -1112,8 +1139,15 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   if (event.type === "turn.failed" || event.type === "error") {
     return { kind: "failure" };
   }
-  if (event.type === "turn.started" || event.type === "turn.completed") {
+  if (event.type === "turn.started") {
     return { kind: "ignored" };
+  }
+  if (event.type === "turn.completed") {
+    // A successful Codex turn reports its token usage here. The usage block is
+    // optional and defensively validated: a turn without it still completes,
+    // but carries no meter (Codex emits no cost, so costUsd is never set).
+    const usage = parseCodexUsage(event.usage);
+    return usage ? { kind: "completed", usage } : { kind: "completed" };
   }
   const item = record(event.item);
   if (!item) return { kind: "unknown", fingerprint: eventFingerprint(event) };

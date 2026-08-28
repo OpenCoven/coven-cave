@@ -4096,6 +4096,16 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             );
             if (ended) push({ kind: "tool_use", ...ended });
           },
+          onResult: (ev) => {
+            // OpenCode's terminal `step_finish` carries token usage and a USD
+            // cost. Both are optional and already validated by the parser; a
+            // turn without them still completes but carries no meter/cost.
+            result = {
+              ...result,
+              ...(ev.usage ? { usage: ev.usage } : {}),
+              ...(ev.costUsd !== undefined ? { costUsd: ev.costUsd } : {}),
+            };
+          },
           onError: (ev) => {
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
@@ -4213,6 +4223,13 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             if (started) push({ kind: "tool_use", ...started });
             const ended = toolTracker.envelopeToolResult(event.id, event.output, event.isError);
             if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
+          case "completed": {
+            // Codex's terminal `turn.completed` carries token usage (no cost).
+            // It is optional and already validated by the parser; a turn
+            // without it still completes but carries no meter.
+            if (event.usage) result = { ...result, usage: event.usage };
             return;
           }
           case "failure": {
@@ -4717,6 +4734,10 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
                   if (!sessionId) announceSession(event.id);
                 }
                 result = { ...result, is_error: event.isError };
+                // Hermes's Responses-compatible `response.completed` reports
+                // token usage (no cost). Optional and already validated by the
+                // parser; a turn without it still completes with no meter.
+                if (event.usage) result = { ...result, usage: event.usage };
                 if (event.isError) recordStdoutErrorTail("Hermes API stream failed", true);
                 if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
                 return true;

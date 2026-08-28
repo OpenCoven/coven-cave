@@ -520,6 +520,18 @@ assert.deepEqual(resultEv, {
   isError: false,
   durationMs: 9980,
 });
+// The Copilot CLI's terminal `result.usage` carries only
+// `{ premiumRequests, totalApiDurationMs, sessionDurationMs }` — no token
+// counts. Per-turn token data exists only as per-message `outputTokens` (a
+// partial, output-only signal) and as session-wide `session.shutdown`
+// aggregates that cannot be attributed to one turn. So the result event
+// deliberately emits NO usage: Cave shows no meter rather than a fabricated
+// zero or a misleading partial count.
+assert.equal(
+  Object.hasOwn(resultEv ?? {}, "usage"),
+  false,
+  "copilot result frames never fabricate a usage block from their token-less usage payload",
+);
 assert.deepEqual(
   parseCopilotChatEvent({ type: "result", exitCode: 1 }),
   { kind: "result", sessionId: undefined, isError: true, durationMs: undefined },

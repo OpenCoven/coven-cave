@@ -145,6 +145,37 @@ const unknownTool = parseCodexStreamEvent({ type: "item.completed", item: { id: 
 assert.equal(unknownTool?.kind, "unknown", "known outer events with an unknown tool type fail closed too");
 assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never render" }, selected.schema), { kind: "failure" }, "terminal turn failures retain no payload");
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
+assert.deepEqual(
+  parseCodexStreamEvent(
+    { type: "turn.completed", usage: { input_tokens: 100, output_tokens: 50, cached_input_tokens: 10 } },
+    selected.schema,
+  ),
+  { kind: "completed", usage: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 10 } },
+  "a successful turn maps Codex's snake_case usage onto Cave's TurnUsage (cache read, no cache-creation/cost)",
+);
+assert.deepEqual(
+  parseCodexStreamEvent(
+    { type: "turn.completed", usage: { input_tokens: 80, output_tokens: 40 } },
+    selected.schema,
+  ),
+  { kind: "completed", usage: { inputTokens: 80, outputTokens: 40 } },
+  "cached_input_tokens is optional and omitted when the CLI does not report it",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", secret: "never render" }, selected.schema),
+  { kind: "completed" },
+  "a turn.completed frame without a usage block completes with no meter (no fabricated zero)",
+);
+assert.equal(
+  parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: "many", output_tokens: "lots" } }, selected.schema)?.kind,
+  "completed",
+  "a malformed usage block drops the usage but never fails the turn or leaks its values",
+);
+assert.doesNotMatch(
+  JSON.stringify(parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: "secret", output_tokens: -5 } }, selected.schema)),
+  /secret/,
+  "usage payloads never leak into event diagnostics",
+);
 
 const decoder = new CodexJsonlDecoder();
 const preambleJson = decoder.push('{"type":"error","message":"assistant JSON, not protocol"}\n{"type":"thread.started","thread_id":"example-thread"}\n{"type":"item.started","item":{"id":"example","type":"command_execution"}}\n', selected.schema);

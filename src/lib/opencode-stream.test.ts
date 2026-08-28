@@ -74,6 +74,47 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
+    {
+      type: "step_finish",
+      sessionID: "ses_123",
+      part: { reason: "stop", cost: 0.001, tokens: { input: 671, output: 8, reasoning: 0, cache: { read: 21415, write: 0 } } },
+    },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  {
+    kind: "result",
+    sessionId: "ses_123",
+    usage: { inputTokens: 671, outputTokens: 8, cacheReadTokens: 21415, cacheCreationTokens: 0 },
+    costUsd: 0.001,
+  },
+  "a terminal step-finish maps OpenCode's tokens (cache write → cache creation) and USD cost onto the result event",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "step_finish", sessionID: "ses_123", part: { reason: "tool-calls", cost: 0, tokens: { input: 21772, output: 110, cache: { read: 0, write: 0 } } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_123" },
+  "an intermediate tool-calls step is not the terminal outcome and its per-step counters are not surfaced",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "step_finish", sessionID: "ses_123", part: { reason: "stop", tokens: { input: "many", output: "lots" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_123" },
+  "a malformed token block yields no usage (no fabricated zero) and falls back to lifecycle handling",
+);
+assert.doesNotMatch(
+  JSON.stringify(parseOpenCodeRunEvent(
+    { type: "step_finish", sessionID: "ses_123", part: { reason: "stop", tokens: { input: "secret", output: -5 } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  )),
+  /secret/,
+  "OpenCode usage payloads never leak into parsed events",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
     { type: "reasoning", sessionID: "ses_123", part: { text: "private chain of thought" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),

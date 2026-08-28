@@ -24,6 +24,11 @@
 //   {"type":"tool.execution_complete","data":{"toolCallId","success",
 //       "result":{"content"}}}
 //   {"type":"result","sessionId","exitCode","usage":{"sessionDurationMs",…}}
+// The `result.usage` object reports premium-request billing counters
+// (`premiumRequests`, `totalApiDurationMs`, `sessionDurationMs`) only — no
+// per-turn token counts or cost — so Cave deliberately renders no token/cost
+// meter for Copilot turns (a 0-token meter would claim a number nothing
+// measured).
 // plus session.* / assistant.turn_* / *_delta noise events that the chat
 // ignores. The final `result` frame is top-level (no `data` envelope).
 
