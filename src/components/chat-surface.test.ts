@@ -108,13 +108,13 @@ assert.match(
   /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
   "ChatSurface should render GroupChatView for the coven scope",
 );
-// Familiar selection now lives in the global top menu bar (and the sidebar /
-// mobile top-bar switcher), so the chat header carries only its scope tabs —
-// no duplicate switcher here.
-assert.doesNotMatch(
+// Familiar selection now lives in a shared full-width context row above the
+// scope tabs (cave-3pnnq) — the header still carries only its scope tabs below
+// that row, so the selector is not a duplicate of the sidebar switcher.
+assert.match(
   chatSurface,
-  /<FamiliarSwitcher/,
-  "ChatSurface should not duplicate the global familiar switcher in its header",
+  /chat-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?familiars=\{resolvedFamiliars\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onSetActiveFamiliar\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?chat-scope-tabs chat-scope-tabs--minimal/,
+  "ChatSurface renders the shared familiar selector above its section tabs, wired through onSetActiveFamiliar",
 );
 assert.match(
   chatSurface,

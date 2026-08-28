@@ -4366,6 +4366,8 @@ export function Workspace() {
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
         }
+        activeFamiliarId={activeId}
+        onSetActiveFamiliar={setActiveId}
         onRequestActingFamiliar={requestActingFamiliar}
         onValidateActingFamiliar={validateActingFamiliar}
         sessions={sessions}
