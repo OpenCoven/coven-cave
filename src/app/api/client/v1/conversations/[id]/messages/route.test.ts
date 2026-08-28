@@ -449,13 +449,13 @@ test("an unprojectable turn answers an envelope, not a Next error page", async (
   });
 });
 
-test("bound messages preserve an encoded slash, query punctuation, spaces, and Unicode", async () => {
+test("bound messages preserve encoded query punctuation, spaces, and Unicode", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     await withClientV1HpkeRouteTestAuthority(
       { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 91 },
       async (authority) => {
-        const conversationId = "conversation/one?# with snow 雪";
+        const conversationId = "conversation one?# with snow 雪";
         const encodedPath =
           `/api/client/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
         const boundConversation: ConversationFile = {

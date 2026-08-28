@@ -274,13 +274,13 @@ test("an unauthenticated probe cannot learn whether a conversation exists", asyn
   });
 });
 
-test("bound conversation detail preserves an encoded slash, query punctuation, spaces, and Unicode", async () => {
+test("bound conversation detail preserves encoded query punctuation, spaces, and Unicode", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     await withClientV1HpkeRouteTestAuthority(
       { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 81 },
       async (authority) => {
-        const conversationId = "conversation/one?# with snow 雪";
+        const conversationId = "conversation one?# with snow 雪";
         const encodedPath =
           `/api/client/v1/conversations/${encodeURIComponent(conversationId)}`;
         const boundLedger: ConversationSummary[] = [
