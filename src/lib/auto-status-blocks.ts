@@ -6,12 +6,14 @@
  * for the text taught to the model).
  *
  * States: clarifying (still needs answers), working (proceeding silently),
- * blocked (needs a human — permissions, a decision, credentials, anything the
- * familiar can't resolve itself), failed (hit something unrecoverable; the
- * mission is over either way), done (mission finished). Only blocked/failed/
- * done should draw the human's attention — that decision lives in the caller
- * (chat-view's auto-mode watcher), this module only extracts the latest
- * state per turn.
+ * needs-approval (needs the human's go-ahead on something irreversible — the
+ * mission continues the moment they say yes), blocked (cannot proceed at all —
+ * no answer unblocks it; something outside the familiar, like permissions or
+ * credentials, has to change), failed (hit something unrecoverable; the
+ * mission is over either way), done (mission finished). Only
+ * needs-approval/blocked/failed/done should draw the human's attention — that
+ * decision lives in the caller (chat-view's auto-mode watcher), this module
+ * only extracts the latest state per turn.
  *
  * `timed-out` also exists as a mission state, but deliberately has NO marker:
  * it is what the client concludes when the model says nothing at all, so
@@ -20,7 +22,13 @@
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export type AutoMissionState = "clarifying" | "working" | "blocked" | "failed" | "done";
+export type AutoMissionState =
+  | "clarifying"
+  | "working"
+  | "needs-approval"
+  | "blocked"
+  | "failed"
+  | "done";
 
 export type AutoStatusUpdate = {
   state: AutoMissionState;
@@ -42,10 +50,17 @@ const STATE_ALIASES: ReadonlyMap<string, AutoMissionState> = new Map([
   ["in-progress", "working"],
   ["in_progress", "working"],
   ["running", "working"],
+  // needs-approval: "I need your go-ahead on something irreversible" — the
+  // mission continues the moment the human says yes. `waiting` is the same
+  // situation (Cursor's "Waiting"): an answer unblocks it.
+  ["needs-approval", "needs-approval"],
+  ["waiting", "needs-approval"],
+  // blocked: "I cannot proceed at all" — no answer unblocks it; something
+  // outside the familiar (permissions, credentials) has to change.
   ["blocked", "blocked"],
+  ["cannot-proceed", "blocked"],
+  ["cannot_proceed", "blocked"],
   ["needs-human", "blocked"],
-  ["needs-approval", "blocked"],
-  ["waiting", "blocked"],
   ["failed", "failed"],
   ["failure", "failed"],
   ["error", "failed"],
