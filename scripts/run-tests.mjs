@@ -1459,6 +1459,7 @@ export const SUITES = {
     "src/lib/server/client-v1/authority-replay.test.ts",
     "src/lib/server/client-v1/authority-runtime.test.ts",
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
+    "src/lib/server/client-v1/json-clone.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
