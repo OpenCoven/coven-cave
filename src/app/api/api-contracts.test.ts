@@ -120,6 +120,11 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  // The client v1 operational state (cave-6rwq0): whether the discovery record
+  // was published and whether the unverified-ownership waiver is in force —
+  // the two degraded states that previously existed only on stderr. GET-only,
+  // no body, same admin credential as the rest of the family.
+  { route: "/client/v1/admin/status", methods: ["GET"], kind: "json" },
   // The Phase 2 canonical reads (cave-jfa9y). Every one is a GET with no body,
   // and every one authenticates its own bearer through requireScope — which is
   // load-bearing rather than routine, because these five paths are the first
@@ -624,6 +629,7 @@ assert.deepEqual(
     "/client/v1/admin/credentials/[id]",
     "/client/v1/admin/pairing-requests",
     "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/admin/status",
     "/client/v1/conversations",
     "/client/v1/conversations/[id]",
     "/client/v1/conversations/[id]/messages",

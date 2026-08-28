@@ -1470,6 +1470,7 @@ export const SUITES = {
     "src/lib/server/client-v1/rate-limit.test.ts",
     "src/lib/server/client-v1/discovery.test.ts",
     "src/lib/server/client-v1/path-ownership.test.ts",
+    "src/lib/server/client-v1/status.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
@@ -1479,6 +1480,7 @@ export const SUITES = {
     "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
     "src/app/api/client/v1/admin/credentials/route.test.ts",
     "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    "src/app/api/client/v1/admin/status/route.test.ts",
     "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/lib/server/client-v1/pagination.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
@@ -1999,6 +2001,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
   "src/app/api/client/v1/admin/credentials/route.test.ts",
   "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  "src/app/api/client/v1/admin/status/route.test.ts",
   "src/app/api/client/v1/admin/security.e2e.test.ts",
   // The Phase 2 canonical reads: the route modules resolve "@/lib/server/..."
   // and "@/proxy-helpers" as runtime values, and their suites import the same
