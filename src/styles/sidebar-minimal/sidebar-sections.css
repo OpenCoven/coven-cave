@@ -78,3 +78,14 @@
 .shell-nav--rail .sidebar-section + .sidebar-section {
   margin-top: var(--space-3);
 }
+
+/* New chat on the standalone rail (cave-10kr8).
+ *
+ * Settings, Dashboard and Analytics render their own rail rather than the
+ * workspace's, and it had no New chat — the one difference that made it read
+ * as a different sidebar instead of the same one on a different route. The
+ * control reuses .rail-header__new so the two are the same button; this only
+ * supplies the padding SidebarRailHeader would otherwise have given it. */
+.sidebar-minimal__new {
+  padding: var(--space-2) var(--rail-pad) 0;
+}

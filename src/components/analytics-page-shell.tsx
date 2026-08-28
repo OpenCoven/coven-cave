@@ -76,6 +76,28 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
+      {/* New chat leads this rail exactly as it leads the workspace rail
+          (SidebarRailHeader). Its absence was the one thing that made
+          Settings, Dashboard and Analytics read as a different sidebar rather
+          than the same one on a different route (cave-10kr8).
+
+          It is an anchor, not a button: these are standalone Next routes with
+          no workspace mounted to hand a compose to, so it navigates by the
+          same `/?mode=chat` deep link the other standalone surfaces already
+          use (familiar-growth-report, familiar-studio-context). Same classes
+          as the workspace control, so the two render identically. */}
+      <div className="rail-header__actions sidebar-minimal__new">
+        <a className="rail-header__new focus-ring" href="/?mode=chat" title="New chat">
+          <Icon
+            name="ph:note-pencil"
+            className="rail-header__new-icon"
+            width={CAVE_ICON_SIZE.sidePanelAction}
+            height={CAVE_ICON_SIZE.sidePanelAction}
+            aria-hidden
+          />
+          <span className="rail-header__new-label">New chat</span>
+        </a>
+      </div>
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
         <SidebarSection id="navigation" label="Navigation">
           {primaryRows.map(renderRow)}

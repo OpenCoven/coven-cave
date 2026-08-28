@@ -64,6 +64,22 @@ assert.doesNotMatch(
 assert.doesNotMatch(shell, /NavSectionTabs/, "the retired section switcher is not resurrected here");
 assert.match(shell, /VISIBLE_WORKSPACE_NAV_ITEMS/, "standalone sidebar rows come from the shared navigation registry");
 
+// Settings, Dashboard and Analytics render THIS rail, not the workspace's, so
+// anything the workspace rail leads with and this one lacks reads as a
+// different sidebar rather than the same one on a different route. New chat
+// was exactly that gap (cave-10kr8).
+const railHeader = await source("components/sidebar-rail-header.tsx");
+assert.match(railHeader, /className="rail-header__new focus-ring"/, "the workspace rail leads with New chat");
+assert.match(shell, /className="rail-header__new focus-ring"/, "…and so does the standalone rail");
+assert.match(shell, /rail-header__new-label">New chat</, "with the same label");
+// An anchor, not a button: there is no workspace mounted on these routes to
+// hand a compose to, so it deep-links the way the other standalone surfaces do.
+assert.match(
+  shell,
+  /<a className="rail-header__new focus-ring" href="\/\?mode=chat"/,
+  "the standalone control navigates rather than calling a handler it does not have",
+);
+
 // Settings and Dashboard render through this shell, so its rail is the one the
 // user sees on those pages. It must be grouped the way the workspace rail is —
 // a flat list here made them the only two pages whose sidebar looked different.
