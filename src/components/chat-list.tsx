@@ -148,6 +148,20 @@ type Props = {
   compact?: boolean;
 };
 
+// Stable three-choice grouping config for the Sessions toolbar's segmented
+// control: ids are already the canonical ChatSessionGroupBy values, so the
+// control writes straight into the persisted groupBy state (none → "Flat",
+// project → "Project", date → "Date").
+const CHAT_GROUP_BY_OPTIONS: ReadonlyArray<{
+  id: ChatSessionGroupBy;
+  label: string;
+  title: string;
+}> = [
+  { id: "none", label: "Flat", title: "No grouping" },
+  { id: "project", label: "Project", title: "Group by project" },
+  { id: "date", label: "Date", title: "Group by date" },
+];
+
 function chatDate(iso: string, prefs: DateTimePrefs): string {
   // Absolute session date — honors the user's date-order preference
   // (month-first "Jun 19, 2026" vs day-first "19 Jun 2026") set in Settings.
@@ -863,6 +877,38 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
             {mine.length} {mine.length === 1 ? "session" : "sessions"}
           </span>
           <span className="flex-1" />
+          {/* Direct three-choice grouping (cave-zdbij): Flat / Project / Date
+              segmented buttons replacing the old dropdown, so the grouping
+              mode is visible without opening the view menu. The ids ARE the
+              groupBy values, so grouping/sorting/filtering behavior is
+              unchanged. Sits on the surface title row — the toolbar's one-line
+              search/status/sort contract has no room for it. */}
+          <div
+            role="group"
+            aria-label="Group sessions by"
+            className="chat-list-group-tabs shrink-0 flex items-center gap-1 rounded-lg border border-[var(--border-hairline)] p-1"
+          >
+            {CHAT_GROUP_BY_OPTIONS.map((option) => {
+              const selected = groupBy === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={groupBy === option.id}
+                  title={option.title}
+                  onClick={() => setGroupBy(option.id)}
+                  className={[
+                    "focus-ring relative inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors",
+                    selected
+                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)] border-[var(--border-strong)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ].join(" ")}
+                >
+                  <span className="truncate">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
           <Button
             variant="primary"
             size="sm"
@@ -995,25 +1041,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                     </PopoverItem>
                   );
                 })}
-                <PopoverSeparator />
-                <PopoverItem
-                  checked={groupBy === "none"}
-                  onSelect={() => setGroupBy(normalizeChatGroupBy("none"))}
-                >
-                  No grouping
-                </PopoverItem>
-                <PopoverItem
-                  checked={groupBy === "project"}
-                  onSelect={() => setGroupBy(normalizeChatGroupBy("project"))}
-                >
-                  Group by project
-                </PopoverItem>
-                <PopoverItem
-                  checked={groupBy === "date"}
-                  onSelect={() => setGroupBy(normalizeChatGroupBy("date"))}
-                >
-                  Group by date
-                </PopoverItem>
                 <PopoverSeparator />
                 <PopoverItem
                   icon="ph:archive"
