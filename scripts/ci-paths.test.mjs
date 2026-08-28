@@ -50,6 +50,27 @@ test("protocol changes run conformance in normal Linux pull-request CI", () => {
   );
 });
 
+test("PR checks cannot silently skip suites after an earlier failure (cave-t8p1a)", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const prChecks = workflow.match(/^  pr-checks:\n[\s\S]*?(?=^  [a-z][a-z-]+:\n)/m)?.[0];
+  assert.ok(prChecks, "CI must retain the PR checks job");
+  for (const suite of ["app-suite", "api-suite", "mobile-suite"]) {
+    assert.match(
+      prChecks,
+      new RegExp(`^      - id: ${suite}\n        name: [^\n]+\n        if: success\\(\\) \\|\\| failure\\(\\)\n        run: `, "m"),
+      `${suite} must run unless the job was cancelled, so an earlier failure cannot skip it`,
+    );
+  }
+  assert.match(
+    prChecks,
+    /- Suites: app=\$APP_OUTCOME api=\$API_OUTCOME mobile=\$MOBILE_OUTCOME/,
+    "the summary must name each suite outcome so a skipped suite is distinguishable from a passed one",
+  );
+});
+
 test("Rust-only changes avoid frontend and E2E work", () => {
   assert.deepEqual(classifyCiPaths(["src-tauri/src/main.rs"]), {
     frontend: false,

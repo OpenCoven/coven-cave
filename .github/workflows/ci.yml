@@ -79,14 +79,31 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm check:tests-wired
-      - run: pnpm test:app
-      - run: pnpm test:api
-      - run: pnpm test:mobile
+      # Each suite must report its own result even when an earlier step failed:
+      # a test:app failure used to silently skip test:api and test:mobile, so a
+      # skipped suite and a passed one looked identical (cave-t8p1a).
+      # success() || failure() runs the suites unless the job was cancelled or
+      # the environment never came up, and each failure still fails the job.
+      - id: app-suite
+        name: Frontend app tests
+        if: success() || failure()
+        run: pnpm test:app
+      - id: api-suite
+        name: Frontend API tests
+        if: success() || failure()
+        run: pnpm test:api
+      - id: mobile-suite
+        name: Mobile tests
+        if: success() || failure()
+        run: pnpm test:mobile
 
       - name: Summarize PR check duration
         if: always()
         env:
           START_EPOCH: ${{ steps.clock.outputs.epoch }}
+          APP_OUTCOME: ${{ steps.app-suite.outcome }}
+          API_OUTCOME: ${{ steps.api-suite.outcome }}
+          MOBILE_OUTCOME: ${{ steps.mobile-suite.outcome }}
         run: |
           end_epoch=$(date +%s)
           duration=$((end_epoch - START_EPOCH))
@@ -95,6 +112,7 @@ jobs:
             echo
             echo "- Duration: ${duration}s"
             echo "- Commit: $GITHUB_SHA"
+            echo "- Suites: app=$APP_OUTCOME api=$API_OUTCOME mobile=$MOBILE_OUTCOME"
           } >> "$GITHUB_STEP_SUMMARY"
 
   paths:
