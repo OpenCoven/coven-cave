@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 
 import {
   isProjectRootOutsideAllowedWorkspace,
-} from "./project-root-workspace-notice.tsx";
-import { PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE } from "../lib/project-root-guidance.ts";
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+} from "../lib/project-root-guidance.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const notice = read("./project-root-workspace-notice.tsx");
@@ -32,8 +32,8 @@ test("the notice renders the canonical error for the workspace code and the gene
   assert.match(notice, /from "@\/lib\/project-root-guidance"/, "imports the shared guidance module");
   assert.match(
     notice,
-    /PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR/,
-    "imports both the code and the canonical error copy",
+    /isProjectRootOutsideAllowedWorkspace,\s*PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR/,
+    "imports the shared predicate and the canonical error copy",
   );
   assert.match(
     notice,

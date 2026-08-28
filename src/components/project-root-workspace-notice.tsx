@@ -1,14 +1,9 @@
 "use client";
 
 import {
-  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  isProjectRootOutsideAllowedWorkspace,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
 } from "@/lib/project-root-guidance";
-
-/** True when a project creation/grant failure carries the out-of-workspace code. */
-export function isProjectRootOutsideAllowedWorkspace(code: string | null | undefined): boolean {
-  return code === PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE;
-}
 
 /**
  * Inline failure surface for project entry points (add-project flow, first-project
