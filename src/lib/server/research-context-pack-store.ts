@@ -21,19 +21,19 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { caveHome } from "@/lib/coven-paths.ts";
+import { caveHome } from "../coven-paths.ts";
 import {
   parseContextPackV1,
   type ContextPackV1,
-} from "@/lib/research-protocol/context-pack.ts";
-import { sha256Digest } from "@/lib/research-protocol/digest.ts";
+} from "../research-protocol/context-pack.ts";
+import { sha256Digest } from "../research-protocol/digest.ts";
 import {
   parseContextPackBuildReceiptV1,
   parseContextPackRedactionMapV1,
   type ContextPackBuildReceiptV1,
-} from "@/lib/research-context-pack.ts";
-import { assertExclusivePathOwnershipSync } from "@/lib/server/client-v1/path-ownership.ts";
-import { withProcessIntentLock } from "@/lib/server/process-intent-lock.ts";
+} from "../research-context-pack.ts";
+import { assertExclusivePathOwnershipSync } from "./client-v1/path-ownership.ts";
+import { withProcessIntentLock } from "./process-intent-lock.ts";
 
 export const MAX_CONTEXT_PACK_BLOB_BYTES = 512 * 1024 * 1024;
 export const MAX_CONTEXT_PACK_RECORDS = 100_000;

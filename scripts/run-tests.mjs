@@ -2322,6 +2322,19 @@ const ALIAS_LOADER = new Set([
   // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
   // reaches "@/lib/server/api-security" for the local-request guard.
   "src/app/api/research/papers/pdf/route.test.ts",
+  // Context Packs (Unit 1): the pack store/adapters/builder and routes resolve
+  // "@/lib/..." aliases at runtime, and research-links.test.ts reaches them
+  // through research-links-compatibility.ts's dynamic recovery import.
+  "src/lib/server/research-context-pack-store.test.ts",
+  "src/lib/server/research-context-resource-adapters.test.ts",
+  "src/lib/server/research-context-pack-builder.test.ts",
+  "src/app/api/research/context-packs/route.test.ts",
+  "src/app/api/research/context-packs/[id]/route.test.ts",
+  "src/lib/server/research-links.test.ts",
+  "src/lib/server/research-links-compatibility.test.ts",
+  "src/lib/server/research-links-compatibility-crash.test.ts",
+  "src/lib/server/research-resource-recovery.test.ts",
+  "src/lib/server/backup-research-resource-restore.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
