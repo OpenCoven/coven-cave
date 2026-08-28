@@ -42,10 +42,13 @@ assert.match(
   /platformizeHint\("⌘K", keys\)/,
   "FamiliarMenuBar platformizes the Search shortcut hint",
 );
-assert.match(
+// The desktop menu bar's New chat button was removed in cave-l9slw, so it no
+// longer renders a ⌘J hint to platformize. TopBar above still does — it keeps
+// its own New chat trigger — and ⌘J itself is unchanged as a global shortcut.
+assert.doesNotMatch(
   familiarMenuBar,
   /platformizeHint\("⌘J", keys\)/,
-  "FamiliarMenuBar platformizes the New chat shortcut hint",
+  "FamiliarMenuBar has no New chat hint left to platformize",
 );
 assert.match(
   familiarMenuBar,

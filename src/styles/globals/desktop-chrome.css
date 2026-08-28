@@ -790,7 +790,12 @@ button:active > .edge-rail-chip {
   position: relative;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-3);
+  /* --space-2, matching the gap INSIDE each __group. The right-hand icons read
+     as one continuous strip but are split across two flex children (--tasks
+     and --status), so a wider gap here put 12px between Settings and the bell
+     where every other pitch was 8px. Search is position: absolute and out of
+     flow, so this governs that one seam and nothing else (cave-l9slw). */
+  gap: var(--space-2);
   min-width: 0;
   width: 100%;
   padding: 5px var(--space-3);

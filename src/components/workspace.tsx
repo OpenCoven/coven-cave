@@ -4782,21 +4782,16 @@ export function Workspace() {
                   onPrefsChanged={refreshPrefs}
                 />
               }
-              taskCount={boardTaskCount}
-              scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
                 openPalette();
               }}
-              onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
-              onViewSchedules={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
-              onOpenQuickChat={startWorkspaceChat}
             />
             <TopBar
               onOpenPalette={() => openPalette()}
