@@ -145,4 +145,10 @@ assert.match(sources, /sweepExpiredXCache\(\)/);
     "the sweep must run on the Research Desk load path, before the listing it serves");
 }
 
+// The runtime crash-residue sweep gets the same second trigger (cave-3zc94):
+// the startup hook alone lets sub-24h residue survive indefinitely when the
+// owning mission is never reopened. Age-gated inside the sweep, so a live
+// run's files are never robbed.
+assert.match(sources, /sweepResearchMissionXRuntime\(\)/);
+
 console.log("research-routes.test.ts: ok");
