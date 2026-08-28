@@ -381,14 +381,36 @@ export function CommandPalette({
         });
         const json = (await res.json().catch(() => ({ ok: false }))) as {
           ok?: boolean;
-          results?: GlobalSearchHit[];
+          results?: Array<{
+            document: {
+              id: string;
+              providerId: string;
+              entityType: string;
+              title: string;
+              excerpt: string;
+              status: string | null;
+              action?: { href?: string };
+            };
+          }>;
           partial?: boolean;
         };
         if (controller.signal.aborted) return;
         if (!json.ok) {
           setGlobalError("Search is unavailable right now.");
         } else {
-          setGlobalResults(json.results ?? []);
+          // The coordinator returns RankedResults (document nested); the
+          // surface only needs the presentation fields.
+          setGlobalResults(
+            (json.results ?? []).map((row) => ({
+              id: row.document.id,
+              providerId: row.document.providerId,
+              entityType: row.document.entityType,
+              title: row.document.title,
+              excerpt: row.document.excerpt,
+              href: row.document.action?.href ?? "",
+              status: row.document.status,
+            })),
+          );
           setGlobalPartial(Boolean(json.partial));
         }
       } catch {
