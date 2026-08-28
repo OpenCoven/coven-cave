@@ -59,6 +59,7 @@ test("the local and disabled gates run before params or catalog access", async (
     guardedContext,
   );
   assert.equal(remote.status, 403);
+  assert.equal(remote.headers.get("cache-control"), "no-store");
   assert.equal(paramsReads, 0);
   assert.equal(catalogReads, 0);
 
@@ -73,6 +74,28 @@ test("the local and disabled gates run before params or catalog access", async (
   assert.equal(disabled.status, 404);
   assert.equal(paramsReads, 0);
   assert.equal(catalogReads, 0);
+});
+
+test("every detail method returns the same bounded no-store local rejection", async () => {
+  const route = createResearchResourceDetailRouteHandlers({
+    enabled: () => true,
+    getManifest: async () => { throw new Error("must not read the catalog"); },
+    retry: async () => { throw new Error("must not retry"); },
+    deleteResource: async () => { throw new Error("must not delete"); },
+  });
+  const remote = new Request("https://cave.example.com/api/research/resources/resource-1", {
+    headers: { host: "cave.example.com" },
+  });
+  for (const method of [route.GET, route.POST, route.DELETE]) {
+    const response = await method(remote, context("resource-1"));
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      code: "local_request_required",
+      error: "forbidden",
+    });
+  }
 });
 
 test("unsafe ids return 400 before catalog access", async () => {
@@ -164,9 +187,30 @@ test("detail catalog errors are bounded and expose no diagnostics", async () => 
   assert.equal(JSON.stringify(body).includes("private/catalog"), false);
 });
 
-test("the detail route exports no mutation methods", () => {
-  assert.equal("POST" in routeModule, false);
+test("retry and delete are local, validated, and use injected durable operations", async () => {
+  const calls: string[] = [];
+  const retryable = { ...manifest(), ingest: { desired: true, state: "failed" as const, retryable: true } };
+  const route = createResearchResourceDetailRouteHandlers({
+    enabled: () => true,
+    getManifest: async () => retryable,
+    retry: async (id) => { calls.push(`retry:${id}`); return true; },
+    deleteResource: async (id) => { calls.push(`delete:${id}`); return true; },
+  });
+  assert.equal((await route.POST(localRequest("resource-1"), context("resource-1"))).status, 200);
+  assert.equal((await route.DELETE(localRequest("resource-1"), context("resource-1"))).status, 200);
+  assert.deepEqual(calls, ["retry:resource-1", "delete:resource-1"]);
+
+  const terminal = createResearchResourceDetailRouteHandlers({
+    enabled: () => true,
+    getManifest: async () => ({ ...retryable, ingest: { ...retryable.ingest, retryable: false } }),
+    retry: async () => { throw new Error("must not run"); },
+  });
+  assert.equal((await terminal.POST(localRequest("resource-1"), context("resource-1"))).status, 409);
+});
+
+test("the detail route exports only the reviewed mutation methods", () => {
+  assert.equal("POST" in routeModule, true);
   assert.equal("PUT" in routeModule, false);
   assert.equal("PATCH" in routeModule, false);
-  assert.equal("DELETE" in routeModule, false);
+  assert.equal("DELETE" in routeModule, true);
 });
