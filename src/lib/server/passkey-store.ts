@@ -33,8 +33,15 @@ export type StoredCredential = {
   algorithm: number;
   signCount: number;
   aaguid: string;
-  /** Recorded, NOT verified — see cave-01v4u. */
+  /** Recorded verbatim, even when it was not cryptographically checked. */
   attestationFormat: string;
+  /**
+   * Whether the attestation statement was verified at registration (cave-01v4u):
+   * `true` means the certificate chain reached a pinned root; "none-equivalent"
+   * means the statement was self/absent and proves nothing about the model.
+   * Absent on credentials stored before cave-01v4u landed — additive schema.
+   */
+  attestationVerified?: boolean | "none-equivalent";
   label: string;
   createdAt: number;
   lastUsedAt: number | null;

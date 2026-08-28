@@ -7,7 +7,14 @@
 // verifier that accepts everything also passes a fixture replay.
 
 import assert from "node:assert/strict";
-import { generateKeyPairSync, createHash, sign as cryptoSign, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createPrivateKey,
+  generateKeyPairSync,
+  randomBytes,
+  sign as cryptoSign,
+  X509Certificate,
+} from "node:crypto";
 import { test } from "node:test";
 
 import {
@@ -17,11 +24,13 @@ import {
   coseKeyToPublicKey,
   parseAuthenticatorData,
   verifyAssertion,
+  verifyAttestationStatement,
   verifyRegistration,
   WebAuthnError,
+  type AttestationVerification,
   type WebAuthnFailureReason,
 } from "./webauthn-verify.ts";
-import { decodeCbor, decodeCborItem, CborError } from "./webauthn-cbor.ts";
+import { decodeCbor, decodeCborItem, CborError, type CborValue } from "./webauthn-cbor.ts";
 
 const RP_ID = "cave.tailnet.example.ts.net";
 const ORIGIN = `https://${RP_ID}`;
@@ -151,6 +160,128 @@ function rejects(fn: () => unknown, reason: WebAuthnFailureReason, message: stri
     },
     message,
   );
+}
+
+// ─── attestation fixtures (cave-01v4u) ────────────────────────────────────
+//
+// A throwaway CA + leaf certificate generated once with OpenSSL (EC P-256) and
+// checked in here so the tests do not shell out or depend on openssl at run
+// time. The leaf private key signs the attestation statement; the CA is
+// injected as a "pinned root" for the accepted cases, and the production
+// default (Apple's roots) is what makes the unknown-root case refuse.
+
+const TEST_CA_CERT_PEM = `-----BEGIN CERTIFICATE-----
+MIICAzCCAamgAwIBAgIUMbka9pC2yM6k0JZA63VjeMJuiAwwCgYIKoZIzj0EAwIw
+TjEpMCcGA1UEAwwgQ292ZW4gQ2F2ZSBUZXN0IEF0dGVzdGF0aW9uIFJvb3QxEjAQ
+BgNVBAoMCU9wZW5Db3ZlbjENMAsGA1UECAwEVGVzdDAgFw0yNjA4MjgyMTM5Mjla
+GA8yMTI2MDgwNDIxMzkyOVowTjEpMCcGA1UEAwwgQ292ZW4gQ2F2ZSBUZXN0IEF0
+dGVzdGF0aW9uIFJvb3QxEjAQBgNVBAoMCU9wZW5Db3ZlbjENMAsGA1UECAwEVGVz
+dDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCXSx4RgomDImK40RPznB8bsRFkE
+ahb7UKkQkW0ha8d/SoIXzlwgVq6S35zWayKbYUwY/RSbeQkRAE9XLvhiO76jYzBh
+MB0GA1UdDgQWBBTo2DK8UdQXQf1gAOlWkyH7PK5iCTAfBgNVHSMEGDAWgBTo2DK8
+UdQXQf1gAOlWkyH7PK5iCTAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIB
+BjAKBggqhkjOPQQDAgNIADBFAiEA5Lm+fD7AV9SxDQJYCMOhnkqk4scaGsw9Z8sa
++KBLdlMCICtG80R0gtbaFVoeGJ7MPnFa/ZqnQCdzHhYvE/lBEV/h
+-----END CERTIFICATE-----`;
+
+const TEST_LEAF_CERT_PEM = `-----BEGIN CERTIFICATE-----
+MIIB/TCCAaOgAwIBAgIUCwFKM9DBLtDVKFkR1Sh+H0+MTsIwCgYIKoZIzj0EAwIw
+TjEpMCcGA1UEAwwgQ292ZW4gQ2F2ZSBUZXN0IEF0dGVzdGF0aW9uIFJvb3QxEjAQ
+BgNVBAoMCU9wZW5Db3ZlbjENMAsGA1UECAwEVGVzdDAgFw0yNjA4MjgyMTM5Mjla
+GA8yMTI2MDgwNDIxMzkyOVowTjEpMCcGA1UEAwwgQ292ZW4gQ2F2ZSBUZXN0IEF0
+dGVzdGF0aW9uIExlYWYxEjAQBgNVBAoMCU9wZW5Db3ZlbjENMAsGA1UECAwEVGVz
+dDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHgXVAG1J/RVlDBqVVm0tbWxP/yH
+sBNm2PjAO1oB3QgWaouSoBgjE0cEUMmPyOhUIBfgW4nRRl1FmNVjNLsf8E+jXTBb
+MAkGA1UdEwQCMAAwDgYDVR0PAQH/BAQDAgeAMB0GA1UdDgQWBBQCcKIOraL7R+dp
+NHCj1qbBMeoc7DAfBgNVHSMEGDAWgBTo2DK8UdQXQf1gAOlWkyH7PK5iCTAKBggq
+hkjOPQQDAgNIADBFAiA1v2ftxRfr1USNzXMEdYLl+SaUbiQhExfFVa+Y+mP4uAIh
+AKD9+O2pJqFyOKqVC+ufgsF/LQZwcGA3VQl+ZWE9dCT5
+-----END CERTIFICATE-----`;
+
+// The leaf private key is stored as a JWK (its raw components) rather than a
+// PEM, so a throwaway test key is not mistaken for a real credential by secret
+// scanners. The x/y also appear on the leaf certificate below.
+const TEST_LEAF_KEY_JWK = {
+  kty: "EC",
+  crv: "P-256",
+  x: "eBdUAbUn9FWUMGpVWbS1tbE__IewE2bY-MA7WgHdCBY",
+  y: "aouSoBgjE0cEUMmPyOhUIBfgW4nRRl1FmNVjNLsf8E8",
+  d: "KLVinjugc3FsVPLuLMFCtjRw8UakHTbIrTnv25ABBn4",
+};
+
+const testCaCert = new X509Certificate(TEST_CA_CERT_PEM);
+const testLeafCert = new X509Certificate(TEST_LEAF_CERT_PEM);
+const testLeafKey = createPrivateKey({ key: TEST_LEAF_KEY_JWK, format: "jwk" });
+const testLeafJwk = testLeafCert.publicKey.export({ format: "jwk" }) as { x: string; y: string };
+
+function coseKeyFromJwk(key: { x: string; y: string }) {
+  return new Map<number, unknown>([
+    [1, 2],
+    [3, -7],
+    [-1, 1],
+    [-2, base64UrlDecode(key.x)],
+    [-3, base64UrlDecode(key.y)],
+  ]);
+}
+
+function signWithLeaf(payload: Uint8Array): Uint8Array {
+  return new Uint8Array(cryptoSign("sha256", payload, testLeafKey));
+}
+
+/**
+ * Build the raw authData plus the clientDataHash a signature would cover. These
+ * are deterministic for a fixed coseKey, so a test can produce a signature over
+ * them and then hand the SAME coseKey to attestationFixture for verification.
+ */
+function fixtureAuthData(coseKey?: Map<number, unknown>) {
+  const authData = buildAuthData({ includeCredential: true, coseKey });
+  const clientDataJSON = clientData("webauthn.create", CHALLENGE);
+  const clientDataHash = new Uint8Array(createHash("sha256").update(clientDataJSON).digest());
+  return { authData, clientDataHash };
+}
+
+/**
+ * Build the input verifyAttestationStatement expects. The attestation object is
+ * round-tripped through the REAL CBOR decoder (not just cast), so the types —
+ * and the bytes the verifier sees — match what verifyRegistration hands over.
+ * `attStmt` is the raw CBOR value for the statement map.
+ */
+function attestationFixture(opts: {
+  fmt: string;
+  coseKey?: Map<number, unknown>;
+  attStmt: unknown;
+}) {
+  const authData = buildAuthData({ includeCredential: true, coseKey: opts.coseKey });
+  const decoded = decodeCbor(
+    cbor(
+      new Map<string, unknown>([
+        ["fmt", opts.fmt],
+        ["attStmt", opts.attStmt],
+        ["authData", authData],
+      ]),
+    ),
+  ) as Map<string | number | bigint, CborValue>;
+  const rawAuthData = decoded.get("authData") as Uint8Array;
+  const parsed = parseAuthenticatorData(rawAuthData);
+  const { algorithm, publicKey } = coseKeyToPublicKey(parsed.attestedCredential!.coseKey);
+  const clientDataJSON = clientData("webauthn.create", CHALLENGE);
+  const clientDataHash = new Uint8Array(createHash("sha256").update(clientDataJSON).digest());
+  return {
+    input: {
+      fmt: decoded.get("fmt") as string,
+      attStmt: decoded.get("attStmt"),
+      authData: rawAuthData,
+      rpIdHash: parsed.rpIdHash,
+      clientDataHash,
+      credentialId: parsed.attestedCredential!.credentialId,
+      coseKey: parsed.attestedCredential!.coseKey,
+      credentialPublicKey: publicKey,
+      algorithm,
+    },
+    parsed,
+    authData,
+    clientDataHash,
+  };
 }
 
 // ─── CBOR decoder ──────────────────────────────────────────────────────────
@@ -304,6 +435,131 @@ test("verifyRegistration refuses a registration with no attested credential", ()
     "malformed",
     "AT flag clear means there is no key to store",
   );
+});
+
+// ─── attestation statements (cave-01v4u) ──────────────────────────────────
+
+test("none and apple-empty record none-equivalent, never a verified true", () => {
+  // The gap between "recorded" and "proven" must stay visible in stored state:
+  // these statement-less forms are accepted but do NOT overclaim a model check.
+  const noneResult: AttestationVerification = verifyRegistration(registration()).attestationVerified;
+  assert.equal(noneResult, "none-equivalent");
+
+  const appleResult = verifyRegistration(registration({ fmt: "apple" }));
+  assert.equal(appleResult.attestationFormat, "apple");
+  assert.equal(appleResult.attestationVerified as AttestationVerification, "none-equivalent");
+});
+
+test("packed x5c chaining to a pinned root is verified", () => {
+  const coseKey = coseKeyFromJwk(testLeafJwk);
+  const { authData, clientDataHash } = fixtureAuthData(coseKey);
+  const attStmt = new Map<string, unknown>([
+    ["alg", -7],
+    ["sig", signWithLeaf(concat(authData, clientDataHash))],
+    ["x5c", [new Uint8Array(testLeafCert.raw)]],
+  ]);
+  const { input } = attestationFixture({ fmt: "packed", coseKey, attStmt });
+  assert.equal(verifyAttestationStatement(input, { pinnedRoots: [testCaCert] }), true);
+});
+
+test("packed x5c to a root that is not pinned is refused", () => {
+  // The production default pins Apple's roots; the throwaway CA is not one of
+  // them, so the same chain that verifies above is refused here.
+  const coseKey = coseKeyFromJwk(testLeafJwk);
+  const { authData, clientDataHash } = fixtureAuthData(coseKey);
+  const attStmt = new Map<string, unknown>([
+    ["alg", -7],
+    ["sig", signWithLeaf(concat(authData, clientDataHash))],
+    ["x5c", [new Uint8Array(testLeafCert.raw)]],
+  ]);
+  const { input } = attestationFixture({ fmt: "packed", coseKey, attStmt });
+  rejects(() => verifyAttestationStatement(input), "attestation", "chain does not reach a pinned root");
+});
+
+test("packed self-attestation verifies against the credential key and is none-equivalent", () => {
+  // No x5c: the CREDENTIAL key signs (authData || clientDataHash). This is the
+  // spec's self-attestation form and proves nothing about the model.
+  const { authData, clientDataHash } = fixtureAuthData();
+  const attStmt = new Map<string, unknown>([
+    ["alg", -7],
+    ["sig", new Uint8Array(cryptoSign("sha256", concat(authData, clientDataHash), privateKey))],
+  ]);
+  const { input } = attestationFixture({ fmt: "packed", attStmt });
+  assert.equal(verifyAttestationStatement(input), "none-equivalent");
+});
+
+test("a packed self-attestation with a wrong signature is refused", () => {
+  const attStmt = new Map<string, unknown>([["alg", -7], ["sig", new Uint8Array(randomBytes(70))]]);
+  const { input } = attestationFixture({ fmt: "packed", attStmt });
+  rejects(() => verifyAttestationStatement(input), "signature", "garbage self-attestation sig");
+});
+
+test("fido-u2f with a certificate matching the credential chaining to a pinned root is verified", () => {
+  const coseKey = coseKeyFromJwk(testLeafJwk);
+  const { authData, clientDataHash } = fixtureAuthData(coseKey);
+  const parsed = parseAuthenticatorData(authData);
+  const point = concat(Uint8Array.from([0x04]), base64UrlDecode(testLeafJwk.x), base64UrlDecode(testLeafJwk.y));
+  const payload = concat(
+    Uint8Array.from([0x00]),
+    parsed.rpIdHash,
+    clientDataHash,
+    parsed.attestedCredential!.credentialId,
+    point,
+  );
+  const attStmt = new Map<string, unknown>([
+    ["sig", signWithLeaf(payload)],
+    ["x5c", [new Uint8Array(testLeafCert.raw)]],
+  ]);
+  const { input } = attestationFixture({ fmt: "fido-u2f", coseKey, attStmt });
+  assert.equal(verifyAttestationStatement(input, { pinnedRoots: [testCaCert] }), true);
+});
+
+test("fido-u2f whose certificate does not match the credential key is refused", () => {
+  // The credential key is the DEFAULT runtime key, not the leaf cert's key.
+  const { authData, clientDataHash } = fixtureAuthData();
+  const parsed = parseAuthenticatorData(authData);
+  const point = concat(Uint8Array.from([0x04]), base64UrlDecode(jwk.x), base64UrlDecode(jwk.y));
+  const payload = concat(
+    Uint8Array.from([0x00]),
+    parsed.rpIdHash,
+    clientDataHash,
+    parsed.attestedCredential!.credentialId,
+    point,
+  );
+  const attStmt = new Map<string, unknown>([
+    ["sig", signWithLeaf(payload)],
+    ["x5c", [new Uint8Array(testLeafCert.raw)]],
+  ]);
+  const { input } = attestationFixture({ fmt: "fido-u2f", attStmt });
+  rejects(
+    () => verifyAttestationStatement(input, { pinnedRoots: [testCaCert] }),
+    "attestation",
+    "certificate must match the credential key",
+  );
+});
+
+test("tpm attestation is refused with the format named", () => {
+  const { input } = attestationFixture({ fmt: "tpm", attStmt: new Map() });
+  assert.throws(
+    () => verifyAttestationStatement(input),
+    (err: unknown) => {
+      assert.ok(err instanceof WebAuthnError, "expected WebAuthnError");
+      assert.equal(err.reason, "attestation");
+      assert.match(err.message, /"tpm"/, "the refusal names the format");
+      return true;
+    },
+  );
+});
+
+test("a packed statement whose attStmt is not a CBOR map is malformed", () => {
+  const { input } = attestationFixture({ fmt: "packed", attStmt: "not-a-map" });
+  rejects(() => verifyAttestationStatement(input), "malformed", "attStmt must be a map");
+});
+
+test("an apple statement with a non-empty attStmt but no certificate chain is malformed", () => {
+  const attStmt = new Map<string, unknown>([["sig", new Uint8Array(randomBytes(64))]]);
+  const { input } = attestationFixture({ fmt: "apple", attStmt });
+  rejects(() => verifyAttestationStatement(input), "malformed", "apple with sig but no x5c");
 });
 
 // ─── assertion ─────────────────────────────────────────────────────────────

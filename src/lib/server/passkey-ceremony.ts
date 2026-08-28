@@ -215,6 +215,7 @@ export async function completeRegistration(input: {
     signCount: result.signCount,
     aaguid: base64UrlEncode(result.aaguid),
     attestationFormat: result.attestationFormat,
+    attestationVerified: result.attestationVerified,
     label: (input.label ?? "").trim().slice(0, 64) || "Passkey",
     createdAt: now,
     lastUsedAt: null,

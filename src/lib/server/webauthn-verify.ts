@@ -21,8 +21,17 @@
 //     Apple's platform authenticators report 0 and never increment (the key is
 //     synced), so a zero counter is accepted rather than treated as a clone
 //     signal — see checkSignCount.
+//   - The attestation STATEMENT is verified (cave-01v4u): a certificate chain
+//     must reach a pinned Apple root, and the self/absent forms are recorded as
+//     "none-equivalent" rather than as a check that happened.
 
-import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  verify as cryptoVerify,
+  X509Certificate,
+  type KeyObject,
+} from "node:crypto";
 
 import { decodeCbor, decodeCborItem, CborError, type CborValue } from "./webauthn-cbor.ts";
 
@@ -45,7 +54,8 @@ export type WebAuthnFailureReason =
   | "user-verification"
   | "algorithm"
   | "signature"
-  | "counter";
+  | "counter"
+  | "attestation";
 
 // COSE algorithm identifiers (IANA). ES256 is what every Apple platform
 // authenticator produces; the other two are here so a hardware key or an
@@ -256,6 +266,324 @@ function verifySignature(
   return cryptoVerify("sha256", data, publicKey, signature);
 }
 
+// ─── attestation statements (cave-01v4u) ──────────────────────────────────
+//
+// An attestation statement is the authenticator's claim about WHAT it is (its
+// model), as opposed to the credential key's proof that a human just
+// authenticated. Recording `fmt` without checking the statement would imply a
+// model check that never happened. This section makes the statement mean
+// something: a certificate chain that reaches one of the pinned Apple roots
+// proves the key lives in a Secure Enclave-backed authenticator, while the
+// statement-less forms ("none", Apple's anonymous empty statement, packed
+// self-attestation) are accepted as "none-equivalent" — they prove possession
+// but nothing about the model, so stored state must keep that gap visible.
+//
+// The fleet is Apple platform authenticators, so the pinned roots are Apple's.
+// A chain reaching any other root is refused: trusting an unaudited vendor root
+// would re-open exactly the gap this module exists to close (a software
+// authenticator that asserts the UV flag without a biometric check).
+
+const APPLE_WEBAUTHN_ROOT_CA_PEM = `-----BEGIN CERTIFICATE-----
+MIICEjCCAZmgAwIBAgIQaB0BbHo84wIlpQGUKEdXcTAKBggqhkjOPQQDAzBLMR8w
+HQYDVQQDDBZBcHBsZSBXZWJBdXRobiBSb290IENBMRMwEQYDVQQKDApBcHBsZSBJ
+bmMuMRMwEQYDVQQIDApDYWxpZm9ybmlhMB4XDTIwMDMxODE4MjEzMloXDTQ1MDMx
+NTAwMDAwMFowSzEfMB0GA1UEAwwWQXBwbGUgV2ViQXV0aG4gUm9vdCBDQTETMBEG
+A1UECgwKQXBwbGUgSW5jLjETMBEGA1UECAwKQ2FsaWZvcm5pYTB2MBAGByqGSM49
+AgEGBSuBBAAiA2IABCJCQ2pTVhzjl4Wo6IhHtMSAzO2cv+H9DQKev3//fG59G11k
+xu9eI0/7o6V5uShBpe1u6l6mS19S1FEh6yGljnZAJ+2GNP1mi/YK2kSXIuTHjxA/
+pcoRf7XkOtO4o1qlcaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUJtdk
+2cV4wlpn0afeaxLQG2PxxtcwDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMDA2cA
+MGQCMFrZ+9DsJ1PW9hfNdBywZDsWDbWFp28it1d/5w2RPkRX3Bbn/UbDTNLx7Jr3
+jAGGiQIwHFj+dJZYUJR786osByBelJYsVZd2GbHQu209b5RCmGQ21gpSAk9QZW4B
+1bWeT0vT
+-----END CERTIFICATE-----`;
+
+const APPLE_APP_ATTESTATION_ROOT_CA_PEM = `-----BEGIN CERTIFICATE-----
+MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYw
+JAYDVQQDDB1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UECgwK
+QXBwbGUgSW5jLjETMBEGA1UECAwKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNa
+Fw00NTAzMTUwMDAwMDBaMFIxJjAkBgNVBAMMHUFwcGxlIEFwcCBBdHRlc3RhdGlv
+biBSb290IENBMRMwEQYDVQQKDApBcHBsZSBJbmMuMRMwEQYDVQQIDApDYWxpZm9y
+bmlhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAERTHhmLW07ATaFQIEVwTtT4dyctdh
+NbJhFs/Ii2FdCgAHGbpphY3+d8qjuDngIN3WVhQUBHAoMeQ/cLiP1sOUtgjqK9au
+Yen1mMEvRq9Sk3Jm5X8U62H+xTD3FE9TgS41o0IwQDAPBgNVHRMBAf8EBTADAQH/
+MB0GA1UdDgQWBBSskRBTM72+aEH/pwyp5frq5eWKoTAOBgNVHQ8BAf8EBAMCAQYw
+CgYIKoZIzj0EAwMDaAAwZQIwQgFGnByvsiVbpTKwSga0kP0e8EeDS4+sQmTvb7vn
+53O5+FRXgeLhpJ06ysC5PrOyAjEAp5U4xDgEgllF7En3VcE3iexZZtKeYnpqtijV
+oyFraWVIyd/dganmrduC1bmTBGwD
+-----END CERTIFICATE-----`;
+
+let cachedPinnedRoots: X509Certificate[] | null = null;
+
+function pinnedRootCertificates(): X509Certificate[] {
+  cachedPinnedRoots ??= [
+    new X509Certificate(APPLE_WEBAUTHN_ROOT_CA_PEM),
+    new X509Certificate(APPLE_APP_ATTESTATION_ROOT_CA_PEM),
+  ];
+  return cachedPinnedRoots;
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function normalizeFingerprint(fingerprint: string): string {
+  return fingerprint.replace(/:/g, "").toLowerCase();
+}
+
+function samePublicKey(a: KeyObject, b: KeyObject): boolean {
+  const aDer = a.export({ format: "der", type: "spki" }) as Uint8Array;
+  const bDer = b.export({ format: "der", type: "spki" }) as Uint8Array;
+  return equalBytes(aDer, bDer);
+}
+
+function requireAttStmtMap(
+  attStmt: CborValue | undefined,
+): Map<string | number | bigint, CborValue> {
+  if (!(attStmt instanceof Map)) {
+    throw new WebAuthnError("malformed", "attestation statement is not a CBOR map");
+  }
+  return attStmt;
+}
+
+function requireSignature(attStmt: Map<string | number | bigint, CborValue>): Uint8Array {
+  const sig = attStmt.get("sig");
+  if (!(sig instanceof Uint8Array)) {
+    throw new WebAuthnError("malformed", "attestation statement is missing a signature");
+  }
+  return sig;
+}
+
+function requireX5c(attStmt: Map<string | number | bigint, CborValue>): Uint8Array[] {
+  const x5c = attStmt.get("x5c");
+  if (!Array.isArray(x5c) || x5c.length === 0 || !x5c.every((cert) => cert instanceof Uint8Array)) {
+    throw new WebAuthnError("malformed", "attestation statement is missing a certificate chain");
+  }
+  return x5c as Uint8Array[];
+}
+
+/**
+ * Walk an x5c chain from the leaf (x5c[0]) to a certificate whose fingerprint
+ * matches the pinned set. Returns the leaf after a successful walk. A chain
+ * that does not reach a pinned root, whose links do not verify, or that loops,
+ * is refused — reaching a pinned root is what proves the certificate was
+ * ISSUED BY an Apple root, which is the whole of the model claim.
+ */
+function verifyCertificateChain(
+  x5c: Uint8Array[],
+  pinnedRoots: X509Certificate[],
+): X509Certificate {
+  let certificates: X509Certificate[];
+  try {
+    certificates = x5c.map((der) => new X509Certificate(Buffer.from(der)));
+  } catch {
+    throw new WebAuthnError("malformed", "attestation certificate is not a valid X.509 certificate");
+  }
+
+  const pinned = new Map<string, X509Certificate>();
+  for (const root of pinnedRoots) pinned.set(normalizeFingerprint(root.fingerprint256), root);
+
+  // Index the presented chain by subject so the walk can follow issuer links
+  // even when a chain is presented out of order or omits its root.
+  const bySubject = new Map<string, X509Certificate>();
+  for (const cert of certificates) bySubject.set(cert.subject, cert);
+
+  let current = certificates[0];
+  const visited = new Set<string>();
+  while (true) {
+    if (pinned.has(normalizeFingerprint(current.fingerprint256))) {
+      return certificates[0];
+    }
+    const fingerprint = normalizeFingerprint(current.fingerprint256);
+    if (visited.has(fingerprint)) {
+      throw new WebAuthnError("attestation", "certificate chain loops without reaching a pinned root");
+    }
+    visited.add(fingerprint);
+
+    const issuer =
+      bySubject.get(current.issuer) ??
+      pinnedRoots.find((root) => root.subject === current.issuer);
+    if (!issuer) {
+      throw new WebAuthnError("attestation", "certificate chain does not reach a pinned root");
+    }
+    if (!current.verify(issuer.publicKey)) {
+      throw new WebAuthnError("attestation", "certificate chain signature verification failed");
+    }
+    current = issuer;
+  }
+}
+
+function attestationSignedPayload(authData: Uint8Array, clientDataHash: Uint8Array): Uint8Array {
+  return concatBytes(authData, clientDataHash);
+}
+
+type AttestationInput = {
+  authData: Uint8Array;
+  rpIdHash: Uint8Array;
+  clientDataHash: Uint8Array;
+  credentialId: Uint8Array;
+  coseKey: Map<string | number | bigint, CborValue>;
+  credentialPublicKey: KeyObject;
+  algorithm: number;
+};
+
+function verifyX5cAttestation(
+  input: AttestationInput,
+  attStmt: Map<string | number | bigint, CborValue>,
+  pinnedRoots: X509Certificate[],
+): AttestationVerification {
+  const sig = requireSignature(attStmt);
+  const x5c = requireX5c(attStmt);
+  const leaf = verifyCertificateChain(x5c, pinnedRoots);
+
+  // The certificate's own key signs the ceremony data. The chain walk already
+  // proved that key was issued by a pinned root.
+  let valid = false;
+  try {
+    valid = verifySignature(
+      input.algorithm,
+      leaf.publicKey,
+      attestationSignedPayload(input.authData, input.clientDataHash),
+      sig,
+    );
+  } catch {
+    valid = false;
+  }
+  if (!valid) throw new WebAuthnError("signature", "attestation signature did not verify");
+  return true;
+}
+
+function verifySelfAttestation(
+  input: AttestationInput,
+  attStmt: Map<string | number | bigint, CborValue>,
+): AttestationVerification {
+  const sig = requireSignature(attStmt);
+  // The spec's self-attestation form: the CREDENTIAL key signs the ceremony. It
+  // proves possession of the credential key but nothing about the authenticator
+  // model, so it is accepted as equivalent to "none".
+  let valid = false;
+  try {
+    valid = verifySignature(
+      input.algorithm,
+      input.credentialPublicKey,
+      attestationSignedPayload(input.authData, input.clientDataHash),
+      sig,
+    );
+  } catch {
+    valid = false;
+  }
+  if (!valid) throw new WebAuthnError("signature", "self-attestation signature did not verify");
+  return "none-equivalent";
+}
+
+function verifyU2fAttestation(
+  input: AttestationInput,
+  attStmt: Map<string | number | bigint, CborValue>,
+  pinnedRoots: X509Certificate[],
+): AttestationVerification {
+  const sig = requireSignature(attStmt);
+  const x5c = requireX5c(attStmt);
+  const leaf = verifyCertificateChain(x5c, pinnedRoots);
+
+  // U2F's certificate IS the credential's: if its public key is not the one in
+  // authData, the chain proves nothing about this credential.
+  if (!samePublicKey(leaf.publicKey, input.credentialPublicKey)) {
+    throw new WebAuthnError(
+      "attestation",
+      "attestation certificate does not match the credential public key",
+    );
+  }
+
+  // FIDO U2F signs 0x00 || rpIdHash || clientDataHash || credentialId || public
+  // key, where the public key is the uncompressed X9.62 point (0x04 || x || y).
+  const x = coseBytes(input.coseKey, -2);
+  const y = coseBytes(input.coseKey, -3);
+  const point = new Uint8Array(1 + x.length + y.length);
+  point[0] = 0x04;
+  point.set(x, 1);
+  point.set(y, 1 + x.length);
+  const payload = concatBytes(
+    Uint8Array.from([0x00]),
+    input.rpIdHash,
+    input.clientDataHash,
+    input.credentialId,
+    point,
+  );
+
+  let valid = false;
+  try {
+    valid = verifySignature(input.algorithm, leaf.publicKey, payload, sig);
+  } catch {
+    valid = false;
+  }
+  if (!valid) throw new WebAuthnError("signature", "U2F attestation signature did not verify");
+  return true;
+}
+
+export type AttestationVerification = true | "none-equivalent";
+
+/**
+ * Verify an attestation statement, called AFTER the credential key and the UV
+ * flag have already been checked. Returns `true` when the statement was
+ * cryptographically verified to a pinned root, and "none-equivalent" when the
+ * statement is self/absent — accepted, but proving nothing about the
+ * authenticator model. Refusal THROWS a WebAuthnError; it is never encoded as
+ * a `false` return, so a caller cannot forget to branch on it.
+ */
+export function verifyAttestationStatement(
+  input: AttestationInput & { fmt: string; attStmt: CborValue | undefined },
+  options: { pinnedRoots?: X509Certificate[] } = {},
+): AttestationVerification {
+  const pinnedRoots = options.pinnedRoots ?? pinnedRootCertificates();
+
+  switch (input.fmt) {
+    case "none":
+      // Self attestation: nothing to verify.
+      return "none-equivalent";
+
+    case "apple": {
+      const attStmt = requireAttStmtMap(input.attStmt);
+      if (attStmt.size === 0) {
+        // Apple's current platform attestation is anonymous: an empty statement
+        // is, per the WebAuthn spec, equivalent to "none" — there is no
+        // certificate to walk. The tailnet-node binding plus the UV flag remain
+        // the authorization weight (see the module header).
+        return "none-equivalent";
+      }
+      return verifyX5cAttestation(input, attStmt, pinnedRoots);
+    }
+
+    case "packed": {
+      const attStmt = requireAttStmtMap(input.attStmt);
+      if (!attStmt.has("x5c")) return verifySelfAttestation(input, attStmt);
+      return verifyX5cAttestation(input, attStmt, pinnedRoots);
+    }
+
+    case "fido-u2f": {
+      const attStmt = requireAttStmtMap(input.attStmt);
+      return verifyU2fAttestation(input, attStmt, pinnedRoots);
+    }
+
+    case "tpm":
+    case "android-key":
+    case "android-safetynet":
+      throw new WebAuthnError(
+        "attestation",
+        `attestation format "${input.fmt}" requires per-format verification this server does not implement; refusing rather than recording an unverified statement as verified`,
+      );
+
+    default:
+      throw new WebAuthnError("attestation", `unrecognized attestation format "${input.fmt}"`);
+  }
+}
+
 // ─── client data ───────────────────────────────────────────────────────────
 
 type ClientData = { type: string; challenge: string; origin: string; crossOrigin?: boolean };
@@ -336,7 +664,11 @@ export type RegistrationResult = {
   algorithm: number;
   signCount: number;
   aaguid: Uint8Array;
+  /** The recorded format, kept verbatim so stored state never overclaims. */
   attestationFormat: string;
+  /** `true` when cryptographically verified to a pinned root; "none-equivalent"
+   *  for self/absent statements that prove nothing about the model. */
+  attestationVerified: AttestationVerification;
   backupEligible: boolean;
   backedUp: boolean;
 };
@@ -381,14 +713,23 @@ export function verifyRegistration(input: {
     throw new WebAuthnError("malformed", "registration carries no attested credential data");
   }
 
-  // NOTE: the attestation STATEMENT is recorded but not cryptographically
-  // verified. Doing so means walking a certificate chain to Apple's or the
-  // vendor's root, which proves the authenticator MODEL. Here the binding that
-  // carries the authorization weight is the tailnet node (cave-zm6pn) plus the
-  // UV flag, and registration is already reachable only from an allowlisted
-  // device. Recording `fmt` keeps the gap visible in stored state instead of
-  // implying a check that did not happen. Follow-up: cave-01v4u.
   const { algorithm, publicKey } = coseKeyToPublicKey(authData.attestedCredential.coseKey);
+
+  // The attestation STATEMENT is checked here, AFTER the credential key and the
+  // UV flag. `fmt` stays the recorded value; `attestationVerified` records
+  // whether (and how) the statement was actually checked, so stored state keeps
+  // the gap between "recorded" and "proven" visible.
+  const attestationVerified = verifyAttestationStatement({
+    fmt: format,
+    attStmt: attestation.get("attStmt"),
+    authData: rawAuthData,
+    rpIdHash: authData.rpIdHash,
+    clientDataHash: sha256(input.clientDataJSON),
+    credentialId: authData.attestedCredential.credentialId,
+    coseKey: authData.attestedCredential.coseKey,
+    credentialPublicKey: publicKey,
+    algorithm,
+  });
 
   return {
     credentialId: authData.attestedCredential.credentialId,
@@ -397,6 +738,7 @@ export function verifyRegistration(input: {
     signCount: authData.signCount,
     aaguid: authData.attestedCredential.aaguid,
     attestationFormat: format,
+    attestationVerified,
     backupEligible: authData.flags.backupEligible,
     backedUp: authData.flags.backedUp,
   };
