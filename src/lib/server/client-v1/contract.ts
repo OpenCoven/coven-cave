@@ -768,7 +768,7 @@ function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue
   });
 }
 
-function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
+export function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
   if (isClientV1JsonArray(value)) {
     return value.map((entry) => cloneClientV1JsonValue(entry)) as unknown as T;
   }

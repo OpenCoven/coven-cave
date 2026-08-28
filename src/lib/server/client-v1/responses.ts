@@ -1,4 +1,5 @@
 import {
+  cloneClientV1JsonValue,
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
   CLIENT_V1_ERROR_CODES,
@@ -68,30 +69,6 @@ function requiredErrorMessage(value: unknown): string {
     );
   }
   return value;
-}
-
-function defineEnumerableValue(target: Record<string, unknown>, key: string, value: unknown) {
-  Object.defineProperty(target, key, {
-    configurable: true,
-    enumerable: true,
-    value,
-    writable: true,
-  });
-}
-
-function cloneClientV1JsonValue<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((entry) => cloneClientV1JsonValue(entry)) as T;
-  }
-  if (value === null || typeof value !== "object") {
-    return value;
-  }
-
-  const clone = Object.create(Object.getPrototypeOf(value)) as Record<string, unknown>;
-  for (const [key, entry] of Object.entries(value)) {
-    defineEnumerableValue(clone, key, cloneClientV1JsonValue(entry));
-  }
-  return clone as T;
 }
 
 function defaultCapabilities(): ClientV1Capability[] {
