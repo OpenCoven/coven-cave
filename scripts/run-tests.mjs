@@ -763,6 +763,7 @@ export const SUITES = {
     "src/lib/use-projects-normalize.test.ts",
     "src/lib/project-frecency.test.ts",
     "src/lib/project-root-normalizers.test.ts",
+    "src/lib/project-root-guidance.test.ts",
     "src/lib/project-root-migration.test.ts",
     "src/lib/project-display-name-spaces.test.ts",
     "src/lib/use-projects-scope-transition.test.ts",
