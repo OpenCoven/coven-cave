@@ -411,4 +411,23 @@ assert.match(
   "onClick guard prevents open being set while disabled",
 );
 
+// cave-cu0x: the shared add flow explains the workspace rule before the pick
+// and, on a containment rejection, pairs the server's error with the help so
+// every picker that renders addFlow.addError shows the actionable guidance.
+assert.match(
+  src,
+  /projectRootRejectionMessage\(result\.code, result\.error\)/,
+  "containment rejections compose the server error with the shared workspace help",
+);
+assert.match(
+  src,
+  /helpText=\{PROJECT_ROOT_WORKSPACE_HELP\}/,
+  "the folder browser shows the shared workspace help before the pick",
+);
+assert.match(
+  src,
+  /PROJECT_ROOT_WORKSPACE_HELP,[\s\S]*?projectRootRejectionMessage,[\s\S]*?\} from "@\/lib\/project-root-guidance"/,
+  "the shared guidance constants are imported, never re-typed",
+);
+
 console.log("project-picker.test.ts OK");

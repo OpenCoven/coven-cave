@@ -26,6 +26,10 @@ import {
   type CaveProject,
 } from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
+import {
+  PROJECT_ROOT_WORKSPACE_HELP,
+  projectRootRejectionMessage,
+} from "@/lib/project-root-guidance";
 import { isTauri } from "@/lib/tauri-platform";
 import { resolveProjectPickerSelection } from "@/lib/project-picker-selection";
 
@@ -81,7 +85,7 @@ export function useAddProjectFlow(args: {
     });
     setAdding(false);
     if (result.ok) args.onAdded(result.projectId);
-    else setAddError(result.error);
+    else setAddError(projectRootRejectionMessage(result.code, result.error));
   };
 
   const beginAddProject = () => {
@@ -109,6 +113,7 @@ export function useAddProjectFlow(args: {
         setPickerOpen(false);
         void registerRoot(dir);
       }}
+      helpText={PROJECT_ROOT_WORKSPACE_HELP}
     />
   );
 

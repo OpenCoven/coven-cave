@@ -506,6 +506,17 @@ test("creating a dot folder reveals it instead of hiding what the user just made
   );
 });
 
+// cave-cu0x: the workspace rule must be explained BEFORE the user picks — not
+// discovered only after a rejected pick. The modal takes optional guidance and
+// renders it in the header, so project callers pass the shared help text.
+test("the modal surfaces optional allowed-workspace guidance before picking", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /helpText\?: string;/, "the modal accepts optional requirement guidance");
+  assert.match(src, /onSelect, helpText \}: DirectoryPickerModalProps/, "the guidance prop is destructured");
+  assert.match(src, /helpText \? \(/, "provided guidance renders below the subtitle");
+  assert.match(src, /\{helpText\}/, "the guidance text is rendered in the header");
+});
+
 test("the picker never reports a folder as empty while it is withholding dot folders", () => {
   const src = read("./directory-picker-modal.tsx");
   // "This folder is empty" beside a toggle reading "Hidden folders (3)" is a

@@ -139,6 +139,12 @@ export type DirectoryPickerModalProps = {
   onClose: () => void;
   /** Called with the absolute path of the chosen directory. */
   onSelect: (dir: string) => void;
+  /**
+   * Optional requirement guidance shown before the user picks a folder. Project
+   * callers pass the shared allowed-workspace help so the rule is explained
+   * proactively rather than only after a rejected pick.
+   */
+  helpText?: string;
 };
 
 /**
@@ -156,7 +162,7 @@ export type DirectoryPickerModalProps = {
  * or drive is always a mistake), matching isAllowedNewProjectRoot on the
  * server.
  */
-export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPickerModalProps) {
+export function DirectoryPickerModal({ open, onClose, onSelect, helpText }: DirectoryPickerModalProps) {
   const [home, setHome] = useState<string | null>(null);
   const [cwd, setCwd] = useState<string | null>(null);
   const [parent, setParent] = useState<string | null>(null);
@@ -508,6 +514,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Pick where this project&apos;s chats will live.
             </span>
+            {helpText ? (
+              <span className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+                {helpText}
+              </span>
+            ) : null}
           </div>
           <Button
             ref={closeButtonRef}

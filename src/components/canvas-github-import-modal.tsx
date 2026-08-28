@@ -19,6 +19,11 @@ import {
   parseGitHubFileUrl,
 } from "@/lib/github-repo-link";
 import { Icon } from "@/lib/icon";
+import { projectErrorCode } from "@/lib/project-errors";
+import {
+  PROJECT_ROOT_WORKSPACE_HELP,
+  projectRootRejectionMessage,
+} from "@/lib/project-root-guidance";
 import { isTauri } from "@/lib/tauri-platform";
 import { useProjects } from "@/lib/use-projects";
 
@@ -205,7 +210,7 @@ export function CanvasGitHubImportModal({
         caught instanceof Error
           ? caught.message
           : "Couldn’t load that GitHub file.";
-      setError(message);
+      setError(projectRootRejectionMessage(projectErrorCode(caught), message));
       announce(message, "assertive");
     } finally {
       setBusy(false);
@@ -411,6 +416,7 @@ export function CanvasGitHubImportModal({
                     Choose an existing checkout for {parsed.owner}/{parsed.repo}.
                     Canvas doesn’t clone repositories.
                   </small>
+                  <small>{PROJECT_ROOT_WORKSPACE_HELP}</small>
                 </label>
               ) : null}
             </section>

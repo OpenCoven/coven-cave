@@ -13,6 +13,10 @@ import {
   writePendingFirstProjectAccessSnapshot,
   type PendingFirstProjectAccessSnapshot,
 } from "@/lib/first-project-gate-retry";
+import {
+  PROJECT_ROOT_WORKSPACE_HELP,
+  projectRootRejectionMessage,
+} from "@/lib/project-root-guidance";
 import { isTauri } from "@/lib/tauri-platform";
 
 function pathBasename(p: string): string {
@@ -191,7 +195,7 @@ export function FirstProjectGate({
         setSubmitError(null);
         announce(`${lockedProject ? "Granted" : "Created"} project ${createdProjectName}. Chat is ready.`);
       } else {
-        setSubmitError(result.error);
+        setSubmitError(projectRootRejectionMessage(result.code, result.error));
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Could not create that project.");
@@ -361,6 +365,9 @@ export function FirstProjectGate({
                   <p id={rootHintId} className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                     Pick the repository root you want chat to run inside.
                   </p>
+                  <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+                    {PROJECT_ROOT_WORKSPACE_HELP}
+                  </p>
                 </div> : null}
 
                 <div className="flex items-center justify-end">
@@ -389,6 +396,7 @@ export function FirstProjectGate({
           setPickerOpen(false);
           applyPickedRoot(dir);
         }}
+        helpText={PROJECT_ROOT_WORKSPACE_HELP}
       />
     </>
   );

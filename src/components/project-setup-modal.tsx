@@ -20,6 +20,8 @@ import { Popover, PopoverBody } from "@/components/ui/popover";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
 import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
+import { projectErrorCode } from "@/lib/project-errors";
+import { projectRootRejectionMessage } from "@/lib/project-root-guidance";
 import { PROJECT_SETUP_COLOR_CHOICES } from "@/lib/project-setup-offer";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -275,9 +277,12 @@ export function ProjectSetupModal({
         );
       } else {
         setError(
-          error instanceof Error && error.message
-            ? error.message
-            : "Couldn't reach the desktop — nothing was created. Retry?",
+          projectRootRejectionMessage(
+            projectErrorCode(error),
+            error instanceof Error && error.message
+              ? error.message
+              : "Couldn't reach the desktop — nothing was created. Retry?",
+          ),
         );
       }
     } finally {

@@ -116,4 +116,13 @@ assert.match(
   "picking a suggestion routes through the shared fill rule",
 );
 
+// cave-cu0x: the setup modal's create failure surfaces the server's error
+// body, and for the containment code it appends the shared workspace help so
+// the in-place registration explains what IS allowed too.
+assert.match(
+  src,
+  /projectRootRejectionMessage\(\s*projectErrorCode\(error\),\s*error instanceof Error && error\.message\s*\?\s*error\.message/,
+  "containment rejections pair the server error with the shared workspace help (cave-cu0x)",
+);
+
 console.log("project-setup-modal.test.ts OK");

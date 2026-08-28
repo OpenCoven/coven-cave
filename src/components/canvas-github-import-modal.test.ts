@@ -72,4 +72,18 @@ assert.doesNotMatch(
   "repository registration does not ask for a redundant project name",
 );
 
+// cave-cu0x: the import modal is a project-creation entry point too — its
+// "Local checkout" field explains the workspace rule before the pick, and a
+// containment rejection pairs the server error with the shared help.
+assert.match(
+  modal,
+  /\{PROJECT_ROOT_WORKSPACE_HELP\}/,
+  "the local-checkout hint explains the allowed-workspace rule before the pick",
+);
+assert.match(
+  modal,
+  /setError\(projectRootRejectionMessage\(projectErrorCode\(caught\), message\)\)/,
+  "containment rejections pair the server error with the shared workspace help",
+);
+
 console.log("canvas GitHub import modal contract: ok");
