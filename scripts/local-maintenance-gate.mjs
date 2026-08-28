@@ -108,12 +108,13 @@ const MUTATION_LOCK_POLL_MS = 10;
 const MUTATION_LOCK_WAIT_MS = 1_000;
 const GATE_CLEANUP_TIMEOUT_MS = 5_000;
 // WSL can step CLOCK_REALTIME backwards while synchronizing with the host. The
-// lifecycle-create baseline measured repeated 1.32s corrections; treating each
-// one as tampering aborted owned lifecycle transactions, including compensation
-// paths. This tolerance is deliberately small relative to the two-minute
-// writer lease: larger/future-dated records still fail closed, and tolerated
+// lifecycle-create baseline measured repeated 1.32s corrections, and the WSL
+// host has since produced a measured 2.936s correction. Treating either as
+// tampering aborts owned lifecycle transactions, including compensation paths.
+// Five seconds remains deliberately small relative to the two-minute writer
+// lease: materially future-dated records still fail closed, and tolerated
 // corrections never move a persisted heartbeat backwards.
-const MAX_TRANSIENT_CLOCK_REGRESSION_MS = 2_000;
+const MAX_TRANSIENT_CLOCK_REGRESSION_MS = 5_000;
 
 /** Synchronous sleep without CPU spin (callers are sync CLI/hook processes). */
 function sleepSync(ms) {
