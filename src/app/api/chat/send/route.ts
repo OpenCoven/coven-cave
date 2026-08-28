@@ -4037,11 +4037,6 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
       };
 
       const handleOpenCodeLine = (line: string) => {
-        // Token usage (cave-0osmn): OpenCode's `run --format json` stream
-        // exposes only text/tool/step/error parts; per-message token and
-        // cost counters live in message metadata that the CLI does not emit
-        // on this transport, so no usage is forwarded and the meter stays
-        // absent rather than inventing a number nothing measured.
         // Current OpenCode can write a human-oriented permission control
         // notice to stdout. Only structured mode has framing sufficient to
         // recognize it without risking a valid assistant-text loss.
@@ -4136,6 +4131,16 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
               ev.isError,
             );
             if (ended) push({ kind: "tool_use", ...ended });
+          },
+          onResult: (ev) => {
+            // OpenCode's terminal `step_finish` carries token usage and a USD
+            // cost. Both are optional and already validated by the parser; a
+            // turn without them still completes but carries no meter/cost.
+            result = {
+              ...result,
+              ...(ev.usage ? { usage: ev.usage } : {}),
+              ...(ev.costUsd !== undefined ? { costUsd: ev.costUsd } : {}),
+            };
           },
           onError: (ev) => {
             // This is an explicit error envelope, so retain its error state

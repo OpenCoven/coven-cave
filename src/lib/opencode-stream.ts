@@ -1,4 +1,5 @@
 import type { OpenCodeEnvelopePath, OpenCodeEventSchema } from "@/lib/opencode-compatibility";
+import { parseCostUsd, type TurnUsage } from "./usage-format.ts";
 
 export type OpenCodeRunEvent =
   | { kind: "ignore"; sessionId?: string }
@@ -8,6 +9,7 @@ export type OpenCodeRunEvent =
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
   | { kind: "error"; sessionId?: string; message: string }
+  | { kind: "result"; sessionId?: string; usage?: TurnUsage; costUsd?: number }
   | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event" };
 
 export type OpenCodeJsonLineHandlers = {
@@ -18,6 +20,7 @@ export type OpenCodeJsonLineHandlers = {
   onToolProgress?: (event: Extract<OpenCodeRunEvent, { kind: "tool_progress" }>) => void;
   onToolEnd?: (event: Extract<OpenCodeRunEvent, { kind: "tool_end" }>) => void;
   onError?: (event: Extract<OpenCodeRunEvent, { kind: "error" }>) => void;
+  onResult?: (event: Extract<OpenCodeRunEvent, { kind: "result" }>) => void;
   onOther?: (event: Extract<OpenCodeRunEvent, { kind: "other" }>, rawEvent: unknown) => void;
   onMalformedJson?: () => void;
 };
@@ -133,6 +136,32 @@ function hasToolErrorPayload(value: unknown): boolean {
     && (typeof value !== "string" || value.trim().length > 0);
 }
 
+function finiteNonNegativeTokens(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** OpenCode's terminal `step_finish` reports `part.tokens` as
+ * `{ input, output, reasoning, cache: { read, write } }` plus a USD `cost`.
+ * Map the counters Cave persists onto a `TurnUsage` (cache write → cache
+ * creation); a missing/empty block yields undefined so the turn shows no meter
+ * instead of a fabricated zero. */
+function parseOpenCodeUsage(raw: unknown): TurnUsage | undefined {
+  const tokens = record(raw);
+  if (!tokens) return undefined;
+  const inputTokens = finiteNonNegativeTokens(tokens.input);
+  const outputTokens = finiteNonNegativeTokens(tokens.output);
+  if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const cache = record(tokens.cache);
+  const cacheReadTokens = finiteNonNegativeTokens(cache?.read);
+  const cacheCreationTokens = finiteNonNegativeTokens(cache?.write);
+  return {
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+  };
+}
+
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
 export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSchema): OpenCodeRunEvent {
   const event = record(value);
@@ -147,6 +176,27 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const discriminator = schema?.shape?.discriminator ?? { envelope: "root" as const, field: "type" };
   const eventType = stringAt(envelope(event, [discriminator.envelope]), discriminator.field);
   if (!eventType) return { kind: "other", sessionId, diagnostic: "malformed-event" };
+  // OpenCode's terminal `step_finish` (reason "stop" or absent) carries the
+  // turn's token usage and USD cost on its `part`. This is the usage/cost
+  // terminal event, handled before the ignored-lifecycle branch below. A
+  // `reason: "tool-calls"` step is an intermediate tool-loop step, not the
+  // turn's terminal outcome, so its per-step counters are not surfaced.
+  if (eventType === "step_finish") {
+    const reason = stringAt(part, "reason");
+    const terminal = reason === undefined || reason === "stop";
+    if (terminal) {
+      const usage = parseOpenCodeUsage(valueAt(part, ["tokens"]));
+      const costUsd = parseCostUsd(valueAt(part, ["cost"]));
+      if (usage || costUsd !== undefined) {
+        return {
+          kind: "result",
+          ...(sessionId ? { sessionId } : {}),
+          ...(usage ? { usage } : {}),
+          ...(costUsd !== undefined ? { costUsd } : {}),
+        };
+      }
+    }
+  }
   if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(eventType)) {
     // Lifecycle/control frames are deliberately non-renderable. The selected
     // schema nevertheless authorizes their label, so retain its session token:
@@ -299,6 +349,7 @@ export function handleOpenCodeJsonLine(
       case "tool_progress": handlers.onToolProgress?.(event); return;
       case "tool_end": handlers.onToolEnd?.(event); return;
       case "error": handlers.onError?.(event); return;
+      case "result": handlers.onResult?.(event); return;
       case "other": handlers.onOther?.(event, rawEvent); return;
     }
   } catch {
