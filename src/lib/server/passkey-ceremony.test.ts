@@ -137,22 +137,30 @@ async function enroll(nodeId = NODE, flags = FLAG_UP | FLAG_UV) {
   const context = ceremonyContext(tailnetHeaders(nodeId), "https:")!;
   const { challenge } = await startCeremony("register", peer, context);
   const data = authData({ flags, withCredential: true });
+  // cave-01v4u: a remote registration must not use fmt "none". Self-attest
+  // with the fixture key so the happy path keeps exercising real signatures.
+  const attestationObject = packedSelfAttestationObject(challenge, data);
   return completeRegistration({
     peer,
     context,
     challenge,
     clientDataJSON: b64(clientData("webauthn.create", challenge)),
-    attestationObject: b64(
-      cbor(
-        new Map<string, unknown>([
-          ["fmt", "none"],
-          ["attStmt", new Map()],
-          ["authData", data],
-        ]),
-      ),
-    ),
+    attestationObject: b64(attestationObject),
     label: "Test iPhone",
   });
+}
+
+function packedSelfAttestationObject(challenge: string, data: Uint8Array): Uint8Array {
+  const cdj = clientData("webauthn.create", challenge);
+  const clientDataHash = new Uint8Array(createHash("sha256").update(cdj).digest());
+  const signature = new Uint8Array(cryptoSign("sha256", concat(data, clientDataHash), privateKey));
+  return cbor(
+    new Map<string, unknown>([
+      ["fmt", "packed"],
+      ["attStmt", new Map<string, unknown>([["alg", -7], ["sig", signature]])],
+      ["authData", data],
+    ]),
+  );
 }
 
 async function assertPresence(
@@ -216,6 +224,45 @@ test("ceremonyContext refuses a host that is not a plain host[:port]", () => {
   assert.equal(ceremonyContext(new Headers(), "https:"), null);
 });
 
+// ─── attestation policy (cave-01v4u) ────────────────────────────────────────
+
+async function noneEnrollment(headersForPeer: Headers, context: ReturnType<typeof ceremonyContext>) {
+  const peer = resolvePeerIdentity(headersForPeer)!;
+  const { challenge } = await startCeremony("register", peer, context!);
+  return completeRegistration({
+    peer,
+    context: context!,
+    challenge,
+    clientDataJSON: b64(clientData("webauthn.create", challenge)),
+    attestationObject: b64(
+      cbor(
+        new Map<string, unknown>([
+          ["fmt", "none"],
+          ["attStmt", new Map()],
+          ["authData", authData({ flags: FLAG_UP | FLAG_UV, withCredential: true })],
+        ]),
+      ),
+    ),
+    label: "Test",
+  });
+}
+
+test("a remote registration with fmt 'none' is refused", async () => {
+  const result = await noneEnrollment(tailnetHeaders(), ceremonyContext(tailnetHeaders(), "https:"));
+  assert.deepEqual(result, { ok: false, status: 400, error: "attestation" });
+});
+
+test("a local loopback registration may still use fmt 'none'", async () => {
+  const localHeaders = headers({ "x-coven-cave-local-peer": process.env.COVEN_CAVE_LOCAL_PEER_SECRET! });
+  const result = await noneEnrollment(localHeaders, ceremonyContext(localHeaders, "https:"));
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.credential.attestationTrustPath, "none");
+    assert.equal(result.credential.attestationVerified, false);
+    assert.equal(result.credential.attestationVerifiedAt, undefined);
+  }
+});
+
 // ─── the happy path ────────────────────────────────────────────────────────
 
 test("register then assert yields a presence token bound to the device", async () => {
@@ -223,6 +270,12 @@ test("register then assert yields a presence token bound to the device", async (
   assert.equal(registration.ok, true);
   assert.equal(registration.ok && registration.credential.credentialId, CREDENTIAL_ID_B64);
   assert.equal(registration.ok && registration.credential.tailnetNodeId, NODE);
+  assert.equal(
+    registration.ok && registration.credential.attestationTrustPath,
+    "packed-self",
+    "the self-attested fixture key records its model-unproven trust path",
+  );
+  assert.equal(registration.ok && registration.credential.attestationVerified, false);
 
   const assertion = await assertPresence();
   assert.equal(assertion.ok, true, assertion.ok ? "" : `failed: ${assertion.error}`);
@@ -374,13 +427,7 @@ test("a proven presence lets the same device enroll another credential", async (
     challenge,
     clientDataJSON: b64(clientData("webauthn.create", challenge)),
     attestationObject: b64(
-      cbor(
-        new Map<string, unknown>([
-          ["fmt", "none"],
-          ["attStmt", new Map()],
-          ["authData", authData({ withCredential: true })],
-        ]),
-      ),
+      packedSelfAttestationObject(challenge, authData({ withCredential: true })),
     ),
     presenceProven: true,
   });

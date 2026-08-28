@@ -1789,6 +1789,8 @@ export const SUITES = {
     "src/lib/server/space-usage.test.ts",
     "src/lib/server/preferences-store.test.ts",
     "src/lib/server/webauthn-verify.test.ts",
+    "src/lib/server/webauthn-roots.test.ts",
+    "src/lib/server/webauthn-attestation-contract.test.ts",
     "src/lib/server/passkey-store.test.ts",
     "src/lib/server/passkey-ceremony.test.ts",
     "src/lib/passkey-presence.test.ts",
