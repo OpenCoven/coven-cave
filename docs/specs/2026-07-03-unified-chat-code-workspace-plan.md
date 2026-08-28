@@ -1,6 +1,6 @@
 # Unified Chat + Code Workspace — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Collapse the separate Chat and Code surfaces into one chat-centered "morphing workspace" whose right **code rail** (Changes · Files · Terminal) smart-auto-reveals when code is in play and can be pinned/collapsed.
 

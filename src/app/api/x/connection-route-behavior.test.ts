@@ -143,15 +143,18 @@ test("DELETE purges normalized post content and keeps the saved identity", async
   assert.deepEqual(sources[0]!.tags, ["research"]);
 });
 
-// DELETE purges BEFORE dropping the bundle, and the route comment calls that
-// ordering load-bearing: a purge failure must abort the disconnect rather than
-// strand post bodies behind a disconnected account. Until this test the
-// ordering was unenforced — swapping the two statements left every other
-// assertion in this file, and both source pins next door, green.
+// DELETE runs the purge best-effort and ALWAYS drops the bundle: the cache
+// holds public post text, the bundle holds OAuth access and refresh tokens, so
+// a purge failure — most plausibly a 15s cross-process cache-lock timeout —
+// must never leave the tokens stored. A user who asks to disconnect is always
+// disconnected, and the purge error is surfaced separately (purgeFailed +
+// purgeError in the response) instead of failing the request (cave-fspmd).
+// Until this test the purge ran first and its failure aborted the disconnect,
+// leaving the OAuth tokens stored.
 //
 // A regular file where the cache directory belongs is the cross-platform way to
 // make the purge fail; an unprivileged Windows process cannot create a symlink.
-test("a failed cache purge aborts the disconnect rather than dropping the bundle", async () => {
+test("a failed cache purge still drops the bundle and reports the purge failure", async () => {
   await rm(cacheDir, { recursive: true, force: true });
   await writeFile(cacheDir, "not a directory", "utf8");
   xCredentialService.replaceBundle({
@@ -163,15 +166,20 @@ test("a failed cache purge aborts the disconnect rather than dropping the bundle
   });
   assert.equal(xCredentialService.getConnectionStatus().connected, true);
 
-  await assert.rejects(
-    () => DELETE(localRequest("DELETE")),
-    /real directory/,
-    "a cache root that is not a real directory must fail the disconnect loudly",
+  const response = await DELETE(localRequest("DELETE"));
+  assert.equal(response.status, 200, "a purge failure must not fail the disconnect");
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(body.ok, true);
+  assert.equal(body.purgeFailed, true, "the purge failure must be surfaced in the response");
+  assert.equal(
+    typeof body.purgeError,
+    "string",
+    "the purge error message must be surfaced in the response",
   );
   assert.equal(
     xCredentialService.getConnectionStatus().connected,
-    true,
-    "the bundle must survive a failed purge — the purge runs BEFORE disconnect",
+    false,
+    "the bundle must be dropped even when the purge fails",
   );
 
   await rm(cacheDir, { force: true });

@@ -4,7 +4,7 @@
 > [`../../ios-current-direction.md`](../../ios-current-direction.md) for the
 > active visual priorities and supersession rules.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Close the remaining compatible gaps between the native SwiftUI app and the supplied Claude Design handoff without undoing the newer, approved familiars-first Chats IA or drawer navigation.
 

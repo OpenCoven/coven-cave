@@ -21,7 +21,7 @@
 // No network and no X credentials: fetch is stubbed for the one upstream read
 // under test, and every durable path is redirected into a temp directory.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -228,4 +228,70 @@ test("attaching a saved X post records an identity-only x-post source on the mis
     1,
     "the response must show the caller the mission it just changed, not the pre-attach copy",
   );
+});
+
+// cave-xl73s: housekeeping must not be able to fail a read. sweepExpiredXCache
+// runs inside the route's try/catch, so a sweep failure — a lock timeout, a
+// permissions problem — used to turn GET /api/x/sources into a 500 even
+// though listing saved sources needs no cache at all. The startup sweep was
+// already void-ed and .catch-ed so it cannot fail boot (instrumentation.ts);
+// the load path now logs the failure instead of propagating it.
+test("a failing expired-cache sweep cannot fail the Research Desk load", async () => {
+  // A saved source the read must still return no matter what housekeeping does.
+  await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "901",
+    canonicalUrl: "https://x.com/opencoven/status/901",
+    originalUrl: "https://x.com/opencoven/status/901",
+    note: "the read must survive a failing sweep",
+    tags: [],
+  });
+
+  // The cache root becomes a SYMLINK — the exact condition the pre-fix code
+  // deliberately surfaced as a read error ("Awaited rather than
+  // fired-and-forgotten so a symlinked cache root surfaces as an error").
+  // The stale entry is parked inside the real directory behind the link, so
+  // a surviving 900.json proves the sweep genuinely FAILED rather than being
+  // skipped, and the load must still succeed.
+  const realCache = path.join(root, "x-cache-broken-real");
+  const hiddenCache = path.join(root, "x-cache-broken-content");
+  await mkdir(realCache, { recursive: true });
+  const originalCacheDir = process.env.COVEN_X_CACHE_DIR;
+  process.env.COVEN_X_CACHE_DIR = realCache;
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (...values: unknown[]) => {
+    warnings.push(values.map(String).join(" "));
+  };
+  try {
+    await cacheNormalizedXPosts(
+      [post("900")],
+      new Date(Date.now() - 25 * 60 * 60 * 1000),
+    );
+    await rename(realCache, hiddenCache);
+    await symlink(hiddenCache, realCache, "dir");
+
+    const response = await GET(listRequest("nova"));
+    assert.equal(response.status, 200, "a sweep failure must not fail the load");
+    const body = await response.json() as {
+      ok: boolean;
+      sources: Array<{ postId: string; note: string }>;
+    };
+    assert.equal(body.ok, true);
+    assert.ok(
+      body.sources.some((source) => source.postId === "901"),
+      "the saved source must still be listed",
+    );
+    assert.ok(
+      (await readdir(hiddenCache)).includes("900.json"),
+      "the sweep must have failed before it could remove the stale entry",
+    );
+    assert.ok(
+      warnings.some((line) => line.includes("X cache sweep failed")),
+      "the sweep failure must be logged, not propagated to the caller",
+    );
+  } finally {
+    process.env.COVEN_X_CACHE_DIR = originalCacheDir;
+    console.warn = originalWarn;
+  }
 });
