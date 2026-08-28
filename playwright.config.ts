@@ -205,6 +205,20 @@ export default defineConfig({
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["iPhone 13"] },
     },
+    {
+      // Tablet-width project for the right Chat drawer's non-full-bleed case
+      // (cave-4snk9): pixel-5 (393px) and iphone-13 (390px) are the only
+      // mobile projects and both are full-bleed (≤480px), so no project
+      // exercised the right-chat backdrop at a width where the pointer path
+      // exists. iPad Mini is 768×1024 — the drawer is capped at 480px and
+      // the backdrop is genuinely reachable along the left edge. Scoped to
+      // right-chat-panel.spec.ts only: the rest of tests/mobile/ was written
+      // for phone widths and must keep running on the phone projects alone.
+      name: "tablet",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /right-chat-panel\.spec\.ts/,
+      use: { ...devices["iPad Mini"] },
+    },
   ],
   webServer: {
     command: `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
