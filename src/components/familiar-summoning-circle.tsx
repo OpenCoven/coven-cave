@@ -94,6 +94,11 @@ type Props = {
   daemonRunning?: boolean;
   /** When provided, the success stage offers to begin the first conversation. */
   onStartChat?: (id: string) => void;
+  /** When provided, the Enhancement Rite's memory hint opens the familiar's daily notes. */
+  onOpenDailyNotes?: (id: string) => void;
+  /** Known memory-entry count for the enhanced familiar (null = unknown). Feeds
+   *  the rite's "no memories yet" hint — an existing growth signal, wired here. */
+  memoryCount?: number | null;
 };
 
 export function FamiliarSummoningCircle({
@@ -106,6 +111,8 @@ export function FamiliarSummoningCircle({
   onEnhanced,
   daemonRunning,
   onStartChat,
+  onOpenDailyNotes,
+  memoryCount = null,
 }: Props) {
   if (!open) return null;
   return (
@@ -118,6 +125,8 @@ export function FamiliarSummoningCircle({
       onEnhanced={onEnhanced}
       daemonRunning={daemonRunning}
       onStartChat={onStartChat}
+      onOpenDailyNotes={onOpenDailyNotes}
+      memoryCount={memoryCount}
     />
   );
 }
@@ -132,6 +141,8 @@ function SummoningCircleOverlay({
   onEnhanced,
   daemonRunning,
   onStartChat,
+  onOpenDailyNotes,
+  memoryCount,
 }: Omit<Props, "open">) {
   const { announce } = useAnnouncer();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -161,6 +172,9 @@ function SummoningCircleOverlay({
             setSubmitting={setSubmitting}
             announce={announce}
             onEnhanced={onEnhanced}
+            onStartChat={onStartChat}
+            onOpenDailyNotes={onOpenDailyNotes}
+            memoryCount={memoryCount}
             onClose={handleClose}
           />
         ) : (
@@ -1495,25 +1509,40 @@ function SummonSuccess({
 
 // ─── The enhancement rite (alteration) ───────────────────────────────────────
 
+type VitalityAction = "chat" | "daily-notes" | null;
+
 type Vitality = {
   label: "Blazing" | "Warm" | "Quiet" | "Dormant";
   embers: 1 | 2 | 3 | 4;
   hint: string;
+  /** Verb this hint points at — an existing callback. Null when the familiar is healthy. */
+  action: VitalityAction;
 };
 
 /** Honest vitality from roster fields — live signals, nothing invented. */
-export function vitalityFor(familiar: ResolvedFamiliar): Vitality {
+export function vitalityFor(familiar: ResolvedFamiliar, memoryCount?: number | null): Vitality {
   if ((familiar.active_sessions ?? 0) > 0) {
-    return { label: "Blazing", embers: 4, hint: "Working right now." };
+    return { label: "Blazing", embers: 4, hint: "Working right now.", action: null };
+  }
+  // Known-empty memory outranks recency: seeding the mind (daily notes) is the
+  // one verb that helps before any conversation can (cave-mo4q).
+  if (memoryCount === 0) {
+    return {
+      label: "Quiet",
+      embers: 2,
+      hint: "No memories yet — open daily notes to seed its mind.",
+      action: "daily-notes",
+    };
   }
   const lastSeen = familiar.last_seen ? Date.parse(familiar.last_seen) : NaN;
   const days = Number.isFinite(lastSeen) ? (Date.now() - lastSeen) / 86_400_000 : Infinity;
-  if (days <= 7) return { label: "Warm", embers: 3, hint: "Active this week." };
-  if (days <= 21) return { label: "Quiet", embers: 2, hint: "A conversation would rekindle it." };
+  if (days <= 7) return { label: "Warm", embers: 3, hint: "Active this week.", action: null };
+  if (days <= 21) return { label: "Quiet", embers: 2, hint: "A conversation would rekindle it.", action: "chat" };
   return {
     label: "Dormant",
     embers: 1,
     hint: "It has been still a long while — begin a conversation to wake it.",
+    action: "chat",
   };
 }
 
@@ -1523,6 +1552,9 @@ function EnhancementRite({
   setSubmitting,
   announce,
   onEnhanced,
+  onStartChat,
+  onOpenDailyNotes,
+  memoryCount,
   onClose,
 }: {
   familiar: ResolvedFamiliar;
@@ -1530,6 +1562,9 @@ function EnhancementRite({
   setSubmitting: (v: boolean) => void;
   announce: (msg: string, tone?: "polite" | "assertive") => void;
   onEnhanced?: (id: string) => void;
+  onStartChat?: (id: string) => void;
+  onOpenDailyNotes?: (id: string) => void;
+  memoryCount?: number | null;
   onClose: () => void;
 }) {
   const [name, setName] = useState(familiar.display_name);
@@ -1543,7 +1578,7 @@ function EnhancementRite({
   const [empowered, setEmpowered] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const vitality = useMemo(() => vitalityFor(familiar), [familiar]);
+  const vitality = useMemo(() => vitalityFor(familiar, memoryCount), [familiar, memoryCount]);
 
   const identityDirty =
     name.trim() !== familiar.display_name ||
@@ -1638,7 +1673,11 @@ function EnhancementRite({
             flare={empowered}
             center={centerNode}
           />
-          <p className="summoning-vitality" role="img" aria-label={`Vitality: ${vitality.label}. ${vitality.hint}`}>
+          <div
+            className="summoning-vitality"
+            role="group"
+            aria-label={`Vitality: ${vitality.label}. ${vitality.hint}`}
+          >
             <span aria-hidden className="summoning-vitality__embers">
               {Array.from({ length: 4 }, (_, i) => (
                 <Icon
@@ -1651,7 +1690,26 @@ function EnhancementRite({
             </span>
             <span className="summoning-vitality__label">{vitality.label}</span>
             <span className="summoning-vitality__hint">{vitality.hint}</span>
-          </p>
+            {vitality.action === "chat" && onStartChat ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                leadingIcon="ph:chat-circle-dots"
+                onClick={() => onStartChat(familiar.id)}
+              >
+                Start chat
+              </Button>
+            ) : vitality.action === "daily-notes" && onOpenDailyNotes ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                leadingIcon="ph:book-open"
+                onClick={() => onOpenDailyNotes(familiar.id)}
+              >
+                Open daily notes
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <div className="summoning-panel">
