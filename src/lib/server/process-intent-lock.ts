@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -18,6 +19,11 @@ const pendingIntentRemovals = new Map<
   string,
   { cleanup: Promise<void>; firstAttempt: Promise<boolean> }
 >();
+type HeldIntentLease = {
+  active: boolean;
+  pending: Set<Promise<void>>;
+};
+const heldIntentDirectories = new AsyncLocalStorage<ReadonlyMap<string, HeldIntentLease>>();
 
 class InvalidIntentDirectoryError extends Error {}
 
@@ -295,4 +301,60 @@ export async function acquireProcessIntentLock(
     await removeIntent(ownPath);
     throw error;
   }
+}
+
+/**
+ * Runs an operation under the process-intent lock while allowing nested store
+ * transactions in the same async call chain to reuse that exact lock. Other
+ * processes and unrelated async callers still queue on the on-disk intent.
+ */
+export function withProcessIntentLock<T>(
+  options: ProcessIntentLockOptions,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = path.resolve(options.intentsDirectory);
+  const held = heldIntentDirectories.getStore();
+  const inheritedLease = held?.get(key);
+  if (inheritedLease?.active) {
+    let nested: Promise<T>;
+    try {
+      nested = operation();
+    } catch (error) {
+      nested = Promise.reject(error);
+    }
+    const observed = nested.then(
+      () => {},
+      () => {},
+    );
+    inheritedLease.pending.add(observed);
+    void observed.then(() => inheritedLease.pending.delete(observed));
+    return nested;
+  }
+  return (async () => {
+    const release = await acquireProcessIntentLock(options);
+    const lease: HeldIntentLease = { active: true, pending: new Set() };
+    const next = new Map(held ?? []);
+    next.set(key, lease);
+    let result: T | undefined;
+    let operationError: unknown;
+    let operationFailed = false;
+    try {
+      result = await heldIntentDirectories.run(next, operation);
+    } catch (error) {
+      operationFailed = true;
+      operationError = error;
+    } finally {
+      while (lease.pending.size > 0) {
+        await Promise.all([...lease.pending]);
+      }
+      lease.active = false;
+      try {
+        await release();
+      } catch (releaseError) {
+        if (!operationFailed) throw releaseError;
+      }
+    }
+    if (operationFailed) throw operationError;
+    return result as T;
+  })();
 }

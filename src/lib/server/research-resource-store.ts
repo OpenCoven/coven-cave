@@ -29,7 +29,7 @@ import {
 import { canonicalJson, sha256Digest } from "../research-protocol/digest.ts";
 import { caveHome } from "../coven-paths.ts";
 import { assertExclusivePathOwnership } from "./client-v1/path-ownership.ts";
-import { acquireProcessIntentLock } from "./process-intent-lock.ts";
+import { withProcessIntentLock } from "./process-intent-lock.ts";
 
 export const MAX_RESEARCH_RESOURCE_BLOB_BYTES = 512 * 1024 * 1024;
 export const MAX_RESEARCH_RESOURCE_MANIFESTS = 100_000;
@@ -168,6 +168,9 @@ export type ResourceOperationalTransaction = ManifestCatalogTransaction & {
   deleteFailure(jobId: string): Promise<boolean>;
   listDeletionFences(): ResourceDeletionFenceV1[];
   readDeletionFence(resourceId: string): ResourceDeletionFenceV1 | null;
+  repairDeletionFenceFromTombstone(resourceId: string): Promise<boolean>;
+  resetRestoreOperationalState(): Promise<{ jobs: number; failures: number; deletions: number }>;
+  repairTombstonedDeletionJournal(expectedManifest: ResourceManifestV1): Promise<boolean>;
   beginDeletion(input: {
     expectedManifest: ResourceManifestV1;
     deletedAt: string;
@@ -2024,6 +2027,121 @@ async function readSnapshotLocked(
   return { snapshot, normalizedBlob, ...(rawBlob === undefined ? {} : { rawBlob }) };
 }
 
+export async function withResearchResourceMaintenanceLock<T>(
+  rootInput: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!path.isAbsolute(rootInput)) {
+    throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
+  }
+  const root = path.resolve(rootInput);
+  const layout = await ensureLayout(root);
+  return withProcessIntentLock({
+    intentsDirectory: layout.intents.path,
+    label: "Research Resource store",
+  }, async () => {
+    await assertStableLayout(layout);
+    return operation();
+  });
+}
+
+async function purgeRestoreDisposableDirectory(
+  layout: StoreLayout,
+  directory: PathIdentity,
+  label: string,
+): Promise<number> {
+  await assertStableLayout(layout);
+  await assertStableDirectory(directory, label);
+  const names: string[] = [];
+  for await (const entry of await opendir(directory.path)) {
+    if (names.length >= MAX_OPERATIONAL_RECORDS) {
+      throw new ResearchResourceStoreError("too-large", `${label} exceeds the restore purge limit`);
+    }
+    names.push(entry.name);
+  }
+
+  let removed = 0;
+  for (const name of names.sort()) {
+    await assertStableLayout(layout);
+    await assertStableDirectory(directory, label);
+    const target = path.join(directory.path, name);
+    const before = await pathMetadata(target, `${label} restore residue is missing`);
+    if (before.isSymbolicLink()) {
+      throw new ResearchResourceStoreError("symlink", `${label} restore residue is a symlink`);
+    }
+    if (!before.isFile()) {
+      throw new ResearchResourceStoreError("unsafe-path", `${label} restore residue is not a regular file`);
+    }
+    if (before.nlink !== 1) {
+      throw new ResearchResourceStoreError("unsafe-path", `${label} restore residue must have exactly one link`);
+    }
+    await assertSafeOwnership(target, before, `Research Resource ${label} restore residue`);
+    let handle: FileHandle;
+    try {
+      handle = await open(target, readFlags());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue is a symlink`);
+      }
+      throw error;
+    }
+    try {
+      const opened = await handle.stat();
+      const after = await pathMetadata(target, `${label} restore residue is missing`);
+      if (
+        !opened.isFile()
+        || opened.nlink !== 1
+        || after.isSymbolicLink()
+        || !after.isFile()
+        || after.nlink !== 1
+        || !sameIdentity(before, opened)
+        || !sameIdentity(opened, after)
+      ) {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue identity changed`);
+      }
+      const resolved = await realpath(target);
+      if (!isContained(layout.rootRealPath, resolved)) {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue escapes the store root`);
+      }
+    } finally {
+      await handle.close();
+    }
+    await assertStableDirectory(directory, label);
+    const current = await pathMetadata(target, `${label} restore residue is missing`);
+    if (current.isSymbolicLink() || !current.isFile() || current.nlink !== 1 || !sameIdentity(before, current)) {
+      throw new ResearchResourceStoreError("symlink", `${label} restore residue changed before deletion`);
+    }
+    await unlink(target);
+    await syncDirectory(directory.path);
+    removed += 1;
+  }
+  await assertStableLayout(layout);
+  return removed;
+}
+
+/**
+ * Restore owns jobs, failures, and deletion journals as disposable state. This
+ * purge deliberately does not parse their bytes, but still refuses links,
+ * foreign ownership, directory swaps, and escapes before unlinking anything.
+ */
+export async function purgeResearchResourceRestoreDisposableState(
+  rootInput: string,
+): Promise<{ jobs: number; failures: number; deletions: number }> {
+  if (!path.isAbsolute(rootInput)) {
+    throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
+  }
+  const root = path.resolve(rootInput);
+  return withResearchResourceMaintenanceLock(root, async () => {
+    const layout = await ensureLayout(root);
+    await assertStableLayout(layout);
+    return {
+      jobs: await purgeRestoreDisposableDirectory(layout, layout.jobs, "jobs"),
+      failures: await purgeRestoreDisposableDirectory(layout, layout.failures, "failures"),
+      deletions: await purgeRestoreDisposableDirectory(layout, layout.deletions, "deletions"),
+    };
+  });
+}
+
 export function createResearchResourceStore(
   options: { root?: string } = {},
 ): ResearchResourceStore {
@@ -2036,16 +2154,13 @@ export function createResearchResourceStore(
 
   const withMutationLock = async <T>(operation: (layout: StoreLayout) => Promise<T>): Promise<T> => {
     const layout = await ensureLayout(root);
-    const release = await acquireProcessIntentLock({
+    return withProcessIntentLock({
       intentsDirectory: layout.intents.path,
       label: "Research Resource store",
-    });
-    try {
+    }, async () => {
       await assertStableLayout(layout);
       return await operation(layout);
-    } finally {
-      await release();
-    }
+    });
   };
 
   const createCatalogTransaction = (
@@ -2370,6 +2485,91 @@ export function createResearchResourceStore(
         assertResourceId(resourceId);
         const fence = fences.records.get(resourceId);
         return fence ? structuredClone(fence) : null;
+      },
+      async repairDeletionFenceFromTombstone(resourceId) {
+        assertResourceId(resourceId);
+        const tombstone = tombstones.records.get(resourceId);
+        if (!tombstone) return false;
+        const existing = fences.records.get(resourceId);
+        if (existing && existing.deletionRevision >= tombstone.deletionRevision) return false;
+        const priorTime = existing ? Date.parse(existing.updatedAt) : Number.NEGATIVE_INFINITY;
+        const tombstoneTime = Date.parse(tombstone.deletedAt);
+        const repaired: ResourceDeletionFenceV1 = parseFence({
+          version: 1,
+          resourceId,
+          deletionRevision: tombstone.deletionRevision,
+          updatedAt: new Date(Math.max(tombstoneTime, priorTime + 1)).toISOString(),
+        });
+        if (existing) {
+          await replaceOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: resourceId,
+            expected: existing, value: repaired, label: "deletion fence",
+          });
+        } else {
+          await createOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: resourceId,
+            value: repaired, label: "deletion fence",
+          });
+        }
+        return true;
+      },
+      async resetRestoreOperationalState() {
+        const removed = { jobs: 0, failures: 0, deletions: 0 };
+        for (const [id, value] of [...jobs.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.jobs, collection: jobs, id,
+            expected: value, label: "job",
+          })) removed.jobs += 1;
+        }
+        for (const [id, value] of [...failures.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.failures, collection: failures, id,
+            expected: value, label: "failure",
+          })) removed.failures += 1;
+        }
+        for (const [id, value] of [...deletions.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.deletions, collection: deletions, id,
+            expected: value, label: "deletion journal",
+          })) removed.deletions += 1;
+        }
+        return removed;
+      },
+      async repairTombstonedDeletionJournal(inputManifest) {
+        const manifest = parseManifest(inputManifest);
+        if (manifest.ingest.state !== "deleting" || manifest.currentSnapshotId !== undefined) {
+          throw new ResearchResourceStoreError(
+            "revision-conflict",
+            "tombstoned deletion repair requires a deleting manifest without a current snapshot",
+          );
+        }
+        const current = manifests.records.get(manifest.id);
+        if (!current || canonicalJson(current) !== canonicalJson(manifest)) {
+          throw new ResearchResourceStoreError("revision-conflict", "deleting manifest changed before repair");
+        }
+        if (deletions.records.has(manifest.id)) return false;
+        const tombstone = tombstones.records.get(manifest.id);
+        const fence = fences.records.get(manifest.id);
+        if (!tombstone || !fence || fence.deletionRevision !== tombstone.deletionRevision) {
+          throw new ResearchResourceStoreError("revision-conflict", "tombstoned deletion authority is incomplete");
+        }
+        const journal: ResourceDeletionJournalV1 = parseJournal({
+          version: 1,
+          resourceId: manifest.id,
+          deletionRevision: tombstone.deletionRevision,
+          expectedManifestRevision: Math.max(1, manifest.revision - 1),
+          phase: "tombstoned",
+          deletedAt: tombstone.deletedAt,
+          snapshotIds: [...snapshots.values()]
+            .filter((snapshot) => snapshot.resourceId === manifest.id)
+            .map((snapshot) => snapshot.id).sort(),
+          updatedAt: tombstone.deletedAt,
+        });
+        await createOperationalRecord({
+          layout, directory: layout.deletions, collection: deletions, id: manifest.id,
+          value: journal, label: "deletion journal",
+        });
+        return true;
       },
       async beginDeletion(input) {
         const expected = parseManifest(input.expectedManifest);

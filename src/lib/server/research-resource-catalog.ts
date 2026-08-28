@@ -4,6 +4,7 @@ import {
   ResearchResourceStoreError,
   type ResearchResourceStore,
 } from "./research-resource-store.ts";
+import { recoverInterruptedResearchResourceRestore } from "./research-resource-recovery.ts";
 
 export { ResearchResourceStoreError as ResearchResourceCatalogError };
 
@@ -18,11 +19,24 @@ export function createResearchResourceCatalog(
   options: { root?: string } = {},
 ): ResearchResourceCatalog {
   const store = createResearchResourceStore(options);
+  const ready = () => recoverInterruptedResearchResourceRestore({ root: options.root });
   return {
-    createManifest: store.createManifest,
-    getManifest: store.readManifest,
-    listManifests: store.listManifests,
-    updateManifest: store.updateManifest,
+    createManifest: async (manifest) => {
+      await ready();
+      return store.createManifest(manifest);
+    },
+    getManifest: async (id) => {
+      await ready();
+      return store.readManifest(id);
+    },
+    listManifests: async () => {
+      await ready();
+      return store.listManifests();
+    },
+    updateManifest: async (input) => {
+      await ready();
+      return store.updateManifest(input);
+    },
   };
 }
 

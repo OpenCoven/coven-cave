@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -132,6 +132,46 @@ async function fixture(
     await rm(parent, { recursive: true, force: true });
   }
 }
+
+async function writeRestoreMarker(
+  resourceRoot: string,
+  phase: "preparing" | "authority-ready",
+): Promise<string> {
+  const marker = path.join(resourceRoot, "index", ".restore-in-progress");
+  await mkdir(path.dirname(marker), { recursive: true, mode: 0o700 });
+  await writeFile(marker, `${JSON.stringify({ version: 1, phase })}\n`, { mode: 0o600 });
+  return marker;
+}
+
+test("an immediate saved-links read completes authority-ready recovery before compatibility proceeds", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    await writeResearchLinksVerified({ version: 1, links: [] }, { path: legacyPath });
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.listManifests();
+    const marker = await writeRestoreMarker(resourceRoot, "authority-ready");
+
+    assert.deepEqual(await listCompatibleResearchLinks(options), []);
+    await assert.rejects(() => lstat(marker), /ENOENT/);
+  });
+});
+
+test("an immediate saved-links mutation remains fail-closed for a preparing restore", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    await writeResearchLinksVerified({ version: 1, links: [] }, { path: legacyPath });
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.listManifests();
+    const marker = await writeRestoreMarker(resourceRoot, "preparing");
+
+    await assert.rejects(
+      () => mutateCompatibleResearchLinks(
+        (links) => ({ links, result: null }),
+        options,
+      ),
+      /resubmit the backup archive/,
+    );
+    assert.equal((await lstat(marker)).isFile(), true);
+  });
+});
 
 test("first upgrade imports every strict row, preserves X bodies, and verifies a complete projection", async () => {
   await fixture(async ({ legacyPath, resourceRoot, options }) => {
