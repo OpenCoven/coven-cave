@@ -308,6 +308,7 @@ import {
   validateModelControlValues,
   type ModelControlValues,
 } from "@/lib/model-control-capabilities";
+import { emitSessionFinishedItem } from "@/lib/session-finished-inbox-emit";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import {
   daemonSessionCwd,
@@ -5989,6 +5990,25 @@ async function postChat(
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,
       });
+      // Session-finished inbox item (cave-fgey): when the turn completed while
+      // the user wasn't watching this chat, surface one 'agent' inbox item
+      // ("<familiar> finished: <session title>") so finished long-running work
+      // is not silent outside Recent Activity. "Watching" is the same signal
+      // the detach cap already uses: the initiating request is still attached
+      // (fetch open) and no detached-run re-attach is pending — a transport
+      // drop arms detachKillTimer, a re-attach clears it, and a deliberate
+      // Stop never arms it. Long turns notify even when watched. Best-effort:
+      // never fails the turn; deduped per session.
+      if (finalSessionId) {
+        await emitSessionFinishedItem({
+          familiarId: body.familiarId,
+          familiarName:
+            config.familiars[body.familiarId]?.display_name?.trim() || body.familiarId,
+          sessionId: finalSessionId,
+          watchedByUser: detachKillTimer == null,
+          durationMs: result.duration_ms,
+        });
+      }
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
