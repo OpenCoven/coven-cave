@@ -2060,6 +2060,38 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   };
 }
 
+/** An agent-written envelope around the ledger — `{ sources: [...] }` with any
+ *  sibling keys it chose to record alongside. */
+function isSourceEnvelope(value: unknown): value is { sources: unknown[] } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Array.isArray((value as { sources?: unknown }).sources)
+  );
+}
+
+/**
+ * Read the flow-written source ledger.
+ *
+ * Accepts a bare array OR an object that carries one under `sources`, because
+ * the file is written by an AGENT and its envelope cannot be guaranteed. The
+ * iteration prompt tells the run to read and write `sources.json` without
+ * pinning a top-level shape, and a model that adds `{ mission, updated,
+ * sources, … }` around the list is following that instruction, not breaking it.
+ *
+ * Requiring a bare array cost a whole mission: research-00b591f3 wrote exactly
+ * that envelope with 23 valid sources — nearly double its target of 12 — and
+ * every one was discarded. `runResearchIteration` catches the throw, checkpoints
+ * with `lastError`, and merges NOTHING, so the mission reported zero sources
+ * while its findings and ledger artifacts sat on disk. Findings with an empty
+ * ledger are unsourced claims, which is the one thing a research run must not
+ * produce (cave-10kr8).
+ *
+ * Per-ENTRY strictness is deliberately kept: a source that cannot be normalized
+ * still throws and names its index, because silently dropping evidence from a
+ * ledger would be worse than refusing to load it. Only the envelope is relaxed.
+ */
 export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
   let parsed: unknown;
   try {
@@ -2067,8 +2099,15 @@ export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
   } catch {
     throw new Error("sources.json is malformed");
   }
-  if (!Array.isArray(parsed)) throw new Error("sources.json must contain an array");
-  return parsed.map((item, index) => {
+  const list = Array.isArray(parsed)
+    ? parsed
+    : isSourceEnvelope(parsed)
+      ? parsed.sources
+      : null;
+  if (!list) {
+    throw new Error("sources.json must contain an array, or an object with a `sources` array");
+  }
+  return list.map((item, index) => {
     const normalized = normalizeResearchSource(
       item as Parameters<typeof normalizeResearchSource>[0],
     );
