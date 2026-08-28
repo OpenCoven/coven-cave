@@ -207,15 +207,10 @@ assert.doesNotMatch(
   /surface\s*=\s*"chat"|surface === "code"|isCodeSurface|CodeInlineToolbar/,
   "ChatSurface should not keep the retired code-surface switch",
 );
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /const compactRail = hideThreadRail/,
-  "ChatSurface should fold chat mode's hideThreadRail into the compact rail flag",
-);
-assert.match(
-  chatSurface,
-  /<ChatRouter[\s\S]*?hideRail=\{compactRail\}/,
-  "ChatSurface should suppress only the in-chat project rail (hideRail) when chat-mode ChatSidebar owns threads — the full-width toolbar stays",
+  /compactRail|hideRail=/,
+  "ChatSurface should not forward a rail flag into ChatRouter — the in-list project rail is retired; hideThreadRail only gates the surface's own docked rail",
 );
 
 assert.match(

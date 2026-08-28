@@ -46,17 +46,12 @@ import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
-  migrateOrganizationExpansionKeys,
-  projectSelectionKeys,
   readPersisted,
-  PROJECT_SIDEBAR_EXPANSION_VERSION,
   PROJECT_SIDEBAR_KEYS,
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
-import { organizationExpansionKey } from "@/lib/project-organizations";
 import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
-import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { SessionRemovalReason } from "@/lib/chat-session-removal";
@@ -102,13 +97,10 @@ type Props = {
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
    *  it for the hash. Workspace owns mount-time restore + popstate handling. */
   syncUrlHash?: boolean;
-  /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Hides the
-   *  project sidebar in both list and chat views to reclaim the limited width. */
+  /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Drops
+   *  the list toolbar in both list and chat views to reclaim the limited
+   *  width. */
   compact?: boolean;
-  /** Hides only the project rail (the outer WorkspaceSidebar owns chats);
-   *  the list keeps its full-width toolbar, unlike compact. */
-  hideRail?: boolean;
-  /** Jump from the in-chat project rail to the dedicated Projects tab. */
   /** Reports the session the router's chat view is showing (null on the list
    *  or a not-yet-minted new chat). Lets the Workspace mirror the active
    *  session as state instead of reading the imperative handle during render,
@@ -188,7 +180,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenPreview,
     syncUrlHash,
     compact = false,
-    hideRail = false,
     onActiveSessionChange,
     enableSplitPanes = false,
     composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY,
@@ -282,9 +273,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const sidebarPrefsLoadedRef = useRef(false);
-  const sidebarOrganizationMigrationPendingRef = useRef(false);
-  const sidebarDefaultExpandedRef = useRef(false);
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const isMobile = useIsMobile();
@@ -314,7 +302,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
   const {
     projects,
-    loadedSuccessfully: projectsLoadedSuccessfully,
   } = useProjects();
   const projectOverrides = useProjectOverrides();
 
@@ -332,138 +319,28 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ),
     [sidebarSessions, projects, projectOverrides, projectIndex],
   );
-  const migrationGroups = useMemo(
-    () => {
-      if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return [];
-      return deriveChatProjectGroups(
-        applyProjectOverrides(filterVisibleChatSessions(sessions, null), projectOverrides),
-        projects,
-        projectIndex,
-        { sessionsNewestFirst: true },
-      );
-    },
-    [sidebarHydrated, sessions, projects, projectOverrides, projectIndex],
-  );
-  const toggleSidebarExpanded = useCallback((key: string) => {
-    sidebarDefaultExpandedRef.current = false;
-    setExpandedKeys((prev) =>
-      prev.includes(key) ? prev.filter((entry) => entry !== key) : [...prev, key],
-    );
-  }, []);
   const syncSidebarProjectRoot = useCallback((
     nextProjectRoot: string | null,
     nextRuntimeHost: string | null,
   ) => {
-    const nextSelection = selectionForProjectRoot(
+    setSelection(selectionForProjectRoot(
       nextProjectRoot,
       nextRuntimeHost,
       sidebarGroups,
-    );
-    setSelection(nextSelection);
-    const group = sidebarGroups.find(
-      (entry) =>
-        selectionKey(entry.projectId, entry.projectRoot, entry.runtimeHost) === nextSelection,
-    );
-    if (nextSelection !== "all" && group) {
-      const organizationKey = organizationExpansionKey(group.organization.key);
-      setExpandedKeys((prev) => {
-        const next = [...prev];
-        if (!next.includes(organizationKey)) next.push(organizationKey);
-        if (!next.includes(nextSelection)) next.push(nextSelection);
-        return next.length === prev.length ? prev : next;
-      });
-    }
+    ));
   }, [sidebarGroups]);
 
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
-    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    const storedExpansionVersion = readPersisted<unknown>(
-      PROJECT_SIDEBAR_KEYS.expandedVersion,
-      null,
-    );
-    sidebarDefaultExpandedRef.current = !Array.isArray(storedExpanded);
-    if (Array.isArray(storedExpanded)) {
-      setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
-      sidebarOrganizationMigrationPendingRef.current =
-        storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;
-    } else {
-      setExpandedKeys(projectSelectionKeys(sidebarGroups));
-      sidebarOrganizationMigrationPendingRef.current = false;
-    }
-    if (!sidebarOrganizationMigrationPendingRef.current) {
-      try {
-        window.localStorage.setItem(
-          PROJECT_SIDEBAR_KEYS.expandedVersion,
-          JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
-        );
-      } catch {
-        // persistence is best-effort
-      }
-    }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, [sessionsLoaded, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
-    setExpandedKeys(projectSelectionKeys(sidebarGroups));
-  }, [sidebarHydrated, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated || sidebarOrganizationMigrationPendingRef.current) return;
-    try {
-      window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
-    } catch {
-      // persistence is best-effort
-    }
-  }, [sidebarHydrated, expandedKeys]);
+  }, [sessionsLoaded]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
-  useEffect(() => {
-    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
-    if (sessionsLoaded === false || sessionsError) return;
-    if (!projectsLoadedSuccessfully) return;
-    const migratedExpandedKeys = migrateOrganizationExpansionKeys(
-      expandedKeys,
-      migrationGroups,
-      projects,
-    );
-    setExpandedKeys(migratedExpandedKeys);
-    try {
-      window.localStorage.setItem(
-        PROJECT_SIDEBAR_KEYS.expanded,
-        JSON.stringify(migratedExpandedKeys),
-      );
-      window.localStorage.setItem(
-        PROJECT_SIDEBAR_KEYS.expandedVersion,
-        JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
-      );
-    } catch {
-      // persistence is best-effort
-    }
-    sidebarOrganizationMigrationPendingRef.current = false;
-  }, [
-    sidebarHydrated,
-    sessionsLoaded,
-    sessionsError,
-    projectsLoadedSuccessfully,
-    expandedKeys,
-    migrationGroups,
-    projects,
-  ]);
-  // First chat in a fresh project folder (or this surface's just-started
-  // chat) must not hide inside a collapsed group (cave-mllp).
-  useAutoExpandNewGroups({
-    hydrated: sidebarHydrated,
-    scopeKey: familiar?.id ?? "all",
-    sessions,
-    groups: sidebarGroups,
-    activeSessionId: view.kind === "chat" ? view.sessionId : null,
-    setExpandedKeys,
-  });
 
   // ── URL hash sync (CHAT-D9-01) ────────────────────────────────────────────
   // Follows the existing in-app hash idiom (`#card-<id>`):
@@ -882,14 +759,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         selection={selection}
-        expandedKeys={expandedKeys}
         onSelectionChange={setSelection}
-        onToggleExpanded={toggleSidebarExpanded}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
         compact={compact}
-        hideRail={hideRail}
         onSessionsChanged={onSessionsChanged}
         onSessionsDeleted={onSessionsDeleted}
         onOpenUrl={onOpenUrl}

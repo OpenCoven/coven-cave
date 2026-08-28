@@ -118,9 +118,7 @@ type Props = {
   familiars?: Familiar[];
   sessions: SessionRow[];
   selection: ProjectSelection;
-  expandedKeys: string[];
   onSelectionChange: (selection: ProjectSelection) => void;
-  onToggleExpanded: (key: string) => void;
   daemonRunning?: boolean;
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (
@@ -142,13 +140,10 @@ type Props = {
    *  for a new thread" empty state for a can't-load state — a failed list is
    *  not evidence there are no chats (cave-x6k5). */
   sessionsError?: boolean;
-  /** When true, hides the project sidebar rail so the list fits in a narrow
-   *  companion panel (e.g. the Browser right-rail). Also drops the toolbar
-   *  (All/Active, group-by, count) — a companion panel has no width for it. */
+  /** When true, drops the toolbar (All/Active, group-by, count) so the list
+   *  fits in a narrow companion panel (e.g. the Browser right-rail) — a
+   *  companion panel has no width for it. */
   compact?: boolean;
-  /** Hides only the in-surface project rail (the outer WorkspaceSidebar owns
-   *  chats beside the surface) while the full-width toolbar stays. */
-  hideRail?: boolean;
 };
 
 function chatDate(iso: string, prefs: DateTimePrefs): string {

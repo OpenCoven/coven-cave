@@ -368,7 +368,6 @@ export const SUITES = {
     "src/lib/chat-sse.test.ts",
     "src/lib/chat-stream-health.test.ts",
     "src/lib/chat-project-selection.test.ts",
-    "src/lib/use-auto-expand-new-groups.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-session-grouping.test.ts",
     "src/lib/chat-session-status.test.ts",
@@ -2071,8 +2070,6 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/recommendations/route.test.ts",
   "src/app/api/research/recommendations-x-capability.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
-  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
-  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
