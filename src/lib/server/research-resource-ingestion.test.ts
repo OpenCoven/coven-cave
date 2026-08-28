@@ -172,6 +172,7 @@ test("general deletion fences completed work, removes snapshots/index/manifest, 
     await store.createManifest(manifest("delete-resource"));
     const { index, publications, residuePurges } = memoryIndex();
     let projectionRepairs = 0;
+    let semanticRemovals = 0;
     const ingestion = createResearchResourceIngestion({
       root,
       store,
@@ -189,11 +190,29 @@ test("general deletion fences completed work, removes snapshots/index/manifest, 
         fetchedAt: "2026-08-27T13:00:00.000Z",
       }),
       repairCompatibilityProjection: async () => { projectionRepairs += 1; },
+      removeSemanticDerivatives: async (resourceId) => {
+        assert.equal(resourceId, "delete-resource");
+        semanticRemovals += 1;
+      },
     });
     await ingestion.enqueue("delete-resource");
     const completed = await ingestion.runNext("worker-delete");
     assert.equal(completed.kind, "completed");
     if (completed.kind !== "completed") return;
+    await store.withOperationalTransaction(async (transaction) => {
+      await transaction.createEmbeddingTask({
+        version: 1,
+        resourceId: "delete-resource",
+        snapshotId: completed.snapshot.id,
+        lexicalRevision: completed.snapshot.resourceRevision,
+        providerId: "local-openai",
+        modelId: "nomic-embed-text",
+        dimensions: 3,
+        modelRevision: "a".repeat(64),
+        status: "queued",
+        updatedAt: "2026-08-27T13:00:01.000Z",
+      });
+    });
 
     assert.equal(await ingestion.deleteResource("delete-resource"), true);
     assert.equal(await store.readManifest("delete-resource"), null);
@@ -201,6 +220,7 @@ test("general deletion fences completed work, removes snapshots/index/manifest, 
     assert.equal(publications.has("delete-resource"), false);
     assert.equal(residuePurges(), 1, "deletion scrubs derivative rebuild residue even after row removal");
     assert.equal(projectionRepairs, 1);
+    assert.equal(semanticRemovals, 1);
     await store.withOperationalTransaction(async (transaction) => {
       assert.deepEqual(transaction.readTombstone("delete-resource"), {
         version: 1,
@@ -209,6 +229,7 @@ test("general deletion fences completed work, removes snapshots/index/manifest, 
         deletedAt: "2026-08-27T13:00:00.000Z",
       });
       assert.equal(transaction.readDeletionJournal("delete-resource"), null);
+      assert.equal(transaction.readEmbeddingTask("delete-resource"), null);
     });
     await ingestion.close();
   });

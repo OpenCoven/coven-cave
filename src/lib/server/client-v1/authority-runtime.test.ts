@@ -172,19 +172,20 @@ async function createBoundClient(input: {
   bootstrap: ClientV1AuthorityBootstrap;
   operation?: ClientV1Operation;
   authorization?: ClientV1HpkeAuthorization;
+  url?: string;
   issuedAt?: number;
   body?: Uint8Array;
   requestNonceByte?: number;
 }): Promise<ClientV1HpkeTestClient> {
   const operation = input.operation ?? "projects.list";
-  const { method, url } = operationRequestDetails(operation);
+  const details = operationRequestDetails(operation);
   return createClientV1HpkeTestClient({
     authority: publicAuthority(input.bootstrap),
     instanceId: TEST_INSTANCE_ID,
     runtimeNonce: base64UrlEncode(input.bootstrap.runtimeNonce),
     operation,
-    url,
-    method,
+    url: input.url ?? details.url,
+    method: details.method,
     ...(input.body === undefined ? {} : { body: input.body }),
     issuedAt: input.issuedAt ?? TEST_NOW,
     requestNonce: new Uint8Array(32).fill(input.requestNonceByte ?? 7),
@@ -385,6 +386,55 @@ test("advertise permits only an unmarked legacy fallback and enforce requires bi
     ),
   );
   assert.equal(invocations, 1);
+});
+
+test("enforce dispatches canonical encoded conversation paths without changing their bytes", async () => {
+  const bootstrap = await createBootstrap("enforce", 21);
+  const authority = withBootstrap(bootstrap, () =>
+    createClientV1AuthorityRuntimeFromGlobal({ now: () => TEST_NOW }));
+  const cases = [
+    {
+      id: "conversation/one?#",
+      operation: "conversations.read" as const,
+      suffix: "",
+    },
+    {
+      id: "conversation with spaces",
+      operation: "messages.list" as const,
+      suffix: "/messages",
+    },
+    {
+      id: "会話-雪-☃️",
+      operation: "conversations.read" as const,
+      suffix: "",
+    },
+  ];
+
+  for (const [index, item] of cases.entries()) {
+    const pathname =
+      `/api/client/v1/conversations/${encodeURIComponent(item.id)}${item.suffix}`;
+    const client = await createBoundClient({
+      bootstrap,
+      operation: item.operation,
+      url: `http://127.0.0.1:3020${pathname}`,
+      requestNonceByte: 70 + index,
+    });
+    let invocations = 0;
+    const response = await authority.handle({
+      operation: item.operation,
+      request: client.request,
+      invoke: async (authorizedRequest) => {
+        invocations += 1;
+        assert.equal(new URL(authorizedRequest.url).pathname, pathname);
+        return Response.json({ id: item.id });
+      },
+    });
+    assert.equal(invocations, 1, item.id);
+    assert.deepEqual(await openJson(client, response), {
+      status: 200,
+      body: { id: item.id },
+    });
+  }
 });
 
 test("present non-exact authority markers fail fixed before callbacks in advertise and enforce", async () => {

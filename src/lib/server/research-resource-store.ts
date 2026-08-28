@@ -15,10 +15,12 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 
 import {
+  parseResourceEmbeddingTaskV1,
   parseResourceIngestJobV1,
   parseResourceManifestV1,
   parseResourceSnapshotV1,
   parseResourceTombstoneV1,
+  type ResourceEmbeddingTaskV1,
   type ResourceIngestJobV1,
   type ResourceManifestV1,
   type ResourceSnapshotV1,
@@ -134,6 +136,12 @@ export type ResourceDeletionJournalV1 = {
   updatedAt: string;
 };
 
+/** A6's Cave-private additive identity field. A1 parsers preserve it without
+ * widening the portable or public task contract. */
+export type ResourceEmbeddingTaskRecordV1 = ResourceEmbeddingTaskV1 & {
+  modelRevision: string;
+};
+
 export type ResourceOperationalTransaction = ManifestCatalogTransaction & {
   listSnapshots(resourceId?: string): ResourceSnapshotV1[];
   readSnapshot(snapshotId: string): Promise<VerifiedResourceSnapshot>;
@@ -143,6 +151,17 @@ export type ResourceOperationalTransaction = ManifestCatalogTransaction & {
   readJob(jobId: string): ResourceIngestJobV1 | null;
   createJob(job: ResourceIngestJobV1): Promise<{ created: boolean; job: ResourceIngestJobV1 }>;
   replaceJob(expected: ResourceIngestJobV1, job: ResourceIngestJobV1): Promise<ResourceIngestJobV1>;
+  listEmbeddingTasks(): ResourceEmbeddingTaskRecordV1[];
+  readEmbeddingTask(resourceId: string): ResourceEmbeddingTaskRecordV1 | null;
+  createEmbeddingTask(task: ResourceEmbeddingTaskRecordV1): Promise<{
+    created: boolean;
+    task: ResourceEmbeddingTaskRecordV1;
+  }>;
+  replaceEmbeddingTask(
+    expected: ResourceEmbeddingTaskRecordV1,
+    task: ResourceEmbeddingTaskRecordV1,
+  ): Promise<ResourceEmbeddingTaskRecordV1>;
+  removeEmbeddingTask(resourceId: string, expected?: ResourceEmbeddingTaskRecordV1): Promise<boolean>;
   listFailures(): ResourceIngestFailureV1[];
   readFailure(jobId: string): ResourceIngestFailureV1 | null;
   writeFailure(failure: ResourceIngestFailureV1): Promise<ResourceIngestFailureV1>;
@@ -270,6 +289,7 @@ type StoreLayout = {
   locks: PathIdentity;
   intents: PathIdentity;
   jobs: PathIdentity;
+  embeddingTasks: PathIdentity;
   failures: PathIdentity;
   fences: PathIdentity;
   deletions: PathIdentity;
@@ -702,6 +722,7 @@ async function assertStableLayout(layout: StoreLayout): Promise<void> {
   await assertStableDirectory(layout.locks, "locks");
   await assertStableDirectory(layout.intents, "lock intents");
   await assertStableDirectory(layout.jobs, "jobs");
+  await assertStableDirectory(layout.embeddingTasks, "embedding tasks");
   await assertStableDirectory(layout.failures, "failures");
   await assertStableDirectory(layout.fences, "fences");
   await assertStableDirectory(layout.deletions, "deletions");
@@ -722,6 +743,9 @@ async function ensureLayout(root: string): Promise<StoreLayout> {
   const locks = await ensureRealDirectory(path.join(root, "locks"), rootRealPath, "locks");
   const intents = await ensureRealDirectory(path.join(root, "locks", "intents"), rootRealPath, "lock intents");
   const jobs = await ensureRealDirectory(path.join(root, "jobs"), rootRealPath, "jobs");
+  const embeddingTasks = await ensureRealDirectory(
+    path.join(root, "embedding-tasks"), rootRealPath, "embedding tasks",
+  );
   const failures = await ensureRealDirectory(path.join(root, "failures"), rootRealPath, "failures");
   const fences = await ensureRealDirectory(path.join(root, "fences"), rootRealPath, "fences");
   const deletions = await ensureRealDirectory(path.join(root, "deletions"), rootRealPath, "deletions");
@@ -736,6 +760,7 @@ async function ensureLayout(root: string): Promise<StoreLayout> {
     locks,
     intents,
     jobs,
+    embeddingTasks,
     failures,
     fences,
     deletions,
@@ -1466,6 +1491,25 @@ function parseJob(value: unknown): ResourceIngestJobV1 {
   return parsed.value;
 }
 
+function parseEmbeddingTask(value: unknown): ResourceEmbeddingTaskRecordV1 {
+  const parsed = parseResourceEmbeddingTaskV1(value);
+  if (!parsed.ok) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      `${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  assertResourceId(parsed.value.resourceId);
+  assertSnapshotId(parsed.value.snapshotId);
+  if (typeof parsed.value.modelRevision !== "string" || !/^[a-f0-9]{64}$/.test(parsed.value.modelRevision)) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      "embedding task modelRevision must be a lowercase SHA-256 digest",
+    );
+  }
+  return parsed.value as ResourceEmbeddingTaskRecordV1;
+}
+
 function parseFailure(value: unknown): ResourceIngestFailureV1 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ResearchResourceStoreError("invalid-operational-record", "failure must be an object");
@@ -1714,6 +1758,39 @@ async function removeOperationalRecord<T>(input: {
 const NONTERMINAL_JOB_STATUSES = new Set<ResourceIngestJobV1["status"]>([
   "queued", "claimed", "paused_quota", "retry_wait",
 ]);
+
+function assertEmbeddingTaskTransition(
+  expected: ResourceEmbeddingTaskRecordV1,
+  next: ResourceEmbeddingTaskRecordV1,
+): void {
+  if (
+    expected.resourceId !== next.resourceId
+    || expected.snapshotId !== next.snapshotId
+    || expected.lexicalRevision !== next.lexicalRevision
+    || expected.providerId !== next.providerId
+    || expected.modelId !== next.modelId
+    || expected.dimensions !== next.dimensions
+    || expected.modelRevision !== next.modelRevision
+  ) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "embedding task identity cannot change",
+    );
+  }
+  if (Date.parse(next.updatedAt) <= Date.parse(expected.updatedAt)) {
+    throw new ResearchResourceStoreError("revision-conflict", "embedding task updatedAt must advance");
+  }
+  const allowed: Record<ResourceEmbeddingTaskRecordV1["status"], Set<ResourceEmbeddingTaskRecordV1["status"]>> = {
+    queued: new Set(["building", "unavailable"]),
+    building: new Set(["queued", "ready", "failed", "unavailable"]),
+    ready: new Set(),
+    failed: new Set(),
+    unavailable: new Set(["queued"]),
+  };
+  if (!allowed[expected.status].has(next.status)) {
+    throw new ResearchResourceStoreError("revision-conflict", "embedding task status transition is invalid");
+  }
+}
 
 function assertJobTransition(expected: ResourceIngestJobV1, next: ResourceIngestJobV1): void {
   if (
@@ -2002,6 +2079,13 @@ export function createResearchResourceStore(
     const jobs = await scanOperationalRecords({
       layout, directory: layout.jobs, label: "job", parse: parseJob, idOf: (job) => job.id,
     });
+    const embeddingTasks = await scanOperationalRecords({
+      layout,
+      directory: layout.embeddingTasks,
+      label: "embedding task",
+      parse: parseEmbeddingTask,
+      idOf: (task) => task.resourceId,
+    });
     const failures = await scanOperationalRecords({
       layout, directory: layout.failures, label: "failure", parse: parseFailure,
       idOf: (failure) => failure.jobId,
@@ -2067,6 +2151,27 @@ export function createResearchResourceStore(
         throw new ResearchResourceStoreError("revision-conflict", "job deletion fence is stale");
       }
       return manifest;
+    };
+    const assertCurrentEmbeddingAuthority = (task: ResourceEmbeddingTaskRecordV1): void => {
+      const manifest = manifests.records.get(task.resourceId);
+      const snapshot = snapshots.get(task.snapshotId);
+      if (
+        !manifest
+        || manifest.ingest.state !== "ready"
+        || manifest.currentSnapshotId !== task.snapshotId
+        || manifest.revision !== task.lexicalRevision
+        || !snapshot
+        || snapshot.resourceId !== task.resourceId
+        || snapshot.resourceRevision !== task.lexicalRevision
+        || deletions.records.has(task.resourceId)
+        || (tombstones.records.get(task.resourceId)?.deletionRevision ?? 0)
+          > currentDeletionRevision(task.resourceId)
+      ) {
+        throw new ResearchResourceStoreError(
+          "revision-conflict",
+          "embedding task snapshot or resource revision is stale",
+        );
+      }
     };
     const assertPublicationFenceLocked = (input: {
       expectedJob: ResourceIngestJobV1;
@@ -2167,6 +2272,64 @@ export function createResearchResourceStore(
           expected, value: job, label: "job",
         });
         return structuredClone(job);
+      },
+      listEmbeddingTasks: () => sorted(embeddingTasks.records),
+      readEmbeddingTask(resourceId) {
+        assertResourceId(resourceId);
+        const task = embeddingTasks.records.get(resourceId);
+        return task ? structuredClone(task) : null;
+      },
+      async createEmbeddingTask(inputTask) {
+        const task = parseEmbeddingTask(inputTask);
+        if (task.status !== "queued") {
+          throw new ResearchResourceStoreError(
+            "invalid-operational-record",
+            "new embedding tasks must be queued",
+          );
+        }
+        assertCurrentEmbeddingAuthority(task);
+        const result = await createOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: task.resourceId,
+          value: task,
+          label: "embedding task",
+        });
+        return { created: result === "created", task: structuredClone(task) };
+      },
+      async replaceEmbeddingTask(inputExpected, inputTask) {
+        const expected = parseEmbeddingTask(inputExpected);
+        const task = parseEmbeddingTask(inputTask);
+        const current = embeddingTasks.records.get(expected.resourceId);
+        if (!current || canonicalJson(current) !== canonicalJson(expected)) {
+          throw new ResearchResourceStoreError("revision-conflict", "embedding task changed");
+        }
+        assertEmbeddingTaskTransition(expected, task);
+        if (task.status !== "failed" && task.status !== "unavailable") {
+          assertCurrentEmbeddingAuthority(task);
+        }
+        await replaceOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: task.resourceId,
+          expected,
+          value: task,
+          label: "embedding task",
+        });
+        return structuredClone(task);
+      },
+      removeEmbeddingTask(resourceId, expected) {
+        assertResourceId(resourceId);
+        return removeOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: resourceId,
+          ...(expected === undefined ? {} : { expected: parseEmbeddingTask(expected) }),
+          label: "embedding task",
+        });
       },
       listFailures: () => sorted(failures.records),
       readFailure(jobId) {
