@@ -68,7 +68,7 @@ export type SearchRuntimeLoaders = {
   loadCards?: () => Promise<Awaited<ReturnType<typeof loadBoard>>["cards"]>;
   listConversations?: () => Promise<ConversationSummary[]>;
   listFamiliars?: () => Promise<
-    { id: string; display_name?: string | null; name?: string | null; description?: string | null }[]
+    { id: string; display_name?: string; name?: string; description?: string }[]
   >;
   sessionRoots?: () => Promise<string[]>;
   /** Injectable ripgrep runner for the file provider (tests). */

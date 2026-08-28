@@ -926,7 +926,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
             )}
           </label>
           <IconButton
-            icon="ph:globe-hemisphere-west"
+            icon="ph:globe"
             size="sm"
             onClick={() => requestGlobalSearch("type:chat")}
             aria-label="Search all chats globally"

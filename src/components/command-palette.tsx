@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
@@ -177,18 +177,18 @@ const scopeKey = (scope: SearchScope) => `${scope.dimension}:${scope.id}`;
 const filterKey = (filter: SearchFilter) => `${filter.key}=${String(filter.value)}`;
 
 /** Icon per global-search entity type (cave-ychtl.6). */
-const resultIcon = (entityType: string): string => {
+const resultIcon = (entityType: string): IconName => {
   switch (entityType) {
     case "project": return "ph:folder-open-bold";
-    case "familiar": return "ph:user-circle-bold";
-    case "task": return "ph:check-square-bold";
+    case "familiar": return "ph:user-circle";
+    case "task": return "ph:check-square";
     case "file": return "ph:file-text-bold";
     case "session":
     case "chat": return "ph:chat-circle-dots-bold";
     case "command": return "ph:terminal-window";
     case "setting": return "ph:gear-six";
     case "destination": return "ph:compass";
-    case "memory": return "ph:bookmark-simple-bold";
+    case "memory": return "ph:bookmark-simple";
     default: return "ph:magnifying-glass";
   }
 };
@@ -470,6 +470,7 @@ export function CommandPalette({
   const copySearchLink = async () => {
     const state = effectiveGlobalState ?? effectiveState;
     if (!state) return;
+    if (typeof window === "undefined" || !window.location) return;
     const url = `${window.location.origin}${window.location.pathname}?${searchQueryToUrlString(state)}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -493,9 +494,11 @@ export function CommandPalette({
         state.scopes.length > 0 ||
         state.phrases.length > 0;
       if (shareWorthy) {
-        const url = new URL(window.location.href);
-        url.search = searchQueryToUrlString(state);
-        window.history.replaceState(null, "", url.toString());
+        if (typeof window !== "undefined" && window.location && window.history) {
+          const url = new URL(window.location.href);
+          url.search = searchQueryToUrlString(state);
+          window.history.replaceState(null, "", url.toString());
+        }
       }
     }
     onClose();
@@ -579,7 +582,11 @@ export function CommandPalette({
     // the same chips, text, and presentation. The restored text seeds the
     // input; linkState keeps the restored filters/scopes authoritative until
     // the text is edited.
-    const params = new URLSearchParams(window.location.search);
+    // Guarded: react-test-renderer mounts the palette without a DOM location.
+    const params =
+      typeof window !== "undefined" && window.location
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams();
     const hasSearchState = ["v", "q", "phrase", "scope", "type", "view"].some((key) => params.has(key));
     const restored = searchQueryFromUrlParams(params);
     const restorable =
