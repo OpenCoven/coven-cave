@@ -42,10 +42,11 @@ export async function generateReflection(opts: {
 }): Promise<ReflectionResult> {
   let res: Response;
   try {
-    res = await fetch("/api/chat/send", {
+    res = await fetch("/api/chat/generate/journal", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      // origin:"journal" keeps these generated runs out of the chat lists
+      // The "journal" provenance is minted server-side by the generation route
+      // (cave-cst0g): these generated runs stay out of the chat lists
       // (cave-buih, same provenance model as canvas-generate).
       body: JSON.stringify({
         familiarId: opts.familiarId,
@@ -54,7 +55,6 @@ export async function generateReflection(opts: {
           ...(opts.familiarName ? { familiar: opts.familiarName } : {}),
           ...(opts.dateLabel ? { date: opts.dateLabel } : {}),
         }),
-        origin: "journal",
       }),
       signal: opts.signal,
     });

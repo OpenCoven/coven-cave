@@ -1588,6 +1588,7 @@ export const SUITES = {
     "src/app/api/sessions/list/route.test.ts",
     "src/lib/server/sessions-list.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
+    "src/app/api/chat/send/origin-server-mint.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
     "src/app/api/chat/send/openclaw-gateway-outcome.test.ts",
