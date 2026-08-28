@@ -103,6 +103,16 @@
   authority. Automatic retirement requires the full maintenance gate. Explicit
   maintainer authorization in the current task may activate Branch Curator's
   bounded manual deletion proof.
+- **A worktree whose directory sits outside your session's granted filesystem
+  roots is retired by de-registration, not by `git worktree remove`.** That
+  command deletes the target directory, so a sandboxed session cannot run it —
+  and a chat approval does not widen a filesystem boundary, so re-asking never
+  unblocks it. The registration lives at `.git/worktrees/<name>/` inside this
+  repository: after proving the head is retained, the owning session is dead,
+  and no bead owns the unit, remove that admin directory and run
+  `git worktree prune`. Full preconditions and the undo are in
+  [`CLAUDE.md`](CLAUDE.md). Report it as a de-registration — the orphaned
+  directory stays on disk.
 - Before you assume a dirty worktree is another session's live work, run
   `pnpm wt:status`. It is network-free and sub-second, and it separates real
   in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
