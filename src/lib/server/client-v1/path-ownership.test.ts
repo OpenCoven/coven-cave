@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 
 import {
   assertClientV1PathOwnership,
+  assertExclusivePathOwnershipSync,
   parseClientV1WindowsAclReport,
   probeWindowsAcl,
   resetClientV1PathOwnershipCache,
@@ -78,6 +79,47 @@ test("compares uid where the platform has one", async () => {
       getuid: () => 1000,
     }),
     /Client v1 credential store root must be owned by the current user\./,
+  );
+});
+
+test("the sync guard answers POSIX ownership completely (cave-8pd39)", () => {
+  assert.doesNotThrow(() =>
+    assertExclusivePathOwnershipSync(uniquePath(), { uid: 1000, mode: 0o600 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 1001, mode: 0o600 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+    /sync subject must be owned by the current user\./,
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 1000, mode: 0o622 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+    /must not be writable by group or others \(mode 622\)/,
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), {
+      uid: 1000,
+      mode: 0o600,
+      isSymbolicLink: true,
+    }, "sync subject", { getuid: () => 1000 }),
+    /must not be a symbolic link/,
+  );
+});
+
+test("the sync guard refuses a platform it cannot answer synchronously (cave-8pd39)", () => {
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 0, mode: 0o666 }, "sync subject", {
+      platform: "win32",
+      getuid: null,
+    }),
+    /cannot be verified synchronously on win32/,
   );
 });
 

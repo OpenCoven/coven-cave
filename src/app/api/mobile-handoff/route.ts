@@ -6,9 +6,12 @@ import {
   safeProcessErrorMessage,
   terminateProcessTree,
 } from "@/lib/process-execution";
+import { lstatSync } from "node:fs";
+import { assertExclusivePathOwnership } from "@/lib/server/client-v1/path-ownership";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
   armMobileAccessSecret,
+  mobileAccessSecretFile,
   provisionMobileAccessSecret,
   retireMobileAccessSecret,
 } from "@/lib/server/mobile-access-provision";
@@ -258,9 +261,40 @@ function mobileAccessUnavailableResponse() {
  * cookie so the freshly armed gate never locks out the session that turned
  * pairing on.
  */
+/**
+ * Verify the persisted secret behind an env-armed gate.
+ *
+ * The boot re-arm in server.ts reads the plaintext token with no ownership
+ * check (a sync reader that cannot run the Windows DACL probe — cave-8pd39),
+ * so the armed value must be verified against the file it came from before
+ * the pairing gate trusts it. The guard's success cache keeps this to one
+ * probe per process; a substituted or loosened file refuses the gate.
+ */
+async function verifyArmedMobileAccessSecret(): Promise<boolean> {
+  const file = mobileAccessSecretFile();
+  let stats;
+  try {
+    stats = lstatSync(file);
+  } catch {
+    // No persisted file: the armed value came from the environment, not from
+    // the boot re-arm — nothing on disk to verify.
+    return true;
+  }
+  if (stats.isSymbolicLink()) return false;
+  try {
+    await assertExclusivePathOwnership(file, stats, "The persisted mobile access secret");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function resolveMobileAccessSecret(): Promise<{ secret: string; provisioned: boolean } | null> {
   const existing = mobileAccessSecret();
-  if (existing) return { secret: existing, provisioned: false };
+  if (existing) {
+    if (!(await verifyArmedMobileAccessSecret())) return null;
+    return { secret: existing, provisioned: false };
+  }
   // Async since cave-fawvh: provisioning now restricts the state directory and
   // the token file to this user before handing back a plaintext secret, and on
   // Windows that means reading a DACL out of a subprocess.

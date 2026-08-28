@@ -106,6 +106,7 @@ const {
     platform: "win32",
     env: {},
     homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
     readFileSync: (filePath) => {
       assert.match(String(filePath), /daemon\.json$/);
       return JSON.stringify({
@@ -116,6 +117,25 @@ const {
     },
   });
   assert.equal(socket, "\\\\.\\pipe\\coven-daemon-abc123.sock");
+}
+
+// An oversized daemon.json is never read or parsed: its size is the writer's
+// choice, so a hostile file must cost one stat, not N bytes of IO per request
+// (cave-dy9). Resolution falls through to the canonical default.
+{
+  let reads = 0;
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: {},
+    homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 100 * 1024 * 1024 }),
+    readFileSync: () => {
+      reads += 1;
+      return "{}";
+    },
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+  assert.equal(reads, 0, "an oversized daemon.json is never read");
 }
 
 // COVEN_SOCKET remains authoritative on Windows, with named pipe shorthand normalized
@@ -170,6 +190,7 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: remote, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: (filePath) => {
         readPaths.push(filePath.replaceAll("\\", "/"));
         return "{}";
@@ -207,6 +228,7 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: forged, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: published }),
     });
     assert.equal(
@@ -261,7 +283,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: traversal, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
     assert.match(
       socket.replaceAll("\\", "/"),
@@ -297,6 +321,7 @@ const {
     platform: "win32",
     env: { COVEN_SOCKET: relative, COVEN_HOME: "C:/Users/Sonic/.coven" },
     homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
     readFileSync: () => "{}",
   });
   assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
@@ -373,6 +398,7 @@ const {
       platform: "win32",
       env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: forged }),
     });
     assert.match(
@@ -448,6 +474,7 @@ const {
       platform: "win32",
       env,
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: String.raw`\\report-file-host\pipe\coven` }),
     });
 
@@ -547,7 +574,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
 
   const shared = `key-limit-${"a".repeat(4096)}`;
@@ -651,7 +680,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: String.raw`\\throwing-recorder-host\pipe\coven` },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
     assert.match(
       socket.replaceAll("\\", "/"),

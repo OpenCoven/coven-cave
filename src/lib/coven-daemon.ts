@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
@@ -32,9 +32,19 @@ type SocketPathResolverOptions = {
   env?: Record<string, string | undefined>;
   homeDir?: string;
   readFileSync?: ReadTextFile;
+  /** Size check before the read; null means missing/unreadable. Test seam. */
+  statSync?: (filePath: string) => { size: number } | null;
 };
 
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
+
+/**
+ * daemon.json is a plain file any process running as this user can rewrite,
+ * so its size is the writer's choice. Bound the read before the parse: a
+ * hostile 100 MB file must cost one stat, not 100 MB of IO per request
+ * (cave-dy9). The real file is a few hundred bytes.
+ */
+const DAEMON_STATUS_FILE_MAX_BYTES = 4 * 1024;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
 export type DaemonTarget =
@@ -256,9 +266,20 @@ function covenHomePath(
   return path.join(homeDir, ".coven");
 }
 
-function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string | null {
+function daemonStatusSocket(
+  covenHome: string,
+  readFile: ReadTextFile,
+  statFile: (filePath: string) => { size: number } | null,
+): string | null {
   try {
-    const raw = readFile(path.join(covenHome, "daemon.json"), "utf8");
+    const filePath = path.join(covenHome, "daemon.json");
+    const metadata = statFile(filePath);
+    if (!metadata || metadata.size > DAEMON_STATUS_FILE_MAX_BYTES) return null;
+    const raw = readFile(filePath, "utf8");
+    // The bound is the parse's own: a file under the cap could still inflate
+    // between stat and read on a hostile machine, so never parse an
+    // unbounded buffer (cave-dy9).
+    if (raw.length > DAEMON_STATUS_FILE_MAX_BYTES) return null;
     const parsed = JSON.parse(raw) as { socket?: unknown };
     return typeof parsed.socket === "string" && parsed.socket.trim() ? parsed.socket : null;
   } catch {
@@ -313,6 +334,15 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   const homeDir = options.homeDir ?? homedir();
   const readFile: ReadTextFile =
     options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
+  const statFile =
+    options.statSync ??
+    ((filePath: string) => {
+      try {
+        return statSync(filePath);
+      } catch {
+        return null;
+      }
+    });
 
   const covenHome = covenHomePath(env, homeDir, platform);
 
@@ -346,7 +376,7 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   }
 
   if (platform === "win32") {
-    const statusSocket = daemonStatusSocket(covenHome, readFile);
+    const statusSocket = daemonStatusSocket(covenHome, readFile, statFile);
     const published = statusSocket
       ? localWindowsDaemonSocket(statusSocket, "daemon-status-file")
       : null;
