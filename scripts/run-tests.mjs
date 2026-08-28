@@ -295,6 +295,8 @@ export const SUITES = {
     "src/lib/cave-inbox-create.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
+    "src/lib/session-finished-inbox.test.ts",
+    "src/lib/session-finished-inbox-emit.test.ts",
     "src/lib/project-permissions.test.ts",
     "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
@@ -2060,6 +2062,10 @@ const ALIAS_LOADER = new Set([
   // the picker imports the module under test, which resolves
   // "@/lib/code-surface" for the shared session-visibility rule.
   "src/lib/code-session-picker.test.ts",
+  // the session-finished emit test loads session-finished-inbox-emit.ts,
+  // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
+  // runtime values; the suite cannot load without the alias resolver.
+  "src/lib/session-finished-inbox-emit.test.ts",
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
