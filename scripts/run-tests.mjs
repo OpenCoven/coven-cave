@@ -1269,6 +1269,7 @@ export const SUITES = {
 	    "src/app/aesthetic/aesthetic-fields.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/popover-submenu.test.ts",
+    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/lib/submenu-position.test.ts",
     "src/components/ui/overflow-menu.test.ts",
     "src/components/ui/surface-toolbar.test.ts",
@@ -2338,6 +2339,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
   "src/components/project-picker-focus.test.tsx",
+  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
