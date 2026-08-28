@@ -7,6 +7,8 @@ import test from "node:test";
 import {
   chunkResearchResourceUtf8,
   openResearchResourceLexicalIndex,
+  MAX_RESEARCH_LEXICAL_ALLOWED_RESOURCE_IDS,
+  MAX_RESEARCH_LEXICAL_ALLOWED_RESOURCE_IDS_BYTES,
   rebuildResearchResourceLexicalIndex,
   ResearchResourceLexicalIndexError,
   type ResearchLexicalAuthority,
@@ -67,6 +69,12 @@ test("private SQLite publication replaces one authority transactionally and prob
     });
     index.replace({ ...first, normalizedBytes: new TextEncoder().encode("alpha coven first") });
     index.replace({ ...sibling, normalizedBytes: new TextEncoder().encode("alpha sibling") });
+    assert.deepEqual(
+      index.search("alpha").map((hit) => hit.resourceId).sort(),
+      ["resource_a", "resource_b"],
+    );
+    assert.equal(index.search('alpha OR "sibling"').length, 0, "operators are tokenized, not executed");
+    assert.deepEqual(index.search("***"), []);
     assert.equal(index.probe(first, "coven").hits.length, 1);
     assert.equal(index.probe({ ...first, snapshotId: "snapshot_stale" }, "coven").usable, false);
     assert.equal(index.probe({ ...first, deletionRevision: 1 }, "coven").usable, false);
@@ -99,6 +107,73 @@ test("private SQLite publication replaces one authority transactionally and prob
     const reopened = await openResearchResourceLexicalIndex({ file });
     assert.equal(reopened.probe(sibling, "sibling").hits.length, 1);
     reopened.close();
+  });
+});
+
+test("allowed resources are filtered before lexical ranking and its candidate cutoff", async () => {
+  await fixture(async (file) => {
+    const index = await openResearchResourceLexicalIndex({ file });
+    const normalizedBytes = new TextEncoder().encode("shared lexical evidence");
+    for (let ordinal = 0; ordinal < 100; ordinal += 1) {
+      const suffix = String(ordinal).padStart(3, "0");
+      index.replace({
+        ...authority({
+          resourceId: `excluded_${suffix}`,
+          snapshotId: `excluded_snapshot_${suffix}`,
+          snapshotDigest: DIGEST_B,
+        }),
+        normalizedBytes,
+      });
+    }
+    const target = authority({
+      resourceId: "target_resource",
+      snapshotId: "target_snapshot",
+      snapshotDigest: DIGEST_B,
+    });
+    index.replace({ ...target, normalizedBytes });
+
+    assert.equal(
+      index.search("shared lexical evidence", 100).some((hit) => hit.resourceId === target.resourceId),
+      false,
+      "the target falls beyond the global top-100 cutoff",
+    );
+    assert.deepEqual(
+      index.search("shared lexical evidence", 100, [target.resourceId]).map((hit) => hit.resourceId),
+      [target.resourceId],
+      "the allowlist constrains candidates inside SQLite before ORDER BY and LIMIT",
+    );
+    assert.deepEqual(index.search("shared lexical evidence", 100, []), []);
+    assert.throws(
+      () => index.search("shared lexical evidence", 100, ["../outside"]),
+      (error) => error instanceof ResearchResourceLexicalIndexError && error.code === "invalid-input",
+    );
+    assert.throws(
+      () => index.search(
+        "shared lexical evidence",
+        100,
+        new Array(MAX_RESEARCH_LEXICAL_ALLOWED_RESOURCE_IDS + 1) as string[],
+      ),
+      (error) => error instanceof ResearchResourceLexicalIndexError && error.code === "invalid-input"
+        && /count/.test(error.message),
+      "the count bound is checked before visiting a sparse array",
+    );
+    assert.throws(
+      () => index.search(
+        "shared lexical evidence",
+        100,
+        ["x".repeat(MAX_RESEARCH_LEXICAL_ALLOWED_RESOURCE_IDS_BYTES - 3)],
+      ),
+      (error) => error instanceof ResearchResourceLexicalIndexError && error.code === "invalid-input"
+        && /byte/.test(error.message),
+      "the serialized byte bound wins before id validation or JSON materialization",
+    );
+    assert.throws(
+      () => index.search("shared lexical evidence", 100, new Set([target.resourceId]) as never),
+      (error) => error instanceof ResearchResourceLexicalIndexError && error.code === "invalid-input"
+        && /array/.test(error.message),
+      "iterables are rejected rather than consumed",
+    );
+    index.close();
   });
 });
 
