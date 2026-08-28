@@ -945,6 +945,7 @@ export const SUITES = {
     "src/components/thread-pane.test.ts",
     "src/components/strand-inspector.test.ts",
     "src/components/proposal-approval.test.ts",
+    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/app/api/proposals-flow-e2e.test.ts",
     "src/app/api/familiar-self-report-route.test.ts",
     "src/components/familiar-analytics-view.test.ts",
@@ -1269,7 +1270,6 @@ export const SUITES = {
 	    "src/app/aesthetic/aesthetic-fields.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/popover-submenu.test.ts",
-    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/lib/submenu-position.test.ts",
     "src/components/ui/overflow-menu.test.ts",
     "src/components/ui/surface-toolbar.test.ts",
@@ -2337,9 +2337,10 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  // renders the parameterized ApprovalCard through react-test-renderer (JSX)
+  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/lib/home-composer-context.test.ts",
   "src/components/project-picker-focus.test.tsx",
-  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
