@@ -390,6 +390,7 @@ export const SUITES = {
     "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
     "src/lib/marketplace-logo.test.ts",
+    "src/lib/marketplace-logo-plate.test.ts",
     "src/lib/craft-draft.test.ts",
     "src/lib/craft-arrival.test.ts",
     "src/lib/role-craft-composition.test.ts",
