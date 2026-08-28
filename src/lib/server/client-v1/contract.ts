@@ -6,8 +6,6 @@ import {
   type ClientV1OperationCredential,
 } from "./authority-contract.ts";
 
-import { cloneClientV1JsonValue } from "./json-clone.ts";
-
 // The reviewed operation registry. A value import, but a cheap one: operations.ts
 // is frozen data whose own imports are all `import type` and therefore erased,
 // so contract.ts keeps the property proxy-helpers.ts depends on — pulling it in
@@ -759,6 +757,30 @@ export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
       .sort()
       .map((key) => [key, sortClientV1JsonKeys(parsed[key])]),
   ) as JsonObject;
+}
+
+function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue) {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+export function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
+  if (isClientV1JsonArray(value)) {
+    return value.map((entry) => cloneClientV1JsonValue(entry)) as unknown as T;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const clone = Object.create(Object.getPrototypeOf(value)) as JsonObject;
+  for (const [key, entry] of Object.entries(value)) {
+    defineEnumerableValue(clone, key, cloneClientV1JsonValue(entry));
+  }
+  return clone as T;
 }
 
 function cloneClientV1Record<T extends ClientV1Record>(value: T): T {

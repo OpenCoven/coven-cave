@@ -1,4 +1,5 @@
 import {
+  cloneClientV1JsonValue,
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
   CLIENT_V1_ERROR_CODES,
@@ -27,7 +28,6 @@ import {
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
 import type { ClientV1RateLimitResult } from "./rate-limit.ts";
-import { cloneClientV1JsonValue } from "./json-clone.ts";
 
 export type ClientV1EnvelopeOptions = {
   capabilities?: readonly ClientV1Capability[];

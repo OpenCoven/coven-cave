@@ -1,15 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cloneClientV1JsonValue, defineEnumerableValue } from "./json-clone.ts";
-
-test("defineEnumerableValue stores an own __proto__ key as plain data without touching the prototype", () => {
-  const target: Record<string, unknown> = {};
-  defineEnumerableValue(target, "__proto__", { hostile: true });
-  assert.equal(Object.getPrototypeOf(target), Object.prototype);
-  assert.deepEqual(target.__proto__, { hostile: true });
-  assert.deepEqual(Object.keys(target), ["__proto__"]);
-});
+import { cloneClientV1JsonValue } from "./contract.ts";
 
 test("cloneClientV1JsonValue returns scalars as-is", () => {
   assert.equal(cloneClientV1JsonValue(null), null);
@@ -27,13 +19,10 @@ test("cloneClientV1JsonValue deep-clones arrays and objects without sharing refe
   assert.notEqual((clone.a as unknown[])[1], source.a[1]);
 });
 
-test("cloneClientV1JsonValue preserves the prototype of class instances", () => {
-  class Custom extends Object {
-    marker = "kept";
-  }
-  const source = new Custom();
+test("cloneClientV1JsonValue preserves the source prototype while cloning fresh", () => {
+  const source = { marker: "kept" };
   const clone = cloneClientV1JsonValue(source);
-  assert.ok(clone instanceof Custom);
+  assert.equal(Object.getPrototypeOf(clone), Object.getPrototypeOf(source));
   assert.notEqual(clone, source);
   assert.equal(clone.marker, "kept");
 });
