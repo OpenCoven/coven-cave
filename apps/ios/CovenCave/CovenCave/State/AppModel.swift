@@ -3871,7 +3871,10 @@ final class AppModel {
             sessionsLoadToken = loadedSessions.token
             switch loadedSessions.result {
             case .success(let nextSessions):
-                resolvedSessions = nextSessions
+                // Selection logic predates archived-inclusive fetches and counts
+                // any unassigned session as an unassigned artifact; archived
+                // rows must not tip a project-context decision.
+                resolvedSessions = nextSessions.filter { $0.archivedAt == nil }
                 fetchedSessions = nextSessions
             case .failure(let error):
                 sessionsError = handleSurfaceError(error)

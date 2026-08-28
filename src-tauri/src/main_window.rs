@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -35,6 +36,22 @@ struct MainWindowRegistryInner {
 
 #[derive(Default)]
 pub(super) struct MainWindowRegistry(Mutex<MainWindowRegistryInner>);
+
+/// Process-wide count of live main windows (registered and not yet destroyed).
+///
+/// Mirrors `MainWindowRegistryInner::labels` but is a lock-free atomic so the
+/// Windows native-close subclass — which must not lock, log, allocate, spawn,
+/// or enter Tauri — can decide whether closing the primary main window should
+/// tear down the whole Cave runtime or just that one window. The registry
+/// keeps the count in step with `labels` on every desktop platform.
+static LIVE_MAIN_WINDOW_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Lock-free count of live main windows, safe to read from the Win32
+/// window-proc subclass that cannot touch the registry's `Mutex`.
+#[cfg(target_os = "windows")]
+pub(super) fn live_main_window_count() -> usize {
+    LIVE_MAIN_WINDOW_COUNT.load(Ordering::SeqCst)
+}
 
 pub(super) fn is_main_window_label(label: &str) -> bool {
     if label == PRIMARY_MAIN_WINDOW_LABEL {
@@ -75,6 +92,7 @@ impl MainWindowRegistry {
             ));
         }
         if inner.labels.insert(label.to_string()) {
+            LIVE_MAIN_WINDOW_COUNT.fetch_add(1, Ordering::SeqCst);
             inner.next_generation = inner
                 .next_generation
                 .checked_add(1)
@@ -109,7 +127,9 @@ impl MainWindowRegistry {
 
     pub(super) fn remove(&self, label: &str) -> Option<u64> {
         if let Ok(mut inner) = self.0.lock() {
-            inner.labels.remove(label);
+            if inner.labels.remove(label) {
+                LIVE_MAIN_WINDOW_COUNT.fetch_sub(1, Ordering::SeqCst);
+            }
             let generation = inner.generations.remove(label);
             if generation.is_some() {
                 inner.retired_labels.insert(label.to_string());
@@ -292,5 +312,27 @@ mod tests {
         assert!(error.contains("cannot be reused"));
         assert_eq!(registry.generation("main-2"), None);
         assert!(first_generation > 0);
+    }
+
+    #[test]
+    fn closing_a_non_last_main_window_keeps_the_rest_registered() {
+        let registry = MainWindowRegistry::default();
+        registry.register("main").expect("register primary");
+        registry.register("main-2").expect("register secondary");
+
+        // Closing the primary window while a secondary remains open must not
+        // retire the secondary: the Cave runtime still has a window to serve.
+        registry.remove("main");
+        assert!(
+            registry.is_registered("main-2"),
+            "the still-open secondary window must survive the primary closing"
+        );
+        assert!(!registry.is_registered("main"));
+
+        // Closing the final window empties the registry — the signal the
+        // destruction teardown uses to stop the sidecar and supervisor.
+        registry.remove("main-2");
+        assert!(!registry.is_registered("main"));
+        assert!(!registry.is_registered("main-2"));
     }
 }
