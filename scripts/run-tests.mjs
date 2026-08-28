@@ -355,6 +355,7 @@ export const SUITES = {
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
+    "src/lib/auto-mission-approval.test.ts",
     "src/lib/auto-mission-presence.test.ts",
     "src/components/running-sessions-mission-row.test.ts",
     "src/lib/auto-mode-preferences.test.ts",
