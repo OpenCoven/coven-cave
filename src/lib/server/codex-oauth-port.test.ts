@@ -16,6 +16,7 @@
 //
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import {
   CODEX_OAUTH_PORT,
@@ -109,6 +110,20 @@ test("pidHoldingPort returns null when no process holds the port", async () => {
   // observable result, which is the right behavior for the caller.
   const result = await pidHoldingPort(ephemeral);
   assert.equal(result, null);
+});
+
+test("the POSIX-only probes are platform-guarded (cave-drb8w)", () => {
+  const source = readFileSync(new URL("./codex-oauth-port.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /if \(process\.platform === "win32"\) return null;/,
+    "pidHoldingPort refuses the lsof probe explicitly on Windows",
+  );
+  assert.match(
+    source,
+    /if \(process\.platform === "win32"\) return "";/,
+    "describePid refuses the ps probe explicitly on Windows",
+  );
 });
 
 // ─── preflightCodexOAuthPort (port-free branch) ────────────────────────
