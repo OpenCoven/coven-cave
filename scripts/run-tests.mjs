@@ -1789,6 +1789,7 @@ export const SUITES = {
     "src/app/api/salem/strip-mdx.test.ts",
     "src/app/api/salem/route.test.ts",
     "src/app/api/search/route.test.ts",
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
@@ -2328,6 +2329,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/project-root-migration.test.ts",
   // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
   // reaches "@/lib/server/api-security" for the local-request guard.
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
+  "src/lib/server/search-runtime.test.ts",
+  "src/lib/search-performance.test.ts",
+  "src/lib/search-compatibility-retention.test.ts",
   "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 
