@@ -23,8 +23,13 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "scripts", "worktree-guard.mjs");
-const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
 const isWin = process.platform === "win32";
+// `which` does not exist on native Windows; `where` is its equivalent
+// (cave-1wus5). Take only the first match so multiple `where` hits cannot
+// smuggle a newline into the git path.
+const realGit = execFileSync(isWin ? "where" : "which", ["git"], { encoding: "utf8" })
+  .trim()
+  .split(/\r?\n/, 1)[0];
 const BYPASS = "WT_GUARD_BYPASS=1";
 const STRICT_GIT_ENV_KEYS = [
   "GIT_DIR",
@@ -50,6 +55,26 @@ const STRICT_GIT_ENV_KEYS = [
   "GIT_NOGLOB_PATHSPECS",
   "GIT_ICASE_PATHSPECS",
 ];
+
+await test("the POSIX-only live-cwd probe fails closed on Windows (cave-1wus5)", () => {
+  const source = readFileSync(script, "utf8");
+  assert.match(
+    source,
+    /process\.platform === "win32" && testLsof === "lsof"/,
+    "a Windows run without a test-mode probe must refuse before spawning lsof",
+  );
+  assert.match(
+    source,
+    /live-worktree detection needs lsof, which Windows does not provide/,
+    "the refusal names the missing tool instead of degrading silently",
+  );
+  const suite = readFileSync(new URL("./worktree-guard.test.mjs", import.meta.url), "utf8");
+  assert.match(
+    suite,
+    /isWin \? "where" : "which"/,
+    "the suite resolves git with where on Windows and which on POSIX",
+  );
+});
 
 await test("strict Git network probes have release-safe bounded timeouts", () => {
   assert.equal(STRICT_GIT_LOCAL_TIMEOUT_MS, 10_000);
