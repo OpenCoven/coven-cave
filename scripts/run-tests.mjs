@@ -817,6 +817,7 @@ export const SUITES = {
     "src/components/chat-canvas-command.test.ts",
     "src/components/chat-diagram-command.test.ts",
     "src/components/calendar-actions.test.ts",
+    "src/components/calendar-day-tighten.test.ts",
     "src/components/calendar-keyboard.test.ts",
     "src/components/task-chat-cwd.test.ts",
     "src/lib/board-search.test.ts",
