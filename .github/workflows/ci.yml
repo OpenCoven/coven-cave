@@ -159,7 +159,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.expected_pr_number }}
         run: node scripts/capture-ci-base-snapshot.mjs >> "$GITHUB_OUTPUT"
@@ -183,7 +182,7 @@ jobs:
       - id: paths
         name: Select path-aware validation
         env:
-          BASE_SHA: ${{ github.event.before || steps.base_snapshot.outputs.run_base_sha }}
+          BASE_SHA: ${{ github.event_name == 'push' && github.event.before || steps.base_snapshot.outputs.run_base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
         run: node scripts/ci-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 

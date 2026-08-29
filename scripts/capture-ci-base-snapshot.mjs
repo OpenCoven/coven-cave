@@ -37,17 +37,16 @@ function validatedSnapshot(ref, sha) {
 /**
  * Capture the immutable base snapshot that this CI run is validating.
  *
- * A recovery dispatch's Actions-run `pull_requests[].base.sha` can remain tied
- * to the original pull_request event after the base branch moves. The current
- * pull request is therefore used only to discover its base ref; that ref's
- * live tip is the dispatch snapshot. Later jobs receive this exact pair via
- * `needs.paths.outputs` and compare it with the then-live ref.
+ * Both a pull_request event's `base.sha` and a recovery dispatch's Actions-run
+ * `pull_requests[].base.sha` can remain tied to an older base after the branch
+ * moves. Only the base ref is retained; its live tip at selector start is the
+ * snapshot. Later jobs receive this exact pair via `needs.paths.outputs` and
+ * compare it with the then-live ref.
  */
 export function resolveRunBaseSnapshot(
   {
     eventName,
     eventBaseRef,
-    eventBaseSha,
     expectedHeadSha,
     prNumber,
     refName,
@@ -55,7 +54,12 @@ export function resolveRunBaseSnapshot(
   { getPullRequest, getRef } = {},
 ) {
   if (eventName === "pull_request") {
-    return validatedSnapshot(eventBaseRef, eventBaseSha);
+    if (typeof getRef !== "function") {
+      throw new Error("pull request base resolution is unavailable");
+    }
+    const baseRef = validatedRef(eventBaseRef);
+    const liveRef = getRef(baseRef);
+    return validatedSnapshot(baseRef, liveRef?.object?.sha);
   }
 
   if (eventName === "workflow_dispatch") {
@@ -92,7 +96,6 @@ export function main(env = process.env) {
       {
         eventName: env.GITHUB_EVENT_NAME,
         eventBaseRef: env.EVENT_BASE_REF,
-        eventBaseSha: env.EVENT_BASE_SHA,
         expectedHeadSha: env.EXPECTED_HEAD_SHA,
         prNumber: env.PR_NUMBER,
         refName: env.GITHUB_REF_NAME,

@@ -85,6 +85,11 @@ assert.equal(baseSnapshot.id, "base_snapshot");
 assert.equal(baseSnapshot.env.GH_TOKEN, "${{ github.token }}");
 assert.equal(baseSnapshot.env.PR_NUMBER, "${{ github.event.pull_request.number || inputs.expected_pr_number }}");
 assert.equal(
+  Object.hasOwn(baseSnapshot.env, "EVENT_BASE_SHA"),
+  false,
+  "pull-request runs must not trust the stale event base SHA",
+);
+assert.equal(
   baseSnapshot.run,
   "node scripts/capture-ci-base-snapshot.mjs >> \"$GITHUB_OUTPUT\"",
 );
@@ -95,8 +100,8 @@ assert.ok(
 );
 assert.equal(
   pathSelector.env.BASE_SHA,
-  "${{ github.event.before || steps.base_snapshot.outputs.run_base_sha }}",
-  "dispatch path selection uses the same live base snapshot exported to the final gate",
+  "${{ github.event_name == 'push' && github.event.before || steps.base_snapshot.outputs.run_base_sha }}",
+  "PR and dispatch path selection use the live base snapshot; only push uses event.before",
 );
 assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation, [
   { name: "lint", command: "lint" },

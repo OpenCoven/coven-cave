@@ -185,7 +185,10 @@ test("a recovery dispatch snapshots the live base ref instead of stale associate
 
 test("base snapshot acquisition fails closed on missing or malformed inputs", () => {
   assert.throws(
-    () => resolveRunBaseSnapshot({ eventName: "pull_request", eventBaseRef: "main" }),
+    () => resolveRunBaseSnapshot(
+      { eventName: "pull_request", eventBaseRef: "main" },
+      { getRef: () => ({ object: {} }) },
+    ),
     /run base SHA is missing or malformed/,
   );
   assert.throws(
@@ -219,15 +222,29 @@ test("base snapshot acquisition fails closed on missing or malformed inputs", ()
   assert.equal(refRequested, false, "a malformed base ref must be rejected before an API path is built");
 });
 
-test("pull request and push events preserve their event snapshots", () => {
-  assert.deepEqual(
-    resolveRunBaseSnapshot({
+test("pull request events ignore stale event base SHA and snapshot the live ref", () => {
+  const staleEventBase = "e".repeat(40);
+  const requestedRefs = [];
+  const snapshot = resolveRunBaseSnapshot(
+    {
       eventName: "pull_request",
       eventBaseRef: "main",
-      eventBaseSha: RUN_BASE,
-    }),
-    { ref: "main", sha: RUN_BASE },
+      eventBaseSha: staleEventBase,
+    },
+    {
+      getRef: (ref) => {
+        requestedRefs.push(ref);
+        return { object: { sha: RUN_BASE } };
+      },
+    },
   );
+
+  assert.deepEqual(requestedRefs, ["main"]);
+  assert.deepEqual(snapshot, { ref: "main", sha: RUN_BASE });
+  assert.notEqual(snapshot.sha, staleEventBase);
+});
+
+test("push events preserve their head snapshot", () => {
   assert.deepEqual(
     resolveRunBaseSnapshot({
       eventName: "push",
