@@ -89,6 +89,7 @@ test("conformance builds keep Turbopack while avoiding plugin process IPC", () =
   );
 
   assert.match(script, /\["pnpm@10\.34\.0", "build"\]/);
+  assert.match(script, /NODE_OPTIONS:\s*"--max-old-space-size=6144"/);
   assert.equal(manifest.scripts?.["build:conformance"], "node scripts/build-conformance.mjs");
   assert.match(manifest.scripts?.build ?? "", /^next build(?:\s|$)/);
   assert.doesNotMatch(manifest.scripts?.build ?? "", /--webpack/);
