@@ -202,7 +202,7 @@ test("bare URL schemes are stripped case-insensitively", () => {
 
 test("bare IPv6 URLs remain opaque without swallowing adjacent citations", () => {
   const integrity = deriveResearchFindingsIntegrity(
-    "See http://[::1]/S1 and http://[::1][S2].",
+    "See http://[::1]/S1, http://user@[::1]/S1/C2, and http://[::1][S2].",
     [source("S1", "used"), source("S2", "candidate")],
   );
   assert.deepEqual(integrity.referencedIds, ["S2"]);
