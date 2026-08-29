@@ -463,13 +463,7 @@ function matchFindingsImageBodyAt(
 
   const suffixStart = labelEnd + 1;
   const suffixOpen = input[suffixStart];
-  if (suffixOpen !== "(" && suffixOpen !== "[") {
-    return {
-      text: input.slice(labelStart, labelEnd),
-      href: null,
-      length: labelEnd + 1 - index,
-    };
-  }
+  if (suffixOpen !== "(" && suffixOpen !== "[") return null;
 
   const suffixClose = suffixOpen === "(" ? ")" : "]";
   const suffixEnd = findBalancedClose(

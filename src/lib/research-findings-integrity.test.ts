@@ -302,6 +302,31 @@ test("parser and integrity align across reference-style and linked-image variant
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("bare image-like source tokens remain visible with an available ledger", () => {
+  const markdown = "Critical![S1]";
+  const sources = [source("S1", "used")];
+
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S1"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("bare image-like source tokens remain visible with a missing ledger", () => {
+  const markdown = "Critical![S1]";
+
+  const doc = parseFindingsDoc(markdown, []);
+  const integrity = deriveResearchFindingsIntegrity(markdown, []);
+
+  assert.deepEqual(doc.refIds, ["S1"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S1"]);
+  assert.equal(integrity.summary.kind, "unavailable");
+});
+
 test("undefined reference-style links preserve visible source suffixes", () => {
   const integrity = deriveResearchFindingsIntegrity("[paper][S1]", []);
   assert.deepEqual(integrity.referencedIds, ["S1"]);
