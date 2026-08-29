@@ -72,6 +72,41 @@ assert.match(
 );
 assert.match(
   source,
+  /new ResizeObserver\(/,
+  "responsive inspector behavior measures the reader container",
+);
+assert.match(
+  source,
+  /const INSPECTOR_OVERLAY_MAX_REM = 62/,
+  "the overlay threshold follows the root rem size used by the container query",
+);
+assert.match(
+  source,
+  /getComputedStyle\(document\.documentElement\)\.fontSize[\s\S]*?INSPECTOR_OVERLAY_MAX_REM \* rootFontSize/,
+  "the overlay threshold converts rem against the live root font size",
+);
+assert.match(
+  source,
+  /documentPane\.inert = inspectorOn && inspectorOverlaysDocument/,
+  "the covered document and contents become inert only in overlay mode",
+);
+assert.match(
+  source,
+  /inspectorFocusReturnRef\.current = invoker/,
+  "the inspector remembers the exact control that invoked it",
+);
+assert.match(
+  source,
+  /selectedSourceId[\s\S]*?research-evidence-card__toggle[\s\S]*?research-evidence-inspector__close[\s\S]*?focus\(\)/,
+  "opening an overlay inspector moves focus to its selected card or close control",
+);
+assert.match(
+  source,
+  /const closeInspector = useCallback\([\s\S]*?\{ restoreFocus = true \}[\s\S]*?inspectorFocusReturnRef\.current[\s\S]*?invoker\?\.focus\(\)/,
+  "ordinary inspector dismissal restores focus to its invoker",
+);
+assert.match(
+  source,
   /const \[selectedSourceId, setSelectedSourceId\] = useState<string \| null>\(null\)/,
   "no evidence source is selected by default",
 );
@@ -136,7 +171,10 @@ assert.match(
   /collapsibleSections=\{false\}/,
   "Research sections retain heading semantics instead of becoming disclosures",
 );
-assert.match(source, /<aside className="rr-col rr-rail"/);
+assert.match(
+  source,
+  /<aside[\s\S]*?ref=\{inspectorRef\}[\s\S]*?className="rr-col rr-rail"/,
+);
 assert.match(source, /onRefClick/);
 assert.match(source, /onPublish/);
 assert.match(source, /<OverflowMenu/, "secondary Research actions live in the shared overflow menu");
@@ -172,7 +210,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onSupport=\{\(target\) => \{\s*setInspectorOn\(false\);\s*requestAnimationFrame\(\(\) =>\s*documentReaderApiRef\.current\?\.scrollToTarget\(target\.id, true\)\s*\);\s*\}\}/,
+  /onSupport=\{\(target\) => \{\s*closeInspector\(\{ restoreFocus: false \}\);\s*requestAnimationFrame\(\(\) =>\s*documentReaderApiRef\.current\?\.scrollToTarget\(target\.id, true\)\s*\);\s*\}\}/,
   "Supports closes the responsive inspector before focusing the cited content",
 );
 

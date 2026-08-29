@@ -13,7 +13,7 @@ export type ResearchProvenanceEdgeProps = {
   selectedId: string | null;
   toneForId: (id: string) => ResearchProvenanceTone;
   onPreview: (id: string | null, element?: HTMLElement) => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, invoker: HTMLButtonElement) => void;
 };
 
 const CONFLICT_ID_RE = /^C\d+$/;
@@ -131,7 +131,7 @@ export function ResearchProvenanceEdge({
               onPreview(hovered?.id ?? null, hovered?.element);
             }}
             onKeyDown={(event) => moveFocus(event, index)}
-            onClick={() => onSelect(id)}
+            onClick={(event) => onSelect(id, event.currentTarget)}
           >
             {id}
           </button>

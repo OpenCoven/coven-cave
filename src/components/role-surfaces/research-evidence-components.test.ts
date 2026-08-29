@@ -41,6 +41,29 @@ function buttonTag(html: string, label: string): string {
 }
 
 describe("ResearchProvenanceEdge", () => {
+  test("passes the invoking control through evidence selection", async () => {
+    const onSelect = vi.fn();
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        createElement(ResearchProvenanceEdge, {
+          ids: ["S1"],
+          selectedId: null,
+          toneForId: (): ResearchProvenanceTone => "accent",
+          onPreview: () => {},
+          onSelect,
+        }),
+      );
+    });
+    const button = renderer.root.findByType("button");
+    const element = { focus: vi.fn() };
+
+    button.props.onClick({ currentTarget: element });
+
+    expect(onSelect).toHaveBeenCalledWith("S1", element);
+    await act(async () => renderer.unmount());
+  });
+
   test("keeps preview active until both hover and focus leave", async () => {
     const onPreview = vi.fn();
     let renderer;

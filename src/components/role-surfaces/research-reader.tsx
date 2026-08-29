@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -42,6 +43,7 @@ import "@/styles/research-reader.css";
 const RAIL_MIN = 240;
 const RAIL_MAX = 520;
 const COLLAPSE_AT = 200;
+const INSPECTOR_OVERLAY_MAX_REM = 62;
 const CONFIDENCE_RE = /^(high|medium|low)$/i;
 const CONFLICT_ID_RE = /^C\d+$/;
 
@@ -122,6 +124,8 @@ export function ResearchReader({
   const focusedTableRef = useRef<HTMLDivElement | null>(null);
   const contentsToggleRef = useRef<HTMLButtonElement | null>(null);
   const evidenceToggleRef = useRef<HTMLButtonElement | null>(null);
+  const inspectorRef = useRef<HTMLElement | null>(null);
+  const inspectorFocusReturnRef = useRef<HTMLElement | null>(null);
   const draggingRail = useRef(false);
 
   const doc = useMemo(
@@ -149,6 +153,8 @@ export function ResearchReader({
 
   const [tocOn, setTocOn] = useState(false);
   const [inspectorOn, setInspectorOn] = useState(false);
+  const [inspectorOverlaysDocument, setInspectorOverlaysDocument] =
+    useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<{ id: string; heading: string } | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
@@ -163,14 +169,28 @@ export function ResearchReader({
     requestAnimationFrame(() => tableFocusReturnRef.current?.focus());
   };
 
+  const closeInspector = useCallback(
+    (
+      { restoreFocus = true }: { restoreFocus?: boolean } = {},
+    ) => {
+      setInspectorOn(false);
+      if (!restoreFocus) return;
+      const invoker =
+        inspectorFocusReturnRef.current ?? evidenceToggleRef.current;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => invoker?.focus());
+      });
+    },
+    [],
+  );
+
   const closeFocusOrReader = () => {
     if (focusTable) {
       closeTable();
       return;
     }
     if (inspectorOn) {
-      setInspectorOn(false);
-      requestAnimationFrame(() => evidenceToggleRef.current?.focus());
+      closeInspector();
       return;
     }
     if (tocOn) {
@@ -182,6 +202,56 @@ export function ResearchReader({
   };
 
   useFocusTrap(true, readerRef, { onEscape: closeFocusOrReader });
+
+  useEffect(() => {
+    const reader = readerRef.current;
+    if (!reader) return;
+
+    const measure = (width: number) => {
+      const rootFontSize =
+        Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+        16;
+      setInspectorOverlaysDocument(
+        width <= INSPECTOR_OVERLAY_MAX_REM * rootFontSize,
+      );
+    };
+    measure(reader.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      measure(entries[0]?.contentRect.width ?? reader.getBoundingClientRect().width);
+    });
+    observer.observe(reader);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const documentPane =
+      readerRef.current?.querySelector<HTMLElement>(".document-reader");
+    if (!documentPane) return;
+    const previousInert = documentPane.inert;
+    documentPane.inert = inspectorOn && inspectorOverlaysDocument;
+    return () => {
+      documentPane.inert = previousInert;
+    };
+  }, [inspectorOn, inspectorOverlaysDocument]);
+
+  useEffect(() => {
+    if (!inspectorOn || !inspectorOverlaysDocument) return;
+    const frame = requestAnimationFrame(() => {
+      const inspector = inspectorRef.current;
+      const target =
+        (selectedSourceId
+          ? inspector?.querySelector<HTMLElement>(
+              '[data-selected="true"] .research-evidence-card__toggle',
+            )
+          : null) ??
+        inspector?.querySelector<HTMLElement>(
+          ".research-evidence-inspector__close",
+        );
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [inspectorOn, inspectorOverlaysDocument, selectedSourceId]);
 
   useEffect(() => {
     readerRef.current?.style.setProperty("--rail-w", `${railWidth}px`);
@@ -210,7 +280,7 @@ export function ResearchReader({
       if (!draggingRail.current || !readerRef.current) return;
       const rect = readerRef.current.getBoundingClientRect();
       if (rect.right - event.clientX - 1 < COLLAPSE_AT) {
-        setInspectorOn(false);
+        closeInspector();
       }
       draggingRail.current = false;
       readerRef.current
@@ -225,7 +295,7 @@ export function ResearchReader({
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
     };
-  }, []);
+  }, [closeInspector]);
 
   const passes = mission.iterations.length;
   const rel = relativeTime(artifact.updatedAt);
@@ -295,7 +365,7 @@ export function ResearchReader({
     });
   };
 
-  const onRefClick = (id: string) => {
+  const onRefClick = (id: string, invoker: HTMLElement) => {
     const source = sourceById.get(id);
     if (!source) {
       announce(
@@ -304,6 +374,7 @@ export function ResearchReader({
       return;
     }
 
+    inspectorFocusReturnRef.current = invoker;
     setSelectedSourceId(id);
     setInspectorOn(true);
     setOpenIds((previous) => new Set(previous).add(id));
@@ -390,7 +461,7 @@ export function ResearchReader({
             onMouseLeave={clearPreview}
             onFocus={(event) => onRefPreview(span.id, event.currentTarget)}
             onBlur={clearPreview}
-            onClick={() => onRefClick(span.id)}
+            onClick={(event) => onRefClick(span.id, event.currentTarget)}
           >
             {span.id}
           </button>
@@ -587,6 +658,7 @@ export function ResearchReader({
           aria-label={`${artifact.title} — research reader`}
           data-toc={tocOn}
           data-rail={inspectorOn}
+          data-inspector={inspectorOn}
           data-copied={copied}
           tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
@@ -657,7 +729,14 @@ export function ResearchReader({
                 aria-pressed={inspectorOn}
                 title={inspectorOn ? "Hide evidence" : "Show evidence"}
                 aria-label={inspectorOn ? "Hide evidence" : "Show evidence"}
-                onClick={() => setInspectorOn((value) => !value)}
+                onClick={(event) => {
+                  if (inspectorOn) {
+                    closeInspector();
+                    return;
+                  }
+                  inspectorFocusReturnRef.current = event.currentTarget;
+                  setInspectorOn(true);
+                }}
               >
                 <svg
                   width={15}
@@ -744,7 +823,11 @@ export function ResearchReader({
               <div className="rr-railgrip" />
             </div>
 
-            <aside className="rr-col rr-rail" aria-label="Evidence">
+            <aside
+              ref={inspectorRef}
+              className="rr-col rr-rail"
+              aria-label="Evidence"
+            >
               <ResearchEvidenceInspector
                 sources={mission.sources}
                 integrityLabel={integrity.summary.label}
@@ -755,17 +838,12 @@ export function ResearchReader({
                 onOpenUrl={openUrl}
                 onCite={(source) => void cite(source)}
                 onSupport={(target) => {
-                  setInspectorOn(false);
+                  closeInspector({ restoreFocus: false });
                   requestAnimationFrame(() =>
                     documentReaderApiRef.current?.scrollToTarget(target.id, true)
                   );
                 }}
-                onClose={() => {
-                  setInspectorOn(false);
-                  requestAnimationFrame(() =>
-                    evidenceToggleRef.current?.focus(),
-                  );
-                }}
+                onClose={closeInspector}
               />
             </aside>
           </div>

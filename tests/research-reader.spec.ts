@@ -130,59 +130,72 @@ async function openReader(page: Page) {
 test.describe("research reader", () => {
   test.describe.configure({ timeout: 180_000 });
 
-  test("typesets findings, chips the sources, and cross-links the evidence rail", async ({ page }) => {
+  test("typesets semantic findings and links evidence back to its supported claim", async ({ page }) => {
     await openReader(page);
     const reader = page.locator(".research-reader");
 
-    // Title, lede, and the collapsible sections all typeset from the markdown.
-    await expect(reader.locator(".rr-doc h1")).toHaveText("Identity Preservation for Agents during Self-Evolution");
+    await expect(reader).toHaveAttribute("data-toc", "false");
+    await expect(reader).toHaveAttribute("data-inspector", "false");
+    await expect(reader.locator(".document-reader__title")).toHaveText("Identity Preservation for Agents during Self-Evolution");
     await expect(reader.locator(".rr-lede")).toContainText("stay recognisably itself");
     for (const heading of ["Current understanding", "Key results", "Open questions"]) {
-      await expect(reader.locator(".rr-h2-btn", { hasText: heading })).toBeVisible();
+      const semanticHeading = reader.getByRole("heading", { name: heading });
+      await expect(semanticHeading).toBeVisible();
+      await expect(semanticHeading.getByRole("button")).toHaveCount(0);
     }
+    await expect(reader.locator(".rr-toc")).toBeHidden();
+    await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
 
-    // Key Results markdown table renders with a confidence chip and a source chip.
     const table = reader.locator(".rr-table");
     await expect(table).toContainText("Scale raises value coherence");
     await expect(table.locator(".rr-cf--high")).toHaveText("High");
     await expect(table.locator(".rr-sref", { hasText: "S14" }).first()).toBeVisible();
 
-    // Evidence rail is built from the real ledger sources.
-    const rail = reader.locator(".rr-rail");
-    await expect(rail).toContainText("Evidence · 4 used");
-    await expect(rail.locator(".rr-src", { hasText: "Emergent value coherence at scale" })).toBeVisible();
-
-    // Collapsing a section hides its body.
-    const openQ = reader.locator(".rr-h2-btn", { hasText: "Open questions" });
-    await openQ.click();
-    await expect(openQ).toHaveAttribute("aria-expanded", "false");
-
-    // Clicking a prose S14 chip opens its evidence card, revealing the quote.
-    await reader.locator(".rr-doc .rr-sref", { hasText: "S14" }).first().click();
-    const s14card = rail.locator(".rr-src", { hasText: "Emergent value coherence at scale" });
+    await reader.getByRole("button", { name: "Open evidence S14" }).first().click();
+    await expect(reader).toHaveAttribute("data-inspector", "true");
+    await expect(reader.locator(".document-reader")).not.toHaveAttribute("inert", "");
+    const inspector = reader.locator(".research-evidence-inspector");
+    const s14card = inspector.locator('[data-source-id="S14"]');
+    await expect(inspector).toBeVisible();
+    await expect(s14card).toHaveAttribute("data-selected", "true");
     await expect(s14card).toHaveAttribute("data-open", "true");
     await expect(s14card.locator(".rr-sd-quote")).toContainText("rise monotonically");
-    // The card's Supports links are derived from the sections that cite S14.
-    await expect(s14card.locator(".rr-sd-supportlink", { hasText: "Key results" })).toBeVisible();
+
+    const support = s14card.locator(".rr-sd-supportlink").first();
+    await support.click();
+    await expect(reader).toHaveAttribute("data-inspector", "false");
+    const focusedTarget = reader.locator("[data-document-target]:focus");
+    await expect(focusedTarget).toHaveCount(1);
+    expect(await focusedTarget.evaluate((target) => {
+      const scroller = target.closest(".document-reader__scroll");
+      if (!scroller) return false;
+      const targetRect = target.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      return (
+        targetRect.bottom > scrollerRect.top &&
+        targetRect.top < scrollerRect.bottom
+      );
+    })).toBe(true);
   });
 
-  test("expands to reveal the contents rail and copies the findings", async ({ page }) => {
+  test("opens dedicated contents and evidence panels while retaining reader actions", async ({ page }) => {
     await openReader(page);
     const reader = page.locator(".research-reader");
 
-    // Contents rail is hidden until expanded.
     await expect(reader.locator(".rr-toc")).toBeHidden();
-    await reader.getByRole("button", { name: "More research reader actions" }).click();
-    await expect(page.getByRole("menuitemcheckbox", { name: "Contents" })).toBeVisible();
-    await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
-    await expect(reader).toHaveAttribute("data-expanded", "true");
+    await reader.getByRole("button", { name: "Show contents" }).click();
     await expect(reader).toHaveAttribute("data-toc", "true");
     await expect(reader.locator(".rr-toc")).toBeVisible();
     await expect(reader.locator(".rr-toclink", { hasText: "Key results" })).toBeVisible();
 
-    // Copy is offered for a written deliverable (clipboard success itself is
-    // environment-dependent under headless, so assert the affordance, not the
-    // confirmation).
+    const evidenceToggle = reader.getByRole("button", { name: "Show evidence" });
+    await evidenceToggle.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector).toBeVisible();
+    await inspector.getByRole("button", { name: "Close evidence inspector" }).click();
+    await expect(inspector).toBeHidden();
+    await expect(evidenceToggle).toBeFocused();
+
     await reader.getByRole("button", { name: "More research reader actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Copy findings" })).toBeEnabled();
     await page.keyboard.press("Escape");
@@ -194,18 +207,56 @@ test.describe("research reader", () => {
     await expect(preferences).toContainText("Hyphenation");
     await page.keyboard.press("Escape");
 
-    // Close dismisses the reader.
     await reader.getByRole("button", { name: "Close" }).click();
     await expect(page.locator(".research-reader")).toHaveCount(0);
   });
 
-  test("narrow rail mode collapses to one grid column and preserves prose gutters", async ({ page }) => {
+  test("narrow overlay transfers focus, inerts covered controls, and returns focus correctly", async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 720 });
     await openReader(page);
     const reader = page.locator(".research-reader");
-    await reader.getByRole("button", { name: "More research reader actions" }).click();
-    await expect(page.getByRole("menuitemcheckbox", { name: "Contents" })).toBeVisible();
-    await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
+    const documentReader = reader.locator(".document-reader");
+    const evidenceToggle = reader.getByRole("button", { name: "Show evidence" });
+
+    await evidenceToggle.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector).toBeVisible();
+    await expect(documentReader).toHaveAttribute("inert", "");
+    await expect(inspector.getByRole("button", { name: "Close evidence inspector" })).toBeFocused();
+    for (let step = 0; step < 5; step += 1) {
+      await page.keyboard.press("Tab");
+      expect(await documentReader.evaluate((element) =>
+        element.contains(document.activeElement),
+      )).toBe(false);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(inspector).toBeHidden();
+    await expect(documentReader).not.toHaveAttribute("inert", "");
+    await expect(evidenceToggle).toBeFocused();
+
+    const inlineReference = reader.locator(".rr-inline-ref", { hasText: "S14" }).first();
+    await inlineReference.click();
+    await expect(documentReader).toHaveAttribute("inert", "");
+    await expect(inspector).toContainText("Emergent value coherence at scale");
+    await expect(
+      inspector.locator('[data-source-id="S14"] .research-evidence-card__toggle'),
+    ).toBeFocused();
+    await inspector.getByRole("button", { name: "Close evidence inspector" }).click();
+    await expect(documentReader).not.toHaveAttribute("inert", "");
+    await expect(inlineReference).toBeFocused();
+
+    await inlineReference.click();
+    await inspector.locator('[data-source-id="S14"] .rr-sd-supportlink').first().click();
+    await expect(documentReader).not.toHaveAttribute("inert", "");
+    await expect(reader.locator("[data-document-target]:focus")).toHaveCount(1);
+
+    await reader.getByRole("button", { name: "Show contents" }).click();
+    await expect(reader).toHaveAttribute("data-toc", "true");
+    await expect(reader.getByRole("button", { name: "Hide contents" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     const columns = await reader.locator(".document-reader__layout").evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns,
