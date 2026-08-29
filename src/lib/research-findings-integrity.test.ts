@@ -200,6 +200,17 @@ test("bare URL schemes are stripped case-insensitively", () => {
   assert.equal(integrity.summary.kind, "none");
 });
 
+test("bare IPv6 URLs remain opaque without swallowing adjacent citations", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "See http://[::1]/S1 and http://[::1][S2].",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("linked images do not create referenced ids or summaries", () => {
   const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)](target)", [source("S9", "candidate")]);
   assert.deepEqual(integrity.referencedIds, []);
