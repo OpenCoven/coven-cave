@@ -115,8 +115,13 @@ assert.match(
 
 assert.match(
   replay,
+  /runRoutine\(automation\.id\)/,
+  "queued automation jobs should be replayed through the Coven automations facade",
+);
+assert.doesNotMatch(
+  replay,
   /startAutomationRun/,
-  "queued automation jobs should be replayed through the automation runner",
+  "queued automation jobs must not replay through the retired Codex automation runner",
 );
 
 assert.match(
