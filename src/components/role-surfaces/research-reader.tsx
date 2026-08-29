@@ -66,7 +66,7 @@ type EvidenceTip = {
   title: string;
   meta: string;
   label: string;
-  tone: "ok" | "warn" | "muted";
+  tone: "ok" | "warn" | "muted" | "rejected";
   left: number;
   top: number;
 };
@@ -97,7 +97,7 @@ function statusView(status: ResearchSourceRef["status"]): {
 } {
   if (status === "used") return { label: "Verified", tone: "ok" };
   if (status === "conflicting") return { label: "Conflicts", tone: "warn" };
-  if (status === "rejected") return { label: "Rejected", tone: "muted" };
+  if (status === "rejected") return { label: "Rejected", tone: "rejected" };
   return { label: "Candidate", tone: "muted" };
 }
 
@@ -648,6 +648,7 @@ export function ResearchReader({
         <button
           className="rr-krfocus focus-ring"
           type="button"
+          title="Focus table"
           onClick={(event) => {
             tableFocusReturnRef.current = event.currentTarget;
             setFocusTable(block);
@@ -948,7 +949,8 @@ export function ResearchReader({
               <button
                 className="rr-iconbtn focus-ring"
                 type="button"
-                aria-label="Close"
+                title="Close focused table"
+                aria-label="Close focused table"
                 onClick={closeTable}
               >
                 <svg

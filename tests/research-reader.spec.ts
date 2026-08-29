@@ -158,9 +158,28 @@ test.describe("research reader", () => {
     await expect(
       table.locator(".rr-inline-ref", { hasText: "S14" }).first(),
     ).toBeHidden();
-    const paperWidthBeforeInspector = await reader
-      .locator(".rr-doc__column")
-      .evaluate((element) => element.getBoundingClientRect().width);
+    const measuredClaim = reader.locator(".rr-block-row", {
+      hasText: "Identity has three components",
+    });
+    const claimWidthBeforeInspector = await measuredClaim.evaluate((element) => {
+      const prose = element.firstElementChild as HTMLElement;
+      const probe = document.createElement("span");
+      probe.style.display = "block";
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.width = "var(--document-reader-prose-measure)";
+      element.append(probe);
+      const widths = {
+        actual: prose.getBoundingClientRect().width,
+        preferred: probe.getBoundingClientRect().width,
+      };
+      probe.remove();
+      return widths;
+    });
+    expect(claimWidthBeforeInspector.actual).toBeCloseTo(
+      claimWidthBeforeInspector.preferred,
+      0,
+    );
 
     await marginReference.click();
     await expect(reader).toHaveAttribute("data-inspector", "true");
@@ -175,10 +194,13 @@ test.describe("research reader", () => {
     await page.mouse.down();
     await page.mouse.move(handleBox!.x - 260, handleBox!.y + handleBox!.height / 2);
     await page.mouse.up();
-    const paperWidthAtMaxRail = await reader
-      .locator(".rr-doc__column")
+    const claimWidthAtMaxRail = await measuredClaim
+      .locator(":scope > :first-child")
       .evaluate((element) => element.getBoundingClientRect().width);
-    expect(paperWidthAtMaxRail).toBeCloseTo(paperWidthBeforeInspector, 0);
+    expect(claimWidthAtMaxRail).toBeCloseTo(
+      claimWidthBeforeInspector.actual,
+      0,
+    );
     const inspector = reader.locator(".research-evidence-inspector");
     const s14card = inspector.locator('[data-source-id="S14"]');
     await expect(inspector).toBeVisible();
@@ -249,6 +271,10 @@ test.describe("research reader", () => {
     await expect(reader.locator(".rr-status")).toBeVisible();
     await expect(reader.locator(".rr-integrity")).toBeVisible();
     await expect(reader.locator(".research-provenance-edge__item").first()).toBeHidden();
+    await expect(reader.locator(".rr-doc")).toHaveCSS(
+      "--research-evidence-edge-reserve",
+      "0",
+    );
 
     await evidenceToggle.click();
     const inspector = reader.locator(".research-evidence-inspector");

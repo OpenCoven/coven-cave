@@ -20,7 +20,7 @@ export type ResearchEvidenceInspectorProps = {
 type SourceStatusView = {
   groupLabel: string;
   label: string;
-  tone: "ok" | "warn" | "muted";
+  tone: "ok" | "warn" | "muted" | "rejected";
   refTone: "accent" | "warn" | "muted";
 };
 
@@ -53,7 +53,7 @@ const STATUS_VIEW: Record<ResearchSourceRef["status"], SourceStatusView> = {
   rejected: {
     groupLabel: "Rejected",
     label: "Rejected",
-    tone: "muted",
+    tone: "rejected",
     refTone: "muted",
   },
 };
@@ -105,6 +105,7 @@ export function ResearchEvidenceInspector({
         <button
           className="research-evidence-inspector__close focus-ring"
           type="button"
+          title="Close evidence inspector"
           aria-label="Close evidence inspector"
           onClick={onClose}
         >

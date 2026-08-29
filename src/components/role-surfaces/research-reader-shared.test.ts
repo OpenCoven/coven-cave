@@ -5,6 +5,14 @@ const source = await readFile(
   new URL("./research-reader.tsx", import.meta.url),
   "utf8",
 );
+const inspectorSource = await readFile(
+  new URL("./research-evidence-inspector.tsx", import.meta.url),
+  "utf8",
+);
+const documentReaderSource = await readFile(
+  new URL("../document-reader.tsx", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -198,6 +206,36 @@ assert.match(
 );
 assert.match(
   source,
+  /className="rr-krfocus focus-ring"[\s\S]*?title="Focus table"[\s\S]*?aria-label="Focus table"/,
+  "the table focus control exposes a native tooltip matching its accessible name",
+);
+assert.match(
+  source,
+  /title="Close focused table"[\s\S]*?aria-label="Close focused table"/,
+  "the focused-table close control exposes a native tooltip matching its accessible name",
+);
+assert.match(
+  inspectorSource,
+  /title="Close evidence inspector"[\s\S]*?aria-label="Close evidence inspector"/,
+  "the evidence inspector close control exposes a native tooltip matching its accessible name",
+);
+assert.match(
+  inspectorSource,
+  /candidate:\s*\{[\s\S]*?tone:\s*"muted"[\s\S]*?refTone:\s*"accent"/,
+  "candidate evidence keeps its neutral status and accent reference tone",
+);
+assert.match(
+  inspectorSource,
+  /rejected:\s*\{[\s\S]*?tone:\s*"rejected"[\s\S]*?refTone:\s*"muted"/,
+  "rejected evidence has a dedicated danger status without conflating candidate evidence",
+);
+assert.match(
+  documentReaderSource,
+  /title="Reading preferences"[\s\S]*?aria-label="Reading preferences"/,
+  "the shared reading-preferences trigger has matching visible and accessible names",
+);
+assert.match(
+  source,
   /context=\{[\s\S]*?<p title=\{mission\.intent\}>\{mission\.intent\}<\/p>[\s\S]*?\}/,
   "mission intent is passed through as authored context with its full title",
 );
@@ -260,6 +298,49 @@ assert.match(
 // direction overflowed the 268px rail by 1964px with cards clipped; column
 // direction overflows by 0 and every card renders at the full 268px.
 const css = await readFile(new URL("../../styles/research-reader.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /--research-evidence-edge-reserve:\s*calc\(\s*var\(--space-10\) \+ var\(--space-3\)\s*\)/,
+  "wide Research readers reserve the evidence edge outside the prose measure",
+);
+assert.match(
+  css,
+  /\.research-reader \.rr-doc__column[\s\S]*?var\(--document-reader-prose-measure\) \+[\s\S]*?var\(--research-evidence-edge-reserve\)/,
+  "the paper adds the provenance reserve to the reading preference measure",
+);
+assert.match(
+  css,
+  /@container document-reader \(max-width: 52rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
+  "compact readers remove the hidden evidence-edge reserve",
+);
+for (const rejectedSelector of [
+  ".research-provenance-edge__item--muted",
+  ".rr-sref--muted",
+  ".rr-src--rejected",
+  ".rr-src--rejected.is-selected",
+  ".rr-srcmini--rejected",
+]) {
+  const start = css.indexOf(rejectedSelector);
+  assert.notEqual(start, -1, `${rejectedSelector} exists`);
+  const rule = css.slice(start, css.indexOf("}", start) + 1);
+  assert.match(
+    rule,
+    /var\(--color-danger\)/,
+    `${rejectedSelector} derives its tint from the danger semantic`,
+  );
+}
+const mutedStatus = css.match(/^\.rr-srcstat--muted \{([^}]*)\}/m);
+assert.ok(mutedStatus, "the candidate status tone still exists");
+assert.doesNotMatch(
+  mutedStatus[1],
+  /--color-danger/,
+  "candidate status text does not inherit the rejected danger semantic",
+);
+assert.match(
+  css,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*?\.rr-inline-ref[\s\S]*?\.rr-krfocus[\s\S]*?document-reader__preferences-trigger[\s\S]*?min-height:\s*var\(--touch-target\)[\s\S]*?\.rr-inline-ref[\s\S]*?\.rr-krfocus[\s\S]*?\.rr-btn--accent[\s\S]*?document-reader__preferences-trigger[\s\S]*?min-width:\s*var\(--touch-target\)/,
+  "coarse-pointer Research controls meet the touch target in both dimensions",
+);
 for (const duplicatedBaseSelector of [
   ".rr-doc h1",
   ".rr-doc h2",

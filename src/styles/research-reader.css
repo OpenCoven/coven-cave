@@ -291,6 +291,10 @@
 
 .research-reader .rr-doc {
   --rr-paper-pad-inline: var(--space-12);
+  --research-paper-border-width: 1px;
+  --research-evidence-edge-reserve: calc(
+    var(--space-10) + var(--space-3)
+  );
   padding: var(--space-8) var(--space-6);
   background: var(--bg-base);
 }
@@ -300,8 +304,11 @@
     100%,
     calc(
       var(--document-reader-prose-measure) +
+        var(--research-evidence-edge-reserve) +
         var(--rr-paper-pad-inline) +
-        var(--rr-paper-pad-inline)
+        var(--rr-paper-pad-inline) +
+        var(--research-paper-border-width) +
+        var(--research-paper-border-width)
     )
   );
   padding: 0 0 var(--space-3);
@@ -324,14 +331,17 @@
     100%,
     calc(
       var(--document-reader-prose-measure) +
+        var(--research-evidence-edge-reserve) +
         var(--rr-paper-pad-inline) +
-        var(--rr-paper-pad-inline)
+        var(--rr-paper-pad-inline) +
+        var(--research-paper-border-width) +
+        var(--research-paper-border-width)
     )
   );
   max-width: none;
   min-height: 100%;
   padding: var(--space-10) var(--rr-paper-pad-inline) var(--space-12);
-  border: 1px solid var(--border-hairline);
+  border: var(--research-paper-border-width) solid var(--border-hairline);
   border-radius: var(--radius-panel);
   background: var(--bg-raised);
 }
@@ -571,12 +581,36 @@
   border-style: dashed;
   border-color: color-mix(
     in oklch,
-    var(--text-muted) 38%,
+    var(--color-danger) 38%,
     var(--border-hairline)
   );
-  background: color-mix(in oklch, var(--text-muted) 12%, transparent);
-  color: var(--text-muted);
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
   text-decoration: line-through;
+}
+
+.research-provenance-edge__item--muted:hover,
+.research-provenance-edge__item--muted.is-selected {
+  border-style: dashed;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 42%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+}
+
+.research-provenance-edge__item--muted.is-selected {
+  box-shadow: inset 0 0 0 var(--ring-width) var(--color-danger);
 }
 
 .research-provenance-edge__item--unresolved {
@@ -638,9 +672,18 @@
 
 .rr-sref--muted {
   border-style: dashed;
-  border-color: var(--border-hairline);
-  background: color-mix(in oklch, var(--text-muted) 12%, transparent);
-  color: var(--text-muted);
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 38%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+  text-decoration: line-through;
 }
 
 .rr-sref.is-match {
@@ -660,6 +703,22 @@
     var(--color-warning) 28%,
     transparent
   );
+}
+
+.rr-sref--muted.is-match {
+  border-style: dashed;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 42%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+  box-shadow: inset 0 0 0 var(--ring-width) var(--color-danger);
 }
 
 /* Tables keep evidence attached to the row and out of the reading cell. */
@@ -919,6 +978,16 @@
 
 .rr-src--rejected {
   border-style: dashed;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 38%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
 }
 
 .rr-src[data-open="true"] {
@@ -942,6 +1011,26 @@
 .rr-src--warn.is-selected {
   border-color: var(--color-warning);
   box-shadow: inset var(--ring-width) 0 0 var(--color-warning);
+}
+
+.rr-src--rejected:hover,
+.rr-src--rejected[data-open="true"],
+.rr-src--rejected.is-selected {
+  border-style: dashed;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 42%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+}
+
+.rr-src--rejected.is-selected {
+  box-shadow: inset var(--ring-width) 0 0 var(--color-danger);
 }
 
 .rr-src__toggle {
@@ -973,7 +1062,8 @@
 }
 
 .rr-src--rejected .rr-src__title {
-  color: var(--text-secondary);
+  color: var(--color-danger);
+  text-decoration: line-through;
 }
 
 .rr-src__meta {
@@ -1002,6 +1092,10 @@
 
 .rr-srcstat--muted {
   color: var(--text-muted);
+}
+
+.rr-srcstat--rejected {
+  color: var(--color-danger);
 }
 
 .rr-srccaret {
@@ -1039,6 +1133,10 @@
 
 .rr-src--warn .rr-sd-quote {
   border-left-color: var(--color-warning);
+}
+
+.rr-src--rejected .rr-sd-quote {
+  border-left-color: var(--color-danger);
 }
 
 .rr-sd-row {
@@ -1190,6 +1288,25 @@
 
 .rr-srcmini--rejected {
   border-style: dashed;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 38%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+}
+
+.rr-srcmini--rejected:hover {
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 42%,
+    var(--border-hairline)
+  );
 }
 
 .rr-srcmini__title {
@@ -1204,6 +1321,11 @@
   margin-top: var(--space-1);
   color: var(--text-muted);
   font: 400 var(--text-2xs) var(--font-mono);
+}
+
+.rr-srcmini--rejected .rr-srcmini__title {
+  color: var(--color-danger);
+  text-decoration: line-through;
 }
 
 .rr-cf {
@@ -1398,6 +1520,10 @@
 
 /* Provenance has one focusable representation at the reading breakpoint. */
 @container document-reader (max-width: 52rem) {
+  .research-reader .rr-doc {
+    --research-evidence-edge-reserve: 0;
+  }
+
   .research-reader[data-toc="true"]
     .document-reader--rail
     .document-reader__toc {
@@ -1505,6 +1631,8 @@
   .research-evidence-inspector__close,
   .research-provenance-edge__item,
   .rr-inline-ref,
+  .rr-krfocus,
+  .research-reader .document-reader__preferences-trigger,
   .rr-sd-btn,
   .rr-sd-supportlink {
     min-height: var(--touch-target);
@@ -1513,7 +1641,11 @@
   .rr-iconbtn,
   .research-reader .rr-head__actions > .ui-icon-btn,
   .research-evidence-inspector__close,
-  .research-provenance-edge__item {
+  .research-provenance-edge__item,
+  .rr-inline-ref,
+  .rr-krfocus,
+  .rr-btn--accent,
+  .research-reader .document-reader__preferences-trigger {
     min-width: var(--touch-target);
   }
 

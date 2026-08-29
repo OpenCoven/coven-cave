@@ -437,6 +437,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
               ref={preferencesTriggerRef}
               type="button"
               className="document-reader__preferences-trigger focus-ring"
+              title="Reading preferences"
               aria-label="Reading preferences"
               aria-haspopup="dialog"
               aria-expanded={preferencesOpen}
