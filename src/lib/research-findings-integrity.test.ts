@@ -209,6 +209,15 @@ test("reference-style links around inline images do not expose image labels", ()
   assert.equal(integrity.summary.kind, "none");
 });
 
+test("reference-style links around images preserve their visible source suffix", () => {
+  const integrity = deriveResearchFindingsIntegrity("[![alt](image.png)][S1]", [
+    source("S1", "used"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("undefined reference-style links preserve visible source suffixes", () => {
   const integrity = deriveResearchFindingsIntegrity("[paper][S1]", []);
   assert.deepEqual(integrity.referencedIds, ["S1"]);
@@ -253,7 +262,7 @@ test("nested visible citations remain unresolved without ledger rows", () => {
 });
 
 test("unsupported container fences remain visible like parser prose", () => {
-  const markdown = "> ~~~\n> [S1] C2\n> ~~~\n> ```\n> [S9]\n> ```";
+  const markdown = "> ~~~\n> [S1] C2\n> ~~~\n>  ```\n> [S9]\n>  ```";
   const sources = [source("S1", "used")];
   assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1", "C2"]);
 
