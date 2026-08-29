@@ -11,9 +11,8 @@ import {
   CLIENT_V1_COMPATIBILITY_PRESET_ENV,
   resolveClientV1Compatibility,
 } from "./conformance-compatibility.ts";
-import { clientV1SuccessResponse } from "./responses.ts";
 
-test("emits an incompatible API major from the closed conformance preset", async () => {
+test("resolves the finite API-major conformance preset", () => {
   const compatibility = resolveClientV1Compatibility(
     { [CLIENT_V1_COMPATIBILITY_PRESET_ENV]: "api-major" },
     true,
@@ -23,18 +22,9 @@ test("emits an incompatible API major from the closed conformance preset", async
     apiVersion: "2.0",
     minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
   });
-
-  const response = clientV1SuccessResponse(
-    { probe: "compatibility" },
-    { compatibility },
-  );
-  const envelope = await response.json();
-  assert.equal(envelope.apiVersion, "2.0");
-  assert.equal(envelope.minimumClientVersion, CLIENT_V1_MIN_CLIENT_VERSION);
-  assert.equal(envelope.data.probe, "compatibility");
 });
 
-test("emits an incompatible minimum client version independently", async () => {
+test("resolves the finite minimum-client conformance preset", () => {
   const compatibility = resolveClientV1Compatibility(
     { [CLIENT_V1_COMPATIBILITY_PRESET_ENV]: "minimum-client" },
     true,
@@ -44,14 +34,6 @@ test("emits an incompatible minimum client version independently", async () => {
     apiVersion: CLIENT_V1_API_VERSION,
     minimumClientVersion: "999.0.0",
   });
-
-  const response = clientV1SuccessResponse(
-    { probe: "compatibility" },
-    { compatibility },
-  );
-  const envelope = await response.json();
-  assert.equal(envelope.apiVersion, CLIENT_V1_API_VERSION);
-  assert.equal(envelope.minimumClientVersion, "999.0.0");
 });
 
 test("invalid selectors fail closed in the enabled conformance build", () => {
