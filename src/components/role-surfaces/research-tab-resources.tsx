@@ -56,6 +56,7 @@ import {
   type XArticleIngestFailure,
 } from "@/lib/x-articles";
 import type { ResearchTabProps } from "./researcher-surface";
+import { ResearchGithubRepoViewer } from "./research-github-repo-viewer";
 import { ResearchXSources } from "./research-x-sources";
 import { useResearchLinks } from "./use-research-links";
 import { useResearchResources } from "./use-research-resources";
@@ -543,6 +544,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           {links.length} saved · from pastes, /save, and run citations
         </span>
       </header>
+
+      {/* cave-vy5vp: browse a GitHub repository's files and README. The fetch
+          is opt-in (no network until "Load repository"), which is the remote-
+          content consent surface for the Research Desk. */}
+      <ResearchGithubRepoViewer openUrl={context.openUrl} />
 
       {/* cave-lsj8u: src/app/api/x/ never landed, so this section's every
           fetch (/api/x/sources, /posts/search, /posts/lookup) 404s and it
