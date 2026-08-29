@@ -15,6 +15,8 @@ import {
   buildResearchChatRunInput,
   formatResearchRunStarted,
 } from "@/lib/research-chat-command";
+import { researchRunBootstrapSnapshot } from "@/lib/research-run-surface";
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -261,6 +263,11 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  APPROVE_MISSION_MESSAGE,
+  DENY_MISSION_MESSAGE,
+  isAutoApprovalPending,
+} from "@/lib/auto-mission-approval";
 import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
@@ -2258,11 +2265,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setAutoMission(record);
   }, [sessionId]);
 
-  // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
-  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
-  // leaves the mission armed (answering it resumes the work); failed and done
-  // end the mission and flag feedback as pending.
+  // Watch settled assistant turns for a `<coven:auto-status>` marker
+  // (auto-status-blocks.ts). Only needs-approval/blocked/failed/done draw the
+  // human back in — see buildAutoModeDirective. needs-approval and blocked
+  // fire a response-needed inbox item and leave the mission armed (answering
+  // it resumes the work); failed and done end the mission and flag feedback as
+  // pending.
   useEffect(() => {
     const pings = pendingAutoMissionPings(autoMission, turns);
     if (!pings.length || !autoMission) return;
@@ -2271,8 +2279,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     let ended = false;
     for (const ping of pings) {
       next.notified.push(ping.turnId);
-      const blocked = ping.state === "blocked";
-      if (!blocked) {
+      const attention = ping.state === "needs-approval" || ping.state === "blocked";
+      if (!attention) {
         ended = true;
         next = {
           ...next,
@@ -2285,12 +2293,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          kind: blocked ? "response-needed" : "agent",
-          title: blocked
-            ? "Auto mission needs you"
-            : ping.state === "failed"
-              ? "Auto mission couldn't finish"
-              : "Auto mission complete",
+          kind: attention ? "response-needed" : "agent",
+          title:
+            ping.state === "needs-approval"
+              ? "Auto mission needs your go-ahead"
+              : ping.state === "blocked"
+                ? "Auto mission needs you"
+                : ping.state === "failed"
+                  ? "Auto mission couldn't finish"
+                  : "Auto mission complete",
           body: ping.note || autoMission.mission,
           source: "agent",
           familiarId: familiar.id,
@@ -5093,12 +5104,55 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       setInput("");
       void createResearchMission(built.input)
-        .then((result) => {
+        .then(async (result) => {
           if (!result.ok || !result.mission) {
             appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
             return;
           }
-          appendSystem(formatResearchRunStarted(result.mission));
+          // Persist the run id on the turns, not a frozen copy of the card's UI
+          // state (#4808): after a reload the inline projection rehydrates from
+          // the canonical ResearchMission via researchRunId.
+          const now = new Date().toISOString();
+          const targetSessionId = currentSessionRef.current;
+          const live = targetSessionId ? readLiveChatGeneration(targetSessionId) : null;
+          const parentId = (live?.activeLeafId ?? activeLeafId) || null;
+          const userTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId,
+            role: "user",
+            text: `/research ${args}`,
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          const assistantTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId: userTurn.id,
+            role: "assistant",
+            text: formatResearchRunStarted(result.mission),
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+          // The appended pair becomes the active path (same as the /image flow) so
+          // the confirmation and its run card render immediately.
+          setActiveLeafId(assistantTurn.id);
+          if (targetSessionId) {
+            invalidateConversation(targetSessionId);
+            try {
+              await fetch(`/api/chat/conversation/${encodeURIComponent(targetSessionId)}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  turns: [userTurn, assistantTurn],
+                  activeLeafId: assistantTurn.id,
+                  familiarId: familiar.id,
+                  harness: modelHarness,
+                }),
+              });
+            } catch {
+              // Optimistic — the transcript already shows the run card.
+            }
+          }
         })
         .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
@@ -6309,6 +6363,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Reassigned every render so TranscriptRows — which deliberately does NOT
   // re-render on composer keystrokes — always invokes closures that read the
   // CURRENT busy/turns/attachments state at call time. See TranscriptHandlers.
+  // Approve/deny for a `needs-approval` mission (cave-l9hsu): both send an
+  // inline answer through the ordinary send machinery — the same path a typed
+  // reply takes — so the familiar resumes in place. Approve is the go-ahead;
+  // deny keeps the mission armed and lets the familiar respond to the no.
+  const approveAutoMission = () => {
+    announce("Mission approved — resuming.", "polite");
+    void send(APPROVE_MISSION_MESSAGE);
+  };
+  const denyAutoMission = () => {
+    announce("Mission denied — resuming.", "polite");
+    void send(DENY_MISSION_MESSAGE);
+  };
   const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
   transcriptHandlersRef.current = {
     siblingsFor,
@@ -6320,6 +6386,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
+    approveAutoMission,
+    denyAutoMission,
   };
   transcriptHandlersRef.current.cancelSend = cancelSend;
 
@@ -8255,6 +8323,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             groupedTurns={groupedTurns}
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
+            autoMission={autoMission}
             historyExpanded={historyExpanded}
             foldOpen={foldOpen}
             onToggleFold={toggleFold}
@@ -8741,6 +8810,8 @@ type TranscriptHandlers = {
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   cancelSend?: () => void;
   send: (override?: string) => Promise<void>;
+  approveAutoMission: () => void;
+  denyAutoMission: () => void;
 };
 
 /**
@@ -8777,10 +8848,12 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl,
   onOpenPreview,
   handlersRef,
+  autoMission,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
+  autoMission: AutoMissionRecord | null;
   historyExpanded: boolean;
   /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
    *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
@@ -8882,6 +8955,7 @@ const TranscriptRows = memo(function TranscriptRows({
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
+          autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
         />
       );
       if (!gapLabel) return row;
@@ -8952,6 +9026,7 @@ const TranscriptRows = memo(function TranscriptRows({
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
+              autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
             />
           );
         })}
@@ -9007,6 +9082,7 @@ function TurnRowImpl({
   handlersRef,
   feedbackContext,
   branchNav,
+  autoApprovalPending = false,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
@@ -9046,6 +9122,9 @@ function TurnRowImpl({
   feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
+  /** True when this turn's `needs-approval` marker is the live, unanswered one —
+   *  the AutoStatusCard then renders the approve/deny affordance. */
+  autoApprovalPending?: boolean;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -9267,6 +9346,27 @@ function TurnRowImpl({
       ghFamiliar,
     );
     renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+
+    // A /research-started run leaves no <coven:research> marker in the turn
+    // text — the run id is persisted on the turn instead. Rehydrate the inline
+    // projection from the canonical mission API through the bootstrap snapshot
+    // so the card survives reload and stays a view of the same run the Research
+    // Desk works on (#4808).
+    const researchRunId = turn.researchRunId;
+    if (turn.role === "assistant" && researchRunId && currentProjection.researchRuns.length === 0) {
+      const researchBlock: MessageBubbleSegment = {
+        kind: "block",
+        key: `research-${researchRunId}`,
+        node: (
+          <div className="my-3">
+            <ResearchRunInlineCard snapshot={researchRunBootstrapSnapshot(researchRunId)} />
+          </div>
+        ),
+      };
+      renderSegments = renderSegments
+        ? [...renderSegments, researchBlock]
+        : [{ kind: "text", text: visible }, researchBlock];
+    }
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
@@ -9375,7 +9475,12 @@ function TurnRowImpl({
       ) : null}
       {autoStatusUpdate ? (
         <div className="mt-2">
-          <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
+          <AutoStatusCard
+            state={autoStatusUpdate.state}
+            note={autoStatusUpdate.note}
+            onApprove={autoApprovalPending ? () => handlersRef.current?.approveAutoMission() : undefined}
+            onDeny={autoApprovalPending ? () => handlersRef.current?.denyAutoMission() : undefined}
+          />
         </div>
       ) : null}
       {/* Edit cards stay visible rather than being buried in activity. */}
@@ -10208,6 +10313,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // every parent render and would defeat memoization.
     prev.branchNav?.index === next.branchNav?.index &&
     prev.branchNav?.total === next.branchNav?.total &&
+    prev.autoApprovalPending === next.autoApprovalPending &&
     // Feedback stamp: compare by value — the memoized context object gets a
     // fresh identity when the model/runtime actually changes.
     prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&

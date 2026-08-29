@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
@@ -34,6 +34,14 @@ import {
 } from "@/components/settings-sections";
 import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
 import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
+import {
+  broadenToGlobal,
+  parseSearchQuery,
+  searchQueryFromUrlParams,
+  searchQueryToUrlString,
+} from "@/lib/search-query";
+import { chipLabelFor, type SearchFilter, type SearchQueryState, type SearchScope } from "@/lib/search-filters";
+import { deriveImplicitScopes } from "@/lib/search-context";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 
@@ -70,7 +78,8 @@ type PaletteIntent =
       kind: "open-setting";
       section: SettingsIndexEntry["section"];
       group?: string;
-    };
+    }
+  | { kind: "open-href"; href: string };
 
 type Card = {
   id: string;
@@ -123,6 +132,11 @@ type Props = {
   }[];
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
+  /** Active workspace state used to derive implicit context scopes (cave-ychtl.6). */
+  activeProjectId?: string | null;
+  activeProjectName?: string | null;
+  activeSessionId?: string | null;
+  runtime?: string | null;
   onIntent: (intent: PaletteIntent) => void;
 };
 
@@ -145,7 +159,39 @@ type Row =
   | { id: string; kind: "create-task"; title: string }
   | { id: string; kind: "conversation-hit"; hit: ConversationHit }
   | { id: string; kind: "setting"; entry: SettingsIndexEntry }
-  | { id: string; kind: "salem-answer"; query: string };
+  | { id: string; kind: "salem-answer"; query: string }
+  | { id: string; kind: "search-result"; result: GlobalSearchHit };
+
+/** A coordinator result row rendered by the global-search mode (cave-ychtl.6). */
+type GlobalSearchHit = {
+  id: string;
+  providerId: string;
+  entityType: string;
+  title: string;
+  excerpt: string;
+  href: string;
+  status: string | null;
+};
+
+const scopeKey = (scope: SearchScope) => `${scope.dimension}:${scope.id}`;
+const filterKey = (filter: SearchFilter) => `${filter.key}=${String(filter.value)}`;
+
+/** Icon per global-search entity type (cave-ychtl.6). */
+const resultIcon = (entityType: string): IconName => {
+  switch (entityType) {
+    case "project": return "ph:folder-open-bold";
+    case "familiar": return "ph:user-circle";
+    case "task": return "ph:check-square";
+    case "file": return "ph:file-text-bold";
+    case "session":
+    case "chat": return "ph:chat-circle-dots-bold";
+    case "command": return "ph:terminal-window";
+    case "setting": return "ph:gear-six";
+    case "destination": return "ph:compass";
+    case "memory": return "ph:bookmark-simple";
+    default: return "ph:magnifying-glass";
+  }
+};
 
 const RESULT_LIMITS = {
   familiar: 6,
@@ -186,6 +232,10 @@ export function CommandPalette({
   roleSurfaces,
   initialQuery = "",
   onQueryChange,
+  activeProjectId,
+  activeProjectName,
+  activeSessionId,
+  runtime,
   onIntent,
 }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
@@ -207,11 +257,24 @@ export function CommandPalette({
   const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
   const [salemError, setSalemError] = useState<string | null>(null);
   const [contentHits, setContentHits] = useState<ConversationHit[]>([]);
+  // Global-search mode state (cave-ychtl.6). Active when the query carries a
+  // structured filter, a shared link was restored, or Cmd/Ctrl+Enter broadened
+  // the search; results then come from the coordinator via /api/search.
+  const [globalMode, setGlobalMode] = useState(false);
+  const [globalBroadened, setGlobalBroadened] = useState(false);
+  const [linkState, setLinkState] = useState<SearchQueryState | null>(null);
+  const [removedScopeKeys, setRemovedScopeKeys] = useState<Set<string>>(new Set());
+  const [removedFilterKeys, setRemovedFilterKeys] = useState<Set<string>>(new Set());
+  const [globalResults, setGlobalResults] = useState<GlobalSearchHit[]>([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [globalPartial, setGlobalPartial] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const keys = useKeySymbols();
 
-  useFocusTrap(open, dialogRef, { onEscape: onClose });
+
 
   // Conversation content search (CHAT-D9-02 backend, surfaced here). Plain,
   // unscoped queries of length ≥2 hit /api/chat/search, debounced ~250ms with a
@@ -249,6 +312,199 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
   };
+
+  // ── Global-search mode (cave-ychtl.6) ────────────────────────────────────
+  // Implicit context scopes derived from the active workspace state. These are
+  // the chips Cmd/Ctrl+Enter removes; explicit filters always survive.
+  const implicitScopes = useMemo(
+    () =>
+      deriveImplicitScopes({
+        activeFamiliarId,
+        familiars,
+        activeProjectId,
+        activeProjectName,
+        activeSessionId,
+        runtime,
+      }),
+    [activeFamiliarId, familiars, activeProjectId, activeProjectName, activeSessionId, runtime],
+  );
+
+  // A restored shared link is authoritative until the text is edited; typing
+  // past its text re-parses from scratch (the link's chips only describe the
+  // exact query it was shared with).
+  const liveLinkState = linkState !== null && query === linkState.text ? linkState : null;
+
+  const parsed = useMemo(
+    () => parseSearchQuery(query, { scopes: implicitScopes }),
+    [query, implicitScopes],
+  );
+
+  // Effective state for the request: the restored link, or the parsed query
+  // minus whatever the user removed via chip buttons / Backspace.
+  const effectiveState = useMemo(() => {
+    if (liveLinkState) return liveLinkState;
+    const scopes = parsed.state.scopes.filter((scope) => !removedScopeKeys.has(scopeKey(scope)));
+    const filters = parsed.state.filters.filter((filter) => !removedFilterKeys.has(filterKey(filter)));
+    return { ...parsed.state, scopes, filters };
+  }, [liveLinkState, parsed, removedScopeKeys, removedFilterKeys]);
+
+  // Cmd/Ctrl+Enter broadens: only implicit scopes go, explicit filters stay.
+  const effectiveGlobalState = useMemo(() => {
+    if (!effectiveState) return null;
+    return globalBroadened ? broadenToGlobal(effectiveState) : effectiveState;
+  }, [effectiveState, globalBroadened]);
+
+  // Global mode is on when the query is structured (any filter), a shared link
+  // was restored, or the user explicitly broadened. Plain text keeps the rich
+  // palette rows.
+  const globalModeActive =
+    globalMode || liveLinkState !== null || parsed.state.filters.length > 0;
+
+  const globalStateKey = useMemo(
+    () => (globalModeActive && effectiveGlobalState ? JSON.stringify(effectiveGlobalState) : null),
+    [globalModeActive, effectiveGlobalState],
+  );
+
+  // Coordinator-backed results, debounced and abortable (retype cancels).
+  useEffect(() => {
+    if (!open || !globalStateKey || !effectiveGlobalState) return;
+    const controller = new AbortController();
+    setGlobalLoading(true);
+    setGlobalError(null);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: effectiveGlobalState, limit: 20 }),
+          signal: controller.signal,
+        });
+        const json = (await res.json().catch(() => ({ ok: false }))) as {
+          ok?: boolean;
+          results?: Array<{
+            document: {
+              id: string;
+              providerId: string;
+              entityType: string;
+              title: string;
+              excerpt: string;
+              status: string | null;
+              action?: { href?: string };
+            };
+          }>;
+          partial?: boolean;
+        };
+        if (controller.signal.aborted) return;
+        if (!json.ok) {
+          setGlobalError("Search is unavailable right now.");
+        } else {
+          // The coordinator returns RankedResults (document nested); the
+          // surface only needs the presentation fields.
+          setGlobalResults(
+            (json.results ?? []).map((row) => ({
+              id: row.document.id,
+              providerId: row.document.providerId,
+              entityType: row.document.entityType,
+              title: row.document.title,
+              excerpt: row.document.excerpt,
+              href: row.document.action?.href ?? "",
+              status: row.document.status,
+            })),
+          );
+          setGlobalPartial(Boolean(json.partial));
+        }
+      } catch {
+        if (!controller.signal.aborted) setGlobalError("Search is unavailable right now.");
+      } finally {
+        if (!controller.signal.aborted) setGlobalLoading(false);
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+    // effectiveGlobalState is stable because it derives from the key string.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, globalStateKey]);
+
+  const removeScopeChip = (scope: SearchScope) => {
+    setRemovedScopeKeys((previous) => {
+      const next = new Set(previous);
+      next.add(scopeKey(scope));
+      return next;
+    });
+    setActiveIdx(0);
+  };
+
+  const removeFilterChip = (filter: SearchFilter) => {
+    setRemovedFilterKeys((previous) => {
+      const next = new Set(previous);
+      next.add(filterKey(filter));
+      return next;
+    });
+    setActiveIdx(0);
+  };
+
+  // Backspace with empty free text removes the final chip (scope or filter).
+  const removeLastChip = () => {
+    const state = effectiveState;
+    if (!state) return;
+    const chips = [
+      ...state.filters.map((filter) => ({ kind: "filter" as const, filter })),
+      ...state.scopes.map((scope) => ({ kind: "scope" as const, scope })),
+    ];
+    const last = chips[chips.length - 1];
+    if (!last) return;
+    if (last.kind === "scope") removeScopeChip(last.scope);
+    else removeFilterChip(last.filter);
+  };
+
+  // Cmd/Ctrl+Enter: drop every implicit scope and search globally.
+  const broadenGlobal = () => {
+    setGlobalMode(true);
+    setGlobalBroadened(true);
+    setActiveIdx(0);
+    inputRef.current?.focus();
+  };
+
+  const copySearchLink = async () => {
+    const state = effectiveGlobalState ?? effectiveState;
+    if (!state) return;
+    if (typeof window === "undefined" || !window.location) return;
+    const url = `${window.location.origin}${window.location.pathname}?${searchQueryToUrlString(state)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      /* clipboard unavailable — the link stays visible in the URL */
+    }
+  };
+
+  // Close while serializing the canonical search state into the URL. Transient
+  // typing never touches history; only a committed close (navigate, scrim
+  // dismiss) writes, and only when the search is structured/global — a plain
+  // palette use must not clobber unrelated query params the page already has.
+  const closeWithState = () => {
+    if (globalModeActive && effectiveGlobalState) {
+      const state = effectiveGlobalState;
+      const shareWorthy =
+        state.text.trim() !== "" ||
+        state.filters.length > 0 ||
+        state.scopes.length > 0 ||
+        state.phrases.length > 0;
+      if (shareWorthy) {
+        if (typeof window !== "undefined" && window.location && window.history) {
+          const url = new URL(window.location.href);
+          url.search = searchQueryToUrlString(state);
+          window.history.replaceState(null, "", url.toString());
+        }
+      }
+    }
+    onClose();
+  };
+
+  useFocusTrap(open, dialogRef, { onEscape: closeWithState });
 
   // Fetch the searchable corpora once on first open. Cheap calls; refreshed
   // every time the palette opens so the index doesn't go stale.
@@ -322,7 +578,32 @@ export function CommandPalette({
 
   useEffect(() => {
     if (!open) return;
-    setQuery(initialQuery);
+    // Shared-link restoration (cave-ychtl.6): search params in the URL restore
+    // the same chips, text, and presentation. The restored text seeds the
+    // input; linkState keeps the restored filters/scopes authoritative until
+    // the text is edited.
+    // Guarded: react-test-renderer mounts the palette without a DOM location.
+    const params =
+      typeof window !== "undefined" && window.location
+        ? new URLSearchParams(window.location.search)
+        : new URLSearchParams();
+    const hasSearchState = ["v", "q", "phrase", "scope", "type", "view"].some((key) => params.has(key));
+    const restored = searchQueryFromUrlParams(params);
+    const restorable =
+      hasSearchState &&
+      (restored.text.trim() !== "" ||
+        restored.filters.length > 0 ||
+        restored.scopes.length > 0 ||
+        restored.presentation !== "top");
+    setLinkState(restorable ? restored : null);
+    setGlobalMode(false);
+    setGlobalBroadened(false);
+    setRemovedScopeKeys(new Set());
+    setRemovedFilterKeys(new Set());
+    setGlobalResults([]);
+    setGlobalError(null);
+    setCopiedLink(false);
+    setQuery(restorable ? restored.text : initialQuery);
     setCategory("all");
     setActiveIdx(0);
     setSalemAnswer(null);
@@ -672,13 +953,27 @@ export function CommandPalette({
     () => filterPaletteRows(allRows, category) as Row[],
     [allRows, category],
   );
+
+  // Global-search rows (cave-ychtl.6): coordinator results replace the palette
+  // corpus while the query is structured, link-restored, or broadened.
+  const globalRows: Row[] = useMemo(
+    () =>
+      globalResults.map((result) => ({
+        id: `search-result:${result.providerId}:${result.id}`,
+        kind: "search-result",
+        result,
+      })),
+    [globalResults],
+  );
+
+  const displayRows = globalModeActive ? globalRows : rows;
   const resultSummary = useMemo(
     () => paletteResultSummary(rows, category, parseFamiliarToken(query).rest),
     [rows, category, query],
   );
 
   useEffect(() => {
-    if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
+    if (activeIdx >= displayRows.length) setActiveIdx(Math.max(0, displayRows.length - 1));
   }, [rows.length, activeIdx]);
 
   // Visible familiar-scope state. When the query carries an `@token`, surface a
@@ -792,10 +1087,12 @@ export function CommandPalette({
         section: row.entry.section,
         ...(row.entry.group ? { group: row.entry.group } : {}),
       });
+    } else if (row.kind === "search-result") {
+      if (row.result.href) onIntent({ kind: "open-href", href: row.result.href });
     } else {
       onIntent(row.intent);
     }
-    onClose();
+    closeWithState();
   };
 
   const onComposerKey = (e: React.KeyboardEvent) => {
@@ -809,10 +1106,19 @@ export function CommandPalette({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      // Command/Control+Enter — remove ONLY implicit context scopes. Explicit
+      // filters survive into the global query (cave-ychtl.6).
+      e.preventDefault();
+      broadenGlobal();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const row = rows[activeIdx];
+      const row = displayRows[activeIdx];
       if (row) fire(row);
+    } else if (e.key === "Backspace" && query === "") {
+      // Free text empty: Backspace removes the final chip instead of doing
+      // nothing (cave-ychtl.6).
+      removeLastChip();
     }
   };
 
@@ -891,11 +1197,11 @@ export function CommandPalette({
             placeholder="Search Cave…"
             role="combobox"
             aria-label="Search and jump to anything"
-            aria-expanded={rows.length > 0}
+            aria-expanded={displayRows.length > 0}
             aria-autocomplete="list"
             aria-controls="command-palette-listbox"
             aria-activedescendant={
-              rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
+              displayRows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
             }
             className="command-palette__input"
           />
@@ -965,6 +1271,61 @@ export function CommandPalette({
             )}
           </div>
         ) : null}
+        {globalModeActive ? (
+          <div
+            role="group"
+            aria-label="Active search filters"
+            className="flex flex-wrap items-center gap-1.5 border-b border-[var(--border-hairline)] px-4 py-2"
+          >
+            {effectiveGlobalState?.scopes.map((scope) => (
+              <span
+                key={scopeKey(scope)}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
+              >
+                {scope.label}
+                <button
+                  type="button"
+                  className="focus-ring rounded-full p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  aria-label={`Remove scope ${scope.label}`}
+                  onClick={() => removeScopeChip(scope)}
+                >
+                  <Icon name="ph:x" width={10} aria-hidden />
+                </button>
+              </span>
+            ))}
+            {effectiveGlobalState?.filters.map((filter) => (
+              <span
+                key={filterKey(filter)}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-xs)] text-[var(--text-primary)]"
+              >
+                {chipLabelFor(filter)}
+                <button
+                  type="button"
+                  className="focus-ring rounded-full p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  aria-label={`Remove filter ${chipLabelFor(filter)}`}
+                  onClick={() => removeFilterChip(filter)}
+                >
+                  <Icon name="ph:x" width={10} aria-hidden />
+                </button>
+              </span>
+            ))}
+            {globalBroadened ? (
+              <span
+                role="status"
+                className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+              >
+                Searching all of Cave — context removed
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              onClick={() => void copySearchLink()}
+            >
+              {copiedLink ? "Link copied" : "Copy search link"}
+            </button>
+          </div>
+        ) : null}
         {scopeInfo ? (
           <div
             role="status"
@@ -1025,8 +1386,25 @@ export function CommandPalette({
             </button>
           ))}
         </div>
+        {globalModeActive && globalLoading ? (
+          <div role="status" className="border-b border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            Searching…
+          </div>
+        ) : null}
+        {globalModeActive && globalError ? (
+          <div role="alert" className="border-b border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-danger)]">
+            {globalError}
+          </div>
+        ) : null}
+        {globalModeActive && globalPartial && !globalError ? (
+          <div role="status" className="border-b border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]">
+            Some sources couldn&apos;t be searched — results may be partial.
+          </div>
+        ) : null}
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {resultSummary}
+          {globalModeActive
+            ? `${globalResults.length} result${globalResults.length === 1 ? "" : "s"} in global search`
+            : resultSummary}
         </div>
         {canonicalMemoryState.state === "error" ? (
           <div
@@ -1041,21 +1419,27 @@ export function CommandPalette({
           role="listbox"
           className="command-palette__results"
         >
-          {rows.length === 0 ? (
+          {displayRows.length === 0 ? (
             <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
-              <p>{resultSummary}</p>
-              {category !== "all" ? (
-                <button
-                  type="button"
-                  className="focus-ring mt-2 rounded-full border border-[var(--border-hairline)] px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                  onClick={() => setCategory("all")}
-                >
-                  Search all categories
-                </button>
-              ) : null}
+              {globalModeActive ? (
+                <p>{globalLoading ? "Searching…" : globalError ? globalError : "No matches across Cave."}</p>
+              ) : (
+                <>
+                  <p>{resultSummary}</p>
+                  {category !== "all" ? (
+                    <button
+                      type="button"
+                      className="focus-ring mt-2 rounded-full border border-[var(--border-hairline)] px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      onClick={() => setCategory("all")}
+                    >
+                      Search all categories
+                    </button>
+                  ) : null}
+                </>
+              )}
             </li>
           ) : null}
-          {rows.map((row, i) => {
+          {displayRows.map((row, i) => {
             const active = i === activeIdx;
             // In browse mode, print a section header above the first row of each
             // group. Headers are role="presentation", so they stay out of the
@@ -1235,6 +1619,20 @@ export function CommandPalette({
                         </span>
                       </span>
                       {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">ask</span> : null}
+                    </>
+                  ) : null}
+                  {row.kind === "search-result" ? (
+                    <>
+                      <Icon name={resultIcon(row.result.entityType)} className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" aria-hidden />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">{row.result.title}</span>
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                          {row.result.entityType}
+                          {row.result.status ? ` · ${row.result.status}` : ""}
+                          {row.result.excerpt ? ` · ${row.result.excerpt}` : ""}
+                        </span>
+                      </span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">open</span> : null}
                     </>
                   ) : null}
                 </button>

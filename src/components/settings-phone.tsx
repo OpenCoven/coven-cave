@@ -599,6 +599,16 @@ function PasskeyCard() {
         // A cancelled Face ID prompt is not a failure worth shouting about;
         // everything else is something the operator has to see.
         if (err instanceof PasskeyError && err.kind === "cancelled") return;
+        // cave-01v4u: the server now refuses enrollments whose browser did not
+        // return device attestation (Chrome on macOS commonly returns "none"
+        // even under "direct"). Translate the raw reason into guidance instead
+        // of showing an opaque "attestation" string.
+        if (err instanceof PasskeyError && err.kind === "server" && err.message === "attestation") {
+          setError(
+            "This browser did not return device attestation. Enroll from Safari (iOS or macOS), or from the browser built into the device itself, so the Secure Enclave can be verified.",
+          );
+          return;
+        }
         setError(err instanceof Error ? err.message : "Passkey step failed");
       } finally {
         setBusy(null);
