@@ -82,13 +82,17 @@ export function ResearchProvenanceEdge({
         const conflict = CONFLICT_ID_RE.test(id);
         const selected = selectedId === id;
         const tone = conflict ? "warn" : toneForId(id);
+        const accessibleLabel =
+          tone === "unresolved"
+            ? `Missing source ${id}`
+            : `${conflict ? "Open conflict" : "Open evidence"} ${id}`;
 
         return (
           <button
             key={`${id}-${index}`}
             className={`research-provenance-edge__item research-provenance-edge__item--${tone} focus-ring${selected ? " is-selected" : ""}`}
             type="button"
-            aria-label={`${conflict ? "Open conflict" : "Open evidence"} ${id}`}
+            aria-label={accessibleLabel}
             aria-current={selected ? "true" : undefined}
             data-research-provenance-id={id}
             data-selected={selected ? "true" : "false"}

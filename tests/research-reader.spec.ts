@@ -89,7 +89,16 @@ const COMPLETED_MISSION = {
   ],
 };
 
-async function openReader(page: Page) {
+async function openReader(
+  page: Page,
+  {
+    markdown = FINDINGS_MD,
+    mission = COMPLETED_MISSION,
+  }: {
+    markdown?: string;
+    mission?: typeof COMPLETED_MISSION;
+  } = {},
+) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
@@ -99,7 +108,7 @@ async function openReader(page: Page) {
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
-  await page.route(/\/api\/research\/missions\?/, (route) => route.fulfill({ json: { ok: true, missions: [COMPLETED_MISSION] } }));
+  await page.route(/\/api\/research\/missions\?/, (route) => route.fulfill({ json: { ok: true, missions: [mission] } }));
   await page.route("**/api/research/links", (route) => route.fulfill({ json: { ok: true, links: [] } }));
   await page.route(/\/api\/research\/generations/, (route) => route.fulfill({ json: { ok: true, generations: [] } }));
   // The artifact file route feeds the reader its findings markdown.
@@ -113,7 +122,7 @@ async function openReader(page: Page) {
           title: "Findings",
           fileName: "findings.md",
           relativePath: "findings.md",
-          content: FINDINGS_MD,
+          content: markdown,
           workspacePath: "/tmp/m-done/findings.md",
           updatedAt: iso(45),
         },
@@ -412,5 +421,89 @@ test.describe("research reader", () => {
     });
     expect(gutters.left).toBeGreaterThan(0);
     expect(gutters.right).toBeGreaterThan(0);
+  });
+
+  test("mobile modal stacking and missing refs stay truthful at multi-digit list markers", async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 720 });
+    const orderedItems = Array.from(
+      { length: 10 },
+      (_, index) =>
+        `${index + 1}. ${index === 9 ? "Missing evidence [S99]" : `Finding ${index + 1}`}`,
+    ).join("\n");
+    await openReader(page, {
+      markdown: `# Findings\n\n## Results\n\n${orderedItems}`,
+    });
+
+    const reader = page.locator(".research-reader");
+    const overlay = page.locator(".research-reader-overlay");
+    const mobileTabs = page.locator(".mobile-bottom-tabs");
+    await expect(mobileTabs).toBeVisible();
+    const layers = await Promise.all([
+      overlay.evaluate((element) => Number(getComputedStyle(element).zIndex)),
+      mobileTabs.evaluate((element) => Number(getComputedStyle(element).zIndex)),
+    ]);
+    expect(layers[0]).toBe(350);
+    expect(layers[0]).toBeGreaterThan(layers[1]);
+    expect(layers[0]).toBeLessThan(400);
+    await reader.getByRole("button", {
+      name: "More research reader actions",
+    }).click();
+    const popoverPortal = page.locator(".ui-popover-portal");
+    await expect(popoverPortal).toBeVisible();
+    expect(
+      await popoverPortal.evaluate((element) =>
+        Number(getComputedStyle(element).zIndex),
+      ),
+    ).toBeGreaterThan(layers[0]);
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "20px";
+    });
+    const rows = reader.locator("ol > .rr-list-row");
+    await expect(rows).toHaveCount(10);
+    const markerState = await rows.nth(9).evaluate((element) => {
+      const marker = getComputedStyle(element, "::before");
+      const firstContent = element.parentElement?.querySelector<HTMLElement>(
+        ".rr-list-row > :first-child",
+      );
+      const currentContent = element.querySelector<HTMLElement>(
+        ":scope > :first-child",
+      );
+      return {
+        content: marker.content,
+        whiteSpace: marker.whiteSpace,
+        inlineSize: marker.inlineSize,
+        aligned:
+          Boolean(firstContent && currentContent) &&
+          Math.abs(
+            firstContent!.getBoundingClientRect().left -
+              currentContent!.getBoundingClientRect().left,
+          ) < 1,
+      };
+    });
+    expect(markerState.content).toContain("counter(rr-ordered-item)");
+    expect(markerState.whiteSpace).toBe("nowrap");
+    expect(markerState.inlineSize).not.toBe("auto");
+    expect(markerState.aligned).toBe(true);
+
+    const missingEdge = reader.locator(
+      '[data-research-provenance-id="S99"]',
+    );
+    await expect(missingEdge).toHaveCount(1);
+    await expect(missingEdge).toHaveAttribute("data-tone", "unresolved");
+    await expect(missingEdge).toBeHidden();
+    const missingRef = reader.getByRole("button", {
+      name: "Missing source S99",
+    });
+    await expect(missingRef).toBeVisible();
+    await missingRef.click();
+    await expect(
+      page.locator(
+        'div.sr-only[role="status"][aria-live="polite"][aria-atomic="true"]',
+      ),
+    ).toContainText("Evidence S99 has no source record.");
+    await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
+    await expect(reader.locator('[data-source-id="S99"]')).toHaveCount(0);
   });
 });

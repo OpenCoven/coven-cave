@@ -306,6 +306,16 @@ assert.match(
   /className=\{`rr-sref rr-inline-ref/,
   "inline references retain their compact representation hook",
 );
+assert.match(
+  source,
+  /span\.tone === "unresolved"[\s\S]*?" rr-sref--unresolved"/,
+  "missing source spans map exhaustively to the unresolved compact style",
+);
+assert.match(
+  source,
+  /sourceById\.has\(span\.id\)[\s\S]*?"Open evidence"[\s\S]*?Missing source/,
+  "inline missing-source controls expose truthful accessible names",
+);
 assert.doesNotMatch(
   source,
   /const \[expanded, setExpanded\]/,
@@ -328,6 +338,29 @@ assert.match(
 // direction overflowed the 268px rail by 1964px with cards clipped; column
 // direction overflows by 0 and every card renders at the full 268px.
 const css = await readFile(new URL("../../styles/research-reader.css", import.meta.url), "utf8");
+const readerOverlayRule = css.match(
+  /^\.research-reader-overlay \{([^}]*)\}/m,
+);
+assert.ok(readerOverlayRule, "the Research Reader overlay rule exists");
+assert.match(
+  readerOverlayRule[1],
+  /z-index:\s*350/,
+  "Research Reader uses the shared modal layer above mobile navigation",
+);
+const tipRule = css.match(/^\.rr-tip \{([^}]*)\}/m);
+const tableOverlayRule = css.match(/^\.rr-kroverlay \{([^}]*)\}/m);
+assert.ok(tipRule, "the evidence tooltip layer exists");
+assert.ok(tableOverlayRule, "the focused table overlay layer exists");
+assert.match(
+  tipRule[1],
+  /z-index:\s*360/,
+  "evidence previews stay above the reader and below portaled popovers",
+);
+assert.match(
+  tableOverlayRule[1],
+  /z-index:\s*360/,
+  "focused tables stay above the reader and below portaled popovers",
+);
 assert.match(
   css,
   /--research-evidence-edge-reserve:\s*calc\(\s*var\(--space-10\) \+ var\(--space-3\)\s*\)/,
@@ -391,6 +424,13 @@ for (const rejectedSelector of [
 const unresolvedAnchorInteraction = css.match(
   /\.research-provenance-edge__item--unresolved:hover[\s\S]*?\{([^}]*)\}/,
 );
+const unresolvedInlineRule = css.match(/^\.rr-sref--unresolved \{([^}]*)\}/m);
+assert.ok(unresolvedInlineRule, "missing inline refs have a dedicated state");
+assert.match(
+  unresolvedInlineRule[1],
+  /var\(--color-danger\)/,
+  "missing inline refs derive their state from the danger semantic",
+);
 assert.ok(
   unresolvedAnchorInteraction,
   "unresolved anchors retain a dedicated hover/selected state",
@@ -444,6 +484,20 @@ assert.match(
   provenanceAnchorRule[1],
   /min-height:\s*var\(--space-6\)/,
   "the painted anchor is shorter than its button hit target",
+);
+const listMarkerRule = css.match(
+  /\.research-reader \.document-reader__column ol > \.rr-list-row::before,[\s\S]*?\.research-reader \.document-reader__column ul > \.rr-list-row::before \{([^}]*)\}/,
+);
+assert.ok(listMarkerRule, "the custom list marker rule exists");
+assert.match(
+  listMarkerRule[1],
+  /white-space:\s*nowrap/,
+  "multi-digit custom ordered markers never wrap or split",
+);
+assert.match(
+  listMarkerRule[1],
+  /inline-size:\s*max-content/,
+  "custom markers retain intrinsic non-wrapping containment",
 );
 for (const duplicatedBaseSelector of [
   ".rr-doc h1",

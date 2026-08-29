@@ -153,6 +153,22 @@ describe("ResearchProvenanceEdge", () => {
     );
   });
 
+  test("labels unresolved source controls truthfully without inventing evidence", () => {
+    const html = renderToStaticMarkup(
+      createElement(ResearchProvenanceEdge, {
+        ids: ["S99"],
+        selectedId: null,
+        toneForId: (): ResearchProvenanceTone => "unresolved",
+        onPreview: () => {},
+        onSelect: () => {},
+      }),
+    );
+
+    assert.match(html, /aria-label="Missing source S99"/);
+    assert.match(buttonTag(html, "Missing source S99"), /data-tone="unresolved"/);
+    assert.doesNotMatch(html, /Open evidence S99/);
+  });
+
   test("uses the selected control as the roving tab stop", () => {
     const html = renderToStaticMarkup(
       createElement(ResearchProvenanceEdge, {

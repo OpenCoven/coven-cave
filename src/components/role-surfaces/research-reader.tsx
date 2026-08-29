@@ -495,19 +495,24 @@ export function ResearchReader({
       const key = `${keyPrefix}-${index}`;
       if (span.kind === "ref") {
         const toneClass =
-          span.tone === "warn"
-            ? " rr-sref--warn"
-            : span.tone === "muted"
-              ? " rr-sref--muted"
-              : "";
+          span.tone === "unresolved"
+            ? " rr-sref--unresolved"
+            : span.tone === "warn"
+              ? " rr-sref--warn"
+              : span.tone === "muted"
+                ? " rr-sref--muted"
+                : "";
         const matched =
           hoverKey === span.id || selectedSourceId === span.id;
+        const accessibleLabel = sourceById.has(span.id)
+          ? `${CONFLICT_ID_RE.test(span.id) ? "Open conflict" : "Open evidence"} ${span.id}`
+          : `Missing source ${span.id}`;
         return (
           <button
             key={key}
             type="button"
             className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
-            aria-label={`${CONFLICT_ID_RE.test(span.id) ? "Open conflict" : "Open evidence"} ${span.id}`}
+            aria-label={accessibleLabel}
             onMouseEnter={(event) =>
               onRefPreview(span.id, event.currentTarget)
             }

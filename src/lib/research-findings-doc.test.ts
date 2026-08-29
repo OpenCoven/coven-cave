@@ -75,6 +75,48 @@ test("conflict tokens resolve to warn even without a source row", () => {
   assert.deepEqual({ id: ref.id, tone: ref.tone }, { id: "C1", tone: "warn" });
 });
 
+test("strict bracketed missing source ids resolve while bare unknown ids stay prose", () => {
+  const spans = parseInline(
+    "Missing [S99] and [R88], but bare S98 and escaped \\[S97] stay prose.",
+    [],
+  );
+  const refs = spans.filter(
+    (span): span is Extract<FindingsSpan, { kind: "ref" }> =>
+      span.kind === "ref",
+  );
+
+  assert.deepEqual(
+    refs.map(({ id, tone }) => ({ id, tone })),
+    [
+      { id: "S99", tone: "unresolved" },
+      { id: "R88", tone: "unresolved" },
+    ],
+  );
+  assert.match(
+    spans
+      .filter((span) => span.kind === "text")
+      .map((span) => span.text)
+      .join(""),
+    /bare S98 and escaped \\?\[S97\] stay prose/,
+  );
+});
+
+test("missing source refs keep markdown code, image, link destination, and URL exclusions", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+Visible [S99], inline \`[S98]\`, image ![S97](image.png), link [paper](https://x.test/[S96]),
+and URL https://x.test/[S95] stay distinct.
+
+<!-- hidden [S94] -->
+
+\`\`\`md
+[S93]
+\`\`\`
+`, []);
+
+  assert.deepEqual(doc.refIds, ["S99"]);
+});
+
 test("conflicting/rejected source refs carry warn/muted tones", () => {
   const spans = parseInline("see S6 and R1 and S14", SOURCES);
   const byId = new Map(
@@ -437,6 +479,38 @@ test("list items and table rows expose stable ids and their own reference ids", 
   assert.deepEqual(table.rows[0].refIds, ["S14"]);
   assert.equal(table.rows[1].id, "s-key-results-block-1-row-2");
   assert.deepEqual(table.rows[1].refIds, ["S6"]);
+});
+
+test("missing refs flow through block, item, row, section, and document provenance", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Evidence
+
+Paragraph [S99].
+
+- List claim [R88]
+
+| Finding | Source |
+| --- | --- |
+| Missing ledger row | [S77] |
+`, [source("S1", "used")]);
+  const evidence = doc.sections[0];
+  const paragraph = evidence.blocks[0];
+  const list = evidence.blocks[1];
+  const table = evidence.blocks[2];
+
+  assert.ok(paragraph.kind === "p");
+  assert.ok(list.kind === "ul");
+  assert.ok(table.kind === "table");
+  assert.deepEqual(paragraph.refIds, ["S99"]);
+  assert.deepEqual(list.items[0].refIds, ["R88"]);
+  assert.deepEqual(table.rows[0].refIds, ["S77"]);
+  assert.deepEqual(evidence.refIds, ["S99", "R88", "S77"]);
+  assert.deepEqual(doc.refIds, ["S99", "R88", "S77"]);
+  assert.deepEqual(
+    targetsSupportingRef(doc, "S99").map((target) => target.id),
+    [paragraph.id],
+  );
 });
 
 test("support targets include lede, overview, list items, and table rows", () => {

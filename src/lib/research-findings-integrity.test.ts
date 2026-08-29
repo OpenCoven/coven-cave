@@ -94,6 +94,20 @@ test("partially populated ledger reports unresolved ids before conflicts", () =>
   assert.equal(integrity.summary.label, "1 reference is unresolved");
 });
 
+test("parser and integrity share missing-ref recognition for empty and partial ledgers", () => {
+  for (const sources of [[], [source("S1", "used")]]) {
+    const markdown = "Known S1, missing [S99], rejected-shaped [R88], and bare S98.";
+    const doc = parseFindingsDoc(markdown, sources);
+    const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+    assert.deepEqual(
+      doc.refIds.filter((id) => /^(?:S|R)\d+$/.test(id)),
+      integrity.referencedIds,
+    );
+    assert.deepEqual(integrity.unresolvedIds, ["S99", "R88"]);
+  }
+});
+
 test("used and candidate sources count together but summarize as candidate", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1] [S2]", [
     source("S1", "used"),

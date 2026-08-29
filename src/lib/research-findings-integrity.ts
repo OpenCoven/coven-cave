@@ -297,47 +297,14 @@ function stripBareUrls(markdown: string): string {
   return sanitized;
 }
 
-type IndexedSourceId = { id: string; index: number };
-
-function scanStrictBracketedSourceIds(sanitizedMarkdown: string): IndexedSourceId[] {
-  const matches: IndexedSourceId[] = [];
-
-  for (let index = 0; index < sanitizedMarkdown.length; ) {
-    if (sanitizedMarkdown[index] !== "[" || isEscaped(sanitizedMarkdown, index)) {
-      index += 1;
-      continue;
-    }
-
-    const closeIndex = findBalancedClose(sanitizedMarkdown, index + 1, "[", "]");
-    if (closeIndex === -1) {
-      index += 1;
-      continue;
-    }
-
-    let tokenStart = index + 1;
-    for (let tokenEnd = tokenStart; tokenEnd <= closeIndex; tokenEnd += 1) {
-      if (tokenEnd < closeIndex && sanitizedMarkdown[tokenEnd] !== ",") continue;
-      const token = sanitizedMarkdown.slice(tokenStart, tokenEnd);
-      const id = token.trim();
-      if (SOURCE_ID_RE.test(id)) {
-        matches.push({
-          id,
-          index: tokenStart + token.length - token.trimStart().length,
-        });
-      }
-      tokenStart = tokenEnd + 1;
-    }
-    index += 1;
-  }
-
-  return matches;
-}
-
 export function scanBracketedSourceIds(markdown: string): string[] {
   return uniqueIdsInOrder(
-    scanStrictBracketedSourceIds(preprocessMarkdownForIntegrity(markdown)).map(
-      (match) => match.id,
-    ),
+    findRecognizedFindingsRefs(
+      preprocessMarkdownForIntegrity(markdown),
+      [],
+    )
+      .filter((match) => SOURCE_ID_RE.test(match.id))
+      .map((match) => match.id),
   );
 }
 
@@ -415,8 +382,10 @@ export function deriveResearchFindingsIntegrity(
   const actualLedgerRefs = recognizedRefs.filter(
     (match) => sourceById.has(match.id) && !CONFLICT_ID_RE.test(match.id),
   );
-  const unresolvedStrictRefs = scanStrictBracketedSourceIds(sanitizedMarkdown).filter(
-    (match) => !sourceById.has(match.id),
+  const unresolvedStrictRefs = recognizedRefs.filter(
+    (match) =>
+      SOURCE_ID_RE.test(match.id) &&
+      !sourceById.has(match.id),
   );
   const referencedIds = uniqueIdsInOrder(
     [...actualLedgerRefs, ...unresolvedStrictRefs]

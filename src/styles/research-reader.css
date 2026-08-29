@@ -3,7 +3,7 @@
 .research-reader-overlay {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 350;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -500,6 +500,8 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: calc(var(--text-sm) * var(--reader-text-scale));
+  inline-size: max-content;
+  white-space: nowrap;
 }
 
 .research-reader .document-reader__column ol > .rr-list-row::before {
@@ -733,6 +735,22 @@
   text-decoration: line-through;
 }
 
+.rr-sref--unresolved {
+  border-style: dotted;
+  border-color: color-mix(
+    in oklch,
+    var(--color-danger) 42%,
+    var(--border-hairline)
+  );
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+  font-style: italic;
+}
+
 .rr-sref.is-match {
   border-color: var(--research-accent);
   background: color-mix(
@@ -762,6 +780,18 @@
   background: color-mix(
     in oklch,
     var(--color-danger) 14%,
+    transparent
+  );
+  color: var(--color-danger);
+  box-shadow: inset 0 0 0 var(--ring-width) var(--color-danger);
+}
+
+.rr-sref--unresolved.is-match {
+  border-style: dotted;
+  border-color: var(--color-danger);
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 20%,
     transparent
   );
   color: var(--color-danger);
@@ -1424,7 +1454,7 @@
 /* Temporary overlays use the existing elevated material and popover shadow. */
 .rr-tip {
   position: fixed;
-  z-index: 80;
+  z-index: 360;
   max-width: 18rem;
   padding: var(--space-3);
   border: 1px solid var(--border-strong);
@@ -1481,7 +1511,7 @@
 .rr-kroverlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 360;
   display: flex;
   align-items: center;
   justify-content: center;

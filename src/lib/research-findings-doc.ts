@@ -11,7 +11,7 @@
 
 import type { ResearchSourceRef } from "./research-missions.ts";
 
-export type FindingsRefTone = "accent" | "warn" | "muted";
+export type FindingsRefTone = "accent" | "warn" | "muted" | "unresolved";
 
 export type RecognizedFindingsRef = {
   id: string;
@@ -84,17 +84,22 @@ export function refToneForStatus(status: ResearchSourceRef["status"]): FindingsR
   return "accent";
 }
 
-type RefResolver = { pattern: RegExp | null; toneFor: (id: string) => FindingsRefTone };
+type RefResolver = {
+  pattern: RegExp | null;
+  sourceIds: ReadonlySet<string>;
+  toneFor: (id: string) => FindingsRefTone;
+};
 
 const CONFLICT_ID_RE = /^C\d+$/;
+const STRICT_SOURCE_ID_RE = /^(?:S|R)\d+$/;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Build the ref tokenizer from the mission's real source ids so only genuine
- *  references become chips — arbitrary capitalised words never do. Conflict
- *  ids (C1, C2, …) are always recognised even when they carry no source row. */
+/** Build the ref tokenizer from the mission's real source ids. Real ids may be
+ *  bare, while missing S#/R# ids must be explicitly bracketed. Conflict ids
+ *  (C1, C2, …) are always recognised even when they carry no source row. */
 function buildRefResolver(sources: ResearchSourceRef[]): RefResolver {
   const toneById = new Map<string, FindingsRefTone>();
   for (const source of sources) {
@@ -110,26 +115,227 @@ function buildRefResolver(sources: ResearchSourceRef[]): RefResolver {
     : null;
   return {
     pattern,
-    toneFor: (id) => toneById.get(id) ?? (CONFLICT_ID_RE.test(id) ? "warn" : "accent"),
+    sourceIds: new Set(toneById.keys()),
+    toneFor: (id) =>
+      toneById.get(id) ??
+      (CONFLICT_ID_RE.test(id) ? "warn" : "unresolved"),
   };
 }
 
 type FindingsRefMatch = RecognizedFindingsRef & { length: number };
 
-function matchRecognizedFindingsRefs(input: string, resolver: RefResolver): FindingsRefMatch[] {
-  if (!resolver.pattern || !input) return [];
+function isEscaped(input: string, index: number): boolean {
+  let slashCount = 0;
+  for (
+    let cursor = index - 1;
+    cursor >= 0 && input[cursor] === "\\";
+    cursor -= 1
+  ) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
 
+function backtickRunLength(input: string, index: number): number {
+  let length = 0;
+  while (input[index + length] === "`") length += 1;
+  return length;
+}
+
+function isUnsupportedContainerFenceRun(
+  input: string,
+  index: number,
+  runLength: number,
+): boolean {
+  if (runLength < 3) return false;
+
+  const lineStart = input.lastIndexOf("\n", index - 1) + 1;
+  const prefix = input.slice(lineStart, index);
+  return (
+    (index === lineStart && /\s/.test(input[index + runLength] ?? "")) ||
+    /^[ \t]+$/.test(prefix) ||
+    /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(
+      prefix,
+    )
+  );
+}
+
+function inlineCodeRanges(input: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+
+  for (let index = 0; index < input.length; ) {
+    if (input[index] !== "`" || isEscaped(input, index)) {
+      index += 1;
+      continue;
+    }
+    const openerLength = backtickRunLength(input, index);
+    if (isUnsupportedContainerFenceRun(input, index, openerLength)) {
+      index += openerLength;
+      continue;
+    }
+    let closeIndex = index + openerLength;
+    while (closeIndex < input.length) {
+      if (input[closeIndex] !== "`") {
+        closeIndex += 1;
+        continue;
+      }
+      const closeLength = backtickRunLength(input, closeIndex);
+      if (closeLength === openerLength) break;
+      closeIndex += closeLength;
+    }
+    if (closeIndex >= input.length) {
+      index += openerLength;
+      continue;
+    }
+    const end = closeIndex + openerLength;
+    ranges.push([index, end]);
+    index = end;
+  }
+
+  return ranges;
+}
+
+function bareUrlRanges(input: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+
+  for (let index = 0; index < input.length; ) {
+    const protocol = input.slice(index, index + "https://".length).toLowerCase();
+    const protocolLength = protocol.startsWith("https://")
+      ? "https://".length
+      : protocol.startsWith("http://")
+        ? "http://".length
+        : 0;
+    if (!protocolLength) {
+      index += 1;
+      continue;
+    }
+
+    const rangeStart = index;
+    let parenDepth = 0;
+    index += protocolLength;
+    const authorityStart = index;
+    while (index < input.length) {
+      const character = input[index];
+      if (/\s/.test(character)) break;
+      if (character === "[" && parenDepth === 0) {
+        const hostEnd = input.indexOf("]", index + 1);
+        const bracketedHost =
+          hostEnd === -1 ? "" : input.slice(index + 1, hostEnd);
+        const authorityPrefix = input.slice(authorityStart, index);
+        if (
+          bracketedHost.includes(":") &&
+          !/\s/.test(bracketedHost) &&
+          !/[/?#]/.test(authorityPrefix)
+        ) {
+          index = hostEnd + 1;
+          continue;
+        }
+        const bracketedComponent =
+          hostEnd === -1 ? "" : input.slice(index + 1, hostEnd);
+        if (
+          /[/?#]/.test(authorityPrefix) &&
+          !/[.,;:!?)]/.test(input[index - 1] ?? "") &&
+          bracketedComponent &&
+          !/\s/.test(bracketedComponent)
+        ) {
+          index = hostEnd + 1;
+          continue;
+        }
+        break;
+      }
+      if (character === "(") parenDepth += 1;
+      else if (character === ")" && parenDepth > 0) parenDepth -= 1;
+      index += 1;
+    }
+    ranges.push([rangeStart, index]);
+  }
+
+  return ranges;
+}
+
+function scanStrictBracketedSourceRefs(
+  input: string,
+  resolver: RefResolver,
+): FindingsRefMatch[] {
   const matches: FindingsRefMatch[] = [];
-  resolver.pattern.lastIndex = 0;
-  for (let match = resolver.pattern.exec(input); match; match = resolver.pattern.exec(input)) {
-    matches.push({
-      id: match[1],
-      index: match.index,
-      length: match[0].length,
-      tone: resolver.toneFor(match[1]),
+  const bracketGroup = /\[([^\[\]\r\n]+)\]/g;
+
+  for (
+    let group = bracketGroup.exec(input);
+    group;
+    group = bracketGroup.exec(input)
+  ) {
+    if (isEscaped(input, group.index)) continue;
+    const content = group[1];
+    const tokens = content.split(",");
+    let contentOffset = 0;
+
+    tokens.forEach((token, tokenIndex) => {
+      const id = token.trim();
+      const leadingSpace = token.length - token.trimStart().length;
+      const idIndex = group.index + 1 + contentOffset + leadingSpace;
+      contentOffset += token.length + 1;
+      if (
+        !STRICT_SOURCE_ID_RE.test(id) ||
+        resolver.sourceIds.has(id)
+      ) {
+        return;
+      }
+
+      const firstToken = tokenIndex === 0;
+      const lastToken = tokenIndex === tokens.length - 1;
+      const matchIndex = firstToken ? group.index : idIndex;
+      const matchEnd = lastToken
+        ? group.index + group[0].length
+        : idIndex + id.length;
+      matches.push({
+        id,
+        index: matchIndex,
+        length: matchEnd - matchIndex,
+        tone: "unresolved",
+      });
     });
   }
+
   return matches;
+}
+
+function matchRecognizedFindingsRefs(input: string, resolver: RefResolver): FindingsRefMatch[] {
+  if (!input) return [];
+
+  const matches: FindingsRefMatch[] = [];
+  if (resolver.pattern) {
+    resolver.pattern.lastIndex = 0;
+    for (
+      let match = resolver.pattern.exec(input);
+      match;
+      match = resolver.pattern.exec(input)
+    ) {
+      matches.push({
+        id: match[1],
+        index: match.index,
+        length: match[0].length,
+        tone: resolver.toneFor(match[1]),
+      });
+    }
+  }
+  matches.push(...scanStrictBracketedSourceRefs(input, resolver));
+
+  const opaqueRanges = [...inlineCodeRanges(input), ...bareUrlRanges(input)];
+  return matches
+    .sort((left, right) => left.index - right.index)
+    .filter(
+      (match, index, ordered) =>
+        !opaqueRanges.some(
+          ([start, end]) => match.index >= start && match.index < end,
+        ) &&
+        !ordered
+          .slice(0, index)
+          .some(
+            (previous) =>
+              match.index < previous.index + previous.length,
+          ),
+    );
 }
 
 /** Find references using the exact resolver and boundary grammar used by the
@@ -467,7 +673,8 @@ export function stripFindingsComments(markdown: string): string {
 
 /**
  * Parse findings markdown into the reader's document model. `sources` supplies
- * the id set that turns S14/C1 tokens into chips.
+ * the id set that permits bare source refs; bracketed missing S#/R# refs remain
+ * visible as unresolved evidence.
  */
 export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[]): FindingsDoc {
   const resolver = buildRefResolver(sources);
