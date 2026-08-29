@@ -129,6 +129,7 @@ export const SUITES = {
     "src/lib/research-source-url.test.ts",
     "src/lib/document-reader.test.ts",
     "src/lib/research-findings-doc.test.ts",
+    "src/lib/research-findings-integrity.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-host-state.test.ts",
     "src/components/role-surface-shell.test.ts",
