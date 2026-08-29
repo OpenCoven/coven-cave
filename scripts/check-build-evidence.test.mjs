@@ -10,6 +10,7 @@ import {
   latestEvidenceJobs,
   staleEvidence,
 } from "./check-build-evidence.mjs";
+import { resolveRunBaseSnapshot } from "./capture-ci-base-snapshot.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./check-build-evidence.mjs", import.meta.url));
 const EXPECTED_HEAD = "a".repeat(40);
@@ -159,6 +160,84 @@ test("the gate refuses when the run base differs from the live base ref", () => 
   );
 });
 
+test("a recovery dispatch snapshots the live base ref instead of stale associated-PR SHA", () => {
+  const staleAssociatedBase = "e".repeat(40);
+  const liveDispatchBase = "f".repeat(40);
+  const requestedRefs = [];
+  const snapshot = resolveRunBaseSnapshot(
+    {
+      eventName: "workflow_dispatch",
+      prNumber: "5097",
+    },
+    {
+      getPullRequest: () => ({ base: { ref: "main", sha: staleAssociatedBase } }),
+      getRef: (ref) => {
+        requestedRefs.push(ref);
+        return { object: { sha: liveDispatchBase } };
+      },
+    },
+  );
+
+  assert.deepEqual(requestedRefs, ["main"]);
+  assert.deepEqual(snapshot, { ref: "main", sha: liveDispatchBase });
+  assert.notEqual(snapshot.sha, staleAssociatedBase);
+});
+
+test("base snapshot acquisition fails closed on missing or malformed inputs", () => {
+  assert.throws(
+    () => resolveRunBaseSnapshot({ eventName: "pull_request", eventBaseRef: "main" }),
+    /run base SHA is missing or malformed/,
+  );
+  assert.throws(
+    () => resolveRunBaseSnapshot(
+      { eventName: "workflow_dispatch", prNumber: "5097" },
+      {
+        getPullRequest: () => ({ base: { ref: "main" } }),
+        getRef: () => ({ object: { sha: "not-a-sha" } }),
+      },
+    ),
+    /run base SHA is missing or malformed/,
+  );
+  assert.throws(
+    () => resolveRunBaseSnapshot({ eventName: "workflow_dispatch", prNumber: "" }),
+    /recovery PR number is missing or malformed/,
+  );
+  let refRequested = false;
+  assert.throws(
+    () => resolveRunBaseSnapshot(
+      { eventName: "workflow_dispatch", prNumber: "5097" },
+      {
+        getPullRequest: () => ({ base: { ref: "main\nforged=output" } }),
+        getRef: () => {
+          refRequested = true;
+          return { object: { sha: RUN_BASE } };
+        },
+      },
+    ),
+    /run base ref is missing or malformed/,
+  );
+  assert.equal(refRequested, false, "a malformed base ref must be rejected before an API path is built");
+});
+
+test("pull request and push events preserve their event snapshots", () => {
+  assert.deepEqual(
+    resolveRunBaseSnapshot({
+      eventName: "pull_request",
+      eventBaseRef: "main",
+      eventBaseSha: RUN_BASE,
+    }),
+    { ref: "main", sha: RUN_BASE },
+  );
+  assert.deepEqual(
+    resolveRunBaseSnapshot({
+      eventName: "push",
+      expectedHeadSha: EXPECTED_HEAD,
+      refName: "main",
+    }),
+    { ref: "main", sha: EXPECTED_HEAD },
+  );
+});
+
 test("missing or malformed evidence timestamps fail closed", () => {
   assert.deepEqual(
     staleEvidence(
@@ -272,7 +351,13 @@ test("the workflow supplies same-domain head, timestamp, and exact base evidence
   );
   assert.match(build, /actions\/runs\/\$RUN_ID" > \/tmp\/cave-build-evidence-run\.json/);
   assert.match(build, /\.run_started_at/);
-  assert.match(build, /\.pull_requests\[\]/);
+  assert.match(build, /RUN_BASE_REF: \$\{\{ needs\.paths\.outputs\.run_base_ref \}\}/);
+  assert.match(build, /RUN_BASE_SHA: \$\{\{ needs\.paths\.outputs\.run_base_sha \}\}/);
+  assert.doesNotMatch(
+    build,
+    /\.pull_requests\[\]/,
+    "the final gate must not reconstruct a dispatch base from stale Actions-run PR metadata",
+  );
   assert.match(build, /git\/ref\/heads\/\$RUN_BASE_REF/);
   for (const flag of [
     "--expected-head-sha",

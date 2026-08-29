@@ -38,6 +38,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Recovery dispatches resolve the PR's current base ref at selector start.
+  pull-requests: read
   # The Frontend build gate reads the run's job list to refuse carried-forward
   # upstream evidence (cave-38aud).
   actions: read
@@ -144,11 +146,23 @@ jobs:
       e2e: ${{ steps.paths.outputs.e2e }}
       ios: ${{ steps.paths.outputs.ios }}
       docs: ${{ steps.paths.outputs.docs }}
+      run_base_ref: ${{ steps.base_snapshot.outputs.run_base_ref }}
+      run_base_sha: ${{ steps.base_snapshot.outputs.run_base_sha }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - id: base_snapshot
+        name: Capture run base snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.expected_pr_number }}
+        run: node scripts/capture-ci-base-snapshot.mjs >> "$GITHUB_OUTPUT"
 
       # The path selector's verdict decides which jobs run at all; a stale
       # tree here could silently skip a lane the PR actually touches
@@ -169,7 +183,7 @@ jobs:
       - id: paths
         name: Select path-aware validation
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.before || steps.base_snapshot.outputs.run_base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
         run: node scripts/ci-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
@@ -631,9 +645,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
-          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.expected_pr_number }}
+          RUN_BASE_REF: ${{ needs.paths.outputs.run_base_ref }}
+          RUN_BASE_SHA: ${{ needs.paths.outputs.run_base_sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -644,22 +657,9 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" > /tmp/cave-build-evidence-jobs.json
           ATTEMPT_STARTED_AT="$(jq -er '.run_started_at | select(type == "string" and length > 0)' /tmp/cave-build-evidence-run.json)"
 
-          # A pull_request event carries its frozen base directly. Recovery
-          # dispatches recover the same snapshot from the run's associated PR.
-          # A push run's own head is its base snapshot.
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            RUN_BASE_REF="$EVENT_BASE_REF"
-            RUN_BASE_SHA="$EVENT_BASE_SHA"
-          elif [ -n "$PR_NUMBER" ]; then
-            RUN_BASE_REF="$(jq -er --arg pr "$PR_NUMBER" '.pull_requests[] | select((.number | tostring) == $pr) | .base.ref' /tmp/cave-build-evidence-run.json)"
-            RUN_BASE_SHA="$(jq -er --arg pr "$PR_NUMBER" '.pull_requests[] | select((.number | tostring) == $pr) | .base.sha' /tmp/cave-build-evidence-run.json)"
-          else
-            RUN_BASE_REF="$GITHUB_REF_NAME"
-            RUN_BASE_SHA="$EXPECTED_HEAD_SHA"
-          fi
-
-          # Resolve the branch tip live. pull.base.sha is a frozen snapshot and
-          # must not be mistaken for the current base ref.
+          # Select validation froze this pair before any validation lane ran.
+          # Resolve the branch tip again now; missing selector outputs fail
+          # closed in check-build-evidence's argument validation.
           LIVE_BASE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RUN_BASE_REF" --jq .object.sha)"
 
           node scripts/check-build-evidence.mjs \

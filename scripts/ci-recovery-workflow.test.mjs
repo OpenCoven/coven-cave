@@ -52,8 +52,14 @@ assert.deepEqual(
 );
 const prChecks = ciWorkflow.jobs["pr-checks"];
 const frontendBuild = ciWorkflow.jobs.build;
+const paths = ciWorkflow.jobs.paths;
 assert.equal(prChecks.name, "PR checks");
 assert.equal(frontendBuild.name, "Frontend build");
+assert.deepEqual(ciWorkflow.permissions, {
+  actions: "read",
+  contents: "read",
+  "pull-requests": "read",
+});
 assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "paths",
   "ios",
@@ -63,6 +69,35 @@ assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "frontend-e2e-agentic",
 ]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
+assert.equal(
+  paths.outputs.run_base_ref,
+  "${{ steps.base_snapshot.outputs.run_base_ref }}",
+  "the selector exports the exact base ref frozen for this run",
+);
+assert.equal(
+  paths.outputs.run_base_sha,
+  "${{ steps.base_snapshot.outputs.run_base_sha }}",
+  "the selector exports the exact base SHA frozen for this run",
+);
+const baseSnapshot = paths.steps.find((step) => step.name === "Capture run base snapshot");
+assert.ok(baseSnapshot, "the selector captures a base snapshot before selecting validation");
+assert.equal(baseSnapshot.id, "base_snapshot");
+assert.equal(baseSnapshot.env.GH_TOKEN, "${{ github.token }}");
+assert.equal(baseSnapshot.env.PR_NUMBER, "${{ github.event.pull_request.number || inputs.expected_pr_number }}");
+assert.equal(
+  baseSnapshot.run,
+  "node scripts/capture-ci-base-snapshot.mjs >> \"$GITHUB_OUTPUT\"",
+);
+const pathSelector = paths.steps.find((step) => step.name === "Select path-aware validation");
+assert.ok(
+  paths.steps.indexOf(baseSnapshot) < paths.steps.indexOf(pathSelector),
+  "the base is frozen before path-aware work begins",
+);
+assert.equal(
+  pathSelector.env.BASE_SHA,
+  "${{ github.event.before || steps.base_snapshot.outputs.run_base_sha }}",
+  "dispatch path selection uses the same live base snapshot exported to the final gate",
+);
 assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation, [
   { name: "lint", command: "lint" },
   { name: "typecheck", command: "typecheck" },
