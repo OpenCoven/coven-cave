@@ -142,6 +142,15 @@ describe("ResearchProvenanceEdge", () => {
       /<button[^>]*aria-label="Open evidence S1"[^>]*>[\s\S]*?<span class="research-provenance-edge__anchor">S1<\/span>[\s\S]*?<\/button>/,
       "the focusable hit target wraps a smaller painted provenance anchor",
     );
+    assert.match(
+      buttonTag(html, "Open evidence S1"),
+      /data-research-reference-id="S1"/,
+      "every margin representation exposes the stable reference id used for responsive focus restoration",
+    );
+    assert.match(
+      buttonTag(html, "Open evidence S1"),
+      /data-research-reference-representation="edge"/,
+    );
     assert.match(buttonTag(html, "Open conflict C1"), /data-tone="warn"/);
     assert.equal(
       renderToStaticMarkup(

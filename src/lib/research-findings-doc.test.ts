@@ -361,6 +361,22 @@ test("markdown pipe tables become table blocks with ref chips in cells", () => {
   assert.deepEqual(refIds(table.rows[0].cells[1]), ["S14"]);
 });
 
+test("table headers expose unique reference ids separately from row evidence", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Key results
+
+| Finding S14 | Source S14 | Confidence S6 |
+| --- | --- | --- |
+| Scale raises value coherence | S1 | High |
+`, SOURCES);
+  const table = doc.sections[0]?.blocks[0];
+  assert.ok(table?.kind === "table");
+  assert.deepEqual(table.headerRefIds, ["S14", "S6"]);
+  assert.deepEqual(table.rows[0].refIds, ["S1"]);
+  assert.deepEqual(table.refIds, ["S14", "S6", "S1"]);
+});
+
 test("lists parse into a single ul block", () => {
   const doc = parseFindingsDoc(FINDINGS, SOURCES);
   const open = doc.sections.find((s) => s.heading === "Open questions");

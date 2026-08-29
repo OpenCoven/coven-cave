@@ -95,6 +95,8 @@ export function ResearchProvenanceEdge({
             aria-label={accessibleLabel}
             aria-current={selected ? "true" : undefined}
             data-research-provenance-id={id}
+            data-research-reference-id={id}
+            data-research-reference-representation="edge"
             data-selected={selected ? "true" : "false"}
             data-tone={tone}
             tabIndex={id === tabStopId ? 0 : -1}

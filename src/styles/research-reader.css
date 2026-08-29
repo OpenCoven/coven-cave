@@ -846,8 +846,8 @@
 .rr-table__evidence {
   position: sticky;
   right: 0;
-  width: var(--space-12);
-  min-width: var(--space-12);
+  width: calc(var(--space-12) + var(--space-4));
+  min-width: calc(var(--space-12) + var(--space-4));
   padding-inline: var(--space-2) !important;
   background: var(--bg-raised);
   text-align: right !important;
@@ -855,6 +855,13 @@
 
 .rr-table thead .rr-table__evidence {
   background: var(--bg-subtle);
+}
+
+.rr-table__evidence-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .rr-table__evidence .research-provenance-edge {
@@ -1595,10 +1602,15 @@
   }
 }
 
-/* Provenance has one focusable representation at the reading breakpoint. */
-@container document-reader (max-width: 52rem) {
+/* 65rem = the intended 52rem document plus the 13rem Contents rail. Keeping
+   the outer threshold here prevents rail reflow from compressing the report. */
+@container document-reader (max-width: 65rem) {
   .research-reader .rr-doc {
     --research-evidence-edge-reserve: 0;
+  }
+
+  .research-reader .document-reader--rail .document-reader__layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .research-reader[data-toc="true"]

@@ -360,7 +360,8 @@ test.describe("research reader", () => {
     await expect(reader).toBeVisible();
   });
 
-  test("Escape closes Contents and Evidence in most-recently-opened order", async ({ page }) => {
+  test("wide Escape closes Contents and Evidence in most-recently-opened order", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
     await openReader(page);
     const reader = page.locator(".research-reader");
     const contentsToggle = reader.getByRole("button", {
@@ -374,6 +375,8 @@ test.describe("research reader", () => {
 
     await contentsToggle.click();
     await evidenceToggle.click();
+    await evidence.locator('[data-source-id="S14"] .research-evidence-card__toggle').click();
+    await expect(evidence.locator('[data-source-id="S14"]')).toHaveAttribute("data-open", "true");
     await page.keyboard.press("Escape");
     await expect(evidence).toBeHidden();
     await expect(contents).toBeVisible();
@@ -384,6 +387,8 @@ test.describe("research reader", () => {
 
     await evidenceToggle.click();
     await contentsToggle.click();
+    await contents.getByRole("button", { name: "Key results" }).click();
+    await expect(reader.getByRole("heading", { name: "Key results" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(contents).toBeHidden();
     await expect(evidence).toBeVisible();
@@ -391,7 +396,170 @@ test.describe("research reader", () => {
     await page.keyboard.press("Escape");
     await expect(evidence).toBeHidden();
     await expect(evidenceToggle).toBeFocused();
+
+    await contentsToggle.click();
+    await evidenceToggle.click();
+    await expect(contents).toBeVisible();
+    await expect(evidence).toBeVisible();
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await expect(contents).toBeHidden();
+    await expect(evidence).toBeVisible();
+    await evidence.locator('[data-source-id="S6"] .research-evidence-card__toggle').click();
+    await page.keyboard.press("Escape");
+    await expect(evidence).toBeHidden();
     await expect(reader).toBeVisible();
+  });
+
+  test("Evidence overlay keeps only the requested side panel accessible", async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const contentsToggle = reader.getByRole("button", {
+      name: /^(Show|Hide) contents$/,
+    });
+    const evidenceToggle = reader.getByRole("button", {
+      name: /^(Show|Hide) evidence$/,
+    });
+    const contents = reader.locator(".rr-toc");
+    const evidence = reader.locator(".research-evidence-inspector");
+
+    await contentsToggle.click();
+    await contents.getByRole("button", { name: "Key results" }).click();
+    await evidenceToggle.click();
+    await expect(contents).toBeHidden();
+    await expect(evidence).toBeVisible();
+    await evidence.locator('[data-source-id="S14"] .research-evidence-card__toggle').click();
+    await expect(evidence.locator('[data-source-id="S14"]')).toHaveAttribute("data-open", "true");
+    await page.keyboard.press("Escape");
+    await expect(evidence).toBeHidden();
+
+    await evidenceToggle.click();
+    await evidence.locator('[data-source-id="S6"] .research-evidence-card__toggle').click();
+    await contentsToggle.click();
+    await expect(evidence).toBeHidden();
+    await expect(contents).toBeVisible();
+    await expect(contents.locator(".document-reader__toc-link:focus")).toHaveCount(1);
+    await contents.getByRole("button", { name: "Open questions" }).click();
+    await page.keyboard.press("Escape");
+    await expect(contents).toBeHidden();
+    await expect(reader).toBeVisible();
+  });
+
+  test("Contents preserves the configured prose measure on both sides of 65rem", async ({ page }) => {
+    await page.setViewportSize({ width: 1080, height: 800 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const claim = reader
+      .locator(".rr-block-row", {
+        hasText: "Identity has three components",
+      })
+      .locator(":scope > :first-child");
+    const measure = () =>
+      claim.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.cssText =
+          "display:block;position:absolute;visibility:hidden;width:var(--document-reader-prose-measure)";
+        element.parentElement!.append(probe);
+        const result = {
+          actual: element.getBoundingClientRect().width,
+          preferred: probe.getBoundingClientRect().width,
+        };
+        probe.remove();
+        return result;
+      });
+
+    await reader.getByRole("button", { name: "Show contents" }).click();
+    const aboveBoundary = await measure();
+    expect(aboveBoundary.actual).toBeGreaterThanOrEqual(
+      aboveBoundary.preferred - 8,
+    );
+    expect(
+      (
+        await reader.locator(".document-reader__layout").evaluate(
+          (element) => getComputedStyle(element).gridTemplateColumns,
+        )
+      )
+        .trim()
+        .split(/\s+/),
+    ).toHaveLength(2);
+
+    await page.setViewportSize({ width: 1064, height: 800 });
+    await expect(reader.locator(".rr-toc")).toBeVisible();
+    const belowBoundary = await measure();
+    expect(belowBoundary.actual).toBeGreaterThanOrEqual(
+      belowBoundary.preferred - 8,
+    );
+    expect(belowBoundary.actual).toBeGreaterThanOrEqual(
+      aboveBoundary.actual - 8,
+    );
+    expect(
+      (
+        await reader.locator(".document-reader__layout").evaluate(
+          (element) => getComputedStyle(element).gridTemplateColumns,
+        )
+      )
+        .trim()
+        .split(/\s+/),
+    ).toHaveLength(1);
+  });
+
+  test("table header citations open their real source from the Evidence heading", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: FINDINGS_MD.replace(
+        "| Finding | Source | Confidence |",
+        "| Finding | Source S14 | Confidence |",
+      ),
+    });
+    const reader = page.locator(".research-reader");
+    const evidenceHeading = reader.locator(
+      ".rr-table thead .rr-table__evidence",
+    );
+    await expect(evidenceHeading).toContainText("Evidence");
+    const headerReference = evidenceHeading.locator(
+      '[data-research-reference-id="S14"]',
+    );
+    await expect(headerReference).toBeVisible();
+    await expect(
+      reader.locator(".rr-table thead .rr-inline-ref", { hasText: "S14" }),
+    ).toBeHidden();
+
+    await headerReference.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    const sourceCard = inspector.locator('[data-source-id="S14"]');
+    await expect(sourceCard).toHaveAttribute("data-selected", "true");
+    await expect(sourceCard).toHaveAttribute("data-open", "true");
+    const popupPromise = page.waitForEvent("popup");
+    await sourceCard.getByRole("button", { name: "Open source" }).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL("https://example.com/s14");
+    await popup.close();
+  });
+
+  test("responsive inspector close restores focus to the visible reference representation", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const marginReference = reader
+      .locator(
+        '[data-research-reference-id="S14"][data-research-reference-representation="edge"]',
+      )
+      .first();
+    await marginReference.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector).toBeVisible();
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(marginReference).toBeHidden();
+    const inlineReference = reader
+      .locator(
+        '[data-research-reference-id="S14"][data-research-reference-representation="inline"]',
+      )
+      .first();
+    await expect(inlineReference).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(inspector).toBeHidden();
+    await expect(inlineReference).toBeFocused();
   });
 
   test("narrow overlay transfers focus, inerts covered controls, and returns focus correctly", async ({ page }) => {
@@ -461,12 +629,13 @@ test.describe("research reader", () => {
 
     await evidenceToggle.click();
     await expect(reader.locator(".research-evidence-inspector")).toBeVisible();
+    await expect(reader.locator(".rr-toc")).toBeHidden();
     await expect(documentReader).toHaveAttribute("inert", "");
     await reader
       .getByRole("button", { name: "Close evidence inspector" })
       .click();
-    await expect(reader.locator(".rr-toc")).toBeVisible();
-    await expect(documentScroll).toHaveAttribute("inert", "");
+    await expect(reader.locator(".rr-toc")).toBeHidden();
+    await expect(documentScroll).not.toHaveAttribute("inert", "");
 
     const columns = await reader.locator(".document-reader__layout").evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns,

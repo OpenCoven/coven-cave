@@ -48,6 +48,7 @@ export type FindingsBlock =
   | (FindingsBlockBase & {
       kind: "table";
       header: FindingsSpan[][];
+      headerRefIds: string[];
       rows: FindingsTableRow[];
     })
   | (FindingsBlockBase & { kind: "code"; language: string; code: string });
@@ -599,12 +600,20 @@ function parseBlocks(
         });
       }
       i -= 1;
-      const refIds: string[] = [];
-      for (const cell of header) collectRefIds(cell, refIds);
+      const headerRefIds: string[] = [];
+      for (const cell of header) collectRefIds(cell, headerRefIds);
+      const refIds = [...headerRefIds];
       for (const row of rows) {
         for (const id of row.refIds) if (!refIds.includes(id)) refIds.push(id);
       }
-      blocks.push({ id: blockId, kind: "table", header, rows, refIds });
+      blocks.push({
+        id: blockId,
+        kind: "table",
+        header,
+        headerRefIds,
+        rows,
+        refIds,
+      });
       continue;
     }
 
