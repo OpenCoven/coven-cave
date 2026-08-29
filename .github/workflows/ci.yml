@@ -30,11 +30,12 @@ on:
 # dispatch. The required check can never report while that runs.
 #
 # So a dispatch never cancels: with cancel-in-progress false it QUEUES behind
-# the in-flight run for that head and starts only once the group frees. A push
-# still supersedes its predecessor, which is the behaviour this setting is for.
+# the in-flight run for that head and starts only once the group frees. Every
+# main push shares ci-main and cancels its predecessor, while pull requests and
+# their recovery dispatches continue to share their PR-scoped group.
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number || inputs.expected_pr_number || github.run_id) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
