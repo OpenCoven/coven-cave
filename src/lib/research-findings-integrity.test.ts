@@ -268,6 +268,22 @@ test("fenced code inside markdown containers does not create evidence states", (
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("unclosed container fences stop when their markdown container ends", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "> ```\n> hidden [S1]\nVisible [S2].\n\n- ~~~\n  hidden [S3]\nVisible [S4].",
+    [
+      source("S1", "used"),
+      source("S2", "candidate"),
+      source("S3", "used"),
+      source("S4", "candidate"),
+    ],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2", "S4"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",

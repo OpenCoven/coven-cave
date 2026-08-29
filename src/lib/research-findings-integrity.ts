@@ -355,17 +355,20 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
     const line = lines[lineIndex];
     if (fence) {
       const containerLine = readReferenceContainerLine(line, fence.container);
-      const run = containerLine === null ? null : readFenceRun(containerLine);
-      if (
-        run &&
-        run.character === fence.character &&
-        run.length >= fence.length &&
-        !run.suffix.trim()
-      ) {
-        fence = null;
+      if (containerLine !== null) {
+        const run = readFenceRun(containerLine);
+        if (
+          run &&
+          run.character === fence.character &&
+          run.length >= fence.length &&
+          !run.suffix.trim()
+        ) {
+          fence = null;
+        }
+        strippedLines.push("");
+        continue;
       }
-      strippedLines.push("");
-      continue;
+      fence = null;
     }
     const containerLine = readReferenceDefinitionContainer(line);
     const run = readFenceRun(containerLine.content);
