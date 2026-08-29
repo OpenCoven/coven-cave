@@ -297,8 +297,15 @@ function readReferenceTitleEnd(
 function readReferenceDefinition(
   lines: string[],
   startLineIndex: number,
+  containerOverride?: MarkdownContainer,
 ): { label: string; endLineIndex: number } | null {
-  const { content, container } = readReferenceDefinitionContainer(lines[startLineIndex]);
+  const containerLine = containerOverride
+    ? readReferenceContainerLine(lines[startLineIndex], containerOverride)
+    : null;
+  const { content, container } =
+    containerLine === null
+      ? readReferenceDefinitionContainer(lines[startLineIndex])
+      : { content: containerLine, container: containerOverride };
   const start = readReferenceDefinitionStart(content);
   if (!start) return null;
 
@@ -348,6 +355,7 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
 } {
   const lines = markdown.split(/\r?\n/);
   let fence: { character: string; length: number; container: MarkdownContainer } | null = null;
+  let activeListContainer: MarkdownContainer | null = null;
   const referenceDefinitionLabels = new Set<string>();
   const strippedLines: string[] = [];
 
@@ -370,7 +378,23 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       }
       fence = null;
     }
-    const containerLine = readReferenceDefinitionContainer(line);
+    const directContainerLine = readReferenceDefinitionContainer(line);
+    let containerLine = directContainerLine;
+    if (directContainerLine.container.listIndent) {
+      activeListContainer = directContainerLine.container;
+    } else if (activeListContainer) {
+      const activeContent = readReferenceContainerLine(line, activeListContainer);
+      if (activeContent !== null) {
+        containerLine = { content: activeContent, container: activeListContainer };
+      } else {
+        const activeBlockquote = stripBlockquotePrefix(
+          line,
+          activeListContainer.blockquoteDepth,
+        );
+        if (activeBlockquote?.content.trim()) activeListContainer = null;
+      }
+    }
+
     const run = readFenceRun(containerLine.content);
     if (run) {
       fence = {
@@ -381,7 +405,11 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       strippedLines.push("");
       continue;
     }
-    const referenceDefinition = readReferenceDefinition(lines, lineIndex);
+    const referenceDefinition = readReferenceDefinition(
+      lines,
+      lineIndex,
+      containerLine.container,
+    );
     if (referenceDefinition) {
       referenceDefinitionLabels.add(referenceDefinition.label);
       while (lineIndex <= referenceDefinition.endLineIndex) {
@@ -484,6 +512,17 @@ function stripMarkdownLinksAndImages(markdown: string, referenceDefinitionLabels
         sanitized += markdown[index];
         index += 1;
         continue;
+      }
+      if (suffixOpen === "[" && !isImage) {
+        const suffixLabel = markdown.slice(suffixStart + 1, suffixEnd);
+        const resolvedLabel = normalizeReferenceLabel(
+          suffixLabel || markdown.slice(labelStart, labelEnd),
+        );
+        if (!referenceDefinitionLabels.has(resolvedLabel)) {
+          sanitized += markdown[index];
+          index += 1;
+          continue;
+        }
       }
       constructEnd = suffixEnd + 1;
     } else if (!isImage) {

@@ -189,6 +189,13 @@ test("reference-style links around inline images do not expose image labels", ()
   assert.equal(integrity.summary.kind, "none");
 });
 
+test("undefined reference-style links preserve visible source suffixes", () => {
+  const integrity = deriveResearchFindingsIntegrity("[paper][S1]", []);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S1"]);
+  assert.equal(integrity.summary.kind, "unavailable");
+});
+
 test("reference definitions do not create source or conflict markers", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "[paper]: /docs/manual-1\n[conflict]: /conflicts/C2\nPlain prose.",
@@ -281,6 +288,16 @@ test("unclosed container fences stop when their markdown container ends", () => 
   assert.deepEqual(integrity.referencedIds, ["S2", "S4"]);
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("fences on list continuation lines inherit the list boundary", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "- item\n  ```\n  hidden [S1]\nVisible [S2].",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
   assert.equal(integrity.summary.kind, "candidate");
 });
 
