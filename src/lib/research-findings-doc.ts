@@ -24,11 +24,39 @@ export type FindingsSpan =
   | { kind: "ref"; id: string; tone: FindingsRefTone }
   | { kind: "link"; text: string; href: string };
 
+export type FindingsListItem = {
+  id: string;
+  spans: FindingsSpan[];
+  refIds: string[];
+};
+
+export type FindingsTableRow = {
+  id: string;
+  cells: FindingsSpan[][];
+  refIds: string[];
+};
+
+export type FindingsBlockBase = {
+  id: string;
+  refIds: string[];
+};
+
 export type FindingsBlock =
-  | { kind: "p"; spans: FindingsSpan[] }
-  | { kind: "ul"; items: FindingsSpan[][] }
-  | { kind: "table"; header: FindingsSpan[][]; rows: FindingsSpan[][][] }
-  | { kind: "code"; language: string; code: string };
+  | (FindingsBlockBase & { kind: "p"; spans: FindingsSpan[] })
+  | (FindingsBlockBase & { kind: "ul" | "ol"; items: FindingsListItem[] })
+  | (FindingsBlockBase & { kind: "quote"; spans: FindingsSpan[] })
+  | (FindingsBlockBase & {
+      kind: "table";
+      header: FindingsSpan[][];
+      rows: FindingsTableRow[];
+    })
+  | (FindingsBlockBase & { kind: "code"; language: string; code: string });
+
+export type FindingsSupportTarget = {
+  id: string;
+  label: string;
+  sectionId: string | null;
+};
 
 export type FindingsSection = {
   /** Stable slug used for the contents rail anchor and scroll-spy. */
@@ -43,6 +71,7 @@ export type FindingsSection = {
 export type FindingsDoc = {
   title: string | null;
   lede: FindingsSpan[] | null;
+  ledeId: string | null;
   sections: FindingsSection[];
   /** Union of every ref id cited across the document, in first-seen order. */
   refIds: string[];
@@ -188,6 +217,8 @@ function slugify(heading: string, index: number): string {
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
 const LIST_RE = /^\s*[-*+]\s+(.+)$/;
+const ORDERED_LIST_RE = /^\s*\d+[.)]\s+(.+)$/;
+const QUOTE_RE = /^\s*>\s?(.*)$/;
 const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
@@ -216,20 +247,54 @@ function splitCells(row: string): string[] {
  *  blocks. Consecutive list items merge into one list; pipe tables with a
  *  dash separator become table blocks; wrapped prose lines join into one
  *  paragraph. */
-function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
+function parseBlocks(
+  lines: string[],
+  resolver: RefResolver,
+  idPrefix: string,
+): FindingsBlock[] {
   const blocks: FindingsBlock[] = [];
   let paragraph: string[] = [];
-  let list: FindingsSpan[][] | null = null;
+  let list: { kind: "ul" | "ol"; items: FindingsSpan[][] } | null = null;
+  let blockIndex = 0;
+
+  const nextBlockId = () => {
+    blockIndex += 1;
+    return `${idPrefix}-block-${blockIndex}`;
+  };
+  const refsForSpans = (spans: FindingsSpan[]) => {
+    const refIds: string[] = [];
+    collectRefIds(spans, refIds);
+    return refIds;
+  };
 
   const flushParagraph = () => {
     if (paragraph.length) {
       const spans = parseSpans(paragraph.join(" "), resolver);
-      if (spans.length) blocks.push({ kind: "p", spans });
+      if (spans.length) {
+        blocks.push({
+          id: nextBlockId(),
+          kind: "p",
+          spans,
+          refIds: refsForSpans(spans),
+        });
+      }
       paragraph = [];
     }
   };
   const flushList = () => {
-    if (list && list.length) blocks.push({ kind: "ul", items: list });
+    if (list && list.items.length) {
+      const blockId = nextBlockId();
+      const items = list.items.map((spans, itemIndex) => ({
+        id: `${blockId}-item-${itemIndex + 1}`,
+        spans,
+        refIds: refsForSpans(spans),
+      }));
+      const refIds: string[] = [];
+      for (const item of items) {
+        for (const id of item.refIds) if (!refIds.includes(id)) refIds.push(id);
+      }
+      blocks.push({ id: blockId, kind: list.kind, items, refIds });
+    }
     list = null;
   };
 
@@ -254,7 +319,13 @@ function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
       for (; i < lines.length && !closingFence.test(lines[i]); i += 1) {
         code.push(lines[i]);
       }
-      blocks.push({ kind: "code", language, code: code.join("\n") });
+      blocks.push({
+        id: nextBlockId(),
+        kind: "code",
+        language,
+        code: code.join("\n"),
+        refIds: [],
+      });
       continue;
     }
 
@@ -262,28 +333,67 @@ function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
     if (TABLE_ROW_RE.test(line) && i + 1 < lines.length && TABLE_SEP_RE.test(lines[i + 1])) {
       flushParagraph();
       flushList();
+      const blockId = nextBlockId();
       const header = splitCells(line).map((cell) => parseSpans(cell, resolver));
-      const rows: FindingsSpan[][][] = [];
+      const rows: FindingsTableRow[] = [];
       i += 2;
       for (; i < lines.length && TABLE_ROW_RE.test(lines[i]); i += 1) {
-        rows.push(splitCells(lines[i]).map((cell) => parseSpans(cell, resolver)));
+        const cells = splitCells(lines[i]).map((cell) => parseSpans(cell, resolver));
+        const refIds: string[] = [];
+        for (const cell of cells) collectRefIds(cell, refIds);
+        rows.push({
+          id: `${blockId}-row-${rows.length + 1}`,
+          cells,
+          refIds,
+        });
       }
       i -= 1;
-      blocks.push({ kind: "table", header, rows });
+      const refIds: string[] = [];
+      for (const cell of header) collectRefIds(cell, refIds);
+      for (const row of rows) {
+        for (const id of row.refIds) if (!refIds.includes(id)) refIds.push(id);
+      }
+      blocks.push({ id: blockId, kind: "table", header, rows, refIds });
       continue;
     }
 
-    const listMatch = LIST_RE.exec(line);
+    const unorderedMatch = LIST_RE.exec(line);
+    const orderedMatch = ORDERED_LIST_RE.exec(line);
+    const listMatch = unorderedMatch ?? orderedMatch;
     if (listMatch) {
       flushParagraph();
-      list = list ?? [];
-      list.push(parseSpans(listMatch[1], resolver));
+      const kind = unorderedMatch ? "ul" : "ol";
+      if (list && list.kind !== kind) flushList();
+      list = list ?? { kind, items: [] };
+      list.items.push(parseSpans(listMatch[1], resolver));
+      continue;
+    }
+
+    const quoteMatch = QUOTE_RE.exec(line);
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      const quoteLines = [quoteMatch[1]];
+      for (i += 1; i < lines.length; i += 1) {
+        const nextQuote = QUOTE_RE.exec(lines[i]);
+        if (!nextQuote) break;
+        quoteLines.push(nextQuote[1]);
+      }
+      i -= 1;
+      const spans = parseSpans(quoteLines.join(" "), resolver);
+      if (spans.length) {
+        blocks.push({
+          id: nextBlockId(),
+          kind: "quote",
+          spans,
+          refIds: refsForSpans(spans),
+        });
+      }
       continue;
     }
 
     flushList();
-    // Blockquotes inside the body read as ordinary prose (strip the marker).
-    paragraph.push(line.replace(/^\s*>\s?/, "").trim());
+    paragraph.push(line.trim());
   }
   flushParagraph();
   flushList();
@@ -293,12 +403,7 @@ function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
 function sectionRefIds(blocks: FindingsBlock[]): string[] {
   const ids: string[] = [];
   for (const block of blocks) {
-    if (block.kind === "p") collectRefIds(block.spans, ids);
-    else if (block.kind === "ul") for (const item of block.items) collectRefIds(item, ids);
-    else if (block.kind === "table") {
-      for (const cell of block.header) collectRefIds(cell, ids);
-      for (const row of block.rows) for (const cell of row) collectRefIds(cell, ids);
-    }
+    for (const id of block.refIds) if (!ids.includes(id)) ids.push(id);
   }
   return ids;
 }
@@ -325,6 +430,7 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
 
   let title: string | null = null;
   let lede: FindingsSpan[] | null = null;
+  let ledeId: string | null = null;
   const sections: FindingsSection[] = [];
 
   // Group lines by heading. The first level-1 heading is the title; the region
@@ -372,19 +478,19 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   // Lede: only a *leading blockquote* becomes the italic tagline under the
   // title (matching the design). Plain opening prose stays body text so a
   // heading-less "title + paragraph" doc doesn't lose its content to a lede.
-  const preambleBlocks = parseBlocks(preamble, resolver);
-  const firstNonEmpty = preamble.find((line) => line.trim());
-  const leadsWithQuote = Boolean(firstNonEmpty && /^\s*>/.test(firstNonEmpty));
+  const preambleBlocks = parseBlocks(preamble, resolver, "s-overview");
   let leadBlocks: FindingsBlock[] = preambleBlocks;
-  if (leadsWithQuote && preambleBlocks[0]?.kind === "p") {
+  if (preambleBlocks[0]?.kind === "quote") {
     lede = preambleBlocks[0].spans;
+    ledeId = "research-question";
     leadBlocks = preambleBlocks.slice(1);
   }
 
   groups.forEach((group, index) => {
-    const blocks = parseBlocks(group.lines, resolver);
+    const sectionId = slugify(group.heading, index);
+    const blocks = parseBlocks(group.lines, resolver, sectionId);
     sections.push({
-      id: slugify(group.heading, index),
+      id: sectionId,
       heading: group.heading,
       blocks,
       refIds: sectionRefIds(blocks),
@@ -401,16 +507,63 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   if (lede) collectRefIds(lede, refIds);
   for (const section of sections) for (const id of section.refIds) if (!refIds.includes(id)) refIds.push(id);
 
-  return { title, lede, sections, refIds };
+  return { title, lede, ledeId, sections, refIds };
 }
 
-/** Sections (id + heading) that cite the given source id — the evidence card's
- *  "Supports" links, derived from where the source is actually referenced. */
-export function sectionsSupportingRef(
+function spansSupportRef(spans: FindingsSpan[], id: string): boolean {
+  return spans.some((span) => span.kind === "ref" && span.id === id);
+}
+
+/** Claim-level targets cited by a source — the evidence card's "Supports"
+ * links, derived from the exact lede, block, list item, or table row. */
+export function targetsSupportingRef(
   doc: FindingsDoc,
   id: string,
-): Array<{ id: string; heading: string }> {
-  return doc.sections
-    .filter((section) => section.heading && section.refIds.includes(id))
-    .map((section) => ({ id: section.id, heading: section.heading }));
+): FindingsSupportTarget[] {
+  const targets: FindingsSupportTarget[] = [];
+
+  if (doc.lede && doc.ledeId && spansSupportRef(doc.lede, id)) {
+    targets.push({
+      id: doc.ledeId,
+      label: "Research question",
+      sectionId: null,
+    });
+  }
+
+  for (const section of doc.sections) {
+    const sectionLabel = section.heading || "Overview";
+    for (const block of section.blocks) {
+      if (block.kind === "p" || block.kind === "quote") {
+        if (block.refIds.includes(id)) {
+          targets.push({
+            id: block.id,
+            label: sectionLabel,
+            sectionId: section.id,
+          });
+        }
+      } else if (block.kind === "ul" || block.kind === "ol") {
+        block.items.forEach((item, itemIndex) => {
+          if (item.refIds.includes(id)) {
+            targets.push({
+              id: item.id,
+              label: `${sectionLabel} · item ${itemIndex + 1}`,
+              sectionId: section.id,
+            });
+          }
+        });
+      } else if (block.kind === "table") {
+        block.rows.forEach((row, rowIndex) => {
+          if (row.refIds.includes(id)) {
+            targets.push({
+              id: row.id,
+              label: `${sectionLabel} · row ${rowIndex + 1}`,
+              sectionId: section.id,
+            });
+          }
+        });
+      }
+    }
+  }
+
+  return targets;
 }

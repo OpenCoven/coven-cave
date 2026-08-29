@@ -6,7 +6,7 @@ import {
   parseFindingsDoc,
   parseInline,
   refToneForStatus,
-  sectionsSupportingRef,
+  targetsSupportingRef,
   type FindingsSpan,
 } from "./research-findings-doc.ts";
 
@@ -148,7 +148,7 @@ test("markdown pipe tables become table blocks with ref chips in cells", () => {
   assert.equal(table.header.length, 3);
   assert.equal(table.rows.length, 2);
   // The Source cell of row 1 carries the S14 chip.
-  assert.deepEqual(refIds(table.rows[0][1]), ["S14"]);
+  assert.deepEqual(refIds(table.rows[0].cells[1]), ["S14"]);
 });
 
 test("lists parse into a single ul block", () => {
@@ -177,9 +177,11 @@ Ready.
   assert.ok(architecture);
   assert.equal(architecture.blocks.length, 1);
   assert.deepEqual(architecture.blocks[0], {
+    id: "s-architecture-block-1",
     kind: "code",
     language: "mermaid",
     code: "flowchart TD\n  UI[Research Desk] --> D[Daemon]",
+    refIds: [],
   });
   assert.deepEqual(doc.sections.map((section) => section.heading), ["Architecture", "Runtime"]);
 });
@@ -198,9 +200,11 @@ Body.
   assert.deepEqual(doc.sections.map((section) => section.heading), ["", "Real section"]);
   const overview = doc.sections.find((section) => section.id === "s-overview");
   assert.deepEqual(overview?.blocks[0], {
+    id: "s-overview-block-1",
     kind: "code",
     language: "markdown",
     code: "# This is code, not a section",
+    refIds: [],
   });
 });
 
@@ -211,11 +215,93 @@ test("section and document ref ids are collected in order", () => {
   assert.deepEqual(keyResults?.refIds, ["S14", "S6"]);
 });
 
-test("supports links resolve to the sections that cite a source", () => {
+test("support targets resolve to the claims that cite a source", () => {
   const doc = parseFindingsDoc(FINDINGS, SOURCES);
-  const supportsS14 = sectionsSupportingRef(doc, "S14").map((s) => s.heading);
-  assert.deepEqual(supportsS14, ["Current understanding", "Key results"]);
-  assert.deepEqual(sectionsSupportingRef(doc, "C1").map((s) => s.heading), ["Open questions"]);
+  const supportsS14 = targetsSupportingRef(doc, "S14").map((target) => target.label);
+  assert.deepEqual(supportsS14, ["Current understanding", "Key results · row 1"]);
+  assert.deepEqual(
+    targetsSupportingRef(doc, "C1").map((target) => target.label),
+    ["Open questions · item 1"],
+  );
+});
+
+test("ordered lists and quotations retain stable block identity and reference ids", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Evidence
+
+1. First claim [S1]
+2. Second claim S14
+
+> Signed does not mean verified [S6].
+> It remains disputed S14.
+`, SOURCES);
+  const evidence = doc.sections[0];
+  const ordered = evidence.blocks[0];
+  const quote = evidence.blocks[1];
+
+  assert.ok(ordered.kind === "ol");
+  assert.ok(quote.kind === "quote");
+  assert.equal(ordered.id, "s-evidence-block-1");
+  assert.equal(quote.id, "s-evidence-block-2");
+  assert.deepEqual(ordered.refIds, ["S1", "S14"]);
+  assert.deepEqual(quote.refIds, ["S6", "S14"]);
+  assert.equal(
+    quote.spans.map((span) => (span.kind === "ref" ? span.id : span.text)).join(""),
+    "Signed does not mean verified S6. It remains disputed S14.",
+  );
+});
+
+test("list items and table rows expose stable ids and their own reference ids", () => {
+  const doc = parseFindingsDoc(FINDINGS, SOURCES);
+  const questions = doc.sections.find((section) => section.heading === "Open questions");
+  const list = questions?.blocks.find((block) => block.kind === "ul");
+  assert.ok(list?.kind === "ul");
+  assert.equal(list.items[0].id, "s-open-questions-block-1-item-1");
+  assert.deepEqual(list.items[0].refIds, ["C1"]);
+  assert.equal(list.items[1].id, "s-open-questions-block-1-item-2");
+  assert.deepEqual(list.items[1].refIds, []);
+
+  const results = doc.sections.find((section) => section.heading === "Key results");
+  const table = results?.blocks.find((block) => block.kind === "table");
+  assert.ok(table?.kind === "table");
+  assert.equal(table.rows[0].id, "s-key-results-block-1-row-1");
+  assert.deepEqual(table.rows[0].refIds, ["S14"]);
+  assert.equal(table.rows[1].id, "s-key-results-block-1-row-2");
+  assert.deepEqual(table.rows[1].refIds, ["S6"]);
+});
+
+test("support targets include lede, overview, list items, and table rows", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+> Question [S1]
+
+Overview [S1].
+
+## Results
+
+- Claim [S1]
+
+| Finding | Source |
+| --- | --- |
+| Result | [S1] |
+`, SOURCES);
+
+  assert.equal(doc.ledeId, "research-question");
+  assert.deepEqual(targetsSupportingRef(doc, "S1"), [
+    { id: "research-question", label: "Research question", sectionId: null },
+    { id: "s-overview-block-2", label: "Overview", sectionId: "s-overview" },
+    {
+      id: "s-results-block-1-item-1",
+      label: "Results · item 1",
+      sectionId: "s-results",
+    },
+    {
+      id: "s-results-block-2-row-1",
+      label: "Results · row 1",
+      sectionId: "s-results",
+    },
+  ]);
 });
 
 test("headingless findings still yield a single renderable section", () => {
