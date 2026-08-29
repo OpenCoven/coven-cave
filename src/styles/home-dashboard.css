@@ -401,3 +401,31 @@
     display: none;
   }
 }
+
+/* The regular mobile transcript reserves space for a composer dock rendered
+   after the scroller. New-chat routes render that same dock inside the
+   dashboard, so give the dashboard the full transcript and anchor its composer
+   inside that bounded surface. This keeps every control below the sticky
+   header and above the app tabs even when another context row is added above. */
+@media (max-width: 767px) {
+  .cave-chat-linear .cave-chat-transcript:has(.home-dash--embed) {
+    padding-bottom: calc(var(--space-4) + var(--sai-bottom));
+    scroll-padding-bottom: calc(var(--space-4) + var(--sai-bottom));
+  }
+
+  .home-dash--embed {
+    position: relative;
+  }
+
+  .home-dash--embed .home-dash__board-head,
+  .home-dash--embed .home-dash__work-empty {
+    display: none;
+  }
+
+  .home-dash--embed .home-dash__composer {
+    position: absolute;
+    inset-inline: var(--space-8);
+    bottom: 0;
+    z-index: 1;
+  }
+}

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { projectNameForRoot, type CreateProjectOptions } from "@/lib/chat-add-project";
+import { projectErrorCode } from "@/lib/project-errors";
 import { projectTint } from "@/lib/comux-projects";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import type { RepoItem } from "@/lib/home-feed";
@@ -17,6 +18,7 @@ import {
   validateRepoDraft,
 } from "@/lib/project-setup-validation";
 import { Popover, PopoverBody } from "@/components/ui/popover";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
 import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
@@ -82,6 +84,9 @@ export function ProjectSetupModal({
   const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Server code behind the error when the failure carried one, so the modal can
+  // render the actionable out-of-workspace containment error inline (cave-cu0x).
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   // Field messages appear only once a field has been touched, so a freshly
   // opened modal never greets you in red — but the submit gate below applies
   // from the first render regardless.
@@ -105,6 +110,7 @@ export function ProjectSetupModal({
     setCreatedProject(null);
     setBusy(false);
     setError(null);
+    setErrorCode(null);
     setTouched({ name: false, repo: false });
     setRepoPickerOpen(false);
     let cancelled = false;
@@ -197,16 +203,19 @@ export function ProjectSetupModal({
       setError(
         "That doesn't look like a GitHub repository. Try owner/repo or a https://github.com/owner/repo link.",
       );
+      setErrorCode(null);
       return;
     }
     setBusy(true);
     setError(null);
+    setErrorCode(null);
     // Creation succeeded but a later grant failed → the project exists, so
     // fan the partial registry mutation out before surfacing the error
     // (mirrors addChatProject).
     const failAfterCreate = (message: string) => {
       emitProjectRegistryMutation();
       setError(message);
+      setErrorCode(null);
     };
     let resolvedProject = createdProject;
     try {
@@ -279,6 +288,7 @@ export function ProjectSetupModal({
             ? error.message
             : "Couldn't reach the desktop — nothing was created. Retry?",
         );
+        setErrorCode(projectErrorCode(error) ?? null);
       }
     } finally {
       setBusy(false);
@@ -396,6 +406,7 @@ export function ProjectSetupModal({
               onChange={(e) => {
                 setRepoDraft(e.target.value);
                 setError(null);
+                setErrorCode(null);
               }}
               onBlur={() => setTouched((prev) => ({ ...prev, repo: true }))}
               placeholder="owner/repo or https://github.com/owner/repo"
@@ -458,6 +469,7 @@ export function ProjectSetupModal({
                     setRepoDraft(next.repoDraft);
                     setName(next.name);
                     setError(null);
+                    setErrorCode(null);
                     setRepoPickerOpen(false);
                   }}
                 >
@@ -550,12 +562,11 @@ export function ProjectSetupModal({
       ) : null}
 
       {error ? (
-        <p
+        <ProjectRootWorkspaceNotice
           className="mt-4 rounded-[var(--radius-control)] border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--danger-text)]"
-          role="alert"
-        >
-          {error}
-        </p>
+          code={errorCode}
+          error={error}
+        />
       ) : null}
     </Modal>
   );

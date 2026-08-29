@@ -11,6 +11,10 @@
 // proxy no runtime dependency.
 import { CLIENT_V1_PUBLIC_ROUTES } from "./lib/server/client-v1/contract.ts";
 import { canonicalClientV1Pathname } from "./lib/server/client-v1/canonical-path.ts";
+import {
+  CLIENT_V1_HPKE_HEADERS,
+  CLIENT_V1_HPKE_MECHANISM,
+} from "./lib/server/client-v1/authority-contract.ts";
 
 export function timingSafeEqualString(a: string, b: string) {
   const encoder = new TextEncoder();
@@ -352,6 +356,28 @@ export function presentsClientV1Bearer(headerValue: string | null) {
   return credential.length > 0
     && credential.length <= CLIENT_V1_BEARER_CHARACTERS
     && CLIENT_V1_BEARER_CREDENTIAL.test(credential);
+}
+
+/**
+ * True when the request presents the complete reviewed HPKE-bound header set.
+ *
+ * Like presentsClientV1Bearer, this checks presentation only. The authority
+ * runtime validates every value, opens the ciphertext, and rejects malformed,
+ * stale, replayed, or incorrectly keyed requests before the route runs.
+ */
+export function presentsClientV1BoundAuthority(
+  headers: Pick<Headers, "get">,
+) {
+  if (
+    headers.get(CLIENT_V1_HPKE_HEADERS.mechanism)
+      !== CLIENT_V1_HPKE_MECHANISM
+  ) {
+    return false;
+  }
+  return Object.values(CLIENT_V1_HPKE_HEADERS).every((name) => {
+    const value = headers.get(name);
+    return value !== null && value.length > 0;
+  });
 }
 
 export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {

@@ -28,14 +28,17 @@ import {
   type KeyboardEvent,
 } from "react";
 import { ResearchXArticleReader } from "@/components/research-x-article-reader";
+import { ResearchResourceBrowserModal } from "@/components/research-resource-browser-modal";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { copyText } from "@/lib/clipboard";
+import { caveResearchRemoteContent } from "@/lib/feature-flags";
 import { Icon } from "@/lib/icon";
 import { paperArxivUrl, paperDownloadUrl } from "@/lib/research-paper-view";
+import { researchResourceSourceUrl } from "@/lib/research-resource-browser";
 import {
   groupSavedLinksByUsage,
   linkCategoryMeta,
@@ -142,6 +145,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [resourceMutationBusy, setResourceMutationBusy] = useState<string | null>(null);
   const [expandedResourceId, setExpandedResourceId] = useState<string | null>(null);
   const [confirmingResourceId, setConfirmingResourceId] = useState<string | null>(null);
+  // Browser-capable preview: { title, url } of the resource whose source URL the
+  // user chose to open in the modal. The modal itself enforces the
+  // consent.allowRemoteContent gate before ever loading the URL.
+  const [browserPreview, setBrowserPreview] = useState<{ title: string; url: string | null } | null>(null);
   const resourceSearchRef = useRef<HTMLInputElement | null>(null);
   const articleRequestRef = useRef(0);
   const activeArticleIdRef = useRef<string | null>(null);
@@ -775,6 +782,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 const expanded = expandedResourceId === resource.id;
                 const confirmingDelete = confirmingResourceId === resource.id;
                 const retryable = resource.ingest.state === "failed" && resource.ingest.retryable !== false;
+                const previewUrl = researchResourceSourceUrl(resource);
                 return (
                   <article className="research-res-catalog-row" key={`${resource.id}:${resource.revision}`}>
                     <div className="research-res-catalog-row__summary">
@@ -825,15 +833,29 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                             <div><dt>Failure code</dt><dd>{resource.ingest.lastFailureCode}</dd></div>
                           ) : null}
                         </dl>
-                        {resource.sourceUri ? (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            trailingIcon="ph:arrow-square-out"
-                            onClick={() => context.openUrl(resource.sourceUri!)}
-                          >
-                            Open source
-                          </Button>
+                        {previewUrl || resource.sourceUri ? (
+                          <div className="flex items-center gap-2">
+                            {previewUrl ? (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                leadingIcon="ph:globe"
+                                onClick={() => setBrowserPreview({ title: resource.title, url: previewUrl })}
+                              >
+                                Preview in browser
+                              </Button>
+                            ) : null}
+                            {resource.sourceUri ? (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                trailingIcon="ph:arrow-square-out"
+                                onClick={() => context.openUrl(resource.sourceUri!)}
+                              >
+                                Open source
+                              </Button>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
@@ -1332,6 +1354,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 ) : null}
                 <Button
                   size="sm"
+                  variant="ghost"
+                  leadingIcon="ph:globe"
+                  onClick={() => setBrowserPreview({
+                    title: openLink.title,
+                    url: (openDurableResource
+                      ? researchResourceSourceUrl(openDurableResource)
+                      : null) ?? openLink.url,
+                  })}
+                >
+                  Preview in browser
+                </Button>
+                <Button
+                  size="sm"
                   variant="secondary"
                   trailingIcon="ph:arrow-square-out"
                   onClick={() => context.openUrl(openLink.url)}
@@ -1360,6 +1395,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           </div>
         </div>
       ) : null}
+
+      <ResearchResourceBrowserModal
+        open={browserPreview !== null}
+        onClose={() => setBrowserPreview(null)}
+        title={browserPreview?.title ?? ""}
+        url={browserPreview?.url ?? null}
+        remoteContentRolloutEnabled={caveResearchRemoteContent()}
+        /* Resources has no authoritative, explicitly selected Context Pack.
+         * The Topic Discovery picker owns private local state and auto-selects
+         * its first result, so it cannot be lifted here as consent. Keep the
+         * optional consent absent until an explicit owner threads it through. */
+        contextPackConsent={undefined}
+      />
     </section>
   );
 }

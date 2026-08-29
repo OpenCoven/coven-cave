@@ -1162,6 +1162,26 @@ test.describe("research desk tabs", () => {
       }))
       .toBe(true);
     await expect(overlay.locator(".research-res-overlay__sub")).toHaveText("github.com");
+
+    // The rollout flag is not Context Pack consent. Resources has no
+    // authoritative explicit pack selection, so the browser modal must stay
+    // locked and must not place the remote URL in an iframe even when this
+    // spec is run locally with both NEXT_PUBLIC_CAVE_RESEARCH_* flags enabled.
+    const remoteRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url() === "https://github.com/acme/vector-bench") {
+        remoteRequests.push(request.url());
+      }
+    });
+    const previewTrigger = overlay.getByRole("button", { name: "Preview in browser" });
+    await previewTrigger.click();
+    const browserDialog = page.getByRole("dialog", { name: /Resource browser.*acme\/vector-bench/ });
+    await expect(browserDialog).toContainText("Remote content is off");
+    await expect(browserDialog.locator("iframe")).toHaveCount(0);
+    expect(remoteRequests).toEqual([]);
+    await browserDialog.getByRole("button", { name: "Close" }).click();
+    await expect(previewTrigger).toBeFocused();
+
     await overlay.getByRole("button", { name: "Close resource details" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // Focus returns to the card title that opened it.

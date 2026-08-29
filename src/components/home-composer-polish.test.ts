@@ -108,8 +108,13 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(
   source,
-  /<FamiliarQuickSwitch/,
-  "Home does not duplicate the shell-owned crew selector",
+  /home-composer-toolbar__left[\s\S]*?<FamiliarQuickSwitch/,
+  "the footer context cluster no longer owns familiar selection",
+);
+assert.match(
+  source,
+  /home-composer-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?home-composer-card\b/,
+  "Home establishes familiar context in a dedicated row before the reference composer",
 );
 assert.match(
   source,

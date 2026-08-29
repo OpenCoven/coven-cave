@@ -34,6 +34,7 @@ import {
 import "@/styles/chat-inner-rail.css";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
@@ -532,9 +533,23 @@ export function ChatSurface({
         </aside>
       ) : null}
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. */}
+            Chat keeps Projects discoverable as a first-class tab. The shared
+            familiar selector row (cave-3pnnq) sits directly above the section
+            tabs so a familiar is established before a scope is chosen. */}
+        <div className="chat-familiar-context">
+          <FamiliarQuickSwitch
+            familiars={resolvedFamiliars}
+            activeFamiliarId={activeFamiliarId}
+            sessions={sessions}
+            onSelectFamiliar={(id) => {
+              if (id) onSetActiveFamiliar(id);
+            }}
+            labeled
+            singleRequired
+          />
+        </div>
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           {/* Mobile route to the thread list. Rendered on every viewport and
               hidden by CSS above 1024px, where the docked rail and its spine

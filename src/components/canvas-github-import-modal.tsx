@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { StandardSelect } from "@/components/ui/select";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
+import { projectErrorCode } from "@/lib/project-errors";
 import type { CanvasArtifactSource } from "@/lib/canvas-artifacts";
 import {
   CREATE_CANVAS_IMPORT_PROJECT,
@@ -55,6 +57,9 @@ export function CanvasGitHubImportModal({
     useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Server code behind the error when the failure carried one, so the modal can
+  // render the actionable out-of-workspace containment error inline (cave-cu0x).
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   const parsed = useMemo(() => parseGitHubFileUrl(fileUrl), [fileUrl]);
   const supported = parsed
@@ -101,6 +106,7 @@ export function CanvasGitHubImportModal({
     setNativeFolderPickerAvailable(isTauri());
     setBusy(false);
     setError(null);
+    setErrorCode(null);
   }, [open]);
 
   const repositoryKey = parsed
@@ -111,6 +117,7 @@ export function CanvasGitHubImportModal({
     setProjectChoiceTouched(false);
     setProjectRoot("");
     setError(null);
+    setErrorCode(null);
   }, [repositoryKey]);
 
   useEffect(() => {
@@ -131,11 +138,13 @@ export function CanvasGitHubImportModal({
       if (picked) {
         setProjectRoot(picked);
         setError(null);
+        setErrorCode(null);
       }
     } catch {
       setError(
         "Couldn’t open the folder picker. Enter the local checkout path.",
       );
+      setErrorCode(null);
     }
   };
 
@@ -148,11 +157,13 @@ export function CanvasGitHubImportModal({
           ? "Enter the local checkout for this repository."
           : "Choose a Cave project.",
       );
+      setErrorCode(null);
       return;
     }
 
     setBusy(true);
     setError(null);
+    setErrorCode(null);
     try {
       const sourceResponse = await fetch("/api/canvas/github-source", {
         method: "POST",
@@ -206,6 +217,7 @@ export function CanvasGitHubImportModal({
           ? caught.message
           : "Couldn’t load that GitHub file.";
       setError(message);
+      setErrorCode(projectErrorCode(caught) ?? null);
       announce(message, "assertive");
     } finally {
       setBusy(false);
@@ -286,6 +298,7 @@ export function CanvasGitHubImportModal({
               setFileUrl(event.target.value);
               setFileUrlBlurred(false);
               setError(null);
+              setErrorCode(null);
             }}
             onBlur={() => setFileUrlBlurred(true)}
             placeholder="https://github.com/owner/repo/blob/main/src/App.tsx"
@@ -360,6 +373,7 @@ export function CanvasGitHubImportModal({
                     setProjectChoice(value);
                     setProjectChoiceTouched(true);
                     setError(null);
+                    setErrorCode(null);
                   }}
                   options={projectOptions}
                   disabled={projectsLoading}
@@ -393,6 +407,7 @@ export function CanvasGitHubImportModal({
                       onChange={(event) => {
                         setProjectRoot(event.target.value);
                         setError(null);
+                        setErrorCode(null);
                       }}
                       placeholder="/Users/you/code/project"
                     />
@@ -418,9 +433,11 @@ export function CanvasGitHubImportModal({
         ) : null}
 
         {error ? (
-          <div className="canvas-github-import__error" role="alert">
-            {error}
-          </div>
+          <ProjectRootWorkspaceNotice
+            className="canvas-github-import__error"
+            code={errorCode}
+            error={error}
+          />
         ) : null}
       </div>
     </Modal>

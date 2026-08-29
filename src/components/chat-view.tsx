@@ -317,6 +317,7 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -8124,9 +8125,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )}
             {overflowAddProject.addError ? (
-              <p className="cave-project-picker__error" role="alert">
-                {overflowAddProject.addError}
-              </p>
+              <ProjectRootWorkspaceNotice
+                className="cave-project-picker__error"
+                code={overflowAddProject.addErrorCode}
+                error={overflowAddProject.addError}
+              />
             ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal

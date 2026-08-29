@@ -7,6 +7,10 @@ import {
   ProjectCreationError,
 } from "./project-errors.ts";
 import {
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+} from "./project-root-guidance.ts";
+import {
   resetProjectRegistryListenersForTests,
   subscribeProjectRegistryMutation,
 } from "./project-registry-events.ts";
@@ -186,6 +190,36 @@ assert.equal(projectNameForRoot(""), "");
   const result = await addChatProject({ root: "/x", familiarId: "sage", createProject, fetchImpl });
   assert.deepEqual(result, { ok: false, error: message });
   assert.equal(granted, false);
+}
+
+// The throwing creator surfaces the server's out-of-workspace containment error
+// WITH its stable code, so entry points can render the actionable copy inline
+// (cave-cu0x). The code is the machine-readable part; the error is its copy.
+{
+  let granted = false;
+  const createProjectOrThrow = async () => {
+    throw new ProjectCreationError(
+      PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+      PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+    );
+  };
+  const fetchImpl = async () => {
+    granted = true;
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  const result = await addChatProject({
+    root: "/Users/me",
+    familiarId: "sage",
+    createProject: async () => null,
+    createProjectOrThrow,
+    fetchImpl,
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
+    code: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
+  });
+  assert.equal(granted, false, "a rejected root must not proceed to the grant step");
 }
 
 // Grant fails → surface the server error.

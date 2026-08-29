@@ -152,6 +152,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
     "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
+    "src/components/research-resource-browser-modal.test.tsx",
     "src/components/role-surfaces/use-research-resources.test.tsx",
     "src/lib/research-resource-client.test.ts",
     "src/components/role-surfaces/use-research-links.test.ts",
@@ -160,6 +161,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/lib/research-generations.test.ts",
     "src/lib/research-paper-view.test.ts",
+    "src/lib/research-resource-browser.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -358,7 +360,6 @@ export const SUITES = {
     "src/lib/auto-mission-state.test.ts",
     "src/lib/auto-mission-approval.test.ts",
     "src/lib/auto-mission-presence.test.ts",
-    "src/components/running-sessions-mission-row.test.ts",
     "src/components/auto-status-card.test.tsx",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
@@ -757,6 +758,7 @@ export const SUITES = {
     "src/components/task-work-cockpit.test.ts",
     "src/components/task-work-github.test.ts",
     "src/lib/session-status.test.ts",
+    "src/lib/running-activity.test.ts",
     "src/components/board-grouping.test.ts",
     "src/components/board-card-chip-diet.test.ts",
     "src/components/board-project-picker.test.ts",
@@ -821,6 +823,7 @@ export const SUITES = {
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-entries.test.ts",
     "src/app/api/journal/route.test.ts",
+    "src/app/api/running-activity/route.test.ts",
     "src/lib/journal.test.ts",
     "src/lib/journal-memory-stats.test.ts",
     "src/lib/journal-generate.test.ts",
@@ -1060,6 +1063,7 @@ export const SUITES = {
     "src/components/project-picker.test.ts",
     "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
+    "src/components/project-root-workspace-notice.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/lib/directory-picker-pins.test.ts",
@@ -1341,7 +1345,7 @@ export const SUITES = {
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
-    "src/components/running-sessions-popover.test.ts",
+    "src/components/running-activity-popover.test.ts",
     "src/components/top-bar-polish.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",
@@ -1458,6 +1462,7 @@ export const SUITES = {
     "scripts/client-v1-release-smoke.test.mjs",
     "scripts/client-v1-authority-takeover.test.mjs",
     "scripts/client-v1-conformance.test.mjs",
+    "scripts/check-build-evidence.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/main-health.test.mjs",
@@ -1517,6 +1522,7 @@ export const SUITES = {
     "src/lib/server/client-v1/path-ownership.test.ts",
     "src/lib/server/client-v1/status.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
+    "src/lib/server/client-v1/conformance-compatibility.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
     "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
@@ -1966,6 +1972,7 @@ export const SUITES = {
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
     "scripts/ios-message-retry.test.mjs",
+    "scripts/ios-mutation-retry.test.mjs",
     "scripts/ios-message-bubble-equatable.test.mjs",
     "scripts/ios-motion-polish.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
@@ -1993,6 +2000,7 @@ export const SUITES = {
   // Keep this separate from the broader app/api/mobile suites.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/client-v1-compatibility-control.integration.test.mjs",
     "scripts/research-protocol-conformance.test.ts",
     "scripts/research-protocol-scenario-conformance.test.ts",
     "src/lib/research-protocol/common.test.ts",
@@ -2042,9 +2050,12 @@ const ALIAS_LOADER = new Set([
   // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",
-  // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
-  // and friends, and the spec itself imports "@/lib/auto-mission-state".
-  "src/components/running-sessions-mission-row.test.ts",
+  // running-activity resolves "@/lib/session-status" (runtime), "@/lib/types",
+  // "@/lib/cave-board-types", and the run-record types; the popover spec renders
+  // the real .tsx module, which resolves "@/lib/icon" and "@/lib/running-activity".
+  "src/lib/running-activity.test.ts",
+  "src/components/running-activity-popover.test.ts",
+  "src/app/api/running-activity/route.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
   // Resolves the process-local instance id through the "@/lib" Cave path.
@@ -2439,6 +2450,7 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
   "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
+  "src/components/research-resource-browser-modal.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
   "src/components/role-surfaces/research-topic-card.test.tsx",

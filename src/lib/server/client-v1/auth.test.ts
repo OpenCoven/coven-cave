@@ -5,6 +5,10 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import {
+  CLIENT_V1_HPKE_HEADERS,
+  CLIENT_V1_HPKE_MECHANISM,
+} from "./authority-contract.ts";
+import {
   createClientV1Authenticator,
   type ClientV1AuthResult,
 } from "./auth.ts";
@@ -30,6 +34,7 @@ import {
   isClientV1Path,
   isRefusedClientV1Path,
   presentsClientV1Bearer,
+  presentsClientV1BoundAuthority,
 } from "../../../proxy-helpers.ts";
 
 const ACTIVE_CREDENTIAL: ClientV1CredentialRecord = {
@@ -779,6 +784,37 @@ test("presentsClientV1Bearer accepts only well-formed RFC 6750 token68", () => {
   assert.equal(presentsClientV1Bearer(`Bearer ${"a".repeat(4097)}`), false);
 });
 
+test("presentsClientV1BoundAuthority requires the exact complete HPKE presentation", () => {
+  const headers = new Headers(
+    Object.fromEntries(
+      Object.values(CLIENT_V1_HPKE_HEADERS).map((name) => [
+        name,
+        name === CLIENT_V1_HPKE_HEADERS.mechanism
+          ? CLIENT_V1_HPKE_MECHANISM
+          : "present",
+      ]),
+    ),
+  );
+  assert.equal(presentsClientV1BoundAuthority(headers), true);
+
+  for (const name of Object.values(CLIENT_V1_HPKE_HEADERS)) {
+    const incomplete = new Headers(headers);
+    incomplete.delete(name);
+    assert.equal(
+      presentsClientV1BoundAuthority(incomplete),
+      false,
+      `missing ${name}`,
+    );
+  }
+
+  const wrongMechanism = new Headers(headers);
+  wrongMechanism.set(
+    CLIENT_V1_HPKE_HEADERS.mechanism,
+    "hpke-bound-v2",
+  );
+  assert.equal(presentsClientV1BoundAuthority(wrongMechanism), false);
+});
+
 test("client-v1 resource ingress refuses a request that presents no bearer", async () => {
   try {
     setProxyEnv({
@@ -858,6 +894,35 @@ test("client-v1 resource ingress refuses a request that presents no bearer", asy
       headers: { ...headers, authorization: "Bearer AAAA" },
     }));
     assert.equal(passedThrough(fakeTwelveByte), true, "presentation-only gate must admit a well-formed fake");
+
+    const boundHeaders = Object.fromEntries(
+      Object.values(CLIENT_V1_HPKE_HEADERS).map((name) => [
+        name,
+        name === CLIENT_V1_HPKE_HEADERS.mechanism
+          ? CLIENT_V1_HPKE_MECHANISM
+          : "present",
+      ]),
+    );
+    const bound = await proxy(proxyRequest("/api/client/v1/projects", {
+      headers: { ...headers, ...boundHeaders },
+    }));
+    assert.equal(
+      passedThrough(bound),
+      true,
+      "a complete HPKE-bound presentation must reach the authority runtime",
+    );
+    for (const missing of Object.values(CLIENT_V1_HPKE_HEADERS)) {
+      const incomplete = { ...boundHeaders };
+      delete incomplete[missing];
+      const response = await proxy(proxyRequest("/api/client/v1/projects", {
+        headers: { ...headers, ...incomplete },
+      }));
+      assert.equal(response.status, 401, `missing ${missing}`);
+      assert.deepEqual(await response.json(), {
+        ok: false,
+        error: "unauthorized",
+      });
+    }
 
     // The public set stays credential-free: pairing is how a client gets one.
     for (const path of contractPublicPaths()) {
