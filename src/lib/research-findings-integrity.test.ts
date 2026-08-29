@@ -114,6 +114,28 @@ test("parser-recognized arbitrary source ids count as citations without creating
   assert.equal(integrity.summary.label, "1 source awaits review");
 });
 
+test("parser boundary grammar excludes punctuation-delimited source ids from integrity", () => {
+  const integrity = deriveResearchFindingsIntegrity("Footnote [^1] and marker -foo- stay prose.", [
+    source("^1", "used"),
+    source("-foo-", "used"),
+  ]);
+
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("missing and actual references preserve document order", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "Missing [S9] before manual-1, then actual S1.",
+    [source("manual-1", "candidate"), source("S1", "used")],
+  );
+
+  assert.deepEqual(integrity.referencedIds, ["S9", "manual-1", "S1"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S9"]);
+});
+
 test("inline code removal inserts a space so arbitrary ids are not fabricated", () => {
   const integrity = deriveResearchFindingsIntegrity("manual`x`-1 stays prose.", [
     source("manual-1", "candidate"),

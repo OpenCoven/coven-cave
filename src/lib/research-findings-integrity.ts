@@ -1,4 +1,5 @@
 import type { ResearchSourceRef } from "./research-missions.ts";
+import { findRecognizedFindingsRefs } from "./research-findings-doc.ts";
 
 export type ResearchIntegritySummaryKind =
   | "unavailable"
@@ -327,9 +328,10 @@ function stripBareUrls(markdown: string): string {
   return sanitized;
 }
 
-function scanStrictBracketedSourceIds(sanitizedMarkdown: string): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
+type IndexedSourceId = { id: string; index: number };
+
+function scanStrictBracketedSourceIds(sanitizedMarkdown: string): IndexedSourceId[] {
+  const matches: IndexedSourceId[] = [];
 
   for (let index = 0; index < sanitizedMarkdown.length; ) {
     if (sanitizedMarkdown[index] !== "[" || isEscaped(sanitizedMarkdown, index)) {
@@ -342,99 +344,32 @@ function scanStrictBracketedSourceIds(sanitizedMarkdown: string): string[] {
       index += 1;
       continue;
     }
-    for (const token of sanitizedMarkdown.slice(index + 1, closeIndex).split(",")) {
+
+    let tokenStart = index + 1;
+    for (let tokenEnd = tokenStart; tokenEnd <= closeIndex; tokenEnd += 1) {
+      if (tokenEnd < closeIndex && sanitizedMarkdown[tokenEnd] !== ",") continue;
+      const token = sanitizedMarkdown.slice(tokenStart, tokenEnd);
       const id = token.trim();
-      if (!SOURCE_ID_RE.test(id) || seen.has(id)) continue;
-      seen.add(id);
-      ids.push(id);
+      if (SOURCE_ID_RE.test(id)) {
+        matches.push({
+          id,
+          index: tokenStart + token.length - token.trimStart().length,
+        });
+      }
+      tokenStart = tokenEnd + 1;
     }
     index = closeIndex + 1;
-  }
-
-  return ids;
-}
-
-export function scanBracketedSourceIds(markdown: string): string[] {
-  return scanStrictBracketedSourceIds(preprocessMarkdownForIntegrity(markdown));
-}
-
-function isTokenCharacter(character: string | undefined): boolean {
-  if (!character) return false;
-  const code = character.charCodeAt(0);
-  return (
-    (code >= 48 && code <= 57) ||
-    (code >= 65 && code <= 90) ||
-    code === 95 ||
-    (code >= 97 && code <= 122)
-  );
-}
-
-function scanConflictMarkerIds(markdown: string): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
-
-  for (let index = 0; index < markdown.length; ) {
-    if (markdown[index] !== "C" || isTokenCharacter(markdown[index - 1])) {
-      index += 1;
-      continue;
-    }
-
-    let endIndex = index + 1;
-    while (endIndex < markdown.length && /\d/.test(markdown[endIndex])) endIndex += 1;
-    if (endIndex === index + 1 || isTokenCharacter(markdown[endIndex])) {
-      index += 1;
-      continue;
-    }
-
-    const id = markdown.slice(index, endIndex);
-    if (!seen.has(id)) {
-      seen.add(id);
-      ids.push(id);
-    }
-    index = endIndex;
-  }
-
-  return ids;
-}
-
-function scanReferencedIdsInOrder(markdown: string, candidates: string[]): string[] {
-  return uniqueIdsInOrder(scanMatchedIds(markdown, candidates).map((match) => match.id));
-}
-
-type IdMatch = { id: string; start: number; end: number };
-
-function scanMatchedIds(markdown: string, candidates: string[]): IdMatch[] {
-  const matches: IdMatch[] = [];
-  const longestFirst = uniqueIdsInOrder(candidates.filter(Boolean)).sort(
-    (left, right) => right.length - left.length,
-  );
-
-  for (let index = 0; index < markdown.length; index += 1) {
-    if (isTokenCharacter(markdown[index - 1])) continue;
-
-    for (const id of longestFirst) {
-      if (!markdown.startsWith(id, index)) continue;
-      if (isTokenCharacter(markdown[index + id.length])) continue;
-      matches.push({ id, start: index, end: index + id.length });
-      index += id.length - 1;
-      break;
-    }
   }
 
   return matches;
 }
 
-function maskMatchedSpans(markdown: string, matches: IdMatch[]): string {
-  if (matches.length === 0) return markdown;
-
-  let masked = "";
-  let cursor = 0;
-  for (const match of matches) {
-    masked += markdown.slice(cursor, match.start);
-    masked += " ".repeat(match.end - match.start);
-    cursor = match.end;
-  }
-  return masked + markdown.slice(cursor);
+export function scanBracketedSourceIds(markdown: string): string[] {
+  return uniqueIdsInOrder(
+    scanStrictBracketedSourceIds(preprocessMarkdownForIntegrity(markdown)).map(
+      (match) => match.id,
+    ),
+  );
 }
 
 function countStatuses(sources: ResearchSourceRef[]): Record<ResearchSourceRef["status"], number> {
@@ -507,22 +442,24 @@ export function deriveResearchFindingsIntegrity(
     if (!sourceById.has(source.id)) sourceById.set(source.id, source);
   }
 
-  const visibleLedgerSourceIds = uniqueIdsInOrder(
-    [...sourceById.keys()].filter((id) => !CONFLICT_ID_RE.test(id)),
+  const recognizedRefs = findRecognizedFindingsRefs(sanitizedMarkdown, sources);
+  const actualLedgerRefs = recognizedRefs.filter(
+    (match) => sourceById.has(match.id) && !CONFLICT_ID_RE.test(match.id),
   );
-  const unresolvedCandidateIds = scanStrictBracketedSourceIds(sanitizedMarkdown).filter(
-    (id) => !sourceById.has(id),
+  const unresolvedStrictRefs = scanStrictBracketedSourceIds(sanitizedMarkdown).filter(
+    (match) => !sourceById.has(match.id),
   );
-  const referencedIds = scanReferencedIdsInOrder(
-    sanitizedMarkdown,
-    uniqueIdsInOrder([...visibleLedgerSourceIds, ...unresolvedCandidateIds]),
+  const referencedIds = uniqueIdsInOrder(
+    [...actualLedgerRefs, ...unresolvedStrictRefs]
+      .sort((left, right) => left.index - right.index)
+      .map((match) => match.id),
   );
   const unresolvedIds = referencedIds.filter((id) => !sourceById.has(id));
-  const maskedConflictMarkdown = maskMatchedSpans(
-    sanitizedMarkdown,
-    scanMatchedIds(sanitizedMarkdown, visibleLedgerSourceIds),
+  const conflictMarkerIds = uniqueIdsInOrder(
+    recognizedRefs
+      .filter((match) => CONFLICT_ID_RE.test(match.id))
+      .map((match) => match.id),
   );
-  const conflictMarkerIds = scanConflictMarkerIds(maskedConflictMarkdown);
   const conflictingSourceIds = uniqueIdsInOrder(
     sources.filter((source) => source.status === "conflicting").map((source) => source.id),
   );

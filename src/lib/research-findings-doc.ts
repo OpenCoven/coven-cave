@@ -13,6 +13,12 @@ import type { ResearchSourceRef } from "./research-missions.ts";
 
 export type FindingsRefTone = "accent" | "warn" | "muted";
 
+export type RecognizedFindingsRef = {
+  id: string;
+  index: number;
+  tone: FindingsRefTone;
+};
+
 export type FindingsSpan =
   | { kind: "text"; text: string; bold?: boolean; italic?: boolean }
   | { kind: "ref"; id: string; tone: FindingsRefTone }
@@ -79,18 +85,47 @@ function buildRefResolver(sources: ResearchSourceRef[]): RefResolver {
   };
 }
 
+type FindingsRefMatch = RecognizedFindingsRef & { length: number };
+
+function matchRecognizedFindingsRefs(input: string, resolver: RefResolver): FindingsRefMatch[] {
+  if (!resolver.pattern || !input) return [];
+
+  const matches: FindingsRefMatch[] = [];
+  resolver.pattern.lastIndex = 0;
+  for (let match = resolver.pattern.exec(input); match; match = resolver.pattern.exec(input)) {
+    matches.push({
+      id: match[1],
+      index: match.index,
+      length: match[0].length,
+      tone: resolver.toneFor(match[1]),
+    });
+  }
+  return matches;
+}
+
+/** Find references using the exact resolver and boundary grammar used by the
+ * inline findings parser. Matches retain duplicates and input-relative order. */
+export function findRecognizedFindingsRefs(
+  input: string,
+  sources: ResearchSourceRef[],
+): RecognizedFindingsRef[] {
+  return matchRecognizedFindingsRefs(input, buildRefResolver(sources)).map(
+    ({ id, index, tone }) => ({ id, index, tone }),
+  );
+}
+
 /** Split plain text into text/ref spans (no emphasis parsing at this layer). */
 function tokenizeRefs(text: string, resolver: RefResolver, base: { bold?: boolean; italic?: boolean }): FindingsSpan[] {
-  if (!resolver.pattern || !text) {
+  const matches = matchRecognizedFindingsRefs(text, resolver);
+  if (matches.length === 0) {
     return text ? [{ kind: "text", text, ...base }] : [];
   }
   const spans: FindingsSpan[] = [];
   let last = 0;
-  resolver.pattern.lastIndex = 0;
-  for (let m = resolver.pattern.exec(text); m; m = resolver.pattern.exec(text)) {
-    if (m.index > last) spans.push({ kind: "text", text: text.slice(last, m.index), ...base });
-    spans.push({ kind: "ref", id: m[1], tone: resolver.toneFor(m[1]) });
-    last = m.index + m[0].length;
+  for (const match of matches) {
+    if (match.index > last) spans.push({ kind: "text", text: text.slice(last, match.index), ...base });
+    spans.push({ kind: "ref", id: match.id, tone: match.tone });
+    last = match.index + match.length;
   }
   if (last < text.length) spans.push({ kind: "text", text: text.slice(last), ...base });
   return spans;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ResearchSourceRef } from "./research-missions.ts";
 import {
+  findRecognizedFindingsRefs,
   parseFindingsDoc,
   parseInline,
   refToneForStatus,
@@ -60,6 +61,29 @@ test("conflicting/rejected source refs carry warn/muted tones", () => {
 test("arbitrary capitalised words are not mistaken for refs", () => {
   const spans = parseInline("The System Self-model is Stable", SOURCES);
   assert.deepEqual(refIds(spans), []);
+});
+
+test("matcher and inline parser reject source ids outside the parser boundary grammar", () => {
+  const sources = [source("^1", "used"), source("-foo-", "used")];
+  const input = "Footnote [^1] and marker -foo- stay prose.";
+
+  assert.deepEqual(findRecognizedFindingsRefs(input, sources), []);
+  assert.deepEqual(refIds(parseInline(input, sources)), []);
+});
+
+test("matcher reports heading refs in order without splitting longer source ids", () => {
+  const input = "# Result from manual-1 compared with manual-C1 and manual-1";
+  const firstManualIndex = input.indexOf("manual-1");
+  const matches = findRecognizedFindingsRefs(input, [
+    source("manual-1", "candidate"),
+    source("manual-C1", "conflicting"),
+  ]);
+
+  assert.deepEqual(matches, [
+    { id: "manual-1", index: firstManualIndex, tone: "accent" },
+    { id: "manual-C1", index: input.indexOf("manual-C1"), tone: "warn" },
+    { id: "manual-1", index: input.indexOf("manual-1", firstManualIndex + 1), tone: "accent" },
+  ]);
 });
 
 test("bold, italic and links parse into styled spans", () => {
