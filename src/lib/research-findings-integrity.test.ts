@@ -239,12 +239,30 @@ test("nested brackets do not form a hidden reference definition", () => {
   assert.equal(integrity.summary.kind, "verified");
 });
 
+test("nested visible citations remain unresolved without ledger rows", () => {
+  const integrity = deriveResearchFindingsIntegrity("[[S1]]: /url", []);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S1"]);
+  assert.equal(integrity.summary.kind, "unavailable");
+});
+
 test("reference definitions inside markdown containers remain hidden", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "> [quoted]: /S1\n- [listed]: /C2\nVisible [S3].",
     [source("S1", "used"), source("S3", "candidate")],
   );
   assert.deepEqual(integrity.referencedIds, ["S3"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("fenced code inside markdown containers does not create evidence states", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "> ~~~\n> [S1] C2\n> ~~~\n1. ```\n   [S3] C4\n   ```\nVisible [S5].",
+    [source("S1", "used"), source("S3", "used"), source("S5", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S5"]);
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "candidate");

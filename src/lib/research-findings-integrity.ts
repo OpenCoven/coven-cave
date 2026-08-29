@@ -135,7 +135,7 @@ function normalizeReferenceLabel(label: string): string {
   return unescapeCommonMarkPunctuation(label).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-type ReferenceDefinitionContainer = {
+type MarkdownContainer = {
   blockquoteDepth: number;
   listIndent: number;
 };
@@ -167,7 +167,7 @@ function stripBlockquotePrefix(
 
 function readReferenceDefinitionContainer(line: string): {
   content: string;
-  container: ReferenceDefinitionContainer;
+  container: MarkdownContainer;
 } {
   const blockquote = stripBlockquotePrefix(line) ?? { content: line, depth: 0 };
   const listMatch = blockquote.content.match(/^ {0,3}(?:[-+*]|\d{1,9}[.)])([ \t]+)/);
@@ -181,7 +181,7 @@ function readReferenceDefinitionContainer(line: string): {
 
 function readReferenceContainerLine(
   line: string,
-  container: ReferenceDefinitionContainer,
+  container: MarkdownContainer,
 ): string | null {
   const blockquote = stripBlockquotePrefix(line, container.blockquoteDepth);
   if (!blockquote) return null;
@@ -347,14 +347,15 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
   referenceDefinitionLabels: Set<string>;
 } {
   const lines = markdown.split(/\r?\n/);
-  let fence: { character: string; length: number } | null = null;
+  let fence: { character: string; length: number; container: MarkdownContainer } | null = null;
   const referenceDefinitionLabels = new Set<string>();
   const strippedLines: string[] = [];
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    const run = readFenceRun(line);
     if (fence) {
+      const containerLine = readReferenceContainerLine(line, fence.container);
+      const run = containerLine === null ? null : readFenceRun(containerLine);
       if (
         run &&
         run.character === fence.character &&
@@ -366,8 +367,14 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       strippedLines.push("");
       continue;
     }
+    const containerLine = readReferenceDefinitionContainer(line);
+    const run = readFenceRun(containerLine.content);
     if (run) {
-      fence = { character: run.character, length: run.length };
+      fence = {
+        character: run.character,
+        length: run.length,
+        container: containerLine.container,
+      };
       strippedLines.push("");
       continue;
     }
@@ -555,7 +562,7 @@ function scanStrictBracketedSourceIds(sanitizedMarkdown: string): IndexedSourceI
       }
       tokenStart = tokenEnd + 1;
     }
-    index = closeIndex + 1;
+    index += 1;
   }
 
   return matches;
