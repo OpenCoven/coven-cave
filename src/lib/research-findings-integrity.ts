@@ -1,4 +1,3 @@
-import { parseFindingsDoc } from "./research-findings-doc.ts";
 import type { ResearchSourceRef } from "./research-missions.ts";
 
 export type ResearchIntegritySummaryKind =
@@ -258,8 +257,16 @@ function stripBareUrls(markdown: string): string {
       continue;
     }
 
+    let parenDepth = 0;
     index += protocolLength;
-    while (index < markdown.length && !/\s/.test(markdown[index])) index += 1;
+    while (index < markdown.length) {
+      const character = markdown[index];
+      if (/\s/.test(character)) break;
+      if (character === "[" && parenDepth === 0) break;
+      if (character === "(") parenDepth += 1;
+      else if (character === ")" && parenDepth > 0) parenDepth -= 1;
+      index += 1;
+    }
     sanitized += " ";
   }
 
@@ -431,15 +438,15 @@ export function deriveResearchFindingsIntegrity(
     if (!sourceById.has(source.id)) sourceById.set(source.id, source);
   }
 
-  const parserRecognizedSourceIds = parseFindingsDoc(sanitizedMarkdown, sources).refIds.filter(
-    (id) => sourceById.has(id) && !CONFLICT_ID_RE.test(id),
+  const visibleLedgerSourceIds = uniqueIdsInOrder(
+    [...sourceById.keys()].filter((id) => !CONFLICT_ID_RE.test(id)),
   );
   const unresolvedCandidateIds = scanStrictBracketedSourceIds(sanitizedMarkdown).filter(
     (id) => !sourceById.has(id),
   );
   const referencedIds = scanReferencedIdsInOrder(
     sanitizedMarkdown,
-    uniqueIdsInOrder([...parserRecognizedSourceIds, ...unresolvedCandidateIds]),
+    uniqueIdsInOrder([...visibleLedgerSourceIds, ...unresolvedCandidateIds]),
   );
   const unresolvedIds = referencedIds.filter((id) => !sourceById.has(id));
   const conflictMarkerIds = scanConflictMarkerIds(sanitizedMarkdown);

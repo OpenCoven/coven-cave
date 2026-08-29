@@ -131,6 +131,14 @@ test("balanced link stripping preserves visible labels while removing destinatio
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("bare URL stripping stops before adjacent citations and leaves later conflicts visible", () => {
+  const integrity = deriveResearchFindingsIntegrity("See https://x.test/report.[S1] C2.", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, ["C2"]);
+  assert.equal(integrity.summary.kind, "conflicting");
+});
+
 test("linked images do not create referenced ids or summaries", () => {
   const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)](target)", [source("S9", "candidate")]);
   assert.deepEqual(integrity.referencedIds, []);
@@ -167,6 +175,26 @@ test("reference definitions do not create source or conflict markers", () => {
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "none");
+});
+
+test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "# Report manual-1\n\n[paper]: /docs/manual-1",
+    [source("manual-1", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("visible section headings count real ledger ids while bare URLs remain excluded", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "# Report\n\n## Result from manual-1\n\nhttps://x.test/manual-1",
+    [source("manual-1", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
 });
 
 test("html comments do not create source or conflict markers", () => {
