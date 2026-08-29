@@ -15,6 +15,13 @@ publish a public TestFlight or App Store enrollment link. End users cannot
 install the native iOS client publicly yet; the source-build path below is the
 available contributor route.
 
+TestFlight uploads carry a known, cosmetic App Store Connect warning that the
+vendored WebRTC.framework (SPM binary package, pinned in project.yml) has no
+matching dSYM, so WebRTC-side crash frames cannot be symbolicated. It does not
+block uploads; the release pipeline audits dSYM coverage and injects vendored
+dSYMs from apps/ios/vendor/WebRTC.dSYMs when they exist. See
+docs/ios-webrtc-dsym-symbolication.md for the root cause and options.
+
 ## Requirements
 
 - Xcode 16+ (developed against Xcode 26)
