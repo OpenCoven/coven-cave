@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
+import { projectErrorCode } from "@/lib/project-errors";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 import {
   canPersistPendingFirstProjectAccessSnapshot,
   clearPendingFirstProjectAccessSnapshot,
@@ -62,6 +65,14 @@ export function FirstProjectGate({
   const [rootDraft, setRootDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // The server code behind submitError when the failure carried one, so the
+  // gate can render the actionable out-of-workspace containment error inline
+  // instead of a generic failure (cave-cu0x).
+  const [submitErrorCode, setSubmitErrorCode] = useState<string | null>(null);
+  const clearSubmitError = useCallback(() => {
+    setSubmitError(null);
+    setSubmitErrorCode(null);
+  }, []);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedExistingProjectId, setSelectedExistingProjectId] = useState("");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
@@ -109,8 +120,8 @@ export function FirstProjectGate({
     if (!trimmed) return;
     setRootDraft(trimmed);
     setNameDraft((current) => (current.trim() ? current : pathBasename(trimmed)));
-    setSubmitError(null);
-  }, []);
+    clearSubmitError();
+  }, [clearSubmitError]);
 
   const createProjectWithRegistration = useCallback(async (
     name: string,
@@ -154,28 +165,33 @@ export function FirstProjectGate({
     event.preventDefault();
     if (submitting || loadingProjects || Boolean(projectsError)) return;
     if (!lockedProject && !submitName) {
+      clearSubmitError();
       setSubmitError("Enter a project name.");
       return;
     }
     if (!lockedProject && !submitRoot) {
+      clearSubmitError();
       setSubmitError("Enter an absolute project root.");
       return;
     }
     if (!lockedProject && !isAbsolutePath(submitRoot)) {
+      clearSubmitError();
       setSubmitError("Project root must be an absolute path.");
       return;
     }
     if (submitFamiliarId && !pendingGrant && !lockedProject && !canPersistPendingFirstProjectAccessSnapshot()) {
+      clearSubmitError();
       setSubmitError(STORAGE_REQUIRED_ERROR);
       return;
     }
     if (submitFamiliarId && pendingGrant && !writePendingFirstProjectAccessSnapshot(pendingGrant)) {
+      clearSubmitError();
       setSubmitError(STORAGE_RETRY_ERROR);
       return;
     }
 
     setSubmitting(true);
-    setSubmitError(null);
+    clearSubmitError();
     try {
       const result = await addChatProject({
         root: submitRoot,
@@ -188,17 +204,19 @@ export function FirstProjectGate({
         const createdProjectName = lockedProject?.name ?? submitName;
         clearPendingFirstProjectAccessSnapshot();
         onPendingGrantChange(null);
-        setSubmitError(null);
+        clearSubmitError();
         announce(`${lockedProject ? "Granted" : "Created"} project ${createdProjectName}. Chat is ready.`);
       } else {
         setSubmitError(result.error);
+        setSubmitErrorCode(result.code ?? null);
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Could not create that project.");
+      setSubmitErrorCode(projectErrorCode(error) ?? null);
     } finally {
       setSubmitting(false);
     }
-  }, [announce, createProjectWithRegistration, loadingProjects, pendingGrant, projectsError, submitFamiliarId, submitName, submitRoot, submitting, lockedProject, onPendingGrantChange]);
+  }, [announce, clearSubmitError, createProjectWithRegistration, loadingProjects, pendingGrant, projectsError, submitFamiliarId, submitName, submitRoot, submitting, lockedProject, onPendingGrantChange]);
 
   if (!open) return null;
 
@@ -262,12 +280,11 @@ export function FirstProjectGate({
                 ) : null}
 
                 {submitError ? (
-                  <div
-                    role="alert"
+                  <ProjectRootWorkspaceNotice
                     className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-danger)]"
-                  >
-                    {submitError}
-                  </div>
+                    code={submitErrorCode}
+                    error={submitError}
+                  />
                 ) : null}
 
                 {loadingProjects ? (
@@ -289,7 +306,7 @@ export function FirstProjectGate({
                       value={selectedExistingProjectId}
                       onChange={(event) => {
                         setSelectedExistingProjectId(event.target.value);
-                        setSubmitError(null);
+                        clearSubmitError();
                       }}
                       disabled={submitting}
                       className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)]"
@@ -318,7 +335,7 @@ export function FirstProjectGate({
                     value={registeredProject?.name ?? nameDraft}
                     onChange={(event) => {
                       setNameDraft(event.target.value);
-                      setSubmitError(null);
+                      clearSubmitError();
                     }}
                     placeholder="Project name"
                     disabled={Boolean(registeredProject) || submitting}
@@ -339,7 +356,7 @@ export function FirstProjectGate({
                       value={registeredProject?.root ?? rootDraft}
                       onChange={(event) => {
                         setRootDraft(event.target.value);
-                        setSubmitError(null);
+                        clearSubmitError();
                       }}
                       placeholder="/absolute/path/to/project"
                       aria-describedby={rootHintId}
@@ -360,6 +377,9 @@ export function FirstProjectGate({
                   </div>
                   <p id={rootHintId} className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                     Pick the repository root you want chat to run inside.
+                  </p>
+                  <p className="first-project-gate-workspace-help text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
+                    {PROJECT_ROOT_WORKSPACE_HELP}
                   </p>
                 </div> : null}
 
