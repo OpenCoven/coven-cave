@@ -663,9 +663,13 @@ in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 promotion: `proxy()` skips the mobile-access gate and returns *before* the
 sidecar-token block, so on those paths the route's own bearer check is the only
 check that *verifies* the credential. The proxy still demands a well-formed
-`Authorization: Bearer` *presentation* first (cave-q5mwb) — presentation, not
-verification: a syntactically valid fake passes the proxy and is refused by the
-route's `requireScope`. See *When the authenticated routes land*.
+`Authorization: Bearer` presentation or the complete exact
+`hpke-bound-v1` header set first (cave-q5mwb) — presentation, not verification.
+A syntactically valid fake bearer passes the proxy and is refused by the route's
+`requireScope`; a complete bound presentation reaches the authority runtime,
+which validates and opens it before the route runs. A request presenting neither
+receives the proxy's bare `401 {"ok":false,"error":"unauthorized"}`. See *When
+the authenticated routes land*.
 
 Eight of the thirteen routes re-check the stamp in the route itself, via
 `runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the

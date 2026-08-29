@@ -2043,7 +2043,14 @@ async function runAuthFailureLeg(client, recorder, bearer, writeOnlyBearer) {
   const noBearer = await client.read("/conversations", null);
   const noBearerFailures = [];
   if (noBearer.status !== 401) noBearerFailures.push(`answered ${noBearer.status}, expected 401`);
-  noBearerFailures.push(...checkEnvelope(noBearer.json, { kind: "error", code: "unauthorized" }));
+  if (
+    JSON.stringify(noBearer.json)
+      !== JSON.stringify({ ok: false, error: "unauthorized" })
+  ) {
+    noBearerFailures.push(
+      `body was ${JSON.stringify(noBearer.text.slice(0, 160))}, expected the proxy refusal {"ok":false,"error":"unauthorized"}`,
+    );
+  }
   recorder.expect("reads.no-bearer", noBearerFailures);
 
   const garbage = await client.read("/conversations", "not-a-real-bearer");
