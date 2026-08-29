@@ -274,7 +274,6 @@ async function removeTestBuildOutputs(root) {
   const removals = await Promise.allSettled([
     rm(root, { recursive: true, force: true }),
     rm(path.join(repositoryRoot, ".next"), { recursive: true, force: true }),
-    rm(path.join(repositoryRoot, "server.mjs"), { force: true }),
   ]);
   const failures = removals
     .filter((result) => result.status === "rejected")
