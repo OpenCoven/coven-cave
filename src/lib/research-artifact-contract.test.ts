@@ -165,6 +165,85 @@ test("read reconciliation keeps mission order and fields before unmatched file s
   );
 });
 
+test("read reconciliation rejects a URL match that would duplicate a mission source id", () => {
+  assert.throws(
+    () => reconcileResearchSourcesForRead([
+      {
+        id: "runner-stale",
+        title: "Stale URL match",
+        url: "https://example.com/shared",
+        sourceType: "web",
+        status: "candidate",
+      },
+      {
+        id: "manual-current",
+        title: "File row already using the current id",
+        url: "https://example.com/other",
+        sourceType: "web",
+        status: "candidate",
+      },
+    ], [{
+      id: "manual-current",
+      title: "Current mission source",
+      url: "https://example.com/shared",
+      sourceType: "web",
+      status: "used",
+    }]),
+    /Research source identities are ambiguous/,
+  );
+});
+
+test("read reconciliation rejects duplicate file source ids", () => {
+  assert.throws(
+    () => reconcileResearchSourcesForRead([
+      {
+        id: "duplicate-id",
+        title: "First file source",
+        url: "https://example.com/first",
+        sourceType: "web",
+        status: "candidate",
+      },
+      {
+        id: "duplicate-id",
+        title: "Second file source",
+        url: "https://example.com/second",
+        sourceType: "web",
+        status: "candidate",
+      },
+    ], []),
+    /Research source identities are ambiguous/,
+  );
+});
+
+test("read reconciliation rejects URL and path matches to different file rows", () => {
+  assert.throws(
+    () => reconcileResearchSourcesForRead([
+      {
+        id: "url-row",
+        title: "URL row",
+        url: "https://example.com/shared",
+        sourceType: "web",
+        status: "candidate",
+      },
+      {
+        id: "path-row",
+        title: "Path row",
+        localPath: "/workspace/shared.pdf",
+        sourceType: "file",
+        status: "candidate",
+      },
+    ], [{
+      id: "mission-row",
+      title: "Mission bridge",
+      url: "https://example.com/shared",
+      localPath: "/workspace/shared.pdf",
+      sourceType: "web",
+      status: "used",
+    }]),
+    /Research source identities are ambiguous/,
+  );
+});
+
 test("presentation artifacts accept Markdown or self-contained HTML only", () => {
   assert.equal(
     normalizeResearchArtifact({ kind: "presentation", path: "artifacts/slides.md" }).ok,

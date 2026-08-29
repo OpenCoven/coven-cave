@@ -178,6 +178,102 @@ test("valid ledgers keep mission order before unmatched file-only additions", as
   });
 });
 
+test("ambiguous source identities fail closed without exposing source content", async () => {
+  const cases: Array<{
+    name: string;
+    missionSources: ResearchMission["sources"];
+    fileSources: ResearchMission["sources"];
+  }> = [
+    {
+      name: "URL merge would duplicate the mission id",
+      missionSources: [{
+        ...SOURCE,
+        id: "manual-current",
+        title: "sensitive mission title",
+      }],
+      fileSources: [
+        {
+          ...SOURCE,
+          id: "runner-stale",
+          title: "sensitive stale title",
+        },
+        {
+          ...SOURCE,
+          id: "manual-current",
+          title: "sensitive duplicate title",
+          url: "https://example.com/other",
+        },
+      ],
+    },
+    {
+      name: "file rows duplicate an id",
+      missionSources: [],
+      fileSources: [
+        {
+          ...SOURCE,
+          id: "duplicate-file-id",
+          title: "sensitive duplicate one",
+          url: "https://example.com/first",
+        },
+        {
+          ...SOURCE,
+          id: "duplicate-file-id",
+          title: "sensitive duplicate two",
+          url: "https://example.com/second",
+        },
+      ],
+    },
+    {
+      name: "one mission row bridges distinct URL and path rows",
+      missionSources: [{
+        ...SOURCE,
+        id: "mission-bridge",
+        title: "sensitive bridge title",
+        localPath: "/workspace/sensitive.pdf",
+      }],
+      fileSources: [
+        {
+          ...SOURCE,
+          id: "url-row",
+          title: "sensitive URL title",
+        },
+        {
+          ...SOURCE,
+          id: "path-row",
+          title: "sensitive path title",
+          url: undefined,
+          localPath: "/workspace/sensitive.pdf",
+          sourceType: "file",
+        },
+      ],
+    },
+  ];
+
+  for (const current of cases) {
+    const { GET } = createResearchMissionFileRouteHandlers({
+      loadMission: async () => mission(current.missionSources),
+      readFile: async (_id, relativePath) =>
+        relativePath === "findings.md"
+          ? "# Findings"
+          : JSON.stringify(current.fileSources),
+      workspacePath: () => "/workspace/mission-1",
+    });
+
+    const response = await GET(localRequest(), context());
+    const body = await response.json();
+    assert.deepEqual(
+      body.file.sourceLedger,
+      { state: "failed", sources: [] },
+      current.name,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(body),
+      /sensitive|ambiguous|duplicate-file-id|workspace\/sensitive/,
+      current.name,
+    );
+  }
+});
+
 test("a legacy missing ledger fails closed without exposing stale mission sources", async () => {
   const { GET } = createResearchMissionFileRouteHandlers({
     loadMission: async () => mission(),
