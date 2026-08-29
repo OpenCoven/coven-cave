@@ -5133,6 +5133,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             researchRunId: result.mission.id,
           };
           updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+          // The appended pair becomes the active path (same as the /image flow) so
+          // the confirmation and its run card render immediately.
+          setActiveLeafId(assistantTurn.id);
           if (targetSessionId) {
             invalidateConversation(targetSessionId);
             try {
