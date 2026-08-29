@@ -154,6 +154,57 @@ function readReferenceDefinitionLabel(line: string): string | null {
   return normalizeReferenceLabel(line.slice(labelStart + 1, labelEnd));
 }
 
+function readReferenceDefinitionBody(line: string): string | null {
+  let labelStart = 0;
+  while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
+  if (line[labelStart] !== "[") return null;
+
+  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
+  if (labelEnd <= labelStart + 1 || line[labelEnd + 1] !== ":") return null;
+  return line.slice(labelEnd + 2).trimStart();
+}
+
+function readReferenceDefinitionContinuation(line: string): string | null {
+  let indent = 0;
+  while (indent < 3 && line[indent] === " ") indent += 1;
+  if (line[indent] === " " || line[indent] === "\t") return null;
+
+  const content = line.slice(indent);
+  return content.trim() ? content : null;
+}
+
+function readReferenceDefinitionRemainder(destination: string): string {
+  if (destination.startsWith("<")) {
+    for (let index = 1; index < destination.length; index += 1) {
+      if (destination[index] === ">" && !isEscaped(destination, index)) {
+        return destination.slice(index + 1).trimStart();
+      }
+    }
+    return "";
+  }
+
+  for (let index = 0; index < destination.length; index += 1) {
+    if (/\s/.test(destination[index]) && !isEscaped(destination, index)) {
+      return destination.slice(index).trimStart();
+    }
+  }
+  return "";
+}
+
+function readReferenceTitleCloser(title: string): "'" | '"' | ")" | null {
+  if (title.startsWith("'")) return "'";
+  if (title.startsWith('"')) return '"';
+  if (title.startsWith("(")) return ")";
+  return null;
+}
+
+function referenceTitleIsClosed(title: string, closer: "'" | '"' | ")"): boolean {
+  for (let index = 1; index < title.length; index += 1) {
+    if (title[index] === closer && !isEscaped(title, index)) return true;
+  }
+  return false;
+}
+
 function stripFencedCodeAndReferenceDefinitions(markdown: string): {
   markdown: string;
   referenceDefinitionLabels: Set<string>;
@@ -161,8 +212,10 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
   const lines = markdown.split(/\r?\n/);
   let fence: { character: string; length: number } | null = null;
   const referenceDefinitionLabels = new Set<string>();
+  const strippedLines: string[] = [];
 
-  const strippedLines = lines.map((line) => {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     const run = readFenceRun(line);
     if (fence) {
       if (
@@ -173,19 +226,51 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       ) {
         fence = null;
       }
-      return "";
+      strippedLines.push("");
+      continue;
     }
     if (run) {
       fence = { character: run.character, length: run.length };
-      return "";
+      strippedLines.push("");
+      continue;
     }
     if (isReferenceDefinitionLine(line)) {
       const label = readReferenceDefinitionLabel(line);
       if (label) referenceDefinitionLabels.add(label);
-      return "";
+      strippedLines.push("");
+
+      let destination = readReferenceDefinitionBody(line) ?? "";
+      if (!destination) {
+        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+        if (continuation && !readReferenceTitleCloser(continuation)) {
+          destination = continuation;
+          lineIndex += 1;
+          strippedLines.push("");
+        }
+      }
+
+      let title = readReferenceDefinitionRemainder(destination);
+      if (!readReferenceTitleCloser(title)) {
+        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+        if (continuation && readReferenceTitleCloser(continuation)) {
+          title = continuation;
+          lineIndex += 1;
+          strippedLines.push("");
+        }
+      }
+
+      const closer = readReferenceTitleCloser(title);
+      while (closer && !referenceTitleIsClosed(title, closer)) {
+        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+        if (!continuation) break;
+        title += `\n${continuation}`;
+        lineIndex += 1;
+        strippedLines.push("");
+      }
+      continue;
     }
-    return line;
-  });
+    strippedLines.push(line);
+  }
 
   return { markdown: strippedLines.join("\n"), referenceDefinitionLabels };
 }

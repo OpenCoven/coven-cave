@@ -200,6 +200,28 @@ test("reference definitions do not create source or conflict markers", () => {
   assert.equal(integrity.summary.kind, "none");
 });
 
+test("multiline reference definitions do not expose destinations or titles", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    '[destination]:\n  /docs/S1\n[title]: /report\n  "C2 and S1"\nPlain prose.',
+    [source("S1", "used")],
+  );
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("multiline reference titles remain hidden until their closing delimiter", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    '[paper]: /report "hidden S1\nand C2"\nVisible [S3].',
+    [source("S1", "used"), source("S3", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S3"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",
