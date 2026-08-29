@@ -98,7 +98,7 @@ assert.match(
 );
 assert.match(
   helper,
-  /if failed > 0 \{[\s\S]*?rollback\(thread\)[\s\S]*?reportPartial\(failed, of: ids\.count, verb: verb\)/,
+  /if failed > 0 \{[\s\S]*?rollback\(thread\)[\s\S]*?reportPartial\(failed, of: ids\.count, verb: verb, retry: retry\)/,
   "failure must roll back AND tell the user",
 );
 
@@ -141,7 +141,7 @@ assert.match(
 );
 assert.match(
   del,
-  /reportDeletePartial\(\s*restoredThreads: restoreIDs\.count,\s*failedSessions: failedSessions,\s*totalSessions: totalSessions\s*\)/,
+  /reportDeletePartial\(\s*restoredThreads: restoreIDs\.count,\s*failedSessions: failedSessions,\s*totalSessions: totalSessions,[\s\S]*?retry: \{ \[weak self\] in self\?\.deleteThreads\(restoreIDs\) \}[\s\S]*?\)/,
   "partial-delete toast must distinguish restored chats from failed session operations",
 );
 

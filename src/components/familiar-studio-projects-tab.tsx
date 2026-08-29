@@ -10,6 +10,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/settings-controls";
 import { ProjectSettingsModal } from "@/components/project-settings-modal";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { useProjects } from "@/lib/use-projects";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -406,9 +407,11 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
         </p>
       )}
       {addFlow.addError ? (
-        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
-          {addFlow.addError}
-        </p>
+        <ProjectRootWorkspaceNotice
+          className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]"
+          code={addFlow.addErrorCode}
+          error={addFlow.addError}
+        />
       ) : null}
 
       {/* ── Project access (the grant matrix, one familiar) ──

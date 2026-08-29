@@ -271,6 +271,10 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import {
+  GLOBAL_SEARCH_REQUEST_EVENT,
+  globalSearchRequestFromDetail,
+} from "@/lib/global-search-request";
 import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
@@ -716,6 +720,21 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
+
+  // Relocation (cave-ychtl.6): chat/tasks/files/familiars search shortcuts
+  // focus global search with the right type: filter instead of opening a
+  // second search surface. They dispatch a named event; this is the one
+  // listener that opens the palette with the preset query.
+  useEffect(() => {
+    const onGlobalSearchRequest = (event: Event) => {
+      const query = globalSearchRequestFromDetail((event as CustomEvent).detail);
+      if (query === null) return;
+      setTopSearchQuery(query);
+      openPalette();
+    };
+    window.addEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+    return () => window.removeEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+  }, []);
   const [
     pendingCanonicalMemorySelection,
     setPendingCanonicalMemorySelection,
@@ -1008,7 +1027,9 @@ export function Workspace() {
         // (either truly no attention ever existed, or it was already patched to
         // none by an earlier optimistic clear and tells us nothing new).
         const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
-        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+        // Guard rows that carry no attention record (e.g. minimal list mocks):
+        // missing attention reads as "none" for baseline purposes, never a crash.
+        const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
           ? acceptedRow.attention
           : null;
         const baselineAttention = acceptedCanonical ??
@@ -3556,6 +3577,11 @@ export function Workspace() {
         selectFamiliarScope(intent.familiarId, { preserveSurface: true });
       }
       shellRef.current?.dismissNavMobile();
+      return;
+    }
+    if (intent.kind === "open-href") {
+      // Global-search result actions are in-app hrefs (never filesystem paths).
+      nextRouter.push(intent.href);
       return;
     }
     if (intent.kind === "open-project") {

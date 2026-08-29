@@ -151,6 +151,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+    "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
     "src/components/role-surfaces/use-research-resources.test.tsx",
     "src/lib/research-resource-client.test.ts",
     "src/components/role-surfaces/use-research-links.test.ts",
@@ -458,6 +459,7 @@ export const SUITES = {
     "src/lib/server/research-links-legacy-store.test.ts",
     "src/lib/server/research-link-materialization.test.ts",
     "src/lib/server/hf-paper-metadata.test.ts",
+    "src/lib/server/research-github-repo.test.ts",
     "src/lib/server/x-article-ingest.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-mission-lock.test.ts",
@@ -500,7 +502,6 @@ export const SUITES = {
     "src/lib/workflow-source.test.ts",
     "src/lib/workflow-runs.test.ts",
     "src/lib/opencoven-submissions.test.ts",
-    "src/lib/automation-runs.test.ts",
     "src/lib/secret-redaction.test.ts",
     "src/lib/retro-runs.test.ts",
     "src/lib/eval-loop-daemon.test.ts",
@@ -590,8 +591,16 @@ export const SUITES = {
     "src/components/command-palette-canonical-memory-behavior.test.tsx",
     "src/components/command-palette-polish.test.ts",
     "src/components/command-palette-save-link.test.ts",
+    "src/components/command-palette-global-search.test.ts",
+    "src/components/command-palette-a11y-global.test.ts",
     "src/lib/command-palette-search.test.ts",
     "src/lib/search-query.test.ts",
+    "src/lib/search-context.test.ts",
+    "src/lib/global-search-request.test.ts",
+    "src/lib/server/search-runtime.test.ts",
+    "src/lib/search-performance.test.ts",
+    "src/lib/search-lazy-modules.test.ts",
+    "src/lib/search-compatibility-retention.test.ts",
     "src/lib/search-index-store.test.ts",
     "src/lib/search-provider.test.ts",
     "src/lib/search-research-resource-provider.test.ts",
@@ -628,6 +637,7 @@ export const SUITES = {
     "src/lib/chat-list-grouping.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-list-render-optimization.test.ts",
+    "src/components/chat-list-organization.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
     "src/components/chat-router-removal-race.test.tsx",
@@ -660,6 +670,7 @@ export const SUITES = {
     "src/components/chat-continuation-controls.test.ts",
     "src/components/chat-composer-footer-band.test.ts",
     "src/components/chat-composer-command-capsule.test.ts",
+    "src/components/chat-composer-send-states.test.ts",
     "src/components/task-link-picker.test.ts",
     "src/components/composer-actions-menu.test.ts",
     "src/components/composer-add-menu.test.ts",
@@ -849,6 +860,27 @@ export const SUITES = {
     "src/lib/use-agentic-recommendations.test.ts",
     "src/lib/feature-flags.test.ts",
     "src/lib/research-resource-contracts.test.ts",
+    "src/lib/research-context-pack.test.ts",
+    "src/lib/research-topic-discovery.test.ts",
+    "src/lib/server/research-model-task-executor.test.ts",
+    "src/lib/server/research-topic-discovery-store.test.ts",
+    "src/lib/server/research-topic-discovery-runner.test.ts",
+    "src/lib/server/research-topic-discovery-authority.test.ts",
+    "src/lib/server/research-context-pack-store.test.ts",
+    "src/lib/server/research-context-resource-adapters.test.ts",
+    "src/lib/server/research-context-pack-builder.test.ts",
+    "src/lib/research-context-pack-client.test.ts",
+    "src/app/api/research/context-packs/route.test.ts",
+    "src/lib/research-topic-discovery-client.test.ts",
+    "src/app/api/research/topic-jobs/route.test.ts",
+    "src/app/api/research/topic-jobs/[id]/route.test.ts",
+    "src/app/api/research/topic-jobs/[id]/cancel/route.test.ts",
+    "src/app/api/research/topic-proposals/route.test.ts",
+    "src/app/api/research/topic-proposals/[id]/route.test.ts",
+    "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
+    "scripts/research-topic-discovery-eval.test.mjs",
+    "src/components/role-surfaces/research-topic-card.test.tsx",
+    "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
     "src/lib/research-resource-read-model.test.ts",
     "src/lib/research-recommendation-context.test.ts",
     "src/lib/research-topic-recommendations.test.ts",
@@ -948,6 +980,7 @@ export const SUITES = {
     "src/components/thread-pane.test.ts",
     "src/components/strand-inspector.test.ts",
     "src/components/proposal-approval.test.ts",
+    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/app/api/proposals-flow-e2e.test.ts",
     "src/app/api/familiar-self-report-route.test.ts",
     "src/components/familiar-analytics-view.test.ts",
@@ -1028,6 +1061,7 @@ export const SUITES = {
     "src/components/project-picker.test.ts",
     "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
+    "src/components/project-root-workspace-notice.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/lib/directory-picker-pins.test.ts",
@@ -1129,6 +1163,7 @@ export const SUITES = {
     "src/lib/familiar-studio-context.test.ts",
     "src/lib/html-sanitize.test.ts",
     "src/lib/github-repo-link.test.ts",
+    "src/lib/research-github-repo.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
     "src/lib/hf-papers.test.ts",
@@ -1272,7 +1307,6 @@ export const SUITES = {
 	    "src/app/aesthetic/aesthetic-fields.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/popover-submenu.test.ts",
-    "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/lib/submenu-position.test.ts",
     "src/components/ui/overflow-menu.test.ts",
     "src/components/ui/surface-toolbar.test.ts",
@@ -1358,7 +1392,6 @@ export const SUITES = {
     "src/components/coven-run-pill-wiring.test.ts",
     "src/components/board-clear-done.test.ts",
     "src/components/board-schedule-window.test.ts",
-    "src/lib/server/automation-runner.test.ts",
     "src/lib/message-feedback.test.ts",
     "src/lib/message-feedback-rollup.test.ts",
     "src/lib/server/message-feedback-store.test.ts",
@@ -1387,6 +1420,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
     "src/app/api/research/links/ingest-urls.test.ts",
     "src/app/api/research/links/route.test.ts",
+    "src/app/api/research/github-repo/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
     "src/app/api/research/resources/route.test.ts",
     "src/app/api/research/resources/[id]/route.test.ts",
@@ -1470,6 +1504,7 @@ export const SUITES = {
     "src/lib/server/client-v1/authority-replay.test.ts",
     "src/lib/server/client-v1/authority-runtime.test.ts",
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
+    "src/lib/server/coven-automations-client.test.ts",
     "src/lib/server/client-v1/json-clone.test.ts",
     "src/components/canvas-github-import-modal.test.ts",
     "src/components/canvas-github-import-styles.test.ts",
@@ -1484,6 +1519,7 @@ export const SUITES = {
     "src/lib/server/client-v1/path-ownership.test.ts",
     "src/lib/server/client-v1/status.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
+    "src/lib/server/client-v1/conformance-compatibility.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
     "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
@@ -1787,6 +1823,7 @@ export const SUITES = {
     "src/app/api/salem/strip-mdx.test.ts",
     "src/app/api/salem/route.test.ts",
     "src/app/api/search/route.test.ts",
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
@@ -1796,6 +1833,8 @@ export const SUITES = {
     "src/lib/server/space-usage.test.ts",
     "src/lib/server/preferences-store.test.ts",
     "src/lib/server/webauthn-verify.test.ts",
+    "src/lib/server/webauthn-roots.test.ts",
+    "src/lib/server/webauthn-attestation-contract.test.ts",
     "src/lib/server/passkey-store.test.ts",
     "src/lib/server/passkey-ceremony.test.ts",
     "src/lib/passkey-presence.test.ts",
@@ -1861,6 +1900,7 @@ export const SUITES = {
     "src/lib/desktop-reachability.test.ts",
     "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
+    "scripts/ios-dsym-coverage.test.mjs",
     "scripts/ios-xctest-summary.test.mjs",
     "scripts/ios-select-simulator.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
@@ -1903,7 +1943,7 @@ export const SUITES = {
     "scripts/ios-bulk-reminders.test.mjs",
     "scripts/ios-session-refetch.test.mjs",
     "scripts/ios-thread-server-persistence.test.mjs",
-    "scripts/ios-thread-flag-reconciliation.test.mjs",
+    "scripts/ios-server-flag-reconcile.test.mjs",
     "scripts/ios-message-delete-persistence.test.mjs",
     "scripts/ios-swipe-ux.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
@@ -1929,6 +1969,7 @@ export const SUITES = {
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
     "scripts/ios-message-retry.test.mjs",
+    "scripts/ios-mutation-retry.test.mjs",
     "scripts/ios-message-bubble-equatable.test.mjs",
     "scripts/ios-motion-polish.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
@@ -1956,6 +1997,7 @@ export const SUITES = {
   // Keep this separate from the broader app/api/mobile suites.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/client-v1-compatibility-control.integration.test.mjs",
     "scripts/research-protocol-conformance.test.ts",
     "scripts/research-protocol-scenario-conformance.test.ts",
     "src/lib/research-protocol/common.test.ts",
@@ -1988,6 +2030,8 @@ const STRIP_TYPES_MJS = new Set([
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
   "scripts/worktree-lifecycle-windows-cwd.test.mjs",
+  // imports the Topic Discovery runner/store TypeScript modules
+  "scripts/research-topic-discovery-eval.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
@@ -2060,6 +2104,8 @@ const ALIAS_LOADER = new Set([
   // through runtime @/lib imports.
   "src/lib/server/x-article-ingest.test.ts",
   "src/app/api/research/links/route.test.ts",
+  // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
+  "src/app/api/research/github-repo/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -2284,8 +2330,9 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/agent-attachments.test.ts",
   "src/lib/server/session-project-roots.test.ts",
   "src/lib/server/familiar-avatar.test.ts",
-  "src/lib/server/automation-runner.test.ts",
   "src/lib/server/automation-log-paths.test.ts",
+  // the client imports the daemon transport and types via "@/lib/…" alias
+  "src/lib/server/coven-automations-client.test.ts",
   "src/lib/session-project-scope.test.ts",
   "src/lib/theme-token-hex.test.ts",
   "src/lib/familiar-growth-signals.test.ts",
@@ -2333,7 +2380,32 @@ const ALIAS_LOADER = new Set([
   "src/lib/project-root-migration.test.ts",
   // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
   // reaches "@/lib/server/api-security" for the local-request guard.
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
+  "src/lib/server/search-runtime.test.ts",
+  "src/lib/search-performance.test.ts",
+  "src/lib/search-compatibility-retention.test.ts",
   "src/app/api/research/papers/pdf/route.test.ts",
+  // Context Packs (Unit 1): the pack store/adapters/builder and routes resolve
+  // "@/lib/..." aliases at runtime, and research-links.test.ts reaches them
+  // through research-links-compatibility.ts's dynamic recovery import.
+  "src/lib/server/research-context-pack-store.test.ts",
+  "src/lib/server/research-context-resource-adapters.test.ts",
+  "src/lib/server/research-context-pack-builder.test.ts",
+  "src/app/api/research/context-packs/route.test.ts",
+  "src/app/api/research/context-packs/[id]/route.test.ts",
+  // Topic Discovery (Unit 2): the six routes resolve "@/lib/..." and the
+  // next/server runtime chain, so they need the alias resolver.
+  "src/app/api/research/topic-jobs/route.test.ts",
+  "src/app/api/research/topic-jobs/[id]/route.test.ts",
+  "src/app/api/research/topic-jobs/[id]/cancel/route.test.ts",
+  "src/app/api/research/topic-proposals/route.test.ts",
+  "src/app/api/research/topic-proposals/[id]/route.test.ts",
+  "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
+  "src/lib/server/research-links.test.ts",
+  "src/lib/server/research-links-compatibility.test.ts",
+  "src/lib/server/research-links-compatibility-crash.test.ts",
+  "src/lib/server/research-resource-recovery.test.ts",
+  "src/lib/server/backup-research-resource-restore.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
@@ -2350,10 +2422,11 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  // renders the parameterized ApprovalCard through react-test-renderer (JSX)
+  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/lib/home-composer-context.test.ts",
   "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
-  "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
@@ -2373,7 +2446,11 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+  "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
+  // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
+  "src/components/role-surfaces/research-topic-card.test.tsx",
+  "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",

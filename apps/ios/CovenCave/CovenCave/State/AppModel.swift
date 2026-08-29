@@ -202,19 +202,16 @@ protocol ProjectContextLoadingClient: Sendable {
     func projects() async throws -> [ProjectInfo]
     func projectGrants() async throws -> ProjectGrantsResponse
     func familiars() async throws -> [Familiar]
-    func sessions() async throws -> [SessionRow]
-    /// The full session list including archived rows, for read-side flag
-    /// reconciliation: an archived session is excluded from `sessions()`, so
-    /// the client could never see that a thread was archived on another client.
-    func sessionsIncludingArchived() async throws -> [SessionRow]
+    /// includeArchived: true fetches rows with archived_at set, so the
+    /// read-side can fold server archive state back onto local threads
+    /// (cave-sve2a); an active-only list would hide exactly the rows the
+    /// fold needs to see.
+    func sessions(includeArchived: Bool) async throws -> [SessionRow]
     func tasks() async throws -> [BoardCard]
 }
 
 extension ProjectContextLoadingClient {
-    func sessions() async throws -> [SessionRow] { [] }
-    /// Default: stubs may implement only `sessions()`; the archived-inclusive
-    /// read degrades to the plain list, which is exactly what a stub wants.
-    func sessionsIncludingArchived() async throws -> [SessionRow] { try await sessions() }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [] }
 }
 
@@ -281,12 +278,24 @@ extension CaveClient: TaskProjectUpdatingClient {}
 extension CaveClient: ReminderManagingClient {}
 
 /// A transient confirmation banner shown over the chat after a command runs.
-struct ToastMessage: Identifiable, Equatable {
+struct ToastMessage: Identifiable {
     enum Style { case success, info, warning, error }
     let id = UUID()
     var text: String
     var systemImage: String
     var style: Style = .info
+    /// Optional primary action (e.g. "Retry") rendered as a button inside the
+    /// toast, so a failed mutation offers a way forward instead of only
+    /// reverting (cave-ioswipe.1).
+    var actionTitle: String?
+    var action: (@MainActor () -> Void)?
+}
+
+extension ToastMessage: Equatable {
+    /// A toast's identity is its id, not its payload: the action closure is not
+    /// comparable, and the toast overlay only needs to know when the current
+    /// message has been replaced by a different one.
+    static func == (lhs: ToastMessage, rhs: ToastMessage) -> Bool { lhs.id == rhs.id }
 }
 
 @Observable
@@ -528,17 +537,42 @@ final class AppModel {
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
 
-    /// Show a confirmation toast (replaces any in-flight one).
-    func showToast(_ text: String, systemImage: String = "checkmark.circle.fill",
-                   style: ToastMessage.Style = .success) {
-        toast = ToastMessage(text: text, systemImage: systemImage, style: style)
+    /// Show a confirmation toast (replaces any in-flight one). A toast can
+    /// carry one optional action — e.g. "Retry" after a failed mutation
+    /// (cave-ioswipe.1) — rendered as a button inside the banner.
+    func showToast(
+        _ text: String,
+        systemImage: String = "checkmark.circle.fill",
+        style: ToastMessage.Style = .success,
+        actionTitle: String? = nil,
+        action: (@MainActor () -> Void)? = nil
+    ) {
+        toast = ToastMessage(
+            text: text,
+            systemImage: systemImage,
+            style: style,
+            actionTitle: actionTitle,
+            action: action
+        )
     }
 
     /// An optimistic edit failed and was reverted: surface a single error toast
     /// + error haptic so the change doesn't silently snap back. Callers still set
     /// their `*Error` string for any inline display.
-    private func reportRevert(_ what: String) {
-        showToast("Couldn’t \(what) — reverted", systemImage: "exclamationmark.triangle.fill", style: .error)
+    ///
+    /// When a `retry` closure is supplied the toast offers a "Retry" button that
+    /// re-runs the failed mutation instead of only reverting (cave-ioswipe.1).
+    /// The transport layer has already retried transient blips inside
+    /// CaveClient, so reaching this point means the write really did not land —
+    /// an explicit retry gives the user a way forward.
+    private func reportRevert(_ what: String, retry: (@MainActor () -> Void)? = nil) {
+        showToast(
+            "Couldn’t \(what) — reverted",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
+        )
         Haptics.error()
     }
 
@@ -546,22 +580,36 @@ final class AppModel {
     /// failed, because the old wholesale "reverted" message was actively
     /// misleading here: most of the batch DID take effect server-side, and only
     /// the named few came back.
-    private func reportPartial(_ failed: Int, of total: Int, verb: String) {
+    private func reportPartial(
+        _ failed: Int,
+        of total: Int,
+        verb: String,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
         showToast(
             "Couldn’t \(verb) \(failed) of \(total) — those were restored",
             systemImage: "exclamationmark.triangle.fill",
             style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
         )
         Haptics.error()
     }
 
-    private func reportDeletePartial(restoredThreads: Int, failedSessions: Int, totalSessions: Int) {
+    private func reportDeletePartial(
+        restoredThreads: Int,
+        failedSessions: Int,
+        totalSessions: Int,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
         let chats = "\(restoredThreads) chat\(restoredThreads == 1 ? "" : "s")"
         let sessions = "\(failedSessions) of \(totalSessions) server session\(totalSessions == 1 ? "" : "s")"
         showToast(
             "Restored \(chats) — couldn’t delete \(sessions)",
             systemImage: "exclamationmark.triangle.fill",
             style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
         )
         Haptics.error()
     }
@@ -1045,11 +1093,9 @@ final class AppModel {
             generation: generation,
             scope: scope
         ) {
-            // Fetch the archived-inclusive list so read-side reconciliation can
-            // see archive state: the active list excludes archived sessions, so
-            // a thread archived on the desktop would otherwise never surface.
-            // Display lists filter `archivedAt == nil` themselves.
-            try await client.sessionsIncludingArchived()
+            // Archived rows are fetched too: the read-side fold needs them to
+            // reconcile a thread archived on another client (cave-sve2a).
+            try await client.sessions(includeArchived: true)
         }
         let output = await handle.task.value
         finishCoordinatedLoad(handle, state: &sessionsLoadState)
@@ -3259,7 +3305,14 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
-            reportRevert("update the task")
+            // A single transient blip never reaches this catch: CaveClient
+            // retried it idempotently first. Once we ARE here the write really
+            // did not land, so offer a Retry that re-runs the same status write
+            // (cave-ioswipe.1) instead of only reverting.
+            reportRevert("update the task") { [weak self] in
+                guard let card = self?.tasks.first(where: { $0.id == cardId }) else { return }
+                _ = self?.requestTaskStatus(card, status)
+            }
         }
     }
 
@@ -3589,7 +3642,15 @@ final class AppModel {
             // no-ops, silently dropping the task the delete failed to remove.
             reinsertTask(removed, at: index)
             tasksError = error.localizedDescription
-            reportRevert("delete the task")
+            // CaveClient already retried the transient failure idempotently, so
+            // reaching here means the delete did not land: offer a Retry that
+            // re-runs it (cave-ioswipe.1) instead of only reverting. The retry
+            // closure is synchronous, so the async delete runs in its own task
+            // (same pattern as the thread-delete fan-out).
+            reportRevert("delete the task") { [weak self] in
+                guard let self else { return }
+                _ = Task { await self.deleteTask(removed) }
+            }
         }
     }
 
@@ -5883,71 +5944,56 @@ final class AppModel {
         _ sessions: [SessionRow],
         refreshProjectContextSelection: Bool = true
     ) {
-        // The fetch is archived-inclusive (so reconciliation can see archive
-        // state), but `serverSessions` drives the active lists and must stay
-        // active-only — every consumer here already filters archivedAt == nil,
-        // and keeping the raw list would leak archived chats into them.
+        // Archived rows are fetched so the fold can see them, but every
+        // existing consumer of serverSessions expects the active-only view —
+        // keep that contract and reconcile flags from the full fetched list
+        // (cave-sve2a).
         serverSessions = sessions.filter { $0.archivedAt == nil }
         sessionsError = nil
         sessionsLoaded = true
         lastSessionsLoadedAt = Date()
+        let flagsReconciled = reconcileServerFlagsOntoThreads(from: sessions)
         let changed = backfillThreadProjectRoots(from: sessions)
-        let flagsChanged = reconcileThreadFlags(from: sessions)
         if refreshProjectContextSelection
-            && (changed || flagsChanged || projectContext == nil || projectContext == .unassigned) {
+            && (flagsReconciled || changed || projectContext == nil || projectContext == .unassigned) {
             refreshProjectContextSelectionFromCurrentData()
         }
         _ = resolvePendingProjectNavigationIntent()
     }
 
-    /// Apply the server's archived/pinned flags back onto local threads.
+    /// Fold server-observed archived/pinned state back onto local threads so
+    /// a change made on another client shows up here (cave-sve2a).
     ///
-    /// The write side fans a flag change out to every session a thread owns;
-    /// this is the read side of the same contract. A thread whose sessions all
-    /// agree with the server adopts the server's state, so a change made on
-    /// the desktop (another client) shows up here after refresh/restart. A
-    /// thread with no server session (never sent) or an in-flight flag write
-    /// keeps its local value — nothing to reconcile, and a write that is still
-    /// landing must not be clobbered by a list read mid-flight.
-    ///
-    /// Only a thread whose EVERY owned session row is present is reconciled,
-    /// and only when they agree: a missing row (sacrificed server-side) or a
-    /// mixed archive/pin state is not a signal to override local flags.
-    /// Returns true when any flag changed, so the caller can refresh derived
-    /// project-context state alongside the persisted change.
-    private func reconcileThreadFlags(from sessions: [SessionRow]) -> Bool {
-        let rowsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+    /// A thread owns N sessions. It is archived when ALL its sessions are
+    /// archived (any live session keeps it visible) and pinned when ANY is
+    /// pinned. Threads that own no session, or whose owned sessions have no
+    /// row in this fetch, have no server opinion and are left alone — a naive
+    /// fold over an active-only list would, for example, "unarchive" a thread
+    /// whose sessions were simply absent. A thread with a flag PATCH still in
+    /// flight keeps its optimistic local value (local-intent-wins); the next
+    /// load after the PATCH settles folds server truth.
+    @discardableResult
+    private func reconcileServerFlagsOntoThreads(from sessions: [SessionRow]) -> Bool {
+        let sessionsByID = Dictionary(
+            uniqueKeysWithValues: sessions.map { ($0.id, $0) }
+        )
         var changed = false
         for thread in threads {
-            let owned = serverSessionIds(thread)
-            guard !owned.isEmpty else { continue }
-            if threadFlagWrites[thread.id] != nil { continue }
-            // A session list fetched before the local write landed can still
-            // apply after it; within the staleness window the server's answer
-            // may predate the local change, so the optimistic flag wins until
-            // a fresh read settles it.
-            if let wroteAt = lastThreadFlagWriteAt[thread.id],
-               Date().timeIntervalSince(wroteAt) < Self.sessionsStaleAfter {
-                continue
-            }
-            let rows = owned.compactMap { rowsByID[$0] }
-            guard rows.count == owned.count else { continue }
-            let archived = rows.allSatisfy { $0.archivedAt != nil }
-            let unarchived = rows.allSatisfy { $0.archivedAt == nil }
-            if archived, !thread.archived {
-                thread.archived = true
-                changed = true
-            } else if unarchived, thread.archived {
-                thread.archived = false
+            // Local intent wins while a PATCH is in flight: the fold must not
+            // clobber an optimistic flag the fan-out has not yet settled.
+            guard threadFlagWrites[thread.id] == nil else { continue }
+            let ownedIDs = serverSessionIds(thread)
+            guard !ownedIDs.isEmpty else { continue }
+            let rows = ownedIDs.compactMap { sessionsByID[$0] }
+            guard !rows.isEmpty else { continue }
+            let serverArchived = rows.allSatisfy { $0.archivedAt != nil }
+            if thread.archived != serverArchived {
+                thread.archived = serverArchived
                 changed = true
             }
-            let pinned = rows.allSatisfy { $0.pinned == true }
-            let unpinned = rows.allSatisfy { $0.pinned != true }
-            if pinned, !thread.pinned {
-                thread.pinned = true
-                changed = true
-            } else if unpinned, thread.pinned {
-                thread.pinned = false
+            let serverPinned = rows.contains { $0.pinned == true }
+            if thread.pinned != serverPinned {
+                thread.pinned = serverPinned
                 changed = true
             }
         }
@@ -7043,10 +7089,15 @@ final class AppModel {
                 restoring: restoreIDs
             )
             self.persistThreads()
+            // The transport retried each DELETE idempotently before giving up,
+            // so a restored thread means the delete really did not land: offer
+            // a Retry that re-runs the whole deletion (cave-ioswipe.1) instead
+            // of leaving the restore as the only word.
             self.reportDeletePartial(
                 restoredThreads: restoreIDs.count,
                 failedSessions: failedSessions,
-                totalSessions: totalSessions
+                totalSessions: totalSessions,
+                retry: { [weak self] in self?.deleteThreads(restoreIDs) }
             )
         }
     }
@@ -7099,6 +7150,7 @@ final class AppModel {
         fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, archived: archived)
         } rollback: { $0.archived = !archived }
+        retry: { [weak self] in self?.setThreadArchived(thread, archived) }
     }
 
     /// Pin or unpin a thread; pinned threads sort to the top of their list.
@@ -7110,6 +7162,7 @@ final class AppModel {
         fanOutThreadFlag(target, verb: pinned ? "pin" : "unpin") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
         } rollback: { $0.pinned = !pinned }
+        retry: { [weak self] in self?.setThreadPinned(thread, pinned) }
     }
 
     /// Session ids a thread owns on the server. A thread that has never been
@@ -7122,13 +7175,6 @@ final class AppModel {
     /// In-flight flag writes per thread, so a rapid pin/unpin cannot let the
     /// older result land last (same hazard as `statusWrites` for tasks).
     @ObservationIgnored private var threadFlagWrites: [String: Task<Void, Never>] = [:]
-
-    /// When each thread last changed a flag locally. Read-side reconciliation
-    /// consults this so a session list fetched BEFORE the write landed cannot
-    /// revert the optimistic flag AFTER the write completed: within the session
-    /// staleness window the server's answer may predate the local change, and
-    /// the next fresh read settles it.
-    @ObservationIgnored private var lastThreadFlagWriteAt: [String: Date] = [:]
 
     /// Push a thread-level flag to every session the thread owns.
     ///
@@ -7143,12 +7189,12 @@ final class AppModel {
         verb: String,
         _ call: @escaping @Sendable (CaveClient, String) async throws -> Void,
         rollback: @escaping (ChatThread) -> Void,
+        retry: (@MainActor () -> Void)? = nil,
     ) {
         guard let client else { return }
         let ids = serverSessionIds(thread)
         guard !ids.isEmpty else { return }
         let threadId = thread.id
-        lastThreadFlagWriteAt[threadId] = Date()
         threadFlagWrites[threadId]?.cancel()
         threadFlagWrites[threadId] = Task { [weak self] in
             var failed = 0
@@ -7164,7 +7210,11 @@ final class AppModel {
             if failed > 0 {
                 rollback(thread)
                 self.persistThreads()
-                self.reportPartial(failed, of: ids.count, verb: verb)
+                // The transport already retried transient blips inside
+                // CaveClient, so a failure here is real: surface a Retry that
+                // re-applies the same flag (cave-ioswipe.1) rather than leaving
+                // the rollback as the only word.
+                self.reportPartial(failed, of: ids.count, verb: verb, retry: retry)
             }
             self.threadFlagWrites[threadId] = nil
         }
