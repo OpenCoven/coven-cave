@@ -14,6 +14,10 @@ test("explicit bracketed groups return ids in first-seen order", () => {
   assert.deepEqual(scanBracketedSourceIds("Claim [S1]. Then [S4, S5] and [R2]."), ["S1", "S4", "S5", "R2"]);
 });
 
+test("scanner keeps first-seen order and skips bracketed conflict or unknown ids", () => {
+  assert.deepEqual(scanBracketedSourceIds("Claim [S2, C1, S1, X2, S2, R2]."), ["S2", "S1", "R2"]);
+});
+
 test("scanner ignores bare source-like prose", () => {
   assert.deepEqual(scanBracketedSourceIds("The model S1 runs in S3 bucket land."), []);
 });
@@ -57,11 +61,57 @@ test("used and candidate sources count together but summarize as candidate", () 
   assert.equal(integrity.summary.label, "1 source awaits review");
 });
 
+test("plural unresolved summaries use the exact plural label", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S1] [S2] [S3]", [source("S1", "candidate")]);
+  assert.deepEqual(integrity.unresolvedIds, ["S2", "S3"]);
+  assert.equal(integrity.summary.kind, "unresolved");
+  assert.equal(integrity.summary.label, "2 references are unresolved");
+});
+
+test("bracketed conflict markers stay out of source references", () => {
+  const integrity = deriveResearchFindingsIntegrity("Claim [S1] [C1] [X2].", [source("S1", "candidate")]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, ["C1"]);
+  assert.equal(integrity.summary.kind, "conflicting");
+  assert.equal(integrity.summary.label, "1 conflict remains");
+});
+
+test("plural conflicting summaries use the exact plural label", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S1] [C1] C2.", [
+    source("S1", "used"),
+    source("C1", "conflicting"),
+    source("C2", "conflicting"),
+  ]);
+  assert.deepEqual(integrity.conflictIds, ["C1", "C2"]);
+  assert.equal(integrity.summary.kind, "conflicting");
+  assert.equal(integrity.summary.label, "2 conflicts remain");
+});
+
+test("plural candidate summaries use the exact plural label", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S1] [S2]", [
+    source("S1", "candidate"),
+    source("S2", "candidate"),
+  ]);
+  assert.equal(integrity.summary.kind, "candidate");
+  assert.equal(integrity.summary.label, "2 sources await review");
+});
+
 test("used-only sources summarize as verified", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1]", [source("S1", "used")]);
   assert.deepEqual(integrity.counts, { candidate: 0, used: 1, conflicting: 0, rejected: 0 });
   assert.equal(integrity.summary.kind, "verified");
   assert.equal(integrity.summary.label, "1 source verified");
+});
+
+test("plural verified summaries use the exact plural label", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S1] [S2]", [
+    source("S1", "used"),
+    source("S2", "used"),
+  ]);
+  assert.deepEqual(integrity.counts, { candidate: 0, used: 2, conflicting: 0, rejected: 0 });
+  assert.equal(integrity.summary.kind, "verified");
+  assert.equal(integrity.summary.label, "2 sources verified");
 });
 
 test("conflicts deduplicate a marker and conflicting row with the same id", () => {

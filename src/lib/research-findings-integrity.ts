@@ -17,8 +17,9 @@ export type ResearchFindingsIntegrity = {
   summary: { kind: ResearchIntegritySummaryKind; label: string };
 };
 
-const BRACKETED_SOURCE_RE = /\[\s*([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)\s*\]/g;
-const CONFLICT_MARKER_RE = /\b(C\d+)\b/g;
+const BRACKETED_SOURCE_RE = /\[\s*([^\[\]]+?)\s*\]/g;
+const SOURCE_ID_RE = /^(?:S|R)\d+$/;
+const CONFLICT_MARKER_RE = /\[\s*(C\d+)\s*\]|\b(C\d+)\b/g;
 
 function emptyCounts(): Record<ResearchSourceRef["status"], number> {
   return { candidate: 0, used: 0, conflicting: 0, rejected: 0 };
@@ -43,7 +44,7 @@ export function scanBracketedSourceIds(markdown: string): string[] {
   for (let match = BRACKETED_SOURCE_RE.exec(markdown); match; match = BRACKETED_SOURCE_RE.exec(markdown)) {
     for (const id of match[1].split(",")) {
       const trimmed = id.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
+      if (!SOURCE_ID_RE.test(trimmed) || seen.has(trimmed)) continue;
       seen.add(trimmed);
       ids.push(trimmed);
     }
@@ -55,11 +56,10 @@ export function scanBracketedSourceIds(markdown: string): string[] {
 function scanConflictMarkerIds(markdown: string): string[] {
   const ids: string[] = [];
   const seen = new Set<string>();
-  const bareMarkdown = markdown.replace(/\[[^\[\]]*\]/g, " ");
 
   CONFLICT_MARKER_RE.lastIndex = 0;
-  for (let match = CONFLICT_MARKER_RE.exec(bareMarkdown); match; match = CONFLICT_MARKER_RE.exec(bareMarkdown)) {
-    const id = match[1];
+  for (let match = CONFLICT_MARKER_RE.exec(markdown); match; match = CONFLICT_MARKER_RE.exec(markdown)) {
+    const id = match[1] ?? match[2];
     if (seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
