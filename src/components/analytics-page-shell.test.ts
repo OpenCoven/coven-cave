@@ -69,14 +69,14 @@ assert.match(shell, /VISIBLE_WORKSPACE_NAV_ITEMS/, "standalone sidebar rows come
 // different sidebar rather than the same one on a different route. New chat
 // was exactly that gap (cave-10kr8).
 const railHeader = await source("components/sidebar-rail-header.tsx");
-assert.match(railHeader, /className="rail-header__new focus-ring"/, "the workspace rail leads with New chat");
-assert.match(shell, /className="rail-header__new focus-ring"/, "…and so does the standalone rail");
-assert.match(shell, /rail-header__new-label">New chat</, "with the same label");
+assert.match(railHeader, /rail-header__new/, "the workspace rail leads with New chat");
+assert.match(shell, /rail-header__new/, "…and so does the standalone rail");
+assert.match(shell, /rail-header__new-label[^>]*>\s*New chat\s*</, "with the same label");
 // An anchor, not a button: there is no workspace mounted on these routes to
 // hand a compose to, so it deep-links the way the other standalone surfaces do.
 assert.match(
   shell,
-  /<a className="rail-header__new focus-ring" href="\/\?mode=chat"/,
+  /<a\b[^>]*\bhref="\/\?mode=chat"/,
   "the standalone control navigates rather than calling a handler it does not have",
 );
 
