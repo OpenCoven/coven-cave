@@ -660,6 +660,7 @@ export const SUITES = {
     "src/components/chat-continuation-controls.test.ts",
     "src/components/chat-composer-footer-band.test.ts",
     "src/components/chat-composer-command-capsule.test.ts",
+    "src/components/chat-composer-send-states.test.ts",
     "src/components/task-link-picker.test.ts",
     "src/components/composer-actions-menu.test.ts",
     "src/components/composer-add-menu.test.ts",
