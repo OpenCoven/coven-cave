@@ -215,6 +215,22 @@ function slugify(heading: string, index: number): string {
   return `s-${base || `section-${index + 1}`}`;
 }
 
+function uniqueSectionId(
+  heading: string,
+  index: number,
+  usedTargetIds: Set<string>,
+): string {
+  const baseId = slugify(heading, index);
+  let sectionId = baseId;
+  let occurrence = 2;
+  while (usedTargetIds.has(sectionId)) {
+    sectionId = `${baseId}-${occurrence}`;
+    occurrence += 1;
+  }
+  usedTargetIds.add(sectionId);
+  return sectionId;
+}
+
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
 const LIST_RE = /^\s*[-*+]\s+(.+)$/;
 const ORDERED_LIST_RE = /^\s*\d+[.)]\s+(.+)$/;
@@ -486,8 +502,12 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
     leadBlocks = preambleBlocks.slice(1);
   }
 
+  const usedTargetIds = new Set<string>();
+  if (ledeId) usedTargetIds.add(ledeId);
+  if (leadBlocks.length) usedTargetIds.add("s-overview");
+
   groups.forEach((group, index) => {
-    const sectionId = slugify(group.heading, index);
+    const sectionId = uniqueSectionId(group.heading, index, usedTargetIds);
     const blocks = parseBlocks(group.lines, resolver, sectionId);
     sections.push({
       id: sectionId,

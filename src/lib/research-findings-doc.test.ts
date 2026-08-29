@@ -25,6 +25,35 @@ function refIds(spans: FindingsSpan[]): string[] {
   return spans.filter((s): s is Extract<FindingsSpan, { kind: "ref" }> => s.kind === "ref").map((s) => s.id);
 }
 
+function assertUniqueTargetIds(markdown: string): ReturnType<typeof parseFindingsDoc> {
+  const doc = parseFindingsDoc(markdown, SOURCES);
+  const targetIds: string[] = [];
+
+  if (doc.ledeId) targetIds.push(doc.ledeId);
+  for (const section of doc.sections) {
+    targetIds.push(section.id);
+    for (const block of section.blocks) {
+      targetIds.push(block.id);
+      if (block.kind === "ul" || block.kind === "ol") {
+        targetIds.push(...block.items.map((item) => item.id));
+      } else if (block.kind === "table") {
+        targetIds.push(...block.rows.map((row) => row.id));
+      }
+    }
+  }
+
+  assert.equal(new Set(targetIds).size, targetIds.length, "document render target ids must be unique");
+
+  const supportIds = targetsSupportingRef(doc, "S1").map((target) => target.id);
+  assert.equal(new Set(supportIds).size, supportIds.length, "support target ids must be unique");
+  assert.ok(
+    supportIds.every((id) => targetIds.includes(id)),
+    "every support target must resolve to a unique document render target",
+  );
+
+  return doc;
+}
+
 test("ref tone follows the source status", () => {
   assert.equal(refToneForStatus("used"), "accent");
   assert.equal(refToneForStatus("candidate"), "accent");
@@ -132,6 +161,73 @@ test("parses title, lede and collapsible sections", () => {
   );
   // Section ids are stable slugs for the contents rail.
   assert.equal(doc.sections[0].id, "s-current-understanding");
+});
+
+test("repeated headings receive unique section and inherited target ids", () => {
+  const doc = assertUniqueTargetIds(`# Findings
+
+## Results
+
+First claim [S1].
+
+## Results
+
+- Second claim [S1]
+
+## Results
+
+| Finding | Source |
+| --- | --- |
+| Third claim | [S1] |
+`);
+
+  assert.deepEqual(doc.sections.map((section) => section.id), [
+    "s-results",
+    "s-results-2",
+    "s-results-3",
+  ]);
+  assert.deepEqual(doc.sections.map((section) => section.blocks[0].id), [
+    "s-results-block-1",
+    "s-results-2-block-1",
+    "s-results-3-block-1",
+  ]);
+});
+
+test("headings sharing a truncated slug receive unique target ids", () => {
+  const sharedPrefix = "A".repeat(40);
+  const doc = assertUniqueTargetIds(`# Findings
+
+## ${sharedPrefix} first
+
+First claim [S1].
+
+## ${sharedPrefix} second
+
+Second claim [S1].
+`);
+
+  const baseId = `s-${sharedPrefix.toLowerCase()}`;
+  assert.deepEqual(doc.sections.map((section) => section.id), [baseId, `${baseId}-2`]);
+});
+
+test("preamble and an Overview heading cannot share reserved target ids", () => {
+  const doc = assertUniqueTargetIds(`# Findings
+
+> Research question [S1]
+
+Preamble claim [S1].
+
+## Overview
+
+Overview claim [S1].
+`);
+
+  assert.equal(doc.ledeId, "research-question");
+  assert.deepEqual(doc.sections.map((section) => section.id), ["s-overview", "s-overview-2"]);
+  assert.deepEqual(doc.sections.map((section) => section.blocks[0].id), [
+    "s-overview-block-2",
+    "s-overview-2-block-1",
+  ]);
 });
 
 test("provenance comment never becomes prose", () => {
