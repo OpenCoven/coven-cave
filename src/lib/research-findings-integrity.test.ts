@@ -331,6 +331,17 @@ test("outer list context resumes after a nested list", () => {
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("same-line nested list markers preserve fenced-code boundaries", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "- - ```\n    hidden [S1] C1\n    ```\nVisible [S2].",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",

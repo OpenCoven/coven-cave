@@ -168,14 +168,25 @@ function stripBlockquotePrefix(
 function readReferenceDefinitionContainer(line: string): {
   content: string;
   container: MarkdownContainer;
+  listContainers: MarkdownContainer[];
 } {
   const blockquote = stripBlockquotePrefix(line) ?? { content: line, depth: 0 };
-  const listMatch = blockquote.content.match(/^ {0,3}(?:[-+*]|\d{1,9}[.)])([ \t]+)/);
-  const listIndent = listMatch?.[0].length ?? 0;
+  const listContainers: MarkdownContainer[] = [];
+  let content = blockquote.content;
+  let listIndent = 0;
+
+  while (true) {
+    const listMatch = content.match(/^ {0,3}(?:[-+*]|\d{1,9}[.)])([ \t]+)/);
+    if (!listMatch) break;
+    listIndent += listMatch[0].length;
+    listContainers.push({ blockquoteDepth: blockquote.depth, listIndent });
+    content = content.slice(listMatch[0].length);
+  }
 
   return {
-    content: blockquote.content.slice(listIndent),
+    content,
     container: { blockquoteDepth: blockquote.depth, listIndent },
+    listContainers,
   };
 }
 
@@ -389,17 +400,18 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
     }
     const directContainerLine = readReferenceDefinitionContainer(line);
     let containerLine = directContainerLine;
-    if (directContainerLine.container.listIndent) {
-      while (
-        listContainerStack.length > 0 &&
-        (listContainerStack.at(-1)?.blockquoteDepth !==
-          directContainerLine.container.blockquoteDepth ||
-          (listContainerStack.at(-1)?.listIndent ?? 0) >=
-            directContainerLine.container.listIndent)
-      ) {
-        listContainerStack.pop();
+    if (directContainerLine.listContainers.length > 0) {
+      for (const directListContainer of directContainerLine.listContainers) {
+        while (
+          listContainerStack.length > 0 &&
+          (listContainerStack.at(-1)?.blockquoteDepth !==
+            directListContainer.blockquoteDepth ||
+            (listContainerStack.at(-1)?.listIndent ?? 0) >= directListContainer.listIndent)
+        ) {
+          listContainerStack.pop();
+        }
+        listContainerStack.push(directListContainer);
       }
-      listContainerStack.push(directContainerLine.container);
     } else {
       let activeListContainer: MarkdownContainer | null = null;
       for (let stackIndex = listContainerStack.length - 1; stackIndex >= 0; stackIndex -= 1) {
