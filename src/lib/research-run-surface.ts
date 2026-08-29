@@ -120,6 +120,26 @@ export function researchMissionToRunSurface(mission: ResearchMission): ResearchR
 
 export type ResearchRunMarker = ResearchRunSurfaceModel;
 
+/**
+ * Bootstrap projection for a research run that chat knows only by id (e.g. a
+ * turn persisted with `researchRunId` after `/research` started the run). The
+ * id is the durable reference — the surface is intentionally minimal so the
+ * inline card immediately rehydrates from the canonical mission API instead of
+ * rendering a frozen copy of UI state (#4808).
+ */
+export function researchRunBootstrapSnapshot(
+  runId: string,
+  title?: string,
+): ResearchRunSurfaceModel {
+  return {
+    runId,
+    title: title?.trim() || "Research run",
+    status: "queued",
+    steps: [],
+    evidence: {},
+  };
+}
+
 export const MAX_RESEARCH_RUN_STEPS = 24;
 export const RESEARCH_RUN_PREVIEW_PREFIX = "/__coven/research/";
 const RESEARCH_RUN_PREVIEW_ORIGIN = "http://127.0.0.1";

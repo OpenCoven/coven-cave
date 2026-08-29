@@ -158,6 +158,7 @@ assert.deepEqual(
     createdAt: "2026-07-25T00:00:00.000Z",
     origin: undefined,
     voiceCallId: undefined,
+    researchRunId: undefined,
   }],
   "persisted compatibility diagnostics round-trip into the client transcript after reload",
 );
@@ -3135,3 +3136,76 @@ console.log("cave-conversations structural-root perf/regression test OK");
   assert.equal(await deleteConversation("createdat-removed"), true);
 }
 console.log("cave-conversations createdAt-stability test OK");
+// cave-8o5s7.2: the /research chat command persists the run id on the turns
+// that started it, so the message can re-find the run and the inline projection
+// can rehydrate after reload. The field must survive the save/load round trip
+// (a reference, not a frozen copy of UI state) and the client history mapping.
+{
+  const sessionId = "research-runid-roundtrip";
+  const runId = "mission-run-abc123";
+  await saveConversation({
+    sessionId,
+    familiarId: "sage",
+    harness: "claude",
+    title: "Research round trip",
+    createdAt: "2026-08-23T10:00:00.000Z",
+    updatedAt: "2026-08-23T10:00:01.000Z",
+    activeLeafId: "research-assistant",
+    turns: [
+      {
+        id: "research-user",
+        parentId: null,
+        role: "user",
+        text: "/research compare managed vector stores",
+        researchRunId: runId,
+        createdAt: "2026-08-23T10:00:00.000Z",
+      },
+      {
+        id: "research-assistant",
+        parentId: "research-user",
+        role: "assistant",
+        text: "Research started — \u201cManaged vector stores\u201d. It runs in the Research Desk (paper mode).",
+        researchRunId: runId,
+        createdAt: "2026-08-23T10:00:01.000Z",
+      },
+    ],
+  });
+  const reloaded = await loadConversation(sessionId);
+  assert.ok(reloaded, "conversation reloads after save");
+  const user = reloaded?.turns.find((turn) => turn.id === "research-user");
+  const assistant = reloaded?.turns.find((turn) => turn.id === "research-assistant");
+  assert.equal(
+    user?.researchRunId,
+    runId,
+    "the user turn that started the run keeps its researchRunId across reload",
+  );
+  assert.equal(
+    assistant?.researchRunId,
+    runId,
+    "the assistant confirmation turn keeps its researchRunId across reload",
+  );
+  assert.equal(
+    reloaded?.turns.find((turn) => turn.id === "research-user")?.text,
+    "/research compare managed vector stores",
+    "turn text is untouched by the round trip",
+  );
+
+  // The client history mapping preserves the run id so ChatView can render the
+  // inline card from it after reload.
+  assert.deepEqual(
+    mapConversationHistoryTurns([
+      {
+        id: "research-user",
+        role: "user",
+        text: "/research compare managed vector stores",
+        researchRunId: runId,
+        createdAt: "2026-08-23T10:00:00.000Z",
+      },
+    ])[0]?.researchRunId,
+    runId,
+    "mapConversationHistoryTurns keeps researchRunId on the client turn",
+  );
+  assert.equal(await deleteConversation(sessionId), true);
+}
+console.log("cave-conversations research-runid round-trip test OK");
+
