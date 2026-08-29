@@ -533,7 +533,7 @@ export function ChatSurface({
         </aside>
       ) : null}
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
             Chat keeps Projects discoverable as a first-class tab. The shared
             familiar selector row (cave-3pnnq) sits directly above the section
