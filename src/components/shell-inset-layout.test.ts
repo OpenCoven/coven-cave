@@ -75,8 +75,23 @@ assert.match(
 // flush" contract — the two can never pass together.
 assert.match(
   shellCss,
-  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*margin:\s*var\(--space-2\);[^}]*border:\s*1px solid var\(--border-hairline\);[^}]*border-radius:\s*var\(--radius-panel\);[^}]*box-shadow:/,
-  "desktop sidepanel should read as an inset rounded elevated panel around the main content",
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*margin:\s*var\(--space-2\);/,
+  "desktop sidepanel should keep its inset margin around the main content",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*border:\s*1px solid var\(--border-hairline\);/,
+  "desktop sidepanel should keep its hairline border",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*border-radius:\s*var\(--radius-panel\);/,
+  "desktop sidepanel should keep its rounded corners",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*box-shadow:/,
+  "desktop sidepanel should keep its elevation",
 );
 assert.match(
   responsiveCss,
