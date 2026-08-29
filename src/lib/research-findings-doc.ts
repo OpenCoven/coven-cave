@@ -134,6 +134,16 @@ function tokenizeRefs(text: string, resolver: RefResolver, base: { bold?: boolea
 // Emphasis + link matcher: **bold**, __bold__, *italic*, _italic_, [text](url).
 const INLINE_RE =
   /(\*\*|__)([\s\S]+?)\1|(\*|_)([\s\S]+?)\3|\[([^\]]+)\]\(([^)\s]+)\)/g;
+const INLINE_LINK_RE = /^\[([^\]]+)\]\(([^)\s]+)\)/;
+
+export function matchFindingsInlineLinkAt(
+  input: string,
+  index: number,
+): { text: string; href: string; length: number } | null {
+  const match = INLINE_LINK_RE.exec(input.slice(index));
+  if (!match) return null;
+  return { text: match[1], href: match[2], length: match[0].length };
+}
 
 /** Parse one run of inline markdown into spans (emphasis, links, ref chips). */
 export function parseInline(input: string, sources: ResearchSourceRef[]): FindingsSpan[] {
@@ -182,6 +192,18 @@ const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
 
+export function matchFindingsFenceRun(
+  line: string,
+): { character: "`" | "~"; length: number; suffix: string } | null {
+  const match = FENCE_RE.exec(line);
+  if (!match) return null;
+  return {
+    character: match[1][0] as "`" | "~",
+    length: match[1].length,
+    suffix: match[2],
+  };
+}
+
 function splitCells(row: string): string[] {
   return row
     .replace(/^\s*\|/, "")
@@ -219,16 +241,14 @@ function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
       continue;
     }
 
-    const fenceMatch = FENCE_RE.exec(line);
-    if (fenceMatch) {
+    const fenceRun = matchFindingsFenceRun(line);
+    if (fenceRun) {
       flushParagraph();
       flushList();
-      const marker = fenceMatch[1];
-      const markerCharacter = marker[0];
       const closingFence = new RegExp(
-        `^\\s{0,3}${escapeRegExp(markerCharacter)}{${marker.length},}\\s*$`,
+        `^\\s{0,3}${escapeRegExp(fenceRun.character)}{${fenceRun.length},}\\s*$`,
       );
-      const language = fenceMatch[2].trim().split(/\s+/, 1)[0] ?? "";
+      const language = fenceRun.suffix.trim().split(/\s+/, 1)[0] ?? "";
       const code: string[] = [];
       i += 1;
       for (; i < lines.length && !closingFence.test(lines[i]); i += 1) {
@@ -316,18 +336,20 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   let headingFence: { character: string; length: number } | null = null;
 
   for (const line of lines) {
-    const fenceMatch = FENCE_RE.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
+    const fenceRun = matchFindingsFenceRun(line);
+    if (fenceRun) {
       if (
         headingFence &&
-        marker[0] === headingFence.character &&
-        marker.length >= headingFence.length &&
-        !fenceMatch[2].trim()
+        fenceRun.character === headingFence.character &&
+        fenceRun.length >= headingFence.length &&
+        !fenceRun.suffix.trim()
       ) {
         headingFence = null;
       } else if (!headingFence) {
-        headingFence = { character: marker[0], length: marker.length };
+        headingFence = {
+          character: fenceRun.character,
+          length: fenceRun.length,
+        };
       }
     }
     const headingMatch = headingFence ? null : HEADING_RE.exec(line);

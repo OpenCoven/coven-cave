@@ -1,5 +1,9 @@
 import type { ResearchSourceRef } from "./research-missions.ts";
-import { findRecognizedFindingsRefs } from "./research-findings-doc.ts";
+import {
+  findRecognizedFindingsRefs,
+  matchFindingsFenceRun,
+  matchFindingsInlineLinkAt,
+} from "./research-findings-doc.ts";
 
 export type ResearchIntegritySummaryKind =
   | "unavailable"
@@ -42,11 +46,14 @@ function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: stri
 }
 
 function preprocessMarkdownForIntegrity(markdown: string): string {
-  const withoutComments = stripHtmlComments(markdown ?? "");
   const { markdown: withoutBlocks, referenceDefinitionLabels } =
-    stripFencedCodeAndReferenceDefinitions(withoutComments);
+    stripFencedCodeAndReferenceDefinitions(markdown ?? "");
   const withoutCode = stripInlineCode(withoutBlocks);
-  const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode, referenceDefinitionLabels);
+  const withoutComments = stripHtmlComments(withoutCode);
+  const withoutMarkdownTargets = stripMarkdownLinksAndImages(
+    withoutComments,
+    referenceDefinitionLabels,
+  );
   return stripBareUrls(withoutMarkdownTargets);
 }
 
@@ -64,23 +71,6 @@ function stripHtmlComments(markdown: string): string {
   }
 
   return sanitized;
-}
-
-type FenceRun = { character: "`" | "~"; length: number; suffix: string };
-
-function readFenceRun(line: string): FenceRun | null {
-  let index = 0;
-  while (index < 3 && line[index] === " ") index += 1;
-
-  const character = line[index];
-  if (character !== "`" && character !== "~") return null;
-
-  const runStart = index;
-  while (line[index] === character) index += 1;
-  const length = index - runStart;
-  if (length < 3) return null;
-
-  return { character, length, suffix: line.slice(index) };
 }
 
 function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {
@@ -378,7 +368,7 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
     if (fence) {
       const containerLine = readReferenceContainerLine(line, fence.container);
       if (containerLine !== null) {
-        const run = readFenceRun(containerLine);
+        const run = matchFindingsFenceRun(containerLine);
         if (
           run &&
           run.character === fence.character &&
@@ -429,7 +419,7 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       if (!activeListContainer && line.trim()) listContainerStack.splice(0);
     }
 
-    const run = readFenceRun(containerLine.content);
+    const run = matchFindingsFenceRun(containerLine.content);
     if (run) {
       fence = {
         character: run.character,
@@ -540,6 +530,21 @@ function stripMarkdownLinksAndImages(markdown: string, referenceDefinitionLabels
     const suffixStart = labelEnd + 1;
     const suffixOpen = markdown[suffixStart];
     if (suffixOpen === "(" || suffixOpen === "[") {
+      const wrapsImage = markdown.startsWith("![", labelStart);
+      if (suffixOpen === "(" && !isImage && !wrapsImage) {
+        const inlineLink = matchFindingsInlineLinkAt(markdown, index);
+        if (!inlineLink) {
+          sanitized += markdown[index];
+          index += 1;
+          continue;
+        }
+        sanitized += stripMarkdownLinksAndImages(
+          inlineLink.text,
+          referenceDefinitionLabels,
+        );
+        index += inlineLink.length;
+        continue;
+      }
       const suffixClose = suffixOpen === "(" ? ")" : "]";
       const suffixEnd = findBalancedClose(markdown, suffixStart + 1, suffixOpen, suffixClose);
       if (suffixEnd === -1) {

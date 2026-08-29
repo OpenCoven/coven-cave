@@ -154,6 +154,15 @@ test("balanced link stripping preserves visible labels while removing destinatio
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("malformed links preserve citations rendered as ordinary prose", () => {
+  const integrity = deriveResearchFindingsIntegrity("See [paper](bad [S1])", [
+    source("S1", "used"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("bare URL stripping stops before adjacent citations and leaves later conflicts visible", () => {
   const integrity = deriveResearchFindingsIntegrity("See https://x.test/report.[S1] C2.", [source("S1", "used")]);
   assert.deepEqual(integrity.referencedIds, ["S1"]);
@@ -384,6 +393,16 @@ test("html comments do not create source or conflict markers", () => {
   assert.equal(integrity.summary.kind, "verified");
 });
 
+test("comment delimiters inside code do not hide visible citations", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "`<!--` Visible [S1]. `-->`\n```\n<!--\n```\nVisible [S2]. -->",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S1", "S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("parser-recognized ids survive bracket prose alternatives", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1; S2]", [
     source("S1", "used"),
@@ -408,6 +427,13 @@ test("a longer backtick run does not close a shorter inline opener", () => {
   assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.equal(integrity.summary.kind, "verified");
+});
+
+test("tab-indented fences use the findings parser grammar", () => {
+  const integrity = deriveResearchFindingsIntegrity("\t```\n[S1]", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
 });
 
 test("escaped backticks remain literal around visible references", () => {
