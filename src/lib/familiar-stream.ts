@@ -2,6 +2,7 @@ import type { ChatAttachment } from "./chat-attachments";
 import type { ChatResponseMetadata } from "./chat-response-metadata";
 import type { ModelControlValues } from "./model-control-capabilities";
 import type { SessionOrigin } from "./types";
+import { isProjectlessGenerationOrigin } from "@/lib/chat-origins";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
 // sanctioned client-side LLM path — the same bridge evals, workflow-generate, and
@@ -37,7 +38,10 @@ export async function streamFamiliarText(opts: {
   modelOverrideScope?: "next-message" | "session" | "runtime-default";
   modelControls?: ModelControlValues;
   /** Session provenance — set by generator surfaces (e.g. "journal") so the
-   *  chat lists can hide the run; user-facing chats leave it unset. */
+   *  chat lists can hide the run; user-facing chats leave it unset. A
+   *  projectless generation origin (canvas/journal/enhance) selects the
+   *  dedicated generation surface, which mints the origin server-side
+   *  (cave-cst0g); ordinary sends stay on /api/chat/send. */
   origin?: SessionOrigin;
   signal?: AbortSignal;
   /** Called with the accumulated assistant text after each streamed chunk,
@@ -65,7 +69,16 @@ export async function streamFamiliarText(opts: {
 }> {
   let res: Response;
   try {
-    res = await fetch("/api/chat/send", {
+    // Server-owned provenance (cave-cst0g): a projectless generation origin
+    // (canvas/journal/enhance) is minted by the dedicated generation surface
+    // (/api/chat/generate/<origin>) — never accepted on /api/chat/send — so
+    // route by origin and let the server stamp it from the path. Ordinary
+    // (non-generation) sends stay on the chat surface.
+    const bridgeUrl =
+      opts.origin && isProjectlessGenerationOrigin(opts.origin)
+        ? `/api/chat/generate/${opts.origin}`
+        : "/api/chat/send";
+    res = await fetch(bridgeUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -83,9 +96,6 @@ export async function streamFamiliarText(opts: {
         ...(opts.modelControls && Object.keys(opts.modelControls).length
           ? { modelControls: opts.modelControls }
           : {}),
-        // Provenance for generated runs (journal narratives, …) so the chat
-        // lists can keep them out of the conversation rail (#2719 model).
-        ...(opts.origin ? { origin: opts.origin } : {}),
       }),
       signal: opts.signal,
     });

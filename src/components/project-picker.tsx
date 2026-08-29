@@ -242,26 +242,30 @@ export function ProjectPickerPopover({
   }, [open, sortedProjects, query, familiarLabel, recent]);
 
   const renderProjectRow = (entry: CaveProject, key: string) => (
-    <PopoverItem
-      key={key}
-      leading={<ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />}
-      checked={entry.id === selected?.id}
-      active={entry.id === selected?.id}
-      title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
-      onSelect={() => pick(entry)}
-    >
-      <span className="cave-project-picker__option">
-        <span className="cave-project-picker__option-heading">
-          <span className="cave-project-picker__option-name">{entry.name}</span>
-          {entry.access ? (
-            <span className="cave-project-picker__option-access">
-              {projectAccessLabel(entry.access)}
-            </span>
-          ) : null}
+    <div className="cave-project-picker__row" role="presentation" key={key}>
+      {/* Expandable avatar leads the row as its own zoom button — a sibling of
+          the menuitem, never nested inside it. Clicking the image peeks at the
+          full-size project icon; clicking the row still selects it. */}
+      <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" expandable />
+      <PopoverItem
+        checked={entry.id === selected?.id}
+        active={entry.id === selected?.id}
+        title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
+        onSelect={() => pick(entry)}
+      >
+        <span className="cave-project-picker__option">
+          <span className="cave-project-picker__option-heading">
+            <span className="cave-project-picker__option-name">{entry.name}</span>
+            {entry.access ? (
+              <span className="cave-project-picker__option-access">
+                {projectAccessLabel(entry.access)}
+              </span>
+            ) : null}
+          </span>
+          <span className="cave-project-picker__option-root">{entry.root}</span>
         </span>
-        <span className="cave-project-picker__option-root">{entry.root}</span>
-      </span>
-    </PopoverItem>
+      </PopoverItem>
+    </div>
   );
 
   const pick = (project: { id: string; root: string }) => {

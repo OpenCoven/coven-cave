@@ -49,6 +49,16 @@ export type CovenGroup = {
   subject?: string;
   /** Optional short running summary of the conversation (details drawer). */
   summary?: string;
+  /**
+   * Shared conversation topic, always visible in the group header and relayed
+   * to every participant so the whole coven knows what is being discussed.
+   */
+  topic?: string;
+  /**
+   * Shared conversation goal — what the group is trying to achieve together.
+   * Always visible in the group header and relayed to every participant.
+   */
+  goal?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -738,6 +748,22 @@ export function setGroupDetails(
   return { ...group, subject, summary, updatedAt: now };
 }
 
+/**
+ * Update the shared conversation topic and goal shown in the group header.
+ * Returns the SAME object when nothing changed so callers can skip a persist
+ * (and the updatedAt-driven rail reorder) on a no-op blur commit.
+ */
+export function setGroupTopicGoal(
+  group: CovenGroup,
+  patch: { topic?: string; goal?: string },
+  now: string,
+): CovenGroup {
+  const topic = patch.topic !== undefined ? patch.topic : group.topic;
+  const goal = patch.goal !== undefined ? patch.goal : group.goal;
+  if (topic === group.topic && goal === group.goal) return group;
+  return { ...group, topic, goal, updatedAt: now };
+}
+
 /** Filter recipients without changing the user-selected Coven order. */
 export function orderRoundRobinFamiliarIds(
   familiarIds: string[],
@@ -808,7 +834,35 @@ export type CovenRoundtablePromptArgs = {
   receivingFamiliarId: string;
   userText: string;
   targeted: boolean;
+  /** Shared conversation topic, relayed to every participant when set. */
+  topic?: string;
+  /** Shared conversation goal, relayed to every participant when set. */
+  goal?: string;
 };
+
+/**
+ * Render the shared conversation brief (topic + goal) every participant sees.
+ *
+ * Pairs with {@link renderCovenRoster}: the roster says *who* is present, this
+ * says *what* the group is discussing and *why*. Third-person and
+ * framework-free; returns "" when neither field is set so sends without a
+ * brief are byte-identical to before.
+ */
+export function renderCovenBrief(topic?: string, goal?: string): string {
+  const parts: string[] = [];
+  const t = topic?.trim();
+  const g = goal?.trim();
+  if (t) parts.push(`Topic: ${t}`);
+  if (g) parts.push(`Goal: ${g}`);
+  if (parts.length === 0) return "";
+  return [
+    "<coven_brief>",
+    "Shared context for this conversation:",
+    ...parts,
+    "Keep your reply relevant to this shared context.",
+    "</coven_brief>",
+  ].join("\n");
+}
 
 const COVEN_DELEGATION_PROMPT_LINES = [
   "Do not merely suggest that the human ask another familiar to do something.",
@@ -829,6 +883,7 @@ const COVEN_DELEGATION_PROMPT_LINES = [
  */
 export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): string {
   const roster = renderCovenRoster(args.participants, args.receivingFamiliarId);
+  const brief = renderCovenBrief(args.topic, args.goal);
   const mode = [
     "<coven_roundtable>",
     args.targeted
@@ -839,7 +894,7 @@ export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): st
     ...COVEN_DELEGATION_PROMPT_LINES,
     "</coven_roundtable>",
   ].join("\n");
-  return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
+  return [roster, brief, mode, args.userText.trim()].filter(Boolean).join("\n\n");
 }
 
 export type CovenRoundRobinPromptArgs = CovenRoundtablePromptArgs & {
@@ -850,6 +905,7 @@ export type CovenRoundRobinPromptArgs = CovenRoundtablePromptArgs & {
 /** Build one sequential reply prompt with settled peer context. */
 export function renderCovenRoundRobinPrompt(args: CovenRoundRobinPromptArgs): string {
   const roster = renderCovenRoster(args.participants, args.receivingFamiliarId);
+  const brief = renderCovenBrief(args.topic, args.goal);
   const context = renderCovenContext(args.transcript, args.receivingFamiliarId, args.familiarNames);
   const mode = [
     "<coven_round_robin>",
@@ -862,7 +918,7 @@ export function renderCovenRoundRobinPrompt(args: CovenRoundRobinPromptArgs): st
     ...COVEN_DELEGATION_PROMPT_LINES,
     "</coven_round_robin>",
   ].join("\n");
-  return [roster, mode, context, args.userText.trim()].filter(Boolean).join("\n\n");
+  return [roster, brief, mode, context, args.userText.trim()].filter(Boolean).join("\n\n");
 }
 
 export type CovenReplyRunner = (
@@ -1122,6 +1178,9 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
     // the details drawer.
     subject: typeof group.subject === "string" ? group.subject : undefined,
     summary: typeof group.summary === "string" ? group.summary : undefined,
+    // Shared topic/goal follow the same later-addition rules as details.
+    topic: typeof group.topic === "string" ? group.topic : undefined,
+    goal: typeof group.goal === "string" ? group.goal : undefined,
     projectId:
       typeof group.projectId === "string" && group.projectId.trim()
         ? group.projectId.trim()

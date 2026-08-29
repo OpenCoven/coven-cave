@@ -78,8 +78,17 @@ assert.match(
 // scopedFamiliarId when the silent familiars[0] default was retired.
 assert.match(
   source,
-  /<h1 className="chat-sessions-title[\s\S]{0,400}?<Button[\s\S]{0,240}?variant="primary"[\s\S]{0,160}?size="sm"[\s\S]{0,240}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,400}?New session\s*\n\s*<\/Button>/,
+  /<h1 className="chat-sessions-title[\s\S]{0,2200}?<Button[\s\S]{0,240}?variant="primary"[\s\S]{0,160}?size="sm"[\s\S]{0,240}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,400}?New session\s*\n\s*<\/Button>/,
   "The surface title row carries the one New session CTA",
+);
+// The grouping control sits on the SAME title row, between the flex-1 spacer
+// and the primary CTA — a view control, not a second action (cave-zdbij). It
+// must never render as a second primary CTA or inside the search/status
+// toolbar (which keeps its one-line contract).
+assert.match(
+  source,
+  /<span className="flex-1" \/>[\s\S]{0,650}?role="group"[\s\S]{0,120}?aria-label="Group sessions by"[\s\S]{0,1400}?<Button[\s\S]{0,200}?variant="primary"/,
+  "the grouping control sits on the title row beside the one New session CTA",
 );
 assert.doesNotMatch(
   source,

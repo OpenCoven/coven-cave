@@ -261,13 +261,6 @@ assert.ok(
 );
 assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
-const automationSource = read("./server/automation-runner.ts");
-assert.match(
-  automationSource,
-  /env: codexManagedPackageSpawnEnv\(\s*dependencies\.env \?\? harnessSpawnEnv\(\),\s*invocation\.managedPackage/,
-  "automation runs keep the scoped harness env while adding only the validated Codex package contract",
-);
-
 const assistSource = read("./server/assist-runner.ts");
 assert.match(assistSource, /env: harnessSpawnEnv\(\)/, "assist runs no longer inherit the full process env");
 

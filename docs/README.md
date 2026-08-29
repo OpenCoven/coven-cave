@@ -49,6 +49,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
 - [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
 - [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
+- [`ios-webrtc-dsym-symbolication.md`](ios-webrtc-dsym-symbolication.md) — why TestFlight uploads warn that the vendored WebRTC.framework has no dSYM, and how the release pipeline audits and restores symbolication coverage
 
 ### Chat, familiars, and tasks
 
@@ -117,6 +118,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
 - [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
+- [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
 ---
 

@@ -97,6 +97,7 @@ test("active Auto status preparation never overwrites an existing draft", () => 
 
 const done = '<coven:auto-status state="done" note="fixed 3 tests" />';
 const blocked = '<coven:auto-status state="blocked" note="needs npm token" />';
+const needsApproval = '<coven:auto-status state="needs-approval" note="irreversible: force-push" />';
 const working = '<coven:auto-status state="working" />';
 
 test("a settled done turn pings once", () => {
@@ -149,6 +150,27 @@ test("blocked then later done both ping, in transcript order", () => {
   ]);
   assert.deepEqual(pings, [
     { turnId: "t1", state: "blocked", note: "needs npm token" },
+    { turnId: "t3", state: "done", note: "fixed 3 tests" },
+  ]);
+});
+
+test("needs-approval pings once like blocked — it interrupts without ending the mission", () => {
+  const pings = pendingAutoMissionPings(base, [
+    { id: "t1", role: "assistant", text: needsApproval },
+  ]);
+  assert.deepEqual(pings, [
+    { turnId: "t1", state: "needs-approval", note: "irreversible: force-push" },
+  ]);
+});
+
+test("needs-approval is not terminal — a later done still pings in transcript order", () => {
+  const pings = pendingAutoMissionPings(base, [
+    { id: "t1", role: "assistant", text: needsApproval },
+    { id: "t2", role: "user", text: "yes, go ahead" },
+    { id: "t3", role: "assistant", text: done },
+  ]);
+  assert.deepEqual(pings, [
+    { turnId: "t1", state: "needs-approval", note: "irreversible: force-push" },
     { turnId: "t3", state: "done", note: "fixed 3 tests" },
   ]);
 });

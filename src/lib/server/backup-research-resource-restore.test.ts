@@ -188,6 +188,8 @@ try {
     tombstoneFencesRepaired: 0,
     jobsRecreated: 0,
     lexicalRebuilt: true,
+    contextPacksValidated: 0,
+    contextPacksInvalid: 0,
   });
   const targetStore = createResearchResourceStore({ root: targetResources });
   const restoredManifests = await targetStore.listManifests();

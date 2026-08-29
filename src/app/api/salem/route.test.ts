@@ -38,7 +38,7 @@ test("Salem uses pending marker handling only while local synthesis is streaming
         if (url.includes("salem.opencoven.ai/api/chat")) {
           return Response.json({ mode: "context", context: "Retrieved docs." });
         }
-        if (new URL(url).pathname === "/api/chat/send") {
+        if (new URL(url).pathname === "/api/chat/generate/enhance") {
           return sseResponse([
             ...chunks.map((text) => ({ kind: "assistant_chunk", text })),
             { kind: "done" },

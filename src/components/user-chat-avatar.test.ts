@@ -10,9 +10,30 @@ assert.match(component, /useUserProfile\(/, "component subscribes to the server 
 assert.match(component, /userAvatarUrl\(snapshot\)/, "server avatar URL renders from the profile snapshot");
 assert.match(component, /<img[\s\S]*src=\{src\}/, "server image renders inside the chat avatar");
 assert.doesNotMatch(component, /type="file"|<input|prepareFamiliarImage|setUserAvatarImage/, "avatar no longer owns inline upload UI");
-assert.match(component, /window\.location\.assign\("\/settings#profile"\)/, "click opens Settings at the Profile section via the existing hash deep-link route");
 assert.doesNotMatch(component, /AvatarMigration|avatar-migrate/, "legacy avatar migration hook is retired");
 assert.match(component, /name\.slice\(0, 1\)\.toUpperCase\(\)/, "named profiles can fall back to an initial when no server avatar exists");
+
+// cave-ocy8: click = expand, edit = modal footer link — no ambiguity between
+// the two actions. The shared AvatarLightbox owns the focus-trap/Esc/backdrop
+// dismiss, and the operator's ring classes ride on the trigger button.
+assert.match(component, /import \{ AvatarLightbox \} from "\.\/ui\/avatar-lightbox"/, "uses the shared lightbox primitive, not a hand-rolled dialog");
+assert.match(
+  component,
+  /<AvatarLightbox[\s\S]*?src=\{src\}[\s\S]*?category="Profile"[\s\S]*?triggerClassName=\{className\}/,
+  "the avatar image expands into the shared lightbox, keeping the chat ring styling",
+);
+assert.match(component, /Edit in Settings →/, "the profile path is preserved as a labeled modal footer action");
+assert.match(
+  component,
+  /window\.location\.assign\("\/settings#profile"\)/,
+  "Settings at the Profile section stays reachable — now via the footer action (and the no-image fallback)",
+);
+assert.match(component, /if \(src\) \{/, "click-to-expand only applies when there is an image to enlarge");
+assert.match(
+  component,
+  /cave-user-chat-avatar \$\{className/,
+  "the no-image fallback keeps the ring classes on its settings button",
+);
 
 assert.match(chat, /import \{ UserChatAvatar \} from "@\/components\/user-chat-avatar"/, "Chat imports the user avatar component");
 assert.match(chat, /<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human"/, "Chat user turns render the clickable user avatar");
