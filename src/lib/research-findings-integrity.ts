@@ -3,7 +3,9 @@ import {
   findRecognizedFindingsRefs,
   matchFindingsFenceRun,
   matchFindingsAtxHeading,
+  matchFindingsInlineImageAt,
   matchFindingsInlineLinkAt,
+  matchFindingsLinkedImageAt,
   stripFindingsComments,
 } from "./research-findings-doc.ts";
 
@@ -194,6 +196,20 @@ function stripMarkdownLinksAndImages(markdown: string): string {
   let sanitized = "";
 
   for (let index = 0; index < markdown.length; ) {
+    const linkedImage = matchFindingsLinkedImageAt(markdown, index);
+    if (linkedImage) {
+      sanitized += " ";
+      index += linkedImage.length;
+      continue;
+    }
+
+    const inlineImage = matchFindingsInlineImageAt(markdown, index);
+    if (inlineImage) {
+      sanitized += " ";
+      index += inlineImage.length;
+      continue;
+    }
+
     const isImage =
       markdown[index] === "!" &&
       markdown[index + 1] === "[" &&

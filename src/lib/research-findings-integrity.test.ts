@@ -265,6 +265,24 @@ test("linked images do not create referenced ids or summaries", () => {
   assert.equal(integrity.summary.label, "This report does not cite sources");
 });
 
+test("parser and integrity ignore image fields while keeping adjacent linked citations", () => {
+  const markdown =
+    "![S1](https://x.test/assets/S6.png) [![S14](image-S6.png)](https://x.test/S1) [evidence S14](../sources/S99)";
+  const sources = [
+    source("S1", "used"),
+    source("S6", "used"),
+    source("S14", "candidate"),
+  ];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S14"]);
+  assert.deepEqual(integrity.referencedIds, ["S14"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("reference-style images are removed in full and collapsed forms", () => {
   const integrity = deriveResearchFindingsIntegrity("![S9][img] and ![S8][]", [
     source("S9", "candidate"),

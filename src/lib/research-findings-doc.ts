@@ -409,10 +409,101 @@ function tokenizeLinkLabel(
   return spans;
 }
 
-// Emphasis + link matcher: **bold**, __bold__, *italic*, _italic_, [text](url).
-const INLINE_RE =
-  /(\*\*|__)([\s\S]+?)\1|(\*|_)([\s\S]+?)\3|\[([^\]]+)\]\(([^)\s]+)\)/g;
 const INLINE_LINK_RE = /^\[([^\]]+)\]\(([^)\s]+)\)/;
+const INLINE_EMPHASIS_RE =
+  /^(?:(\*\*|__)([\s\S]+?)\1|(\*|_)([\s\S]+?)\3)/;
+
+function findBalancedClose(
+  input: string,
+  startIndex: number,
+  open: string,
+  close: string,
+): number {
+  let depth = 1;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (character === open) {
+      depth += 1;
+      continue;
+    }
+    if (character !== close) continue;
+    depth -= 1;
+    if (depth === 0) return index;
+  }
+
+  return -1;
+}
+
+export function matchFindingsInlineImageAt(
+  input: string,
+  index: number,
+): { text: string; href: string; length: number } | null {
+  if (
+    input[index] !== "!" ||
+    input[index + 1] !== "[" ||
+    isEscaped(input, index)
+  ) {
+    return null;
+  }
+
+  const labelStart = index + 2;
+  const labelEnd = findBalancedClose(input, labelStart, "[", "]");
+  if (labelEnd === -1 || input[labelEnd + 1] !== "(") return null;
+
+  const destinationStart = labelEnd + 2;
+  const destinationEnd = findBalancedClose(
+    input,
+    destinationStart,
+    "(",
+    ")",
+  );
+  if (destinationEnd === -1) return null;
+
+  return {
+    text: input.slice(labelStart, labelEnd),
+    href: input.slice(destinationStart, destinationEnd),
+    length: destinationEnd + 1 - index,
+  };
+}
+
+export function matchFindingsLinkedImageAt(
+  input: string,
+  index: number,
+): { text: string; href: string; length: number } | null {
+  if (
+    input[index] !== "[" ||
+    input[index + 1] !== "!" ||
+    isEscaped(input, index)
+  ) {
+    return null;
+  }
+
+  const image = matchFindingsInlineImageAt(input, index + 1);
+  if (!image) return null;
+
+  const imageEnd = index + 1 + image.length;
+  if (input[imageEnd] !== "]" || input[imageEnd + 1] !== "(") return null;
+
+  const destinationStart = imageEnd + 2;
+  const destinationEnd = findBalancedClose(
+    input,
+    destinationStart,
+    "(",
+    ")",
+  );
+  if (destinationEnd === -1) return null;
+
+  return {
+    text: image.text,
+    href: input.slice(destinationStart, destinationEnd),
+    length: destinationEnd + 1 - index,
+  };
+}
 
 export function matchFindingsInlineLinkAt(
   input: string,
@@ -432,28 +523,77 @@ function parseSpans(input: string, resolver: RefResolver): FindingsSpan[] {
   const text = input.trim();
   if (!text) return [];
   const spans: FindingsSpan[] = [];
-  let last = 0;
-  INLINE_RE.lastIndex = 0;
-  for (let m = INLINE_RE.exec(text); m; m = INLINE_RE.exec(text)) {
-    if (m.index > last) spans.push(...tokenizeRefs(text.slice(last, m.index), resolver, {}));
-    if (m[1]) {
-      spans.push(...tokenizeRefs(m[2], resolver, { bold: true }));
-    } else if (m[3]) {
-      spans.push(...tokenizeRefs(m[4], resolver, { italic: true }));
-    } else {
-      const imageLabel =
-        m.index > 0 &&
-        text[m.index - 1] === "!" &&
-        !isEscaped(text, m.index - 1);
-      if (imageLabel || isEscaped(text, m.index)) {
-        spans.push({ kind: "link", text: m[5], href: m[6] });
-      } else {
-        spans.push(...tokenizeLinkLabel(m[5], m[6], resolver));
-      }
+  let plainStart = 0;
+
+  const pushPlain = (end: number) => {
+    if (end <= plainStart) return;
+    spans.push(...tokenizeRefs(text.slice(plainStart, end), resolver, {}));
+  };
+  const pushImageFallback = (image: { text: string; href: string }) => {
+    if (image.text) {
+      spans.push({ kind: "link", text: image.text, href: image.href });
     }
-    last = m.index + m[0].length;
+  };
+
+  for (let index = 0; index < text.length; ) {
+    const character = text[index];
+    const linkedImage =
+      character === "[" ? matchFindingsLinkedImageAt(text, index) : null;
+    if (linkedImage) {
+      pushPlain(index);
+      pushImageFallback(linkedImage);
+      index += linkedImage.length;
+      plainStart = index;
+      continue;
+    }
+
+    const image =
+      character === "!" ? matchFindingsInlineImageAt(text, index) : null;
+    if (image) {
+      pushPlain(index);
+      pushImageFallback(image);
+      index += image.length;
+      plainStart = index;
+      continue;
+    }
+
+    const link =
+      character === "[" ? matchFindingsInlineLinkAt(text, index) : null;
+    if (link) {
+      pushPlain(index);
+      if (isEscaped(text, index)) {
+        spans.push({ kind: "link", text: link.text, href: link.href });
+      } else {
+        spans.push(...tokenizeLinkLabel(link.text, link.href, resolver));
+      }
+      index += link.length;
+      plainStart = index;
+      continue;
+    }
+
+    const emphasis =
+      character === "*" || character === "_"
+        ? INLINE_EMPHASIS_RE.exec(text.slice(index))
+        : null;
+    if (emphasis) {
+      pushPlain(index);
+      if (emphasis[1]) {
+        spans.push(
+          ...tokenizeRefs(emphasis[2], resolver, { bold: true }),
+        );
+      } else {
+        spans.push(
+          ...tokenizeRefs(emphasis[4], resolver, { italic: true }),
+        );
+      }
+      index += emphasis[0].length;
+      plainStart = index;
+      continue;
+    }
+
+    index += 1;
   }
-  if (last < text.length) spans.push(...tokenizeRefs(text.slice(last), resolver, {}));
+  pushPlain(text.length);
   return spans;
 }
 

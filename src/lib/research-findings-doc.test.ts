@@ -209,6 +209,59 @@ test("inline-link labels tokenize exact and mixed evidence refs without linking 
   );
 });
 
+test("inline images consume their whole construct without citing alt text or destinations", () => {
+  const spans = parseInline(
+    "Before ![nested [S1]](https://x.test/assets/S6_(v2).png) after [S14](../sources/S99).",
+    SOURCES,
+  );
+
+  assert.deepEqual(refIds(spans), ["S14"]);
+  assert.deepEqual(
+    spans.filter(
+      (span): span is Extract<FindingsSpan, { kind: "link" }> =>
+        span.kind === "link",
+    ),
+    [
+      {
+        kind: "link",
+        text: "nested [S1]",
+        href: "https://x.test/assets/S6_(v2).png",
+      },
+    ],
+  );
+  assert.deepEqual(spans, [
+    { kind: "text", text: "Before " },
+    {
+      kind: "link",
+      text: "nested [S1]",
+      href: "https://x.test/assets/S6_(v2).png",
+    },
+    { kind: "text", text: " after " },
+    { kind: "ref", id: "S14", tone: "accent" },
+    { kind: "text", text: "." },
+  ]);
+});
+
+test("linked images consume both destinations before adjacent real citations", () => {
+  const spans = parseInline(
+    "[![S1](image-S6.png)](https://x.test/S14) then [evidence S14](../sources/S99).",
+    SOURCES,
+  );
+
+  assert.deepEqual(refIds(spans), ["S14"]);
+  assert.deepEqual(spans, [
+    {
+      kind: "link",
+      text: "S1",
+      href: "https://x.test/S14",
+    },
+    { kind: "text", text: " then " },
+    { kind: "link", text: "evidence ", href: "../sources/S99" },
+    { kind: "ref", id: "S14", tone: "accent" },
+    { kind: "text", text: "." },
+  ]);
+});
+
 test("linked evidence refs populate claim support targets while destinations stay opaque", () => {
   const doc = parseFindingsDoc(`# Findings
 
