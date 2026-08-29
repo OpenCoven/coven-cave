@@ -1640,9 +1640,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
-  /** Familiar / model / project pickers, rendered INLINE on the title row.
-   *  Their presence also suppresses the static identity text, which would
-   *  otherwise name the same familiar and model a second time. */
+  /** Session action verbs, rendered after the conversation title. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1728,11 +1726,11 @@ function MetaLine({
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
-        {/* Chat-revamp 1b: the settled header carries a quiet, always-visible
-            identity line — "· <familiar> · <model> · <branch>" — while the
-            heavier provenance (cwd · duration · tokens · cost + meters) stays
-            in the reveal-on-hover cluster below, so nothing is deleted, just
-            demoted. Streaming/failed/offline states keep their live meta. */}
+        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+            — "<familiar> · <model> · <branch>" — while the heavier provenance
+            (cwd · duration · tokens · cost + meters) stays in the adjacent
+            reveal-on-hover cluster, so nothing is deleted, just demoted.
+            Streaming/failed/offline states keep their live meta. */}
         {state === "complete" ? (
           <span className="cave-chat-meta-line__identity reveal-on-hover">
             {familiar.display_name}
