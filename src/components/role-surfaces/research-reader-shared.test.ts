@@ -206,6 +206,11 @@ assert.match(
 );
 assert.match(
   source,
+  /className="rr-btn rr-btn--accent focus-ring"[\s\S]*?title="Publish"[\s\S]*?onClick=\{onPublish\}/,
+  "the narrow icon-only Publish control exposes a native tooltip matching its name",
+);
+assert.match(
+  source,
   /className="rr-krfocus focus-ring"[\s\S]*?title="Focus table"[\s\S]*?aria-label="Focus table"/,
   "the table focus control exposes a native tooltip matching its accessible name",
 );
@@ -373,6 +378,53 @@ assert.match(
   css,
   /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*?rr-head__actions > \.ui-icon-btn[\s\S]*?min-height:\s*var\(--touch-target\)/,
   "the overflow trigger reaches the touch target on coarse pointers",
+);
+const coarsePointerRules = css.slice(
+  css.indexOf("@media (hover: none) and (pointer: coarse)"),
+  css.indexOf("@media (prefers-reduced-motion: reduce)"),
+);
+const coarsePointerHeightTargets = coarsePointerRules.slice(
+  0,
+  coarsePointerRules.indexOf("}") + 1,
+);
+const coarsePointerHeightEnd = coarsePointerHeightTargets.length;
+for (const selector of [
+  ".research-reader .document-reader__toc-link",
+  ".research-reader .rr-toclink",
+  ".research-reader .document-reader__preferences-trigger",
+  ".research-reader .document-reader__size-step",
+  ".research-reader .document-reader__preference-option",
+  ".research-reader .document-reader__reset",
+]) {
+  assert.match(
+    coarsePointerHeightTargets,
+    new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `${selector} reaches the touch target height on coarse pointers`,
+  );
+}
+assert.match(
+  coarsePointerHeightTargets,
+  /min-height:\s*var\(--touch-target\)/,
+  "the coarse-pointer height target group uses the shared touch token",
+);
+const coarsePointerWidthTargets = coarsePointerRules.slice(
+  coarsePointerHeightEnd,
+  coarsePointerRules.indexOf("}", coarsePointerHeightEnd) + 1,
+);
+for (const selector of [
+  ".research-reader .document-reader__preferences-trigger",
+  ".research-reader .document-reader__size-step",
+]) {
+  assert.match(
+    coarsePointerWidthTargets,
+    new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `${selector} reaches the touch target width on coarse pointers`,
+  );
+}
+assert.match(
+  coarsePointerWidthTargets,
+  /min-width:\s*var\(--touch-target\)/,
+  "the coarse-pointer square target group uses the shared touch token",
 );
 assert.match(
   css,

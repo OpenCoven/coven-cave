@@ -733,6 +733,7 @@ export function ResearchReader({
                 <button
                   className="rr-btn rr-btn--accent focus-ring"
                   type="button"
+                  title="Publish"
                   onClick={onPublish}
                 >
                   <svg

@@ -1632,7 +1632,12 @@
   .research-provenance-edge__item,
   .rr-inline-ref,
   .rr-krfocus,
+  .research-reader .document-reader__toc-link,
+  .research-reader .rr-toclink,
   .research-reader .document-reader__preferences-trigger,
+  .research-reader .document-reader__size-step,
+  .research-reader .document-reader__preference-option,
+  .research-reader .document-reader__reset,
   .rr-sd-btn,
   .rr-sd-supportlink {
     min-height: var(--touch-target);
@@ -1645,7 +1650,8 @@
   .rr-inline-ref,
   .rr-krfocus,
   .rr-btn--accent,
-  .research-reader .document-reader__preferences-trigger {
+  .research-reader .document-reader__preferences-trigger,
+  .research-reader .document-reader__size-step {
     min-width: var(--touch-target);
   }
 

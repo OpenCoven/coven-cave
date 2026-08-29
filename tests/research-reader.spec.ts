@@ -229,6 +229,13 @@ test.describe("research reader", () => {
     await openReader(page);
     const reader = page.locator(".research-reader");
 
+    await expect(reader.getByRole("button", { name: "Publish" })).toHaveAttribute(
+      "title",
+      "Publish",
+    );
+    await expect(
+      reader.getByRole("button", { name: "More research reader actions" }),
+    ).toHaveAttribute("title", "More research reader actions");
     await expect(reader.locator(".rr-toc")).toBeHidden();
     await reader.getByRole("button", { name: "Show contents" }).click();
     await expect(reader).toHaveAttribute("data-toc", "true");
