@@ -217,6 +217,7 @@ function stripBareUrls(markdown: string): string {
       continue;
     }
 
+    const urlStart = index;
     let parenDepth = 0;
     index += protocolLength;
     const authorityStart = index;
@@ -251,7 +252,8 @@ function stripBareUrls(markdown: string): string {
       else if (character === ")" && parenDepth > 0) parenDepth -= 1;
       index += 1;
     }
-    sanitized += " ";
+    // Keep parser offsets and word boundaries while making URL contents opaque.
+    sanitized += "x".repeat(index - urlStart);
   }
 
   return sanitized;

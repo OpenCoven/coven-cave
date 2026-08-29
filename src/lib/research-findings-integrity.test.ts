@@ -217,12 +217,48 @@ test("malformed links preserve citations rendered as ordinary prose", () => {
   assert.equal(integrity.summary.kind, "verified");
 });
 
+test("bare URL stripping preserves parser boundaries before URL schemes", () => {
+  const markdown =
+    "S1https://example.test/report C1https://example.test/conflict";
+  const sources = [source("S1", "used")];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, []);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
 test("bare URL stripping stops before adjacent citations and leaves later conflicts visible", () => {
-  const integrity = deriveResearchFindingsIntegrity("See https://x.test/report.[S1] C2.", [source("S1", "used")]);
+  const markdown = "See https://x.test/report.[S1] C2.";
+  const sources = [source("S1", "used")];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S1", "C2"]);
   assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, ["C2"]);
   assert.equal(integrity.summary.kind, "conflicting");
+});
+
+test("bare source ids appended to URLs stay aligned with parser URL opacity", () => {
+  const sources = [source("S1", "used")];
+  for (const markdown of [
+    "https://x.test/reportS1",
+    "https://x.test/report/S1",
+    "https://x.test/report.C1",
+  ]) {
+    const doc = parseFindingsDoc(markdown, sources);
+    const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+    assert.deepEqual(doc.refIds, [], markdown);
+    assert.deepEqual(integrity.referencedIds, [], markdown);
+    assert.deepEqual(integrity.unresolvedIds, [], markdown);
+    assert.deepEqual(integrity.conflictIds, [], markdown);
+  }
 });
 
 test("bare URL schemes are stripped case-insensitively", () => {
