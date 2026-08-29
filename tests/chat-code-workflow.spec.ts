@@ -68,6 +68,21 @@ const FAMILIAR = {
   icon: "ph:sparkle-fill",
 };
 
+const EMPTY_RUNNING_ACTIVITY = {
+  ok: true,
+  generatedAt: ISO,
+  total: 0,
+  items: [],
+  sources: {
+    sessions: { ok: true, count: 0 },
+    board: { ok: true, count: 0 },
+    automations: { ok: true, count: 0 },
+    flows: { ok: true, count: 0 },
+    workflows: { ok: true, count: 0 },
+  },
+  unavailable: [],
+} as const;
+
 type FixtureState = {
   changeCount: number;
   requestedConversationIds: string[];
@@ -100,6 +115,10 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
     const request = route.request();
     const url = new URL(request.url());
     throw new Error(`Unexpected API request: ${request.method()} ${url.pathname}${url.search}`);
+  });
+  await page.route(/\/api\/running-activity(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    return route.fulfill({ json: EMPTY_RUNNING_ACTIVITY });
   });
   await page.route(/\/api\/familiars(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");

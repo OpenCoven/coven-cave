@@ -358,7 +358,6 @@ export const SUITES = {
     "src/lib/auto-mission-state.test.ts",
     "src/lib/auto-mission-approval.test.ts",
     "src/lib/auto-mission-presence.test.ts",
-    "src/components/running-sessions-mission-row.test.ts",
     "src/components/auto-status-card.test.tsx",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
@@ -757,6 +756,7 @@ export const SUITES = {
     "src/components/task-work-cockpit.test.ts",
     "src/components/task-work-github.test.ts",
     "src/lib/session-status.test.ts",
+    "src/lib/running-activity.test.ts",
     "src/components/board-grouping.test.ts",
     "src/components/board-card-chip-diet.test.ts",
     "src/components/board-project-picker.test.ts",
@@ -821,6 +821,7 @@ export const SUITES = {
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-entries.test.ts",
     "src/app/api/journal/route.test.ts",
+    "src/app/api/running-activity/route.test.ts",
     "src/lib/journal.test.ts",
     "src/lib/journal-memory-stats.test.ts",
     "src/lib/journal-generate.test.ts",
@@ -1342,7 +1343,7 @@ export const SUITES = {
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
-    "src/components/running-sessions-popover.test.ts",
+    "src/components/running-activity-popover.test.ts",
     "src/components/top-bar-polish.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",
@@ -2046,9 +2047,12 @@ const ALIAS_LOADER = new Set([
   // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",
-  // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
-  // and friends, and the spec itself imports "@/lib/auto-mission-state".
-  "src/components/running-sessions-mission-row.test.ts",
+  // running-activity resolves "@/lib/session-status" (runtime), "@/lib/types",
+  // "@/lib/cave-board-types", and the run-record types; the popover spec renders
+  // the real .tsx module, which resolves "@/lib/icon" and "@/lib/running-activity".
+  "src/lib/running-activity.test.ts",
+  "src/components/running-activity-popover.test.ts",
+  "src/app/api/running-activity/route.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
   // Resolves the process-local instance id through the "@/lib" Cave path.
