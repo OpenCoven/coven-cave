@@ -868,19 +868,16 @@ test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, a
   const constrainedChat = await requiredBounds(page, ".chat-surface");
   const constrainedRail = await requiredBounds(page, ".workspace-rail");
   const shellDetail = await requiredBounds(page, ".shell-detail");
-  expectBoundsNear(constrainedChat, { x: 9, y: 43, width: 1102, height: 680 });
-  expectBoundsNear(constrainedRail, { x: 831, y: 77, width: 280, height: 646 });
+  expectBoundsNear(constrainedChat, { x: 9, y: 34, width: 1102, height: 689 });
+  expectBoundsNear(constrainedRail, { x: 831, y: 68, width: 280, height: 655 });
   const shellContract = await page.locator(".shell-detail").evaluate((element) => {
     const style = getComputedStyle(element);
-    const rootStyle = getComputedStyle(document.documentElement);
     return {
       borderTopRightRadius: style.borderTopRightRadius,
-      radiusToken: rootStyle.getPropertyValue("--radius-panel").trim(),
       borderRightWidth: Number.parseFloat(style.borderRightWidth),
     };
   });
-  expect(shellContract.borderTopRightRadius).toBe(shellContract.radiusToken);
-  expect(Number.parseFloat(shellContract.borderTopRightRadius)).toBeGreaterThan(0);
+  expect(shellContract.borderTopRightRadius).toBe("0px");
   expect(Math.abs(constrainedRail.x + constrainedRail.width - (shellDetail.x + shellDetail.width - shellContract.borderRightWidth))).toBeLessThanOrEqual(1);
   measurements.constrained = {
     viewport: page.viewportSize(),

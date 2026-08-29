@@ -137,7 +137,7 @@ test("sources file parsing rejects malformed ledgers", () => {
 // it to read/write sources.json without pinning a top-level shape — so a model
 // that wraps the list in `{ mission, updated, sources, … }` is following the
 // instruction. Requiring a bare array cost a whole mission: research-00b591f3
-// wrote exactly that envelope carrying 23 valid sources against a target of 12,
+// wrote exactly that envelope carrying 25 valid sources against a target of 12,
 // and every one was discarded, because runResearchIteration catches the throw,
 // checkpoints, and merges NOTHING. The run then reported zero sources while its
 // findings sat on disk — unsourced claims, the one output a research run must
