@@ -847,11 +847,26 @@ export const SUITES = {
     "src/lib/feature-flags.test.ts",
     "src/lib/research-resource-contracts.test.ts",
     "src/lib/research-context-pack.test.ts",
+    "src/lib/research-topic-discovery.test.ts",
+    "src/lib/server/research-model-task-executor.test.ts",
+    "src/lib/server/research-topic-discovery-store.test.ts",
+    "src/lib/server/research-topic-discovery-runner.test.ts",
+    "src/lib/server/research-topic-discovery-authority.test.ts",
     "src/lib/server/research-context-pack-store.test.ts",
     "src/lib/server/research-context-resource-adapters.test.ts",
     "src/lib/server/research-context-pack-builder.test.ts",
     "src/lib/research-context-pack-client.test.ts",
     "src/app/api/research/context-packs/route.test.ts",
+    "src/lib/research-topic-discovery-client.test.ts",
+    "src/app/api/research/topic-jobs/route.test.ts",
+    "src/app/api/research/topic-jobs/[id]/route.test.ts",
+    "src/app/api/research/topic-jobs/[id]/cancel/route.test.ts",
+    "src/app/api/research/topic-proposals/route.test.ts",
+    "src/app/api/research/topic-proposals/[id]/route.test.ts",
+    "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
+    "scripts/research-topic-discovery-eval.test.mjs",
+    "src/components/role-surfaces/research-topic-card.test.tsx",
+    "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
     "src/lib/research-resource-read-model.test.ts",
     "src/lib/research-recommendation-context.test.ts",
     "src/lib/research-topic-recommendations.test.ts",
@@ -1988,6 +2003,8 @@ const STRIP_TYPES_MJS = new Set([
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
   "scripts/worktree-lifecycle-windows-cwd.test.mjs",
+  // imports the Topic Discovery runner/store TypeScript modules
+  "scripts/research-topic-discovery-eval.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
@@ -2335,6 +2352,14 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/research-context-pack-builder.test.ts",
   "src/app/api/research/context-packs/route.test.ts",
   "src/app/api/research/context-packs/[id]/route.test.ts",
+  // Topic Discovery (Unit 2): the six routes resolve "@/lib/..." and the
+  // next/server runtime chain, so they need the alias resolver.
+  "src/app/api/research/topic-jobs/route.test.ts",
+  "src/app/api/research/topic-jobs/[id]/route.test.ts",
+  "src/app/api/research/topic-jobs/[id]/cancel/route.test.ts",
+  "src/app/api/research/topic-proposals/route.test.ts",
+  "src/app/api/research/topic-proposals/[id]/route.test.ts",
+  "src/app/api/research/topic-proposals/[id]/accept/route.test.ts",
   "src/lib/server/research-links.test.ts",
   "src/lib/server/research-links-compatibility.test.ts",
   "src/lib/server/research-links-compatibility-crash.test.ts",
@@ -2379,6 +2404,9 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
+  // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
+  "src/components/role-surfaces/research-topic-card.test.tsx",
+  "src/components/role-surfaces/use-research-topic-discovery.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
