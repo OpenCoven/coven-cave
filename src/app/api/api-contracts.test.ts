@@ -333,6 +333,7 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/media-ticket", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/github-repo", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/files/[key]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },

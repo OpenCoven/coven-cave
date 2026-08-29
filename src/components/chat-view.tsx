@@ -15,6 +15,8 @@ import {
   buildResearchChatRunInput,
   formatResearchRunStarted,
 } from "@/lib/research-chat-command";
+import { researchRunBootstrapSnapshot } from "@/lib/research-run-surface";
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -5097,12 +5099,55 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       setInput("");
       void createResearchMission(built.input)
-        .then((result) => {
+        .then(async (result) => {
           if (!result.ok || !result.mission) {
             appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
             return;
           }
-          appendSystem(formatResearchRunStarted(result.mission));
+          // Persist the run id on the turns, not a frozen copy of the card's UI
+          // state (#4808): after a reload the inline projection rehydrates from
+          // the canonical ResearchMission via researchRunId.
+          const now = new Date().toISOString();
+          const targetSessionId = currentSessionRef.current;
+          const live = targetSessionId ? readLiveChatGeneration(targetSessionId) : null;
+          const parentId = (live?.activeLeafId ?? activeLeafId) || null;
+          const userTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId,
+            role: "user",
+            text: `/research ${args}`,
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          const assistantTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId: userTurn.id,
+            role: "assistant",
+            text: formatResearchRunStarted(result.mission),
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+          // The appended pair becomes the active path (same as the /image flow) so
+          // the confirmation and its run card render immediately.
+          setActiveLeafId(assistantTurn.id);
+          if (targetSessionId) {
+            invalidateConversation(targetSessionId);
+            try {
+              await fetch(`/api/chat/conversation/${encodeURIComponent(targetSessionId)}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  turns: [userTurn, assistantTurn],
+                  activeLeafId: assistantTurn.id,
+                  familiarId: familiar.id,
+                  harness: modelHarness,
+                }),
+              });
+            } catch {
+              // Optimistic — the transcript already shows the run card.
+            }
+          }
         })
         .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
@@ -9299,6 +9344,27 @@ function TurnRowImpl({
       ghFamiliar,
     );
     renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+
+    // A /research-started run leaves no <coven:research> marker in the turn
+    // text — the run id is persisted on the turn instead. Rehydrate the inline
+    // projection from the canonical mission API through the bootstrap snapshot
+    // so the card survives reload and stays a view of the same run the Research
+    // Desk works on (#4808).
+    const researchRunId = turn.researchRunId;
+    if (turn.role === "assistant" && researchRunId && currentProjection.researchRuns.length === 0) {
+      const researchBlock: MessageBubbleSegment = {
+        kind: "block",
+        key: `research-${researchRunId}`,
+        node: (
+          <div className="my-3">
+            <ResearchRunInlineCard snapshot={researchRunBootstrapSnapshot(researchRunId)} />
+          </div>
+        ),
+      };
+      renderSegments = renderSegments
+        ? [...renderSegments, researchBlock]
+        : [{ kind: "text", text: visible }, researchBlock];
+    }
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration

@@ -151,6 +151,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+    "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
     "src/components/role-surfaces/use-research-resources.test.tsx",
     "src/lib/research-resource-client.test.ts",
     "src/components/role-surfaces/use-research-links.test.ts",
@@ -459,6 +460,7 @@ export const SUITES = {
     "src/lib/server/research-links-legacy-store.test.ts",
     "src/lib/server/research-link-materialization.test.ts",
     "src/lib/server/hf-paper-metadata.test.ts",
+    "src/lib/server/research-github-repo.test.ts",
     "src/lib/server/x-article-ingest.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-mission-lock.test.ts",
@@ -590,8 +592,16 @@ export const SUITES = {
     "src/components/command-palette-canonical-memory-behavior.test.tsx",
     "src/components/command-palette-polish.test.ts",
     "src/components/command-palette-save-link.test.ts",
+    "src/components/command-palette-global-search.test.ts",
+    "src/components/command-palette-a11y-global.test.ts",
     "src/lib/command-palette-search.test.ts",
     "src/lib/search-query.test.ts",
+    "src/lib/search-context.test.ts",
+    "src/lib/global-search-request.test.ts",
+    "src/lib/server/search-runtime.test.ts",
+    "src/lib/search-performance.test.ts",
+    "src/lib/search-lazy-modules.test.ts",
+    "src/lib/search-compatibility-retention.test.ts",
     "src/lib/search-index-store.test.ts",
     "src/lib/search-provider.test.ts",
     "src/lib/search-research-resource-provider.test.ts",
@@ -1151,6 +1161,7 @@ export const SUITES = {
     "src/lib/familiar-studio-context.test.ts",
     "src/lib/html-sanitize.test.ts",
     "src/lib/github-repo-link.test.ts",
+    "src/lib/research-github-repo.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
     "src/lib/hf-papers.test.ts",
@@ -1407,6 +1418,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
     "src/app/api/research/links/ingest-urls.test.ts",
     "src/app/api/research/links/route.test.ts",
+    "src/app/api/research/github-repo/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
     "src/app/api/research/resources/route.test.ts",
     "src/app/api/research/resources/[id]/route.test.ts",
@@ -1808,6 +1820,7 @@ export const SUITES = {
     "src/app/api/salem/strip-mdx.test.ts",
     "src/app/api/salem/route.test.ts",
     "src/app/api/search/route.test.ts",
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
@@ -2083,6 +2096,8 @@ const ALIAS_LOADER = new Set([
   // through runtime @/lib imports.
   "src/lib/server/x-article-ingest.test.ts",
   "src/app/api/research/links/route.test.ts",
+  // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
+  "src/app/api/research/github-repo/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -2357,6 +2372,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/project-root-migration.test.ts",
   // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
   // reaches "@/lib/server/api-security" for the local-request guard.
+  // unit-6/7 search tests import the coordinator/query/parser via "@/lib/…".
+  "src/lib/server/search-runtime.test.ts",
+  "src/lib/search-performance.test.ts",
+  "src/lib/search-compatibility-retention.test.ts",
   "src/app/api/research/papers/pdf/route.test.ts",
   // Context Packs (Unit 1): the pack store/adapters/builder and routes resolve
   // "@/lib/..." aliases at runtime, and research-links.test.ts reaches them
@@ -2419,6 +2438,7 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
+  "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
   "src/components/role-surfaces/research-topic-card.test.tsx",
