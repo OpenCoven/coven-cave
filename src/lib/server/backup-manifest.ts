@@ -94,6 +94,10 @@ const CAVE_DIRS = [
   "research-resources/snapshots",
   "research-resources/blobs",
   "research-resources/tombstones",
+  "research-context-packs/manifests",
+  "research-context-packs/blobs",
+  "research-context-packs/redactions",
+  "research-context-packs/receipts",
   "research-resources/migration",
 ] as const;
 
@@ -195,16 +199,17 @@ export function isAllowedBackupEntry(root: BackupRoot, rel: string): boolean {
 
 async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, string>): Promise<Array<{ root: BackupRoot; rel: string; secret: boolean; optional?: boolean }>> {
   const full = resolveBackupEntryPath(candidate.root, candidate.rel, roots);
-  const privateResearch = candidate.root === "cave" && candidate.rel.startsWith("research-resources/");
+  const hardenedCave = candidate.root === "cave"
+    && (candidate.rel.startsWith("research-resources/") || candidate.rel.startsWith("research-context-packs/"));
   let s;
   try {
-    s = privateResearch ? await lstat(full) : await stat(full);
+    s = hardenedCave ? await lstat(full) : await stat(full);
   } catch (error) {
-    if (privateResearch && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (hardenedCave && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return [];
   }
-  if (privateResearch && s.isSymbolicLink()) throw new Error("Research backup path is unsafe");
-  if (privateResearch && !s.isDirectory()) throw new Error("Research backup path is unsafe");
+  if (hardenedCave && s.isSymbolicLink()) throw new Error("Research backup path is unsafe");
+  if (hardenedCave && !s.isDirectory()) throw new Error("Research backup path is unsafe");
   if (s.isFile()) return [{ root: candidate.root, rel: normalizeBackupPath(candidate.rel), secret: candidate.secret === true, optional: candidate.optional }];
   if (!s.isDirectory()) return [];
 
@@ -215,7 +220,7 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
       const childRel = normalizeBackupPath(`${dirRel}/${entry.name}`);
       if (isExcludedRel(childRel)) continue;
       const child = resolveBackupEntryPath(candidate.root, childRel, roots);
-      if (privateResearch) {
+      if (hardenedCave) {
         const metadata = await lstat(child);
         if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
           throw new Error("Research backup entry is unsafe");
@@ -268,8 +273,9 @@ export async function listBackupFiles(roots = backupRoots()): Promise<BackupSour
       if (seen.has(key)) continue;
       seen.add(key);
       const fullPath = resolveBackupEntryPath(file.root, file.rel, roots);
-      const privateResearch = file.root === "cave" && file.rel.startsWith("research-resources/");
-      const metadata = privateResearch ? await lstat(fullPath) : null;
+      const hardenedCave = file.root === "cave"
+        && (file.rel.startsWith("research-resources/") || file.rel.startsWith("research-context-packs/"));
+      const metadata = hardenedCave ? await lstat(fullPath) : null;
       if (metadata && (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1)) {
         throw new Error("Research backup entry is unsafe");
       }
@@ -299,6 +305,7 @@ export const RESEARCH_BACKUP_EXCLUSIONS = [
   "research-resources/jobs/", "research-resources/failures/",
   "research-resources/fences/", "research-resources/deletions/",
   "research-resources/locks/", "research-resources/index/",
+  "research-context-packs/locks/",
 ] as const;
 
 export function createBackupManifest(entries: BackupEntry[], roots = backupRoots(), createdAt = new Date().toISOString()): BackupManifest {

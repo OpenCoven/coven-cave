@@ -54,6 +54,7 @@ import {
 } from "@/lib/research-prompt-brief";
 import { ResearchPromptBuilder } from "./research-prompt-builder";
 import { ResearchPromptStrengthMeter } from "./research-prompt-strength";
+import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 
 type StartResult =
   | { ok: true; mission: ResearchMission }
@@ -84,6 +85,8 @@ type Props = {
   onDraftChange?(draft: string): void;
   /** An explicitly accepted recommendation replaces the composer draft once. */
   recommendedDraft?: { value: string; revision: number } | null;
+  /** An accepted Topic Discovery proposal pre-fills intent/mode/bounds once. */
+  initialDraft?: TopicProposalDraftV1;
 };
 
 const MODE_LABELS: Record<ResearchMissionMode, string> = {
@@ -226,6 +229,7 @@ export function ResearchMissionComposer({
   recommendations = [],
   onDraftChange,
   recommendedDraft,
+  initialDraft,
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
@@ -335,6 +339,25 @@ export function ResearchMissionComposer({
   useEffect(() => {
     if (initialMode) setMode(initialMode);
   }, [initialMode, setMode]);
+
+  // An accepted Topic Discovery proposal is a one-shot prefill: the question
+  // becomes the intent, the suggested mode is selected, and the suggested
+  // sourceTarget/wallClockMinutes land in the plan bounds. Other plan fields
+  // (iterations, checkpointEvery) come from the mode's default plan.
+  const appliedInitialDraftId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialDraft || appliedInitialDraftId.current === initialDraft.proposalId) return;
+    appliedInitialDraftId.current = initialDraft.proposalId;
+    setIntent(initialDraft.question);
+    setMode(initialDraft.mode);
+    boundsDirtyRef.current = true;
+    const draftPlan = defaultResearchPlan(initialDraft.mode).bounds;
+    setBounds({
+      ...draftPlan,
+      sourceTarget: initialDraft.sourceTarget,
+      wallClockMinutes: initialDraft.wallClockMinutes,
+    });
+  }, [initialDraft, setMode]);
 
   const inferred = useMemo(() => inferResearchMissionMode(intent), [intent]);
   const effectiveMode = mode === "auto" ? inferred.mode : mode;

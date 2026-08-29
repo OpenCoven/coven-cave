@@ -434,6 +434,43 @@ describe("streamFamiliarText", () => {
     assert.equal(text, literal, "a marker inside an inline code span is left untouched");
   });
 
+  it("routes projectless generation origins to the dedicated generation surface (cave-cst0g)", async () => {
+    const urls: string[] = [];
+    const bodies: string[] = [];
+    globalThis.fetch = (async (url: unknown, init: { body?: string }) => {
+      urls.push(String(url));
+      bodies.push(init.body ?? "");
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({ familiarId: "nova", prompt: "p" });
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "enhance" });
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "journal" });
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "canvas" });
+
+    // Ordinary sends stay on the chat surface; hidden generations hit the
+    // generation surface, which mints the origin server-side from its path.
+    assert.equal(urls[0], "/api/chat/send");
+    assert.equal(urls[1], "/api/chat/generate/enhance");
+    assert.equal(urls[2], "/api/chat/generate/journal");
+    assert.equal(urls[3], "/api/chat/generate/canvas");
+    // The origin claim no longer rides in the request body — the server
+    // stamps it from the route path.
+    assert.equal(JSON.parse(bodies[1]).origin, undefined, "generation sends omit the body origin claim");
+    assert.equal(JSON.parse(bodies[2]).origin, undefined);
+  });
+
+  it("keeps non-generation origins on the chat surface", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      urls.push(String(url));
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "chat" });
+    assert.equal(urls[0], "/api/chat/send", "a non-projectless origin is not a generation send");
+  });
+
   it("hides an attention marker delivered via assistant_replace", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "draft" }),

@@ -145,6 +145,16 @@ const unknownTool = parseCodexStreamEvent({ type: "item.completed", item: { id: 
 assert.equal(unknownTool?.kind, "unknown", "known outer events with an unknown tool type fail closed too");
 assert.deepEqual(parseCodexStreamEvent({ type: "turn.failed", message: "never render" }, selected.schema), { kind: "failure" }, "terminal turn failures retain no payload");
 assert.deepEqual(parseCodexStreamEvent({ type: "error", message: "never render" }, selected.schema), { kind: "failure" }, "terminal error frames retain no payload");
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } }, selected.schema),
+  { kind: "usage", usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 128, output_tokens: 122 } },
+  "turn.completed forwards its raw usage object for the route to validate",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "turn.completed", secret: "never render" }, selected.schema),
+  { kind: "usage", usage: undefined },
+  "a turn.completed frame without usage still exposes no payload",
+);
 
 const decoder = new CodexJsonlDecoder();
 const preambleJson = decoder.push('{"type":"error","message":"assistant JSON, not protocol"}\n{"type":"thread.started","thread_id":"example-thread"}\n{"type":"item.started","item":{"id":"example","type":"command_execution"}}\n', selected.schema);

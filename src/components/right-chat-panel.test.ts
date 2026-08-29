@@ -542,6 +542,18 @@ assert.match(
   "the backdrop renders only while any drawer is open, as a real <button>",
 );
 
+// Full-bleed close strip (cave-4snk9): on phones (≤480px) the drawer is
+// width:100vw and covers the backdrop at every pixel, so CSS hides the
+// backdrop for this slot and THIS button — the drawer's own first child,
+// inside the focus trap — is the close control pointer AND keyboard users
+// can reach. CSS (shell-responsive.css) shows it only at ≤480px; this pin
+// fixes its source shape and that it precedes the panel content.
+assert.match(
+  drawerSource,
+  /className="focus-ring mobile-right-chat-drawer__close"[\s\S]{0,120}aria-label="Close drawer"[\s\S]{0,60}onClick=\{onClose\}\s*\/>\s*\{rightChat\}/,
+  "the full-bleed close strip is the drawer's first child (inside the trap) and calls the same onClose the backdrop uses",
+);
+
 // Escape ownership: the legacy standalone listener must step aside for the
 // right Chat drawer, which owns Escape entirely through useFocusTrap's
 // onEscape — otherwise Escape would fire onClose twice for that slot.

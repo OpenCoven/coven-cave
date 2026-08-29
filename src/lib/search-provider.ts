@@ -40,6 +40,17 @@ export type SearchRequesterContext = {
   allowedProjectRoots: string[] | null;
   /** The active familiar, when a surface has one. */
   familiarId: string | null;
+  /**
+   * Every familiar the requester may read, when access is roster-wide.
+   *
+   * The local desktop user owns their whole roster, so familiar-scoped rows
+   * (sessions, tasks) must stay reachable after global broadening — the unit-6
+   * contract that broader matches are never excluded. The single `familiarId`
+   * above expresses "this surface is pinned to one familiar" for scoped
+   * surfaces; `familiarIds` expresses "the user may read these familiars"
+   * for the server API. Undefined keeps the old exact-match behavior.
+   */
+  familiarIds?: string[] | null;
 };
 
 export type SearchProviderQuery = {
@@ -154,14 +165,20 @@ export function permitsByProject(
       }
     }
     if (permission.kind === "familiar") {
-      // Exact match, and no active familiar fails CLOSED.
+      // Roster-wide access (the local user owns every roster familiar) wins
+      // over the single-familiar pin; otherwise exact match, and no familiar
+      // context fails CLOSED.
       //
       // `allowedProjectIds: null` means "unrestricted", but `familiarId: null`
       // means "this surface has no active familiar" — not "every familiar".
       // Reading the second like the first is how a familiar-scoped row leaks
       // into an unscoped search: the requirement simply cannot be satisfied
       // when there is no familiar to satisfy it.
-      if (context.familiarId !== permission.id) return false;
+      if (context.familiarIds !== undefined && context.familiarIds !== null) {
+        if (!context.familiarIds.includes(permission.id)) return false;
+      } else if (context.familiarId !== permission.id) {
+        return false;
+      }
     }
   }
   return true;

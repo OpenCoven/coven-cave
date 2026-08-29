@@ -74,13 +74,13 @@ test.describe("calendar month grid keyboard model", () => {
     expect(await focusedCellIndex(page)).toBe(start + 1);
 
     await page.keyboard.press("ArrowDown");
-    const afterDown = await focusedCellIndex(page);
-    // ↓ is one 7-cell row-step. The roving hook's documented grid rule is
-    // "off the top/bottom edge: stay put rather than clamping", so a cell in
-    // the grid's last row (start + 1 + 7 >= 42) does not move. The assertion
-    // is date-dependent otherwise: today's cell row changes every week, which
-    // made this test fail repo-wide whenever today sat in the last row.
-    expect(afterDown).toBe(start + 8 < 42 ? start + 8 : start + 1);
+    // A ↓ row-step from the grid's last row would leave the grid entirely;
+    // the roving hook's documented behavior is to stay put at the edge
+    // (see use-roving-tabindex.ts) rather than slide into a different
+    // column. The anchor is today's cell, so this case occurs whenever the
+    // test runs on the last day of a calendar row (e.g. a Saturday in a
+    // Sunday-start grid). Every other row advances a full week.
+    expect(await focusedCellIndex(page)).toBe(start + 8 <= 41 ? start + 8 : start + 1);
 
     // The grid owns its arrows: the month must NOT have paged underneath.
     await expect(page.getByRole("grid")).toHaveAttribute("aria-label", monthLabel!);
