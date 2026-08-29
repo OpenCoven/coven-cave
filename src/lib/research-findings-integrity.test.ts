@@ -49,7 +49,7 @@ test("scanner remains stable across repeated calls", () => {
 });
 
 test("empty ledger with citations reports unavailable and keeps conflicts separate", () => {
-  const integrity = deriveResearchFindingsIntegrity("Claim [S1]. Conflict C2.", []);
+  const integrity = deriveResearchFindingsIntegrity("Critical![S1]. Conflict C2.", []);
   assert.deepEqual(integrity, {
     ledger: "empty",
     referencedIds: ["S1"],
@@ -103,12 +103,13 @@ test("used and candidate sources count together but summarize as candidate", () 
   assert.equal(integrity.summary.label, "1 source awaits review");
 });
 
-test("parser-recognized arbitrary source ids count as citations", () => {
-  const integrity = deriveResearchFindingsIntegrity("Manual note cites manual-1 for follow-up.", [
-    source("manual-1", "candidate"),
+test("parser-recognized arbitrary source ids count as citations without creating conflicts", () => {
+  const integrity = deriveResearchFindingsIntegrity("Manual note cites manual-C1 for follow-up.", [
+    source("manual-C1", "candidate"),
   ]);
-  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.referencedIds, ["manual-C1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "candidate");
   assert.equal(integrity.summary.label, "1 source awaits review");
 });
@@ -277,9 +278,11 @@ test("plural candidate summaries use the exact plural label", () => {
   assert.equal(integrity.summary.label, "2 sources await review");
 });
 
-test("used-only sources summarize as verified", () => {
-  const integrity = deriveResearchFindingsIntegrity("[S1]", [source("S1", "used")]);
+test("used-only sources summarize as verified even when punctuation touches a bare label", () => {
+  const integrity = deriveResearchFindingsIntegrity("Critical![S1]", [source("S1", "used")]);
   assert.deepEqual(integrity.counts, { candidate: 0, used: 1, conflicting: 0, rejected: 0 });
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "verified");
   assert.equal(integrity.summary.label, "1 source verified");
 });

@@ -42,9 +42,10 @@ function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: stri
 
 function preprocessMarkdownForIntegrity(markdown: string): string {
   const withoutComments = stripHtmlComments(markdown ?? "");
-  const withoutBlocks = stripFencedCodeAndReferenceDefinitions(withoutComments);
+  const { markdown: withoutBlocks, referenceDefinitionLabels } =
+    stripFencedCodeAndReferenceDefinitions(withoutComments);
   const withoutCode = stripInlineCode(withoutBlocks);
-  const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode);
+  const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode, referenceDefinitionLabels);
   return stripBareUrls(withoutMarkdownTargets);
 }
 
@@ -102,6 +103,37 @@ function findBalancedClose(input: string, startIndex: number, open: string, clos
   return -1;
 }
 
+function isCommonMarkEscapablePunctuation(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e)
+  );
+}
+
+function unescapeCommonMarkPunctuation(text: string): string {
+  let result = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (
+      text[index] === "\\" &&
+      index + 1 < text.length &&
+      isCommonMarkEscapablePunctuation(text[index + 1])
+    ) {
+      result += text[index + 1];
+      index += 1;
+      continue;
+    }
+    result += text[index];
+  }
+  return result;
+}
+
+function normalizeReferenceLabel(label: string): string {
+  return unescapeCommonMarkPunctuation(label).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function isReferenceDefinitionLine(line: string): boolean {
   let labelStart = 0;
   while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
@@ -111,32 +143,50 @@ function isReferenceDefinitionLine(line: string): boolean {
   return labelEnd > labelStart + 1 && line[labelEnd + 1] === ":";
 }
 
-function stripFencedCodeAndReferenceDefinitions(markdown: string): string {
+function readReferenceDefinitionLabel(line: string): string | null {
+  let labelStart = 0;
+  while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
+  if (line[labelStart] !== "[") return null;
+
+  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
+  if (labelEnd <= labelStart + 1 || line[labelEnd + 1] !== ":") return null;
+  return normalizeReferenceLabel(line.slice(labelStart + 1, labelEnd));
+}
+
+function stripFencedCodeAndReferenceDefinitions(markdown: string): {
+  markdown: string;
+  referenceDefinitionLabels: Set<string>;
+} {
   const lines = markdown.split(/\r?\n/);
   let fence: { character: string; length: number } | null = null;
+  const referenceDefinitionLabels = new Set<string>();
 
-  return lines
-    .map((line) => {
-      const run = readFenceRun(line);
-      if (fence) {
-        if (
-          run &&
-          run.character === fence.character &&
-          run.length >= fence.length &&
-          !run.suffix.trim()
-        ) {
-          fence = null;
-        }
-        return "";
+  const strippedLines = lines.map((line) => {
+    const run = readFenceRun(line);
+    if (fence) {
+      if (
+        run &&
+        run.character === fence.character &&
+        run.length >= fence.length &&
+        !run.suffix.trim()
+      ) {
+        fence = null;
       }
-      if (run) {
-        fence = { character: run.character, length: run.length };
-        return "";
-      }
-      if (isReferenceDefinitionLine(line)) return "";
-      return line;
-    })
-    .join("\n");
+      return "";
+    }
+    if (run) {
+      fence = { character: run.character, length: run.length };
+      return "";
+    }
+    if (isReferenceDefinitionLine(line)) {
+      const label = readReferenceDefinitionLabel(line);
+      if (label) referenceDefinitionLabels.add(label);
+      return "";
+    }
+    return line;
+  });
+
+  return { markdown: strippedLines.join("\n"), referenceDefinitionLabels };
 }
 
 function isEscaped(input: string, index: number): boolean {
@@ -193,7 +243,7 @@ function stripInlineCode(markdown: string): string {
   return sanitized;
 }
 
-function stripMarkdownLinksAndImages(markdown: string): string {
+function stripMarkdownLinksAndImages(markdown: string, referenceDefinitionLabels: Set<string>): string {
   let sanitized = "";
 
   for (let index = 0; index < markdown.length; ) {
@@ -232,11 +282,15 @@ function stripMarkdownLinksAndImages(markdown: string): string {
       sanitized += markdown[index];
       index += 1;
       continue;
+    } else if (!referenceDefinitionLabels.has(normalizeReferenceLabel(markdown.slice(labelStart, labelEnd)))) {
+      sanitized += markdown.slice(index, labelEnd + 1);
+      index = labelEnd + 1;
+      continue;
     }
 
     sanitized += isImage
       ? " "
-      : stripMarkdownLinksAndImages(markdown.slice(labelStart, labelEnd));
+      : stripMarkdownLinksAndImages(markdown.slice(labelStart, labelEnd), referenceDefinitionLabels);
     index = constructEnd;
   }
 
@@ -344,8 +398,13 @@ function scanConflictMarkerIds(markdown: string): string[] {
 }
 
 function scanReferencedIdsInOrder(markdown: string, candidates: string[]): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
+  return uniqueIdsInOrder(scanMatchedIds(markdown, candidates).map((match) => match.id));
+}
+
+type IdMatch = { id: string; start: number; end: number };
+
+function scanMatchedIds(markdown: string, candidates: string[]): IdMatch[] {
+  const matches: IdMatch[] = [];
   const longestFirst = uniqueIdsInOrder(candidates.filter(Boolean)).sort(
     (left, right) => right.length - left.length,
   );
@@ -356,16 +415,26 @@ function scanReferencedIdsInOrder(markdown: string, candidates: string[]): strin
     for (const id of longestFirst) {
       if (!markdown.startsWith(id, index)) continue;
       if (isTokenCharacter(markdown[index + id.length])) continue;
-      if (!seen.has(id)) {
-        seen.add(id);
-        ids.push(id);
-      }
+      matches.push({ id, start: index, end: index + id.length });
       index += id.length - 1;
       break;
     }
   }
 
-  return ids;
+  return matches;
+}
+
+function maskMatchedSpans(markdown: string, matches: IdMatch[]): string {
+  if (matches.length === 0) return markdown;
+
+  let masked = "";
+  let cursor = 0;
+  for (const match of matches) {
+    masked += markdown.slice(cursor, match.start);
+    masked += " ".repeat(match.end - match.start);
+    cursor = match.end;
+  }
+  return masked + markdown.slice(cursor);
 }
 
 function countStatuses(sources: ResearchSourceRef[]): Record<ResearchSourceRef["status"], number> {
@@ -449,7 +518,11 @@ export function deriveResearchFindingsIntegrity(
     uniqueIdsInOrder([...visibleLedgerSourceIds, ...unresolvedCandidateIds]),
   );
   const unresolvedIds = referencedIds.filter((id) => !sourceById.has(id));
-  const conflictMarkerIds = scanConflictMarkerIds(sanitizedMarkdown);
+  const maskedConflictMarkdown = maskMatchedSpans(
+    sanitizedMarkdown,
+    scanMatchedIds(sanitizedMarkdown, visibleLedgerSourceIds),
+  );
+  const conflictMarkerIds = scanConflictMarkerIds(maskedConflictMarkdown);
   const conflictingSourceIds = uniqueIdsInOrder(
     sources.filter((source) => source.status === "conflicting").map((source) => source.id),
   );
