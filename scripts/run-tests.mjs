@@ -1904,7 +1904,7 @@ export const SUITES = {
     "scripts/ios-bulk-reminders.test.mjs",
     "scripts/ios-session-refetch.test.mjs",
     "scripts/ios-thread-server-persistence.test.mjs",
-    "scripts/ios-thread-flag-reconciliation.test.mjs",
+    "scripts/ios-server-flag-reconcile.test.mjs",
     "scripts/ios-message-delete-persistence.test.mjs",
     "scripts/ios-swipe-ux.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",

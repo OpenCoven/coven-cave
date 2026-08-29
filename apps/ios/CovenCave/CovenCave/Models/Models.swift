@@ -85,7 +85,8 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
-    /// Server-side keep pin (`pinned: true` when pinned, absent otherwise).
+    /// Pinned by the user; chat lists sort pinned rows to the top. The server
+    /// omits the key entirely when unpinned, so absence decodes as nil.
     var pinned: Bool? = nil
     /// Launch provenance for first-turn continuity across clients.
     var projectRoot: String? = nil
