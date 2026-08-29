@@ -211,6 +211,17 @@ test("bare IPv6 URLs remain opaque without swallowing adjacent citations", () =>
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("bracketed URL path and query components remain opaque", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "See https://x.test/[S1] and https://x.test/?q=[S2].",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
 test("linked images do not create referenced ids or summaries", () => {
   const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)](target)", [source("S9", "candidate")]);
   assert.deepEqual(integrity.referencedIds, []);

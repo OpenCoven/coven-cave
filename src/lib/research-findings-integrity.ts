@@ -275,6 +275,16 @@ function stripBareUrls(markdown: string): string {
           index = hostEnd + 1;
           continue;
         }
+        const bracketedComponent = hostEnd === -1 ? "" : markdown.slice(index + 1, hostEnd);
+        if (
+          /[/?#]/.test(authorityPrefix) &&
+          !/[.,;:!?)]/.test(markdown[index - 1] ?? "") &&
+          bracketedComponent &&
+          !/\s/.test(bracketedComponent)
+        ) {
+          index = hostEnd + 1;
+          continue;
+        }
         break;
       }
       if (character === "(") parenDepth += 1;
