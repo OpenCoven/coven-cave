@@ -65,7 +65,7 @@ assert.doesNotMatch(source, /chat-thread-filters/, "All/Active/Tasks/Pinned tabs
 // ── Familiar selection lives in the page header, not this rail ───────────────
 assert.doesNotMatch(source, /function RailFamiliarStrip/, "Rail no longer carries a duplicate familiar-avatar strip");
 assert.doesNotMatch(source, /<FamiliarAvatar familiar=\{f\} size="sm"/, "Familiar chips moved out of the session rail");
-assert.match(source, /placeholder="Search chats…"/, "Rail search uses chat language (§10: chats are what people open)");
+assert.match(source, /placeholder="Filter chats…"/, "Rail search uses chat language (§10: chats are what people open)");
 assert.match(source, /aria-label="Familiar sessions"/, "Rail names the region as familiar sessions");
 
 // ── Ops footer (Git / Inspect / Debug) is preserved ─────────────────────────

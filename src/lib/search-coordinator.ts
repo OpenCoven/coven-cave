@@ -19,7 +19,7 @@
  * Spec: docs/superpowers/specs/2026-08-03-global-intelligent-search-design.md
  */
 
-import { SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
+import { canonicalEntityTypes, SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
 import { normalizeSearchDocument, type SearchDocument } from "./search-document.ts";
 import {
   permitsByProject,
@@ -189,7 +189,7 @@ export function satisfiesHardConstraints(
     if (!document.familiarId || !wanted.includes(document.familiarId.toLowerCase())) return false;
   }
   const types = filterValues(query, "type");
-  if (types.length > 0 && !types.includes(document.entityType)) return false;
+  if (types.length > 0 && !canonicalEntityTypes(types).includes(document.entityType)) return false;
 
   const statuses = filterValues(query, "status");
   if (statuses.length > 0 && (!document.status || !statuses.includes(document.status))) return false;

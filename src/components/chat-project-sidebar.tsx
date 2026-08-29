@@ -771,8 +771,8 @@ export function ChatProjectSidebar({
             value={search}
             onValueChange={setSearch}
             onClear={() => setSearch("")}
-            placeholder="Search chats…"
-            aria-label="Search chats"
+            placeholder="Filter chats…"
+            aria-label="Filter chats"
           />
         }
       >
