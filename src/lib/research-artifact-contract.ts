@@ -192,66 +192,90 @@ export function researchSourcesShareIdentity(
     );
 }
 
-type ResearchSourceIdentityKind = "id" | "url" | "localPath";
-
-function researchSourceIdentityEntries(
-  source: ResearchSourceRef,
-): Array<readonly [ResearchSourceIdentityKind, string]> {
-  return [
-    ["id", source.id],
-    ...(source.url ? [["url", source.url] as const] : []),
-    ...(source.localPath ? [["localPath", source.localPath] as const] : []),
-  ];
-}
-
 function ambiguousResearchSourceIdentities(): never {
   throw new Error("Research source identities are ambiguous");
 }
 
-function indexDistinctResearchSourceIdentities(
+function indexDistinctResearchSourceIds(
   sources: ResearchSourceRef[],
-): Record<ResearchSourceIdentityKind, Map<string, number>> {
-  const owners = {
-    id: new Map<string, number>(),
-    url: new Map<string, number>(),
-    localPath: new Map<string, number>(),
-  };
+): Map<string, number> {
+  const owners = new Map<string, number>();
 
   sources.forEach((source, index) => {
-    for (const [kind, value] of researchSourceIdentityEntries(source)) {
-      if (owners[kind].has(value)) ambiguousResearchSourceIdentities();
-      owners[kind].set(value, index);
-    }
+    if (owners.has(source.id)) ambiguousResearchSourceIdentities();
+    owners.set(source.id, index);
   });
 
   return owners;
 }
 
+function researchSourcesShareSecondaryIdentity(
+  left: ResearchSourceRef,
+  right: ResearchSourceRef,
+): boolean {
+  return Boolean(left.url && right.url && left.url === right.url) ||
+    Boolean(
+      left.localPath &&
+      right.localPath &&
+      left.localPath === right.localPath,
+    );
+}
+
 /**
  * Reconcile a healthy file snapshot with the mission's current user-owned
- * source state. Mission order and fields win; unmatched file rows follow in
- * their file order.
+ * source state. Exact ids pair first. Remaining rows may bridge by one unique
+ * URL or local-path match; shared secondary identities otherwise stay distinct
+ * or fail closed when they make the bridge ambiguous. Mission order and fields
+ * win, and unmatched file rows follow in their file order.
  */
 export function reconcileResearchSourcesForRead(
   fileSources: ResearchSourceRef[],
   missionSources: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const fileIdentityOwners = indexDistinctResearchSourceIdentities(fileSources);
-  indexDistinctResearchSourceIdentities(missionSources);
+  const fileIdOwners = indexDistinctResearchSourceIds(fileSources);
+  indexDistinctResearchSourceIds(missionSources);
 
   const matchedFileIndexes = new Set<number>();
-  const reconciledMissionSources = missionSources.map((missionSource) => {
-    const candidateFileIndexes = new Set<number>();
-    for (const [kind, value] of researchSourceIdentityEntries(missionSource)) {
-      const fileIndex = fileIdentityOwners[kind].get(value);
-      if (fileIndex !== undefined) candidateFileIndexes.add(fileIndex);
-    }
-    if (candidateFileIndexes.size > 1) ambiguousResearchSourceIdentities();
+  const fileIndexByMissionIndex = new Map<number, number>();
 
-    const fileIndex = candidateFileIndexes.values().next().value;
-    if (fileIndex === undefined) return missionSource;
-    if (matchedFileIndexes.has(fileIndex)) ambiguousResearchSourceIdentities();
+  missionSources.forEach((missionSource, missionIndex) => {
+    const fileIndex = fileIdOwners.get(missionSource.id);
+    if (fileIndex === undefined) return;
     matchedFileIndexes.add(fileIndex);
+    fileIndexByMissionIndex.set(missionIndex, fileIndex);
+  });
+
+  const candidateMissionIndexesByFile = new Map<number, number[]>();
+  missionSources.forEach((missionSource, missionIndex) => {
+    if (fileIndexByMissionIndex.has(missionIndex)) return;
+
+    const candidateFileIndexes: number[] = [];
+    fileSources.forEach((fileSource, fileIndex) => {
+      if (
+        !matchedFileIndexes.has(fileIndex) &&
+        researchSourcesShareSecondaryIdentity(missionSource, fileSource)
+      ) {
+        candidateFileIndexes.push(fileIndex);
+      }
+    });
+    if (candidateFileIndexes.length > 1) ambiguousResearchSourceIdentities();
+    const fileIndex = candidateFileIndexes[0];
+    if (fileIndex === undefined) return;
+    const candidateMissionIndexes =
+      candidateMissionIndexesByFile.get(fileIndex) ?? [];
+    candidateMissionIndexes.push(missionIndex);
+    candidateMissionIndexesByFile.set(fileIndex, candidateMissionIndexes);
+  });
+
+  for (const [fileIndex, missionIndexes] of candidateMissionIndexesByFile) {
+    if (missionIndexes.length > 1) ambiguousResearchSourceIdentities();
+    matchedFileIndexes.add(fileIndex);
+    fileIndexByMissionIndex.set(missionIndexes[0], fileIndex);
+  }
+
+  const reconciledMissionSources = missionSources.map((missionSource, missionIndex) => {
+    const fileIndex = fileIndexByMissionIndex.get(missionIndex);
+    if (fileIndex === undefined) return missionSource;
     return {
       ...fileSources[fileIndex],
       ...missionSource,
@@ -262,7 +286,7 @@ export function reconcileResearchSourcesForRead(
     ...reconciledMissionSources,
     ...fileSources.filter((_, index) => !matchedFileIndexes.has(index)),
   ];
-  indexDistinctResearchSourceIdentities(reconciledSources);
+  indexDistinctResearchSourceIds(reconciledSources);
   return reconciledSources;
 }
 

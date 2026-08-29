@@ -303,6 +303,23 @@ function scanStrictBracketedSourceRefs(
   return matches;
 }
 
+function escapedBracketRanges(input: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const bracketGroup = /\[([^\[\]\r\n]+)\]/g;
+
+  for (
+    let group = bracketGroup.exec(input);
+    group;
+    group = bracketGroup.exec(input)
+  ) {
+    if (isEscaped(input, group.index)) {
+      ranges.push([group.index, group.index + group[0].length]);
+    }
+  }
+
+  return ranges;
+}
+
 function matchRecognizedFindingsRefs(input: string, resolver: RefResolver): FindingsRefMatch[] {
   if (!input) return [];
 
@@ -324,7 +341,11 @@ function matchRecognizedFindingsRefs(input: string, resolver: RefResolver): Find
   }
   matches.push(...scanStrictBracketedSourceRefs(input, resolver));
 
-  const opaqueRanges = [...inlineCodeRanges(input), ...bareUrlRanges(input)];
+  const opaqueRanges = [
+    ...inlineCodeRanges(input),
+    ...bareUrlRanges(input),
+    ...escapedBracketRanges(input),
+  ];
   return matches
     .sort((left, right) => left.index - right.index)
     .filter(

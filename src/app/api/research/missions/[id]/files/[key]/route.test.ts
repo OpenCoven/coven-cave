@@ -178,33 +178,91 @@ test("valid ledgers keep mission order before unmatched file-only additions", as
   });
 });
 
+test("versioned source ids sharing a URL remain available and distinct", async () => {
+  const versions = [
+    {
+      ...SOURCE,
+      id: "content-v1",
+      title: "Version one",
+      localPath: "/workspace/report-v1.md",
+    },
+    {
+      ...SOURCE,
+      id: "content-v2",
+      title: "Version two",
+      localPath: "/workspace/report-v2.md",
+    },
+  ];
+  const { GET } = createResearchMissionFileRouteHandlers({
+    loadMission: async () => mission([]),
+    readFile: async (_id, relativePath) =>
+      relativePath === "findings.md"
+        ? "# Findings"
+        : JSON.stringify(versions),
+    workspacePath: () => "/workspace/mission-1",
+  });
+
+  const response = await GET(localRequest(), context());
+  const body = await response.json();
+  assert.deepEqual(body.file.sourceLedger, {
+    state: "available",
+    sources: versions,
+  });
+});
+
+test("exact-id reconciliation wins over a competing shared-URL bridge", async () => {
+  const current = {
+    ...SOURCE,
+    id: "manual-current",
+    title: "Current mission title",
+  };
+  const fileSources = [
+    {
+      ...SOURCE,
+      id: "runner-stale",
+      title: "Stale URL title",
+    },
+    {
+      ...SOURCE,
+      id: "manual-current",
+      title: "Stale exact-id title",
+      url: "https://example.com/other",
+      publisher: "File publisher",
+    },
+  ];
+  const { GET } = createResearchMissionFileRouteHandlers({
+    loadMission: async () => mission([current]),
+    readFile: async (_id, relativePath) =>
+      relativePath === "findings.md"
+        ? "# Findings"
+        : JSON.stringify(fileSources),
+    workspacePath: () => "/workspace/mission-1",
+  });
+
+  const response = await GET(localRequest(), context());
+  const body = await response.json();
+  assert.deepEqual(body.file.sourceLedger, {
+    state: "available",
+    sources: [
+      {
+        ...fileSources[1],
+        ...current,
+      },
+      fileSources[0],
+    ],
+  });
+  assert.equal(
+    new Set(body.file.sourceLedger.sources.map((source: { id: string }) => source.id)).size,
+    body.file.sourceLedger.sources.length,
+  );
+});
+
 test("ambiguous source identities fail closed without exposing source content", async () => {
   const cases: Array<{
     name: string;
     missionSources: ResearchMission["sources"];
     fileSources: ResearchMission["sources"];
   }> = [
-    {
-      name: "URL merge would duplicate the mission id",
-      missionSources: [{
-        ...SOURCE,
-        id: "manual-current",
-        title: "sensitive mission title",
-      }],
-      fileSources: [
-        {
-          ...SOURCE,
-          id: "runner-stale",
-          title: "sensitive stale title",
-        },
-        {
-          ...SOURCE,
-          id: "manual-current",
-          title: "sensitive duplicate title",
-          url: "https://example.com/other",
-        },
-      ],
-    },
     {
       name: "file rows duplicate an id",
       missionSources: [],

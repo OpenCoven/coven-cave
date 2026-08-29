@@ -120,6 +120,36 @@ test("strict bracketed missing source ids resolve while bare unknown ids stay pr
   );
 });
 
+test("escaped known refs stay prose beside ordinary bracketed and bare refs", () => {
+  const input = String.raw`Literal \[S1], then [S1] and bare S1.`;
+  const spans = parseInline(input, SOURCES);
+
+  assert.deepEqual(refIds(spans), ["S1", "S1"]);
+  assert.match(
+    spans
+      .filter((span) => span.kind === "text")
+      .map((span) => span.text)
+      .join(""),
+    /Literal \\\[S1\]/,
+  );
+});
+
+test("known and missing bracketed refs follow odd-even escape parity", () => {
+  const input = String.raw`Odd \[S1] \[S99], triple \\\[S2] \\\[S98], even \\[S3] \\[S97], adjacent \[S4][S4].`;
+  const sources = [
+    source("S1", "candidate"),
+    source("S2", "rejected"),
+    source("S3", "used"),
+    source("S4", "used"),
+  ];
+
+  assert.deepEqual(refIds(parseInline(input, sources)), [
+    "S3",
+    "S97",
+    "S4",
+  ]);
+});
+
 test("missing source refs keep markdown code, image, link destination, and URL exclusions", () => {
   const doc = parseFindingsDoc(`# Findings
 

@@ -108,6 +108,37 @@ test("parser and integrity share missing-ref recognition for empty and partial l
   }
 });
 
+test("an escaped known citation remains prose and does not affect integrity", () => {
+  const markdown = String.raw`Literal \[S1]`;
+  const sources = [source("S1", "used")];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, []);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("parser and integrity share escape parity for known, missing, and adjacent refs", () => {
+  const markdown = String.raw`Odd \[S1] \[S99], triple \\\[S2] \\\[S98], even \\[S3] \\[S97], adjacent \[S4][S4].`;
+  const sources = [
+    source("S1", "candidate"),
+    source("S2", "rejected"),
+    source("S3", "used"),
+    source("S4", "used"),
+  ];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S3", "S97", "S4"]);
+  assert.deepEqual(integrity.referencedIds, ["S3", "S97", "S4"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S97"]);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "unresolved");
+});
+
 test("used and candidate sources count together but summarize as candidate", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1] [S2]", [
     source("S1", "used"),

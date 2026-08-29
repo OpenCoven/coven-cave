@@ -165,32 +165,115 @@ test("read reconciliation keeps mission order and fields before unmatched file s
   );
 });
 
-test("read reconciliation rejects a URL match that would duplicate a mission source id", () => {
-  assert.throws(
-    () => reconcileResearchSourcesForRead([
+test("read reconciliation preserves distinct version ids that share a URL", () => {
+  const versions = [
+    {
+      id: "content-v1",
+      title: "Version one",
+      url: "https://example.com/report",
+      localPath: "/workspace/report-v1.md",
+      sourceType: "web",
+      status: "used" as const,
+    },
+    {
+      id: "content-v2",
+      title: "Version two",
+      url: "https://example.com/report",
+      localPath: "/workspace/report-v2.md",
+      sourceType: "web",
+      status: "candidate" as const,
+    },
+  ];
+
+  assert.deepEqual(reconcileResearchSourcesForRead(versions, []), versions);
+});
+
+test("read reconciliation gives exact ids priority over shared URL bridges", () => {
+  const missionSources = [
+    {
+      id: "content-v2",
+      title: "Current version title",
+      url: "https://example.com/report",
+      localPath: "/workspace/report-v2.md",
+      sourceType: "web",
+      status: "used" as const,
+    },
+  ];
+  const fileSources = [
+    {
+      id: "content-v1",
+      title: "Version one",
+      url: "https://example.com/report",
+      localPath: "/workspace/report-v1.md",
+      sourceType: "web",
+      status: "candidate" as const,
+    },
+    {
+      id: "content-v2",
+      title: "Stale version title",
+      url: "https://example.com/report",
+      localPath: "/workspace/stale-v2.md",
+      publisher: "File publisher",
+      sourceType: "journal",
+      status: "candidate" as const,
+    },
+  ];
+
+  assert.deepEqual(
+    reconcileResearchSourcesForRead(fileSources, missionSources),
+    [
       {
-        id: "runner-stale",
-        title: "Stale URL match",
-        url: "https://example.com/shared",
-        sourceType: "web",
-        status: "candidate",
+        ...fileSources[1],
+        ...missionSources[0],
       },
-      {
-        id: "manual-current",
-        title: "File row already using the current id",
-        url: "https://example.com/other",
-        sourceType: "web",
-        status: "candidate",
-      },
-    ], [{
+      fileSources[0],
+    ],
+  );
+});
+
+test("read reconciliation resolves the prior id-overwrite append collision without duplicate ids", () => {
+  const reconciled = reconcileResearchSourcesForRead([
+    {
+      id: "runner-stale",
+      title: "Stale URL match",
+      url: "https://example.com/shared",
+      sourceType: "web",
+      status: "candidate",
+    },
+    {
+      id: "manual-current",
+      title: "File row already using the current id",
+      url: "https://example.com/other",
+      publisher: "File publisher",
+      sourceType: "journal",
+      status: "candidate",
+    },
+  ], [{
+    id: "manual-current",
+    title: "Current mission source",
+    url: "https://example.com/shared",
+    sourceType: "web",
+    status: "used",
+  }]);
+
+  assert.deepEqual(reconciled, [
+    {
       id: "manual-current",
       title: "Current mission source",
       url: "https://example.com/shared",
+      publisher: "File publisher",
       sourceType: "web",
       status: "used",
-    }]),
-    /Research source identities are ambiguous/,
-  );
+    },
+    {
+      id: "runner-stale",
+      title: "Stale URL match",
+      url: "https://example.com/shared",
+      sourceType: "web",
+      status: "candidate",
+    },
+  ]);
+  assert.equal(new Set(reconciled.map((source) => source.id)).size, reconciled.length);
 });
 
 test("read reconciliation rejects duplicate file source ids", () => {
