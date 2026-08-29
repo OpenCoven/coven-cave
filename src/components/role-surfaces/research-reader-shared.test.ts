@@ -90,6 +90,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const CONTENTS_SHEET_MAX_REM = 65/,
+  "the Contents sheet threshold includes the 13rem rail beside the intended 52rem document",
+);
+assert.match(
+  source,
   /const RAIL_MIN_REM = 18/,
   "the resizable inspector minimum matches the CSS 18rem track minimum",
 );
@@ -126,7 +131,7 @@ assert.match(
 assert.match(
   source,
   /measureContents\(documentPane\.clientWidth\)[\s\S]*?contentRect\.width[\s\S]*?documentPane\.clientWidth/,
-  "Contents JS follows the DocumentReader container instead of assuming the outer width",
+  "Contents JS measures the outer DocumentReader width against the rail-inclusive threshold",
 );
 assert.match(
   source,
@@ -155,8 +160,18 @@ assert.match(
 );
 assert.match(
   source,
-  /const closeInspector = useCallback\([\s\S]*?\{ restoreFocus = true \}[\s\S]*?inspectorFocusReturnRef\.current[\s\S]*?invoker\?\.focus\(\)/,
-  "ordinary inspector dismissal restores focus to its invoker",
+  /const closeInspector = useCallback\([\s\S]*?\{ restoreFocus = true \}[\s\S]*?focusInspectorReturnTarget/,
+  "ordinary inspector dismissal validates and restores a reachable focus target",
+);
+assert.match(
+  source,
+  /isValidFocusReturnTarget[\s\S]*?isConnected[\s\S]*?closest\("\[inert\]"\)[\s\S]*?getClientRects\(\)\.length[\s\S]*?tabIndex/,
+  "focus restoration rejects detached, inert, hidden, and unfocusable invokers",
+);
+assert.match(
+  source,
+  /inspectorFocusReturnIdRef[\s\S]*?data-research-reference-id[\s\S]*?evidenceToggleRef/,
+  "a hidden invoker falls back to the visible representation of the same reference, then the toolbar toggle",
 );
 assert.match(
   source,
@@ -175,7 +190,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const latestOpenPanel = \(\): ReaderPanel \| null =>[\s\S]*?panelOrderRef\.current[\s\S]*?panelOpenRef\.current\[panel\]/,
+  /const latestOpenPanel = useCallback\(\(\): ReaderPanel \| null =>[\s\S]*?panelOrderRef\.current[\s\S]*?panelOpenRef\.current\[panel\]/,
   "Escape resolves the latest still-open panel from current refs",
 );
 assert.match(
@@ -187,6 +202,16 @@ assert.match(
   source,
   /const onRefClick[\s\S]*?openPanel\("evidence"\)/,
   "inline and margin evidence selection promote Evidence in panel opening order",
+);
+assert.match(
+  source,
+  /const openPanel = useCallback\([\s\S]*?inspectorOverlayRef\.current[\s\S]*?suspendPanel\(otherPanel\)[\s\S]*?panelOpenRef\.current\[panel\] = true/,
+  "opening either panel in Evidence overlay mode synchronously suspends the inaccessible peer first",
+);
+assert.match(
+  source,
+  /if \(\s*!inspectorOverlaysDocument[\s\S]*?panelOpenRef\.current\.contents[\s\S]*?panelOpenRef\.current\.evidence[\s\S]*?latestOpenPanel\(\)/,
+  "resizing an already-open wide pair into overlay mode preserves only the latest panel",
 );
 assert.match(
   source,
@@ -328,8 +353,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<th[^>]*scope="col"[^>]*>Evidence<\/th>/,
-  "tables reserve an Evidence column for row provenance",
+  /<th[^>]*className="rr-table__evidence"[^>]*scope="col"[^>]*>[\s\S]*?rr-table__evidence-heading[\s\S]*?Evidence[\s\S]*?renderEdge\(table\.headerRefIds\)/,
+  "table header references move into the visible Evidence heading cell on wide layouts",
 );
 assert.match(
   source,
@@ -340,6 +365,11 @@ assert.match(
   source,
   /className=\{`rr-sref rr-inline-ref/,
   "inline references retain their compact representation hook",
+);
+assert.match(
+  source,
+  /data-research-reference-id=\{span\.id\}[\s\S]*?data-research-reference-representation="inline"/,
+  "inline references expose the same stable id as their margin representation",
 );
 assert.match(
   source,
@@ -437,7 +467,7 @@ assert.match(
 );
 assert.match(
   css,
-  /@container document-reader \(max-width: 52rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
+  /@container document-reader \(max-width: 65rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
   "compact readers remove the hidden evidence-edge reserve",
 );
 for (const rejectedSelector of [
@@ -554,7 +584,7 @@ assert.match(
 );
 assert.match(
   css,
-  /@container document-reader \(max-width: 52rem\)[\s\S]*?document-reader__toc[\s\S]*?position:\s*absolute[\s\S]*?display:\s*block/,
+  /@container document-reader \(max-width: 65rem\)[\s\S]*?document-reader__layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?document-reader__toc[\s\S]*?position:\s*absolute[\s\S]*?display:\s*block/,
   "the dedicated Contents toggle reveals the real navigation as a compact sheet",
 );
 assert.match(

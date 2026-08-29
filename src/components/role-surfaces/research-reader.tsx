@@ -44,7 +44,7 @@ const RAIL_MIN_REM = 18;
 const RAIL_INITIAL_REM = 18.75;
 const RAIL_MAX_REM = 32.5;
 const COLLAPSE_AT_REM = 15;
-const CONTENTS_SHEET_MAX_REM = 52;
+const CONTENTS_SHEET_MAX_REM = 65;
 // Keep this equal to the research-reader container query in research-reader.css.
 const INSPECTOR_OVERLAY_MAX_REM = 80;
 const CONFIDENCE_RE = /^(high|medium|low)$/i;
@@ -112,6 +112,24 @@ function refIdsForSpans(spans: FindingsSpan[]): string[] {
   return ids;
 }
 
+function isValidFocusReturnTarget(
+  element: HTMLElement | null,
+): element is HTMLElement {
+  if (!element?.isConnected || element.closest("[inert]")) return false;
+  if (element.closest('[aria-hidden="true"]')) return false;
+  if (element instanceof HTMLButtonElement && element.disabled) return false;
+  const style = getComputedStyle(element);
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    style.visibility === "collapse" ||
+    element.getClientRects().length === 0
+  ) {
+    return false;
+  }
+  return element.tabIndex >= 0;
+}
+
 export function ResearchReader({
   mission,
   artifact,
@@ -131,6 +149,8 @@ export function ResearchReader({
   const evidenceToggleRef = useRef<HTMLButtonElement | null>(null);
   const inspectorRef = useRef<HTMLElement | null>(null);
   const inspectorFocusReturnRef = useRef<HTMLElement | null>(null);
+  const inspectorFocusReturnIdRef = useRef<string | null>(null);
+  const inspectorOverlayRef = useRef(false);
   const panelOrderRef = useRef<ReaderPanel[]>([]);
   const panelOpenRef = useRef<Record<ReaderPanel, boolean>>({
     contents: false,
@@ -176,22 +196,42 @@ export function ResearchReader({
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<EvidenceTip | null>(null);
 
-  const openPanel = useCallback((panel: ReaderPanel) => {
-    panelOpenRef.current[panel] = true;
-    panelOrderRef.current = [
-      ...panelOrderRef.current.filter((candidate) => candidate !== panel),
-      panel,
-    ];
-    if (panel === "contents") setTocOn(true);
-    else setInspectorOn(true);
-  }, []);
-
   const removePanelFromOrder = useCallback((panel: ReaderPanel) => {
     panelOpenRef.current[panel] = false;
     panelOrderRef.current = panelOrderRef.current.filter(
       (candidate) => candidate !== panel,
     );
   }, []);
+
+  const suspendPanel = useCallback(
+    (panel: ReaderPanel) => {
+      removePanelFromOrder(panel);
+      if (panel === "contents") setTocOn(false);
+      else setInspectorOn(false);
+    },
+    [removePanelFromOrder],
+  );
+
+  const openPanel = useCallback(
+    (panel: ReaderPanel) => {
+      const otherPanel: ReaderPanel =
+        panel === "contents" ? "evidence" : "contents";
+      if (
+        inspectorOverlayRef.current &&
+        panelOpenRef.current[otherPanel]
+      ) {
+        suspendPanel(otherPanel);
+      }
+      panelOpenRef.current[panel] = true;
+      panelOrderRef.current = [
+        ...panelOrderRef.current.filter((candidate) => candidate !== panel),
+        panel,
+      ];
+      if (panel === "contents") setTocOn(true);
+      else setInspectorOn(true);
+    },
+    [suspendPanel],
+  );
 
   const closeTable = useCallback(() => {
     setFocusTable(null);
@@ -202,32 +242,57 @@ export function ResearchReader({
     (
       { restoreFocus = true }: { restoreFocus?: boolean } = {},
     ) => {
-      removePanelFromOrder("contents");
-      setTocOn(false);
+      suspendPanel("contents");
       if (restoreFocus) {
         requestAnimationFrame(() => contentsToggleRef.current?.focus());
       }
     },
-    [removePanelFromOrder],
+    [suspendPanel],
   );
+
+  const focusInspectorReturnTarget = useCallback(() => {
+    const invoker = inspectorFocusReturnRef.current;
+    if (isValidFocusReturnTarget(invoker)) {
+      invoker.focus();
+      return;
+    }
+
+    const referenceId = inspectorFocusReturnIdRef.current;
+    if (referenceId) {
+      const representations =
+        readerRef.current?.querySelectorAll<HTMLElement>(
+          "[data-research-reference-id]",
+        ) ?? [];
+      for (const representation of representations) {
+        if (
+          representation.dataset.researchReferenceId === referenceId &&
+          isValidFocusReturnTarget(representation)
+        ) {
+          representation.focus();
+          return;
+        }
+      }
+    }
+
+    if (isValidFocusReturnTarget(evidenceToggleRef.current)) {
+      evidenceToggleRef.current.focus();
+    }
+  }, []);
 
   const closeInspector = useCallback(
     (
       { restoreFocus = true }: { restoreFocus?: boolean } = {},
     ) => {
-      removePanelFromOrder("evidence");
-      setInspectorOn(false);
+      suspendPanel("evidence");
       if (!restoreFocus) return;
-      const invoker =
-        inspectorFocusReturnRef.current ?? evidenceToggleRef.current;
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => invoker?.focus());
+        requestAnimationFrame(focusInspectorReturnTarget);
       });
     },
-    [removePanelFromOrder],
+    [focusInspectorReturnTarget, suspendPanel],
   );
 
-  const latestOpenPanel = (): ReaderPanel | null => {
+  const latestOpenPanel = useCallback((): ReaderPanel | null => {
     for (let index = panelOrderRef.current.length - 1; index >= 0; index -= 1) {
       const panel = panelOrderRef.current[index];
       if (panelOpenRef.current[panel]) return panel;
@@ -235,7 +300,7 @@ export function ResearchReader({
     if (panelOpenRef.current.contents) return "contents";
     if (panelOpenRef.current.evidence) return "evidence";
     return null;
-  };
+  }, []);
 
   const closeFocusOrReader = () => {
     const panel = latestOpenPanel();
@@ -264,9 +329,9 @@ export function ResearchReader({
       Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
       16;
     const measureInspector = (width: number) => {
-      setInspectorOverlaysDocument(
-        width <= INSPECTOR_OVERLAY_MAX_REM * rootFontSize,
-      );
+      const overlays = width <= INSPECTOR_OVERLAY_MAX_REM * rootFontSize;
+      inspectorOverlayRef.current = overlays;
+      setInspectorOverlaysDocument(overlays);
     };
     const measureContents = (width: number) => {
       setContentsOverlaysDocument(
@@ -293,6 +358,26 @@ export function ResearchReader({
   }, []);
 
   useEffect(() => {
+    if (
+      !inspectorOverlaysDocument ||
+      !panelOpenRef.current.contents ||
+      !panelOpenRef.current.evidence
+    ) {
+      return;
+    }
+    if (latestOpenPanel() === "contents") {
+      closeInspector({ restoreFocus: false });
+    } else {
+      closeContents({ restoreFocus: false });
+    }
+  }, [
+    closeContents,
+    closeInspector,
+    inspectorOverlaysDocument,
+    latestOpenPanel,
+  ]);
+
+  useEffect(() => {
     const documentPane =
       readerRef.current?.querySelector<HTMLElement>(".document-reader");
     if (!documentPane) return;
@@ -315,8 +400,14 @@ export function ResearchReader({
   }, [contentsOverlaysDocument, tocOn]);
 
   useEffect(() => {
-    if (!tocOn || !contentsOverlaysDocument) return;
-    if (readerRef.current?.dataset.inspector === "true") return;
+    if (
+      !tocOn ||
+      (!contentsOverlaysDocument && !inspectorOverlaysDocument) ||
+      !panelOpenRef.current.contents ||
+      panelOpenRef.current.evidence
+    ) {
+      return;
+    }
     const frame = requestAnimationFrame(() => {
       const contents = readerRef.current?.querySelector<HTMLElement>(
         '.document-reader__toc-link[data-active="true"], .document-reader__toc-link',
@@ -324,10 +415,21 @@ export function ResearchReader({
       contents?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [contentsOverlaysDocument, tocOn]);
+  }, [
+    contentsOverlaysDocument,
+    inspectorOn,
+    inspectorOverlaysDocument,
+    tocOn,
+  ]);
 
   useEffect(() => {
-    if (!inspectorOn || !inspectorOverlaysDocument) return;
+    if (
+      !inspectorOn ||
+      !inspectorOverlaysDocument ||
+      !panelOpenRef.current.evidence
+    ) {
+      return;
+    }
     const frame = requestAnimationFrame(() => {
       const inspector = inspectorRef.current;
       const target =
@@ -471,6 +573,7 @@ export function ResearchReader({
     }
 
     inspectorFocusReturnRef.current = invoker;
+    inspectorFocusReturnIdRef.current = id;
     setSelectedSourceId(id);
     openPanel("evidence");
     setOpenIds((previous) => new Set(previous).add(id));
@@ -556,6 +659,8 @@ export function ResearchReader({
             type="button"
             className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
             aria-label={accessibleLabel}
+            data-research-reference-id={span.id}
+            data-research-reference-representation="inline"
             onMouseEnter={(event) =>
               onRefPreview(span.id, event.currentTarget)
             }
@@ -621,7 +726,12 @@ export function ResearchReader({
               {renderSpans(cell, `th-${index}`)}
             </th>
           ))}
-          <th className="rr-table__evidence" scope="col">Evidence</th>
+          <th className="rr-table__evidence" scope="col">
+            <span className="rr-table__evidence-heading">
+              <span>Evidence</span>
+              {renderEdge(table.headerRefIds)}
+            </span>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -847,6 +957,7 @@ export function ResearchReader({
                     return;
                   }
                   inspectorFocusReturnRef.current = event.currentTarget;
+                  inspectorFocusReturnIdRef.current = null;
                   openPanel("evidence");
                 }}
               >
