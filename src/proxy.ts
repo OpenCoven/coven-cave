@@ -31,6 +31,7 @@ import {
   CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
   presentsClientV1Bearer,
+  presentsClientV1BoundAuthority,
   isClientV1AdminPath,
   isClientV1Path,
   isRefusedClientV1Path,
@@ -537,6 +538,7 @@ export async function proxy(req: NextRequest) {
     if (
       clientV1Ingress !== CLIENT_V1_PUBLIC_INGRESS
       && !presentsClientV1Bearer(req.headers.get("authorization"))
+      && !presentsClientV1BoundAuthority(req.headers)
     ) {
       return jsonError(401, "unauthorized");
     }

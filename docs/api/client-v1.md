@@ -663,9 +663,13 @@ in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 promotion: `proxy()` skips the mobile-access gate and returns *before* the
 sidecar-token block, so on those paths the route's own bearer check is the only
 check that *verifies* the credential. The proxy still demands a well-formed
-`Authorization: Bearer` *presentation* first (cave-q5mwb) — presentation, not
-verification: a syntactically valid fake passes the proxy and is refused by the
-route's `requireScope`. See *When the authenticated routes land*.
+`Authorization: Bearer` presentation or the complete exact
+`hpke-bound-v1` header set first (cave-q5mwb) — presentation, not verification.
+A syntactically valid fake bearer passes the proxy and is refused by the route's
+`requireScope`; a complete bound presentation reaches the authority runtime,
+which validates and opens it before the route runs. A request presenting neither
+receives the proxy's bare `401 {"ok":false,"error":"unauthorized"}`. See *When
+the authenticated routes land*.
 
 Eight of the thirteen routes re-check the stamp in the route itself, via
 `runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the
@@ -804,13 +808,32 @@ because the whole body is public.
 - **`releaseVersion`** is the running Cave's package version. The fixture's
   `"0.0.0"` is a placeholder and never served.
 
+### Conformance-only compatibility controls
+
+Normal `pnpm build` artifacts compile this control disabled; setting a runtime
+environment variable cannot activate it. The explicit conformance build
+contract is:
+
+```bash
+pnpm build:conformance
+COVEN_CAVE_CLIENT_V1_COMPATIBILITY_PRESET=api-major pnpm start
+```
+
+The runtime selector is finite: `api-major` emits `apiVersion: "2.0"` while
+keeping `minimumClientVersion: "0.1.0"`, and `minimum-client` emits
+`apiVersion: "1.0"` with `minimumClientVersion: "999.0.0"`. An unset selector
+emits normal metadata; any other value returns HTTP 500 with the shared error
+envelope. These controls exist only to let the Phase 1 harness independently
+prove the SDK's API-major and minimum-client compatibility checks.
+
 The live inventory is **not** in `data`: `capabilities` and `operations` ride
 the envelope, here as on every other response. This is nonetheless the response
 a client reads them from, because it is the only one reachable before pairing —
 so it is the first place the declaration has to be true. See *Capability
 discovery*.
 
-**Errors:** none. The route has no failure branch of its own.
+**Errors:** normal builds have no failure branch of their own. An enabled
+conformance build returns `500 internal_error` when its selector is invalid.
 
 ### `POST /api/client/v1/pairing/requests`
 
@@ -1457,8 +1480,10 @@ All four call `requireClientV1Admin`, which:
    [the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22;
    a handler-level test cannot see it, because it never runs the proxy. The
    check in `requireClientV1Admin` is not redundant — it is what answers if the
-   admin family ever stops falling through — but it is the *second* refusal, and
-   the 503 for an unset token is the only one of its answers a caller observes.
+   admin family ever stops falling through — but it is the *second* refusal.
+   With no configured token, a verified direct-loopback development request
+   receives the proxy's per-boot marker and reaches the route; a missing marker
+   still receives the route-level 503.
 3. For **mutations only** (the decision POST and the credential DELETE),
    requires **at least one** of `Origin` and `Referer`, and requires every one
    that *is* present to be same-origin. A request carrying neither is refused;
