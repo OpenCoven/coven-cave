@@ -77,7 +77,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const INSPECTOR_OVERLAY_MAX_REM = 62/,
+  /const INSPECTOR_OVERLAY_MAX_REM = 80/,
   "the overlay threshold follows the root rem size used by the container query",
 );
 assert.match(
@@ -87,8 +87,28 @@ assert.match(
 );
 assert.match(
   source,
+  /measureInspector\(reader\.clientWidth\)[\s\S]*?contentRect\.width[\s\S]*?reader\.clientWidth/,
+  "inspector JS measures the same content box used by its container query",
+);
+assert.match(
+  source,
+  /measureContents\(documentPane\.clientWidth\)[\s\S]*?contentRect\.width[\s\S]*?documentPane\.clientWidth/,
+  "Contents JS follows the DocumentReader container instead of assuming the outer width",
+);
+assert.match(
+  source,
   /documentPane\.inert = inspectorOn && inspectorOverlaysDocument/,
   "the covered document and contents become inert only in overlay mode",
+);
+assert.match(
+  source,
+  /documentScroll\.inert = tocOn && contentsOverlaysDocument/,
+  "the covered report becomes inert while the responsive Contents sheet is open",
+);
+assert.match(
+  source,
+  /document-reader__toc-link\[data-active="true"\][\s\S]*?contents\?\.focus\(\)/,
+  "opening the responsive Contents sheet moves focus into its real navigation",
 );
 assert.match(
   source,
@@ -160,6 +180,21 @@ assert.match(
   source,
   /navigation=\{tocOn \? "rail" : "compact"\}/,
   "Research opts into the shared contents rail independently",
+);
+assert.match(
+  source,
+  /aria-controls="research-reader-contents"/,
+  "the dedicated chrome toggle identifies the Contents panel it controls",
+);
+assert.match(
+  source,
+  /contentsId="research-reader-contents"/,
+  "the real Contents navigation receives the dedicated toggle's controlled id",
+);
+assert.match(
+  source,
+  /<OverflowMenu[\s\S]*?ariaLabel="More research reader actions"[\s\S]*?size="md"/,
+  "the overflow trigger uses the same Cave chrome size as adjacent controls",
 );
 assert.match(
   source,
@@ -240,8 +275,23 @@ for (const duplicatedBaseSelector of [
 }
 assert.match(
   css,
-  /@container research-reader \(max-width: 62rem\)[\s\S]*?\.rr-rail/,
+  /@container research-reader \(max-width: 80rem\)[\s\S]*?\.rr-rail/,
   "the evidence dock overlays instead of squeezing medium readers",
+);
+assert.match(
+  css,
+  /@container document-reader \(max-width: 52rem\)[\s\S]*?document-reader__toc[\s\S]*?position:\s*absolute[\s\S]*?display:\s*block/,
+  "the dedicated Contents toggle reveals the real navigation as a compact sheet",
+);
+assert.match(
+  css,
+  /\.research-reader \.document-reader__compact-nav\s*\{\s*display:\s*none/,
+  "Research hides the shared redundant compact Contents trigger",
+);
+assert.match(
+  css,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*?rr-head__actions > \.ui-icon-btn[\s\S]*?min-height:\s*var\(--touch-target\)/,
+  "the overflow trigger reaches the touch target on coarse pointers",
 );
 assert.match(
   css,

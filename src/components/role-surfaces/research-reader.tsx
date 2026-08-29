@@ -43,7 +43,9 @@ import "@/styles/research-reader.css";
 const RAIL_MIN = 240;
 const RAIL_MAX = 520;
 const COLLAPSE_AT = 200;
-const INSPECTOR_OVERLAY_MAX_REM = 62;
+const CONTENTS_SHEET_MAX_REM = 52;
+// Keep this equal to the research-reader container query in research-reader.css.
+const INSPECTOR_OVERLAY_MAX_REM = 80;
 const CONFIDENCE_RE = /^(high|medium|low)$/i;
 const CONFLICT_ID_RE = /^C\d+$/;
 
@@ -155,6 +157,8 @@ export function ResearchReader({
   const [inspectorOn, setInspectorOn] = useState(false);
   const [inspectorOverlaysDocument, setInspectorOverlaysDocument] =
     useState(false);
+  const [contentsOverlaysDocument, setContentsOverlaysDocument] =
+    useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<{ id: string; heading: string } | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
@@ -205,23 +209,39 @@ export function ResearchReader({
 
   useEffect(() => {
     const reader = readerRef.current;
-    if (!reader) return;
-
-    const measure = (width: number) => {
-      const rootFontSize =
-        Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
-        16;
+    const documentPane =
+      reader?.querySelector<HTMLElement>(".document-reader");
+    if (!reader || !documentPane) return;
+    const rootFontSize =
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+      16;
+    const measureInspector = (width: number) => {
       setInspectorOverlaysDocument(
         width <= INSPECTOR_OVERLAY_MAX_REM * rootFontSize,
       );
     };
-    measure(reader.getBoundingClientRect().width);
+    const measureContents = (width: number) => {
+      setContentsOverlaysDocument(
+        width <= CONTENTS_SHEET_MAX_REM * rootFontSize,
+      );
+    };
+    measureInspector(reader.clientWidth);
+    measureContents(documentPane.clientWidth);
 
-    const observer = new ResizeObserver((entries) => {
-      measure(entries[0]?.contentRect.width ?? reader.getBoundingClientRect().width);
+    const readerObserver = new ResizeObserver((entries) => {
+      measureInspector(entries[0]?.contentRect.width ?? reader.clientWidth);
     });
-    observer.observe(reader);
-    return () => observer.disconnect();
+    const documentObserver = new ResizeObserver((entries) => {
+      measureContents(
+        entries[0]?.contentRect.width ?? documentPane.clientWidth,
+      );
+    });
+    readerObserver.observe(reader);
+    documentObserver.observe(documentPane);
+    return () => {
+      readerObserver.disconnect();
+      documentObserver.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -234,6 +254,29 @@ export function ResearchReader({
       documentPane.inert = previousInert;
     };
   }, [inspectorOn, inspectorOverlaysDocument]);
+
+  useEffect(() => {
+    const documentScroll =
+      readerRef.current?.querySelector<HTMLElement>(".document-reader__scroll");
+    if (!documentScroll) return;
+    const previousInert = documentScroll.inert;
+    documentScroll.inert = tocOn && contentsOverlaysDocument;
+    return () => {
+      documentScroll.inert = previousInert;
+    };
+  }, [contentsOverlaysDocument, tocOn]);
+
+  useEffect(() => {
+    if (!tocOn || !contentsOverlaysDocument) return;
+    if (readerRef.current?.dataset.inspector === "true") return;
+    const frame = requestAnimationFrame(() => {
+      const contents = readerRef.current?.querySelector<HTMLElement>(
+        '.document-reader__toc-link[data-active="true"], .document-reader__toc-link',
+      );
+      contents?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [contentsOverlaysDocument, tocOn]);
 
   useEffect(() => {
     if (!inspectorOn || !inspectorOverlaysDocument) return;
@@ -672,12 +715,14 @@ export function ResearchReader({
               className={`rr-status${published && !rejected ? "" : " rr-status--muted"}`}
             >
               <i className="rr-status__dot" aria-hidden />
-              {lifecycleLabel}
+              <span className="rr-status__label">{lifecycleLabel}</span>
             </span>
             <span
               className={`rr-integrity rr-integrity--${integrity.summary.kind}`}
             >
-              {integrity.summary.label}
+              <span className="rr-integrity__label">
+                {integrity.summary.label}
+              </span>
             </span>
             <span className="rr-meta" title={metaLine}>
               {chromeTitle}
@@ -706,6 +751,7 @@ export function ResearchReader({
                 ref={contentsToggleRef}
                 className="rr-iconbtn focus-ring"
                 type="button"
+                aria-controls="research-reader-contents"
                 aria-pressed={tocOn}
                 title={tocOn ? "Hide contents" : "Show contents"}
                 aria-label={tocOn ? "Hide contents" : "Show contents"}
@@ -750,7 +796,10 @@ export function ResearchReader({
                   <path d="M15 4v16" />
                 </svg>
               </button>
-              <OverflowMenu ariaLabel="More research reader actions">
+              <OverflowMenu
+                ariaLabel="More research reader actions"
+                size="md"
+              >
                 <PopoverItem onSelect={() => void copy()} disabled={!markdown}>
                   {copied ? "Copied findings" : "Copy findings"}
                 </PopoverItem>
@@ -781,6 +830,7 @@ export function ResearchReader({
             <DocumentReader
               document={doc}
               navigation={tocOn ? "rail" : "compact"}
+              contentsId="research-reader-contents"
               kicker={titleCase(artifact.kind)}
               context={
                 hasDocumentContent ? (

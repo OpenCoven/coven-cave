@@ -20,6 +20,7 @@
 
 .research-reader {
   --research-accent: var(--accent-presence);
+  --rr-chrome-control-size: calc(var(--space-6) + var(--space-1));
   --research-accent-soft: color-mix(
     in oklch,
     var(--research-accent) 14%,
@@ -86,6 +87,7 @@
 .rr-head {
   z-index: 6;
   display: flex;
+  min-width: 0;
   min-height: var(--space-12);
   align-items: center;
   gap: var(--space-3);
@@ -98,6 +100,7 @@
 
 .rr-head__actions {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: var(--space-1);
   margin-left: auto;
@@ -118,6 +121,7 @@
   font: 400 var(--text-xs) var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1 1 auto;
 }
 
 .rr-status,
@@ -132,7 +136,15 @@
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
-  flex: none;
+  flex: 0 1 auto;
+}
+
+.rr-status__label,
+.rr-integrity__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rr-status {
@@ -244,6 +256,12 @@
   color: var(--text-muted);
 }
 
+.rr-head .rr-iconbtn {
+  width: var(--rr-chrome-control-size);
+  min-width: var(--rr-chrome-control-size);
+  min-height: var(--rr-chrome-control-size);
+}
+
 .rr-iconbtn:hover,
 .research-evidence-inspector__close:hover {
   background: var(--bg-hover);
@@ -267,6 +285,7 @@
 }
 
 .research-reader .document-reader__layout {
+  position: relative;
   min-width: 0;
 }
 
@@ -292,6 +311,12 @@
 .research-reader .document-reader__contents-trigger {
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Research owns Contents in the persistent chrome; never render a second
+   DocumentReader trigger for the same panel. */
+.research-reader .document-reader__compact-nav {
+  display: none;
 }
 
 .research-reader .rr-doc__column {
@@ -1347,8 +1372,9 @@
   text-align: center;
 }
 
-/* Medium readers keep the report stable and overlay evidence from the right. */
-@container research-reader (max-width: 62rem) {
+/* 80rem is shared with INSPECTOR_OVERLAY_MAX_REM. Below it, overlaying avoids
+   subtracting the resizable 32.5rem rail from the 66ch report and its gutters. */
+@container research-reader (max-width: 80rem) {
   .research-reader[data-inspector="true"] .research-reader__grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1372,6 +1398,20 @@
 
 /* Provenance has one focusable representation at the reading breakpoint. */
 @container document-reader (max-width: 52rem) {
+  .research-reader[data-toc="true"]
+    .document-reader--rail
+    .document-reader__toc {
+    position: absolute;
+    z-index: 7;
+    inset-block: 0;
+    left: 0;
+    display: block;
+    width: min(18rem, 86cqw);
+    border-right: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-popover);
+  }
+
   .research-provenance-edge {
     display: none;
   }
@@ -1411,8 +1451,8 @@
   }
 
   .rr-btn--accent {
-    width: var(--space-8);
-    min-width: var(--space-8);
+    width: var(--rr-chrome-control-size);
+    min-width: var(--rr-chrome-control-size);
     overflow: hidden;
     padding: 0;
     gap: 0;
@@ -1423,6 +1463,15 @@
     inset: 0;
     width: 100%;
     border-left: 0;
+    box-shadow: none;
+  }
+
+  .research-reader[data-toc="true"]
+    .document-reader--rail
+    .document-reader__toc {
+    inset: 0;
+    width: 100%;
+    border-right: 0;
     box-shadow: none;
   }
 
@@ -1452,6 +1501,7 @@
 @media (hover: none) and (pointer: coarse) {
   .rr-btn,
   .rr-iconbtn,
+  .research-reader .rr-head__actions > .ui-icon-btn,
   .research-evidence-inspector__close,
   .research-provenance-edge__item,
   .rr-inline-ref,
@@ -1461,6 +1511,7 @@
   }
 
   .rr-iconbtn,
+  .research-reader .rr-head__actions > .ui-icon-btn,
   .research-evidence-inspector__close,
   .research-provenance-edge__item {
     min-width: var(--touch-target);

@@ -124,6 +124,7 @@ type DocumentReaderProps<TBlock, TLede> = {
   collapsibleSections?: boolean;
   empty?: ReactNode;
   tocMeta?: ReactNode;
+  contentsId?: string;
   className?: string;
   apiRef?: MutableRefObject<DocumentReaderApi | null>;
   onScrollProgress?: (progress: number) => void;
@@ -148,6 +149,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   collapsibleSections = true,
   empty,
   tocMeta,
+  contentsId,
   className,
   apiRef,
   onScrollProgress,
@@ -402,6 +404,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       <div className="document-reader__layout">
       {navigation === "rail" && namedSections.length > 0 ? (
         <nav
+          id={contentsId}
           className="document-reader__toc rr-col rr-toc"
           aria-label="Contents"
         >

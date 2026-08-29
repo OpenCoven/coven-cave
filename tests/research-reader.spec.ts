@@ -131,6 +131,7 @@ test.describe("research reader", () => {
   test.describe.configure({ timeout: 180_000 });
 
   test("typesets semantic findings and links evidence back to its supported claim", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await openReader(page);
     const reader = page.locator(".research-reader");
 
@@ -149,11 +150,35 @@ test.describe("research reader", () => {
     const table = reader.locator(".rr-table");
     await expect(table).toContainText("Scale raises value coherence");
     await expect(table.locator(".rr-cf--high")).toHaveText("High");
-    await expect(table.locator(".rr-sref", { hasText: "S14" }).first()).toBeVisible();
+    const marginReference = reader.locator(
+      ".research-provenance-edge__item",
+      { hasText: "S14" },
+    ).first();
+    await expect(marginReference).toBeVisible();
+    await expect(
+      table.locator(".rr-inline-ref", { hasText: "S14" }).first(),
+    ).toBeHidden();
+    const paperWidthBeforeInspector = await reader
+      .locator(".rr-doc__column")
+      .evaluate((element) => element.getBoundingClientRect().width);
 
-    await reader.getByRole("button", { name: "Open evidence S14" }).first().click();
+    await marginReference.click();
     await expect(reader).toHaveAttribute("data-inspector", "true");
     await expect(reader.locator(".document-reader")).not.toHaveAttribute("inert", "");
+    const railHandle = reader.locator(".rr-railhandle");
+    const handleBox = await railHandle.boundingBox();
+    expect(handleBox).not.toBeNull();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(handleBox!.x - 260, handleBox!.y + handleBox!.height / 2);
+    await page.mouse.up();
+    const paperWidthAtMaxRail = await reader
+      .locator(".rr-doc__column")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(paperWidthAtMaxRail).toBeCloseTo(paperWidthBeforeInspector, 0);
     const inspector = reader.locator(".research-evidence-inspector");
     const s14card = inspector.locator('[data-source-id="S14"]');
     await expect(inspector).toBeVisible();
@@ -216,7 +241,14 @@ test.describe("research reader", () => {
     await openReader(page);
     const reader = page.locator(".research-reader");
     const documentReader = reader.locator(".document-reader");
+    const documentScroll = reader.locator(".document-reader__scroll");
     const evidenceToggle = reader.getByRole("button", { name: "Show evidence" });
+    const chrome = reader.locator(".rr-head");
+
+    expect(await chrome.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await expect(reader.locator(".rr-status")).toBeVisible();
+    await expect(reader.locator(".rr-integrity")).toBeVisible();
+    await expect(reader.locator(".research-provenance-edge__item").first()).toBeHidden();
 
     await evidenceToggle.click();
     const inspector = reader.locator(".research-evidence-inspector");
@@ -236,6 +268,7 @@ test.describe("research reader", () => {
     await expect(evidenceToggle).toBeFocused();
 
     const inlineReference = reader.locator(".rr-inline-ref", { hasText: "S14" }).first();
+    await expect(inlineReference).toBeVisible();
     await inlineReference.click();
     await expect(documentReader).toHaveAttribute("inert", "");
     await expect(inspector).toContainText("Emergent value coherence at scale");
@@ -253,10 +286,25 @@ test.describe("research reader", () => {
 
     await reader.getByRole("button", { name: "Show contents" }).click();
     await expect(reader).toHaveAttribute("data-toc", "true");
+    await expect(reader.locator(".rr-toc")).toBeVisible();
+    await expect(reader.locator(".document-reader__compact-nav")).toBeHidden();
+    await expect(documentScroll).toHaveAttribute("inert", "");
+    await expect(
+      reader.locator('.rr-toclink[data-active="true"]'),
+    ).toBeFocused();
     await expect(reader.getByRole("button", { name: "Hide contents" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+
+    await evidenceToggle.click();
+    await expect(reader.locator(".research-evidence-inspector")).toBeVisible();
+    await expect(documentReader).toHaveAttribute("inert", "");
+    await reader
+      .getByRole("button", { name: "Close evidence inspector" })
+      .click();
+    await expect(reader.locator(".rr-toc")).toBeVisible();
+    await expect(documentScroll).toHaveAttribute("inert", "");
 
     const columns = await reader.locator(".document-reader__layout").evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns,
