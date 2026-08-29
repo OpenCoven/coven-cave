@@ -23,6 +23,21 @@ assert.match(
 );
 assert.match(
   source,
+  /deriveResearchFindingsIntegrity/,
+  "Research Reader derives evidence integrity from the findings and ledger",
+);
+assert.match(
+  source,
+  /<ResearchProvenanceEdge/,
+  "claim-aligned evidence controls use the shared provenance edge",
+);
+assert.match(
+  source,
+  /<ResearchEvidenceInspector/,
+  "all source cards render through the shared evidence inspector",
+);
+assert.match(
+  source,
   /block\.kind === "code"[\s\S]*?<MarkdownBlock/,
   "fenced blocks use the shared Markdown renderer so Mermaid diagrams render",
 );
@@ -33,8 +48,38 @@ assert.match(
 );
 assert.match(
   source,
-  /navigation=\{expanded && tocOn \? "rail" : "compact"\}/,
-  "Research uses the shared compact outline until the wide rail is available",
+  /const \[tocOn, setTocOn\] = useState\(false\)/,
+  "Contents is hidden by default",
+);
+assert.match(
+  source,
+  /const \[inspectorOn, setInspectorOn\] = useState\(false\)/,
+  "the evidence inspector is hidden by default",
+);
+assert.match(
+  source,
+  /const \[selectedSourceId, setSelectedSourceId\] = useState<string \| null>\(null\)/,
+  "no evidence source is selected by default",
+);
+assert.match(
+  source,
+  /const \[activeSection, setActiveSection\] = useState<\{ id: string; heading: string \} \| null>\(null\)/,
+  "the compact chrome waits for the shared reader's active section",
+);
+assert.match(
+  source,
+  /navigation=\{tocOn \? "rail" : "compact"\}/,
+  "Research opts into the shared contents rail independently",
+);
+assert.match(
+  source,
+  /context=\{[\s\S]*?<p title=\{mission\.intent\}>\{mission\.intent\}<\/p>[\s\S]*?\}/,
+  "mission intent is passed through as authored context with its full title",
+);
+assert.match(
+  source,
+  /collapsibleSections=\{false\}/,
+  "Research sections retain heading semantics instead of becoming disclosures",
 );
 assert.match(source, /<aside className="rr-col rr-rail"/);
 assert.match(source, /onRefClick/);
@@ -42,8 +87,33 @@ assert.match(source, /onPublish/);
 assert.match(source, /<OverflowMenu/, "secondary Research actions live in the shared overflow menu");
 assert.match(
   source,
-  /if \(!expanded\) \{\s*setExpanded\(true\);\s*setTocOn\(true\);\s*return;\s*\}\s*setTocOn\(\(value\) => !value\)/,
-  "Contents explicitly enables expansion and the outline when collapsed, then toggles only while expanded",
+  /data-document-target=\{block\.id\}[\s\S]*?renderEdge\(block\.refIds\)/,
+  "simple findings blocks expose stable claim targets beside provenance controls",
+);
+assert.match(
+  source,
+  /className="rr-list-row"[\s\S]*?data-document-target=\{item\.id\}[\s\S]*?renderEdge\(item\.refIds\)/,
+  "each list item owns its focus target and provenance edge",
+);
+assert.match(
+  source,
+  /<th[^>]*scope="col"[^>]*>Evidence<\/th>/,
+  "tables reserve an Evidence column for row provenance",
+);
+assert.match(
+  source,
+  /data-document-target=\{targetable \? row\.id : undefined\}[\s\S]*?renderEdge\(row\.refIds\)/,
+  "table rows are focusable evidence targets with their own provenance edge",
+);
+assert.match(
+  source,
+  /className=\{`rr-sref rr-inline-ref/,
+  "inline references retain their compact representation hook",
+);
+assert.doesNotMatch(
+  source,
+  /const \[expanded, setExpanded\]/,
+  "the old expanded reader mode is removed",
 );
 
 // ── "More sources" scrolls with the rail, never sideways (cave-l2hkx) ───────
