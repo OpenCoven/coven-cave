@@ -9,6 +9,7 @@ import {
   normalizeResearchSource,
   parseResearchControl,
   parseResearchSourcesFile,
+  researchSourcesShareIdentity,
   renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   type ResearchProvenance,
@@ -286,11 +287,9 @@ function mergeResearchSource(
   sources: ResearchSourceRef[],
   source: ResearchSourceRef,
 ): ResearchSourceRef[] {
-  const index = sources.findIndex((item) => (
-    source.url && item.url === source.url
-  ) || (
-    source.localPath && item.localPath === source.localPath
-  ) || item.id === source.id);
+  const index = sources.findIndex((item) =>
+    researchSourcesShareIdentity(source, item)
+  );
   if (index < 0) return [source, ...sources];
   return sources.map((item, itemIndex) => itemIndex === index ? {
     ...item,
@@ -310,12 +309,8 @@ function mergeFileSources(
   stored: ResearchSourceRef[],
   file: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const matches = (source: ResearchSourceRef, item: ResearchSourceRef) => (
-    source.url && item.url === source.url
-  ) || (
-    source.localPath && item.localPath === source.localPath
-  ) || source.id === item.id;
-  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => matches(source, item));
+  const matchesFileEntry = (item: ResearchSourceRef) =>
+    file.some((source) => researchSourcesShareIdentity(source, item));
   // The agent's sources.json wins on every field it owns, but external-provider
   // IDENTITY is Cave's, not the agent's: it is written by the attach route and
   // by hydration, and the agent is never told to reproduce it. Without this
@@ -325,7 +320,11 @@ function mergeFileSources(
   // that the source was an X post at all (cave-v3ajh, #4816 criterion 4).
   const merged = file.map((source) => {
     if (source.provider !== undefined) return source;
-    const displaced = stored.find((item) => item.provider !== undefined && matches(source, item));
+    const displaced = stored.find(
+      (item) =>
+        item.provider !== undefined &&
+        researchSourcesShareIdentity(source, item),
+    );
     if (!displaced) return source;
     return {
       ...source,

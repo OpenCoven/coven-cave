@@ -135,6 +135,83 @@ function isValidFocusReturnTarget(
   return element.tabIndex >= 0;
 }
 
+type ResearchFindingsInlineSpansProps = {
+  spans: FindingsSpan[];
+  keyPrefix: string;
+  sourceById: ReadonlyMap<string, ResearchSourceRef>;
+  hoverKey: string | null;
+  selectedSourceId: string | null;
+  onRefPreview: (id: string, target: HTMLElement) => void;
+  onClearPreview: () => void;
+  onRefClick: (id: string, target: HTMLElement) => void;
+};
+
+export function ResearchFindingsInlineSpans({
+  spans,
+  keyPrefix,
+  sourceById,
+  hoverKey,
+  selectedSourceId,
+  onRefPreview,
+  onClearPreview,
+  onRefClick,
+}: ResearchFindingsInlineSpansProps) {
+  return spans.map((span, index) => {
+    const key = `${keyPrefix}-${index}`;
+    if (span.kind === "ref-gap") {
+      return (
+        <span key={key} className="rr-inline-ref-gap">
+          {span.text}
+        </span>
+      );
+    }
+    if (span.kind === "ref") {
+      const toneClass =
+        span.tone === "unresolved"
+          ? " rr-sref--unresolved"
+          : span.tone === "warn"
+            ? " rr-sref--warn"
+            : span.tone === "muted"
+              ? " rr-sref--muted"
+              : "";
+      const matched =
+        hoverKey === span.id || selectedSourceId === span.id;
+      const accessibleLabel = sourceById.has(span.id)
+        ? `${CONFLICT_ID_RE.test(span.id) ? "Open conflict" : "Open evidence"} ${span.id}`
+        : `Missing source ${span.id}`;
+      return (
+        <button
+          key={key}
+          type="button"
+          className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
+          aria-label={accessibleLabel}
+          data-research-reference-id={span.id}
+          data-research-reference-representation="inline"
+          onMouseEnter={(event) =>
+            onRefPreview(span.id, event.currentTarget)
+          }
+          onMouseLeave={onClearPreview}
+          onFocus={(event) => onRefPreview(span.id, event.currentTarget)}
+          onBlur={onClearPreview}
+          onClick={(event) => onRefClick(span.id, event.currentTarget)}
+        >
+          <ResearchSourceIdLabel id={span.id} />
+        </button>
+      );
+    }
+    if (span.kind === "link") {
+      return (
+        <a key={key} href={span.href} target="_blank" rel="noreferrer">
+          {span.text}
+        </a>
+      );
+    }
+    if (span.bold) return <b key={key}>{span.text}</b>;
+    if (span.italic) return <em key={key}>{span.text}</em>;
+    return <span key={key}>{span.text}</span>;
+  });
+}
+
 export function ResearchReader({
   mission,
   artifact,
@@ -710,61 +787,18 @@ export function ResearchReader({
   const renderSpans = (
     spans: FindingsSpan[],
     keyPrefix: string,
-  ): ReactNode[] =>
-    spans.map((span, index) => {
-      const key = `${keyPrefix}-${index}`;
-      if (span.kind === "ref-gap") {
-        return (
-          <span key={key} className="rr-inline-ref-gap">
-            {span.text}
-          </span>
-        );
-      }
-      if (span.kind === "ref") {
-        const toneClass =
-          span.tone === "unresolved"
-            ? " rr-sref--unresolved"
-            : span.tone === "warn"
-              ? " rr-sref--warn"
-              : span.tone === "muted"
-                ? " rr-sref--muted"
-                : "";
-        const matched =
-          hoverKey === span.id || selectedSourceId === span.id;
-        const accessibleLabel = sourceById.has(span.id)
-          ? `${CONFLICT_ID_RE.test(span.id) ? "Open conflict" : "Open evidence"} ${span.id}`
-          : `Missing source ${span.id}`;
-        return (
-          <button
-            key={key}
-            type="button"
-            className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
-            aria-label={accessibleLabel}
-            data-research-reference-id={span.id}
-            data-research-reference-representation="inline"
-            onMouseEnter={(event) =>
-              onRefPreview(span.id, event.currentTarget)
-            }
-            onMouseLeave={clearPreview}
-            onFocus={(event) => onRefPreview(span.id, event.currentTarget)}
-            onBlur={clearPreview}
-            onClick={(event) => onRefClick(span.id, event.currentTarget)}
-          >
-            <ResearchSourceIdLabel id={span.id} />
-          </button>
-        );
-      }
-      if (span.kind === "link") {
-        return (
-          <a key={key} href={span.href} target="_blank" rel="noreferrer">
-            {span.text}
-          </a>
-        );
-      }
-      if (span.bold) return <b key={key}>{span.text}</b>;
-      if (span.italic) return <em key={key}>{span.text}</em>;
-      return <span key={key}>{span.text}</span>;
-    });
+  ): ReactNode => (
+    <ResearchFindingsInlineSpans
+      spans={spans}
+      keyPrefix={keyPrefix}
+      sourceById={sourceById}
+      hoverKey={hoverKey}
+      selectedSourceId={selectedSourceId}
+      onRefPreview={onRefPreview}
+      onClearPreview={clearPreview}
+      onRefClick={onRefClick}
+    />
+  );
 
   const renderLede = (lede: FindingsSpan[]): ReactNode => (
     <div

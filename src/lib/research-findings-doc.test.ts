@@ -186,6 +186,50 @@ test("bold, italic and links parse into styled spans", () => {
   assert.deepEqual({ text: link.text, href: link.href }, { text: "paper", href: "https://x.test/a" });
 });
 
+test("inline-link labels tokenize exact and mixed evidence refs without linking the refs", () => {
+  const spans = parseInline(
+    "[S1](../sources.json), [evidence S14](https://x.test/report), and [paper](https://x.test/plain).",
+    SOURCES,
+  );
+
+  assert.deepEqual(refIds(spans), ["S1", "S14"]);
+  assert.deepEqual(
+    spans.filter(
+      (span): span is Extract<FindingsSpan, { kind: "link" }> =>
+        span.kind === "link",
+    ),
+    [
+      { kind: "link", text: "evidence ", href: "https://x.test/report" },
+      { kind: "link", text: "paper", href: "https://x.test/plain" },
+    ],
+  );
+  assert.equal(
+    spans.some((span) => span.kind === "link" && /S1|S14/.test(span.text)),
+    false,
+  );
+});
+
+test("linked evidence refs populate claim support targets while destinations stay opaque", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Linked evidence
+
+[S1](../sources/S99) and [evidence manual-1](https://x.test/S88) support this claim.
+`, [...SOURCES, source("manual-1", "candidate")]);
+  const block = doc.sections[0]?.blocks[0];
+  assert.ok(block?.kind === "p");
+  assert.deepEqual(block.refIds, ["S1", "manual-1"]);
+  assert.deepEqual(doc.refIds, ["S1", "manual-1"]);
+  assert.deepEqual(
+    targetsSupportingRef(doc, "S1").map((target) => target.id),
+    [block.id],
+  );
+  assert.deepEqual(
+    targetsSupportingRef(doc, "manual-1").map((target) => target.id),
+    [block.id],
+  );
+});
+
 const FINDINGS = `<!-- research-provenance
 mission: cave-1
 generated_at: 2026-07-24

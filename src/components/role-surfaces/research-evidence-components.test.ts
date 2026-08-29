@@ -4,7 +4,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create } from "react-test-renderer";
 import { describe, expect, test, vi } from "vitest";
-import type { FindingsSupportTarget } from "@/lib/research-findings-doc";
+import {
+  parseInline,
+  type FindingsSupportTarget,
+} from "@/lib/research-findings-doc";
 import type { ResearchSourceRef } from "@/lib/research-missions";
 import { ResearchEvidenceInspector } from "./research-evidence-inspector";
 import {
@@ -15,6 +18,7 @@ import {
   compactResearchSourceId,
   ResearchSourceIdLabel,
 } from "./research-source-id-label";
+import { ResearchFindingsInlineSpans } from "./research-reader";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -470,5 +474,41 @@ describe("ResearchEvidenceInspector", () => {
       /class="research-source-id-label test-source-label"/,
     );
     assert.doesNotMatch(html, new RegExp(`>${id}</span>`));
+  });
+});
+
+describe("ResearchFindingsInlineSpans", () => {
+  test("renders mixed link labels as linked prose plus selectable evidence refs", () => {
+    const sources = [
+      source("S1", "used"),
+      source("S14", "candidate"),
+    ];
+    const html = renderToStaticMarkup(
+      createElement(ResearchFindingsInlineSpans, {
+        spans: parseInline(
+          "[S1](../sources.json), [evidence S14](https://example.com/report), and [paper](https://example.com/plain).",
+          sources,
+        ),
+        keyPrefix: "linked-citations",
+        sourceById: new Map(sources.map((item) => [item.id, item])),
+        hoverKey: null,
+        selectedSourceId: null,
+        onRefPreview: () => {},
+        onClearPreview: () => {},
+        onRefClick: () => {},
+      }),
+    );
+
+    assert.match(html, /<button[^>]*aria-label="Open evidence S1"/);
+    assert.match(html, /<button[^>]*aria-label="Open evidence S14"/);
+    assert.match(
+      html,
+      /<a href="https:\/\/example\.com\/report"[^>]*>evidence <\/a>/,
+    );
+    assert.match(
+      html,
+      /<a href="https:\/\/example\.com\/plain"[^>]*>paper<\/a>/,
+    );
+    assert.doesNotMatch(html, /<a[^>]*>S(?:1|14)<\/a>/);
   });
 });

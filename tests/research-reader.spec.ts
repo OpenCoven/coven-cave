@@ -353,6 +353,53 @@ Identity drifts independently [S1] [S14]. Evidence [S1] supports continuity.`,
     );
   });
 
+  test("linked citation labels select evidence and retain hyperlink text and Supports", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openReader(page, {
+      markdown: `# Findings
+
+## Linked evidence
+
+[S1](../sources.json) and [evidence S14](https://example.com/report) support this claim. [paper](https://example.com/plain) is context.`,
+    });
+    const reader = page.locator(".research-reader");
+    const paragraph = reader.locator(".rr-block-row", {
+      hasText: "support this claim",
+    });
+    const exactReference = paragraph.locator(
+      '[data-research-reference-id="S1"][data-research-reference-representation="inline"]',
+    );
+    const mixedReference = paragraph.locator(
+      '[data-research-reference-id="S14"][data-research-reference-representation="inline"]',
+    );
+
+    await expect(exactReference).toBeVisible();
+    await expect(mixedReference).toBeVisible();
+    await expect(
+      paragraph.getByRole("link", { name: "evidence" }),
+    ).toHaveAttribute("href", "https://example.com/report");
+    await expect(
+      paragraph.getByRole("link", { name: "paper" }),
+    ).toHaveAttribute("href", "https://example.com/plain");
+    await expect(paragraph.getByRole("link", { name: "S1" })).toHaveCount(0);
+
+    await exactReference.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector.locator('[data-source-id="S1"]')).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await inspector.getByRole("button", { name: "Close evidence inspector" }).click();
+
+    await mixedReference.click();
+    const selectedCard = inspector.locator('[data-source-id="S14"]');
+    await expect(selectedCard).toHaveAttribute("data-selected", "true");
+    await selectedCard.locator(".rr-sd-supportlink").click();
+
+    await expect(inspector).toBeHidden();
+    await expect(paragraph).toBeFocused();
+  });
+
   test("hides only redundant author reference columns when generated evidence is visible", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openReader(page, {

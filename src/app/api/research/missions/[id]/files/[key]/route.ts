@@ -1,7 +1,13 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseResearchSourcesFile } from "@/lib/research-artifact-contract";
-import type { ResearchSourceLedgerSnapshot } from "@/lib/research-missions";
+import {
+  parseResearchSourcesFile,
+  reconcileResearchSourcesForRead,
+} from "@/lib/research-artifact-contract";
+import type {
+  ResearchSourceLedgerSnapshot,
+  ResearchSourceRef,
+} from "@/lib/research-missions";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   isValidResearchMissionId,
@@ -21,11 +27,15 @@ type ResearchMissionFileRouteDependencies = {
 
 async function readSourceLedgerSnapshot(
   missionId: string,
+  missionSources: ResearchSourceRef[],
   readFile: typeof readValidatedMissionFile,
 ): Promise<ResearchSourceLedgerSnapshot> {
   try {
     const raw = await readFile(missionId, "sources.json");
-    const sources = parseResearchSourcesFile(raw);
+    const sources = reconcileResearchSourcesForRead(
+      parseResearchSourcesFile(raw),
+      missionSources,
+    );
     return sources.length > 0
       ? { state: "available", sources }
       : { state: "empty", sources: [] };
@@ -71,7 +81,11 @@ export function createResearchMissionFileRouteHandlers(
           );
         }
       }
-      const sourceLedger = await readSourceLedgerSnapshot(id, readFile);
+      const sourceLedger = await readSourceLedgerSnapshot(
+        id,
+        mission.sources,
+        readFile,
+      );
       return NextResponse.json({
         ok: true,
         file: {

@@ -379,6 +379,36 @@ function tokenizeRefs(text: string, resolver: RefResolver, base: { bold?: boolea
   return spans;
 }
 
+function tokenizeLinkLabel(
+  text: string,
+  href: string,
+  resolver: RefResolver,
+): FindingsSpan[] {
+  const strictSourceGroup =
+    /^\s*(?:[SR]\d+\s*)(?:,\s*[SR]\d+\s*)*$/.test(text);
+  const tokenized = tokenizeRefs(
+    strictSourceGroup ? `[${text}]` : text,
+    resolver,
+    {},
+  );
+  const spans: FindingsSpan[] = [];
+
+  for (const span of tokenized) {
+    if (span.kind === "ref") {
+      spans.push(span);
+      continue;
+    }
+    const previous = spans.at(-1);
+    if (previous?.kind === "link" && previous.href === href) {
+      previous.text += span.text;
+    } else {
+      spans.push({ kind: "link", text: span.text, href });
+    }
+  }
+
+  return spans;
+}
+
 // Emphasis + link matcher: **bold**, __bold__, *italic*, _italic_, [text](url).
 const INLINE_RE =
   /(\*\*|__)([\s\S]+?)\1|(\*|_)([\s\S]+?)\3|\[([^\]]+)\]\(([^)\s]+)\)/g;
@@ -411,7 +441,15 @@ function parseSpans(input: string, resolver: RefResolver): FindingsSpan[] {
     } else if (m[3]) {
       spans.push(...tokenizeRefs(m[4], resolver, { italic: true }));
     } else {
-      spans.push({ kind: "link", text: m[5], href: m[6] });
+      const imageLabel =
+        m.index > 0 &&
+        text[m.index - 1] === "!" &&
+        !isEscaped(text, m.index - 1);
+      if (imageLabel || isEscaped(text, m.index)) {
+        spans.push({ kind: "link", text: m[5], href: m[6] });
+      } else {
+        spans.push(...tokenizeLinkLabel(m[5], m[6], resolver));
+      }
     }
     last = m.index + m[0].length;
   }

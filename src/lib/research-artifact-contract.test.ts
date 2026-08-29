@@ -6,9 +6,11 @@ import {
   normalizeResearchArtifact,
   normalizeResearchSource,
   parseResearchControl,
+  reconcileResearchSourcesForRead,
   renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   researchProvenanceHeader,
+  researchSourcesShareIdentity,
   validateResearchArtifactContent,
 } from "./research-artifact-contract.ts";
 
@@ -75,6 +77,91 @@ test("sources require a safe web URL or absolute local path", () => {
   assert.equal(
     normalizeResearchSource({ id: "s1", title: "Relative", localPath: "../notes.md" }).ok,
     false,
+  );
+});
+
+test("source identity matches by id, URL, or local path", () => {
+  const base = {
+    id: "source-a",
+    title: "Source A",
+    url: "https://example.com/a",
+    localPath: "/workspace/a.md",
+    sourceType: "web",
+    status: "used" as const,
+  };
+
+  assert.equal(researchSourcesShareIdentity(base, { ...base, url: "https://example.com/b", localPath: "/workspace/b.md" }), true);
+  assert.equal(researchSourcesShareIdentity(base, { ...base, id: "source-b", localPath: "/workspace/b.md" }), true);
+  assert.equal(researchSourcesShareIdentity(base, { ...base, id: "source-b", url: "https://example.com/b" }), true);
+  assert.equal(
+    researchSourcesShareIdentity(base, {
+      ...base,
+      id: "source-b",
+      url: "https://example.com/b",
+      localPath: "/workspace/b.md",
+    }),
+    false,
+  );
+});
+
+test("read reconciliation keeps mission order and fields before unmatched file sources", () => {
+  const missionSources = [
+    {
+      id: "manual-current",
+      title: "Current title",
+      url: "https://example.com/shared",
+      sourceType: "web",
+      note: "Current note",
+      status: "used" as const,
+      provider: "x" as const,
+      externalId: "post-1",
+      availability: "available" as const,
+    },
+    {
+      id: "manual-only",
+      title: "Manual attachment",
+      localPath: "/workspace/manual.pdf",
+      sourceType: "file",
+      status: "candidate" as const,
+    },
+  ];
+  const fileOnly = {
+    id: "file-only",
+    title: "File only",
+    url: "https://example.com/file-only",
+    sourceType: "web",
+    status: "candidate" as const,
+  };
+
+  assert.deepEqual(
+    reconcileResearchSourcesForRead([
+      {
+        id: "runner-stale",
+        title: "Stale title",
+        url: "https://example.com/shared",
+        publisher: "File publisher",
+        sourceType: "journal",
+        note: "Stale note",
+        status: "candidate",
+      },
+      fileOnly,
+    ], missionSources),
+    [
+      {
+        id: "manual-current",
+        title: "Current title",
+        url: "https://example.com/shared",
+        publisher: "File publisher",
+        sourceType: "web",
+        note: "Current note",
+        status: "used",
+        provider: "x",
+        externalId: "post-1",
+        availability: "available",
+      },
+      missionSources[1],
+      fileOnly,
+    ],
   );
 });
 

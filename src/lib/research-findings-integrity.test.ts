@@ -176,6 +176,27 @@ test("inline-link labels remain detectable when their ledger row is missing", ()
   assert.equal(integrity.summary.kind, "unavailable");
 });
 
+test("exact and mixed inline-link labels count refs while destination ids stay opaque", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "[S1](../sources/S99) and [evidence S14](https://x.test/S88) plus [paper](https://x.test/S6).",
+    [source("S1", "used"), source("S14", "candidate"), source("S6", "used")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S1", "S14"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("mixed inline-link labels keep arbitrary persisted source ids aligned with the parser", () => {
+  const markdown = "[context manual-1](https://x.test/C9)";
+  const sources = [source("manual-1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["manual-1"]);
+  assert.deepEqual(
+    deriveResearchFindingsIntegrity(markdown, sources).referencedIds,
+    ["manual-1"],
+  );
+});
+
 test("escaped inline-link markers still use the findings parser grammar", () => {
   const markdown = "\\[paper](manual-1)";
   const sources = [source("manual-1", "used")];

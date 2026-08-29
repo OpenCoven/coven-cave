@@ -179,6 +179,49 @@ export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
   });
 }
 
+export function researchSourcesShareIdentity(
+  left: ResearchSourceRef,
+  right: ResearchSourceRef,
+): boolean {
+  return left.id === right.id ||
+    Boolean(left.url && right.url && left.url === right.url) ||
+    Boolean(
+      left.localPath &&
+      right.localPath &&
+      left.localPath === right.localPath,
+    );
+}
+
+/**
+ * Reconcile a healthy file snapshot with the mission's current user-owned
+ * source state. Mission order and fields win; unmatched file rows follow in
+ * their file order.
+ */
+export function reconcileResearchSourcesForRead(
+  fileSources: ResearchSourceRef[],
+  missionSources: ResearchSourceRef[],
+): ResearchSourceRef[] {
+  const matchedFileIndexes = new Set<number>();
+  const reconciledMissionSources = missionSources.map((missionSource) => {
+    const fileIndex = fileSources.findIndex(
+      (fileSource, index) =>
+        !matchedFileIndexes.has(index) &&
+        researchSourcesShareIdentity(missionSource, fileSource),
+    );
+    if (fileIndex < 0) return missionSource;
+    matchedFileIndexes.add(fileIndex);
+    return {
+      ...fileSources[fileIndex],
+      ...missionSource,
+    };
+  });
+
+  return [
+    ...reconciledMissionSources,
+    ...fileSources.filter((_, index) => !matchedFileIndexes.has(index)),
+  ];
+}
+
 export function normalizeResearchArtifact(
   draft: ResearchArtifactDraft,
 ): ContractResult<{ kind: ResearchArtifactKind; relativePath: string }> {
