@@ -11,7 +11,7 @@ export type ResearchIntegritySummaryKind =
   | "none";
 
 export type ResearchFindingsIntegrity = {
-  ledger: "available" | "empty";
+  ledger: "available" | "empty" | "failed";
   referencedIds: string[];
   unresolvedIds: string[];
   conflictIds: string[];
@@ -43,8 +43,23 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: string } {
+  return { kind: "unavailable", label: "Sources unavailable — references can't be verified" };
+}
+
 function preprocessMarkdownForIntegrity(markdown: string): string {
   return stripBareUrls(stripMarkdownLinksAndImages(stripInlineCode(stripFencedCodeBlocks(markdown ?? ""))));
+}
+
+function isClosingFence(
+  fenceMatch: RegExpExecArray,
+  fence: { character: string; length: number },
+): boolean {
+  return (
+    fenceMatch[1][0] === fence.character &&
+    fenceMatch[1].length >= fence.length &&
+    !fenceMatch[2].trim()
+  );
 }
 
 function stripFencedCodeBlocks(markdown: string): string {
@@ -58,11 +73,11 @@ function stripFencedCodeBlocks(markdown: string): string {
         fence = { character: fenceMatch[1][0], length: fenceMatch[1].length };
         return "";
       }
-      if (fence && fenceMatch && fenceMatch[1][0] === fence.character && fenceMatch[1].length >= fence.length) {
-        fence = null;
+      if (fence) {
+        if (fenceMatch && isClosingFence(fenceMatch, fence)) fence = null;
         return "";
       }
-      return fence ? "" : line;
+      return line;
     })
     .join("\n");
 }
@@ -85,20 +100,87 @@ function stripInlineCode(markdown: string): string {
       index += fenceLength - 1;
       continue;
     }
+    sanitized += " ";
     index = endIndex + fenceLength - 1;
   }
 
   return sanitized;
 }
 
+function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {
+  let depth = 1;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (character === open) {
+      depth += 1;
+      continue;
+    }
+    if (character !== close) continue;
+    depth -= 1;
+    if (depth === 0) return index;
+  }
+
+  return -1;
+}
+
 function stripMarkdownLinksAndImages(markdown: string): string {
-  return markdown
-    .replace(/!\[[^\]]*]\(([^)\s]+)\)/g, "")
-    .replace(/\[[^\]]+]\(([^)\s]+)\)/g, "");
+  let sanitized = "";
+
+  for (let index = 0; index < markdown.length; index += 1) {
+    const isImage = markdown[index] === "!" && markdown[index + 1] === "[";
+    const isLink = markdown[index] === "[";
+    if (!isImage && !isLink) {
+      sanitized += markdown[index];
+      continue;
+    }
+
+    const labelStart = index + (isImage ? 2 : 1);
+    const labelEnd = findBalancedClose(markdown, labelStart, "[", "]");
+    if (labelEnd === -1) {
+      sanitized += markdown[index];
+      continue;
+    }
+
+    const destinationStart = labelEnd + 1;
+    if (markdown[destinationStart] !== "(") {
+      sanitized += markdown.slice(index, destinationStart);
+      index = destinationStart - 1;
+      continue;
+    }
+
+    const destinationEnd = findBalancedClose(markdown, destinationStart + 1, "(", ")");
+    if (destinationEnd === -1) {
+      sanitized += markdown[index];
+      continue;
+    }
+
+    if (isLink) sanitized += markdown.slice(labelStart, labelEnd);
+    index = destinationEnd;
+  }
+
+  return sanitized;
 }
 
 function stripBareUrls(markdown: string): string {
-  return markdown.replace(/https?:\/\/[^\s<>()]+/g, "");
+  let sanitized = "";
+  let cursor = 0;
+  const urlPattern = /https?:\/\//g;
+
+  for (let match = urlPattern.exec(markdown); match; match = urlPattern.exec(markdown)) {
+    let end = match.index + match[0].length;
+    while (end < markdown.length && !/\s/.test(markdown[end])) end += 1;
+    sanitized += markdown.slice(cursor, match.index);
+    sanitized += " ";
+    cursor = end;
+    urlPattern.lastIndex = end;
+  }
+
+  return sanitized + markdown.slice(cursor);
 }
 
 export function scanBracketedSourceIds(markdown: string): string[] {
@@ -190,9 +272,8 @@ function summarize(
   const unresolvedCount = integrity.unresolvedIds.length;
   const conflictCount = integrity.conflictIds.length;
 
-  if (integrity.ledger === "empty" && integrity.referencedIds.length > 0) {
-    return { kind: "unavailable", label: "Sources unavailable — references can't be verified" };
-  }
+  if (integrity.ledger === "failed") return unavailableSummary();
+  if (integrity.ledger === "empty" && integrity.referencedIds.length > 0) return unavailableSummary();
 
   if (unresolvedCount > 0) {
     return {
@@ -235,6 +316,7 @@ function summarize(
 export function deriveResearchFindingsIntegrity(
   markdown: string,
   sources: ResearchSourceRef[],
+  options: { ledger?: ResearchFindingsIntegrity["ledger"] } = {},
 ): ResearchFindingsIntegrity {
   const sourceById = new Map<string, ResearchSourceRef>();
   const sanitizedMarkdown = preprocessMarkdownForIntegrity(markdown);
@@ -259,7 +341,7 @@ export function deriveResearchFindingsIntegrity(
   const citedUsedCount = referencedIds.filter((id) => sourceById.get(id)?.status === "used").length;
   const citedRejectedCount = referencedIds.filter((id) => sourceById.get(id)?.status === "rejected").length;
   const integrity: ResearchFindingsIntegrity = {
-    ledger: sources.length > 0 ? "available" : "empty",
+    ledger: options.ledger ?? (sources.length > 0 ? "available" : "empty"),
     referencedIds,
     unresolvedIds,
     conflictIds,

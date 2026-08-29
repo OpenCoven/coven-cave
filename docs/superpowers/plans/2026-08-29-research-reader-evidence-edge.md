@@ -146,7 +146,7 @@ export type ResearchIntegritySummaryKind =
   | "none";
 
 export type ResearchFindingsIntegrity = {
-  ledger: "available" | "empty";
+  ledger: "available" | "empty" | "failed";
   referencedIds: string[];
   unresolvedIds: string[];
   conflictIds: string[];
@@ -165,6 +165,7 @@ export function scanBracketedSourceIds(markdown: string): string[] {
 export function deriveResearchFindingsIntegrity(
   markdown: string,
   sources: ResearchSourceRef[],
+  options?: { ledger?: "available" | "empty" | "failed" },
 ): ResearchFindingsIntegrity {
   // Reuse parseFindingsDoc (or its exact ref-recognition rules) against the
   // sanitized Markdown to collect actual ledger-backed source ids such as

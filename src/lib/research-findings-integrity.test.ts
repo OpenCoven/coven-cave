@@ -23,12 +23,15 @@ test("scanner ignores markdown syntax that only looks like evidence", () => {
     scanBracketedSourceIds(
       [
         "Claim [S1].",
-        "[paper](https://x.test/evidence/C1)",
+        "[paper](https://x.test/evidence_(C1))",
         "```md",
         "[S2] C2",
-        "```",
+        "```still-code",
+        "[S9] C2",
+        "```   ",
         "Inline `[S3] C3` stays code.",
-        "![S4](https://x.test/assets/report.png)",
+        "![nested [S4]](https://x.test/assets/report_(v2).png)",
+        "Bare URL https://x.test/conflicts/(C4) is not a conflict.",
       ].join("\n"),
     ),
     ["S1"],
@@ -64,13 +67,15 @@ test("markdown syntax does not create false source or conflict states", () => {
   const integrity = deriveResearchFindingsIntegrity(
     [
       "Claim [S1].",
-      "[paper](https://x.test/evidence/C1)",
+      "[paper](https://x.test/evidence_(C1))",
       "```md",
       "[S2] C2",
-      "```",
+      "```still-code",
+      "[S9] C2",
+      "```   ",
       "Inline `S3 C3` stays code.",
-      "![S4](https://x.test/assets/report.png)",
-      "Bare URL https://x.test/conflicts/C4 is not a conflict.",
+      "![nested [S4]](https://x.test/assets/report_(v2).png)",
+      "Bare URL https://x.test/conflicts/(C4) is not a conflict.",
     ].join("\n"),
     [source("S1", "used")],
   );
@@ -106,6 +111,24 @@ test("parser-recognized arbitrary source ids count as citations", () => {
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.equal(integrity.summary.kind, "candidate");
   assert.equal(integrity.summary.label, "1 source awaits review");
+});
+
+test("inline code removal inserts a space so arbitrary ids are not fabricated", () => {
+  const integrity = deriveResearchFindingsIntegrity("manual`x`-1 stays prose.", [
+    source("manual-1", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("balanced link stripping preserves visible labels while removing destinations", () => {
+  const integrity = deriveResearchFindingsIntegrity("Use [manual-1](https://x.test/docs_(v2)) as evidence.", [
+    source("manual-1", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
 });
 
 test("plural unresolved summaries use the exact plural label", () => {
@@ -183,4 +206,16 @@ test("rejected-only citations summarize as rejected rather than none", () => {
   assert.deepEqual(integrity.referencedIds, ["R1", "R2"]);
   assert.equal(integrity.summary.kind, "rejected");
   assert.equal(integrity.summary.label, "2 rejected sources cited");
+});
+
+test("failed ledger reports unavailable even without detected citations", () => {
+  const integrity = deriveResearchFindingsIntegrity("Plain prose only.", [], { ledger: "failed" });
+  assert.equal(integrity.ledger, "failed");
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.deepEqual(integrity.summary, {
+    kind: "unavailable",
+    label: "Sources unavailable — references can't be verified",
+  });
 });
