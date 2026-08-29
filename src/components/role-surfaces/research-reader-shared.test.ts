@@ -41,6 +41,20 @@ assert.match(
   /block\.kind === "code"[\s\S]*?<MarkdownBlock/,
   "fenced blocks use the shared Markdown renderer so Mermaid diagrams render",
 );
+const codeBranch = source.slice(
+  source.indexOf('if (block.kind === "code")'),
+  source.indexOf('if (block.kind === "table")'),
+);
+assert.match(
+  codeBranch,
+  /<MarkdownBlock/,
+  "code blocks render through the shared Markdown renderer",
+);
+assert.doesNotMatch(
+  codeBranch,
+  /data-document-target|rr-block-row|tabIndex|renderEdge|ResearchProvenanceEdge/,
+  "code blocks stay opaque instead of becoming provenance or focus targets",
+);
 assert.match(
   source,
   /block\.code\.match\(\/`\+\/g\)[\s\S]*?Math\.max\(3, longestBacktickRun \+ 1\)/,

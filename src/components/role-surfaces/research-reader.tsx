@@ -512,19 +512,11 @@ export function ResearchReader({
       );
       const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
       return (
-        <div
-          key={key}
-          className="rr-block-row"
-          data-document-target={block.id}
-          tabIndex={-1}
-        >
-          <div className="rr-codeblock document-reader__wide-block">
-            <MarkdownBlock
-              text={`${fence}${block.language}\n${block.code}\n${fence}`}
-              onOpenUrl={openUrl}
-            />
-          </div>
-          {renderEdge([])}
+        <div key={key} className="rr-codeblock document-reader__wide-block">
+          <MarkdownBlock
+            text={`${fence}${block.language}\n${block.code}\n${fence}`}
+            onOpenUrl={openUrl}
+          />
         </div>
       );
     }
