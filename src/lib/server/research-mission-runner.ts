@@ -2074,23 +2074,13 @@ function isSourceEnvelope(value: unknown): value is { sources: unknown[] } {
 /**
  * Read the flow-written source ledger.
  *
- * Accepts a bare array OR an object that carries one under `sources`, because
- * the file is written by an AGENT and its envelope cannot be guaranteed. The
- * iteration prompt tells the run to read and write `sources.json` without
- * pinning a top-level shape, and a model that adds `{ mission, updated,
- * sources, … }` around the list is following that instruction, not breaking it.
+ * Accepts either a top-level array or an object with a `sources` array,
+ * because flow-written `sources.json` content may include an envelope around
+ * the list of sources.
  *
- * Requiring a bare array cost a whole mission: research-00b591f3 wrote exactly
- * that envelope with 23 valid sources — nearly double its target of 12 — and
- * every one was discarded. `runResearchIteration` catches the throw, checkpoints
- * with `lastError`, and merges NOTHING, so the mission reported zero sources
- * while its findings and ledger artifacts sat on disk. Findings with an empty
- * ledger are unsourced claims, which is the one thing a research run must not
- * produce (cave-10kr8).
- *
- * Per-ENTRY strictness is deliberately kept: a source that cannot be normalized
- * still throws and names its index, because silently dropping evidence from a
- * ledger would be worse than refusing to load it. Only the envelope is relaxed.
+ * Per-entry validation remains strict: each source must still normalize
+ * successfully, and failures are reported with the source index. Only the
+ * accepted top-level shape is relaxed.
  */
 export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
   let parsed: unknown;
