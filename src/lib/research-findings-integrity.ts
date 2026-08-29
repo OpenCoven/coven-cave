@@ -135,33 +135,20 @@ function normalizeReferenceLabel(label: string): string {
   return unescapeCommonMarkPunctuation(label).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function isReferenceDefinitionLine(line: string): boolean {
-  let labelStart = 0;
-  while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
-  if (line[labelStart] !== "[") return false;
-
-  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
-  return labelEnd > labelStart + 1 && line[labelEnd + 1] === ":";
-}
-
-function readReferenceDefinitionLabel(line: string): string | null {
+function readReferenceDefinitionStart(line: string): {
+  label: string;
+  body: string;
+} | null {
   let labelStart = 0;
   while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
   if (line[labelStart] !== "[") return null;
 
   const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
   if (labelEnd <= labelStart + 1 || line[labelEnd + 1] !== ":") return null;
-  return normalizeReferenceLabel(line.slice(labelStart + 1, labelEnd));
-}
-
-function readReferenceDefinitionBody(line: string): string | null {
-  let labelStart = 0;
-  while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
-  if (line[labelStart] !== "[") return null;
-
-  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
-  if (labelEnd <= labelStart + 1 || line[labelEnd + 1] !== ":") return null;
-  return line.slice(labelEnd + 2).trimStart();
+  return {
+    label: normalizeReferenceLabel(line.slice(labelStart + 1, labelEnd)),
+    body: line.slice(labelEnd + 2),
+  };
 }
 
 function readReferenceDefinitionContinuation(line: string): string | null {
@@ -173,22 +160,41 @@ function readReferenceDefinitionContinuation(line: string): string | null {
   return content.trim() ? content : null;
 }
 
-function readReferenceDefinitionRemainder(destination: string): string {
-  if (destination.startsWith("<")) {
+function readReferenceDestination(input: string): { remainder: string } | null {
+  const destination = input.trimStart();
+  if (!destination) return null;
+
+  if (destination[0] === "<") {
     for (let index = 1; index < destination.length; index += 1) {
+      if (destination[index] === "<" && !isEscaped(destination, index)) return null;
       if (destination[index] === ">" && !isEscaped(destination, index)) {
-        return destination.slice(index + 1).trimStart();
+        return { remainder: destination.slice(index + 1) };
       }
     }
-    return "";
+    return null;
   }
 
-  for (let index = 0; index < destination.length; index += 1) {
-    if (/\s/.test(destination[index]) && !isEscaped(destination, index)) {
-      return destination.slice(index).trimStart();
+  let parenthesisDepth = 0;
+  let index = 0;
+  while (index < destination.length) {
+    const character = destination[index];
+    if (/\s/.test(character)) break;
+    if (character === "\\" && index + 1 < destination.length) {
+      index += 2;
+      continue;
     }
+    if (character === "(") {
+      parenthesisDepth += 1;
+      if (parenthesisDepth > 32) return null;
+    } else if (character === ")") {
+      if (parenthesisDepth === 0) break;
+      parenthesisDepth -= 1;
+    }
+    index += 1;
   }
-  return "";
+
+  if (index === 0 || parenthesisDepth !== 0) return null;
+  return { remainder: destination.slice(index) };
 }
 
 function readReferenceTitleCloser(title: string): "'" | '"' | ")" | null {
@@ -198,11 +204,67 @@ function readReferenceTitleCloser(title: string): "'" | '"' | ")" | null {
   return null;
 }
 
-function referenceTitleIsClosed(title: string, closer: "'" | '"' | ")"): boolean {
-  for (let index = 1; index < title.length; index += 1) {
-    if (title[index] === closer && !isEscaped(title, index)) return true;
+function readReferenceTitleEnd(
+  lines: string[],
+  startLineIndex: number,
+  title: string,
+): number | null {
+  const closer = readReferenceTitleCloser(title);
+  if (!closer) return null;
+
+  let lineIndex = startLineIndex;
+  let current = title;
+  let searchStart = 1;
+  while (true) {
+    for (let index = searchStart; index < current.length; index += 1) {
+      if (current[index] !== closer || isEscaped(current, index)) continue;
+      return current.slice(index + 1).trim() ? null : lineIndex;
+    }
+
+    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    if (!continuation) return null;
+    current = continuation;
+    searchStart = 0;
+    lineIndex += 1;
   }
-  return false;
+}
+
+function readReferenceDefinition(
+  lines: string[],
+  startLineIndex: number,
+): { label: string; endLineIndex: number } | null {
+  const start = readReferenceDefinitionStart(lines[startLineIndex]);
+  if (!start) return null;
+
+  let lineIndex = startLineIndex;
+  let destinationInput = start.body.trimStart();
+  if (!destinationInput) {
+    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    if (!continuation || readReferenceTitleCloser(continuation)) return null;
+    destinationInput = continuation;
+    lineIndex += 1;
+  }
+
+  const destination = readReferenceDestination(destinationInput);
+  if (!destination) return null;
+
+  const separatedRemainder = destination.remainder;
+  const title = separatedRemainder.trimStart();
+  if (title) {
+    if (title === separatedRemainder || !readReferenceTitleCloser(title)) return null;
+    const titleEndLineIndex = readReferenceTitleEnd(lines, lineIndex, title);
+    if (titleEndLineIndex === null) return null;
+    lineIndex = titleEndLineIndex;
+  } else {
+    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    if (continuation && readReferenceTitleCloser(continuation)) {
+      const titleEndLineIndex = readReferenceTitleEnd(lines, lineIndex + 1, continuation);
+      if (titleEndLineIndex === null) return null;
+      lineIndex = titleEndLineIndex;
+    }
+  }
+
+  return { label: start.label, endLineIndex: lineIndex };
 }
 
 function stripFencedCodeAndReferenceDefinitions(markdown: string): {
@@ -234,39 +296,14 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
       strippedLines.push("");
       continue;
     }
-    if (isReferenceDefinitionLine(line)) {
-      const label = readReferenceDefinitionLabel(line);
-      if (label) referenceDefinitionLabels.add(label);
-      strippedLines.push("");
-
-      let destination = readReferenceDefinitionBody(line) ?? "";
-      if (!destination) {
-        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
-        if (continuation && !readReferenceTitleCloser(continuation)) {
-          destination = continuation;
-          lineIndex += 1;
-          strippedLines.push("");
-        }
-      }
-
-      let title = readReferenceDefinitionRemainder(destination);
-      if (!readReferenceTitleCloser(title)) {
-        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
-        if (continuation && readReferenceTitleCloser(continuation)) {
-          title = continuation;
-          lineIndex += 1;
-          strippedLines.push("");
-        }
-      }
-
-      const closer = readReferenceTitleCloser(title);
-      while (closer && !referenceTitleIsClosed(title, closer)) {
-        const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
-        if (!continuation) break;
-        title += `\n${continuation}`;
-        lineIndex += 1;
+    const referenceDefinition = readReferenceDefinition(lines, lineIndex);
+    if (referenceDefinition) {
+      referenceDefinitionLabels.add(referenceDefinition.label);
+      while (lineIndex <= referenceDefinition.endLineIndex) {
         strippedLines.push("");
+        lineIndex += 1;
       }
+      lineIndex -= 1;
       continue;
     }
     strippedLines.push(line);

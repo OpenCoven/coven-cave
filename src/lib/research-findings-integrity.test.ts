@@ -222,6 +222,16 @@ test("multiline reference titles remain hidden until their closing delimiter", (
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("citation prose beginning with a source label is not hidden as a definition", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "[S1]: This source supports the claim.",
+    [source("S1", "used")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",
