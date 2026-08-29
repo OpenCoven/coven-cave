@@ -6,6 +6,7 @@ import {
   automationActivityItems,
   boardTaskActivityItems,
   buildRunningActivityPayload,
+  fetchRunningActivity,
   flowActivityItems,
   sessionActivityItems,
   workflowActivityItems,
@@ -171,6 +172,53 @@ test("buildRunningActivityPayload sorts newest-first and counts post-dedup", () 
     "dated items sort newest-first; an undated item sorts last",
   );
   assert.equal(payload.total, 3);
+});
+
+function fetchJson(payload, ok = true) {
+  return async () => ({ ok, json: async () => payload });
+}
+
+function completePayload() {
+  return buildRunningActivityPayload(
+    {
+      sessions: { ok: true, items: sessionActivityItems([SESSION()]) },
+      board: { ok: true, items: [] },
+      automations: { ok: true, items: [] },
+      flows: { ok: true, items: [] },
+      workflows: { ok: true, items: [] },
+    },
+    "2026-08-23T12:00:00.000Z",
+  );
+}
+
+test("fetchRunningActivity accepts a complete payload", async () => {
+  const payload = completePayload();
+  assert.deepEqual(await fetchRunningActivity(fetchJson(payload)), payload);
+});
+
+test("fetchRunningActivity rejects malformed ok payloads before they reach React state", async () => {
+  const valid = completePayload();
+  const malformed = [
+    { ok: true },
+    { ...valid, items: null },
+    { ...valid, unavailable: undefined },
+    { ...valid, items: [{ ...valid.items[0], startedAt: 123 }] },
+    { ...valid, unavailable: ["unknown-source"] },
+    { ...valid, unavailable: ["flows"] },
+    {
+      ...valid,
+      sources: { ...valid.sources, board: { ok: true, count: "zero" } },
+    },
+    { ...valid, total: valid.total + 1 },
+  ];
+
+  for (const [index, payload] of malformed.entries()) {
+    assert.equal(
+      await fetchRunningActivity(fetchJson(payload)),
+      null,
+      `malformed payload ${index + 1} must fail closed`,
+    );
+  }
 });
 
 console.log("running-activity.test.ts: ok");

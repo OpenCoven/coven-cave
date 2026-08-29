@@ -73,6 +73,92 @@ export type RunningActivitySourceInput =
   | { ok: true; items: RunningActivityItem[] }
   | { ok: false; error: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRunningActivityKind(value: unknown): value is RunningActivityKind {
+  return value === "session"
+    || value === "board-task"
+    || value === "automation"
+    || value === "flow"
+    || value === "workflow";
+}
+
+function isRunningActivityStatus(value: unknown): value is RunningActivityItem["status"] {
+  return value === "running" || value === "queued";
+}
+
+function isRunningActivitySourceId(value: unknown): value is RunningActivitySourceId {
+  return RUNNING_ACTIVITY_SOURCES.some((source) => source === value);
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string";
+}
+
+function isOptionalNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isRunningActivityItem(value: unknown): value is RunningActivityItem {
+  if (!isRecord(value)) return false;
+  if (!isRunningActivityKind(value.kind) || !isRunningActivityStatus(value.status)) return false;
+  return typeof value.id === "string"
+    && value.id.startsWith(`${value.kind}:`)
+    && value.id.length > value.kind.length + 1
+    && typeof value.title === "string"
+    && typeof value.targetId === "string"
+    && value.targetId.length > 0
+    && isOptionalString(value.startedAt)
+    && isOptionalNullableString(value.familiarId)
+    && isOptionalNullableString(value.sessionId);
+}
+
+function isRunningActivitySourceState(value: unknown): value is RunningActivitySourceState {
+  if (!isRecord(value)) return false;
+  return typeof value.ok === "boolean"
+    && typeof value.count === "number"
+    && Number.isInteger(value.count)
+    && value.count >= 0
+    && isOptionalString(value.error);
+}
+
+/** Validate the complete wire payload before any field reaches React state. */
+export function isRunningActivityPayload(value: unknown): value is RunningActivityPayload {
+  if (
+    !isRecord(value)
+    || value.ok !== true
+    || typeof value.generatedAt !== "string"
+    || typeof value.total !== "number"
+    || !Number.isInteger(value.total)
+    || value.total < 0
+    || !Array.isArray(value.items)
+    || !Array.isArray(value.unavailable)
+    || !isRecord(value.sources)
+  ) return false;
+
+  const itemIds = new Set<string>();
+  for (const item of value.items) {
+    if (!isRunningActivityItem(item) || itemIds.has(item.id)) return false;
+    itemIds.add(item.id);
+  }
+  if (value.total !== value.items.length) return false;
+
+  const unavailable = new Set<RunningActivitySourceId>();
+  for (const source of value.unavailable) {
+    if (!isRunningActivitySourceId(source) || unavailable.has(source)) return false;
+    unavailable.add(source);
+  }
+
+  for (const source of RUNNING_ACTIVITY_SOURCES) {
+    const state = value.sources[source];
+    if (!isRunningActivitySourceState(state)) return false;
+    if (state.ok === unavailable.has(source)) return false;
+  }
+  return true;
+}
+
 const RUNNING_OR_QUEUED = new Set(["running", "queued"]);
 
 export function sessionActivityItems(rows: SessionRow[]): RunningActivityItem[] {
@@ -200,9 +286,7 @@ export async function fetchRunningActivity(
     const res = await fetchImpl("/api/running-activity", { cache: "no-store" });
     if (!res.ok) return null;
     const json: unknown = await res.json();
-    return json && typeof json === "object" && (json as { ok?: unknown }).ok === true
-      ? (json as RunningActivityPayload)
-      : null;
+    return isRunningActivityPayload(json) ? json : null;
   } catch {
     return null;
   }
