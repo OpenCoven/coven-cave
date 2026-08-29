@@ -651,14 +651,18 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
       },
     });
   });
-  await page.route("**/api/chat/send", (route) => {
+  // Server-minted provenance (cave-cst0g): hidden generations ride the
+  // dedicated generation surface, which names the origin in its path.
+  await page.route(/\/api\/chat\/generate\/[a-z]+$/, (route) => {
+    const url = new URL(route.request().url());
+    const origin = url.pathname.split("/").pop() ?? "";
     const body = route.request().postDataJSON() as Record<string, unknown>;
-    if (body.origin === "enhance") {
+    if (origin === "enhance") {
       handles.directionDraftBodies.push(body);
       return fulfillDirectionDraft(route);
     }
-    if (body.origin === "journal") return fulfillJournalSend(route);
-    throw new Error(`unexpected Research Desk chat send origin: ${String(body.origin)}`);
+    if (origin === "journal") return fulfillJournalSend(route);
+    throw new Error(`unexpected Research Desk generation origin: ${origin}`);
   });
   await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
     route.fulfill({

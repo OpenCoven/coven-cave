@@ -2364,19 +2364,26 @@ export function makeProductionResearchMissionRunner() {
       return updateCodexAutomation(id, patch);
     },
     latestAutomationRun: async (id) => {
-      const { latestRun } = await import("../automation-runs.ts");
-      return latestRun(id);
+      const { listRoutineRuns } = await import("./coven-automations-client.ts");
+      const runs = await listRoutineRuns(id, 1);
+      const run = runs[0];
+      if (!run) return null;
+      return {
+        id: run.id,
+        automationId: run.automationId,
+        automationName: id,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        status: run.status === "cancelled" ? "failed" : run.status,
+        exitCode: run.exitCode,
+        summary: run.logJson,
+      };
     },
     readAutomationTranscript: async (run) => {
-      if (!run.logPath) return "";
-      const [{ isAllowedAutomationLogPath, MAX_RUN_LOG_BYTES }, { readFile, stat }] = await Promise.all([
-        import("./automation-log-paths.ts"),
-        import("node:fs/promises"),
-      ]);
-      if (!(await isAllowedAutomationLogPath(run.logPath))) return "";
-      const metadata = await stat(run.logPath);
-      if (metadata.size > MAX_RUN_LOG_BYTES) return "";
-      return readFile(run.logPath, "utf8");
+      // The run ledger carries bounded log JSON; the filesystem log store is
+      // retired (coven-cave#4990).
+      const summary = typeof run.summary === "string" ? run.summary : "";
+      return summary;
     },
     readAutomationCheckpoint: async (id) => {
       try {

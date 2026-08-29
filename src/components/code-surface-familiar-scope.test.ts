@@ -60,12 +60,14 @@ assert.match(
 
 // 6. WorkspaceSidebar scopes the sessions that drive its unified recency list
 //    and project metadata to the active familiar (null = show everything).
+//    The rail is archive-free by design (cave-zdbij): it derives its rows
+//    through the shared filter's default, with no archive opt-in.
 //    Global project selection belongs to WorkspaceContextSwitcher/ProjectPicker;
 //    the sidebar no longer renders a duplicate per-project branch.
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(rows, activeFamiliarId \?\? null, \{ includeArchived: showArchived \}\)/,
-  "WorkspaceSidebar must derive visibleSessions from the active familiar",
+  /filterVisibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\)/,
+  "WorkspaceSidebar must derive visibleSessions from the active familiar, archive-free by default",
 );
 assert.match(
   workspaceSidebar,
