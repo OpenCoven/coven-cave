@@ -68,6 +68,21 @@ const FAMILIAR = {
   icon: "ph:sparkle-fill",
 };
 
+const EMPTY_RUNNING_ACTIVITY = {
+  ok: true,
+  generatedAt: ISO,
+  total: 0,
+  items: [],
+  sources: {
+    sessions: { ok: true, count: 0 },
+    board: { ok: true, count: 0 },
+    automations: { ok: true, count: 0 },
+    flows: { ok: true, count: 0 },
+    workflows: { ok: true, count: 0 },
+  },
+  unavailable: [],
+} as const;
+
 type FixtureState = {
   changeCount: number;
   requestedConversationIds: string[];
@@ -100,6 +115,10 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
     const request = route.request();
     const url = new URL(request.url());
     throw new Error(`Unexpected API request: ${request.method()} ${url.pathname}${url.search}`);
+  });
+  await page.route(/\/api\/running-activity(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    return route.fulfill({ json: EMPTY_RUNNING_ACTIVITY });
   });
   await page.route(/\/api\/familiars(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
@@ -868,16 +887,21 @@ test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, a
   const constrainedChat = await requiredBounds(page, ".chat-surface");
   const constrainedRail = await requiredBounds(page, ".workspace-rail");
   const shellDetail = await requiredBounds(page, ".shell-detail");
-  expectBoundsNear(constrainedChat, { x: 9, y: 34, width: 1102, height: 689 });
-  expectBoundsNear(constrainedRail, { x: 831, y: 68, width: 280, height: 655 });
+  expectBoundsNear(constrainedChat, { x: 9, y: 43, width: 1102, height: 680 });
+  // The shared familiar selector now sits above the Home/Chat tabs inside the
+  // rail header (cave-3pnnq), shifting the rail content down 45px.
+  expectBoundsNear(constrainedRail, { x: 831, y: 122, width: 280, height: 601 });
   const shellContract = await page.locator(".shell-detail").evaluate((element) => {
     const style = getComputedStyle(element);
+    const rootStyle = getComputedStyle(document.documentElement);
     return {
       borderTopRightRadius: style.borderTopRightRadius,
+      radiusToken: rootStyle.getPropertyValue("--radius-panel").trim(),
       borderRightWidth: Number.parseFloat(style.borderRightWidth),
     };
   });
-  expect(shellContract.borderTopRightRadius).toBe("0px");
+  expect(shellContract.borderTopRightRadius).toBe(shellContract.radiusToken);
+  expect(Number.parseFloat(shellContract.borderTopRightRadius)).toBeGreaterThan(0);
   expect(Math.abs(constrainedRail.x + constrainedRail.width - (shellDetail.x + shellDetail.width - shellContract.borderRightWidth))).toBeLessThanOrEqual(1);
   measurements.constrained = {
     viewport: page.viewportSize(),

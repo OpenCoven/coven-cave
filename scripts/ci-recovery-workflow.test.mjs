@@ -52,8 +52,14 @@ assert.deepEqual(
 );
 const prChecks = ciWorkflow.jobs["pr-checks"];
 const frontendBuild = ciWorkflow.jobs.build;
+const paths = ciWorkflow.jobs.paths;
 assert.equal(prChecks.name, "PR checks");
 assert.equal(frontendBuild.name, "Frontend build");
+assert.deepEqual(ciWorkflow.permissions, {
+  actions: "read",
+  contents: "read",
+  "pull-requests": "read",
+});
 assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "paths",
   "ios",
@@ -63,6 +69,40 @@ assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "frontend-e2e-agentic",
 ]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
+assert.equal(
+  paths.outputs.run_base_ref,
+  "${{ steps.base_snapshot.outputs.run_base_ref }}",
+  "the selector exports the exact base ref frozen for this run",
+);
+assert.equal(
+  paths.outputs.run_base_sha,
+  "${{ steps.base_snapshot.outputs.run_base_sha }}",
+  "the selector exports the exact base SHA frozen for this run",
+);
+const baseSnapshot = paths.steps.find((step) => step.name === "Capture run base snapshot");
+assert.ok(baseSnapshot, "the selector captures a base snapshot before selecting validation");
+assert.equal(baseSnapshot.id, "base_snapshot");
+assert.equal(baseSnapshot.env.GH_TOKEN, "${{ github.token }}");
+assert.equal(baseSnapshot.env.PR_NUMBER, "${{ github.event.pull_request.number || inputs.expected_pr_number }}");
+assert.equal(
+  Object.hasOwn(baseSnapshot.env, "EVENT_BASE_SHA"),
+  false,
+  "pull-request runs must not trust the stale event base SHA",
+);
+assert.equal(
+  baseSnapshot.run,
+  "node scripts/capture-ci-base-snapshot.mjs >> \"$GITHUB_OUTPUT\"",
+);
+const pathSelector = paths.steps.find((step) => step.name === "Select path-aware validation");
+assert.ok(
+  paths.steps.indexOf(baseSnapshot) < paths.steps.indexOf(pathSelector),
+  "the base is frozen before path-aware work begins",
+);
+assert.equal(
+  pathSelector.env.BASE_SHA,
+  "${{ github.event_name == 'push' && github.event.before || steps.base_snapshot.outputs.run_base_sha }}",
+  "PR and dispatch path selection use the live base snapshot; only push uses event.before",
+);
 assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation, [
   { name: "lint", command: "lint" },
   { name: "typecheck", command: "typecheck" },
@@ -135,20 +175,22 @@ assert.deepEqual(ciWorkflow.on.workflow_dispatch, {
 });
 assert.equal(
   ciWorkflow.concurrency.group,
-  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}",
-  "each pull request and its recovery dispatch must share one concurrency key",
+  "ci-${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number || inputs.expected_pr_number || github.run_id) }}",
+  "main pushes must share one key while each pull request and its recovery dispatch share a PR-scoped key",
 );
-// Sharing the key is deliberate; CANCELLING across it is not. A dispatch
-// resolves to the same group as the run it is rescuing, so with a blanket
-// cancel-in-progress it kills that run and the required check never reports —
-// observed on #4618, where one head collected three cancelled runs and no
-// verdict, each cancellation feeding ci-recovery's `cancelled_latest_run`
-// wedge test and provoking the next dispatch (cave-f22tp). Excluded from
-// cancellation, a dispatch queues behind the in-flight run instead.
+// Main pushes share a constant key and cancel stale predecessors. Sharing the
+// PR key is also deliberate, but CANCELLING from a recovery dispatch is not: a
+// dispatch resolves to the same group as the run it is rescuing, so with a
+// blanket cancel-in-progress it kills that run and the required check never
+// reports — observed on #4618, where one head collected three cancelled runs
+// and no verdict, each cancellation feeding ci-recovery's
+// `cancelled_latest_run` wedge test and provoking the next dispatch
+// (cave-f22tp). Excluded from cancellation, a dispatch queues behind the
+// in-flight run instead.
 assert.equal(
   ciWorkflow.concurrency["cancel-in-progress"],
-  "${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}",
-  "a recovery dispatch must never cancel the run it exists to rescue",
+  "${{ github.event_name != 'workflow_dispatch' }}",
+  "a main push must cancel its predecessor while a recovery dispatch never cancels the run it exists to rescue",
 );
 const expectedSubordinateJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",

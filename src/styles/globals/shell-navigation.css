@@ -153,10 +153,18 @@
   overflow-y: auto;
 }
 
-/* Inset-shell layout: navigation stays flush on the shell floor while the
-   content becomes the single elevated panel. */
+/* Inset-shell layout: the sidepanel and the main content are both elevated
+   cards floating on the shell floor. The navigation sits INSET around the
+   content — a tokenized margin, rounded corners, the same hairline border, and
+   the same restrained elevation as the detail card — instead of flush
+   edge-to-edge. The collapsed rail stays flush and square (see the rail guard
+   in shell-inset-layout.test.ts). */
 @media (min-width: 1024px) {
   .shell-nav-panel > .shell-nav:not(.shell-nav--rail) {
+    margin: var(--space-2);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 14px 36px -28px var(--shadow-color);
     overflow-x: hidden;
   }
 
@@ -166,14 +174,7 @@
   }
 
   .shell-detail-panel {
-    /* No gutter ABOVE the card. The toolbar row and the card already paint the
-       same surface, so the only thing separating them was this 8px band of
-       --shell-floor plus the card's own top edge — which is what made the top
-       row read as sitting outside the container rather than as its first row
-       (cave-10kr8). Measured before the change at 1440x900: .shell-top ended
-       at y=34 and .shell-detail began at y=42, with the lighter floor between.
-       Sides and bottom keep their gutter. */
-    padding: 0 var(--space-2) var(--space-2);
+    padding: var(--space-2);
     /* The gutter this padding reserves IS the outer frame, so it takes the
        rail's own rendered shade rather than the bare panel token — see
        --shell-floor in globals/foundations.css. */
@@ -182,11 +183,7 @@
 
   .shell-detail {
     border: 1px solid var(--border-hairline);
-    /* Top edge dropped with the gutter above it: the card continues the
-       toolbar rather than starting under it. Bottom corners keep the radius,
-       so the frame still reads as a card against the floor. */
-    border-top: 0;
-    border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+    border-radius: var(--radius-panel);
     box-shadow: 0 14px 36px -28px var(--shadow-color);
     overflow-x: hidden;
   }

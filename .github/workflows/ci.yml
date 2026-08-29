@@ -30,14 +30,20 @@ on:
 # dispatch. The required check can never report while that runs.
 #
 # So a dispatch never cancels: with cancel-in-progress false it QUEUES behind
-# the in-flight run for that head and starts only once the group frees. A push
-# still supersedes its predecessor, which is the behaviour this setting is for.
+# the in-flight run for that head and starts only once the group frees. Every
+# main push shares ci-main and cancels its predecessor, while pull requests and
+# their recovery dispatches continue to share their PR-scoped group.
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number || inputs.expected_pr_number || github.run_id) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
+  # Recovery dispatches resolve the PR's current base ref at selector start.
+  pull-requests: read
+  # The Frontend build gate reads the run's job list to refuse carried-forward
+  # upstream evidence (cave-38aud).
+  actions: read
 
 jobs:
   # This context is introduced alongside Frontend build during the protection
@@ -141,11 +147,22 @@ jobs:
       e2e: ${{ steps.paths.outputs.e2e }}
       ios: ${{ steps.paths.outputs.ios }}
       docs: ${{ steps.paths.outputs.docs }}
+      run_base_ref: ${{ steps.base_snapshot.outputs.run_base_ref }}
+      run_base_sha: ${{ steps.base_snapshot.outputs.run_base_sha }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - id: base_snapshot
+        name: Capture run base snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.expected_pr_number }}
+        run: node scripts/capture-ci-base-snapshot.mjs >> "$GITHUB_OUTPUT"
 
       # The path selector's verdict decides which jobs run at all; a stale
       # tree here could silently skip a lane the PR actually touches
@@ -166,7 +183,7 @@ jobs:
       - id: paths
         name: Select path-aware validation
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'push' && github.event.before || steps.base_snapshot.outputs.run_base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
         run: node scripts/ci-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
@@ -623,6 +640,35 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Refuse carried-forward upstream evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+          RUN_BASE_REF: ${{ needs.paths.outputs.run_base_ref }}
+          RUN_BASE_SHA: ${{ needs.paths.outputs.run_base_sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # The jobs API reports the PR head SHA, not github.sha's synthetic
+          # merge SHA. A carried-forward job is also relabelled with the new
+          # run_attempt but retains its old started_at, so both domains matter.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > /tmp/cave-build-evidence-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" > /tmp/cave-build-evidence-jobs.json
+          ATTEMPT_STARTED_AT="$(jq -er '.run_started_at | select(type == "string" and length > 0)' /tmp/cave-build-evidence-run.json)"
+
+          # Select validation froze this pair before any validation lane ran.
+          # Resolve the branch tip again now; missing selector outputs fail
+          # closed in check-build-evidence's argument validation.
+          LIVE_BASE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RUN_BASE_REF" --jq .object.sha)"
+
+          node scripts/check-build-evidence.mjs \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --attempt-started-at "$ATTEMPT_STARTED_AT" \
+            --run-base-ref "$RUN_BASE_REF" \
+            --run-base-sha "$RUN_BASE_SHA" \
+            --live-base-sha "$LIVE_BASE_SHA" \
+            < /tmp/cave-build-evidence-jobs.json 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Runs without pnpm install: the test imports only node builtins, so a
       # documentation-only PR — which skips the frontend step entirely — still

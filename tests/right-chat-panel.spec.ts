@@ -228,16 +228,19 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
   const closeStrip = drawer.getByRole("button", { name: "Close drawer" });
   await expect(page.locator(".mobile-drawer-backdrop")).toBeHidden();
   await expect(closeStrip).toBeVisible();
-  const stripBox = await closeStrip.boundingBox();
-  if (!stripBox) throw new Error("Close strip did not render");
   await expect
-    .poll(() =>
-      page.evaluate(
+    .poll(async () => {
+      // The drawer is visible while its 180 ms slide-in is still settling.
+      // Re-read the box on every attempt so the hit test never reuses an
+      // offscreen coordinate captured during that transition.
+      const stripBox = await closeStrip.boundingBox();
+      if (!stripBox) return false;
+      return page.evaluate(
         ([x, y]) =>
           !!document.elementFromPoint(x, y)?.closest(".mobile-right-chat-drawer__close"),
         [Math.round(stripBox.x + stripBox.width / 2), Math.round(stripBox.y + stripBox.height / 2)],
-      ),
-    )
+      );
+    })
     .toBe(true);
   await closeStrip.click();
   await expect(drawer).toBeHidden();

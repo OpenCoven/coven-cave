@@ -72,13 +72,16 @@ const railHeader = await source("components/sidebar-rail-header.tsx");
 assert.match(railHeader, /rail-header__new/, "the workspace rail leads with New chat");
 assert.match(shell, /rail-header__new/, "…and so does the standalone rail");
 assert.match(shell, /rail-header__new-label[^>]*>\s*New chat\s*</, "with the same label");
-// An anchor, not a button: there is no workspace mounted on these routes to
-// hand a compose to, so it deep-links the way the other standalone surfaces do.
+// A client link, not a button or raw anchor: there is no workspace mounted on
+// these routes to hand a compose to, so it deep-links without reloading the
+// Next/Tauri document.
+assert.match(shell, /import Link from "next\/link";/, "the standalone control uses Next Link");
 assert.match(
   shell,
-  /<a\b[^>]*\bhref="\/\?mode=chat"/,
-  "the standalone control navigates rather than calling a handler it does not have",
+  /<Link\s+className="rail-header__new focus-ring"\s+href="\/\?mode=chat"\s+title="New chat">[\s\S]*?<span className="rail-header__new-label">New chat<\/span>[\s\S]*?<\/Link>/,
+  "the standalone control preserves its link destination, styling, title, and accessible label",
 );
+assert.doesNotMatch(shell, /<a\b[^>]*\bhref="\/\?mode=chat"/, "New chat is not a raw same-origin anchor");
 
 // Settings and Dashboard render through this shell, so its rail is the one the
 // user sees on those pages. It must be grouped the way the workspace rail is —
