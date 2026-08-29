@@ -394,7 +394,13 @@
   color: var(--text-primary);
 }
 
-.research-reader .rr-codeblock,
+.research-reader .rr-codeblock {
+  width: calc(100% - var(--research-evidence-edge-reserve));
+  max-width: calc(100% - var(--research-evidence-edge-reserve));
+  margin-inline: 0;
+  transform: none;
+}
+
 .research-reader .rr-krblock {
   width: calc(
     100% + var(--rr-paper-pad-inline) + var(--rr-paper-pad-inline)
@@ -518,7 +524,21 @@
   min-height: var(--space-8);
   align-items: center;
   justify-content: center;
-  padding: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--research-accent);
+  font: 600 var(--text-2xs) var(--font-mono);
+  cursor: pointer;
+}
+
+.research-provenance-edge__anchor {
+  display: inline-flex;
+  min-width: var(--space-6);
+  min-height: var(--space-6);
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--space-1);
   border: 1px solid color-mix(
     in oklch,
     var(--research-accent) 38%,
@@ -526,9 +546,7 @@
   );
   border-radius: var(--radius-pill);
   background: var(--research-accent-soft);
-  color: var(--research-accent);
-  font: 600 var(--text-2xs) var(--font-mono);
-  cursor: pointer;
+  color: inherit;
   transition:
     background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
@@ -536,8 +554,9 @@
     transform var(--duration-fast) var(--ease-standard);
 }
 
-.research-provenance-edge__item:hover,
-.research-provenance-edge__item.is-selected {
+.research-provenance-edge__item:hover .research-provenance-edge__anchor,
+.research-provenance-edge__item.is-selected
+  .research-provenance-edge__anchor {
   border-color: var(--research-accent);
   background: color-mix(
     in oklch,
@@ -547,11 +566,13 @@
   color: var(--text-primary);
 }
 
-.research-provenance-edge__item.is-selected {
+.research-provenance-edge__item.is-selected
+  .research-provenance-edge__anchor {
   box-shadow: inset 0 0 0 var(--ring-width) var(--research-accent);
 }
 
-.research-provenance-edge__item--warn {
+.research-provenance-edge__item--warn
+  .research-provenance-edge__anchor {
   border-width: var(--ring-width);
   border-color: color-mix(
     in oklch,
@@ -567,8 +588,10 @@
   text-decoration: underline wavy;
 }
 
-.research-provenance-edge__item--warn:hover,
-.research-provenance-edge__item--warn.is-selected {
+.research-provenance-edge__item--warn:hover
+  .research-provenance-edge__anchor,
+.research-provenance-edge__item--warn.is-selected
+  .research-provenance-edge__anchor {
   border-color: var(--color-warning);
   background: color-mix(
     in oklch,
@@ -577,7 +600,8 @@
   );
 }
 
-.research-provenance-edge__item--muted {
+.research-provenance-edge__item--muted
+  .research-provenance-edge__anchor {
   border-style: dashed;
   border-color: color-mix(
     in oklch,
@@ -593,8 +617,10 @@
   text-decoration: line-through;
 }
 
-.research-provenance-edge__item--muted:hover,
-.research-provenance-edge__item--muted.is-selected {
+.research-provenance-edge__item--muted:hover
+  .research-provenance-edge__anchor,
+.research-provenance-edge__item--muted.is-selected
+  .research-provenance-edge__anchor {
   border-style: dashed;
   border-color: color-mix(
     in oklch,
@@ -609,11 +635,13 @@
   color: var(--color-danger);
 }
 
-.research-provenance-edge__item--muted.is-selected {
+.research-provenance-edge__item--muted.is-selected
+  .research-provenance-edge__anchor {
   box-shadow: inset 0 0 0 var(--ring-width) var(--color-danger);
 }
 
-.research-provenance-edge__item--unresolved {
+.research-provenance-edge__item--unresolved
+  .research-provenance-edge__anchor {
   border-style: dotted;
   border-color: color-mix(
     in oklch,
@@ -627,6 +655,25 @@
   );
   color: var(--color-danger);
   font-style: italic;
+}
+
+.research-provenance-edge__item--unresolved:hover
+  .research-provenance-edge__anchor,
+.research-provenance-edge__item--unresolved.is-selected
+  .research-provenance-edge__anchor {
+  border-style: dotted;
+  border-color: var(--color-danger);
+  background: color-mix(
+    in oklch,
+    var(--color-danger) 20%,
+    transparent
+  );
+  color: var(--color-danger);
+}
+
+.research-provenance-edge__item--unresolved.is-selected
+  .research-provenance-edge__anchor {
+  box-shadow: inset 0 0 0 var(--ring-width) var(--color-danger);
 }
 
 .rr-inline-ref {

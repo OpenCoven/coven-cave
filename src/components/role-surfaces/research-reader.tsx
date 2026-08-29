@@ -40,9 +40,10 @@ import {
 } from "./research-provenance-edge";
 import "@/styles/research-reader.css";
 
-const RAIL_MIN = 240;
-const RAIL_MAX = 520;
-const COLLAPSE_AT = 200;
+const RAIL_MIN_REM = 18;
+const RAIL_INITIAL_REM = 18.75;
+const RAIL_MAX_REM = 32.5;
+const COLLAPSE_AT_REM = 15;
 const CONTENTS_SHEET_MAX_REM = 52;
 // Keep this equal to the research-reader container query in research-reader.css.
 const INSPECTOR_OVERLAY_MAX_REM = 80;
@@ -162,7 +163,7 @@ export function ResearchReader({
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<{ id: string; heading: string } | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
-  const [railWidth, setRailWidth] = useState(300);
+  const [railWidth, setRailWidth] = useState(RAIL_INITIAL_REM);
   const [copied, setCopied] = useState(false);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
@@ -297,7 +298,7 @@ export function ResearchReader({
   }, [inspectorOn, inspectorOverlaysDocument, selectedSourceId]);
 
   useEffect(() => {
-    readerRef.current?.style.setProperty("--rail-w", `${railWidth}px`);
+    readerRef.current?.style.setProperty("--rail-w", `${railWidth}rem`);
   }, [railWidth]);
 
   useEffect(() => {
@@ -315,14 +316,23 @@ export function ResearchReader({
     const move = (event: PointerEvent) => {
       if (!draggingRail.current || !readerRef.current) return;
       const rect = readerRef.current.getBoundingClientRect();
-      let width = rect.right - event.clientX - 1;
-      if (width < COLLAPSE_AT) width = RAIL_MIN;
-      setRailWidth(Math.max(RAIL_MIN, Math.min(RAIL_MAX, width)));
+      const rootFontSize =
+        Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+        16;
+      const widthPx = rect.right - event.clientX - 1;
+      let widthRem = widthPx / rootFontSize;
+      if (widthRem < COLLAPSE_AT_REM) widthRem = RAIL_MIN_REM;
+      setRailWidth(
+        Math.max(RAIL_MIN_REM, Math.min(RAIL_MAX_REM, widthRem)),
+      );
     };
     const up = (event: PointerEvent) => {
       if (!draggingRail.current || !readerRef.current) return;
       const rect = readerRef.current.getBoundingClientRect();
-      if (rect.right - event.clientX - 1 < COLLAPSE_AT) {
+      const rootFontSize =
+        Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+        16;
+      if ((rect.right - event.clientX - 1) / rootFontSize < COLLAPSE_AT_REM) {
         closeInspector();
       }
       draggingRail.current = false;

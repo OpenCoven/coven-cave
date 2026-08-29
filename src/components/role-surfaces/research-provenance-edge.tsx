@@ -133,7 +133,7 @@ export function ResearchProvenanceEdge({
             onKeyDown={(event) => moveFocus(event, index)}
             onClick={(event) => onSelect(id, event.currentTarget)}
           >
-            {id}
+            <span className="research-provenance-edge__anchor">{id}</span>
           </button>
         );
       })}

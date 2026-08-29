@@ -129,6 +129,15 @@ describe("ResearchProvenanceEdge", () => {
     assert.match(html, /role="group"/);
     assert.match(html, /aria-label="Open evidence S1"/);
     assert.match(html, /aria-label="Open conflict C1"/);
+    assert.match(
+      buttonTag(html, "Open evidence S1"),
+      /research-provenance-edge__item/,
+    );
+    assert.match(
+      html,
+      /<button[^>]*aria-label="Open evidence S1"[^>]*>[\s\S]*?<span class="research-provenance-edge__anchor">S1<\/span>[\s\S]*?<\/button>/,
+      "the focusable hit target wraps a smaller painted provenance anchor",
+    );
     assert.match(buttonTag(html, "Open conflict C1"), /data-tone="warn"/);
     assert.equal(
       renderToStaticMarkup(

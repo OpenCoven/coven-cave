@@ -26,6 +26,15 @@ generated_at: 2026-07-24
 
 Identity has **three** components and can drift independently S1 S14.
 
+\`\`\`ts
+const identity = preserve(agent);
+\`\`\`
+
+\`\`\`mermaid
+graph LR
+  Agent --> Identity
+\`\`\`
+
 ## Key results
 
 | Finding | Source | Confidence |
@@ -180,19 +189,57 @@ test.describe("research reader", () => {
       claimWidthBeforeInspector.preferred,
       0,
     );
+    const opaqueBlocks = reader.locator(".rr-codeblock");
+    await expect(opaqueBlocks).toHaveCount(2);
+    await expect(opaqueBlocks.nth(1).locator(".cm-mermaid-diagram")).toBeVisible();
+    for (const opaqueBlock of await opaqueBlocks.all()) {
+      await expect(
+        opaqueBlock.locator(".research-provenance-edge"),
+      ).toHaveCount(0);
+      expect(
+        await opaqueBlock.evaluate((element) => element.getBoundingClientRect().width),
+      ).toBeCloseTo(claimWidthBeforeInspector.actual, 0);
+    }
 
     await marginReference.click();
     await expect(reader).toHaveAttribute("data-inspector", "true");
     await expect(reader.locator(".document-reader")).not.toHaveAttribute("inert", "");
     const railHandle = reader.locator(".rr-railhandle");
     const handleBox = await railHandle.boundingBox();
+    const readerBox = await reader.boundingBox();
     expect(handleBox).not.toBeNull();
+    expect(readerBox).not.toBeNull();
     await page.mouse.move(
       handleBox!.x + handleBox!.width / 2,
       handleBox!.y + handleBox!.height / 2,
     );
     await page.mouse.down();
-    await page.mouse.move(handleBox!.x - 260, handleBox!.y + handleBox!.height / 2);
+    await page.mouse.move(
+      readerBox!.x + readerBox!.width - 260,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.up();
+    await expect.poll(async () => {
+      const currentHandleBox = await railHandle.boundingBox();
+      const currentRailBox = await reader.locator(".rr-rail").boundingBox();
+      if (!currentHandleBox || !currentRailBox) return Number.POSITIVE_INFINITY;
+      return Math.abs(
+        currentHandleBox.x +
+          currentHandleBox.width / 2 -
+          currentRailBox.x,
+      );
+    }).toBeLessThan(2);
+    const minimumHandleBox = await railHandle.boundingBox();
+    expect(minimumHandleBox).not.toBeNull();
+    await page.mouse.move(
+      minimumHandleBox!.x + minimumHandleBox!.width / 2,
+      minimumHandleBox!.y + minimumHandleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      minimumHandleBox!.x - 260,
+      minimumHandleBox!.y + minimumHandleBox!.height / 2,
+    );
     await page.mouse.up();
     const claimWidthAtMaxRail = await measuredClaim
       .locator(":scope > :first-child")
@@ -207,6 +254,15 @@ test.describe("research reader", () => {
     await expect(s14card).toHaveAttribute("data-selected", "true");
     await expect(s14card).toHaveAttribute("data-open", "true");
     await expect(s14card.locator(".rr-sd-quote")).toContainText("rise monotonically");
+    const paintedAnchor = marginReference.locator(
+      ".research-provenance-edge__anchor",
+    );
+    const hitBox = await marginReference.boundingBox();
+    const anchorBox = await paintedAnchor.boundingBox();
+    expect(hitBox).not.toBeNull();
+    expect(anchorBox).not.toBeNull();
+    expect(hitBox!.width).toBeGreaterThan(anchorBox!.width);
+    expect(hitBox!.height).toBeGreaterThan(anchorBox!.height);
 
     const support = s14card.locator(".rr-sd-supportlink").first();
     await support.click();

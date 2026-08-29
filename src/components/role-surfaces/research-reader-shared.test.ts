@@ -90,6 +90,31 @@ assert.match(
 );
 assert.match(
   source,
+  /const RAIL_MIN_REM = 18/,
+  "the resizable inspector minimum matches the CSS 18rem track minimum",
+);
+assert.match(
+  source,
+  /const RAIL_INITIAL_REM = 18\.75[\s\S]*?useState\(RAIL_INITIAL_REM\)/,
+  "the rem-based rail preserves the previous 300px default at the canonical root size",
+);
+assert.match(
+  source,
+  /const COLLAPSE_AT_REM = 15/,
+  "pointer collapse keeps a rem-scaled buffer below the inspector minimum",
+);
+assert.match(
+  source,
+  /widthPx \/ rootFontSize[\s\S]*?Math\.max\(RAIL_MIN_REM,[\s\S]*?Math\.min\(RAIL_MAX_REM, widthRem\)/,
+  "pointer resizing clamps in live root-rem units",
+);
+assert.match(
+  source,
+  /setProperty\("--rail-w", `\$\{railWidth\}rem`\)/,
+  "the rail handle and CSS track share the same rem-based width",
+);
+assert.match(
+  source,
   /getComputedStyle\(document\.documentElement\)\.fontSize[\s\S]*?INSPECTOR_OVERLAY_MAX_REM \* rootFontSize/,
   "the overlay threshold converts rem against the live root font size",
 );
@@ -313,6 +338,35 @@ assert.match(
   /\.research-reader \.rr-doc__column[\s\S]*?var\(--document-reader-prose-measure\) \+[\s\S]*?var\(--research-evidence-edge-reserve\)/,
   "the paper adds the provenance reserve to the reading preference measure",
 );
+const codeBlockRule = css.match(
+  /^\.research-reader \.rr-codeblock \{([^}]*)\}/m,
+);
+assert.ok(codeBlockRule, "Research code blocks have a surface-specific width");
+assert.match(
+  codeBlockRule[1],
+  /width:\s*calc\(\s*100% - var\(--research-evidence-edge-reserve\)\s*\)/,
+  "opaque code and Mermaid stop before the provenance reserve",
+);
+assert.match(
+  codeBlockRule[1],
+  /max-width:\s*calc\(\s*100% - var\(--research-evidence-edge-reserve\)\s*\)/,
+  "opaque code and Mermaid remain contained within the prose/report lane",
+);
+assert.match(
+  codeBlockRule[1],
+  /margin-inline:\s*0/,
+  "Research code blocks do not inherit shared wide-block centering",
+);
+assert.match(
+  codeBlockRule[1],
+  /transform:\s*none/,
+  "Research code blocks do not translate under the provenance reserve",
+);
+assert.match(
+  css,
+  /\.rr-codeblock \.cave-md > \.cm-mermaid-diagram/,
+  "Mermaid uses the same reserve-excluding opaque block wrapper",
+);
 assert.match(
   css,
   /@container document-reader \(max-width: 52rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
@@ -334,6 +388,18 @@ for (const rejectedSelector of [
     `${rejectedSelector} derives its tint from the danger semantic`,
   );
 }
+const unresolvedAnchorInteraction = css.match(
+  /\.research-provenance-edge__item--unresolved:hover[\s\S]*?\{([^}]*)\}/,
+);
+assert.ok(
+  unresolvedAnchorInteraction,
+  "unresolved anchors retain a dedicated hover/selected state",
+);
+assert.match(
+  unresolvedAnchorInteraction[1],
+  /var\(--color-danger\)/,
+  "unresolved anchor interaction paint retains its semantic danger tint",
+);
 const mutedStatus = css.match(/^\.rr-srcstat--muted \{([^}]*)\}/m);
 assert.ok(mutedStatus, "the candidate status tone still exists");
 assert.doesNotMatch(
@@ -345,6 +411,39 @@ assert.match(
   css,
   /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*?\.rr-inline-ref[\s\S]*?\.rr-krfocus[\s\S]*?document-reader__preferences-trigger[\s\S]*?min-height:\s*var\(--touch-target\)[\s\S]*?\.rr-inline-ref[\s\S]*?\.rr-krfocus[\s\S]*?\.rr-btn--accent[\s\S]*?document-reader__preferences-trigger[\s\S]*?min-width:\s*var\(--touch-target\)/,
   "coarse-pointer Research controls meet the touch target in both dimensions",
+);
+const provenanceButtonRule = css.match(
+  /^\.research-provenance-edge__item \{([^}]*)\}/m,
+);
+const provenanceAnchorRule = css.match(
+  /^\.research-provenance-edge__anchor \{([^}]*)\}/m,
+);
+assert.ok(provenanceButtonRule, "the provenance hit-target rule exists");
+assert.ok(provenanceAnchorRule, "the painted provenance anchor rule exists");
+assert.match(
+  provenanceButtonRule[1],
+  /min-width:\s*var\(--space-8\)/,
+  "the provenance button owns the token-sized hit width",
+);
+assert.match(
+  provenanceButtonRule[1],
+  /min-height:\s*var\(--space-8\)/,
+  "the provenance button owns the token-sized hit height",
+);
+assert.match(
+  provenanceButtonRule[1],
+  /background:\s*transparent/,
+  "the larger provenance button stays visually invisible",
+);
+assert.match(
+  provenanceAnchorRule[1],
+  /min-width:\s*var\(--space-6\)/,
+  "the painted anchor is narrower than its button hit target",
+);
+assert.match(
+  provenanceAnchorRule[1],
+  /min-height:\s*var\(--space-6\)/,
+  "the painted anchor is shorter than its button hit target",
 );
 for (const duplicatedBaseSelector of [
   ".rr-doc h1",
