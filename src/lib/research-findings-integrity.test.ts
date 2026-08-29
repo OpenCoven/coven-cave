@@ -292,6 +292,16 @@ test("unsupported container fences remain visible like parser prose", () => {
   assert.equal(integrity.summary.kind, "unresolved");
 });
 
+test("deeply indented backtick lines do not form inline code across prose", () => {
+  const markdown = "    ```\n[S1]\n    ```";
+  const sources = [source("S1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1"]);
+
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("visible document titles count real ledger ids without duplicate prose references", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",

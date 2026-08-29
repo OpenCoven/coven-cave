@@ -130,7 +130,10 @@ function isUnsupportedContainerFenceRun(
 
   const lineStart = input.lastIndexOf("\n", index - 1) + 1;
   const prefix = input.slice(lineStart, index);
-  return /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(prefix);
+  return (
+    /^[ \t]+$/.test(prefix) ||
+    /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(prefix)
+  );
 }
 
 function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
