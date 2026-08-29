@@ -175,20 +175,22 @@ assert.deepEqual(ciWorkflow.on.workflow_dispatch, {
 });
 assert.equal(
   ciWorkflow.concurrency.group,
-  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}",
-  "each pull request and its recovery dispatch must share one concurrency key",
+  "ci-${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number || inputs.expected_pr_number || github.run_id) }}",
+  "main pushes must share one key while each pull request and its recovery dispatch share a PR-scoped key",
 );
-// Sharing the key is deliberate; CANCELLING across it is not. A dispatch
-// resolves to the same group as the run it is rescuing, so with a blanket
-// cancel-in-progress it kills that run and the required check never reports —
-// observed on #4618, where one head collected three cancelled runs and no
-// verdict, each cancellation feeding ci-recovery's `cancelled_latest_run`
-// wedge test and provoking the next dispatch (cave-f22tp). Excluded from
-// cancellation, a dispatch queues behind the in-flight run instead.
+// Main pushes share a constant key and cancel stale predecessors. Sharing the
+// PR key is also deliberate, but CANCELLING from a recovery dispatch is not: a
+// dispatch resolves to the same group as the run it is rescuing, so with a
+// blanket cancel-in-progress it kills that run and the required check never
+// reports — observed on #4618, where one head collected three cancelled runs
+// and no verdict, each cancellation feeding ci-recovery's
+// `cancelled_latest_run` wedge test and provoking the next dispatch
+// (cave-f22tp). Excluded from cancellation, a dispatch queues behind the
+// in-flight run instead.
 assert.equal(
   ciWorkflow.concurrency["cancel-in-progress"],
-  "${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}",
-  "a recovery dispatch must never cancel the run it exists to rescue",
+  "${{ github.event_name != 'workflow_dispatch' }}",
+  "a main push must cancel its predecessor while a recovery dispatch never cancels the run it exists to rescue",
 );
 const expectedSubordinateJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
