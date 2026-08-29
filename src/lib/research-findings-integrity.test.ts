@@ -155,6 +155,13 @@ test("balanced link stripping preserves visible labels while removing destinatio
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("inline-link labels remain detectable when their ledger row is missing", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S9](https://x.test/doc)", []);
+  assert.deepEqual(integrity.referencedIds, ["S9"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S9"]);
+  assert.equal(integrity.summary.kind, "unavailable");
+});
+
 test("malformed links preserve citations rendered as ordinary prose", () => {
   const integrity = deriveResearchFindingsIntegrity("See [paper](bad [S1])", [
     source("S1", "used"),
@@ -311,6 +318,17 @@ test("HTML comments take the same precedence as the findings parser", () => {
 
   const integrity = deriveResearchFindingsIntegrity(markdown, sources);
   assert.deepEqual(integrity.referencedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("comment removal repeats until stable like the findings parser", () => {
+  const markdown = "<!<!-- hidden -->-- [S1] C2 -->";
+  const sources = [source("S1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, []);
+
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "none");
 });
 

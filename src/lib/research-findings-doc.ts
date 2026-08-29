@@ -305,7 +305,7 @@ function sectionRefIds(blocks: FindingsBlock[]): string[] {
 
 /** Strip the leading `<!-- research-provenance … -->` header (and any other
  *  HTML comments) so it never renders as prose. */
-function stripComments(markdown: string): string {
+export function stripFindingsComments(markdown: string): string {
   let current = markdown;
   let previous: string;
   do {
@@ -321,7 +321,7 @@ function stripComments(markdown: string): string {
  */
 export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[]): FindingsDoc {
   const resolver = buildRefResolver(sources);
-  const lines = stripComments(markdown ?? "").split(/\r?\n/);
+  const lines = stripFindingsComments(markdown ?? "").split(/\r?\n/);
 
   let title: string | null = null;
   let lede: FindingsSpan[] | null = null;

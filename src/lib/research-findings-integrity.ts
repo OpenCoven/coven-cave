@@ -3,6 +3,7 @@ import {
   findRecognizedFindingsRefs,
   matchFindingsFenceRun,
   matchFindingsInlineLinkAt,
+  stripFindingsComments,
 } from "./research-findings-doc.ts";
 
 export type ResearchIntegritySummaryKind =
@@ -46,27 +47,11 @@ function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: stri
 }
 
 function preprocessMarkdownForIntegrity(markdown: string): string {
-  const withoutComments = stripHtmlComments(markdown ?? "");
+  const withoutComments = stripFindingsComments(markdown ?? "");
   const withoutBlocks = stripFencedCode(withoutComments);
   const withoutCode = stripInlineCode(withoutBlocks);
   const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode);
   return stripBareUrls(withoutMarkdownTargets);
-}
-
-function stripHtmlComments(markdown: string): string {
-  let sanitized = "";
-  let cursor = 0;
-
-  while (cursor < markdown.length) {
-    const commentStart = markdown.indexOf("<!--", cursor);
-    if (commentStart === -1) return sanitized + markdown.slice(cursor);
-    const commentEnd = markdown.indexOf("-->", commentStart + 4);
-    if (commentEnd === -1) return sanitized + markdown.slice(cursor);
-    sanitized += markdown.slice(cursor, commentStart);
-    cursor = commentEnd + 3;
-  }
-
-  return sanitized;
 }
 
 function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {
@@ -221,7 +206,7 @@ function stripMarkdownLinksAndImages(markdown: string): string {
       }
       const inlineLink = matchFindingsInlineLinkAt(markdown, index);
       if (inlineLink) {
-        sanitized += stripMarkdownLinksAndImages(inlineLink.text);
+        sanitized += `[${stripMarkdownLinksAndImages(inlineLink.text)}]`;
         index += inlineLink.length;
         continue;
       }
