@@ -5,6 +5,7 @@ import {
   deriveResearchFindingsIntegrity,
   scanBracketedSourceIds,
 } from "./research-findings-integrity.ts";
+import { parseFindingsDoc } from "./research-findings-doc.ts";
 
 function source(id: string, status: ResearchSourceRef["status"]): ResearchSourceRef {
   return { id, title: `${id} title`, sourceType: "web", status };
@@ -49,7 +50,7 @@ test("scanner remains stable across repeated calls", () => {
 });
 
 test("empty ledger with citations reports unavailable and keeps conflicts separate", () => {
-  const integrity = deriveResearchFindingsIntegrity("Critical![S1]. Conflict C2.", []);
+  const integrity = deriveResearchFindingsIntegrity("Critical: [S1]. Conflict C2.", []);
   assert.deepEqual(integrity, {
     ledger: "empty",
     referencedIds: ["S1"],
@@ -215,37 +216,16 @@ test("undefined reference-style links preserve visible source suffixes", () => {
   assert.equal(integrity.summary.kind, "unavailable");
 });
 
-test("reference definitions do not create source or conflict markers", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "[paper]: /docs/manual-1\n[conflict]: /conflicts/C2\nPlain prose.",
-    [source("manual-1", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, []);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "none");
-});
+test("reference definitions remain scan-visible when the parser renders them as prose", () => {
+  const markdown = "[paper]: /docs/manual-1/C2";
+  const sources = [source("manual-1", "candidate")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["manual-1", "C2"]);
 
-test("multiline reference definitions do not expose destinations or titles", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    '[destination]:\n  /docs/S1\n[title]: /report\n  "C2 and S1"\nPlain prose.',
-    [source("S1", "used")],
-  );
-  assert.deepEqual(integrity.referencedIds, []);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "none");
-});
-
-test("multiline reference titles remain hidden until their closing delimiter", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    '[paper]: /report "hidden S1\nand C2"\nVisible [S3].',
-    [source("S1", "used"), source("S3", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S3"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
+  assert.deepEqual(integrity.conflictIds, ["C2"]);
+  assert.equal(integrity.summary.kind, "conflicting");
 });
 
 test("citation prose beginning with a source label is not hidden as a definition", () => {
@@ -272,97 +252,19 @@ test("nested visible citations remain unresolved without ledger rows", () => {
   assert.equal(integrity.summary.kind, "unavailable");
 });
 
-test("reference definitions inside markdown containers remain hidden", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "> [quoted]: /S1\n- [listed]: /C2\nVisible [S3].",
-    [source("S1", "used"), source("S3", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S3"]);
+test("unsupported container fences remain visible like parser prose", () => {
+  const markdown = "> ~~~\n> [S1] C2\n> ~~~";
+  const sources = [source("S1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1", "C2"]);
+
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
+  assert.deepEqual(integrity.conflictIds, ["C2"]);
+  assert.equal(integrity.summary.kind, "conflicting");
 });
 
-test("fenced code inside markdown containers does not create evidence states", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "> ~~~\n> [S1] C2\n> ~~~\n1. ```\n   [S3] C4\n   ```\nVisible [S5].",
-    [source("S1", "used"), source("S3", "used"), source("S5", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S5"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("unclosed container fences stop when their markdown container ends", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "> ```\n> hidden [S1]\nVisible [S2].\n\n- ~~~\n  hidden [S3]\nVisible [S4].",
-    [
-      source("S1", "used"),
-      source("S2", "candidate"),
-      source("S3", "used"),
-      source("S4", "candidate"),
-    ],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S2", "S4"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("fences on list continuation lines inherit the list boundary", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "- item\n  ```\n  hidden [S1]\nVisible [S2].",
-    [source("S1", "used"), source("S2", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S2"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("list fences remain active across blank lines", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "- ~~~\n  hidden [S1]\n\n  still hidden [S2]\n  ~~~\nVisible [S3].",
-    [source("S1", "used"), source("S2", "used"), source("S3", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S3"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("outer list context resumes after a nested list", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "- outer\n  - inner\n    detail\n\n  ~~~\n  hidden [S1]\nVisible [S2].",
-    [source("S1", "used"), source("S2", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S2"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("same-line nested list markers preserve fenced-code boundaries", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "- - ```\n    hidden [S1] C1\n    ```\nVisible [S2].",
-    [source("S1", "used"), source("S2", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S2"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("list-then-blockquote containers preserve fenced-code boundaries", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "- > ~~~\n  > [S9] C1\n  > ~~~\nVisible [S2].",
-    [source("S2", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S2"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.deepEqual(integrity.conflictIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
-});
-
-test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
+test("visible document titles count real ledger ids without duplicate prose references", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",
     [source("manual-1", "candidate")],
@@ -393,14 +295,14 @@ test("html comments do not create source or conflict markers", () => {
   assert.equal(integrity.summary.kind, "verified");
 });
 
-test("comment delimiters inside code do not hide visible citations", () => {
-  const integrity = deriveResearchFindingsIntegrity(
-    "`<!--` Visible [S1]. `-->`\n```\n<!--\n```\nVisible [S2]. -->",
-    [source("S1", "used"), source("S2", "candidate")],
-  );
-  assert.deepEqual(integrity.referencedIds, ["S1", "S2"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
+test("HTML comments take the same precedence as the findings parser", () => {
+  const markdown = "`<!--` [S1] `-->`";
+  const sources = [source("S1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, []);
+
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.equal(integrity.summary.kind, "none");
 });
 
 test("parser-recognized ids survive bracket prose alternatives", () => {
@@ -487,7 +389,7 @@ test("plural candidate summaries use the exact plural label", () => {
 });
 
 test("used-only sources summarize as verified even when punctuation touches a bare label", () => {
-  const integrity = deriveResearchFindingsIntegrity("Critical![S1]", [source("S1", "used")]);
+  const integrity = deriveResearchFindingsIntegrity("Critical:[S1]", [source("S1", "used")]);
   assert.deepEqual(integrity.counts, { candidate: 0, used: 1, conflicting: 0, rejected: 0 });
   assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.conflictIds, []);
