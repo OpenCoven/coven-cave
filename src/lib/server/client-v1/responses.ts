@@ -28,7 +28,6 @@ import {
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
 import type { ClientV1RateLimitResult } from "./rate-limit.ts";
-import type { ClientV1CompatibilityOverride } from "./conformance-compatibility.ts";
 
 export type ClientV1EnvelopeOptions = {
   capabilities?: readonly ClientV1Capability[];
@@ -40,7 +39,6 @@ export type ClientV1EnvelopeOptions = {
 };
 
 export type ClientV1SuccessResponseOptions = ClientV1EnvelopeOptions & {
-  compatibility?: ClientV1CompatibilityOverride;
   headers?: HeadersInit;
   status?: number;
 };
@@ -204,19 +202,9 @@ export function clientV1SuccessResponse<TData extends ClientV1Record>(
   data: TData,
   options: ClientV1SuccessResponseOptions = {},
 ): Response {
-  const { compatibility, headers, status = 200, ...envelopeOptions } = options;
+  const { headers, status = 200, ...envelopeOptions } = options;
   assertSuccessStatus(status);
-  const envelope = clientV1Success(data, envelopeOptions);
-  return Response.json(
-    compatibility
-      ? {
-          ...envelope,
-          apiVersion: compatibility.apiVersion,
-          minimumClientVersion: compatibility.minimumClientVersion,
-        }
-      : envelope,
-    { headers, status },
-  );
+  return Response.json(clientV1Success(data, envelopeOptions), { headers, status });
 }
 
 export function clientV1ErrorResponse(

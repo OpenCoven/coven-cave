@@ -73,6 +73,7 @@
     "test:api": "node scripts/run-tests.mjs api",
     "test:api:http": "node scripts/api-http-smoke.mjs",
     "test:client-v1:conformance": "node scripts/client-v1-conformance.mjs",
+    "test:client-v1:compatibility-control": "node scripts/client-v1-compatibility-control.integration.test.mjs",
     "test:client-v1:authority-takeover": "node --experimental-strip-types scripts/client-v1-authority-takeover.mjs",
     "test:research-media:ffmpeg": "node --experimental-strip-types scripts/research-media-ffmpeg.integration.test.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
