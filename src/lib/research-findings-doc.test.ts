@@ -230,6 +230,78 @@ Overview claim [S1].
   ]);
 });
 
+test("later section ids disambiguate against earlier generated block ids", () => {
+  const doc = assertUniqueTargetIds(`# Findings
+
+## Results
+
+First claim [S1].
+
+## Results block 1
+
+Second claim [S1].
+`);
+
+  assert.deepEqual(doc.sections.map((section) => section.id), [
+    "s-results",
+    "s-results-block-1-2",
+  ]);
+  assert.deepEqual(doc.sections.map((section) => section.blocks[0].id), [
+    "s-results-block-1",
+    "s-results-block-1-2-block-1",
+  ]);
+});
+
+test("later section ids disambiguate against earlier preamble block ids", () => {
+  const doc = assertUniqueTargetIds(`# Findings
+
+Preamble claim [S1].
+
+## Overview block 1
+
+Section claim [S1].
+`);
+
+  assert.deepEqual(doc.sections.map((section) => section.id), [
+    "s-overview",
+    "s-overview-block-1-2",
+  ]);
+  assert.deepEqual(doc.sections.map((section) => section.blocks[0].id), [
+    "s-overview-block-1",
+    "s-overview-block-1-2-block-1",
+  ]);
+});
+
+test("generated child ids disambiguate against earlier cross-level section ids", () => {
+  const doc = assertUniqueTargetIds(`# Findings
+
+## Results block 1 item 1
+
+Earlier item-shaped section [S1].
+
+## Results block 2 row 1
+
+Earlier row-shaped section [S1].
+
+## Results
+
+- List claim [S1]
+
+| Finding | Source |
+| --- | --- |
+| Table claim | [S1] |
+`);
+
+  const results = doc.sections.at(-1);
+  assert.ok(results);
+  const list = results.blocks[0];
+  const table = results.blocks[1];
+  assert.ok(list.kind === "ul");
+  assert.ok(table.kind === "table");
+  assert.equal(list.items[0].id, "s-results-block-1-item-1-2");
+  assert.equal(table.rows[0].id, "s-results-block-2-row-1-2");
+});
+
 test("provenance comment never becomes prose", () => {
   const doc = parseFindingsDoc(FINDINGS, SOURCES);
   const firstSpan = doc.lede?.[0] as { text?: string } | undefined;

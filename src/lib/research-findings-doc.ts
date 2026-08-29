@@ -215,20 +215,48 @@ function slugify(heading: string, index: number): string {
   return `s-${base || `section-${index + 1}`}`;
 }
 
+type TargetIdAllocator = {
+  allocate: (baseId: string) => string;
+  release: (id: string) => void;
+};
+
+function createTargetIdAllocator(): TargetIdAllocator {
+  const usedIds = new Set<string>();
+
+  const allocate = (baseId: string) => {
+    let id = baseId;
+    let occurrence = 2;
+    while (usedIds.has(id)) {
+      id = `${baseId}-${occurrence}`;
+      occurrence += 1;
+    }
+    usedIds.add(id);
+    return id;
+  };
+
+  return {
+    allocate,
+    release: (id) => {
+      usedIds.delete(id);
+    },
+  };
+}
+
 function uniqueSectionId(
   heading: string,
   index: number,
-  usedTargetIds: Set<string>,
+  allocator: TargetIdAllocator,
 ): string {
-  const baseId = slugify(heading, index);
-  let sectionId = baseId;
-  let occurrence = 2;
-  while (usedTargetIds.has(sectionId)) {
-    sectionId = `${baseId}-${occurrence}`;
-    occurrence += 1;
+  return allocator.allocate(slugify(heading, index));
+}
+
+function releaseBlockTargetIds(block: FindingsBlock, allocator: TargetIdAllocator): void {
+  allocator.release(block.id);
+  if (block.kind === "ul" || block.kind === "ol") {
+    for (const item of block.items) allocator.release(item.id);
+  } else if (block.kind === "table") {
+    for (const row of block.rows) allocator.release(row.id);
   }
-  usedTargetIds.add(sectionId);
-  return sectionId;
 }
 
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
@@ -267,6 +295,7 @@ function parseBlocks(
   lines: string[],
   resolver: RefResolver,
   idPrefix: string,
+  allocator: TargetIdAllocator,
 ): FindingsBlock[] {
   const blocks: FindingsBlock[] = [];
   let paragraph: string[] = [];
@@ -275,7 +304,7 @@ function parseBlocks(
 
   const nextBlockId = () => {
     blockIndex += 1;
-    return `${idPrefix}-block-${blockIndex}`;
+    return allocator.allocate(`${idPrefix}-block-${blockIndex}`);
   };
   const refsForSpans = (spans: FindingsSpan[]) => {
     const refIds: string[] = [];
@@ -301,7 +330,7 @@ function parseBlocks(
     if (list && list.items.length) {
       const blockId = nextBlockId();
       const items = list.items.map((spans, itemIndex) => ({
-        id: `${blockId}-item-${itemIndex + 1}`,
+        id: allocator.allocate(`${blockId}-item-${itemIndex + 1}`),
         spans,
         refIds: refsForSpans(spans),
       }));
@@ -358,7 +387,7 @@ function parseBlocks(
         const refIds: string[] = [];
         for (const cell of cells) collectRefIds(cell, refIds);
         rows.push({
-          id: `${blockId}-row-${rows.length + 1}`,
+          id: allocator.allocate(`${blockId}-row-${rows.length + 1}`),
           cells,
           refIds,
         });
@@ -442,6 +471,7 @@ export function stripFindingsComments(markdown: string): string {
  */
 export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[]): FindingsDoc {
   const resolver = buildRefResolver(sources);
+  const targetIds = createTargetIdAllocator();
   const lines = stripFindingsComments(markdown ?? "").split(/\r?\n/);
 
   let title: string | null = null;
@@ -494,21 +524,20 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   // Lede: only a *leading blockquote* becomes the italic tagline under the
   // title (matching the design). Plain opening prose stays body text so a
   // heading-less "title + paragraph" doc doesn't lose its content to a lede.
-  const preambleBlocks = parseBlocks(preamble, resolver, "s-overview");
+  const overviewId = targetIds.allocate("s-overview");
+  const preambleBlocks = parseBlocks(preamble, resolver, overviewId, targetIds);
   let leadBlocks: FindingsBlock[] = preambleBlocks;
   if (preambleBlocks[0]?.kind === "quote") {
     lede = preambleBlocks[0].spans;
-    ledeId = "research-question";
+    releaseBlockTargetIds(preambleBlocks[0], targetIds);
+    ledeId = targetIds.allocate("research-question");
     leadBlocks = preambleBlocks.slice(1);
   }
-
-  const usedTargetIds = new Set<string>();
-  if (ledeId) usedTargetIds.add(ledeId);
-  if (leadBlocks.length) usedTargetIds.add("s-overview");
+  if (!leadBlocks.length) targetIds.release(overviewId);
 
   groups.forEach((group, index) => {
-    const sectionId = uniqueSectionId(group.heading, index, usedTargetIds);
-    const blocks = parseBlocks(group.lines, resolver, sectionId);
+    const sectionId = uniqueSectionId(group.heading, index, targetIds);
+    const blocks = parseBlocks(group.lines, resolver, sectionId, targetIds);
     sections.push({
       id: sectionId,
       heading: group.heading,
@@ -520,7 +549,7 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   // Leftover preamble prose (rare) is preserved as a leading, heading-less
   // section rather than discarded.
   if (leadBlocks.length) {
-    sections.unshift({ id: "s-overview", heading: "", blocks: leadBlocks, refIds: sectionRefIds(leadBlocks) });
+    sections.unshift({ id: overviewId, heading: "", blocks: leadBlocks, refIds: sectionRefIds(leadBlocks) });
   }
 
   const refIds: string[] = [];
