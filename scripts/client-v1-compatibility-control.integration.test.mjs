@@ -270,6 +270,23 @@ function assertSafeError(response, body) {
   });
 }
 
+async function removeTestBuildOutputs(root) {
+  const removals = await Promise.allSettled([
+    rm(root, { recursive: true, force: true }),
+    rm(path.join(repositoryRoot, ".next"), { recursive: true, force: true }),
+    rm(path.join(repositoryRoot, "server.mjs"), { force: true }),
+  ]);
+  const failures = removals
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures,
+      "compatibility-control test build cleanup failed",
+    );
+  }
+}
+
 test("builds and launches normal and conformance packaged Client v1 artifacts", async () => {
   const scratchParent = path.join(repositoryRoot, ".tmp");
   await mkdir(scratchParent, { recursive: true });
@@ -320,6 +337,7 @@ test("builds and launches normal and conformance packaged Client v1 artifacts", 
       if (server) await stopArtifact(server);
     }
   } finally {
-    await rm(root, { recursive: true, force: true });
+    // Never leave the conformance-enabled build in the canonical package path.
+    await removeTestBuildOutputs(root);
   }
 });
