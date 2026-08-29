@@ -1476,8 +1476,10 @@ All four call `requireClientV1Admin`, which:
    [the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22;
    a handler-level test cannot see it, because it never runs the proxy. The
    check in `requireClientV1Admin` is not redundant — it is what answers if the
-   admin family ever stops falling through — but it is the *second* refusal, and
-   the 503 for an unset token is the only one of its answers a caller observes.
+   admin family ever stops falling through — but it is the *second* refusal.
+   With no configured token, a verified direct-loopback development request
+   receives the proxy's per-boot marker and reaches the route; a missing marker
+   still receives the route-level 503.
 3. For **mutations only** (the decision POST and the credential DELETE),
    requires **at least one** of `Origin` and `Referer`, and requires every one
    that *is* present to be same-origin. A request carrying neither is refused;
