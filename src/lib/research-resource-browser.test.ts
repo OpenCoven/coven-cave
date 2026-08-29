@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   remoteContentAllowed,
+  remoteContentPreviewAllowed,
   researchResourceSourceUrl,
 } from "./research-resource-browser.ts";
 import type { ResourceManifestV1 } from "./research-resource-contracts.ts";
@@ -29,6 +30,30 @@ test("remote content consent is fail-closed", () => {
   assert.equal(remoteContentAllowed(undefined), false, "missing consent never loads");
   assert.equal(remoteContentAllowed({ allowRemoteContent: false }), false, "explicit false never loads");
   assert.equal(remoteContentAllowed({ allowRemoteContent: true }), true, "explicit true loads");
+});
+
+test("remote content preview requires rollout availability and explicit consent", () => {
+  assert.equal(remoteContentPreviewAllowed(false, undefined), false, "both gates default closed");
+  assert.equal(
+    remoteContentPreviewAllowed(true, undefined),
+    false,
+    "the rollout flag never substitutes for missing consent",
+  );
+  assert.equal(
+    remoteContentPreviewAllowed(true, { allowRemoteContent: false }),
+    false,
+    "explicit denial wins over rollout availability",
+  );
+  assert.equal(
+    remoteContentPreviewAllowed(false, { allowRemoteContent: true }),
+    false,
+    "consent cannot bypass a disabled rollout",
+  );
+  assert.equal(
+    remoteContentPreviewAllowed(true, { allowRemoteContent: true }),
+    true,
+    "remote content loads only when both independent gates are open",
+  );
 });
 
 test("source URL prefers the explicit sourceUri", () => {

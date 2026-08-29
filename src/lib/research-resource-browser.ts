@@ -10,13 +10,14 @@
  */
 
 import { paperArxivUrl } from "./research-paper-view.ts";
+import type { ContextPackV1 } from "./research-protocol/context-pack.ts";
 import type { ResourceManifestV1 } from "./research-resource-contracts.ts";
 
 /** The slice of the Context Pack consent that gates the browser view. */
-export type ResearchRemoteContentConsent = {
-  /** Mirrors `ContextPackConsentV1.allowRemoteContent`. */
-  allowRemoteContent: boolean;
-};
+export type ResearchRemoteContentConsent = Pick<
+  ContextPackV1["consent"],
+  "allowRemoteContent"
+>;
 
 /**
  * Fail-closed: remote content loads only when consent is present AND explicit.
@@ -24,9 +25,22 @@ export type ResearchRemoteContentConsent = {
  * the protocol's `privacy.remoteContent`-vs-consent check in `research-run.ts`.
  */
 export function remoteContentAllowed(
-  consent: Pick<ResearchRemoteContentConsent, "allowRemoteContent"> | undefined,
+  consent: ResearchRemoteContentConsent | undefined,
 ): boolean {
   return consent?.allowRemoteContent === true;
+}
+
+/**
+ * The browser preview has two independent gates. The public rollout flag only
+ * makes the capability available; it never stands in for a Context Pack's
+ * explicit consent. Missing consent therefore stays locked even when an
+ * operator enables the rollout.
+ */
+export function remoteContentPreviewAllowed(
+  rolloutEnabled: boolean,
+  consent: ResearchRemoteContentConsent | undefined,
+): boolean {
+  return rolloutEnabled && remoteContentAllowed(consent);
 }
 
 /**

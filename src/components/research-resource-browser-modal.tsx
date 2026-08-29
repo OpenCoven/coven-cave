@@ -2,6 +2,10 @@
 
 import { Icon } from "@/lib/icon";
 import { Modal } from "@/components/ui/modal";
+import {
+  remoteContentPreviewAllowed,
+  type ResearchRemoteContentConsent,
+} from "@/lib/research-resource-browser";
 
 export type ResearchResourceBrowserModalProps = {
   open: boolean;
@@ -10,8 +14,10 @@ export type ResearchResourceBrowserModalProps = {
   title: string;
   /** Browser-capable source URL. Untrusted data; loaded only when consent allows. */
   url: string | null;
-  /** Mirrors `consent.allowRemoteContent` — remote content is opt-in, fail-closed. */
-  allowRemoteContent: boolean;
+  /** Rollout availability only. This must never be treated as user consent. */
+  remoteContentRolloutEnabled: boolean;
+  /** Consent from an explicitly selected Context Pack. Missing consent fails closed. */
+  contextPackConsent: ResearchRemoteContentConsent | undefined;
 };
 
 /**
@@ -34,8 +40,13 @@ export function ResearchResourceBrowserModal({
   onClose,
   title,
   url,
-  allowRemoteContent,
+  remoteContentRolloutEnabled,
+  contextPackConsent,
 }: ResearchResourceBrowserModalProps) {
+  const allowRemoteContent = remoteContentPreviewAllowed(
+    remoteContentRolloutEnabled,
+    contextPackConsent,
+  );
   const browserUrl = allowRemoteContent ? url : null;
   return (
     <Modal
@@ -50,16 +61,18 @@ export function ResearchResourceBrowserModal({
             <Icon name="ph:lock-simple" width={16} height={16} aria-hidden />
             <strong>Remote content is off</strong>
             <p>
-              This resource’s local text stays the default view. Turn on remote
-              content to load its source URL here.
+              This resource’s local text stays the default view. Loading its
+              source requires an explicitly selected Context Pack that allows
+              remote content.
             </p>
           </div>
         ) : browserUrl ? (
           <iframe
             src={browserUrl}
             title={`${title} — browser preview`}
-            className="research-resource-browser__frame"
+            className="research-resource-browser__frame focus-ring"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+            tabIndex={0}
           />
         ) : (
           <div className="research-resource-browser__gated" role="status">

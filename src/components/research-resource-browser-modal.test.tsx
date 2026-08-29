@@ -2,6 +2,7 @@
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { describe, expect, test, vi } from "vitest";
+import { FOCUSABLE } from "@/lib/use-focus-trap";
 
 import { ResearchResourceBrowserModal } from "./research-resource-browser-modal";
 
@@ -19,7 +20,8 @@ const baseProps = {
   onClose: () => {},
   title: "Field notes",
   url: "https://example.com/article",
-  allowRemoteContent: true,
+  remoteContentRolloutEnabled: true,
+  contextPackConsent: { allowRemoteContent: true },
 };
 
 function render(props: Partial<typeof baseProps> = {}) {
@@ -50,7 +52,7 @@ describe("ResearchResourceBrowserModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test("passes the resource URL to the sandboxed browser frame when remote content is allowed", () => {
+  test("passes the resource URL only when rollout and explicit consent are both enabled", () => {
     const renderer = render({ open: true, url: "https://example.com/article" });
 
     const frame = renderer.root.findByType("iframe");
@@ -58,10 +60,26 @@ describe("ResearchResourceBrowserModal", () => {
     expect(frame.props.title).toBe("Field notes — browser preview");
     expect(frame.props.sandbox).toContain("allow-scripts");
     expect(frame.props.sandbox).toContain("allow-forms");
+    expect(frame.props.tabIndex).toBe(0);
+    expect(frame.props.className).toContain("focus-ring");
+    expect(FOCUSABLE).toContain("[tabindex]:not([tabindex='-1'])");
   });
 
-  test("never loads the URL when remote content consent is off", () => {
-    const renderer = render({ open: true, allowRemoteContent: false });
+  test.each([
+    {
+      label: "consent is missing",
+      props: { contextPackConsent: undefined },
+    },
+    {
+      label: "consent explicitly denies remote content",
+      props: { contextPackConsent: { allowRemoteContent: false } },
+    },
+    {
+      label: "the rollout is disabled despite explicit consent",
+      props: { remoteContentRolloutEnabled: false },
+    },
+  ])("never loads the URL when $label", ({ props }) => {
+    const renderer = render({ open: true, ...props });
 
     expect(renderer.root.findAllByType("iframe")).toHaveLength(0);
     const gated = renderer.root.findByProps({ role: "status" });
@@ -69,7 +87,7 @@ describe("ResearchResourceBrowserModal", () => {
   });
 
   test("shows a no-source notice when consent is on but the resource has no URL", () => {
-    const renderer = render({ open: true, url: null, allowRemoteContent: true });
+    const renderer = render({ open: true, url: null });
 
     expect(renderer.root.findAllByType("iframe")).toHaveLength(0);
     const gated = renderer.root.findByProps({ role: "status" });

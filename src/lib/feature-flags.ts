@@ -44,9 +44,10 @@ export function caveResearchContextPacks(): boolean {
 
 /**
  * Browser-capable resource preview: loading a resource's source URL in the
- * Research Desk browser modal. Maps 1:1 to the Context Pack
- * `consent.allowRemoteContent` gate — remote content is opt-in, fail-closed,
- * and requires the authoritative resource catalog (cave-m13fh).
+ * Research Desk browser modal. This is rollout availability only: callers
+ * must separately prove an explicitly selected Context Pack's
+ * `consent.allowRemoteContent`. The flag never substitutes for consent and
+ * still requires the authoritative resource catalog (cave-m13fh).
  */
 export function caveResearchRemoteContent(): boolean {
   return caveResearchResources()

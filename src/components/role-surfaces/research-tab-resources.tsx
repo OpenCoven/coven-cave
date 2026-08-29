@@ -1401,7 +1401,12 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         onClose={() => setBrowserPreview(null)}
         title={browserPreview?.title ?? ""}
         url={browserPreview?.url ?? null}
-        allowRemoteContent={caveResearchRemoteContent()}
+        remoteContentRolloutEnabled={caveResearchRemoteContent()}
+        /* Resources has no authoritative, explicitly selected Context Pack.
+         * The Topic Discovery picker owns private local state and auto-selects
+         * its first result, so it cannot be lifted here as consent. Keep the
+         * optional consent absent until an explicit owner threads it through. */
+        contextPackConsent={undefined}
       />
     </section>
   );
