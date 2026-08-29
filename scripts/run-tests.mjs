@@ -138,6 +138,7 @@ export const SUITES = {
     "src/components/role-surfaces/familiar-room-interactions.test.tsx",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-reader-shared.test.ts",
+    "src/components/role-surfaces/research-evidence-components.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
     "src/components/role-surfaces/research-tab-prompt.test.ts",

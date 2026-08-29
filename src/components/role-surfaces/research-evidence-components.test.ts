@@ -1,0 +1,202 @@
+import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, test } from "vitest";
+import type { FindingsSupportTarget } from "@/lib/research-findings-doc";
+import type { ResearchSourceRef } from "@/lib/research-missions";
+import { ResearchEvidenceInspector } from "./research-evidence-inspector";
+import {
+  ResearchProvenanceEdge,
+  type ResearchProvenanceTone,
+} from "./research-provenance-edge";
+
+const callbacks = {
+  onToggle: () => {},
+  onOpenUrl: () => {},
+  onCite: () => {},
+  onSupport: () => {},
+  onClose: () => {},
+};
+
+function source(
+  id: string,
+  status: ResearchSourceRef["status"],
+  title = `${id} source`,
+): ResearchSourceRef {
+  return {
+    id,
+    title,
+    sourceType: "web",
+    status,
+  };
+}
+
+function buttonTag(html: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return html.match(new RegExp(`<button[^>]*aria-label="${escaped}"[^>]*>`))?.[0] ?? "";
+}
+
+describe("ResearchProvenanceEdge", () => {
+  test("labels evidence and conflict controls and renders nothing without IDs", () => {
+    const html = renderToStaticMarkup(
+      createElement(ResearchProvenanceEdge, {
+        ids: ["S1", "C1"],
+        selectedId: null,
+        toneForId: (id): ResearchProvenanceTone =>
+          id === "C1" ? "muted" : "accent",
+        onPreview: () => {},
+        onSelect: () => {},
+      }),
+    );
+
+    assert.match(html, /role="group"/);
+    assert.match(html, /aria-label="Open evidence S1"/);
+    assert.match(html, /aria-label="Open conflict C1"/);
+    assert.match(buttonTag(html, "Open conflict C1"), /data-tone="warn"/);
+    assert.equal(
+      renderToStaticMarkup(
+        createElement(ResearchProvenanceEdge, {
+          ids: [],
+          selectedId: null,
+          toneForId: (): ResearchProvenanceTone => "accent",
+          onPreview: () => {},
+          onSelect: () => {},
+        }),
+      ),
+      "",
+    );
+  });
+
+  test("uses the selected control as the roving tab stop", () => {
+    const html = renderToStaticMarkup(
+      createElement(ResearchProvenanceEdge, {
+        ids: ["S1", "S2", "C1"],
+        selectedId: "S2",
+        toneForId: (): ResearchProvenanceTone => "accent",
+        onPreview: () => {},
+        onSelect: () => {},
+      }),
+    );
+
+    assert.match(buttonTag(html, "Open evidence S1"), /tabindex="-1"/);
+    assert.match(buttonTag(html, "Open evidence S2"), /tabindex="0"/);
+    assert.match(buttonTag(html, "Open evidence S2"), /aria-current="true"/);
+    assert.match(buttonTag(html, "Open conflict C1"), /tabindex="-1"/);
+  });
+});
+
+describe("ResearchEvidenceInspector", () => {
+  test("renders a sparse candidate source as a full card", () => {
+    const html = renderToStaticMarkup(
+      createElement(ResearchEvidenceInspector, {
+        sources: [source("S2", "candidate", "Sparse source")],
+        integrityLabel: "1 source awaits review",
+        selectedId: "S2",
+        openIds: new Set(["S2"]),
+        targetsBySource: new Map<string, FindingsSupportTarget[]>(),
+        ...callbacks,
+      }),
+    );
+
+    assert.match(html, /<article[^>]*research-evidence-card/);
+    assert.match(html, /Sparse source/);
+    assert.match(html, /Candidate/);
+    assert.match(html, />Type</);
+    assert.match(html, />web</);
+  });
+
+  test("groups every status by priority and preserves mission order within groups", () => {
+    const sources = [
+      source("S6", "rejected", "Rejected first in mission"),
+      source("S2", "used", "Used first"),
+      source("S4", "candidate", "Candidate first"),
+      source("S1", "used", "Used second"),
+      source("C1", "conflicting", "Conflict"),
+      source("S5", "candidate", "Candidate second"),
+    ];
+    const html = renderToStaticMarkup(
+      createElement(ResearchEvidenceInspector, {
+        sources,
+        integrityLabel: "1 conflict remains",
+        selectedId: null,
+        openIds: new Set<string>(),
+        targetsBySource: new Map<string, FindingsSupportTarget[]>(),
+        ...callbacks,
+      }),
+    );
+
+    const orderedTitles = [
+      "Used first",
+      "Used second",
+      "Candidate first",
+      "Candidate second",
+      "Conflict",
+      "Rejected first in mission",
+    ];
+    let previousIndex = -1;
+    for (const title of orderedTitles) {
+      const index = html.indexOf(title);
+      assert.ok(index > previousIndex, `${title} should follow the preceding priority item`);
+      previousIndex = index;
+    }
+  });
+
+  test("shows source count, integrity, and an accessible close control", () => {
+    const html = renderToStaticMarkup(
+      createElement(ResearchEvidenceInspector, {
+        sources: [source("S1", "used"), source("S2", "candidate")],
+        integrityLabel: "1 source awaits review",
+        selectedId: null,
+        openIds: new Set<string>(),
+        targetsBySource: new Map<string, FindingsSupportTarget[]>(),
+        ...callbacks,
+      }),
+    );
+
+    assert.match(html, /2 sources/);
+    assert.match(html, /1 source awaits review/);
+    assert.match(html, /aria-label="Close evidence inspector"/);
+    assert.match(buttonTag(html, "Close evidence inspector"), /focus-ring/);
+  });
+
+  test("renders only real support targets and the existing source actions", () => {
+    const richSource: ResearchSourceRef = {
+      id: "S1",
+      title: "Primary source",
+      sourceType: "journal",
+      status: "used",
+      url: "https://example.com/report",
+      publisher: "Example Journal",
+      publishedAt: "2026-08-01",
+      claim: "Observed result",
+      note: "Primary evidence",
+      confidence: 0.82,
+    };
+    const target: FindingsSupportTarget = {
+      id: "findings-overview-block-1",
+      label: "Overview",
+      sectionId: "overview",
+    };
+    const html = renderToStaticMarkup(
+      createElement(ResearchEvidenceInspector, {
+        sources: [richSource, source("S2", "candidate", "No linked evidence")],
+        integrityLabel: "1 source verified",
+        selectedId: "S1",
+        openIds: new Set(["S1", "S2"]),
+        targetsBySource: new Map([["S1", [target]]]),
+        ...callbacks,
+      }),
+    );
+
+    assert.match(html, /Observed result/);
+    assert.match(html, /Example Journal/);
+    assert.match(html, /2026-08-01/);
+    assert.match(html, /Primary evidence/);
+    assert.match(html, /82%/);
+    assert.match(html, />Overview</);
+    assert.equal((html.match(/>Open source</g) ?? []).length, 2);
+    assert.equal((html.match(/>Cite</g) ?? []).length, 2);
+    assert.equal((html.match(/rr-sd-supportlink/g) ?? []).length, 1);
+    assert.doesNotMatch(html, /Accept source|Reject source|Generated summary/);
+  });
+});
