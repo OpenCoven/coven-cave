@@ -142,6 +142,7 @@ export type ResearchIntegritySummaryKind =
   | "conflicting"
   | "candidate"
   | "verified"
+  | "rejected"
   | "none";
 
 export type ResearchFindingsIntegrity = {
@@ -156,31 +157,20 @@ export type ResearchFindingsIntegrity = {
   };
 };
 
-const BRACKETED_SOURCE_GROUP_RE =
-  /\[((?:[SR]\d+\s*)(?:,\s*[SR]\d+\s*)*)\]/g;
-const SOURCE_ID_RE = /[SR]\d+/g;
-const CONFLICT_ID_RE = /\bC\d+\b/g;
-
 export function scanBracketedSourceIds(markdown: string): string[] {
-  const ids: string[] = [];
-  for (
-    let match = BRACKETED_SOURCE_GROUP_RE.exec(markdown);
-    match;
-    match = BRACKETED_SOURCE_GROUP_RE.exec(markdown)
-  ) {
-    for (const id of match[1].match(SOURCE_ID_RE) ?? []) {
-      if (!ids.includes(id)) ids.push(id);
-    }
-  }
-  return ids;
+  // Preprocess Markdown first so fenced code, inline code, image alt text,
+  // link destinations, and bare URLs never fabricate evidence states.
 }
 
 export function deriveResearchFindingsIntegrity(
   markdown: string,
   sources: ResearchSourceRef[],
 ): ResearchFindingsIntegrity {
-  // Count ledger statuses, compare explicit bracketed IDs with real rows, keep
-  // C# conflict markers independent, then apply the precedence from the spec.
+  // Reuse parseFindingsDoc (or its exact ref-recognition rules) against the
+  // sanitized Markdown to collect actual ledger-backed source ids such as
+  // manual-1, supplement that with strict bracketed S#/R# detection for
+  // missing rows, keep C# conflict markers independent, preserve first-seen
+  // order, then apply the precedence from the spec.
 }
 ```
 
@@ -191,7 +181,21 @@ Implement singular/plural labels exactly:
 - `1 conflict remains` / `N conflicts remain`
 - `1 source awaits review` / `N sources await review`
 - `1 source verified` / `N sources verified`
+- `1 rejected source cited` / `N rejected sources cited`
 - `This report does not cite sources`
+
+Primary-summary precedence must be:
+
+1. unavailable
+2. unresolved
+3. conflicting
+4. candidate
+5. verified
+6. rejected
+7. none
+
+The `none` summary is valid only when the sanitized document contains no
+source or conflict tokens at all.
 
 - [ ] **Step 4: Run the integrity tests**
 

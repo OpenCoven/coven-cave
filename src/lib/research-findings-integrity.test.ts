@@ -18,6 +18,23 @@ test("scanner keeps first-seen order and skips bracketed conflict or unknown ids
   assert.deepEqual(scanBracketedSourceIds("Claim [S2, C1, S1, X2, S2, R2]."), ["S2", "S1", "R2"]);
 });
 
+test("scanner ignores markdown syntax that only looks like evidence", () => {
+  assert.deepEqual(
+    scanBracketedSourceIds(
+      [
+        "Claim [S1].",
+        "[paper](https://x.test/evidence/C1)",
+        "```md",
+        "[S2] C2",
+        "```",
+        "Inline `[S3] C3` stays code.",
+        "![S4](https://x.test/assets/report.png)",
+      ].join("\n"),
+    ),
+    ["S1"],
+  );
+});
+
 test("scanner ignores bare source-like prose", () => {
   assert.deepEqual(scanBracketedSourceIds("The model S1 runs in S3 bucket land."), []);
 });
@@ -43,6 +60,26 @@ test("empty ledger with citations reports unavailable and keeps conflicts separa
   });
 });
 
+test("markdown syntax does not create false source or conflict states", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    [
+      "Claim [S1].",
+      "[paper](https://x.test/evidence/C1)",
+      "```md",
+      "[S2] C2",
+      "```",
+      "Inline `S3 C3` stays code.",
+      "![S4](https://x.test/assets/report.png)",
+      "Bare URL https://x.test/conflicts/C4 is not a conflict.",
+    ].join("\n"),
+    [source("S1", "used")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("partially populated ledger reports unresolved ids before conflicts", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1] [S9] C1.", [source("S1", "candidate")]);
   assert.deepEqual(integrity.unresolvedIds, ["S9"]);
@@ -57,6 +94,16 @@ test("used and candidate sources count together but summarize as candidate", () 
     source("S2", "candidate"),
   ]);
   assert.deepEqual(integrity.counts, { candidate: 1, used: 1, conflicting: 0, rejected: 0 });
+  assert.equal(integrity.summary.kind, "candidate");
+  assert.equal(integrity.summary.label, "1 source awaits review");
+});
+
+test("parser-recognized arbitrary source ids count as citations", () => {
+  const integrity = deriveResearchFindingsIntegrity("Manual note cites manual-1 for follow-up.", [
+    source("manual-1", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
   assert.equal(integrity.summary.kind, "candidate");
   assert.equal(integrity.summary.label, "1 source awaits review");
 });
@@ -122,16 +169,18 @@ test("conflicts deduplicate a marker and conflicting row with the same id", () =
   assert.equal(integrity.summary.label, "1 conflict remains");
 });
 
-test("no citations returns none even when the ledger is populated", () => {
+test("no citations returns none only when no source or conflict ids are detected", () => {
   const integrity = deriveResearchFindingsIntegrity("Plain prose only.", [source("S1", "candidate")]);
   assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
   assert.equal(integrity.summary.kind, "none");
   assert.equal(integrity.summary.label, "This report does not cite sources");
 });
 
-test("rejected-only citations are counted but do not raise the summary", () => {
+test("rejected-only citations summarize as rejected rather than none", () => {
   const integrity = deriveResearchFindingsIntegrity("[R1] [R2]", [source("R1", "rejected"), source("R2", "rejected")]);
   assert.deepEqual(integrity.counts, { candidate: 0, used: 0, conflicting: 0, rejected: 2 });
-  assert.equal(integrity.summary.kind, "none");
-  assert.equal(integrity.summary.label, "This report does not cite sources");
+  assert.deepEqual(integrity.referencedIds, ["R1", "R2"]);
+  assert.equal(integrity.summary.kind, "rejected");
+  assert.equal(integrity.summary.label, "2 rejected sources cited");
 });

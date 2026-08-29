@@ -357,12 +357,14 @@ enum:
 - Reference presence: whether the document cites any source or conflict token.
 
 The current parser's "recognize only real ledger IDs" rule remains the safe path
-for normal inline tokenization. A separate integrity scanner recognizes only
-explicit bracketed source forms such as `[S1]`, `[S4, S5]`, or `[R1]` in every
-document, then compares them with the available ledger. It does not classify
-bare strings such as `model S1` or `S3 bucket` as citations. Unmatched detected
-IDs drive unresolved and unavailable states; they do not receive a verified
-source card.
+for normal inline tokenization. Integrity scanning first removes fenced code,
+inline code, image alt text, link destinations, and bare URLs so raw Markdown
+syntax cannot fabricate evidence states. It then reuses the findings parser's
+real-ledger ID recognition for actual citations and supplements that with
+strict bracketed source forms such as `[S1]`, `[S4, S5]`, or `[R1]` so missing
+ledger rows still surface honestly. It does not classify bare strings such as
+`model S1` or `S3 bucket` as citations. Unmatched detected IDs drive
+unresolved and unavailable states; they do not receive a verified source card.
 
 The chrome presents one primary integrity summary with deterministic
 precedence, while the inspector exposes all counts:
@@ -373,7 +375,8 @@ precedence, while the inspector exposes all counts:
 3. Conflict markers or conflicting ledger entries: `N conflicts remain`.
 4. One or more candidate entries: `N sources await review`.
 5. Used sources with no higher-priority issue: `N sources verified`.
-6. No source or conflict tokens: `This report does not cite sources`.
+6. Rejected sources with no higher-priority issue: `N rejected sources cited`.
+7. No source or conflict tokens: `This report does not cite sources`.
 
 A published artifact may carry any integrity facts. The chrome must not turn
 publication into evidence approval.
@@ -383,6 +386,7 @@ Example integrity copy:
 - `3 conflicts remain`
 - `2 references are unresolved`
 - `Sources unavailable — references can't be verified`
+- `1 rejected source cited`
 - `This report does not cite sources`
 
 Unknown IDs remain visible with an unresolved treatment. They never inherit the
