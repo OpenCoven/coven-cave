@@ -75,6 +75,47 @@ assert.match(
   /const \[selectedSourceId, setSelectedSourceId\] = useState<string \| null>\(null\)/,
   "no evidence source is selected by default",
 );
+const onRefClickBranch = source.slice(
+  source.indexOf("const onRefClick"),
+  source.indexOf("const clearPreview"),
+);
+assert.match(
+  onRefClickBranch,
+  /const source = sourceById\.get\(id\)/,
+  "evidence selection verifies that the ledger contains a real source row",
+);
+const missingRecordGuard = onRefClickBranch.match(
+  /if \(!source\) \{([\s\S]*?)\n\s*\}/,
+);
+assert.ok(
+  missingRecordGuard,
+  "missing source rows have an explicit selection guard",
+);
+assert.ok(
+  onRefClickBranch.indexOf("if (!source)") <
+    onRefClickBranch.indexOf("setSelectedSourceId(id)"),
+  "the missing-record guard runs before any inspector selection mutation",
+);
+assert.match(
+  missingRecordGuard[1],
+  /announce\(\s*`\$\{CONFLICT_ID_RE\.test\(id\) \? "Conflict" : "Evidence"\} \$\{id\} has no source record\.`,?\s*\)/,
+  "missing conflict and evidence references announce that no source record exists",
+);
+assert.match(
+  missingRecordGuard[1],
+  /return;/,
+  "missing source rows stop before any inspector selection state changes",
+);
+assert.doesNotMatch(
+  missingRecordGuard[1],
+  /setSelectedSourceId|setInspectorOn|setOpenIds/,
+  "missing source rows never select, open, or synthesize an inspector card",
+);
+assert.match(
+  onRefClickBranch,
+  /setSelectedSourceId\(id\)[\s\S]*?setInspectorOn\(true\)[\s\S]*?setOpenIds\([\s\S]*?Opened conflict" : "Opened evidence"/,
+  "real source selections retain the existing selected, open, and announced behavior",
+);
 assert.match(
   source,
   /const \[activeSection, setActiveSection\] = useState<\{ id: string; heading: string \} \| null>\(null\)/,
@@ -128,6 +169,11 @@ assert.doesNotMatch(
   source,
   /const \[expanded, setExpanded\]/,
   "the old expanded reader mode is removed",
+);
+assert.match(
+  source,
+  /onSupport=\{\(target\) => \{\s*setInspectorOn\(false\);\s*requestAnimationFrame\(\(\) =>\s*documentReaderApiRef\.current\?\.scrollToTarget\(target\.id, true\)\s*\);\s*\}\}/,
+  "Supports closes the responsive inspector before focusing the cited content",
 );
 
 // ── "More sources" scrolls with the rail, never sideways (cave-l2hkx) ───────

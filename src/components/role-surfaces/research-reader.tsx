@@ -296,6 +296,14 @@ export function ResearchReader({
   };
 
   const onRefClick = (id: string) => {
+    const source = sourceById.get(id);
+    if (!source) {
+      announce(
+        `${CONFLICT_ID_RE.test(id) ? "Conflict" : "Evidence"} ${id} has no source record.`,
+      );
+      return;
+    }
+
     setSelectedSourceId(id);
     setInspectorOn(true);
     setOpenIds((previous) => new Set(previous).add(id));
@@ -746,9 +754,12 @@ export function ResearchReader({
                 onToggle={toggleSource}
                 onOpenUrl={openUrl}
                 onCite={(source) => void cite(source)}
-                onSupport={(target) =>
-                  documentReaderApiRef.current?.scrollToTarget(target.id, true)
-                }
+                onSupport={(target) => {
+                  setInspectorOn(false);
+                  requestAnimationFrame(() =>
+                    documentReaderApiRef.current?.scrollToTarget(target.id, true)
+                  );
+                }}
                 onClose={() => {
                   setInspectorOn(false);
                   requestAnimationFrame(() =>
