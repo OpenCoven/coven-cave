@@ -19,10 +19,8 @@ export type ResearchFindingsIntegrity = {
   summary: { kind: ResearchIntegritySummaryKind; label: string };
 };
 
-const BRACKETED_TOKEN_RE = /\[\s*([^\[\]]+?)\s*\]/g;
 const SOURCE_ID_RE = /^(?:S|R)\d+$/;
 const CONFLICT_ID_RE = /^C\d+$/;
-const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
 
 function emptyCounts(): Record<ResearchSourceRef["status"], number> {
   return { candidate: 0, used: 0, conflicting: 0, rejected: 0 };
@@ -39,72 +37,49 @@ function uniqueIdsInOrder(ids: string[]): string[] {
   return unique;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: string } {
   return { kind: "unavailable", label: "Sources unavailable — references can't be verified" };
 }
 
 function preprocessMarkdownForIntegrity(markdown: string): string {
-  return stripBareUrls(stripMarkdownLinksAndImages(stripInlineCode(stripFencedCodeBlocks(markdown ?? ""))));
+  const withoutComments = stripHtmlComments(markdown ?? "");
+  const withoutBlocks = stripFencedCodeAndReferenceDefinitions(withoutComments);
+  const withoutCode = stripInlineCode(withoutBlocks);
+  const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode);
+  return stripBareUrls(withoutMarkdownTargets);
 }
 
-function isClosingFence(
-  fenceMatch: RegExpExecArray,
-  fence: { character: string; length: number },
-): boolean {
-  return (
-    fenceMatch[1][0] === fence.character &&
-    fenceMatch[1].length >= fence.length &&
-    !fenceMatch[2].trim()
-  );
-}
-
-function stripFencedCodeBlocks(markdown: string): string {
-  const lines = markdown.split(/\r?\n/);
-  let fence: { character: string; length: number } | null = null;
-
-  return lines
-    .map((line) => {
-      const fenceMatch = FENCE_RE.exec(line);
-      if (!fence && fenceMatch) {
-        fence = { character: fenceMatch[1][0], length: fenceMatch[1].length };
-        return "";
-      }
-      if (fence) {
-        if (fenceMatch && isClosingFence(fenceMatch, fence)) fence = null;
-        return "";
-      }
-      return line;
-    })
-    .join("\n");
-}
-
-function stripInlineCode(markdown: string): string {
+function stripHtmlComments(markdown: string): string {
   let sanitized = "";
+  let cursor = 0;
 
-  for (let index = 0; index < markdown.length; index += 1) {
-    if (markdown[index] !== "`") {
-      sanitized += markdown[index];
-      continue;
-    }
-
-    let fenceLength = 1;
-    while (markdown[index + fenceLength] === "`") fenceLength += 1;
-    const marker = "`".repeat(fenceLength);
-    const endIndex = markdown.indexOf(marker, index + fenceLength);
-    if (endIndex === -1) {
-      sanitized += marker;
-      index += fenceLength - 1;
-      continue;
-    }
-    sanitized += " ";
-    index = endIndex + fenceLength - 1;
+  while (cursor < markdown.length) {
+    const commentStart = markdown.indexOf("<!--", cursor);
+    if (commentStart === -1) return sanitized + markdown.slice(cursor);
+    const commentEnd = markdown.indexOf("-->", commentStart + 4);
+    if (commentEnd === -1) return sanitized + markdown.slice(cursor);
+    sanitized += markdown.slice(cursor, commentStart);
+    cursor = commentEnd + 3;
   }
 
   return sanitized;
+}
+
+type FenceRun = { character: "`" | "~"; length: number; suffix: string };
+
+function readFenceRun(line: string): FenceRun | null {
+  let index = 0;
+  while (index < 3 && line[index] === " ") index += 1;
+
+  const character = line[index];
+  if (character !== "`" && character !== "~") return null;
+
+  const runStart = index;
+  while (line[index] === character) index += 1;
+  const length = index - runStart;
+  if (length < 3) return null;
+
+  return { character, length, suffix: line.slice(index) };
 }
 
 function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {
@@ -128,14 +103,109 @@ function findBalancedClose(input: string, startIndex: number, open: string, clos
   return -1;
 }
 
+function isReferenceDefinitionLine(line: string): boolean {
+  let labelStart = 0;
+  while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
+  if (line[labelStart] !== "[") return false;
+
+  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
+  return labelEnd > labelStart + 1 && line[labelEnd + 1] === ":";
+}
+
+function stripFencedCodeAndReferenceDefinitions(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  let fence: { character: string; length: number } | null = null;
+
+  return lines
+    .map((line) => {
+      const run = readFenceRun(line);
+      if (fence) {
+        if (
+          run &&
+          run.character === fence.character &&
+          run.length >= fence.length &&
+          !run.suffix.trim()
+        ) {
+          fence = null;
+        }
+        return "";
+      }
+      if (run) {
+        fence = { character: run.character, length: run.length };
+        return "";
+      }
+      if (isReferenceDefinitionLine(line)) return "";
+      return line;
+    })
+    .join("\n");
+}
+
+function isEscaped(input: string, index: number): boolean {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && input[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function backtickRunLength(input: string, index: number): number {
+  let length = 0;
+  while (input[index + length] === "`") length += 1;
+  return length;
+}
+
+function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
+  for (let index = startIndex; index < input.length; ) {
+    if (input[index] !== "`" || isEscaped(input, index)) {
+      index += 1;
+      continue;
+    }
+
+    const length = backtickRunLength(input, index);
+    if (length === openerLength) return index;
+    index += length;
+  }
+
+  return -1;
+}
+
+function stripInlineCode(markdown: string): string {
+  let sanitized = "";
+
+  for (let index = 0; index < markdown.length; ) {
+    if (markdown[index] !== "`" || isEscaped(markdown, index)) {
+      sanitized += markdown[index];
+      index += 1;
+      continue;
+    }
+
+    const openerLength = backtickRunLength(markdown, index);
+    const closeIndex = findClosingBacktickRun(markdown, index + openerLength, openerLength);
+    if (closeIndex === -1) {
+      sanitized += markdown.slice(index, index + openerLength);
+      index += openerLength;
+      continue;
+    }
+
+    sanitized += " ";
+    index = closeIndex + openerLength;
+  }
+
+  return sanitized;
+}
+
 function stripMarkdownLinksAndImages(markdown: string): string {
   let sanitized = "";
 
-  for (let index = 0; index < markdown.length; index += 1) {
-    const isImage = markdown[index] === "!" && markdown[index + 1] === "[";
-    const isLink = markdown[index] === "[";
+  for (let index = 0; index < markdown.length; ) {
+    const isImage =
+      markdown[index] === "!" &&
+      markdown[index + 1] === "[" &&
+      !isEscaped(markdown, index);
+    const isLink = markdown[index] === "[" && !isEscaped(markdown, index);
     if (!isImage && !isLink) {
       sanitized += markdown[index];
+      index += 1;
       continue;
     }
 
@@ -143,24 +213,32 @@ function stripMarkdownLinksAndImages(markdown: string): string {
     const labelEnd = findBalancedClose(markdown, labelStart, "[", "]");
     if (labelEnd === -1) {
       sanitized += markdown[index];
+      index += 1;
       continue;
     }
 
-    const destinationStart = labelEnd + 1;
-    if (markdown[destinationStart] !== "(") {
-      sanitized += markdown.slice(index, destinationStart);
-      index = destinationStart - 1;
-      continue;
-    }
-
-    const destinationEnd = findBalancedClose(markdown, destinationStart + 1, "(", ")");
-    if (destinationEnd === -1) {
+    let constructEnd = labelEnd + 1;
+    const suffixStart = labelEnd + 1;
+    const suffixOpen = markdown[suffixStart];
+    if (suffixOpen === "(" || suffixOpen === "[") {
+      const suffixClose = suffixOpen === "(" ? ")" : "]";
+      const suffixEnd = findBalancedClose(markdown, suffixStart + 1, suffixOpen, suffixClose);
+      if (suffixEnd === -1) {
+        sanitized += markdown[index];
+        index += 1;
+        continue;
+      }
+      constructEnd = suffixEnd + 1;
+    } else if (!isImage) {
       sanitized += markdown[index];
+      index += 1;
       continue;
     }
 
-    if (isLink) sanitized += stripMarkdownLinksAndImages(markdown.slice(labelStart, labelEnd));
-    index = destinationEnd;
+    sanitized += isImage
+      ? " "
+      : stripMarkdownLinksAndImages(markdown.slice(labelStart, labelEnd));
+    index = constructEnd;
   }
 
   return sanitized;
@@ -168,88 +246,116 @@ function stripMarkdownLinksAndImages(markdown: string): string {
 
 function stripBareUrls(markdown: string): string {
   let sanitized = "";
-  let cursor = 0;
-  const urlPattern = /https?:\/\//g;
+  for (let index = 0; index < markdown.length; ) {
+    const protocolLength = markdown.startsWith("https://", index)
+      ? "https://".length
+      : markdown.startsWith("http://", index)
+        ? "http://".length
+        : 0;
+    if (!protocolLength) {
+      sanitized += markdown[index];
+      index += 1;
+      continue;
+    }
 
-  for (let match = urlPattern.exec(markdown); match; match = urlPattern.exec(markdown)) {
-    let end = match.index + match[0].length;
-    while (end < markdown.length && !/\s/.test(markdown[end])) end += 1;
-    sanitized += markdown.slice(cursor, match.index);
+    index += protocolLength;
+    while (index < markdown.length && !/\s/.test(markdown[index])) index += 1;
     sanitized += " ";
-    cursor = end;
-    urlPattern.lastIndex = end;
   }
 
-  return sanitized + markdown.slice(cursor);
+  return sanitized;
 }
 
-export function scanBracketedSourceIds(markdown: string): string[] {
+function scanStrictBracketedSourceIds(sanitizedMarkdown: string): string[] {
   const ids: string[] = [];
   const seen = new Set<string>();
-  const sanitized = preprocessMarkdownForIntegrity(markdown);
 
-  BRACKETED_TOKEN_RE.lastIndex = 0;
-  for (let match = BRACKETED_TOKEN_RE.exec(sanitized); match; match = BRACKETED_TOKEN_RE.exec(sanitized)) {
-    for (const token of match[1].split(",")) {
+  for (let index = 0; index < sanitizedMarkdown.length; ) {
+    if (sanitizedMarkdown[index] !== "[" || isEscaped(sanitizedMarkdown, index)) {
+      index += 1;
+      continue;
+    }
+
+    const closeIndex = findBalancedClose(sanitizedMarkdown, index + 1, "[", "]");
+    if (closeIndex === -1) {
+      index += 1;
+      continue;
+    }
+    for (const token of sanitizedMarkdown.slice(index + 1, closeIndex).split(",")) {
       const id = token.trim();
       if (!SOURCE_ID_RE.test(id) || seen.has(id)) continue;
       seen.add(id);
       ids.push(id);
     }
+    index = closeIndex + 1;
   }
 
   return ids;
+}
+
+export function scanBracketedSourceIds(markdown: string): string[] {
+  return scanStrictBracketedSourceIds(preprocessMarkdownForIntegrity(markdown));
+}
+
+function isTokenCharacter(character: string | undefined): boolean {
+  if (!character) return false;
+  const code = character.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    code === 95 ||
+    (code >= 97 && code <= 122)
+  );
 }
 
 function scanConflictMarkerIds(markdown: string): string[] {
   const ids: string[] = [];
   const seen = new Set<string>();
 
-  const conflictPattern = /\[\s*([^\[\]]+?)\s*\]|\b(C\d+)\b/g;
-  for (let match = conflictPattern.exec(markdown); match; match = conflictPattern.exec(markdown)) {
-    if (match[1] !== undefined) {
-      for (const token of match[1].split(",")) {
-        const id = token.trim();
-        if (!CONFLICT_ID_RE.test(id) || seen.has(id)) continue;
-        seen.add(id);
-        ids.push(id);
-      }
+  for (let index = 0; index < markdown.length; ) {
+    if (markdown[index] !== "C" || isTokenCharacter(markdown[index - 1])) {
+      index += 1;
       continue;
     }
 
-    const id = match[2];
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
+    let endIndex = index + 1;
+    while (endIndex < markdown.length && /\d/.test(markdown[endIndex])) endIndex += 1;
+    if (endIndex === index + 1 || isTokenCharacter(markdown[endIndex])) {
+      index += 1;
+      continue;
+    }
+
+    const id = markdown.slice(index, endIndex);
+    if (!seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+    index = endIndex;
   }
 
   return ids;
 }
 
-function scanReferencedIdsInOrder(markdown: string, actualSourceIds: Set<string>): string[] {
+function scanReferencedIdsInOrder(markdown: string, candidates: string[]): string[] {
   const ids: string[] = [];
   const seen = new Set<string>();
-  const actualIds = [...actualSourceIds].sort((a, b) => b.length - a.length);
-  const pattern = actualIds.length
-    ? new RegExp(`\\[\\s*([^\\[\\]]+?)\\s*\\]|\\b(${actualIds.map(escapeRegExp).join("|")})\\b`, "g")
-    : /\[\s*([^\[\]]+?)\s*\]/g;
+  const longestFirst = uniqueIdsInOrder(candidates.filter(Boolean)).sort(
+    (left, right) => right.length - left.length,
+  );
 
-  for (let match = pattern.exec(markdown); match; match = pattern.exec(markdown)) {
-    if (match[1] !== undefined) {
-      for (const token of match[1].split(",")) {
-        const id = token.trim();
-        if (CONFLICT_ID_RE.test(id) || seen.has(id)) continue;
-        if (!SOURCE_ID_RE.test(id) && !actualSourceIds.has(id)) continue;
+  for (let index = 0; index < markdown.length; index += 1) {
+    if (isTokenCharacter(markdown[index - 1])) continue;
+
+    for (const id of longestFirst) {
+      if (!markdown.startsWith(id, index)) continue;
+      if (isTokenCharacter(markdown[index + id.length])) continue;
+      if (!seen.has(id)) {
         seen.add(id);
         ids.push(id);
       }
-      continue;
+      index += id.length - 1;
+      break;
     }
-
-    const id = match[2];
-    if (!id || seen.has(id) || CONFLICT_ID_RE.test(id)) continue;
-    seen.add(id);
-    ids.push(id);
   }
 
   return ids;
@@ -325,12 +431,16 @@ export function deriveResearchFindingsIntegrity(
     if (!sourceById.has(source.id)) sourceById.set(source.id, source);
   }
 
-  const parserRecognizedSourceIds = new Set(
-    parseFindingsDoc(sanitizedMarkdown, sources).refIds.filter(
-      (id) => sourceById.has(id) && !CONFLICT_ID_RE.test(id),
-    ),
+  const parserRecognizedSourceIds = parseFindingsDoc(sanitizedMarkdown, sources).refIds.filter(
+    (id) => sourceById.has(id) && !CONFLICT_ID_RE.test(id),
   );
-  const referencedIds = scanReferencedIdsInOrder(sanitizedMarkdown, parserRecognizedSourceIds);
+  const unresolvedCandidateIds = scanStrictBracketedSourceIds(sanitizedMarkdown).filter(
+    (id) => !sourceById.has(id),
+  );
+  const referencedIds = scanReferencedIdsInOrder(
+    sanitizedMarkdown,
+    uniqueIdsInOrder([...parserRecognizedSourceIds, ...unresolvedCandidateIds]),
+  );
   const unresolvedIds = referencedIds.filter((id) => !sourceById.has(id));
   const conflictMarkerIds = scanConflictMarkerIds(sanitizedMarkdown);
   const conflictingSourceIds = uniqueIdsInOrder(

@@ -139,6 +139,80 @@ test("linked images do not create referenced ids or summaries", () => {
   assert.equal(integrity.summary.label, "This report does not cite sources");
 });
 
+test("reference-style images are removed in full and collapsed forms", () => {
+  const integrity = deriveResearchFindingsIntegrity("![S9][img] and ![S8][]", [
+    source("S9", "candidate"),
+    source("S8", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("reference-style links around inline images do not expose image labels", () => {
+  const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)][target]", [
+    source("S9", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("reference definitions do not create source or conflict markers", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "[paper]: /docs/manual-1\n[conflict]: /conflicts/C2\nPlain prose.",
+    [source("manual-1", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
+test("html comments do not create source or conflict markers", () => {
+  const integrity = deriveResearchFindingsIntegrity("Visible [S1]. <!-- [S9] C2 -->", [
+    source("S1", "used"),
+    source("S9", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("parser-recognized ids survive bracket prose alternatives", () => {
+  const integrity = deriveResearchFindingsIntegrity("[S1; S2]", [
+    source("S1", "used"),
+    source("S2", "used"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["S1", "S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("parser-recognized arbitrary ids survive bracket prose", () => {
+  const integrity = deriveResearchFindingsIntegrity("[see manual-1]", [
+    source("manual-1", "candidate"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("a longer backtick run does not close a shorter inline opener", () => {
+  const integrity = deriveResearchFindingsIntegrity("`draft [S1]``", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("escaped backticks remain literal around visible references", () => {
+  const integrity = deriveResearchFindingsIntegrity("\\`[S1]\\`", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
 test("plural unresolved summaries use the exact plural label", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1] [S2] [S3]", [source("S1", "candidate")]);
   assert.deepEqual(integrity.unresolvedIds, ["S2", "S3"]);
