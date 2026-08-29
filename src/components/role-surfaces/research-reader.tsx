@@ -72,6 +72,8 @@ type EvidenceTip = {
   top: number;
 };
 
+type ReaderPanel = "contents" | "evidence";
+
 function titleCase(value: string): string {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
@@ -129,6 +131,11 @@ export function ResearchReader({
   const evidenceToggleRef = useRef<HTMLButtonElement | null>(null);
   const inspectorRef = useRef<HTMLElement | null>(null);
   const inspectorFocusReturnRef = useRef<HTMLElement | null>(null);
+  const panelOrderRef = useRef<ReaderPanel[]>([]);
+  const panelOpenRef = useRef<Record<ReaderPanel, boolean>>({
+    contents: false,
+    evidence: false,
+  });
   const draggingRail = useRef(false);
 
   const doc = useMemo(
@@ -169,15 +176,46 @@ export function ResearchReader({
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<EvidenceTip | null>(null);
 
-  const closeTable = () => {
+  const openPanel = useCallback((panel: ReaderPanel) => {
+    panelOpenRef.current[panel] = true;
+    panelOrderRef.current = [
+      ...panelOrderRef.current.filter((candidate) => candidate !== panel),
+      panel,
+    ];
+    if (panel === "contents") setTocOn(true);
+    else setInspectorOn(true);
+  }, []);
+
+  const removePanelFromOrder = useCallback((panel: ReaderPanel) => {
+    panelOpenRef.current[panel] = false;
+    panelOrderRef.current = panelOrderRef.current.filter(
+      (candidate) => candidate !== panel,
+    );
+  }, []);
+
+  const closeTable = useCallback(() => {
     setFocusTable(null);
     requestAnimationFrame(() => tableFocusReturnRef.current?.focus());
-  };
+  }, []);
+
+  const closeContents = useCallback(
+    (
+      { restoreFocus = true }: { restoreFocus?: boolean } = {},
+    ) => {
+      removePanelFromOrder("contents");
+      setTocOn(false);
+      if (restoreFocus) {
+        requestAnimationFrame(() => contentsToggleRef.current?.focus());
+      }
+    },
+    [removePanelFromOrder],
+  );
 
   const closeInspector = useCallback(
     (
       { restoreFocus = true }: { restoreFocus?: boolean } = {},
     ) => {
+      removePanelFromOrder("evidence");
       setInspectorOn(false);
       if (!restoreFocus) return;
       const invoker =
@@ -186,27 +224,36 @@ export function ResearchReader({
         requestAnimationFrame(() => invoker?.focus());
       });
     },
-    [],
+    [removePanelFromOrder],
   );
 
+  const latestOpenPanel = (): ReaderPanel | null => {
+    for (let index = panelOrderRef.current.length - 1; index >= 0; index -= 1) {
+      const panel = panelOrderRef.current[index];
+      if (panelOpenRef.current[panel]) return panel;
+    }
+    if (panelOpenRef.current.contents) return "contents";
+    if (panelOpenRef.current.evidence) return "evidence";
+    return null;
+  };
+
   const closeFocusOrReader = () => {
-    if (focusTable) {
-      closeTable();
+    const panel = latestOpenPanel();
+    if (panel === "contents") {
+      closeContents();
       return;
     }
-    if (inspectorOn) {
+    if (panel === "evidence") {
       closeInspector();
-      return;
-    }
-    if (tocOn) {
-      setTocOn(false);
-      requestAnimationFrame(() => contentsToggleRef.current?.focus());
       return;
     }
     onClose();
   };
 
-  useFocusTrap(true, readerRef, { onEscape: closeFocusOrReader });
+  useFocusTrap(!focusTable, readerRef, { onEscape: closeFocusOrReader });
+  useFocusTrap(Boolean(focusTable), focusedTableRef, {
+    onEscape: closeTable,
+  });
 
   useEffect(() => {
     const reader = readerRef.current;
@@ -307,10 +354,6 @@ export function ResearchReader({
       tipRef.current.style.top = `${tip.top}px`;
     }
   }, [tip]);
-
-  useEffect(() => {
-    if (focusTable) focusedTableRef.current?.focus();
-  }, [focusTable]);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -429,7 +472,7 @@ export function ResearchReader({
 
     inspectorFocusReturnRef.current = invoker;
     setSelectedSourceId(id);
-    setInspectorOn(true);
+    openPanel("evidence");
     setOpenIds((previous) => new Set(previous).add(id));
     announce(
       `${CONFLICT_ID_RE.test(id) ? "Opened conflict" : "Opened evidence"} ${id}.`,
@@ -772,7 +815,13 @@ export function ResearchReader({
                 aria-pressed={tocOn}
                 title={tocOn ? "Hide contents" : "Show contents"}
                 aria-label={tocOn ? "Hide contents" : "Show contents"}
-                onClick={() => setTocOn((value) => !value)}
+                onClick={() => {
+                  if (panelOpenRef.current.contents) {
+                    closeContents({ restoreFocus: false });
+                    return;
+                  }
+                  openPanel("contents");
+                }}
               >
                 <svg
                   width={15}
@@ -798,7 +847,7 @@ export function ResearchReader({
                     return;
                   }
                   inspectorFocusReturnRef.current = event.currentTarget;
-                  setInspectorOn(true);
+                  openPanel("evidence");
                 }}
               >
                 <svg

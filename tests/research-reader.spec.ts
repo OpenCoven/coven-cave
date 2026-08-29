@@ -168,6 +168,9 @@ test.describe("research reader", () => {
     const table = reader.locator(".rr-table");
     await expect(table).toContainText("Scale raises value coherence");
     await expect(table.locator(".rr-cf--high")).toHaveText("High");
+    await expect(
+      reader.getByRole("region", { name: "Evidence references · 2" }).first(),
+    ).toBeVisible();
     const marginReference = reader.locator(
       ".research-provenance-edge__item",
       { hasText: "S14" },
@@ -328,6 +331,67 @@ test.describe("research reader", () => {
 
     await reader.getByRole("button", { name: "Close" }).click();
     await expect(page.locator(".research-reader")).toHaveCount(0);
+  });
+
+  test("focused table traps Tab and Escape returns focus to its invoker", async ({ page }) => {
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const focusTable = reader.getByRole("button", { name: "Focus table" });
+
+    await focusTable.click();
+    const tableDialog = page.getByRole("dialog", { name: "Key results" });
+    await expect(tableDialog).toBeVisible();
+    await expect(
+      tableDialog.getByRole("button", { name: "Close focused table" }),
+    ).toBeFocused();
+
+    for (let step = 0; step < 8; step += 1) {
+      await page.keyboard.press("Tab");
+      expect(
+        await tableDialog.evaluate((dialog) =>
+          dialog.contains(document.activeElement),
+        ),
+      ).toBe(true);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(tableDialog).toHaveCount(0);
+    await expect(focusTable).toBeFocused();
+    await expect(reader).toBeVisible();
+  });
+
+  test("Escape closes Contents and Evidence in most-recently-opened order", async ({ page }) => {
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const contentsToggle = reader.getByRole("button", {
+      name: /^(Show|Hide) contents$/,
+    });
+    const evidenceToggle = reader.getByRole("button", {
+      name: /^(Show|Hide) evidence$/,
+    });
+    const contents = reader.locator(".rr-toc");
+    const evidence = reader.locator(".research-evidence-inspector");
+
+    await contentsToggle.click();
+    await evidenceToggle.click();
+    await page.keyboard.press("Escape");
+    await expect(evidence).toBeHidden();
+    await expect(contents).toBeVisible();
+    await expect(evidenceToggle).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(contents).toBeHidden();
+    await expect(contentsToggle).toBeFocused();
+
+    await evidenceToggle.click();
+    await contentsToggle.click();
+    await page.keyboard.press("Escape");
+    await expect(contents).toBeHidden();
+    await expect(evidence).toBeVisible();
+    await expect(contentsToggle).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(evidence).toBeHidden();
+    await expect(evidenceToggle).toBeFocused();
+    await expect(reader).toBeVisible();
   });
 
   test("narrow overlay transfers focus, inerts covered controls, and returns focus correctly", async ({ page }) => {

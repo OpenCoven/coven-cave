@@ -160,6 +160,41 @@ assert.match(
 );
 assert.match(
   source,
+  /useFocusTrap\(!focusTable, readerRef, \{ onEscape: closeFocusOrReader \}\)/,
+  "the reader focus trap suspends while the portaled table dialog is open",
+);
+assert.match(
+  source,
+  /useFocusTrap\(Boolean\(focusTable\), focusedTableRef, \{[\s\S]*?onEscape: closeTable[\s\S]*?\}\)/,
+  "the focused table owns a dedicated focus trap and Escape dismissal",
+);
+assert.match(
+  source,
+  /const panelOrderRef = useRef<ReaderPanel\[\]>\(\[\]\)/,
+  "Contents and Evidence keep a synchronous opening-order stack",
+);
+assert.match(
+  source,
+  /const latestOpenPanel = \(\): ReaderPanel \| null =>[\s\S]*?panelOrderRef\.current[\s\S]*?panelOpenRef\.current\[panel\]/,
+  "Escape resolves the latest still-open panel from current refs",
+);
+assert.match(
+  source,
+  /const closeFocusOrReader = \(\) => \{[\s\S]*?latestOpenPanel\(\)[\s\S]*?closeContents\(\)[\s\S]*?closeInspector\(\)[\s\S]*?onClose\(\)/,
+  "Escape closes the latest panel before the remaining panel and reader",
+);
+assert.match(
+  source,
+  /const onRefClick[\s\S]*?openPanel\("evidence"\)/,
+  "inline and margin evidence selection promote Evidence in panel opening order",
+);
+assert.match(
+  source,
+  /onSupport=\{\(target\) => \{[\s\S]*?closeInspector\(\{ restoreFocus: false \}\)/,
+  "Supports removes Evidence from the open-panel stack before focusing content",
+);
+assert.match(
+  source,
   /const \[selectedSourceId, setSelectedSourceId\] = useState<string \| null>\(null\)/,
   "no evidence source is selected by default",
 );
@@ -201,7 +236,7 @@ assert.doesNotMatch(
 );
 assert.match(
   onRefClickBranch,
-  /setSelectedSourceId\(id\)[\s\S]*?setInspectorOn\(true\)[\s\S]*?setOpenIds\([\s\S]*?Opened conflict" : "Opened evidence"/,
+  /setSelectedSourceId\(id\)[\s\S]*?openPanel\("evidence"\)[\s\S]*?setOpenIds\([\s\S]*?Opened conflict" : "Opened evidence"/,
   "real source selections retain the existing selected, open, and announced behavior",
 );
 assert.match(

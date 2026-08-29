@@ -114,7 +114,7 @@ describe("ResearchProvenanceEdge", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("labels evidence and conflict controls and renders nothing without IDs", () => {
+  test("exposes a labeled provenance landmark without changing its controls", () => {
     const html = renderToStaticMarkup(
       createElement(ResearchProvenanceEdge, {
         ids: ["S1", "C1"],
@@ -126,7 +126,11 @@ describe("ResearchProvenanceEdge", () => {
       }),
     );
 
-    assert.match(html, /role="group"/);
+    assert.match(
+      html,
+      /<div[^>]*class="research-provenance-edge"[^>]*role="region"[^>]*aria-label="Evidence references · 2"/,
+    );
+    assert.doesNotMatch(html, /role="group"/);
     assert.match(html, /aria-label="Open evidence S1"/);
     assert.match(html, /aria-label="Open conflict C1"/);
     assert.match(
@@ -151,6 +155,40 @@ describe("ResearchProvenanceEdge", () => {
       ),
       "",
     );
+  });
+
+  test("keeps arrow-key roving focus inside the provenance region", async () => {
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        createElement(ResearchProvenanceEdge, {
+          ids: ["S1", "S2"],
+          selectedId: null,
+          toneForId: (): ResearchProvenanceTone => "accent",
+          onPreview: () => {},
+          onSelect: () => {},
+        }),
+      );
+    });
+    const buttons = renderer.root.findAllByType("button");
+    const focused: string[] = [];
+    const elements = buttons.map((button, index) => ({
+      focus: () => focused.push(button.props["data-research-provenance-id"]),
+      tabIndex: index === 0 ? 0 : -1,
+    }));
+    const region = { querySelectorAll: () => elements };
+
+    buttons[0].props.onKeyDown({
+      key: "ArrowRight",
+      currentTarget: {
+        closest: (selector: string) =>
+          selector === ".research-provenance-edge" ? region : null,
+      },
+      preventDefault: () => {},
+    });
+
+    expect(focused).toEqual(["S2"]);
+    await act(async () => renderer.unmount());
   });
 
   test("labels unresolved source controls truthfully without inventing evidence", () => {

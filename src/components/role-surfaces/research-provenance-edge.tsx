@@ -62,7 +62,7 @@ export function ResearchProvenanceEdge({
             : (currentIndex + 1) % ids.length;
     const nextId = ids[nextIndex];
     const buttons = event.currentTarget
-      .closest('[role="group"]')
+      .closest(".research-provenance-edge")
       ?.querySelectorAll<HTMLButtonElement>(
         "[data-research-provenance-id]",
       );
@@ -75,7 +75,7 @@ export function ResearchProvenanceEdge({
   return (
     <div
       className="research-provenance-edge"
-      role="group"
+      role="region"
       aria-label={`Evidence references · ${ids.length}`}
     >
       {ids.map((id, index) => {
@@ -118,7 +118,7 @@ export function ResearchProvenanceEdge({
                 element: event.currentTarget,
               };
               const buttons = event.currentTarget
-                .closest('[role="group"]')
+                .closest(".research-provenance-edge")
                 ?.querySelectorAll<HTMLButtonElement>(
                   "[data-research-provenance-id]",
                 );
