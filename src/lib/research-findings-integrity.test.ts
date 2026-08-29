@@ -232,6 +232,24 @@ test("citation prose beginning with a source label is not hidden as a definition
   assert.equal(integrity.summary.kind, "verified");
 });
 
+test("nested brackets do not form a hidden reference definition", () => {
+  const integrity = deriveResearchFindingsIntegrity("[[S1]]: /url", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("reference definitions inside markdown containers remain hidden", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "> [quoted]: /S1\n- [listed]: /C2\nVisible [S3].",
+    [source("S1", "used"), source("S3", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S3"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",
@@ -294,6 +312,13 @@ test("escaped backticks remain literal around visible references", () => {
   assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.equal(integrity.summary.kind, "verified");
+});
+
+test("backslashes do not escape closing delimiters inside inline code", () => {
+  const integrity = deriveResearchFindingsIntegrity("`[S1]\\` trailing", [source("S1", "used")]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
 });
 
 test("plural unresolved summaries use the exact plural label", () => {

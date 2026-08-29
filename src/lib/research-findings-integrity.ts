@@ -135,6 +135,61 @@ function normalizeReferenceLabel(label: string): string {
   return unescapeCommonMarkPunctuation(label).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+type ReferenceDefinitionContainer = {
+  blockquoteDepth: number;
+  listIndent: number;
+};
+
+function stripBlockquotePrefix(
+  line: string,
+  expectedDepth?: number,
+): { content: string; depth: number } | null {
+  let cursor = 0;
+  let depth = 0;
+
+  while (expectedDepth === undefined || depth < expectedDepth) {
+    let markerIndex = cursor;
+    let spaces = 0;
+    while (spaces < 3 && line[markerIndex] === " ") {
+      markerIndex += 1;
+      spaces += 1;
+    }
+    if (line[markerIndex] !== ">") break;
+
+    cursor = markerIndex + 1;
+    if (line[cursor] === " " || line[cursor] === "\t") cursor += 1;
+    depth += 1;
+  }
+
+  if (expectedDepth !== undefined && depth !== expectedDepth) return null;
+  return { content: line.slice(cursor), depth };
+}
+
+function readReferenceDefinitionContainer(line: string): {
+  content: string;
+  container: ReferenceDefinitionContainer;
+} {
+  const blockquote = stripBlockquotePrefix(line) ?? { content: line, depth: 0 };
+  const listMatch = blockquote.content.match(/^ {0,3}(?:[-+*]|\d{1,9}[.)])([ \t]+)/);
+  const listIndent = listMatch?.[0].length ?? 0;
+
+  return {
+    content: blockquote.content.slice(listIndent),
+    container: { blockquoteDepth: blockquote.depth, listIndent },
+  };
+}
+
+function readReferenceContainerLine(
+  line: string,
+  container: ReferenceDefinitionContainer,
+): string | null {
+  const blockquote = stripBlockquotePrefix(line, container.blockquoteDepth);
+  if (!blockquote) return null;
+  if (!container.listIndent) return blockquote.content;
+  if (!blockquote.content.startsWith(" ".repeat(container.listIndent))) return null;
+  return blockquote.content.slice(container.listIndent);
+}
+
 function readReferenceDefinitionStart(line: string): {
   label: string;
   body: string;
@@ -143,10 +198,20 @@ function readReferenceDefinitionStart(line: string): {
   while (labelStart < 3 && line[labelStart] === " ") labelStart += 1;
   if (line[labelStart] !== "[") return null;
 
-  const labelEnd = findBalancedClose(line, labelStart + 1, "[", "]");
+  let labelEnd = -1;
+  for (let index = labelStart + 1; index < line.length; index += 1) {
+    if (line[index] === "[" && !isEscaped(line, index)) return null;
+    if (line[index] === "]" && !isEscaped(line, index)) {
+      labelEnd = index;
+      break;
+    }
+  }
+
   if (labelEnd <= labelStart + 1 || line[labelEnd + 1] !== ":") return null;
+  const rawLabel = line.slice(labelStart + 1, labelEnd);
+  if (rawLabel.length > 999 || !/\S/.test(rawLabel)) return null;
   return {
-    label: normalizeReferenceLabel(line.slice(labelStart + 1, labelEnd)),
+    label: normalizeReferenceLabel(rawLabel),
     body: line.slice(labelEnd + 2),
   };
 }
@@ -205,9 +270,9 @@ function readReferenceTitleCloser(title: string): "'" | '"' | ")" | null {
 }
 
 function readReferenceTitleEnd(
-  lines: string[],
   startLineIndex: number,
   title: string,
+  readContinuation: (lineIndex: number) => string | null,
 ): number | null {
   const closer = readReferenceTitleCloser(title);
   if (!closer) return null;
@@ -221,7 +286,7 @@ function readReferenceTitleEnd(
       return current.slice(index + 1).trim() ? null : lineIndex;
     }
 
-    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    const continuation = readContinuation(lineIndex + 1);
     if (!continuation) return null;
     current = continuation;
     searchStart = 0;
@@ -233,13 +298,19 @@ function readReferenceDefinition(
   lines: string[],
   startLineIndex: number,
 ): { label: string; endLineIndex: number } | null {
-  const start = readReferenceDefinitionStart(lines[startLineIndex]);
+  const { content, container } = readReferenceDefinitionContainer(lines[startLineIndex]);
+  const start = readReferenceDefinitionStart(content);
   if (!start) return null;
+
+  const readContinuation = (lineIndex: number): string | null => {
+    const containerLine = readReferenceContainerLine(lines[lineIndex] ?? "", container);
+    return containerLine === null ? null : readReferenceDefinitionContinuation(containerLine);
+  };
 
   let lineIndex = startLineIndex;
   let destinationInput = start.body.trimStart();
   if (!destinationInput) {
-    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    const continuation = readContinuation(lineIndex + 1);
     if (!continuation || readReferenceTitleCloser(continuation)) return null;
     destinationInput = continuation;
     lineIndex += 1;
@@ -252,13 +323,17 @@ function readReferenceDefinition(
   const title = separatedRemainder.trimStart();
   if (title) {
     if (title === separatedRemainder || !readReferenceTitleCloser(title)) return null;
-    const titleEndLineIndex = readReferenceTitleEnd(lines, lineIndex, title);
+    const titleEndLineIndex = readReferenceTitleEnd(lineIndex, title, readContinuation);
     if (titleEndLineIndex === null) return null;
     lineIndex = titleEndLineIndex;
   } else {
-    const continuation = readReferenceDefinitionContinuation(lines[lineIndex + 1] ?? "");
+    const continuation = readContinuation(lineIndex + 1);
     if (continuation && readReferenceTitleCloser(continuation)) {
-      const titleEndLineIndex = readReferenceTitleEnd(lines, lineIndex + 1, continuation);
+      const titleEndLineIndex = readReferenceTitleEnd(
+        lineIndex + 1,
+        continuation,
+        readContinuation,
+      );
       if (titleEndLineIndex === null) return null;
       lineIndex = titleEndLineIndex;
     }
@@ -328,7 +403,7 @@ function backtickRunLength(input: string, index: number): number {
 
 function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
   for (let index = startIndex; index < input.length; ) {
-    if (input[index] !== "`" || isEscaped(input, index)) {
+    if (input[index] !== "`") {
       index += 1;
       continue;
     }
