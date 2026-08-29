@@ -1008,7 +1008,9 @@ export function Workspace() {
         // (either truly no attention ever existed, or it was already patched to
         // none by an earlier optimistic clear and tells us nothing new).
         const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
-        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+        // Guard rows that carry no attention record (e.g. minimal list mocks):
+        // missing attention reads as "none" for baseline purposes, never a crash.
+        const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
           ? acceptedRow.attention
           : null;
         const baselineAttention = acceptedCanonical ??
