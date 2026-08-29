@@ -21,6 +21,7 @@ export type RecognizedFindingsRef = {
 
 export type FindingsSpan =
   | { kind: "text"; text: string; bold?: boolean; italic?: boolean }
+  | { kind: "ref-gap"; text: string }
   | { kind: "ref"; id: string; tone: FindingsRefTone }
   | { kind: "link"; text: string; href: string };
 
@@ -50,6 +51,7 @@ export type FindingsBlock =
       header: FindingsSpan[][];
       headerRefIds: string[];
       rows: FindingsTableRow[];
+      redundantRefColumnIndexes: number[];
     })
   | (FindingsBlockBase & { kind: "code"; language: string; code: string });
 
@@ -357,9 +359,19 @@ function tokenizeRefs(text: string, resolver: RefResolver, base: { bold?: boolea
     return text ? [{ kind: "text", text, ...base }] : [];
   }
   const spans: FindingsSpan[] = [];
+  const pushTextBeforeRef = (value: string) => {
+    const trailingWhitespace = value.match(/\s+$/)?.[0] ?? "";
+    const prose = trailingWhitespace
+      ? value.slice(0, -trailingWhitespace.length)
+      : value;
+    if (prose) spans.push({ kind: "text", text: prose, ...base });
+    if (trailingWhitespace) {
+      spans.push({ kind: "ref-gap", text: trailingWhitespace });
+    }
+  };
   let last = 0;
   for (const match of matches) {
-    if (match.index > last) spans.push({ kind: "text", text: text.slice(last, match.index), ...base });
+    if (match.index > last) pushTextBeforeRef(text.slice(last, match.index));
     spans.push({ kind: "ref", id: match.id, tone: match.tone });
     last = match.index + match.length;
   }
@@ -494,6 +506,40 @@ function splitCells(row: string): string[] {
     .map((cell) => cell.trim());
 }
 
+const REFERENCE_COLUMN_HEADERS = new Set([
+  "source",
+  "sources",
+  "reference",
+  "references",
+  "evidence",
+  "citation",
+  "citations",
+]);
+
+function referenceColumnHeader(cell: FindingsSpan[]): boolean {
+  const label = cell
+    .filter(
+      (
+        span,
+      ): span is Extract<FindingsSpan, { kind: "text" | "link" }> =>
+        span.kind === "text" || span.kind === "link",
+    )
+    .map((span) => span.text)
+    .join("")
+    .trim()
+    .toLowerCase();
+  return REFERENCE_COLUMN_HEADERS.has(label);
+}
+
+function refOnlyCell(cell: FindingsSpan[]): boolean {
+  return (
+    cell.some((span) => span.kind === "ref") &&
+    cell.every(
+      (span) => span.kind === "ref" || span.kind === "ref-gap",
+    )
+  );
+}
+
 /** Parse the body region (everything after the title/lede or one section) into
  *  blocks. Consecutive list items merge into one list; pipe tables with a
  *  dash separator become table blocks; wrapped prose lines join into one
@@ -602,6 +648,13 @@ function parseBlocks(
       i -= 1;
       const headerRefIds: string[] = [];
       for (const cell of header) collectRefIds(cell, headerRefIds);
+      const redundantRefColumnIndexes = header.flatMap((cell, columnIndex) =>
+        referenceColumnHeader(cell) &&
+        rows.length > 0 &&
+        rows.every((row) => refOnlyCell(row.cells[columnIndex] ?? []))
+          ? [columnIndex]
+          : [],
+      );
       const refIds = [...headerRefIds];
       for (const row of rows) {
         for (const id of row.refIds) if (!refIds.includes(id)) refIds.push(id);
@@ -612,6 +665,7 @@ function parseBlocks(
         header,
         headerRefIds,
         rows,
+        redundantRefColumnIndexes,
         refIds,
       });
       continue;
@@ -830,5 +884,24 @@ export function targetsSupportingRef(
     }
   }
 
-  return targets;
+  const duplicateCounts = new Map<string, number>();
+  for (const target of targets) {
+    if (!target.sectionId) continue;
+    const key = `${target.sectionId}\u0000${target.label}`;
+    duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+  }
+
+  const duplicateIndexes = new Map<string, number>();
+  return targets.map((target) => {
+    if (!target.sectionId) return target;
+    const key = `${target.sectionId}\u0000${target.label}`;
+    const count = duplicateCounts.get(key) ?? 1;
+    if (count === 1) return target;
+    const index = (duplicateIndexes.get(key) ?? 0) + 1;
+    duplicateIndexes.set(key, index);
+    return {
+      ...target,
+      label: `${target.label} · claim ${index}/${count}`,
+    };
+  });
 }

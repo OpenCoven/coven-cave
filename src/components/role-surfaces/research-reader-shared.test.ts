@@ -229,6 +229,11 @@ const onRefClickBranch = source.slice(
 );
 assert.match(
   onRefClickBranch,
+  /clearPreview\(\)[\s\S]*?const source = sourceById\.get\(id\)/,
+  "committed reference selection replaces any transient preview",
+);
+assert.match(
+  onRefClickBranch,
   /const source = sourceById\.get\(id\)/,
   "evidence selection verifies that the ledger contains a real source row",
 );
@@ -363,8 +368,18 @@ assert.match(
 );
 assert.match(
   source,
+  /redundantRefColumnIndexes\.includes\(index\)[\s\S]*?rr-table__redundant-reference/,
+  "parser-identified redundant reference columns receive a responsive rendering hook",
+);
+assert.match(
+  source,
   /className=\{`rr-sref rr-inline-ref/,
   "inline references retain their compact representation hook",
+);
+assert.match(
+  source,
+  /span\.kind === "ref-gap"[\s\S]*?className="rr-inline-ref-gap"/,
+  "parser-owned reference gaps render independently from prose and chips",
 );
 assert.match(
   source,

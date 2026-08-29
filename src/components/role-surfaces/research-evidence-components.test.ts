@@ -114,6 +114,44 @@ describe("ResearchProvenanceEdge", () => {
     await act(async () => renderer.unmount());
   });
 
+  test("committing a selection clears hover and focus preview state", async () => {
+    const onPreview = vi.fn();
+    const onSelect = vi.fn();
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        createElement(ResearchProvenanceEdge, {
+          ids: ["S1"],
+          selectedId: null,
+          toneForId: (): ResearchProvenanceTone => "accent",
+          onPreview,
+          onSelect,
+        }),
+      );
+    });
+    const button = renderer.root.findByType("button");
+    const element = {
+      closest: () => ({ querySelectorAll: () => [element] }),
+      tabIndex: 0,
+    };
+
+    button.props.onFocus({ currentTarget: element });
+    button.props.onMouseEnter({ currentTarget: element });
+    button.props.onClick({ currentTarget: element });
+    button.props.onMouseLeave({ currentTarget: element });
+    button.props.onBlur({ currentTarget: element });
+
+    expect(onSelect).toHaveBeenCalledWith("S1", element);
+    expect(onPreview.mock.calls.map(([id]) => id)).toEqual([
+      "S1",
+      "S1",
+      null,
+      null,
+      null,
+    ]);
+    await act(async () => renderer.unmount());
+  });
+
   test("exposes a labeled provenance landmark without changing its controls", () => {
     const html = renderToStaticMarkup(
       createElement(ResearchProvenanceEdge, {

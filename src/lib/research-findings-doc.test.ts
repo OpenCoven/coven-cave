@@ -69,6 +69,25 @@ test("longer ids win over their prefixes and brackets are consumed", () => {
   assert.ok(!text.includes("["), "brackets around a ref must be consumed");
 });
 
+test("whitespace immediately before refs becomes a responsive reference gap", () => {
+  const spans = parseInline(
+    "Identity drifts independently [S1] [S14]. Evidence [S1] supports continuity.",
+    SOURCES,
+  );
+
+  assert.deepEqual(spans, [
+    { kind: "text", text: "Identity drifts independently" },
+    { kind: "ref-gap", text: " " },
+    { kind: "ref", id: "S1", tone: "accent" },
+    { kind: "ref-gap", text: " " },
+    { kind: "ref", id: "S14", tone: "accent" },
+    { kind: "text", text: ". Evidence" },
+    { kind: "ref-gap", text: " " },
+    { kind: "ref", id: "S1", tone: "accent" },
+    { kind: "text", text: " supports continuity." },
+  ]);
+});
+
 test("conflict tokens resolve to warn even without a source row", () => {
   const spans = parseInline("open item C1 remains", SOURCES);
   const ref = spans.find((s) => s.kind === "ref") as Extract<FindingsSpan, { kind: "ref" }>;
@@ -361,6 +380,39 @@ test("markdown pipe tables become table blocks with ref chips in cells", () => {
   assert.deepEqual(refIds(table.rows[0].cells[1]), ["S14"]);
 });
 
+test("marks only recognized table columns whose body cells are entirely references", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Redundant
+
+| Finding | Source | Confidence |
+| --- | --- | --- |
+| First result | [S1] [S14] | High |
+| Second result | S6 | Medium |
+
+## Mixed
+
+| Finding | Reference | Evidence |
+| --- | --- | --- |
+| First result | Primary source [S1] | [S14] |
+| Second result | [S6] | Supporting note |
+
+## Unrecognized
+
+| Finding | Owner |
+| --- | --- |
+| First result | [S1] |
+`, SOURCES);
+  const tables = doc.sections.map((section) => section.blocks[0]);
+
+  assert.ok(tables.every((block) => block.kind === "table"));
+  assert.deepEqual(tables.map((block) => block.redundantRefColumnIndexes), [
+    [1],
+    [],
+    [],
+  ]);
+});
+
 test("table headers expose unique reference ids separately from row evidence", () => {
   const doc = parseFindingsDoc(`# Findings
 
@@ -448,6 +500,30 @@ test("support targets resolve to the claims that cite a source", () => {
   assert.deepEqual(
     targetsSupportingRef(doc, "C1").map((target) => target.label),
     ["Open questions · item 1"],
+  );
+});
+
+test("support targets disambiguate duplicate claims only within the same section", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Current understanding
+
+First claim [S1].
+
+Second claim [S1].
+
+## Implications
+
+Unique claim [S1].
+`, SOURCES);
+
+  assert.deepEqual(
+    targetsSupportingRef(doc, "S1").map((target) => target.label),
+    [
+      "Current understanding · claim 1/2",
+      "Current understanding · claim 2/2",
+      "Implications",
+    ],
   );
 });
 

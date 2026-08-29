@@ -553,6 +553,7 @@ export function ResearchReader({
   };
 
   const onRefClick = (id: string, invoker: HTMLElement) => {
+    clearPreview();
     const source = sourceById.get(id);
     if (!source) {
       announce(
@@ -628,6 +629,13 @@ export function ResearchReader({
   ): ReactNode[] =>
     spans.map((span, index) => {
       const key = `${keyPrefix}-${index}`;
+      if (span.kind === "ref-gap") {
+        return (
+          <span key={key} className="rr-inline-ref-gap">
+            {span.text}
+          </span>
+        );
+      }
       if (span.kind === "ref") {
         const toneClass =
           span.tone === "unresolved"
@@ -711,7 +719,15 @@ export function ResearchReader({
       <thead>
         <tr>
           {table.header.map((cell, index) => (
-            <th key={`header-${index}`} scope="col">
+            <th
+              key={`header-${index}`}
+              className={
+                table.redundantRefColumnIndexes.includes(index)
+                  ? "rr-table__redundant-reference"
+                  : undefined
+              }
+              scope="col"
+            >
               {renderSpans(cell, `th-${index}`)}
             </th>
           ))}
@@ -731,7 +747,14 @@ export function ResearchReader({
             tabIndex={targetable ? -1 : undefined}
           >
             {row.cells.map((cell, index) => (
-              <td key={`${row.id}:cell:${index}`}>
+              <td
+                key={`${row.id}:cell:${index}`}
+                className={
+                  table.redundantRefColumnIndexes.includes(index)
+                    ? "rr-table__redundant-reference"
+                    : undefined
+                }
+              >
                 {renderCell(cell, `${row.id}:cell:${index}`)}
               </td>
             ))}

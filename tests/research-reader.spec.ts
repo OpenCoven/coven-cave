@@ -295,6 +295,128 @@ test.describe("research reader", () => {
     })).toBe(true);
   });
 
+  test("preserves prose spacing around consecutive inline references across layouts", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: `# Findings
+
+## Result
+
+Identity drifts independently [S1] [S14]. Evidence [S1] supports continuity.`,
+    });
+    const paragraph = page.locator(".rr-block-row p");
+    const visibleText = () =>
+      paragraph.evaluate((element) => {
+        const readVisibleText = (node: Node): string => {
+          if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+          if (!(node instanceof HTMLElement)) return "";
+          if (getComputedStyle(node).display === "none") return "";
+          return Array.from(node.childNodes, readVisibleText).join("");
+        };
+        return readVisibleText(element);
+      });
+
+    await expect(paragraph.locator(".rr-inline-ref")).toHaveCount(3);
+    await expect(paragraph.locator(".rr-inline-ref-gap")).toHaveCount(3);
+    expect(await visibleText()).toBe(
+      "Identity drifts independently. Evidence supports continuity.",
+    );
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(paragraph.locator(".rr-inline-ref").first()).toBeVisible();
+    await expect(paragraph.locator(".rr-inline-ref-gap").first()).toBeVisible();
+    expect(await visibleText()).toBe(
+      "Identity drifts independently S1 S14. Evidence S1 supports continuity.",
+    );
+  });
+
+  test("hides only redundant author reference columns when generated evidence is visible", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: `# Findings
+
+## Redundant
+
+| Finding | Source | Confidence |
+| --- | --- | --- |
+| First result | [S1] [S14] | High |
+| Second result | [S6] | Medium |
+
+## Mixed
+
+| Finding | Source | Confidence |
+| --- | --- | --- |
+| First result | Primary source [S1] | High |
+| Second result | [S6] | Medium |`,
+    });
+    const tables = page.locator(".rr-table");
+    const redundantSourceHeader = tables
+      .nth(0)
+      .locator("thead th")
+      .nth(1);
+    const mixedSourceHeader = tables
+      .nth(1)
+      .locator("thead th")
+      .nth(1);
+
+    await expect(redundantSourceHeader).toHaveClass(
+      /rr-table__redundant-reference/,
+    );
+    await expect(redundantSourceHeader).toBeHidden();
+    await expect(
+      tables.nth(0).locator("tbody tr").first().locator("td").nth(1),
+    ).toBeHidden();
+    await expect(tables.nth(0).locator(".rr-table__evidence").first()).toBeVisible();
+    await expect(mixedSourceHeader).not.toHaveClass(
+      /rr-table__redundant-reference/,
+    );
+    await expect(mixedSourceHeader).toBeVisible();
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(redundantSourceHeader).toBeVisible();
+    await expect(
+      tables.nth(0).locator("tbody tr").first().locator("td").nth(1),
+    ).toBeVisible();
+    await expect(tables.nth(0).locator(".rr-table__evidence").first()).toBeHidden();
+  });
+
+  test("committed real and missing references dismiss transient previews", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: `# Findings
+
+## Result
+
+Verified claim [S1]. Missing claim [S99].`,
+    });
+    const reader = page.locator(".research-reader");
+    const tip = page.locator(".rr-tip");
+    const realReference = reader.locator(
+      '[data-research-reference-id="S1"][data-research-reference-representation="edge"]',
+    );
+
+    await realReference.hover();
+    await expect(tip).toHaveAttribute("data-show", "true");
+    await realReference.click();
+    await expect(reader.locator(".research-evidence-inspector")).toBeVisible();
+    await expect(tip).toHaveAttribute("data-show", "false");
+    await expect(tip).toHaveCSS("opacity", "0");
+
+    await reader
+      .getByRole("button", { name: "Close evidence inspector" })
+      .click();
+    await page.setViewportSize({ width: 1000, height: 800 });
+    const missingReference = reader.getByRole("button", {
+      name: "Missing source S99",
+    });
+    await missingReference.hover();
+    await expect(tip).toHaveAttribute("data-show", "true");
+    await missingReference.click();
+    await expect(tip).toHaveAttribute("data-show", "false");
+    await expect(tip).toHaveCSS("opacity", "0");
+    await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
+  });
+
   test("published findings keep lifecycle truth separate from an unavailable empty source ledger", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openReader(page, {

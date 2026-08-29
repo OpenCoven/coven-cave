@@ -682,6 +682,10 @@
   display: none;
 }
 
+.rr-inline-ref-gap {
+  display: none;
+}
+
 .rr-sref {
   align-items: center;
   justify-content: center;
@@ -851,6 +855,10 @@
   padding-inline: var(--space-2) !important;
   background: var(--bg-raised);
   text-align: right !important;
+}
+
+.rr-table__redundant-reference {
+  display: none;
 }
 
 .rr-table thead .rr-table__evidence {
@@ -1633,6 +1641,14 @@
 
   .rr-inline-ref {
     display: inline-flex;
+  }
+
+  .rr-inline-ref-gap {
+    display: inline;
+  }
+
+  .rr-table__redundant-reference {
+    display: table-cell;
   }
 
   .rr-table__evidence {

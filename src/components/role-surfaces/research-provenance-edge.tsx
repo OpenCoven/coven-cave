@@ -137,7 +137,12 @@ export function ResearchProvenanceEdge({
               onPreview(hovered?.id ?? null, hovered?.element);
             }}
             onKeyDown={(event) => moveFocus(event, index)}
-            onClick={(event) => onSelect(id, event.currentTarget)}
+            onClick={(event) => {
+              hoveredPreview.current = null;
+              focusedPreview.current = null;
+              onPreview(null);
+              onSelect(id, event.currentTarget);
+            }}
           >
             <span className="research-provenance-edge__anchor">{id}</span>
           </button>
