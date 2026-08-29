@@ -162,6 +162,17 @@ test("inline-link labels remain detectable when their ledger row is missing", ()
   assert.equal(integrity.summary.kind, "unavailable");
 });
 
+test("escaped inline-link markers still use the findings parser grammar", () => {
+  const markdown = "\\[paper](manual-1)";
+  const sources = [source("manual-1", "used")];
+  assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, []);
+
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
 test("malformed links preserve citations rendered as ordinary prose", () => {
   const integrity = deriveResearchFindingsIntegrity("See [paper](bad [S1])", [
     source("S1", "used"),
@@ -269,7 +280,8 @@ test("nested visible citations remain unresolved without ledger rows", () => {
 });
 
 test("unsupported container fences remain visible like parser prose", () => {
-  const markdown = "> ~~~\n> [S1] C2\n> ~~~\n>  ```\n> [S9]\n>  ```";
+  const markdown =
+    "> ~~~\n> [S1] C2\n> ~~~\n    >  ```\n    > [S9]\n    >  ```";
   const sources = [source("S1", "used")];
   assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1", "C2"]);
 

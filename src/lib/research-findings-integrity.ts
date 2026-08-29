@@ -130,7 +130,7 @@ function isUnsupportedContainerFenceRun(
 
   const lineStart = input.lastIndexOf("\n", index - 1) + 1;
   const prefix = input.slice(lineStart, index);
-  return /^(?: {0,3}(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]{0,3}$/.test(prefix);
+  return /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(prefix);
 }
 
 function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
@@ -191,7 +191,7 @@ function stripMarkdownLinksAndImages(markdown: string): string {
       markdown[index] === "!" &&
       markdown[index + 1] === "[" &&
       !isEscaped(markdown, index);
-    const isLink = markdown[index] === "[" && !isEscaped(markdown, index);
+    const isLink = markdown[index] === "[";
     if (!isImage && !isLink) {
       sanitized += markdown[index];
       index += 1;
