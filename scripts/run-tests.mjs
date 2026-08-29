@@ -1509,6 +1509,7 @@ export const SUITES = {
     "src/lib/server/client-v1/path-ownership.test.ts",
     "src/lib/server/client-v1/status.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
+    "src/lib/server/client-v1/conformance-compatibility.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
     "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",

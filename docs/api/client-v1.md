@@ -804,13 +804,32 @@ because the whole body is public.
 - **`releaseVersion`** is the running Cave's package version. The fixture's
   `"0.0.0"` is a placeholder and never served.
 
+### Conformance-only compatibility controls
+
+Normal `pnpm build` artifacts compile this control disabled; setting a runtime
+environment variable cannot activate it. The explicit conformance build
+contract is:
+
+```bash
+pnpm build:conformance
+COVEN_CAVE_CLIENT_V1_COMPATIBILITY_PRESET=api-major pnpm start
+```
+
+The runtime selector is finite: `api-major` emits `apiVersion: "2.0"` while
+keeping `minimumClientVersion: "0.1.0"`, and `minimum-client` emits
+`apiVersion: "1.0"` with `minimumClientVersion: "999.0.0"`. An unset selector
+emits normal metadata; any other value returns HTTP 500 with the shared error
+envelope. These controls exist only to let the Phase 1 harness independently
+prove the SDK's API-major and minimum-client compatibility checks.
+
 The live inventory is **not** in `data`: `capabilities` and `operations` ride
 the envelope, here as on every other response. This is nonetheless the response
 a client reads them from, because it is the only one reachable before pairing —
 so it is the first place the declaration has to be true. See *Capability
 discovery*.
 
-**Errors:** none. The route has no failure branch of its own.
+**Errors:** normal builds have no failure branch of their own. An enabled
+conformance build returns `500 internal_error` when its selector is invalid.
 
 ### `POST /api/client/v1/pairing/requests`
 

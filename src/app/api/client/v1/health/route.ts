@@ -19,12 +19,31 @@ import {
   type ClientV1Health,
 } from "@/lib/server/client-v1/contract";
 import { clientV1InstanceId } from "@/lib/server/client-v1/instance-id";
-import { clientV1SuccessResponse } from "@/lib/server/client-v1/responses";
+import {
+  clientV1ErrorResponse,
+  clientV1SuccessResponse,
+} from "@/lib/server/client-v1/responses";
+import {
+  CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED,
+  resolveClientV1Compatibility,
+} from "@/lib/server/client-v1/conformance-compatibility";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
+  const compatibility = resolveClientV1Compatibility(
+    process.env,
+    CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED,
+  );
+  if (compatibility.kind === "invalid") {
+    return clientV1ErrorResponse(
+      "internal_error",
+      "Client v1 compatibility preset is invalid.",
+      { details: { reason: "invalid_conformance_preset" } },
+    );
+  }
+
   const health: ClientV1Health = {
     instanceId: clientV1InstanceId(),
     pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
@@ -33,5 +52,8 @@ export async function GET() {
   // apiVersion, minimumClientVersion, and capabilities ride the shared
   // envelope rather than being repeated in `data` — one source, so a client
   // can never read two different answers out of the same response.
-  return clientV1SuccessResponse(health);
+  return clientV1SuccessResponse(
+    health,
+    compatibility.kind === "override" ? { compatibility } : undefined,
+  );
 }
