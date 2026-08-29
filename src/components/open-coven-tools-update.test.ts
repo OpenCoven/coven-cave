@@ -124,7 +124,7 @@ assert.match(
   /\.settings-tool-action--primary\s*\{[\s\S]*?border:[\s\S]*?box-shadow:/,
   "Primary Settings tool action should have a visible border and elevation",
 );
-assert.match(status, /minimumVersion: "0\.2\.5"/, "Coven CLI compatibility floor requires the released maintenance protocol");
+assert.match(status, /minimumVersion: "0\.4\.0"/, "Coven CLI compatibility floor requires the supervised research protocol");
 assert.doesNotMatch(status, /minimumVersion: "0\.6\.0"/, "coven-code compatibility floor removed after unification");
 assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven CLI exposes the exact update command");
 assert.doesNotMatch(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code install command removed after unification");

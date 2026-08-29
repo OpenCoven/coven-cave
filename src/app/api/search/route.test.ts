@@ -21,12 +21,17 @@ function request(payload, overrides = {}) {
   });
 }
 
-test("a valid query returns a 200 filtered-empty (no providers registered yet)", async () => {
+test("a valid query returns a 200 with the truthful empty state (registry is wired)", async () => {
+  // Unit 6 wired the real provider registry and index reader into this route
+  // (cave-ychtl.6). A clean environment has no documents matching "widget", so
+  // the route must answer no-matches — never a convincing empty, and never the
+  // pre-wiring filtered-empty that claimed "no provider can honor this".
   const response = await POST(request({ query: baseQuery }));
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.equal(body.emptyReason, "filtered-empty");
+  assert.ok(Array.isArray(body.results), "results is always an array");
+  assert.equal(body.emptyReason, "no-matches");
   assert.deepEqual(body.results, []);
   assert.equal(body.partial, false);
   assert.equal(body.cursor, null);

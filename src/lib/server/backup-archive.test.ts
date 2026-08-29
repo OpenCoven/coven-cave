@@ -144,6 +144,8 @@ await restoreBackupArchive(archive, passphrase, {
       tombstoneFencesRepaired: 0,
       jobsRecreated: 0,
       lexicalRebuilt: true,
+      contextPacksValidated: 0,
+      contextPacksInvalid: 0,
     };
   },
 });

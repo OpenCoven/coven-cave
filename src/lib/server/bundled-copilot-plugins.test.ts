@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { resolveBundledCopilotPluginDirs } from "./bundled-copilot-plugins.ts";
+import {
+  clearBundledCopilotPluginDirsCache,
+  resolveBundledCopilotPluginDirs,
+} from "./bundled-copilot-plugins.ts";
 
 async function writePlugin(root: string, id: string, extra: Record<string, unknown> = {}) {
   const dir = path.join(root, id);
@@ -60,5 +63,28 @@ test("missing plugin roots degrade to no plugins", async () => {
   assert.deepEqual(
     await resolveBundledCopilotPluginDirs([], { pluginsRoot: "/definitely/missing/cave-plugins" }),
     [],
+  );
+});
+
+test("memoizes the resolved startup plugin dirs until explicitly cleared", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-bundled-plugins-cache-"));
+  // First resolution on an empty root records the (empty) result.
+  assert.deepEqual(
+    await resolveBundledCopilotPluginDirs(["coven-memory"], { pluginsRoot: root }),
+    [],
+  );
+  // A plugin that appears after the first resolution must not be picked up by
+  // a later call: the cached startup context is reused rather than re-scanned,
+  // so per-turn chat spawns skip repeated realpath/stat/readFile work.
+  const dir = await writePlugin(root, "coven-memory");
+  assert.deepEqual(
+    await resolveBundledCopilotPluginDirs(["coven-memory"], { pluginsRoot: root }),
+    [],
+  );
+  // Clearing the process-local cache forces the next call to re-scan the root.
+  clearBundledCopilotPluginDirsCache();
+  assert.deepEqual(
+    await resolveBundledCopilotPluginDirs(["coven-memory"], { pluginsRoot: root }),
+    [await realpath(dir)],
   );
 });
