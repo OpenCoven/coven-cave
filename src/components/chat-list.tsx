@@ -16,6 +16,7 @@ import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { requestGlobalSearch } from "@/lib/global-search-request";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
@@ -975,8 +976,8 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                   setSearch("");
                 }
               }}
-              placeholder="Search sessions…"
-              aria-label="Search sessions"
+              placeholder="Filter sessions…"
+              aria-label="Filter sessions"
               className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
             {!search && (
@@ -997,6 +998,14 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
               />
             )}
           </label>
+          <IconButton
+            icon="ph:globe"
+            size="sm"
+            onClick={() => requestGlobalSearch("type:chat")}
+            aria-label="Search all chats globally"
+            title="Search all chats globally (type:chat)"
+            className="shrink-0"
+          />
 
           {!compact && (
             <>

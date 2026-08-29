@@ -206,7 +206,9 @@ test("an accepted canonical row wins over a stale event-carried baseline (clear-
 
   function resolveClearBaseline(sessionId: string, eventBaseline: ChatAttention | null | undefined) {
     const acceptedRow = baseSessions.find((session) => session.id === sessionId);
-    const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+    // Mirrors the workspace guard: an accepted row with no attention record
+    // (minimal list mocks) must not crash the clear baseline resolution.
+    const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
       ? acceptedRow.attention
       : null;
     return acceptedCanonical ?? eventBaseline ?? acceptedRow?.attention;
@@ -271,7 +273,9 @@ test("a cached canonical none records a modern clear and workspace reconciliatio
 
   function resolveClearBaseline(sessionId: string, eventBaseline: ChatAttention | null | undefined) {
     const acceptedRow = baseSessions.find((session) => session.id === sessionId);
-    const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+    // Mirrors the workspace guard: an accepted row with no attention record
+    // (minimal list mocks) must not crash the clear baseline resolution.
+    const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
       ? acceptedRow.attention
       : null;
     return acceptedCanonical ?? eventBaseline ?? acceptedRow?.attention;
