@@ -107,7 +107,15 @@ const BASELINES = {
 // cae54fb6e5, which is what CI scans. Measured 1607 before the rebase, because
 // the branch predated its own live-run-card merge; re-measure after the base
 // moves, never derive a baseline from another baseline.
-BASELINES.offScaleSpacingPx = 1608;
+// +2: the project picker's option rows (cave-ocy8) lead with an expandable
+// avatar as a sibling zoom button, and the row wrapper owns the menuitem's
+// inset so the tile lines up exactly where the leading slot sat. It mirrors
+// the shared .ui-popover-item inset (6px 10px) — itself already banked drift
+// above — and --space-1/-2 (4px/8px) would misalign the avatar rows against
+// the icon rows in the same list, so the value is genuinely off-scale by
+// design (docs/coven-design-language.md §9 rule 1). Everything else the rows
+// add (the avatar-to-text gap) is on --space-2.
+BASELINES.offScaleSpacingPx = 1610;
 // +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
 // cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
 // five: the two rail widths the USER DRAGS (one `style` object carrying

@@ -32,6 +32,23 @@ assert.deepEqual(
   assert.deepEqual(toolIds, ["tool_live"], "terminal tool frames retain their upstream call id");
   assert.deepEqual(diagnostics, ["malformed-event"], "hostile frames reach the diagnostic path instead of assistant text");
 }
+{
+  let usage: unknown;
+  handleOpenCodeJsonLine(
+    JSON.stringify({
+      type: "step_finish",
+      sessionID: "ses_usage_dispatch",
+      part: { tokens: { input: 10, output: 2 }, cost: 0.001 },
+    }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onUsage: (event) => { usage = event; } },
+  );
+  assert.deepEqual(
+    usage,
+    { kind: "usage", sessionId: "ses_usage_dispatch", usage: { input: 10, output: 2 }, totalCostUsd: 0.001 },
+    "step_finish usage dispatches through the onUsage handler",
+  );
+}
 assert.deepEqual(
   parseOpenCodeRunEvent(
     { type: "text", sessionID: "ses_123", text: "provider-controlled root field" },
@@ -71,6 +88,27 @@ assert.deepEqual(
   ),
   { kind: "ignore", sessionId: "ses_123" },
   "current OpenCode step-finish frames are lifecycle metadata, not compatibility failures",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    {
+      type: "step_finish",
+      sessionID: "ses_usage",
+      part: {
+        id: "step_1",
+        tokens: { total: 7077, input: 205, output: 3, reasoning: 21, cache: { write: 0, read: 6848 } },
+        cost: 0.000124095,
+      },
+    },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  {
+    kind: "usage",
+    sessionId: "ses_usage",
+    usage: { total: 7077, input: 205, output: 3, reasoning: 21, cache: { write: 0, read: 6848 } },
+    totalCostUsd: 0.000124095,
+  },
+  "a step_finish frame carrying tokens and cost forwards the raw usage/cost for the route to validate",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(

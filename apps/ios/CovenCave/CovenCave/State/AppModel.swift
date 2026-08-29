@@ -202,12 +202,16 @@ protocol ProjectContextLoadingClient: Sendable {
     func projects() async throws -> [ProjectInfo]
     func projectGrants() async throws -> ProjectGrantsResponse
     func familiars() async throws -> [Familiar]
-    func sessions() async throws -> [SessionRow]
+    /// includeArchived: true fetches rows with archived_at set, so the
+    /// read-side can fold server archive state back onto local threads
+    /// (cave-sve2a); an active-only list would hide exactly the rows the
+    /// fold needs to see.
+    func sessions(includeArchived: Bool) async throws -> [SessionRow]
     func tasks() async throws -> [BoardCard]
 }
 
 extension ProjectContextLoadingClient {
-    func sessions() async throws -> [SessionRow] { [] }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [] }
 }
 
@@ -1038,7 +1042,9 @@ final class AppModel {
             generation: generation,
             scope: scope
         ) {
-            try await client.sessions()
+            // Archived rows are fetched too: the read-side fold needs them to
+            // reconcile a thread archived on another client (cave-sve2a).
+            try await client.sessions(includeArchived: true)
         }
         let output = await handle.task.value
         finishCoordinatedLoad(handle, state: &sessionsLoadState)
@@ -3865,7 +3871,10 @@ final class AppModel {
             sessionsLoadToken = loadedSessions.token
             switch loadedSessions.result {
             case .success(let nextSessions):
-                resolvedSessions = nextSessions
+                // Selection logic predates archived-inclusive fetches and counts
+                // any unassigned session as an unassigned artifact; archived
+                // rows must not tip a project-context decision.
+                resolvedSessions = nextSessions.filter { $0.archivedAt == nil }
                 fetchedSessions = nextSessions
             case .failure(let error):
                 sessionsError = handleSurfaceError(error)
@@ -5869,16 +5878,63 @@ final class AppModel {
         _ sessions: [SessionRow],
         refreshProjectContextSelection: Bool = true
     ) {
-        serverSessions = sessions
+        // Archived rows are fetched so the fold can see them, but every
+        // existing consumer of serverSessions expects the active-only view —
+        // keep that contract and reconcile flags from the full fetched list
+        // (cave-sve2a).
+        serverSessions = sessions.filter { $0.archivedAt == nil }
         sessionsError = nil
         sessionsLoaded = true
         lastSessionsLoadedAt = Date()
+        let flagsReconciled = reconcileServerFlagsOntoThreads(from: sessions)
         let changed = backfillThreadProjectRoots(from: sessions)
         if refreshProjectContextSelection
-            && (changed || projectContext == nil || projectContext == .unassigned) {
+            && (flagsReconciled || changed || projectContext == nil || projectContext == .unassigned) {
             refreshProjectContextSelectionFromCurrentData()
         }
         _ = resolvePendingProjectNavigationIntent()
+    }
+
+    /// Fold server-observed archived/pinned state back onto local threads so
+    /// a change made on another client shows up here (cave-sve2a).
+    ///
+    /// A thread owns N sessions. It is archived when ALL its sessions are
+    /// archived (any live session keeps it visible) and pinned when ANY is
+    /// pinned. Threads that own no session, or whose owned sessions have no
+    /// row in this fetch, have no server opinion and are left alone — a naive
+    /// fold over an active-only list would, for example, "unarchive" a thread
+    /// whose sessions were simply absent. A thread with a flag PATCH still in
+    /// flight keeps its optimistic local value (local-intent-wins); the next
+    /// load after the PATCH settles folds server truth.
+    @discardableResult
+    private func reconcileServerFlagsOntoThreads(from sessions: [SessionRow]) -> Bool {
+        let sessionsByID = Dictionary(
+            uniqueKeysWithValues: sessions.map { ($0.id, $0) }
+        )
+        var changed = false
+        for thread in threads {
+            // Local intent wins while a PATCH is in flight: the fold must not
+            // clobber an optimistic flag the fan-out has not yet settled.
+            guard threadFlagWrites[thread.id] == nil else { continue }
+            let ownedIDs = serverSessionIds(thread)
+            guard !ownedIDs.isEmpty else { continue }
+            let rows = ownedIDs.compactMap { sessionsByID[$0] }
+            guard !rows.isEmpty else { continue }
+            let serverArchived = rows.allSatisfy { $0.archivedAt != nil }
+            if thread.archived != serverArchived {
+                thread.archived = serverArchived
+                changed = true
+            }
+            let serverPinned = rows.contains { $0.pinned == true }
+            if thread.pinned != serverPinned {
+                thread.pinned = serverPinned
+                changed = true
+            }
+        }
+        if changed {
+            persistThreads()
+        }
+        return changed
     }
 
     private func shouldRefreshAuthoritativeSessionRow(_ sessionID: String) -> Bool {

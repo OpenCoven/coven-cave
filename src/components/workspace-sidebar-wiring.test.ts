@@ -80,8 +80,9 @@ assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow s
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
 // to the RIGHT of the bookmark button. The archive button flips to unarchive
-// on archived rows, and the sidebar options menu exposes Show archived
-// (default-off wiring is pinned in chat-siderail-hide-archived.test.ts).
+// on archived rows. Archive VISIBILITY belongs to the Sessions list
+// (ChatList); the rail exposes no control of its own (cave-zdbij, pinned in
+// chat-siderail-hide-archived.test.ts).
 assert.match(
   workspaceSidebar,
   /onClick=\{onTogglePin\}[\s\S]*?onClick=\{onToggleArchive\}[\s\S]*?onClick=\{onRequestDelete\}/,
@@ -92,7 +93,11 @@ assert.match(
   /name=\{archived \? "ph:arrow-counter-clockwise" : "ph:archive"\}/,
   "the archive button must flip to unarchive on archived rows",
 );
-assert.match(workspaceSidebar, /Show archived/, "the sidebar options menu must expose Show archived");
+assert.doesNotMatch(
+  workspaceSidebar,
+  /Show archived/,
+  "the Chat side rail must not expose an archive-visibility control",
+);
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
 assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");

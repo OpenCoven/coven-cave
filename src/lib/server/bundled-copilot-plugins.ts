@@ -30,14 +30,21 @@ function isSkillOnlyManifest(value: unknown, expectedName: string): boolean {
  * Resolve app-bundled, skill-only Copilot plugins without trusting a familiar
  * workspace's writable plugin manifest. Invalid or missing bundles are omitted
  * so chat remains available without silently loading hooks, agents, or MCPs.
+ *
+ * The result is memoized per process because the bundled plugins are part of
+ * the packaged app and immutable for a process lifetime (they change only on
+ * app update/restart, which reloads this module). The chat send route calls
+ * this on every Copilot turn to assemble the `--plugin-dir` startup args, so
+ * without the cache each turn repeats realpath/stat/readFile work for startup
+ * context that cannot have changed.
  */
-export async function resolveBundledCopilotPluginDirs(
-  pluginIds: readonly string[] = ["coven-memory"],
-  options: BundledPluginOptions = {},
+async function resolveUncached(
+  pluginIds: readonly string[],
+  requestedRoot: string,
 ): Promise<string[]> {
   let root: string;
   try {
-    root = await realpath(options.pluginsRoot ?? marketplacePluginsRoot());
+    root = await realpath(requestedRoot);
     if (!(await stat(root)).isDirectory()) return [];
   } catch {
     return [];
@@ -57,4 +64,24 @@ export async function resolveBundledCopilotPluginDirs(
     }
   }
   return resolved;
+}
+
+const resolvedCache = new Map<string, string[]>();
+
+/** Test seam: reset the process-local bundled plugin resolution cache. */
+export function clearBundledCopilotPluginDirsCache(): void {
+  resolvedCache.clear();
+}
+
+export async function resolveBundledCopilotPluginDirs(
+  pluginIds: readonly string[] = ["coven-memory"],
+  options: BundledPluginOptions = {},
+): Promise<string[]> {
+  const requestedRoot = options.pluginsRoot ?? marketplacePluginsRoot();
+  const cacheKey = `${requestedRoot}\u0000${pluginIds.join("\u0000")}`;
+  const cached = resolvedCache.get(cacheKey);
+  if (cached) return [...cached];
+  const resolved = await resolveUncached(pluginIds, requestedRoot);
+  resolvedCache.set(cacheKey, resolved);
+  return [...resolved];
 }

@@ -63,7 +63,22 @@ test("state matching is case-insensitive and accepts the obvious synonyms", () =
   );
   assert.equal(
     extractAutoStatusMarkers('<coven:auto-status state="needs-approval" />').update?.state,
+    "needs-approval",
+  );
+  assert.equal(
+    extractAutoStatusMarkers('<coven:auto-status state="Waiting" />').update?.state,
+    "needs-approval",
+    "waiting is the same situation as needs-approval — an answer unblocks it",
+  );
+  assert.equal(
+    extractAutoStatusMarkers('<coven:auto-status state="cannot-proceed" />').update?.state,
     "blocked",
+    "cannot-proceed is the wall, not a go-ahead request",
+  );
+  assert.equal(
+    extractAutoStatusMarkers('<coven:auto-status state="needs-human" />').update?.state,
+    "blocked",
+    "needs-human stays blocked: no answer the human types unblocks it",
   );
 });
 
@@ -78,4 +93,20 @@ test("failed is a first-class state, distinct from blocked", () => {
 
 test("a genuinely unknown state is still dropped rather than guessed at", () => {
   assert.equal(extractAutoStatusMarkers('<coven:auto-status state="banana" />').update, null);
+});
+
+test("needs-approval is a distinct state, not an alias for blocked", () => {
+  const approval = extractAutoStatusMarkers(
+    'about to push the tag <coven:auto-status state="needs-approval" note="irreversible: force-push" />',
+  );
+  assert.equal(approval.update?.state, "needs-approval");
+  assert.equal(approval.update?.note, "irreversible: force-push");
+
+  const wall = extractAutoStatusMarkers(
+    'no token on disk <coven:auto-status state="blocked" note="needs npm token" />',
+  );
+  assert.equal(wall.update?.state, "blocked");
+  assert.equal(wall.update?.note, "needs npm token");
+
+  assert.notEqual(approval.update?.state, wall.update?.state);
 });

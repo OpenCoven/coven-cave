@@ -65,6 +65,7 @@ import {
   mentionSuggestionAuthor,
   setGroupResponseMode,
   setGroupDetails,
+  setGroupTopicGoal,
   setGroupParticipantIncluded,
   moveGroupParticipant,
   includedGroupParticipants,
@@ -612,6 +613,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     [persistGroups, announce],
   );
 
+  // Shared brief (topic / goal): always-visible in the header, committed on
+  // blur through the same saveGroups path. setGroupTopicGoal returns the
+  // identical object on a no-op commit, so an untouched blur neither persists
+  // nor reorders the rail.
+  const commitTopicGoal = useCallback(
+    (patch: { topic?: string; goal?: string }) => {
+      const group = activeGroupRef.current;
+      if (!group) return;
+      const next = setGroupTopicGoal(group, patch, nowIso());
+      if (next === group) return;
+      persistGroups(upsertGroup(groupsRef.current, next));
+      announce("Conversation brief saved.");
+    },
+    [persistGroups, announce],
+  );
+
   const changeResponseMode = useCallback(
     (responseMode: CovenResponseMode) => {
       const group = activeGroupRef.current;
@@ -985,6 +1002,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 receivingFamiliarId: reply.familiarId,
                 userText: text,
                 targeted,
+                topic: group.topic,
+                goal: group.goal,
                 familiarNames: mentionable,
                 transcript: [...priorTurns, userTurn, ...settledBefore].map((turn) =>
                   turn.role === "assistant"
@@ -997,6 +1016,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 receivingFamiliarId: reply.familiarId,
                 userText: text,
                 targeted,
+                topic: group.topic,
+                goal: group.goal,
               });
           return streamOne(group, reply, prompt, projectRoot, scopeId, controller.signal);
         },
@@ -1098,6 +1119,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 receivingFamiliarId: targetId,
                 userText: `Delegated by @${delegatedBy}:\n${delegation.task}`,
                 targeted: true,
+                topic: group.topic,
+                goal: group.goal,
               }),
               projectRoot,
               scopeId,
@@ -1234,6 +1257,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               receivingFamiliarId: fresh.familiarId,
               userText: retryText,
               targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
+              topic: group.topic,
+              goal: group.goal,
               familiarNames: group.familiarIds.map((id) => ({
                 id,
                 name: byId.get(id)?.display_name ?? id,
@@ -1249,6 +1274,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               receivingFamiliarId: fresh.familiarId,
               userText: retryText,
               targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
+              topic: group.topic,
+              goal: group.goal,
             }),
         selectedGroupProject.root,
         scopeId,
@@ -1757,6 +1784,35 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
               </button>
             </header>
+
+            {/* Shared brief: topic + goal stay visible in the surface (not the
+                inspector) because every member of the conversation reads them. */}
+            <div className="coven-tab__brief">
+              <label className="coven-tab__brief-field">
+                <span className="coven-tab__brief-label">Topic</span>
+                <input
+                  key={`${activeGroup.id}:topic`}
+                  type="text"
+                  defaultValue={activeGroup.topic ?? ""}
+                  placeholder="Add a shared topic…"
+                  aria-label="Shared conversation topic"
+                  className="coven-tab__brief-input focus-ring-inset"
+                  onBlur={(event) => commitTopicGoal({ topic: event.target.value })}
+                />
+              </label>
+              <label className="coven-tab__brief-field">
+                <span className="coven-tab__brief-label">Goal</span>
+                <input
+                  key={`${activeGroup.id}:goal`}
+                  type="text"
+                  defaultValue={activeGroup.goal ?? ""}
+                  placeholder="Add a shared goal…"
+                  aria-label="Shared conversation goal"
+                  className="coven-tab__brief-input focus-ring-inset"
+                  onBlur={(event) => commitTopicGoal({ goal: event.target.value })}
+                />
+              </label>
+            </div>
 
             {/* Transcript + details inspector */}
             <div className="coven-tab__body">
