@@ -13,6 +13,10 @@ import {
 } from "@/lib/server/client-v1/contract";
 import { clientV1Operation } from "@/lib/server/client-v1/operations";
 import { APP_VERSION } from "@/lib/app-version";
+import {
+  CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED,
+  CLIENT_V1_COMPATIBILITY_PRESET_ENV,
+} from "@/lib/server/client-v1/conformance-compatibility";
 
 import { GET } from "./route.ts";
 
@@ -82,6 +86,95 @@ test("reports the running release rather than the fixture placeholder", async ()
     assert.equal(envelope.data.releaseVersion, APP_VERSION);
   });
 });
+
+test(
+  "keeps production metadata unchanged when only the runtime selector is present",
+  { skip: CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED },
+  async () => {
+    await withTemporaryCaveHome(async () => {
+      const previousPreset = process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+      process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = "api-major";
+      try {
+        const envelope = await (await GET()).json();
+        assert.equal(envelope.apiVersion, CLIENT_V1_API_VERSION);
+        assert.equal(envelope.minimumClientVersion, CLIENT_V1_MIN_CLIENT_VERSION);
+      } finally {
+        if (previousPreset === undefined) {
+          delete process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+        } else {
+          process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = previousPreset;
+        }
+      }
+    });
+  },
+);
+
+test(
+  "the enabled conformance build emits the API-major preset through the real route",
+  { skip: !CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED },
+  async () => {
+    await withTemporaryCaveHome(async () => {
+      const previousPreset = process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+      process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = "api-major";
+      try {
+        const envelope = await (await GET()).json();
+        assert.equal(envelope.apiVersion, "2.0");
+        assert.equal(envelope.minimumClientVersion, CLIENT_V1_MIN_CLIENT_VERSION);
+      } finally {
+        if (previousPreset === undefined) {
+          delete process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+        } else {
+          process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = previousPreset;
+        }
+      }
+    });
+  },
+);
+
+test(
+  "the enabled conformance build emits the minimum-client preset independently",
+  { skip: !CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED },
+  async () => {
+    await withTemporaryCaveHome(async () => {
+      const previousPreset = process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+      process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = "minimum-client";
+      try {
+        const envelope = await (await GET()).json();
+        assert.equal(envelope.apiVersion, CLIENT_V1_API_VERSION);
+        assert.equal(envelope.minimumClientVersion, "999.0.0");
+      } finally {
+        if (previousPreset === undefined) {
+          delete process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+        } else {
+          process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = previousPreset;
+        }
+      }
+    });
+  },
+);
+
+test(
+  "the enabled conformance build rejects an invalid preset",
+  { skip: !CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED },
+  async () => {
+    await withTemporaryCaveHome(async () => {
+      const previousPreset = process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+      process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = "not-a-preset";
+      try {
+        const response = await GET();
+        const envelope = await response.json();
+        assert.equal(response.status, 500);
+        assert.equal(envelope.error.code, "internal_error");
+      } finally {
+        if (previousPreset === undefined) {
+          delete process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV];
+        } else {
+          process.env[CLIENT_V1_COMPATIBILITY_PRESET_ENV] = previousPreset;
+        }
+      }
+    });
+  },
+);
 
 test("answers without leaking paths, configuration, or user data", async () => {
   await withTemporaryCaveHome(async () => {
