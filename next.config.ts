@@ -8,6 +8,9 @@ const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "1" || process.env.ANALYZE === "true",
 });
 
+const conformanceBuild =
+  process.env.COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1";
+
 const nextConfig: NextConfig = {
   env: {
     COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
@@ -109,6 +112,12 @@ const nextConfig: NextConfig = {
   // bundle-budget postbuild gate and the e2e suite guard the output.
   reactCompiler: true,
   experimental: {
+    // The conformance artifact is built inside Chat's bounded macOS authority
+    // runner. Keep the production Turbopack compiler, but avoid the PostCSS
+    // child-process IPC path that can time out under that runner's contention.
+    turbopackPluginRuntimeStrategy: conformanceBuild
+      ? "workerThreads"
+      : undefined,
     // Next 16.2 enables Turbopack's persistent dev cache by default. In this
     // app the cache reaches multiple gigabytes, then its SST compaction can
     // starve the PostCSS child-process IPC until Turbopack panics while

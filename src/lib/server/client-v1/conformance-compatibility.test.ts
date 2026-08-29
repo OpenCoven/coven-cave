@@ -74,3 +74,26 @@ test("normal builds compile the compatibility control disabled", () => {
     /COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED:\s*[\s\S]*?"0"/,
   );
 });
+
+test("conformance builds keep Turbopack while avoiding plugin process IPC", () => {
+  const script = readFileSync(
+    path.join(process.cwd(), "scripts/build-conformance.mjs"),
+    "utf8",
+  );
+  const manifest = JSON.parse(
+    readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const config = readFileSync(
+    path.join(process.cwd(), "next.config.ts"),
+    "utf8",
+  );
+
+  assert.match(script, /\["pnpm@10\.34\.0", "build"\]/);
+  assert.equal(manifest.scripts?.["build:conformance"], "node scripts/build-conformance.mjs");
+  assert.match(manifest.scripts?.build ?? "", /^next build(?:\s|$)/);
+  assert.doesNotMatch(manifest.scripts?.build ?? "", /--webpack/);
+  assert.match(
+    config,
+    /COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1"[\s\S]*?turbopackPluginRuntimeStrategy:\s*conformanceBuild\s*\?\s*"workerThreads"\s*:\s*undefined/,
+  );
+});
