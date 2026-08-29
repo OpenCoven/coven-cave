@@ -355,7 +355,7 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
 } {
   const lines = markdown.split(/\r?\n/);
   let fence: { character: string; length: number; container: MarkdownContainer } | null = null;
-  let activeListContainer: MarkdownContainer | null = null;
+  const listContainerStack: MarkdownContainer[] = [];
   const referenceDefinitionLabels = new Set<string>();
   const strippedLines: string[] = [];
 
@@ -376,23 +376,43 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
         strippedLines.push("");
         continue;
       }
+      const blockquoteLine = stripBlockquotePrefix(line, fence.container.blockquoteDepth);
+      if (
+        fence.container.listIndent > 0 &&
+        blockquoteLine !== null &&
+        !blockquoteLine.content.trim()
+      ) {
+        strippedLines.push("");
+        continue;
+      }
       fence = null;
     }
     const directContainerLine = readReferenceDefinitionContainer(line);
     let containerLine = directContainerLine;
     if (directContainerLine.container.listIndent) {
-      activeListContainer = directContainerLine.container;
-    } else if (activeListContainer) {
-      const activeContent = readReferenceContainerLine(line, activeListContainer);
-      if (activeContent !== null) {
-        containerLine = { content: activeContent, container: activeListContainer };
-      } else {
-        const activeBlockquote = stripBlockquotePrefix(
-          line,
-          activeListContainer.blockquoteDepth,
-        );
-        if (activeBlockquote?.content.trim()) activeListContainer = null;
+      while (
+        listContainerStack.length > 0 &&
+        (listContainerStack.at(-1)?.blockquoteDepth !==
+          directContainerLine.container.blockquoteDepth ||
+          (listContainerStack.at(-1)?.listIndent ?? 0) >=
+            directContainerLine.container.listIndent)
+      ) {
+        listContainerStack.pop();
       }
+      listContainerStack.push(directContainerLine.container);
+    } else {
+      let activeListContainer: MarkdownContainer | null = null;
+      for (let stackIndex = listContainerStack.length - 1; stackIndex >= 0; stackIndex -= 1) {
+        const candidate = listContainerStack[stackIndex];
+        const activeContent = readReferenceContainerLine(line, candidate);
+        if (activeContent === null) continue;
+        activeListContainer = candidate;
+        containerLine = { content: activeContent, container: candidate };
+        listContainerStack.splice(stackIndex + 1);
+        break;
+      }
+
+      if (!activeListContainer && line.trim()) listContainerStack.splice(0);
     }
 
     const run = readFenceRun(containerLine.content);
@@ -547,9 +567,10 @@ function stripMarkdownLinksAndImages(markdown: string, referenceDefinitionLabels
 function stripBareUrls(markdown: string): string {
   let sanitized = "";
   for (let index = 0; index < markdown.length; ) {
-    const protocolLength = markdown.startsWith("https://", index)
+    const protocol = markdown.slice(index, index + "https://".length).toLowerCase();
+    const protocolLength = protocol.startsWith("https://")
       ? "https://".length
-      : markdown.startsWith("http://", index)
+      : protocol.startsWith("http://")
         ? "http://".length
         : 0;
     if (!protocolLength) {

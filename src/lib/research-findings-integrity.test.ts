@@ -162,6 +162,16 @@ test("bare URL stripping stops before adjacent citations and leaves later confli
   assert.equal(integrity.summary.kind, "conflicting");
 });
 
+test("bare URL schemes are stripped case-insensitively", () => {
+  const integrity = deriveResearchFindingsIntegrity("HTTPS://x.test/S1/C2", [
+    source("S1", "used"),
+  ]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
 test("linked images do not create referenced ids or summaries", () => {
   const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)](target)", [source("S9", "candidate")]);
   assert.deepEqual(integrity.referencedIds, []);
@@ -294,6 +304,26 @@ test("unclosed container fences stop when their markdown container ends", () => 
 test("fences on list continuation lines inherit the list boundary", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "- item\n  ```\n  hidden [S1]\nVisible [S2].",
+    [source("S1", "used"), source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("list fences remain active across blank lines", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "- ~~~\n  hidden [S1]\n\n  still hidden [S2]\n  ~~~\nVisible [S3].",
+    [source("S1", "used"), source("S2", "used"), source("S3", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S3"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
+test("outer list context resumes after a nested list", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "- outer\n  - inner\n    detail\n\n  ~~~\n  hidden [S1]\nVisible [S2].",
     [source("S1", "used"), source("S2", "candidate")],
   );
   assert.deepEqual(integrity.referencedIds, ["S2"]);
