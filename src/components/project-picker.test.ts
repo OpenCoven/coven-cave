@@ -92,6 +92,16 @@ assert.match(
   "callers that require an explicit durable choice can keep null rendered as Choose project",
 );
 assert.match(src, /import \{ Button \}/, "picker trigger uses the shared Button primitive");
+
+// cave-ocy8: clicking a project avatar opens the lightbox. The row avatar is
+// expandable (shared AvatarLightbox), rendered as a SIBLING of the menuitem so
+// the zoom button is never nested inside the row's select button.
+assert.match(
+  src,
+  /<ProjectAvatar name=\{entry\.name\} root=\{entry\.root\} color=\{entry\.color\} size="sm" expandable \/>/,
+  "picker rows' avatars are expandable — clicking peeks at the full-size project icon",
+);
+assert.match(src, /cave-project-picker__row/, "expandable avatar leads the row inside a presentation wrapper");
 assert.doesNotMatch(src, /<button\b/, "picker should not hand-roll button controls");
 assert.doesNotMatch(
   src,
