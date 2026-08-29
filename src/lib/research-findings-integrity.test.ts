@@ -131,6 +131,14 @@ test("balanced link stripping preserves visible labels while removing destinatio
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("linked images do not create referenced ids or summaries", () => {
+  const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)](target)", [source("S9", "candidate")]);
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+  assert.equal(integrity.summary.label, "This report does not cite sources");
+});
+
 test("plural unresolved summaries use the exact plural label", () => {
   const integrity = deriveResearchFindingsIntegrity("[S1] [S2] [S3]", [source("S1", "candidate")]);
   assert.deepEqual(integrity.unresolvedIds, ["S2", "S3"]);

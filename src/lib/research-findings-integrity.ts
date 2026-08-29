@@ -159,7 +159,7 @@ function stripMarkdownLinksAndImages(markdown: string): string {
       continue;
     }
 
-    if (isLink) sanitized += markdown.slice(labelStart, labelEnd);
+    if (isLink) sanitized += stripMarkdownLinksAndImages(markdown.slice(labelStart, labelEnd));
     index = destinationEnd;
   }
 
