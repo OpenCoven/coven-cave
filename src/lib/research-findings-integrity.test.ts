@@ -302,6 +302,16 @@ test("deeply indented backtick lines do not form inline code across prose", () =
   assert.equal(integrity.summary.kind, "verified");
 });
 
+test("indented continuation runs can close an existing inline code span", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "Before ```hidden [S9]\n    ``` after",
+    [],
+  );
+  assert.deepEqual(integrity.referencedIds, []);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.equal(integrity.summary.kind, "none");
+});
+
 test("visible document titles count real ledger ids without duplicate prose references", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",

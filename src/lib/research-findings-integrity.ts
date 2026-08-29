@@ -144,12 +144,7 @@ function findClosingBacktickRun(input: string, startIndex: number, openerLength:
     }
 
     const length = backtickRunLength(input, index);
-    if (
-      length === openerLength &&
-      !isUnsupportedContainerFenceRun(input, index, length)
-    ) {
-      return index;
-    }
+    if (length === openerLength) return index;
     index += length;
   }
 
