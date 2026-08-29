@@ -342,6 +342,17 @@ test("same-line nested list markers preserve fenced-code boundaries", () => {
   assert.equal(integrity.summary.kind, "candidate");
 });
 
+test("list-then-blockquote containers preserve fenced-code boundaries", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "- > ~~~\n  > [S9] C1\n  > ~~~\nVisible [S2].",
+    [source("S2", "candidate")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S2"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
+});
+
 test("visible document titles count real ledger ids while hidden definitions remain excluded", () => {
   const integrity = deriveResearchFindingsIntegrity(
     "# Report manual-1\n\n[paper]: /docs/manual-1",

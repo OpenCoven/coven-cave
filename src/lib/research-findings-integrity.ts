@@ -138,54 +138,47 @@ function normalizeReferenceLabel(label: string): string {
 type MarkdownContainer = {
   blockquoteDepth: number;
   listIndent: number;
+  segments: Array<
+    | { kind: "blockquote" }
+    | { kind: "list"; width: number }
+  >;
 };
-
-function stripBlockquotePrefix(
-  line: string,
-  expectedDepth?: number,
-): { content: string; depth: number } | null {
-  let cursor = 0;
-  let depth = 0;
-
-  while (expectedDepth === undefined || depth < expectedDepth) {
-    let markerIndex = cursor;
-    let spaces = 0;
-    while (spaces < 3 && line[markerIndex] === " ") {
-      markerIndex += 1;
-      spaces += 1;
-    }
-    if (line[markerIndex] !== ">") break;
-
-    cursor = markerIndex + 1;
-    if (line[cursor] === " " || line[cursor] === "\t") cursor += 1;
-    depth += 1;
-  }
-
-  if (expectedDepth !== undefined && depth !== expectedDepth) return null;
-  return { content: line.slice(cursor), depth };
-}
 
 function readReferenceDefinitionContainer(line: string): {
   content: string;
   container: MarkdownContainer;
   listContainers: MarkdownContainer[];
 } {
-  const blockquote = stripBlockquotePrefix(line) ?? { content: line, depth: 0 };
   const listContainers: MarkdownContainer[] = [];
-  let content = blockquote.content;
+  const segments: MarkdownContainer["segments"] = [];
+  let content = line;
+  let blockquoteDepth = 0;
   let listIndent = 0;
 
   while (true) {
+    const blockquoteMatch = content.match(/^ {0,3}>[ \t]?/);
+    if (blockquoteMatch) {
+      segments.push({ kind: "blockquote" });
+      blockquoteDepth += 1;
+      content = content.slice(blockquoteMatch[0].length);
+      continue;
+    }
+
     const listMatch = content.match(/^ {0,3}(?:[-+*]|\d{1,9}[.)])([ \t]+)/);
     if (!listMatch) break;
     listIndent += listMatch[0].length;
-    listContainers.push({ blockquoteDepth: blockquote.depth, listIndent });
+    segments.push({ kind: "list", width: listMatch[0].length });
+    listContainers.push({
+      blockquoteDepth,
+      listIndent,
+      segments: [...segments],
+    });
     content = content.slice(listMatch[0].length);
   }
 
   return {
     content,
-    container: { blockquoteDepth: blockquote.depth, listIndent },
+    container: { blockquoteDepth, listIndent, segments },
     listContainers,
   };
 }
@@ -194,11 +187,21 @@ function readReferenceContainerLine(
   line: string,
   container: MarkdownContainer,
 ): string | null {
-  const blockquote = stripBlockquotePrefix(line, container.blockquoteDepth);
-  if (!blockquote) return null;
-  if (!container.listIndent) return blockquote.content;
-  if (!blockquote.content.startsWith(" ".repeat(container.listIndent))) return null;
-  return blockquote.content.slice(container.listIndent);
+  let content = line;
+
+  for (const segment of container.segments) {
+    if (segment.kind === "list") {
+      if (!content.startsWith(" ".repeat(segment.width))) return null;
+      content = content.slice(segment.width);
+      continue;
+    }
+
+    const blockquoteMatch = content.match(/^ {0,3}>[ \t]?/);
+    if (!blockquoteMatch) return null;
+    content = content.slice(blockquoteMatch[0].length);
+  }
+
+  return content;
 }
 
 function readReferenceDefinitionStart(line: string): {
@@ -387,11 +390,10 @@ function stripFencedCodeAndReferenceDefinitions(markdown: string): {
         strippedLines.push("");
         continue;
       }
-      const blockquoteLine = stripBlockquotePrefix(line, fence.container.blockquoteDepth);
       if (
         fence.container.listIndent > 0 &&
-        blockquoteLine !== null &&
-        !blockquoteLine.content.trim()
+        fence.container.blockquoteDepth === 0 &&
+        !line.trim()
       ) {
         strippedLines.push("");
         continue;
