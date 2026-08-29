@@ -7,21 +7,41 @@
 // verifier that accepts everything also passes a fixture replay.
 
 import assert from "node:assert/strict";
-import { generateKeyPairSync, createHash, sign as cryptoSign, randomBytes } from "node:crypto";
+import {
+  generateKeyPairSync,
+  createHash,
+  createPrivateKey,
+  sign as cryptoSign,
+  randomBytes,
+  X509Certificate,
+} from "node:crypto";
 import { test } from "node:test";
 
 import {
+  appleNonceExtension,
   base64UrlEncode,
   base64UrlDecode,
   checkSignCount,
   coseKeyToPublicKey,
   parseAuthenticatorData,
+  validateChainToPinnedRoot,
   verifyAssertion,
   verifyRegistration,
   WebAuthnError,
   type WebAuthnFailureReason,
 } from "./webauthn-verify.ts";
+import type { PinnedRoot } from "./webauthn-roots.ts";
 import { decodeCbor, decodeCborItem, CborError } from "./webauthn-cbor.ts";
+import {
+  APPLE_FIXTURE,
+  APPLE_FIXTURE_AUTH_DATA_HEX,
+  APPLE_FIXTURE_CHALLENGE,
+  APPLE_FIXTURE_CLIENT_DATA_JSON_HEX,
+  APPLE_FIXTURE_NONCE_HEX,
+  APPLE_FIXTURE_ORIGIN,
+  APPLE_FIXTURE_RP_ID,
+  PACKED_FIXTURE,
+} from "./webauthn-attestation-fixtures.ts";
 
 const RP_ID = "cave.tailnet.example.ts.net";
 const ORIGIN = `https://${RP_ID}`;
@@ -248,11 +268,32 @@ function registration(overrides: { authData?: Uint8Array; clientDataJSON?: Uint8
 }
 
 test("verifyRegistration accepts a well-formed UV ceremony", () => {
-  const result = verifyRegistration(registration());
+  const result = verifyRegistration(registration(), { allowNone: true });
   assert.deepEqual(result.credentialId, CREDENTIAL_ID);
   assert.equal(result.algorithm, -7);
   assert.equal(result.attestationFormat, "none");
   assert.equal((result.publicKeyJwk as { x: string }).x, jwk.x);
+  assert.deepEqual(
+    result.attestation,
+    { format: "none", verified: false, trustPath: "none" },
+    "an allowed fmt 'none' registration records its model-unproven trust path honestly",
+  );
+});
+
+test("verifyRegistration refuses fmt 'none' without the loopback policy", () => {
+  rejects(
+    () => verifyRegistration(registration()),
+    "attestation",
+    "fmt 'none' must not enroll a new remote credential",
+  );
+});
+
+test("verifyRegistration refuses an unsupported attestation format", () => {
+  rejects(
+    () => verifyRegistration(registration({ fmt: "tpm" })),
+    "attestation",
+    "an unknown fmt is refused, never silently treated as none",
+  );
 });
 
 test("verifyRegistration refuses a ceremony with user verification off", () => {
@@ -303,6 +344,197 @@ test("verifyRegistration refuses a registration with no attested credential", ()
     () => verifyRegistration(registration({ authData: buildAuthData({ includeCredential: false }) })),
     "malformed",
     "AT flag clear means there is no key to store",
+  );
+});
+
+// ─── attestation statements (cave-01v4u) ────────────────────────────────────
+
+const APPLE_FIXTURE_ROOTS: readonly PinnedRoot[] = [{
+  id: "cave-test-apple-root",
+  der: APPLE_FIXTURE.root,
+  fingerprint256: APPLE_FIXTURE.rootFingerprint256,
+}];
+
+const PACKED_FIXTURE_ROOTS: readonly PinnedRoot[] = [{
+  id: "cave-test-packed-root",
+  der: PACKED_FIXTURE.root,
+  fingerprint256: PACKED_FIXTURE.rootFingerprint256,
+}];
+
+function appleRegistration() {
+  return {
+    clientDataJSON: new Uint8Array(Buffer.from(APPLE_FIXTURE_CLIENT_DATA_JSON_HEX, "hex")),
+    attestationObject: cbor(
+      new Map<string, unknown>([
+        ["fmt", "apple"],
+        [
+          "attStmt",
+          new Map<string, unknown>([
+            ["x5c", APPLE_FIXTURE.x5c.map((der) => new Uint8Array(der))],
+            ["nonce", new Uint8Array(Buffer.from(APPLE_FIXTURE_NONCE_HEX, "hex"))],
+          ]),
+        ],
+        ["authData", new Uint8Array(Buffer.from(APPLE_FIXTURE_AUTH_DATA_HEX, "hex"))],
+      ]),
+    ),
+    expectedChallenge: APPLE_FIXTURE_CHALLENGE,
+    expectedOrigin: APPLE_FIXTURE_ORIGIN,
+    expectedRpId: APPLE_FIXTURE_RP_ID,
+  };
+}
+
+test("apple attestation chains to a pinned root and verifies", () => {
+  const result = verifyRegistration(appleRegistration(), { allowNone: false, appleRoots: APPLE_FIXTURE_ROOTS });
+  assert.equal(result.attestationFormat, "apple");
+  assert.deepEqual(
+    result.attestation,
+    { format: "apple", verified: true, trustPath: "apple" },
+    "a chain to a pinned root proves the authenticator model",
+  );
+});
+
+test("apple attestation rejects a foreign root", () => {
+  const foreignRoots: readonly PinnedRoot[] = [{
+    id: "foreign-root",
+    der: PACKED_FIXTURE.root,
+    fingerprint256: PACKED_FIXTURE.rootFingerprint256,
+  }];
+  rejects(
+    () => verifyRegistration(appleRegistration(), { allowNone: false, appleRoots: foreignRoots }),
+    "attestation",
+    "a chain ending in an unpinned root must not verify",
+  );
+});
+
+test("apple attestation rejects a ceremony the nonce was not committed to", () => {
+  // Same type/challenge/origin but extra JSON bytes: SHA256(authData ||
+  // SHA256(clientDataJSON)) no longer matches the nonce inside the credential
+  // certificate, while every earlier check still passes.
+  const tampered = new TextEncoder().encode(
+    JSON.stringify({
+      type: "webauthn.create",
+      challenge: APPLE_FIXTURE_CHALLENGE,
+      origin: APPLE_FIXTURE_ORIGIN,
+      extra: "tampered",
+    }),
+  );
+  rejects(
+    () => verifyRegistration({ ...appleRegistration(), clientDataJSON: tampered }),
+    "attestation",
+    "the nonce binding must cover the exact ceremony bytes",
+  );
+});
+
+test("appleNonceExtension reads the fixture nonce and rejects certificates without it", () => {
+  const leaf = new X509Certificate(APPLE_FIXTURE.x5c[0]);
+  assert.equal(
+    Buffer.from(appleNonceExtension(leaf) ?? new Uint8Array()).toString("hex"),
+    APPLE_FIXTURE_NONCE_HEX,
+    "the DER walker extracts the 32-byte nonce from OID 1.2.840.113635.100.8.2",
+  );
+  const packedLeaf = new X509Certificate(PACKED_FIXTURE.leaf);
+  assert.equal(appleNonceExtension(packedLeaf), null, "a certificate without the extension yields null");
+  assert.equal(appleNonceExtension(new X509Certificate(PACKED_FIXTURE.root)), null);
+});
+
+test("validateChainToPinnedRoot rejects a chain whose top is not issued by a pinned root", () => {
+  const certs = [new X509Certificate(APPLE_FIXTURE.x5c[0]), new X509Certificate(APPLE_FIXTURE.x5c[1])];
+  assert.equal(
+    validateChainToPinnedRoot(certs, PACKED_FIXTURE_ROOTS),
+    false,
+    "the packed test root did not sign the apple chain",
+  );
+  assert.equal(validateChainToPinnedRoot(certs, APPLE_FIXTURE_ROOTS), true);
+});
+
+function packedSelfRegistration(overrides: { sig?: Uint8Array; alg?: number } = {}) {
+  const authData = buildAuthData({ includeCredential: true });
+  const clientDataJSON = clientData("webauthn.create", CHALLENGE);
+  const clientDataHash = new Uint8Array(createHash("sha256").update(clientDataJSON).digest());
+  const sig = overrides.sig ?? new Uint8Array(cryptoSign("sha256", concat(authData, clientDataHash), privateKey));
+  return {
+    clientDataJSON,
+    attestationObject: cbor(
+      new Map<string, unknown>([
+        ["fmt", "packed"],
+        ["attStmt", new Map<string, unknown>([["alg", overrides.alg ?? -7], ["sig", sig]])],
+        ["authData", authData],
+      ]),
+    ),
+    expectedChallenge: CHALLENGE,
+    expectedOrigin: ORIGIN,
+    expectedRpId: RP_ID,
+  };
+}
+
+test("packed self-attestation verifies but stays model-unproven", () => {
+  const result = verifyRegistration(packedSelfRegistration(), { allowNone: false });
+  assert.deepEqual(
+    result.attestation,
+    { format: "packed", verified: false, trustPath: "packed-self" },
+    "self-attestation proves the key holder, not the model",
+  );
+});
+
+test("packed self-attestation refuses a bad signature and a mismatched algorithm", () => {
+  rejects(
+    () => verifyRegistration(packedSelfRegistration({ sig: new Uint8Array(64) }), { allowNone: false }),
+    "signature",
+    "a wrong signature must not verify",
+  );
+  rejects(
+    () => verifyRegistration(packedSelfRegistration({ alg: -257 }), { allowNone: false }),
+    "attestation",
+    "a self-attestation must use the credential's own algorithm",
+  );
+});
+
+function packedBasicRegistration(roots: readonly PinnedRoot[]) {
+  const authData = new Uint8Array(Buffer.from(APPLE_FIXTURE_AUTH_DATA_HEX, "hex"));
+  const clientDataJSON = new Uint8Array(Buffer.from(APPLE_FIXTURE_CLIENT_DATA_JSON_HEX, "hex"));
+  const clientDataHash = new Uint8Array(createHash("sha256").update(clientDataJSON).digest());
+  const sig = new Uint8Array(
+    cryptoSign("sha256", concat(authData, clientDataHash), createPrivateKey({ key: Buffer.from(PACKED_FIXTURE.leafPrivateKeyDerB64, "base64"), format: "der", type: "sec1" })),
+  );
+  return {
+    clientDataJSON,
+    attestationObject: cbor(
+      new Map<string, unknown>([
+        ["fmt", "packed"],
+        [
+          "attStmt",
+          new Map<string, unknown>([
+            ["alg", -7],
+            ["sig", sig],
+            ["x5c", [new Uint8Array(PACKED_FIXTURE.leaf)]],
+          ]),
+        ],
+        ["authData", authData],
+      ]),
+    ),
+    expectedChallenge: APPLE_FIXTURE_CHALLENGE,
+    expectedOrigin: APPLE_FIXTURE_ORIGIN,
+    expectedRpId: APPLE_FIXTURE_RP_ID,
+    roots,
+  };
+}
+
+test("packed basic attestation verifies against a pinned packed root", () => {
+  const { roots, ...registration } = packedBasicRegistration(PACKED_FIXTURE_ROOTS);
+  const result = verifyRegistration(registration, { allowNone: false, packedRoots: roots });
+  assert.deepEqual(
+    result.attestation,
+    { format: "packed", verified: true, trustPath: "packed-basic" },
+    "a packed chain to a pinned root verifies",
+  );
+});
+
+test("packed basic attestation fails closed when no packed root is pinned", () => {
+  const { roots: _, ...registration } = packedBasicRegistration(PACKED_FIXTURE_ROOTS);
+  rejects(
+    () => verifyRegistration(registration, { allowNone: false, packedRoots: [] }),
+    "attestation",
+    "the production packed root set is empty, so x5c packed attestation is refused",
   );
 });
 

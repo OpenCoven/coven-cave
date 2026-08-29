@@ -112,6 +112,10 @@ test("registration asks for a platform authenticator with UV required", async ()
     [-7, -257],
     "only algorithms the server can verify are offered",
   );
+  // cave-01v4u: the client must request the attestation statement so the
+  // server can verify the authenticator model. Falling back to "none" would
+  // recreate the gap this closes.
+  assert.equal(options?.attestation, "direct");
 });
 
 test("registration posts the ceremony fields the server expects", async () => {
