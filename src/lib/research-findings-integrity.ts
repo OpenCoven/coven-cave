@@ -136,6 +136,18 @@ function backtickRunLength(input: string, index: number): number {
   return length;
 }
 
+function isUnsupportedContainerFenceRun(
+  input: string,
+  index: number,
+  runLength: number,
+): boolean {
+  if (runLength < 3) return false;
+
+  const lineStart = input.lastIndexOf("\n", index - 1) + 1;
+  const prefix = input.slice(lineStart, index);
+  return /^(?: {0,3}(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+$/.test(prefix);
+}
+
 function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
   for (let index = startIndex; index < input.length; ) {
     if (input[index] !== "`") {
@@ -144,7 +156,12 @@ function findClosingBacktickRun(input: string, startIndex: number, openerLength:
     }
 
     const length = backtickRunLength(input, index);
-    if (length === openerLength) return index;
+    if (
+      length === openerLength &&
+      !isUnsupportedContainerFenceRun(input, index, length)
+    ) {
+      return index;
+    }
     index += length;
   }
 
@@ -162,6 +179,11 @@ function stripInlineCode(markdown: string): string {
     }
 
     const openerLength = backtickRunLength(markdown, index);
+    if (isUnsupportedContainerFenceRun(markdown, index, openerLength)) {
+      sanitized += markdown.slice(index, index + openerLength);
+      index += openerLength;
+      continue;
+    }
     const closeIndex = findClosingBacktickRun(markdown, index + openerLength, openerLength);
     if (closeIndex === -1) {
       sanitized += markdown.slice(index, index + openerLength);

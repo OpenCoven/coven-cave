@@ -253,15 +253,15 @@ test("nested visible citations remain unresolved without ledger rows", () => {
 });
 
 test("unsupported container fences remain visible like parser prose", () => {
-  const markdown = "> ~~~\n> [S1] C2\n> ~~~";
+  const markdown = "> ~~~\n> [S1] C2\n> ~~~\n> ```\n> [S9]\n> ```";
   const sources = [source("S1", "used")];
   assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1", "C2"]);
 
   const integrity = deriveResearchFindingsIntegrity(markdown, sources);
-  assert.deepEqual(integrity.referencedIds, ["S1"]);
-  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.referencedIds, ["S1", "S9"]);
+  assert.deepEqual(integrity.unresolvedIds, ["S9"]);
   assert.deepEqual(integrity.conflictIds, ["C2"]);
-  assert.equal(integrity.summary.kind, "conflicting");
+  assert.equal(integrity.summary.kind, "unresolved");
 });
 
 test("visible document titles count real ledger ids without duplicate prose references", () => {
