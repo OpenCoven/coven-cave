@@ -1462,6 +1462,7 @@ export const SUITES = {
     "scripts/client-v1-release-smoke.test.mjs",
     "scripts/client-v1-authority-takeover.test.mjs",
     "scripts/client-v1-conformance.test.mjs",
+    "scripts/check-build-evidence.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/main-health.test.mjs",
