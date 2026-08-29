@@ -41,6 +41,20 @@ test("sessions use the read-only, subprocess-free projection", () => {
   assert.match(route, /enrichGit: false/);
 });
 
+test("automations use the daemon run ledger after local run-history retirement", () => {
+  assert.doesNotMatch(
+    route,
+    /import \{ listRuns as listAutomationRuns \} from "@\/lib\/automation-runs"/,
+  );
+  assert.match(route, /listRoutines\(\)/);
+  assert.match(route, /const AUTOMATION_RUN_HISTORY_LIMIT = 20/);
+  assert.match(route, /const AUTOMATION_RUN_FETCH_CONCURRENCY = 4/);
+  assert.match(route, /listRoutineRuns\(routine\.id, AUTOMATION_RUN_HISTORY_LIMIT\)/);
+  assert.match(route, /routines\.slice\(index, index \+ AUTOMATION_RUN_FETCH_CONCURRENCY\)/);
+  assert.match(route, /\.filter\(\(run\) => run\.status === "running"\)/);
+  assert.match(route, /automationName: routine\.name/);
+});
+
 // ── Behavioural contract the route depends on ────────────────────────────────
 test("a failing source is marked unavailable while the rest of the payload survives", () => {
   const payload = buildRunningActivityPayload(
