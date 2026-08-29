@@ -439,10 +439,16 @@ function findBalancedClose(
   return -1;
 }
 
-export function matchFindingsInlineImageAt(
+type FindingsImageBoundary = {
+  text: string;
+  href: string | null;
+  length: number;
+};
+
+function matchFindingsImageBodyAt(
   input: string,
   index: number,
-): { text: string; href: string; length: number } | null {
+): FindingsImageBoundary | null {
   if (
     input[index] !== "!" ||
     input[index + 1] !== "[" ||
@@ -453,28 +459,45 @@ export function matchFindingsInlineImageAt(
 
   const labelStart = index + 2;
   const labelEnd = findBalancedClose(input, labelStart, "[", "]");
-  if (labelEnd === -1 || input[labelEnd + 1] !== "(") return null;
+  if (labelEnd === -1) return null;
 
-  const destinationStart = labelEnd + 2;
-  const destinationEnd = findBalancedClose(
+  const suffixStart = labelEnd + 1;
+  const suffixOpen = input[suffixStart];
+  if (suffixOpen !== "(" && suffixOpen !== "[") {
+    return {
+      text: input.slice(labelStart, labelEnd),
+      href: null,
+      length: labelEnd + 1 - index,
+    };
+  }
+
+  const suffixClose = suffixOpen === "(" ? ")" : "]";
+  const suffixEnd = findBalancedClose(
     input,
-    destinationStart,
-    "(",
-    ")",
+    suffixStart + 1,
+    suffixOpen,
+    suffixClose,
   );
-  if (destinationEnd === -1) return null;
+  if (suffixEnd === -1) return null;
 
   return {
     text: input.slice(labelStart, labelEnd),
-    href: input.slice(destinationStart, destinationEnd),
-    length: destinationEnd + 1 - index,
+    href:
+      suffixOpen === "("
+        ? input.slice(suffixStart + 1, suffixEnd)
+        : null,
+    length: suffixEnd + 1 - index,
   };
 }
 
-export function matchFindingsLinkedImageAt(
+export function matchFindingsImageAt(
   input: string,
   index: number,
-): { text: string; href: string; length: number } | null {
+): FindingsImageBoundary | null {
+  if (input[index] === "!") {
+    return matchFindingsImageBodyAt(input, index);
+  }
+
   if (
     input[index] !== "[" ||
     input[index + 1] !== "!" ||
@@ -483,25 +506,32 @@ export function matchFindingsLinkedImageAt(
     return null;
   }
 
-  const image = matchFindingsInlineImageAt(input, index + 1);
+  const image = matchFindingsImageBodyAt(input, index + 1);
   if (!image) return null;
 
   const imageEnd = index + 1 + image.length;
-  if (input[imageEnd] !== "]" || input[imageEnd + 1] !== "(") return null;
+  if (input[imageEnd] !== "]") return null;
 
-  const destinationStart = imageEnd + 2;
-  const destinationEnd = findBalancedClose(
+  const suffixStart = imageEnd + 1;
+  const suffixOpen = input[suffixStart];
+  if (suffixOpen !== "(" && suffixOpen !== "[") return null;
+
+  const suffixClose = suffixOpen === "(" ? ")" : "]";
+  const suffixEnd = findBalancedClose(
     input,
-    destinationStart,
-    "(",
-    ")",
+    suffixStart + 1,
+    suffixOpen,
+    suffixClose,
   );
-  if (destinationEnd === -1) return null;
+  if (suffixEnd === -1) return null;
 
   return {
     text: image.text,
-    href: input.slice(destinationStart, destinationEnd),
-    length: destinationEnd + 1 - index,
+    href:
+      suffixOpen === "("
+        ? input.slice(suffixStart + 1, suffixEnd)
+        : image.href,
+    length: suffixEnd + 1 - index,
   };
 }
 
@@ -529,26 +559,21 @@ function parseSpans(input: string, resolver: RefResolver): FindingsSpan[] {
     if (end <= plainStart) return;
     spans.push(...tokenizeRefs(text.slice(plainStart, end), resolver, {}));
   };
-  const pushImageFallback = (image: { text: string; href: string }) => {
-    if (image.text) {
+  const pushImageFallback = (image: FindingsImageBoundary) => {
+    if (!image.text) return;
+    if (image.href) {
       spans.push({ kind: "link", text: image.text, href: image.href });
+    } else {
+      spans.push({ kind: "text", text: image.text });
     }
   };
 
   for (let index = 0; index < text.length; ) {
     const character = text[index];
-    const linkedImage =
-      character === "[" ? matchFindingsLinkedImageAt(text, index) : null;
-    if (linkedImage) {
-      pushPlain(index);
-      pushImageFallback(linkedImage);
-      index += linkedImage.length;
-      plainStart = index;
-      continue;
-    }
-
     const image =
-      character === "!" ? matchFindingsInlineImageAt(text, index) : null;
+      character === "!" || character === "["
+        ? matchFindingsImageAt(text, index)
+        : null;
     if (image) {
       pushPlain(index);
       pushImageFallback(image);

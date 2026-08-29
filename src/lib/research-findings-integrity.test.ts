@@ -283,32 +283,23 @@ test("parser and integrity ignore image fields while keeping adjacent linked cit
   assert.equal(integrity.summary.kind, "candidate");
 });
 
-test("reference-style images are removed in full and collapsed forms", () => {
-  const integrity = deriveResearchFindingsIntegrity("![S9][img] and ![S8][]", [
-    source("S9", "candidate"),
-    source("S8", "candidate"),
-  ]);
-  assert.deepEqual(integrity.referencedIds, []);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "none");
-});
-
-test("reference-style links around inline images do not expose image labels", () => {
-  const integrity = deriveResearchFindingsIntegrity("[![S9](image.png)][target]", [
-    source("S9", "candidate"),
-  ]);
-  assert.deepEqual(integrity.referencedIds, []);
-  assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "none");
-});
-
-test("reference-style links around images preserve their visible source suffix", () => {
-  const integrity = deriveResearchFindingsIntegrity("[![alt](image.png)][S1]", [
+test("parser and integrity align across reference-style and linked-image variants", () => {
+  const markdown =
+    "![S1][img], ![S6][], [![S14](image-S6.png)][target], [![S1][thumb]](https://x.test/S6), and [![alt](image.png)][S1] then [S14].";
+  const sources = [
     source("S1", "used"),
-  ]);
-  assert.deepEqual(integrity.referencedIds, ["S1"]);
+    source("S6", "used"),
+    source("S14", "candidate"),
+  ];
+
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S14"]);
+  assert.deepEqual(integrity.referencedIds, ["S14"]);
   assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "verified");
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "candidate");
 });
 
 test("undefined reference-style links preserve visible source suffixes", () => {

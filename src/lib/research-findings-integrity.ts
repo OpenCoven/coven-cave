@@ -3,9 +3,8 @@ import {
   findRecognizedFindingsRefs,
   matchFindingsFenceRun,
   matchFindingsAtxHeading,
-  matchFindingsInlineImageAt,
+  matchFindingsImageAt,
   matchFindingsInlineLinkAt,
-  matchFindingsLinkedImageAt,
   stripFindingsComments,
 } from "./research-findings-doc.ts";
 
@@ -63,27 +62,6 @@ function stripAtxHeadings(markdown: string): string {
     .split(/\r?\n/)
     .map((line) => (matchFindingsAtxHeading(line) ? "" : line))
     .join("\n");
-}
-
-function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {
-  let depth = 1;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-    if (character === "\\") {
-      index += 1;
-      continue;
-    }
-    if (character === open) {
-      depth += 1;
-      continue;
-    }
-    if (character !== close) continue;
-    depth -= 1;
-    if (depth === 0) return index;
-  }
-
-  return -1;
 }
 
 function stripFencedCode(markdown: string): string {
@@ -196,72 +174,29 @@ function stripMarkdownLinksAndImages(markdown: string): string {
   let sanitized = "";
 
   for (let index = 0; index < markdown.length; ) {
-    const linkedImage = matchFindingsLinkedImageAt(markdown, index);
-    if (linkedImage) {
+    const image = matchFindingsImageAt(markdown, index);
+    if (image) {
       sanitized += " ";
-      index += linkedImage.length;
+      index += image.length;
       continue;
     }
 
-    const inlineImage = matchFindingsInlineImageAt(markdown, index);
-    if (inlineImage) {
-      sanitized += " ";
-      index += inlineImage.length;
-      continue;
-    }
-
-    const isImage =
-      markdown[index] === "!" &&
-      markdown[index + 1] === "[" &&
-      !isEscaped(markdown, index);
     const isLink = markdown[index] === "[";
-    if (!isImage && !isLink) {
+    if (!isLink) {
       sanitized += markdown[index];
       index += 1;
       continue;
     }
 
-    if (isLink) {
-      if (markdown.startsWith("![", index + 1)) {
-        sanitized += markdown[index];
-        index += 1;
-        continue;
-      }
-      const inlineLink = matchFindingsInlineLinkAt(markdown, index);
-      if (inlineLink) {
-        sanitized += `[${stripMarkdownLinksAndImages(inlineLink.text)}]`;
-        index += inlineLink.length;
-        continue;
-      }
-      sanitized += markdown[index];
-      index += 1;
+    const inlineLink = matchFindingsInlineLinkAt(markdown, index);
+    if (inlineLink) {
+      sanitized += `[${stripMarkdownLinksAndImages(inlineLink.text)}]`;
+      index += inlineLink.length;
       continue;
     }
 
-    const labelStart = index + (isImage ? 2 : 1);
-    const labelEnd = findBalancedClose(markdown, labelStart, "[", "]");
-    if (labelEnd === -1) {
-      sanitized += markdown[index];
-      index += 1;
-      continue;
-    }
-
-    let constructEnd = labelEnd + 1;
-    const suffixStart = labelEnd + 1;
-    const suffixOpen = markdown[suffixStart];
-    if (suffixOpen === "(" || suffixOpen === "[") {
-      const suffixClose = suffixOpen === "(" ? ")" : "]";
-      const suffixEnd = findBalancedClose(markdown, suffixStart + 1, suffixOpen, suffixClose);
-      if (suffixEnd === -1) {
-        sanitized += markdown[index];
-        index += 1;
-        continue;
-      }
-      constructEnd = suffixEnd + 1;
-    }
-
-    sanitized += " ";
-    index = constructEnd;
+    sanitized += markdown[index];
+    index += 1;
   }
 
   return sanitized;

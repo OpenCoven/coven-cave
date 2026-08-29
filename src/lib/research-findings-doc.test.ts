@@ -262,6 +262,43 @@ test("linked images consume both destinations before adjacent real citations", (
   ]);
 });
 
+test("reference-style image variants degrade without exposing image fields as citations", () => {
+  const spans = parseInline(
+    "![S1][img], ![S6][], [![S14](image-S6.png)][target], and [![S1][thumb]](https://x.test/S6) then [S14].",
+    SOURCES,
+  );
+
+  assert.deepEqual(refIds(spans), ["S14"]);
+  assert.deepEqual(spans, [
+    { kind: "text", text: "S1" },
+    { kind: "text", text: ", " },
+    { kind: "text", text: "S6" },
+    { kind: "text", text: ", " },
+    { kind: "link", text: "S14", href: "image-S6.png" },
+    { kind: "text", text: ", and " },
+    { kind: "link", text: "S1", href: "https://x.test/S6" },
+    { kind: "text", text: " then" },
+    { kind: "ref-gap", text: " " },
+    { kind: "ref", id: "S14", tone: "accent" },
+    { kind: "text", text: "." },
+  ]);
+});
+
+test("ordinary reference-style prose links remain scan-visible prose", () => {
+  const spans = parseInline("[paper][S1] then [S14].", SOURCES);
+
+  assert.deepEqual(refIds(spans), ["S1", "S14"]);
+  assert.equal(spans.some((span) => span.kind === "link"), false);
+  assert.deepEqual(spans, [
+    { kind: "text", text: "[paper]" },
+    { kind: "ref", id: "S1", tone: "accent" },
+    { kind: "text", text: " then" },
+    { kind: "ref-gap", text: " " },
+    { kind: "ref", id: "S14", tone: "accent" },
+    { kind: "text", text: "." },
+  ]);
+});
+
 test("linked evidence refs populate claim support targets while destinations stay opaque", () => {
   const doc = parseFindingsDoc(`# Findings
 
