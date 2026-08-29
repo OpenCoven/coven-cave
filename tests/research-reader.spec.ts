@@ -213,7 +213,9 @@ test.describe("research reader", () => {
       ).toBeCloseTo(claimWidthBeforeInspector.actual, 0);
     }
 
-    await marginReference.click();
+    await marginReference.focus();
+    await expect(marginReference).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(reader).toHaveAttribute("data-inspector", "true");
     await expect(reader.locator(".document-reader")).not.toHaveAttribute("inert", "");
     const railHandle = reader.locator(".rr-railhandle");
@@ -291,6 +293,48 @@ test.describe("research reader", () => {
         targetRect.top < scrollerRect.bottom
       );
     })).toBe(true);
+  });
+
+  test("published findings keep lifecycle truth separate from an unavailable empty source ledger", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: "# Findings\n\n## Result\n\nClaim [S1].",
+      mission: {
+        ...COMPLETED_MISSION,
+        artifacts: COMPLETED_MISSION.artifacts.map((artifact) => ({
+          ...artifact,
+          state: "published",
+        })),
+        sources: [],
+      },
+    });
+    const reader = page.locator(".research-reader");
+    const edgeReference = reader.locator(
+      '[data-research-reference-id="S1"][data-research-reference-representation="edge"]',
+    );
+    const inlineReference = reader.locator(
+      '[data-research-reference-id="S1"][data-research-reference-representation="inline"]',
+    );
+
+    await expect(reader.locator(".rr-status")).toContainText("Published");
+    await expect(reader.locator(".rr-integrity")).toHaveText(
+      "Sources unavailable — references can't be verified",
+    );
+    await expect(edgeReference).toHaveAttribute("data-tone", "unresolved");
+    await expect(inlineReference).toHaveClass(/rr-sref--unresolved/);
+    await expect(inlineReference).toHaveAttribute("aria-label", "Missing source S1");
+    await expect(edgeReference).toBeVisible();
+    await expect(inlineReference).toBeHidden();
+
+    await edgeReference.click();
+    await expect(
+      page.locator(
+        'div.sr-only[role="status"][aria-live="polite"][aria-atomic="true"]',
+      ),
+    ).toContainText("Evidence S1 has no source record.");
+    await expect(reader).toHaveAttribute("data-inspector", "false");
+    await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
+    await expect(reader.locator('[data-source-id="S1"]')).toHaveCount(0);
   });
 
   test("opens dedicated contents and evidence panels while retaining reader actions", async ({ page }) => {
