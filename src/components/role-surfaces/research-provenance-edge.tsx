@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, type KeyboardEvent } from "react";
+import { ResearchSourceIdLabel } from "./research-source-id-label";
 
 export type ResearchProvenanceTone =
   | "accent"
@@ -144,7 +145,10 @@ export function ResearchProvenanceEdge({
               onSelect(id, event.currentTarget);
             }}
           >
-            <span className="research-provenance-edge__anchor">{id}</span>
+            <ResearchSourceIdLabel
+              id={id}
+              className="research-provenance-edge__anchor"
+            />
           </button>
         );
       })}

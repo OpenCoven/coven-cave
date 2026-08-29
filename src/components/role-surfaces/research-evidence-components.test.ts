@@ -11,6 +11,10 @@ import {
   ResearchProvenanceEdge,
   type ResearchProvenanceTone,
 } from "./research-provenance-edge";
+import {
+  compactResearchSourceId,
+  ResearchSourceIdLabel,
+} from "./research-source-id-label";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,6 +24,9 @@ const callbacks = {
   onCite: () => {},
   onSupport: () => {},
   onClose: () => {},
+  onRetrySources: () => {},
+  ledgerState: "available" as const,
+  retryingSources: false,
 };
 
 function source(
@@ -177,7 +184,7 @@ describe("ResearchProvenanceEdge", () => {
     );
     assert.match(
       html,
-      /<button[^>]*aria-label="Open evidence S1"[^>]*>[\s\S]*?<span class="research-provenance-edge__anchor">S1<\/span>[\s\S]*?<\/button>/,
+      /<button[^>]*aria-label="Open evidence S1"[^>]*>[\s\S]*?<span[^>]*class="[^"]*research-provenance-edge__anchor[^"]*"[^>]*>[\s\S]*?S1[\s\S]*?<\/span>[\s\S]*?<\/button>/,
       "the focusable hit target wraps a smaller painted provenance anchor",
     );
     assert.match(
@@ -269,6 +276,33 @@ describe("ResearchProvenanceEdge", () => {
     assert.match(buttonTag(html, "Open evidence S2"), /tabindex="0"/);
     assert.match(buttonTag(html, "Open evidence S2"), /aria-current="true"/);
     assert.match(buttonTag(html, "Open conflict C1"), /tabindex="-1"/);
+  });
+
+  test("compacts long visual ids while retaining the complete accessible identity", () => {
+    const id = `manual-${"source-".repeat(14)}primary`;
+    const html = renderToStaticMarkup(
+      createElement(ResearchProvenanceEdge, {
+        ids: [id],
+        selectedId: null,
+        toneForId: (): ResearchProvenanceTone => "accent",
+        onPreview: () => {},
+        onSelect: () => {},
+      }),
+    );
+
+    assert.equal(compactResearchSourceId("S123"), "S123");
+    assert.equal(compactResearchSourceId("R4"), "R4");
+    assert.equal(compactResearchSourceId("C27"), "C27");
+    assert.notEqual(compactResearchSourceId(id), id);
+    assert.match(html, new RegExp(`aria-label="Open evidence ${id}"`));
+    assert.match(html, new RegExp(`title="${id}"`));
+    assert.match(html, new RegExp(`data-research-source-id-label="${id}"`));
+    assert.doesNotMatch(
+      html,
+      new RegExp(
+        `<span[^>]*class="[^"]*research-provenance-edge__anchor[^"]*"[^>]*>${id}</span>`,
+      ),
+    );
   });
 });
 
@@ -385,5 +419,56 @@ describe("ResearchEvidenceInspector", () => {
     assert.equal((html.match(/>Cite</g) ?? []).length, 2);
     assert.equal((html.match(/rr-sd-supportlink/g) ?? []).length, 1);
     assert.doesNotMatch(html, /Accept source|Reject source|Generated summary/);
+  });
+
+  test("failed ledgers render a retry treatment without stale source cards", async () => {
+    const onRetrySources = vi.fn();
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        createElement(ResearchEvidenceInspector, {
+          ...callbacks,
+          sources: [],
+          ledgerState: "failed",
+          retryingSources: false,
+          integrityLabel: "Sources unavailable — references can't be verified",
+          selectedId: null,
+          openIds: new Set<string>(),
+          targetsBySource: new Map<string, FindingsSupportTarget[]>(),
+          onRetrySources,
+        }),
+      );
+    });
+
+    expect(renderer.root.findAllByProps({ "data-source-id": "S1" })).toHaveLength(0);
+    expect(
+      renderer.root.find(
+        (node) =>
+          typeof node.props.className === "string" &&
+          node.props.className.includes("research-evidence-inspector__failure"),
+      ),
+    ).toBeTruthy();
+    const retry = renderer.root.findByProps({ children: "Retry sources" });
+    retry.props.onClick();
+    expect(onRetrySources).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
+  });
+
+  test("source id label preserves full tooltip and data identity", () => {
+    const id = `manual-${"x".repeat(96)}`;
+    const html = renderToStaticMarkup(
+      createElement(ResearchSourceIdLabel, {
+        id,
+        className: "test-source-label",
+      }),
+    );
+
+    assert.match(html, new RegExp(`title="${id}"`));
+    assert.match(html, /aria-hidden="true"/);
+    assert.match(
+      html,
+      /class="research-source-id-label test-source-label"/,
+    );
+    assert.doesNotMatch(html, new RegExp(`>${id}</span>`));
   });
 });

@@ -30,6 +30,7 @@ import { deriveResearchFindingsIntegrity } from "@/lib/research-findings-integri
 import type {
   ResearchArtifactRef,
   ResearchMission,
+  ResearchSourceLedgerSnapshot,
   ResearchSourceRef,
 } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -38,6 +39,7 @@ import {
   ResearchProvenanceEdge,
   type ResearchProvenanceTone,
 } from "./research-provenance-edge";
+import { ResearchSourceIdLabel } from "./research-source-id-label";
 import "@/styles/research-reader.css";
 
 const RAIL_MIN_REM = 18;
@@ -49,13 +51,16 @@ const CONTENTS_SHEET_MAX_REM = 65;
 const INSPECTOR_OVERLAY_MAX_REM = 80;
 const CONFIDENCE_RE = /^(high|medium|low)$/i;
 const CONFLICT_ID_RE = /^C\d+$/;
+const EMPTY_SOURCES: ResearchSourceRef[] = [];
 
 type ResearchReaderProps = {
   mission: ResearchMission;
   artifact: ResearchArtifactRef;
   /** findings.md content; null when the file has not been written yet. */
   markdown: string | null;
+  sourceLedger: ResearchSourceLedgerSnapshot;
   onClose: () => void;
+  onRetrySources: () => Promise<ResearchSourceLedgerSnapshot>;
   onOpenUrl?: (url: string) => void;
   /** Publish this artifact to the Grimoire (offered only for a working,
    *  unpublished copy on a settled mission). */
@@ -134,7 +139,9 @@ export function ResearchReader({
   mission,
   artifact,
   markdown,
+  sourceLedger,
   onClose,
+  onRetrySources,
   onOpenUrl,
   onPublish,
 }: ResearchReaderProps) {
@@ -156,29 +163,47 @@ export function ResearchReader({
     contents: false,
     evidence: false,
   });
+  const tableRestoreFocusRef = useRef(true);
   const draggingRail = useRef(false);
+  const sources =
+    sourceLedger.state === "available"
+      ? sourceLedger.sources
+      : EMPTY_SOURCES;
 
   const doc = useMemo(
-    () => parseFindingsDoc(markdown ?? "", mission.sources),
-    [markdown, mission.sources],
+    () => parseFindingsDoc(markdown ?? "", sources),
+    [markdown, sources],
   );
+  const hasDocumentContent =
+    doc.title !== null || doc.lede !== null || doc.sections.length > 0;
+  const readerDocument = useMemo(
+    () => ({
+      ...doc,
+      title: doc.title ?? (hasDocumentContent ? artifact.title : null),
+    }),
+    [artifact.title, doc, hasDocumentContent],
+  );
+  const hasNamedSections = doc.sections.some((section) => section.heading);
   const integrity = useMemo(
-    () => deriveResearchFindingsIntegrity(markdown ?? "", mission.sources),
-    [markdown, mission.sources],
+    () =>
+      deriveResearchFindingsIntegrity(markdown ?? "", sources, {
+        ledger: sourceLedger.state,
+      }),
+    [markdown, sourceLedger.state, sources],
   );
   const sourceById = useMemo(
-    () => new Map(mission.sources.map((source) => [source.id, source])),
-    [mission.sources],
+    () => new Map(sources.map((source) => [source.id, source])),
+    [sources],
   );
   const targetsBySource = useMemo(
     () =>
       new Map<string, FindingsSupportTarget[]>(
-        mission.sources.map((source) => [
+        sources.map((source) => [
           source.id,
           targetsSupportingRef(doc, source.id),
         ]),
       ),
-    [doc, mission.sources],
+    [doc, sources],
   );
 
   const [tocOn, setTocOn] = useState(false);
@@ -195,6 +220,7 @@ export function ResearchReader({
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<EvidenceTip | null>(null);
+  const [retryingSources, setRetryingSources] = useState(false);
 
   const removePanelFromOrder = useCallback((panel: ReaderPanel) => {
     panelOpenRef.current[panel] = false;
@@ -233,9 +259,16 @@ export function ResearchReader({
     [suspendPanel],
   );
 
-  const closeTable = useCallback(() => {
+  const closeTable = useCallback(({
+    restoreFocus = true,
+  }: {
+    restoreFocus?: boolean;
+  } = {}) => {
+    tableRestoreFocusRef.current = restoreFocus;
     setFocusTable(null);
-    requestAnimationFrame(() => tableFocusReturnRef.current?.focus());
+    if (restoreFocus) {
+      requestAnimationFrame(() => tableFocusReturnRef.current?.focus());
+    }
   }, []);
 
   const closeContents = useCallback(
@@ -292,6 +325,18 @@ export function ResearchReader({
     [focusInspectorReturnTarget, suspendPanel],
   );
 
+  const focusSelectedInspector = useCallback((id: string) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        inspectorRef.current
+          ?.querySelector<HTMLElement>(
+            `[data-source-id="${CSS.escape(id)}"] .research-evidence-card__toggle`,
+          )
+          ?.focus();
+      });
+    });
+  }, []);
+
   const latestOpenPanel = useCallback((): ReaderPanel | null => {
     for (let index = panelOrderRef.current.length - 1; index >= 0; index -= 1) {
       const panel = panelOrderRef.current[index];
@@ -318,7 +363,25 @@ export function ResearchReader({
   useFocusTrap(!focusTable, readerRef, { onEscape: closeFocusOrReader });
   useFocusTrap(Boolean(focusTable), focusedTableRef, {
     onEscape: closeTable,
+    restoreFocus: () => tableRestoreFocusRef.current,
   });
+
+  useEffect(() => {
+    if (hasNamedSections || !panelOpenRef.current.contents) return;
+    suspendPanel("contents");
+  }, [hasNamedSections, suspendPanel]);
+
+  useEffect(() => {
+    setSelectedSourceId((current) =>
+      current && sourceById.has(current) ? current : null,
+    );
+    setOpenIds((current) => {
+      const next = new Set(
+        [...current].filter((id) => sourceById.has(id)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [sourceById]);
 
   useEffect(() => {
     const reader = readerRef.current;
@@ -491,7 +554,9 @@ export function ResearchReader({
     `v${artifact.iteration}`,
     mission.mode,
     passes > 0 ? `${passes} pass${passes === 1 ? "" : "es"}` : null,
-    `${mission.sources.length} source${mission.sources.length === 1 ? "" : "s"}`,
+    sourceLedger.state === "failed"
+      ? "sources unavailable"
+      : `${sources.length} source${sources.length === 1 ? "" : "s"}`,
     rel ? `updated ${rel}` : null,
   ]
     .filter(Boolean)
@@ -508,13 +573,10 @@ export function ResearchReader({
     Boolean(onPublish) &&
     artifact.state === "working" &&
     !artifact.knowledgeId;
-  const compactTitle = doc.title ?? artifact.title;
+  const compactTitle = readerDocument.title ?? artifact.title;
   const chromeTitle = activeSection?.heading
     ? `${compactTitle} · ${activeSection.heading}`
     : compactTitle;
-  const hasDocumentContent =
-    doc.title !== null || doc.lede !== null || doc.sections.length > 0;
-
   const copy = async () => {
     if (!markdown) return;
     const ok = await copyText(markdown);
@@ -552,6 +614,21 @@ export function ResearchReader({
     });
   };
 
+  const retrySources = async () => {
+    if (retryingSources) return;
+    setRetryingSources(true);
+    try {
+      const next = await onRetrySources();
+      announce(
+        next.state === "failed"
+          ? "Evidence sources are still unavailable."
+          : "Evidence sources reloaded.",
+      );
+    } finally {
+      setRetryingSources(false);
+    }
+  };
+
   const onRefClick = (id: string, invoker: HTMLElement) => {
     clearPreview();
     const source = sourceById.get(id);
@@ -562,11 +639,18 @@ export function ResearchReader({
       return;
     }
 
-    inspectorFocusReturnRef.current = invoker;
+    const fromFocusedTable = Boolean(invoker.closest(".rr-kroverlay-card"));
+    if (fromFocusedTable) {
+      closeTable({ restoreFocus: false });
+      inspectorFocusReturnRef.current = tableFocusReturnRef.current;
+    } else {
+      inspectorFocusReturnRef.current = invoker;
+    }
     inspectorFocusReturnIdRef.current = id;
     setSelectedSourceId(id);
     openPanel("evidence");
     setOpenIds((previous) => new Set(previous).add(id));
+    if (fromFocusedTable) focusSelectedInspector(id);
     announce(
       `${CONFLICT_ID_RE.test(id) ? "Opened conflict" : "Opened evidence"} ${id}.`,
     );
@@ -666,7 +750,7 @@ export function ResearchReader({
             onBlur={clearPreview}
             onClick={(event) => onRefClick(span.id, event.currentTarget)}
           >
-            {span.id}
+            <ResearchSourceIdLabel id={span.id} />
           </button>
         );
       }
@@ -831,6 +915,7 @@ export function ResearchReader({
           title="Focus table"
           onClick={(event) => {
             tableFocusReturnRef.current = event.currentTarget;
+            tableRestoreFocusRef.current = true;
             setFocusTable(block);
           }}
           aria-label="Focus table"
@@ -929,33 +1014,35 @@ export function ResearchReader({
                   Publish
                 </button>
               ) : null}
-              <button
-                ref={contentsToggleRef}
-                className="rr-iconbtn focus-ring"
-                type="button"
-                aria-controls="research-reader-contents"
-                aria-pressed={tocOn}
-                title={tocOn ? "Hide contents" : "Show contents"}
-                aria-label={tocOn ? "Hide contents" : "Show contents"}
-                onClick={() => {
-                  if (panelOpenRef.current.contents) {
-                    closeContents({ restoreFocus: false });
-                    return;
-                  }
-                  openPanel("contents");
-                }}
-              >
-                <svg
-                  width={15}
-                  height={15}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.8}
+              {hasNamedSections ? (
+                <button
+                  ref={contentsToggleRef}
+                  className="rr-iconbtn focus-ring"
+                  type="button"
+                  aria-controls="research-reader-contents"
+                  aria-pressed={tocOn}
+                  title={tocOn ? "Hide contents" : "Show contents"}
+                  aria-label={tocOn ? "Hide contents" : "Show contents"}
+                  onClick={() => {
+                    if (panelOpenRef.current.contents) {
+                      closeContents({ restoreFocus: false });
+                      return;
+                    }
+                    openPanel("contents");
+                  }}
                 >
-                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-                </svg>
-              </button>
+                  <svg
+                    width={15}
+                    height={15}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.8}
+                  >
+                    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+                  </svg>
+                </button>
+              ) : null}
               <button
                 ref={evidenceToggleRef}
                 className="rr-iconbtn focus-ring"
@@ -1017,7 +1104,7 @@ export function ResearchReader({
 
           <div className="research-reader__grid">
             <DocumentReader
-              document={doc}
+              document={readerDocument}
               navigation={tocOn ? "rail" : "compact"}
               contentsId="research-reader-contents"
               kicker={titleCase(artifact.kind)}
@@ -1037,7 +1124,9 @@ export function ResearchReader({
               tocMeta={
                 <>
                   <span>
-                    {mission.sources.length} sources · {integrity.counts.used} used
+                    {sourceLedger.state === "failed"
+                      ? "Sources unavailable"
+                      : `${sources.length} sources · ${integrity.counts.used} used`}
                   </span>
                   <span>
                     {passes} pass{passes === 1 ? "" : "es"} · {mission.mode}
@@ -1068,7 +1157,9 @@ export function ResearchReader({
               aria-label="Evidence"
             >
               <ResearchEvidenceInspector
-                sources={mission.sources}
+                sources={sources}
+                ledgerState={sourceLedger.state}
+                retryingSources={retryingSources}
                 integrityLabel={integrity.summary.label}
                 selectedId={selectedSourceId}
                 openIds={openIds}
@@ -1083,6 +1174,7 @@ export function ResearchReader({
                   );
                 }}
                 onClose={closeInspector}
+                onRetrySources={() => void retrySources()}
               />
             </aside>
           </div>
@@ -1098,7 +1190,10 @@ export function ResearchReader({
         {tip ? (
           <>
             <div className="rr-tip__head">
-              <span className="rr-tip__id">{tip.id}</span>
+              <ResearchSourceIdLabel
+                id={tip.id}
+                className="rr-tip__id"
+              />
               <span
                 className={`rr-tip__status rr-srcstat--${tip.tone}`}
               >
@@ -1116,7 +1211,7 @@ export function ResearchReader({
         <div
           className="rr-kroverlay"
           role="presentation"
-          onClick={closeTable}
+          onClick={() => closeTable()}
         >
           <div
             ref={focusedTableRef}
@@ -1139,7 +1234,7 @@ export function ResearchReader({
                 type="button"
                 title="Close focused table"
                 aria-label="Close focused table"
-                onClick={closeTable}
+                onClick={() => closeTable()}
               >
                 <svg
                   width={16}

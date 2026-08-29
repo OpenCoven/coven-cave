@@ -1,4 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import type {
+  ResearchMission,
+  ResearchSourceRef,
+} from "@/lib/research-missions";
 
 // Research Reader — the typeset findings deliverable viewer (Research
 // Reader.dc.html handoff). Reached from the Research Desk artifact rail: a
@@ -87,6 +91,11 @@ const COMPLETED_MISSION = {
     { id: "S2", title: "Persona vectors and steering", url: "https://example.com/s2", publisher: "arXiv", publishedAt: "2024", sourceType: "web", status: "used" },
     { id: "S4", title: "Utility engineering in LMs", url: "https://example.com/s4", publisher: "arXiv", publishedAt: "2025", sourceType: "web", status: "used" },
   ],
+} satisfies ResearchMission;
+
+type SourceLedgerFixture = {
+  state: "available" | "empty" | "failed";
+  sources: ResearchSourceRef[];
 };
 
 async function openReader(
@@ -94,9 +103,11 @@ async function openReader(
   {
     markdown = FINDINGS_MD,
     mission = COMPLETED_MISSION,
+    sourceLedgers,
   }: {
     markdown?: string;
-    mission?: typeof COMPLETED_MISSION;
+    mission?: ResearchMission;
+    sourceLedgers?: SourceLedgerFixture[];
   } = {},
 ) {
   await page.addInitScript(() => {
@@ -111,9 +122,20 @@ async function openReader(
   await page.route(/\/api\/research\/missions\?/, (route) => route.fulfill({ json: { ok: true, missions: [mission] } }));
   await page.route("**/api/research/links", (route) => route.fulfill({ json: { ok: true, links: [] } }));
   await page.route(/\/api\/research\/generations/, (route) => route.fulfill({ json: { ok: true, generations: [] } }));
-  // The artifact file route feeds the reader its findings markdown.
-  await page.route("**/api/research/missions/*/files/**", (route) =>
-    route.fulfill({
+  const defaultLedger: SourceLedgerFixture = {
+    state: mission.sources.length > 0 ? "available" : "empty",
+    sources: mission.sources,
+  };
+  let fileRequestIndex = 0;
+  // The artifact file route feeds the reader its findings markdown and the
+  // independently read source-ledger snapshot from the same request.
+  await page.route("**/api/research/missions/*/files/**", (route) => {
+    const ledger =
+      sourceLedgers?.[
+        Math.min(fileRequestIndex, sourceLedgers.length - 1)
+      ] ?? defaultLedger;
+    fileRequestIndex += 1;
+    return route.fulfill({
       json: {
         ok: true,
         file: {
@@ -125,10 +147,11 @@ async function openReader(
           content: markdown,
           workspacePath: "/tmp/m-done/findings.md",
           updatedAt: iso(45),
+          sourceLedger: ledger,
         },
       },
-    }),
-  );
+    });
+  });
 
   await page.goto("/");
   await page.locator(".shell-frame").waitFor({ timeout: 60_000 });
@@ -524,6 +547,187 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(tableDialog).toHaveCount(0);
     await expect(focusTable).toBeFocused();
     await expect(reader).toBeVisible();
+  });
+
+  test("focused table evidence closes the table before opening and focusing the inspector", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+
+    await reader.getByRole("button", { name: "Focus table" }).click();
+    const tableDialog = page.getByRole("dialog", { name: "Key results" });
+    const focusedReference = tableDialog
+      .locator(
+        '[data-research-reference-id="S14"][data-research-reference-representation="edge"]',
+      )
+      .first();
+    await expect(focusedReference).toBeVisible();
+    await focusedReference.click();
+
+    await expect(tableDialog).toHaveCount(0);
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector).toBeVisible();
+    const selectedToggle = inspector.locator(
+      '[data-source-id="S14"] .research-evidence-card__toggle',
+    );
+    await expect(selectedToggle).toBeFocused();
+    await expect(inspector.locator('[data-source-id="S14"]')).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
+
+  test("failed source ledger never reuses stale mission sources and retries to current truth", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const currentSource = COMPLETED_MISSION.sources.find(
+      (source) => source.id === "S1",
+    )!;
+    await openReader(page, {
+      markdown: "# Findings\n\n## Result\n\nClaim [S1].",
+      sourceLedgers: [
+        { state: "failed", sources: [] },
+        { state: "available", sources: [currentSource] },
+      ],
+    });
+    const reader = page.locator(".research-reader");
+
+    await expect(reader.locator(".rr-integrity")).toHaveText(
+      "Sources unavailable — references can't be verified",
+    );
+    await expect(
+      reader.locator('[data-source-id="S1"]'),
+    ).toHaveCount(0);
+    await expect(
+      reader.locator('[data-research-reference-id="S1"]').first(),
+    ).toHaveAttribute("aria-label", "Missing source S1");
+
+    await reader.getByRole("button", { name: "Show evidence" }).click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    await expect(inspector).toContainText("Sources unavailable");
+    await expect(inspector).toContainText(
+      "The source ledger could not be read.",
+    );
+    await expect(inspector.locator(".research-evidence-card")).toHaveCount(0);
+
+    await inspector.getByRole("button", { name: "Retry sources" }).click();
+    await expect(reader.locator(".rr-integrity")).toHaveText(
+      "1 source verified",
+    );
+    await expect(inspector.locator('[data-source-id="S1"]')).toHaveCount(1);
+    await expect(
+      reader.locator('[data-research-reference-id="S1"]').first(),
+    ).toHaveAttribute("aria-label", "Open evidence S1");
+  });
+
+  test("headingless findings use the artifact title and omit dead Contents chrome", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openReader(page, {
+      markdown: "Opening claim [S1].\n\nA second paragraph keeps the report readable.",
+      sourceLedgers: [{
+        state: "available",
+        sources: [COMPLETED_MISSION.sources.find((source) => source.id === "S1")!],
+      }],
+    });
+    const reader = page.locator(".research-reader");
+
+    await expect(reader.locator(".document-reader__title")).toHaveText(
+      "Findings",
+    );
+    await expect(reader).toContainText("Opening claim");
+    await expect(
+      reader.getByRole("button", { name: /^(Show|Hide) contents$/ }),
+    ).toHaveCount(0);
+
+    await reader.getByRole("button", { name: "Show evidence" }).click();
+    await page.keyboard.press("Escape");
+    await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
+    await expect(
+      reader.getByRole("button", { name: "Show evidence" }),
+    ).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".research-reader")).toHaveCount(0);
+  });
+
+  test("long source ids stay compact without losing their full accessible identity", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const longId = `manual-${"x".repeat(121)}`;
+    const longSource = {
+      id: longId,
+      title: "Manually curated primary source",
+      sourceType: "manual",
+      status: "used",
+    } as const;
+    await openReader(page, {
+      markdown: `# Findings\n\n## Result\n\nClaim [${longId}].`,
+      mission: {
+        ...COMPLETED_MISSION,
+        sources: [longSource],
+      },
+      sourceLedgers: [{ state: "available", sources: [longSource] }],
+    });
+    const reader = page.locator(".research-reader");
+    const edgeReference = reader.locator(
+      `[data-research-reference-id="${longId}"][data-research-reference-representation="edge"]`,
+    );
+    await expect(edgeReference).toHaveAttribute(
+      "aria-label",
+      `Open evidence ${longId}`,
+    );
+    const edgeLabel = edgeReference.locator(
+      `[data-research-source-id-label="${longId}"]`,
+    );
+    await expect(edgeLabel).toHaveAttribute("title", longId);
+    await expect(edgeLabel).toContainText("…");
+    expect(
+      await edgeReference.evaluate((element) => {
+        const row = element.closest(".rr-block-row");
+        const content = row?.firstElementChild?.getBoundingClientRect();
+        const edge = element.getBoundingClientRect();
+        return {
+          contained: element.scrollWidth <= element.clientWidth,
+          separated: Boolean(content) && content!.right <= edge.left,
+        };
+      }),
+    ).toEqual({ contained: true, separated: true });
+
+    await edgeReference.click();
+    const inspector = reader.locator(".research-evidence-inspector");
+    const sourceToggle = inspector.locator(
+      `[data-source-id="${longId}"] .research-evidence-card__toggle`,
+    );
+    await expect(sourceToggle).toHaveAttribute(
+      "aria-label",
+      `Collapse evidence ${longId}: Manually curated primary source`,
+    );
+    await expect(
+      sourceToggle.locator(`[data-research-source-id-label="${longId}"]`),
+    ).toHaveAttribute("title", longId);
+    await inspector
+      .getByRole("button", { name: "Close evidence inspector" })
+      .click();
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    const inlineReference = reader.locator(
+      `[data-research-reference-id="${longId}"][data-research-reference-representation="inline"]`,
+    );
+    await expect(inlineReference).toBeVisible();
+    await expect(inlineReference).toHaveAttribute(
+      "aria-label",
+      `Open evidence ${longId}`,
+    );
+    const inlineLabel = inlineReference.locator(
+      `[data-research-source-id-label="${longId}"]`,
+    );
+    await expect(inlineLabel).toHaveAttribute("title", longId);
+    expect(
+      await inlineReference.evaluate(
+        (element) =>
+          element.scrollWidth <= element.clientWidth &&
+          element.getBoundingClientRect().right <=
+            element.closest(".document-reader__column")!.getBoundingClientRect()
+              .right,
+      ),
+    ).toBe(true);
   });
 
   test("wide Escape closes Contents and Evidence in most-recently-opened order", async ({ page }) => {

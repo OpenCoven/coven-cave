@@ -2,6 +2,7 @@ import type { ResearchSourceRef } from "./research-missions.ts";
 import {
   findRecognizedFindingsRefs,
   matchFindingsFenceRun,
+  matchFindingsAtxHeading,
   matchFindingsInlineLinkAt,
   stripFindingsComments,
 } from "./research-findings-doc.ts";
@@ -49,9 +50,17 @@ function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: stri
 function preprocessMarkdownForIntegrity(markdown: string): string {
   const withoutComments = stripFindingsComments(markdown ?? "");
   const withoutBlocks = stripFencedCode(withoutComments);
-  const withoutCode = stripInlineCode(withoutBlocks);
+  const withoutHeadings = stripAtxHeadings(withoutBlocks);
+  const withoutCode = stripInlineCode(withoutHeadings);
   const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode);
   return stripBareUrls(withoutMarkdownTargets);
+}
+
+function stripAtxHeadings(markdown: string): string {
+  return markdown
+    .split(/\r?\n/)
+    .map((line) => (matchFindingsAtxHeading(line) ? "" : line))
+    .join("\n");
 }
 
 function findBalancedClose(input: string, startIndex: number, open: string, close: string): number {

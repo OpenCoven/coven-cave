@@ -2100,6 +2100,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/links/route.test.ts",
   // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
   "src/app/api/research/github-repo/route.test.ts",
+  // the mission-file route resolves the validated store and shared source
+  // parser through "@/lib/..." runtime imports.
+  "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws

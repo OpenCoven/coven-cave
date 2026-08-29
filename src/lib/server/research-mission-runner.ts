@@ -8,6 +8,7 @@ import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
   normalizeResearchSource,
   parseResearchControl,
+  parseResearchSourcesFile,
   renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   type ResearchProvenance,
@@ -68,8 +69,9 @@ import {
 } from "./research-mission-lifecycle.ts";
 
 export {
+  parseResearchSourcesFile,
   withinStartupGrace,
-} from "./research-mission-lifecycle.ts";
+};
 export type { ResearchFlowStartResult } from "./research-mission-lifecycle.ts";
 
 export const RESEARCH_SESSION_OWNER_REPAIR_REQUIRED =
@@ -2058,25 +2060,6 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     },
     act,
   };
-}
-
-export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("sources.json is malformed");
-  }
-  if (!Array.isArray(parsed)) throw new Error("sources.json must contain an array");
-  return parsed.map((item, index) => {
-    const normalized = normalizeResearchSource(
-      item as Parameters<typeof normalizeResearchSource>[0],
-    );
-    if (!normalized.ok) {
-      throw new Error(`sources.json source ${index + 1}: ${normalized.reason}`);
-    }
-    return normalized.value;
-  });
 }
 
 /**

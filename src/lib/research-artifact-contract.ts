@@ -153,6 +153,32 @@ export function normalizeResearchSource(
   };
 }
 
+/** Parse and normalize the authoritative sources.json payload. Keep this
+ * outside the runner so read-only routes can validate the ledger without
+ * importing the runner's orchestration graph. */
+export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("sources.json is malformed");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("sources.json must contain an array");
+  }
+  return parsed.map((item, index) => {
+    const normalized = normalizeResearchSource(
+      item as Parameters<typeof normalizeResearchSource>[0],
+    );
+    if (!normalized.ok) {
+      throw new Error(
+        `sources.json source ${index + 1}: ${normalized.reason}`,
+      );
+    }
+    return normalized.value;
+  });
+}
+
 export function normalizeResearchArtifact(
   draft: ResearchArtifactDraft,
 ): ContractResult<{ kind: ResearchArtifactKind; relativePath: string }> {

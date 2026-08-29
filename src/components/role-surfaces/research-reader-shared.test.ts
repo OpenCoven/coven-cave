@@ -21,7 +21,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<DocumentReader[\s\S]*?document=\{doc\}/,
+  /<DocumentReader[\s\S]*?document=\{readerDocument\}/,
   "the source-aware findings model must flow through DocumentReader",
 );
 assert.match(
@@ -33,6 +33,11 @@ assert.match(
   source,
   /deriveResearchFindingsIntegrity/,
   "Research Reader derives evidence integrity from the findings and ledger",
+);
+assert.match(
+  source,
+  /sourceLedger\.sources[\s\S]*?ledger:\s*sourceLedger\.state/,
+  "Research Reader derives evidence truth from the current file-ledger snapshot",
 );
 assert.match(
   source,
@@ -77,6 +82,16 @@ assert.match(
   source,
   /const \[inspectorOn, setInspectorOn\] = useState\(false\)/,
   "the evidence inspector is hidden by default",
+);
+assert.match(
+  source,
+  /const hasNamedSections = doc\.sections\.some[\s\S]*?\{hasNamedSections \? \([\s\S]*?contentsToggleRef/,
+  "headingless reports omit the dead top-level Contents control",
+);
+assert.match(
+  source,
+  /document=\{readerDocument\}/,
+  "DocumentReader receives the artifact-title fallback document",
 );
 assert.match(
   source,
@@ -202,6 +217,11 @@ assert.match(
   source,
   /const onRefClick[\s\S]*?openPanel\("evidence"\)/,
   "inline and margin evidence selection promote Evidence in panel opening order",
+);
+assert.match(
+  source,
+  /closest\("\.rr-kroverlay-card"\)[\s\S]*?closeTable\(\{ restoreFocus: false \}\)[\s\S]*?focusSelectedInspector/,
+  "focused-table evidence closes the table without restoring its invoker before focusing Evidence",
 );
 assert.match(
   source,

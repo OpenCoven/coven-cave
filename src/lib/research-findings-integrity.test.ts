@@ -348,24 +348,37 @@ test("indented continuation runs can close an existing inline code span", () => 
   assert.equal(integrity.summary.kind, "none");
 });
 
-test("visible document titles count real ledger ids without duplicate prose references", () => {
+test("document titles do not create evidence integrity references", () => {
   const integrity = deriveResearchFindingsIntegrity(
-    "# Report manual-1\n\n[paper]: /docs/manual-1",
+    "# Report manual-1 [S9] C2",
     [source("manual-1", "candidate")],
   );
-  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.referencedIds, []);
   assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "none");
 });
 
-test("visible section headings count real ledger ids while bare URLs remain excluded", () => {
+test("section headings do not create evidence integrity references but body citations do", () => {
   const integrity = deriveResearchFindingsIntegrity(
-    "# Report\n\n## Result from manual-1\n\nhttps://x.test/manual-1",
-    [source("manual-1", "candidate")],
+    "# Report\n\n## Result from manual-1 [S9] C2\n\nBody evidence [S1].\n\nhttps://x.test/manual-1",
+    [source("manual-1", "candidate"), source("S1", "used")],
   );
-  assert.deepEqual(integrity.referencedIds, ["manual-1"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
   assert.deepEqual(integrity.unresolvedIds, []);
-  assert.equal(integrity.summary.kind, "candidate");
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("heading-like lines inside fenced code and comments keep their existing opaque semantics", () => {
+  const integrity = deriveResearchFindingsIntegrity(
+    "```md\n# Hidden [S9] C2\n```\n<!-- ## Hidden [S8] C3 -->\nBody [S1].",
+    [source("S1", "used")],
+  );
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
 });
 
 test("html comments do not create source or conflict markers", () => {

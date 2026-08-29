@@ -328,6 +328,9 @@ parser delta is explicit:
 - Add stable block IDs and block-level reference IDs.
 - Add per-item reference IDs for ordered and unordered lists.
 - Add per-row reference IDs for tables.
+- Treat ATX title and section heading text as navigation only, not as
+  provenance-bearing claims; heading-only source or conflict tokens do not
+  contribute to evidence integrity.
 - Keep code content opaque; fenced code does not produce source anchors.
 
 `Supports` relationships target stable blocks, including heading-less overview

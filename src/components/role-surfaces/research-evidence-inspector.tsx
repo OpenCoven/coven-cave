@@ -1,11 +1,19 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { Icon } from "@/lib/icon";
 import type { FindingsSupportTarget } from "@/lib/research-findings-doc";
-import type { ResearchSourceRef } from "@/lib/research-missions";
+import type {
+  ResearchSourceLedgerSnapshot,
+  ResearchSourceRef,
+} from "@/lib/research-missions";
+import { ResearchSourceIdLabel } from "./research-source-id-label";
 
 export type ResearchEvidenceInspectorProps = {
   sources: ResearchSourceRef[];
+  ledgerState: ResearchSourceLedgerSnapshot["state"];
+  retryingSources: boolean;
   integrityLabel: string;
   selectedId: string | null;
   openIds: ReadonlySet<string>;
@@ -15,6 +23,7 @@ export type ResearchEvidenceInspectorProps = {
   onCite: (source: ResearchSourceRef) => void;
   onSupport: (target: FindingsSupportTarget) => void;
   onClose: () => void;
+  onRetrySources: () => void;
 };
 
 type SourceStatusView = {
@@ -74,6 +83,8 @@ function sourceVariant(source: ResearchSourceRef): string {
 
 export function ResearchEvidenceInspector({
   sources,
+  ledgerState,
+  retryingSources,
   integrityLabel,
   selectedId,
   openIds,
@@ -83,8 +94,12 @@ export function ResearchEvidenceInspector({
   onCite,
   onSupport,
   onClose,
+  onRetrySources,
 }: ResearchEvidenceInspectorProps) {
-  const sourceCountLabel = `${sources.length} source${sources.length === 1 ? "" : "s"}`;
+  const sourceCountLabel =
+    ledgerState === "failed"
+      ? "Unavailable"
+      : `${sources.length} source${sources.length === 1 ? "" : "s"}`;
 
   return (
     <aside
@@ -114,7 +129,24 @@ export function ResearchEvidenceInspector({
       </header>
 
       <div className="research-evidence-inspector__list">
-        {STATUS_PRIORITY.map((status) => {
+        {ledgerState === "failed" ? (
+          <ErrorState
+            compact
+            className="research-evidence-inspector__failure"
+            headline="Sources unavailable"
+            subtitle="The source ledger could not be read. The report remains available, but its citations cannot be verified."
+            actions={
+              <Button
+                size="sm"
+                leadingIcon="ph:arrow-clockwise"
+                loading={retryingSources}
+                onClick={onRetrySources}
+              >
+                Retry sources
+              </Button>
+            }
+          />
+        ) : STATUS_PRIORITY.map((status) => {
           const statusSources = sources.filter(
             (source) => source.status === status,
           );
@@ -162,12 +194,14 @@ export function ResearchEvidenceInspector({
                       type="button"
                       aria-expanded={open}
                       aria-controls={detailId}
+                      aria-label={`${open ? "Collapse" : "Expand"} evidence ${source.id}: ${source.title}`}
                       onClick={() => onToggle(source.id)}
                     >
                       <span className="rr-src__head">
-                        <span className={`rr-sref${refToneClass}`}>
-                          {source.id}
-                        </span>
+                        <ResearchSourceIdLabel
+                          id={source.id}
+                          className={`rr-sref${refToneClass}`}
+                        />
                         <span
                           className={`rr-srcstat rr-srcstat--${view.tone}`}
                         >

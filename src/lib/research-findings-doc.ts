@@ -482,6 +482,18 @@ const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
 const LIST_RE = /^\s*[-*+]\s+(.+)$/;
 const ORDERED_LIST_RE = /^\s*\d+[.)]\s+(.+)$/;
 const QUOTE_RE = /^\s*>\s?(.*)$/;
+
+/** Match the ATX headings that become reader title/section chrome. Their text
+ * is navigation, not a provenance target; integrity scanning shares this exact
+ * boundary so heading-only citations cannot claim evidence support. */
+export function matchFindingsAtxHeading(
+  line: string,
+): { level: number; heading: string } | null {
+  const match = HEADING_RE.exec(line);
+  return match
+    ? { level: match[1].length, heading: match[2].trim() }
+    : null;
+}
 const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
@@ -774,10 +786,9 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
         };
       }
     }
-    const headingMatch = headingFence ? null : HEADING_RE.exec(line);
+    const headingMatch = headingFence ? null : matchFindingsAtxHeading(line);
     if (headingMatch) {
-      const level = headingMatch[1].length;
-      const heading = headingMatch[2].trim();
+      const { level, heading } = headingMatch;
       if (title === null && level === 1) {
         title = heading;
         current = null;
