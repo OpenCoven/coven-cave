@@ -700,8 +700,35 @@
   overflow: hidden;
 }
 
+.rr-wide-ref {
+  display: inline-flex;
+  max-width: calc(var(--space-12) + var(--space-4));
+  align-items: baseline;
+  overflow: hidden;
+  color: var(--research-accent);
+  font: 600 var(--text-xs) var(--font-mono);
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.rr-wide-ref--warn {
+  color: var(--color-warning);
+  text-decoration: underline wavy;
+}
+
+.rr-wide-ref--muted {
+  color: var(--color-danger);
+  text-decoration: line-through;
+}
+
+.rr-wide-ref--unresolved {
+  color: var(--color-danger);
+  font-style: italic;
+  text-decoration: underline dotted;
+}
+
 .rr-inline-ref-gap {
-  display: none;
+  display: inline;
 }
 
 .rr-sref {
@@ -1665,6 +1692,10 @@
   }
 
   .research-provenance-edge {
+    display: none;
+  }
+
+  .rr-wide-ref {
     display: none;
   }
 

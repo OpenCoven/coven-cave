@@ -1,12 +1,5 @@
 import type { ResearchSourceRef } from "./research-missions.ts";
-import {
-  findRecognizedFindingsRefs,
-  matchFindingsFenceRun,
-  matchFindingsAtxHeading,
-  matchFindingsImageAt,
-  matchFindingsInlineLinkAt,
-  stripFindingsComments,
-} from "./research-findings-doc.ts";
+import { parseFindingsDoc } from "./research-findings-doc.ts";
 
 export type ResearchIntegritySummaryKind =
   | "unavailable"
@@ -48,225 +41,9 @@ function unavailableSummary(): { kind: ResearchIntegritySummaryKind; label: stri
   return { kind: "unavailable", label: "Sources unavailable — references can't be verified" };
 }
 
-function preprocessMarkdownForIntegrity(markdown: string): string {
-  const withoutComments = stripFindingsComments(markdown ?? "");
-  const withoutBlocks = stripFencedCode(withoutComments);
-  const withoutHeadings = stripAtxHeadings(withoutBlocks);
-  const withoutCode = stripInlineCode(withoutHeadings);
-  const withoutMarkdownTargets = stripMarkdownLinksAndImages(withoutCode);
-  return stripBareUrls(withoutMarkdownTargets);
-}
-
-function stripAtxHeadings(markdown: string): string {
-  return markdown
-    .split(/\r?\n/)
-    .map((line) => (matchFindingsAtxHeading(line) ? "" : line))
-    .join("\n");
-}
-
-function stripFencedCode(markdown: string): string {
-  const lines = markdown.split(/\r?\n/);
-  let fence: { character: string; length: number } | null = null;
-  const strippedLines: string[] = [];
-
-  for (const line of lines) {
-    const run = matchFindingsFenceRun(line);
-    if (fence) {
-      if (
-        run &&
-        run.character === fence.character &&
-        run.length >= fence.length &&
-        !run.suffix.trim()
-      ) {
-        fence = null;
-      }
-      strippedLines.push("");
-      continue;
-    }
-
-    if (run) {
-      fence = { character: run.character, length: run.length };
-      strippedLines.push("");
-      continue;
-    }
-
-    strippedLines.push(line);
-  }
-
-  return strippedLines.join("\n");
-}
-
-function isEscaped(input: string, index: number): boolean {
-  let slashCount = 0;
-  for (let cursor = index - 1; cursor >= 0 && input[cursor] === "\\"; cursor -= 1) {
-    slashCount += 1;
-  }
-  return slashCount % 2 === 1;
-}
-
-function backtickRunLength(input: string, index: number): number {
-  let length = 0;
-  while (input[index + length] === "`") length += 1;
-  return length;
-}
-
-function isUnsupportedContainerFenceRun(
-  input: string,
-  index: number,
-  runLength: number,
-): boolean {
-  if (runLength < 3) return false;
-
-  const lineStart = input.lastIndexOf("\n", index - 1) + 1;
-  const prefix = input.slice(lineStart, index);
-  return (
-    /^[ \t]+$/.test(prefix) ||
-    /^(?:[ \t]*(?:>[ \t]?|(?:[-+*]|\d{1,9}[.)])[ \t]+))+[ \t]*$/.test(prefix)
-  );
-}
-
-function findClosingBacktickRun(input: string, startIndex: number, openerLength: number): number {
-  for (let index = startIndex; index < input.length; ) {
-    if (input[index] !== "`") {
-      index += 1;
-      continue;
-    }
-
-    const length = backtickRunLength(input, index);
-    if (length === openerLength) return index;
-    index += length;
-  }
-
-  return -1;
-}
-
-function stripInlineCode(markdown: string): string {
-  let sanitized = "";
-
-  for (let index = 0; index < markdown.length; ) {
-    if (markdown[index] !== "`" || isEscaped(markdown, index)) {
-      sanitized += markdown[index];
-      index += 1;
-      continue;
-    }
-
-    const openerLength = backtickRunLength(markdown, index);
-    if (isUnsupportedContainerFenceRun(markdown, index, openerLength)) {
-      sanitized += markdown.slice(index, index + openerLength);
-      index += openerLength;
-      continue;
-    }
-    const closeIndex = findClosingBacktickRun(markdown, index + openerLength, openerLength);
-    if (closeIndex === -1) {
-      sanitized += markdown.slice(index, index + openerLength);
-      index += openerLength;
-      continue;
-    }
-
-    sanitized += " ";
-    index = closeIndex + openerLength;
-  }
-
-  return sanitized;
-}
-
-function stripMarkdownLinksAndImages(markdown: string): string {
-  let sanitized = "";
-
-  for (let index = 0; index < markdown.length; ) {
-    const image = matchFindingsImageAt(markdown, index);
-    if (image) {
-      sanitized += " ";
-      index += image.length;
-      continue;
-    }
-
-    const isLink = markdown[index] === "[";
-    if (!isLink) {
-      sanitized += markdown[index];
-      index += 1;
-      continue;
-    }
-
-    const inlineLink = matchFindingsInlineLinkAt(markdown, index);
-    if (inlineLink) {
-      sanitized += `[${stripMarkdownLinksAndImages(inlineLink.text)}]`;
-      index += inlineLink.length;
-      continue;
-    }
-
-    sanitized += markdown[index];
-    index += 1;
-  }
-
-  return sanitized;
-}
-
-function stripBareUrls(markdown: string): string {
-  let sanitized = "";
-  for (let index = 0; index < markdown.length; ) {
-    const protocol = markdown.slice(index, index + "https://".length).toLowerCase();
-    const protocolLength = protocol.startsWith("https://")
-      ? "https://".length
-      : protocol.startsWith("http://")
-        ? "http://".length
-        : 0;
-    if (!protocolLength) {
-      sanitized += markdown[index];
-      index += 1;
-      continue;
-    }
-
-    const urlStart = index;
-    let parenDepth = 0;
-    index += protocolLength;
-    const authorityStart = index;
-    while (index < markdown.length) {
-      const character = markdown[index];
-      if (/\s/.test(character)) break;
-      if (character === "[" && parenDepth === 0) {
-        const hostEnd = markdown.indexOf("]", index + 1);
-        const bracketedHost = hostEnd === -1 ? "" : markdown.slice(index + 1, hostEnd);
-        const authorityPrefix = markdown.slice(authorityStart, index);
-        if (
-          bracketedHost.includes(":") &&
-          !/\s/.test(bracketedHost) &&
-          !/[/?#]/.test(authorityPrefix)
-        ) {
-          index = hostEnd + 1;
-          continue;
-        }
-        const bracketedComponent = hostEnd === -1 ? "" : markdown.slice(index + 1, hostEnd);
-        if (
-          /[/?#]/.test(authorityPrefix) &&
-          !/[.,;:!?)]/.test(markdown[index - 1] ?? "") &&
-          bracketedComponent &&
-          !/\s/.test(bracketedComponent)
-        ) {
-          index = hostEnd + 1;
-          continue;
-        }
-        break;
-      }
-      if (character === "(") parenDepth += 1;
-      else if (character === ")" && parenDepth > 0) parenDepth -= 1;
-      index += 1;
-    }
-    // Keep parser offsets and word boundaries while making URL contents opaque.
-    sanitized += "x".repeat(index - urlStart);
-  }
-
-  return sanitized;
-}
-
 export function scanBracketedSourceIds(markdown: string): string[] {
-  return uniqueIdsInOrder(
-    findRecognizedFindingsRefs(
-      preprocessMarkdownForIntegrity(markdown),
-      [],
-    )
-      .filter((match) => SOURCE_ID_RE.test(match.id))
-      .map((match) => match.id),
+  return parseFindingsDoc(markdown, []).refIds.filter((id) =>
+    SOURCE_ID_RE.test(id),
   );
 }
 
@@ -334,31 +111,22 @@ export function deriveResearchFindingsIntegrity(
   options: { ledger?: ResearchFindingsIntegrity["ledger"] } = {},
 ): ResearchFindingsIntegrity {
   const sourceById = new Map<string, ResearchSourceRef>();
-  const sanitizedMarkdown = preprocessMarkdownForIntegrity(markdown);
 
   for (const source of sources) {
     if (!sourceById.has(source.id)) sourceById.set(source.id, source);
   }
 
-  const recognizedRefs = findRecognizedFindingsRefs(sanitizedMarkdown, sources);
-  const actualLedgerRefs = recognizedRefs.filter(
-    (match) => sourceById.has(match.id) && !CONFLICT_ID_RE.test(match.id),
-  );
-  const unresolvedStrictRefs = recognizedRefs.filter(
-    (match) =>
-      SOURCE_ID_RE.test(match.id) &&
-      !sourceById.has(match.id),
-  );
+  const recognizedIds = parseFindingsDoc(markdown, sources).refIds;
   const referencedIds = uniqueIdsInOrder(
-    [...actualLedgerRefs, ...unresolvedStrictRefs]
-      .sort((left, right) => left.index - right.index)
-      .map((match) => match.id),
+    recognizedIds.filter(
+      (id) =>
+        !CONFLICT_ID_RE.test(id) &&
+        (sourceById.has(id) || SOURCE_ID_RE.test(id)),
+    ),
   );
   const unresolvedIds = referencedIds.filter((id) => !sourceById.has(id));
   const conflictMarkerIds = uniqueIdsInOrder(
-    recognizedRefs
-      .filter((match) => CONFLICT_ID_RE.test(match.id))
-      .map((match) => match.id),
+    recognizedIds.filter((id) => CONFLICT_ID_RE.test(id)),
   );
   const conflictingSourceIds = uniqueIdsInOrder(
     sources.filter((source) => source.status === "conflicting").map((source) => source.id),

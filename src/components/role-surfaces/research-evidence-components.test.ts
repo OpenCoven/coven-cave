@@ -478,6 +478,58 @@ describe("ResearchEvidenceInspector", () => {
 });
 
 describe("ResearchFindingsInlineSpans", () => {
+  test("keeps authored refs as aria-hidden visual text beside the sole interactive inline control", () => {
+    const longId = `manual-${"source-".repeat(14)}primary`;
+    const sources = [
+      source("S1", "used"),
+      source("C1", "conflicting"),
+      source("R1", "rejected"),
+      source(longId, "used"),
+    ];
+    const html = renderToStaticMarkup(
+      createElement(ResearchFindingsInlineSpans, {
+        spans: parseInline(
+          `S1 contradicts C1; R1 is rejected; [S99] is missing; ${longId} remains.`,
+          sources,
+        ),
+        keyPrefix: "authored-refs",
+        sourceById: new Map(sources.map((item) => [item.id, item])),
+        hoverKey: null,
+        selectedSourceId: null,
+        onRefPreview: () => {},
+        onClearPreview: () => {},
+        onRefClick: () => {},
+      }),
+    );
+
+    for (const [id, tone] of [
+      ["S1", "accent"],
+      ["C1", "warn"],
+      ["R1", "muted"],
+      ["S99", "unresolved"],
+      [longId, "accent"],
+    ] as const) {
+      assert.equal(
+        html.match(new RegExp(`data-research-reference-id="${id}"`, "g"))
+          ?.length,
+        1,
+        `${id} has one interactive representation`,
+      );
+      assert.match(
+        html,
+        new RegExp(
+          `<span[^>]*class="rr-wide-ref rr-wide-ref--${tone}"[^>]*aria-hidden="true"[^>]*>[\\s\\S]*?data-research-source-id-label="${id}"`,
+        ),
+        `${id} has a noninteractive wide visual token`,
+      );
+    }
+    assert.match(html, new RegExp(`title="${longId}"`));
+    assert.doesNotMatch(
+      html,
+      /<button[^>]*rr-wide-ref|<span[^>]*rr-wide-ref[^>]*(?:tabindex|role)=/,
+    );
+  });
+
   test("renders mixed link labels as linked prose plus selectable evidence refs", () => {
     const sources = [
       source("S1", "used"),

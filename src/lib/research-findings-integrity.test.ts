@@ -151,7 +151,7 @@ test("missing and actual references preserve document order", () => {
   assert.deepEqual(integrity.unresolvedIds, ["S9"]);
 });
 
-test("inline code removal inserts a space so arbitrary ids are not fabricated", () => {
+test("inline code boundaries do not fabricate arbitrary ids", () => {
   const integrity = deriveResearchFindingsIntegrity("manual`x`-1 stays prose.", [
     source("manual-1", "candidate"),
   ]);
@@ -160,7 +160,7 @@ test("inline code removal inserts a space so arbitrary ids are not fabricated", 
   assert.equal(integrity.summary.kind, "none");
 });
 
-test("balanced link stripping preserves visible labels while removing destinations", () => {
+test("balanced links expose visible labels while destinations stay opaque", () => {
   const integrity = deriveResearchFindingsIntegrity("Use [manual-1](https://x.test/docs_(v2)) as evidence.", [
     source("manual-1", "candidate"),
   ]);
@@ -217,7 +217,7 @@ test("malformed links preserve citations rendered as ordinary prose", () => {
   assert.equal(integrity.summary.kind, "verified");
 });
 
-test("bare URL stripping preserves parser boundaries before URL schemes", () => {
+test("bare URL boundaries do not split source ids before URL schemes", () => {
   const markdown =
     "S1https://example.test/report C1https://example.test/conflict";
   const sources = [source("S1", "used")];
@@ -231,7 +231,7 @@ test("bare URL stripping preserves parser boundaries before URL schemes", () => 
   assert.equal(integrity.summary.kind, "none");
 });
 
-test("bare URL stripping stops before adjacent citations and leaves later conflicts visible", () => {
+test("bare URL boundaries stop before adjacent citations and leave later conflicts visible", () => {
   const markdown = "See https://x.test/report.[S1] C2.";
   const sources = [source("S1", "used")];
   const doc = parseFindingsDoc(markdown, sources);
@@ -242,6 +242,36 @@ test("bare URL stripping stops before adjacent citations and leaves later confli
   assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, ["C2"]);
   assert.equal(integrity.summary.kind, "conflicting");
+});
+
+test("table cell boundaries stop bare URLs before adjacent citations", () => {
+  const markdown = [
+    "| Report | Evidence |",
+    "| --- | --- |",
+    "| https://x.test/report|[S1] |",
+  ].join("\n");
+  const sources = [source("S1", "used")];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S1"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
+});
+
+test("inline code delimiters cannot consume references from another list item", () => {
+  const markdown = "- `draft\n- [S1]`";
+  const sources = [source("S1", "used")];
+  const doc = parseFindingsDoc(markdown, sources);
+  const integrity = deriveResearchFindingsIntegrity(markdown, sources);
+
+  assert.deepEqual(doc.refIds, ["S1"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
+  assert.deepEqual(integrity.conflictIds, []);
+  assert.equal(integrity.summary.kind, "verified");
 });
 
 test("bare source ids appended to URLs stay aligned with parser URL opacity", () => {
@@ -261,7 +291,7 @@ test("bare source ids appended to URLs stay aligned with parser URL opacity", ()
   }
 });
 
-test("bare URL schemes are stripped case-insensitively", () => {
+test("bare URL schemes remain opaque case-insensitively", () => {
   const integrity = deriveResearchFindingsIntegrity("HTTPS://x.test/S1/C2", [
     source("S1", "used"),
   ]);
@@ -406,17 +436,17 @@ test("nested visible citations remain unresolved without ledger rows", () => {
   assert.equal(integrity.summary.kind, "unavailable");
 });
 
-test("unsupported container fences remain visible like parser prose", () => {
+test("unsupported container fences follow the parser's per-block boundaries", () => {
   const markdown =
     "> ~~~\n> [S1] C2\n> ~~~\n    >  ```\n    > [S9]\n    >  ```";
   const sources = [source("S1", "used")];
   assert.deepEqual(parseFindingsDoc(markdown, sources).refIds, ["S1", "C2"]);
 
   const integrity = deriveResearchFindingsIntegrity(markdown, sources);
-  assert.deepEqual(integrity.referencedIds, ["S1", "S9"]);
-  assert.deepEqual(integrity.unresolvedIds, ["S9"]);
+  assert.deepEqual(integrity.referencedIds, ["S1"]);
+  assert.deepEqual(integrity.unresolvedIds, []);
   assert.deepEqual(integrity.conflictIds, ["C2"]);
-  assert.equal(integrity.summary.kind, "unresolved");
+  assert.equal(integrity.summary.kind, "conflicting");
 });
 
 test("deeply indented backtick lines do not form inline code across prose", () => {

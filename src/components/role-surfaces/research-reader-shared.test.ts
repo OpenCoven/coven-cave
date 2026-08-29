@@ -398,8 +398,13 @@ assert.match(
 );
 assert.match(
   source,
+  /className=\{`rr-wide-ref rr-wide-ref--\$\{span\.tone\}`\}[\s\S]*?aria-hidden="true"[\s\S]*?<ResearchSourceIdLabel id=\{span\.id\}/,
+  "wide findings retain a separate noninteractive visual reference token",
+);
+assert.match(
+  source,
   /span\.kind === "ref-gap"[\s\S]*?className="rr-inline-ref-gap"/,
-  "parser-owned reference gaps render independently from prose and chips",
+  "parser-owned reference gaps render independently from prose and both reference representations",
 );
 assert.match(
   source,
@@ -505,8 +510,55 @@ assert.match(
   /@container document-reader \(max-width: 65rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
   "compact readers remove the hidden evidence-edge reserve",
 );
+const wideInlineReferenceRule = css.match(/^\.rr-wide-ref \{([^}]*)\}/m);
+assert.ok(wideInlineReferenceRule, "wide visual reference tokens have a dedicated rule");
+assert.match(
+  wideInlineReferenceRule[1],
+  /display:\s*inline-flex/,
+  "authored reference tokens remain visible in wide prose",
+);
+assert.match(
+  wideInlineReferenceRule[1],
+  /font:[^;]*var\(--font-mono\)/,
+  "wide visual reference tokens use restrained source typography",
+);
+assert.match(
+  wideInlineReferenceRule[1],
+  /color:\s*var\(--research-accent\)/,
+  "verified wide references keep the evidence accent",
+);
+assert.doesNotMatch(
+  wideInlineReferenceRule[1],
+  /(?:border|background):/,
+  "wide visual references remain typography rather than a second chip",
+);
+for (const [selector, token] of [
+  [".rr-wide-ref--warn", "--color-warning"],
+  [".rr-wide-ref--muted", "--color-danger"],
+  [".rr-wide-ref--unresolved", "--color-danger"],
+] as const) {
+  const escapedSelector = selector.replace(".", "\\.");
+  const rule = css.match(new RegExp(`^${escapedSelector} \\{([^}]*)\\}`, "m"));
+  assert.ok(rule, `${selector} has a semantic tone rule`);
+  assert.match(
+    rule[1],
+    new RegExp(`var\\(${token}\\)`),
+    `${selector} uses ${token}`,
+  );
+}
+assert.match(
+  css,
+  /@container document-reader \(max-width: 65rem\)[\s\S]*?\.rr-wide-ref\s*\{[\s\S]*?display:\s*none[\s\S]*?\}[\s\S]*?\.rr-inline-ref\s*\{[\s\S]*?display:\s*inline-flex/,
+  "compact readers swap the aria-hidden visual token for the interactive inline ref",
+);
+assert.match(
+  css,
+  /^\.rr-inline-ref-gap \{[\s\S]*?display:\s*inline/m,
+  "authored whitespace remains present beside refs in both layouts",
+);
 for (const rejectedSelector of [
   ".research-provenance-edge__item--muted",
+  ".rr-wide-ref--muted",
   ".rr-sref--muted",
   ".rr-src--rejected",
   ".rr-src--rejected.is-selected",

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -180,23 +181,30 @@ export function ResearchFindingsInlineSpans({
         ? `${CONFLICT_ID_RE.test(span.id) ? "Open conflict" : "Open evidence"} ${span.id}`
         : `Missing source ${span.id}`;
       return (
-        <button
-          key={key}
-          type="button"
-          className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
-          aria-label={accessibleLabel}
-          data-research-reference-id={span.id}
-          data-research-reference-representation="inline"
-          onMouseEnter={(event) =>
-            onRefPreview(span.id, event.currentTarget)
-          }
-          onMouseLeave={onClearPreview}
-          onFocus={(event) => onRefPreview(span.id, event.currentTarget)}
-          onBlur={onClearPreview}
-          onClick={(event) => onRefClick(span.id, event.currentTarget)}
-        >
-          <ResearchSourceIdLabel id={span.id} />
-        </button>
+        <Fragment key={key}>
+          <span
+            className={`rr-wide-ref rr-wide-ref--${span.tone}`}
+            aria-hidden="true"
+          >
+            <ResearchSourceIdLabel id={span.id} />
+          </span>
+          <button
+            type="button"
+            className={`rr-sref rr-inline-ref${toneClass}${matched ? " is-match" : ""}`}
+            aria-label={accessibleLabel}
+            data-research-reference-id={span.id}
+            data-research-reference-representation="inline"
+            onMouseEnter={(event) =>
+              onRefPreview(span.id, event.currentTarget)
+            }
+            onMouseLeave={onClearPreview}
+            onFocus={(event) => onRefPreview(span.id, event.currentTarget)}
+            onBlur={onClearPreview}
+            onClick={(event) => onRefClick(span.id, event.currentTarget)}
+          >
+            <ResearchSourceIdLabel id={span.id} />
+          </button>
+        </Fragment>
       );
     }
     if (span.kind === "link") {

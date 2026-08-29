@@ -318,18 +318,22 @@ test.describe("research reader", () => {
     })).toBe(true);
   });
 
-  test("preserves prose spacing around consecutive inline references across layouts", async ({ page }) => {
+  test("preserves authored grammatical and trailing refs while switching the sole interactive representation", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openReader(page, {
       markdown: `# Findings
 
 ## Result
 
-Identity drifts independently [S1] [S14]. Evidence [S1] supports continuity.`,
+S1 contradicts S14.
+
+Evidence remains mixed [S1] [S14].`,
     });
-    const paragraph = page.locator(".rr-block-row p");
-    const visibleText = () =>
-      paragraph.evaluate((element) => {
+    const rows = page.locator(".rr-block-row", { has: page.locator("p") });
+    const grammaticalRow = rows.nth(0);
+    const trailingRow = rows.nth(1);
+    const visibleText = (row: typeof grammaticalRow) =>
+      row.locator("p").evaluate((element) => {
         const readVisibleText = (node: Node): string => {
           if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
           if (!(node instanceof HTMLElement)) return "";
@@ -339,18 +343,33 @@ Identity drifts independently [S1] [S14]. Evidence [S1] supports continuity.`,
         return readVisibleText(element);
       });
 
-    await expect(paragraph.locator(".rr-inline-ref")).toHaveCount(3);
-    await expect(paragraph.locator(".rr-inline-ref-gap")).toHaveCount(3);
-    expect(await visibleText()).toBe(
-      "Identity drifts independently. Evidence supports continuity.",
+    for (const row of [grammaticalRow, trailingRow]) {
+      await expect(row.locator(".rr-wide-ref")).toHaveCount(2);
+      await expect(row.locator(".rr-wide-ref").first()).toBeVisible();
+      await expect(row.locator(".rr-inline-ref")).toHaveCount(2);
+      await expect(row.locator(".rr-inline-ref").first()).toBeHidden();
+      await expect(row.locator(".research-provenance-edge__item")).toHaveCount(2);
+      await expect(row.locator(".research-provenance-edge__item").first()).toBeVisible();
+      await expect(row.locator("button:visible")).toHaveCount(2);
+    }
+    await expect(
+      grammaticalRow.locator('.rr-wide-ref[aria-hidden="true"]'),
+    ).toHaveCount(2);
+    expect(await visibleText(grammaticalRow)).toBe("S1 contradicts S14.");
+    expect(await visibleText(trailingRow)).toBe(
+      "Evidence remains mixed S1 S14.",
     );
 
     await page.setViewportSize({ width: 1000, height: 800 });
-    await expect(paragraph.locator(".rr-inline-ref").first()).toBeVisible();
-    await expect(paragraph.locator(".rr-inline-ref-gap").first()).toBeVisible();
-    expect(await visibleText()).toBe(
-      "Identity drifts independently S1 S14. Evidence S1 supports continuity.",
-    );
+    for (const row of [grammaticalRow, trailingRow]) {
+      await expect(row.locator(".rr-wide-ref").first()).toBeHidden();
+      await expect(row.locator(".rr-inline-ref").first()).toBeVisible();
+      await expect(row.locator(".rr-inline-ref-gap").first()).toBeVisible();
+      await expect(row.locator(".research-provenance-edge__item").first()).toBeHidden();
+      await expect(row.locator("button:visible")).toHaveCount(2);
+    }
+    expect(await visibleText(grammaticalRow)).toBe("S1 contradicts S14.");
+    expect(await visibleText(trailingRow)).toBe("Evidence remains mixed S1 S14.");
   });
 
   test("linked citation labels select evidence and retain hyperlink text and Supports", async ({ page }) => {
@@ -716,6 +735,16 @@ Verified claim [S1]. Missing claim [S99].`,
     const edgeReference = reader.locator(
       `[data-research-reference-id="${longId}"][data-research-reference-representation="edge"]`,
     );
+    const wideVisualReference = reader.locator(
+      `.rr-wide-ref [data-research-source-id-label="${longId}"]`,
+    );
+    await expect(wideVisualReference).toBeVisible();
+    await expect(wideVisualReference).toHaveAttribute("title", longId);
+    await expect(wideVisualReference).toContainText("…");
+    await expect(wideVisualReference.locator("xpath=..")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
     await expect(edgeReference).toHaveAttribute(
       "aria-label",
       `Open evidence ${longId}`,
@@ -757,6 +786,7 @@ Verified claim [S1]. Missing claim [S99].`,
     const inlineReference = reader.locator(
       `[data-research-reference-id="${longId}"][data-research-reference-representation="inline"]`,
     );
+    await expect(wideVisualReference).toBeHidden();
     await expect(inlineReference).toBeVisible();
     await expect(inlineReference).toHaveAttribute(
       "aria-label",
