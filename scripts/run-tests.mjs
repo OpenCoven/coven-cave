@@ -2442,6 +2442,7 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/research-tab-resources.behavior.test.tsx",
   "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
+  "src/components/role-surfaces/research-evidence-components.test.ts",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
   "src/components/role-surfaces/research-topic-card.test.tsx",
   "src/components/role-surfaces/use-research-topic-discovery.test.tsx",

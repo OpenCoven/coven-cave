@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent } from "react";
 
 export type ResearchProvenanceTone =
   | "accent"
@@ -26,6 +26,11 @@ const NAVIGATION_KEYS = new Set([
   "End",
 ]);
 
+type PreviewInteraction = {
+  id: string;
+  element: HTMLElement;
+};
+
 export function ResearchProvenanceEdge({
   ids,
   selectedId,
@@ -33,6 +38,9 @@ export function ResearchProvenanceEdge({
   onPreview,
   onSelect,
 }: ResearchProvenanceEdgeProps) {
+  const hoveredPreview = useRef<PreviewInteraction | null>(null);
+  const focusedPreview = useRef<PreviewInteraction | null>(null);
+
   if (ids.length === 0) return null;
 
   const tabStopId = ids.includes(selectedId ?? "") ? selectedId : ids[0];
@@ -86,9 +94,25 @@ export function ResearchProvenanceEdge({
             data-selected={selected ? "true" : "false"}
             data-tone={tone}
             tabIndex={id === tabStopId ? 0 : -1}
-            onMouseEnter={(event) => onPreview(id, event.currentTarget)}
-            onMouseLeave={() => onPreview(null)}
+            onMouseEnter={(event) => {
+              hoveredPreview.current = {
+                id,
+                element: event.currentTarget,
+              };
+              onPreview(id, event.currentTarget);
+            }}
+            onMouseLeave={(event) => {
+              if (hoveredPreview.current?.element === event.currentTarget) {
+                hoveredPreview.current = null;
+              }
+              const focused = focusedPreview.current;
+              onPreview(focused?.id ?? null, focused?.element);
+            }}
             onFocus={(event) => {
+              focusedPreview.current = {
+                id,
+                element: event.currentTarget,
+              };
               const buttons = event.currentTarget
                 .closest('[role="group"]')
                 ?.querySelectorAll<HTMLButtonElement>(
@@ -99,7 +123,13 @@ export function ResearchProvenanceEdge({
               });
               onPreview(id, event.currentTarget);
             }}
-            onBlur={() => onPreview(null)}
+            onBlur={(event) => {
+              if (focusedPreview.current?.element === event.currentTarget) {
+                focusedPreview.current = null;
+              }
+              const hovered = hoveredPreview.current;
+              onPreview(hovered?.id ?? null, hovered?.element);
+            }}
             onKeyDown={(event) => moveFocus(event, index)}
             onClick={() => onSelect(id)}
           >

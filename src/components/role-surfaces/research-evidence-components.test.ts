@@ -1,7 +1,9 @@
+// @ts-nocheck — react-test-renderer ships no types; this is a rendered component behavior test.
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, test } from "vitest";
+import { act, create } from "react-test-renderer";
+import { describe, expect, test, vi } from "vitest";
 import type { FindingsSupportTarget } from "@/lib/research-findings-doc";
 import type { ResearchSourceRef } from "@/lib/research-missions";
 import { ResearchEvidenceInspector } from "./research-evidence-inspector";
@@ -9,6 +11,8 @@ import {
   ResearchProvenanceEdge,
   type ResearchProvenanceTone,
 } from "./research-provenance-edge";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const callbacks = {
   onToggle: () => {},
@@ -37,6 +41,56 @@ function buttonTag(html: string, label: string): string {
 }
 
 describe("ResearchProvenanceEdge", () => {
+  test("keeps preview active until both hover and focus leave", async () => {
+    const onPreview = vi.fn();
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        createElement(ResearchProvenanceEdge, {
+          ids: ["S1"],
+          selectedId: null,
+          toneForId: (): ResearchProvenanceTone => "accent",
+          onPreview,
+          onSelect: () => {},
+        }),
+      );
+    });
+    const button = renderer.root.findByType("button");
+    const element = {
+      closest: () => ({ querySelectorAll: () => [element] }),
+      tabIndex: 0,
+    };
+
+    button.props.onFocus({ currentTarget: element });
+    button.props.onMouseEnter({ currentTarget: element });
+    button.props.onMouseLeave({ currentTarget: element });
+    button.props.onBlur({ currentTarget: element });
+
+    expect(onPreview.mock.calls.map(([id]) => id)).toEqual([
+      "S1",
+      "S1",
+      "S1",
+      null,
+    ]);
+    expect(onPreview).toHaveBeenNthCalledWith(3, "S1", element);
+
+    onPreview.mockClear();
+    button.props.onMouseEnter({ currentTarget: element });
+    button.props.onFocus({ currentTarget: element });
+    button.props.onBlur({ currentTarget: element });
+    button.props.onMouseLeave({ currentTarget: element });
+
+    expect(onPreview.mock.calls.map(([id]) => id)).toEqual([
+      "S1",
+      "S1",
+      "S1",
+      null,
+    ]);
+    expect(onPreview).toHaveBeenNthCalledWith(3, "S1", element);
+
+    await act(async () => renderer.unmount());
+  });
+
   test("labels evidence and conflict controls and renders nothing without IDs", () => {
     const html = renderToStaticMarkup(
       createElement(ResearchProvenanceEdge, {
