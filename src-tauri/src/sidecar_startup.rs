@@ -759,6 +759,29 @@ mod tests {
             "the native splash path must not be copied to the authenticated sidecar URL"
         );
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn startup_running_guard_releases_the_retry_gate_when_worker_unwinds() {
+        let control = Arc::new(SidecarStartupControl::new());
+        control.begin().expect("startup worker begins");
+
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+            let control = Arc::clone(&control);
+            move || {
+                let _guard = SidecarStartupRunningGuard::new(control);
+                panic!("simulated startup dependency panic");
+            }
+        }));
+
+        assert!(unwound.is_err());
+        assert!(
+            !control.is_running(),
+            "a panic must not strand the startup retry gate"
+        );
+        control.begin().expect("retry can start after an unwind");
+        control.finish();
+    }
 }
 
 #[cfg(desktop)]
@@ -1365,6 +1388,29 @@ fn finish_sidecar_startup(
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
+struct SidecarStartupRunningGuard {
+    control: Arc<SidecarStartupControl>,
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+impl SidecarStartupRunningGuard {
+    fn new(control: Arc<SidecarStartupControl>) -> Self {
+        Self { control }
+    }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+impl Drop for SidecarStartupRunningGuard {
+    fn drop(&mut self) {
+        // `start_sidecar_runtime` is intentionally fallible, but native
+        // dependencies and navigation callbacks can still panic. The worker
+        // must never leave the retry gate pinned merely because one of those
+        // paths unwound.
+        self.control.finish();
+    }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn spawn_sidecar_startup(
     app: tauri::AppHandle,
     control: Arc<SidecarStartupControl>,
@@ -1396,109 +1442,141 @@ pub(super) fn spawn_sidecar_startup(
             let progress_app = app.clone();
             let progress_control = Arc::clone(&thread_control);
             let cancel_control = Arc::clone(&thread_control);
-            let result = start_sidecar_runtime(
-                &app,
-                operation,
-                attempt,
-                move |step| {
-                    let status = match step {
-                        SidecarStartupStep::PreparingRuntime => SidecarStartupStatus::preparing(),
-                        SidecarStartupStep::StartingService => SidecarStartupStatus::starting(),
-                        SidecarStartupStep::WaitingForService => SidecarStartupStatus::waiting(),
-                    };
-                    if let Err(error) = publish_sidecar_startup_status(
-                        &progress_app,
-                        &progress_control,
-                        status,
-                    ) {
-                        log::warn!("[cave] {error}");
-                    }
-                },
-                move || cancel_control.is_cancelled(),
-            );
-
-            let (final_status, terminal_evidence) = match result {
-                Ok(_url) if thread_control.is_cancelled() => {
-                    if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(error) = sidecar.stop_after_startup_attempt() {
-                            log::warn!("[cave] could not stop cancelled sidecar: {error}");
+            let running_guard = SidecarStartupRunningGuard::new(Arc::clone(&thread_control));
+            let worker_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let result = start_sidecar_runtime(
+                    &app,
+                    operation,
+                    attempt,
+                    move |step| {
+                        let status = match step {
+                            SidecarStartupStep::PreparingRuntime => SidecarStartupStatus::preparing(),
+                            SidecarStartupStep::StartingService => SidecarStartupStatus::starting(),
+                            SidecarStartupStep::WaitingForService => SidecarStartupStatus::waiting(),
+                        };
+                        if let Err(error) = publish_sidecar_startup_status(
+                            &progress_app,
+                            &progress_control,
+                            status,
+                        ) {
+                            log::warn!("[cave] {error}");
                         }
-                    }
-                    (
-                        SidecarStartupStatus::cancelled(),
-                        NativeStartupTerminalEvidence::Cancelled,
-                    )
-                }
-                Ok(url) => {
-                    pty::trust_main_origin(&url);
-                    remember_main_startup_url(&url);
-                    // location.replace() swaps startup.html out of session
-                    // history; native navigation is the shared fallback when
-                    // the page's JS context is unreachable.
-                    let navigation = replace_main_window_url(&app, url);
-                    match navigation {
-                        Ok(()) => (
-                            SidecarStartupStatus::ready(),
-                            NativeStartupTerminalEvidence::AuthenticatedReady,
-                        ),
-                        Err(error) => {
-                            if let Some(sidecar) = app.try_state::<SidecarState>() {
-                                if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
-                                    log::warn!(
-                                        "[cave] could not stop sidecar after navigation failure: {stop_error}"
-                                    );
-                                }
+                    },
+                    move || cancel_control.is_cancelled(),
+                );
+
+                let (final_status, terminal_evidence) = match result {
+                    Ok(_url) if thread_control.is_cancelled() => {
+                        if let Some(sidecar) = app.try_state::<SidecarState>() {
+                            if let Err(error) = sidecar.stop_after_startup_attempt() {
+                                log::warn!("[cave] could not stop cancelled sidecar: {error}");
                             }
-                            (
-                                SidecarStartupStatus::failed(error),
-                                NativeStartupTerminalEvidence::Failed(
-                                    ReliabilityFailureClass::Transport,
-                                ),
-                            )
+                        }
+                        (
+                            SidecarStartupStatus::cancelled(),
+                            NativeStartupTerminalEvidence::Cancelled,
+                        )
+                    }
+                    Ok(url) => {
+                        pty::trust_main_origin(&url);
+                        remember_main_startup_url(&url);
+                        // location.replace() swaps startup.html out of session
+                        // history; native navigation is the shared fallback when
+                        // the page's JS context is unreachable.
+                        let navigation = replace_main_window_url(&app, url);
+                        match navigation {
+                            Ok(()) => (
+                                SidecarStartupStatus::ready(),
+                                NativeStartupTerminalEvidence::AuthenticatedReady,
+                            ),
+                            Err(error) => {
+                                if let Some(sidecar) = app.try_state::<SidecarState>() {
+                                    if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
+                                        log::warn!(
+                                            "[cave] could not stop sidecar after navigation failure: {stop_error}"
+                                        );
+                                    }
+                                }
+                                (
+                                    SidecarStartupStatus::failed(error),
+                                    NativeStartupTerminalEvidence::Failed(
+                                        ReliabilityFailureClass::Transport,
+                                    ),
+                                )
+                            }
                         }
                     }
-                }
-                Err(SidecarStartError::Cancelled) => {
-                    if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(error) = sidecar.stop_after_startup_attempt() {
-                            log::warn!("[cave] could not stop cancelled sidecar: {error}");
+                    Err(SidecarStartError::Cancelled) => {
+                        if let Some(sidecar) = app.try_state::<SidecarState>() {
+                            if let Err(error) = sidecar.stop_after_startup_attempt() {
+                                log::warn!("[cave] could not stop cancelled sidecar: {error}");
+                            }
                         }
+                        (
+                            SidecarStartupStatus::cancelled(),
+                            NativeStartupTerminalEvidence::Cancelled,
+                        )
                     }
-                    (
-                        SidecarStartupStatus::cancelled(),
-                        NativeStartupTerminalEvidence::Cancelled,
-                    )
-                }
-                Err(SidecarStartError::Failed {
-                    message,
-                    failure_class,
-                }) => {
-                    if let Some(sidecar) = app.try_state::<SidecarState>() {
-                        if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
-                            log::warn!(
-                                "[cave] could not stop sidecar after startup failure: {stop_error}"
-                            );
+                    Err(SidecarStartError::Failed {
+                        message,
+                        failure_class,
+                    }) => {
+                        if let Some(sidecar) = app.try_state::<SidecarState>() {
+                            if let Err(stop_error) = sidecar.stop_after_startup_attempt() {
+                                log::warn!(
+                                    "[cave] could not stop sidecar after startup failure: {stop_error}"
+                                );
+                            }
                         }
+                        (
+                            SidecarStartupStatus::failed(message),
+                            NativeStartupTerminalEvidence::Failed(failure_class),
+                        )
                     }
-                    (
-                        SidecarStartupStatus::failed(message),
-                        NativeStartupTerminalEvidence::Failed(failure_class),
-                    )
-                }
-            };
+                };
 
-            if let Err(error) =
-                publish_sidecar_startup_status(&app, &thread_control, final_status)
-            {
-                log::warn!("[cave] {error}");
+                if let Err(error) =
+                    publish_sidecar_startup_status(&app, &thread_control, final_status)
+                {
+                    log::warn!("[cave] {error}");
+                }
+                finish_sidecar_startup(
+                    &app,
+                    &thread_control,
+                    terminal_policy,
+                    started.elapsed(),
+                    terminal_evidence,
+                );
+            }));
+
+            if worker_result.is_err() {
+                log::error!("[cave] sidecar startup worker terminated unexpectedly");
+                if let Some(sidecar) = app.try_state::<SidecarState>() {
+                    if let Err(error) = sidecar.stop_after_startup_attempt() {
+                        log::warn!(
+                            "[cave] could not stop sidecar after startup worker panic: {error}"
+                        );
+                    }
+                }
+                let status = SidecarStartupStatus::failed(
+                    "Sidecar startup worker terminated unexpectedly. Please retry.",
+                );
+                if let Err(error) = publish_sidecar_startup_status(
+                    &app,
+                    &thread_control,
+                    status,
+                ) {
+                    log::warn!("[cave] {error}");
+                }
+                finish_sidecar_startup(
+                    &app,
+                    &thread_control,
+                    terminal_policy,
+                    started.elapsed(),
+                    NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Unknown),
+                );
             }
-            finish_sidecar_startup(
-                &app,
-                &thread_control,
-                terminal_policy,
-                started.elapsed(),
-                terminal_evidence,
-            );
+            drop(running_guard);
         });
 
     if let Err(error) = spawn_result {
