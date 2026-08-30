@@ -220,7 +220,10 @@ export type ResearchAutomationLink = {
   checkpointFingerprint: string;
   checkpointToken?: string;
   lastRunId?: string;
-  lastRunStatus?: "queued" | "running" | "succeeded" | "failed";
+  // One vocabulary with the daemon's RoutineRun statuses (automation-runs.ts):
+  // `cancelled` is a terminal outcome a linked automation's last run can
+  // carry, and a parser that rejected it would reject a real persisted state.
+  lastRunStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   lastRunAt?: string;
   stopReason?: string;
 };
@@ -746,7 +749,7 @@ function parseResearchAutomation(value: unknown): ResearchAutomationLink | null 
     return null;
   }
   if (value.lastRunStatus !== undefined
-    && !["queued", "running", "succeeded", "failed"].includes(String(value.lastRunStatus))) {
+    && !["queued", "running", "succeeded", "failed", "cancelled"].includes(String(value.lastRunStatus))) {
     return null;
   }
   return {

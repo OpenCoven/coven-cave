@@ -71,6 +71,18 @@ describe("liveRunView", () => {
     assert.match(view.headline, /Failed \(exit 1\) after 10s/);
   });
 
+  it("settles a cancelled run instead of presenting it as running forever", () => {
+    // The daemon reports `cancelled` as a terminal outcome; the card must
+    // stop polling and say so, never keep counting up under "Running…".
+    const view = liveRunView(
+      run("cancelled", { finishedAt: "2026-08-25T10:00:12.000Z" }),
+      NOW,
+    )!;
+    assert.equal(view.phase, "cancelled");
+    assert.equal(view.settled, true, "a cancelled run is settled — the card stops ticking");
+    assert.equal(view.headline, "Cancelled after 12s");
+  });
+
   it("falls back to wall clock when finishedAt is nonsense, never a negative", () => {
     const view = liveRunView(
       run("succeeded", { finishedAt: "2026-08-25T09:00:00.000Z" }), // before the start
