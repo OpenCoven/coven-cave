@@ -2,8 +2,13 @@
 
 ## Status
 
-The MVP direction is approved. This written specification is awaiting
-maintainer review and does not authorize implementation.
+Shipped. The MVP this document describes is implemented on `main`, and the
+"Shipped ... (cave-uajyn, 2026-08-24)" notes below are part of the record:
+they mark where the code deliberately departs from the original sketch
+instead of leaving the document describing a system that was never built.
+What still gates a release is evidence rather than code — the native-room
+pass through the real Tauri shell and the live X smoke evidence listed under
+`## Acceptance audit`.
 
 - Date: 2026-07-27
 - Bead: `cave-8i8q5`
