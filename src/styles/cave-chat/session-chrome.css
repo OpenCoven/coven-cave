@@ -104,7 +104,7 @@
   margin-left: auto;
 }
 
-/* One tint per element, set by the model's `is-*` class and read by the dot,
+/* One tint per element, set by the element’s `is-*` class and read by the dot,
    the value and the meter fill — so a new tint teaches one place. */
 .cave-chat-context-stat,
 .cave-chat-context-breakdown :where(
