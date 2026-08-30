@@ -18,7 +18,10 @@ export type SessionMenuItemId =
   | "continue-on-phone"
   | "project"
   | "thinking"
-  | "activity-map"
+  // No "activity-map": the transcript's right-side instrument is automatic
+  // (cave-5m5hv). It replaced the retired thread minimap, and re-adding a
+  // visibility item here would give a person a way to turn it back off — which
+  // is the state the removal exists to make unreachable.
   | "reflect"
   | "debug";
 
@@ -45,8 +48,6 @@ export function sessionMenuSections(ctx: {
   projectRoot: string | null;
   hasTurns: boolean;
   showThinking: boolean;
-  /** Whether the chat activity map is currently shown. */
-  activityMapVisible: boolean;
   /** Reflect-on-thread is wired (familiar has an id). */
   reflectAvailable: boolean;
   reflecting: boolean;
@@ -76,21 +77,6 @@ export function sessionMenuSections(ctx: {
       icon: ctx.showThinking ? "ph:brain-bold" : "ph:brain",
       checked: ctx.showThinking,
       title: ctx.showThinking ? "Hide reasoning blocks" : "Show reasoning blocks",
-    });
-  }
-  if (ctx.hasTurns) {
-    // Sits beside Show thinking: both are "how much scaffolding do I want
-    // around the conversation". Gated on hasTurns for the same reason —
-    // there is nothing to navigate in an empty transcript, and offering to
-    // hide furniture that is not on screen reads as a broken setting.
-    tools.push({
-      id: "activity-map",
-      label: ctx.activityMapVisible ? "Hide activity map" : "Show activity map",
-      icon: "ph:path",
-      checked: ctx.activityMapVisible,
-      title: ctx.activityMapVisible
-        ? "Hide the activity timeline and tool summary"
-        : "Show the activity timeline and tool summary",
     });
   }
   if (ctx.reflectAvailable) {

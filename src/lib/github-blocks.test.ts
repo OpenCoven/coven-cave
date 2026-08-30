@@ -158,6 +158,28 @@ test("slice: action markers become proposal pieces (agents propose, humans dispo
   assert.ok(!joined.includes("coven:github-action"));
 });
 
+test("slice: reply actions require a numeric top-level review comment target", () => {
+  const valid = sliceGitHubBlocks(
+    '<coven:github-action kind="reply" repo="a/b" number="7" thread="5551" body="Please fix this" />',
+  );
+  assert.deepEqual((valid[0] as { action: unknown }).action, {
+    kind: "reply",
+    repo: "a/b",
+    note: undefined,
+    body: "Please fix this",
+    number: 7,
+    threadId: "5551",
+  });
+  for (const marker of [
+    '<coven:github-action kind="reply" repo="a/b" number="7" body="Missing target" />',
+    '<coven:github-action kind="reply" repo="a/b" number="7" thread="thread-node" body="Wrong target" />',
+    '<coven:github-action kind="reply" repo="a/b" number="7" thread="0" body="Non-positive target" />',
+  ]) {
+    const pieces = sliceGitHubBlocks(marker);
+    assert.ok(pieces.every((piece) => piece.kind === "text"), marker);
+  }
+});
+
 test("slice: action attrs validate per kind — malformed proposals drop silently", () => {
   // review without a valid event, dispatch without ref, rerun without run id.
   for (const bad of [

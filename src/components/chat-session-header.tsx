@@ -6,7 +6,6 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
@@ -58,7 +57,6 @@ export function SessionOverflowMenu({
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
-  const [activityMapVisible, setActivityMapVisible] = useActivityMapVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const keyboardOpenRequested = useRef(false);
@@ -72,7 +70,6 @@ export function SessionOverflowMenu({
     projectRoot: activeProject?.root ?? null,
     hasTurns,
     showThinking,
-    activityMapVisible,
     reflectAvailable: Boolean(onReflect),
     reflecting,
   });
@@ -159,10 +156,6 @@ export function SessionOverflowMenu({
       setShowThinking(!showThinking);
       close();
     },
-    "activity-map": () => {
-      setActivityMapVisible(!activityMapVisible);
-      close();
-    },
     reflect: () => {
       close();
       onReflect?.();
@@ -211,8 +204,8 @@ export function SessionOverflowMenu({
                     key={item.id}
                     icon={item.icon}
                     checked={item.checked}
-                    // Only `thinking` and `activity-map` carry `checked` here and
-                    // both are independent on/off toggles, not one of a set.
+                    // Only `thinking` carries `checked` here, and it is an
+                    // independent on/off toggle, not one of a set.
                     checkedRole="checkbox"
                     disabled={item.disabled}
                     title={item.title}
