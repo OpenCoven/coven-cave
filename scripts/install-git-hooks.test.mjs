@@ -213,6 +213,43 @@ test("cave-f13bp: the driver resolves to an ABSOLUTE node path, not a bare 'node
   }
 });
 
+test("cave-f13bp: a shell FUNCTION named 'node' does not count as a resolved node — install still fails", () => {
+  // `command -v` can report a shell function or alias instead of a real
+  // executable. Neither means anything once baked into a git config that a
+  // different process (git, from a GUI client) will later run directly — so
+  // the installer must require an executable regular file, not just any
+  // non-empty `command -v` output.
+  const dir = scaffold();
+  try {
+    const wrapper = join(dir, "run-with-fake-node-function.sh");
+    writeFileSync(
+      wrapper,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "node() { echo fake; }",
+        "export -f node",
+        `exec bash "${join(dir, "scripts", "install-git-hooks.sh")}"`,
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    assert.throws(
+      () => execFileSync("bash", [wrapper], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
+      /node/i,
+      "installer must fail when the only 'node' on PATH is a shell function",
+    );
+
+    assert.throws(
+      () => git(dir, "config", "--get", "merge.beads-jsonl.driver"),
+      "no driver config must be written when node resolves to a non-file",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("cave-f13bp: install FAILS LOUDLY when node cannot be resolved, rather than writing a config we already know will break later", () => {
   // A silent fallback to the bare "node" would just relocate the failure to
   // whatever GUI merge eventually runs the driver — exactly the bug being

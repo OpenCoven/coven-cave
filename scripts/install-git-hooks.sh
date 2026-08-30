@@ -88,11 +88,26 @@ git -C "$REPO_ROOT" config merge.beads-jsonl.name \
 # value is per-clone anyway, so baking in this machine's resolution costs
 # nothing and survives whatever PATH invokes git later. Fail loudly now
 # rather than writing a config we already know will fail silently later.
+#
+# `command -v` can report a shell function or alias name instead of a real
+# executable (neither is meaningful once baked into a git config run by a
+# different process), and can report a path that is relative if PATH itself
+# contains a relative entry. Require an executable regular file, and
+# normalize to an absolute path rather than trusting the string as-is.
 node_bin=$(command -v node || true)
-if [ -z "$node_bin" ]; then
-  echo "ERROR: node not found on PATH; cannot install a GUI-safe" >&2
-  echo "  merge.beads-jsonl.driver (cave-f13bp). Install Node, then" >&2
-  echo "  re-run this script." >&2
+if [ -n "$node_bin" ] && [ ! -f "$node_bin" ]; then
+  node_bin=""
+fi
+if [ -n "$node_bin" ]; then
+  case "$node_bin" in
+    /*) : ;;
+    *) node_bin=$(cd "$(dirname "$node_bin")" && pwd)/$(basename "$node_bin") ;;
+  esac
+fi
+if [ -z "$node_bin" ] || [ ! -x "$node_bin" ]; then
+  echo "ERROR: node not found (as an executable file) on PATH; cannot" >&2
+  echo "  install a GUI-safe merge.beads-jsonl.driver (cave-f13bp)." >&2
+  echo "  Install Node, then re-run this script." >&2
   exit 1
 fi
 
