@@ -291,6 +291,16 @@ work.
 | Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
+
+## Daemon fault-injection CI coverage decision
+
+Per-pull-request daemon fault-injection coverage is intentionally funded on
+Ubuntu and Windows only. The release platform-validation matrix runs the same
+bounded fault harness on `ubuntu-24.04`, `windows-latest`, and `macos-15`, so
+macOS host behavior is exercised in release validation without adding a third
+runner to every pull request. This is an explicit coverage boundary for
+`cave-58eoq.4`, not a claim that macOS is unsupported or untested.
+
 ## Reliability measurement contract
 This contract measures local reliability without turning diagnostics into an
 activity log. It covers packaged sidecar startup, frontend reconnection, and
