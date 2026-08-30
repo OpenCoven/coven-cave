@@ -256,18 +256,23 @@ Run the wrapper **in the foreground** and leave the terminal attached; stop it
 with `Ctrl-C`. Detached runs can exit without leaving useful Tauri logs, so
 foreground startup is the reliable way to confirm the app launched.
 
-The wrapper picks the first free loopback port in `3000..3010` (if `3000` is
-taken, e.g. by Docker, it uses `3001`), reuses or starts the dev server, writes
-a temporary Tauri config pointing `devUrl` at the real port, and runs
-`tauri dev`. Force a port with `PORT=3007 bash scripts/dev-app.sh`.
+The wrapper resolves one dedicated loopback port: `COVEN_CAVE_PORT` takes
+precedence, then `PORT`, then the fixed dev default `3000`. It does not scan for
+an arbitrary free port. If that port answers as CovenCave, the wrapper attaches
+to it; if it answers as another or gated service, the wrapper refuses instead
+of relocating. A silent holder is treated as free so the wrapper's own bind
+reports the concrete listen error. It writes a temporary Tauri config pointing
+`devUrl` at the resolved port and runs `tauri dev`. Choose another free port
+with `COVEN_CAVE_PORT=3007 bash scripts/dev-app.sh` (`PORT=3007` remains the
+fallback when `COVEN_CAVE_PORT` is unset).
 
 Expected early output:
 
 ```text
-[dev:app] port 3001 is free
-[dev:app] starting dev server on 3001
-Running BeforeDevCommand (`PORT=3001 pnpm dev`)
-> Ready on http://127.0.0.1:3001
+[dev:app] dedicated dev port 3000
+[dev:app] starting dev server on 3000
+Running BeforeDevCommand (`PORT=3000 pnpm dev`)
+> Ready on http://127.0.0.1:3000
 Running DevCommand (`cargo run --no-default-features --color always --`)
 ```
 
@@ -278,8 +283,12 @@ Running DevCommand (`cargo run --no-default-features --color always --`)
 
 - **First launch is slow by design.** Cargo downloads and compiles Rust crates
   before the window appears. `Compiling ...` lines are progress, not a hang.
-- **No `port ... is free` line + an error** → every port in `3000..3010` is
-  occupied. Free one or pass an explicit `PORT=`.
+- **`attaching to the CovenCave dev server already on ...`** → a healthy Cave
+  already owns the resolved port, so no second dev server is started.
+- **`port ... is held by something that is not CovenCave`** → free that port or
+  choose another one with an explicit `COVEN_CAVE_PORT=`.
+- **`... is serving with an access token configured`** → the holder refused the
+  identity probe; stop it or choose another explicit `COVEN_CAVE_PORT=`.
 - **Stuck before `> Ready on ...`** → the Next dev server. Check the wrapper's
   terminal for Next/Node errors.
 - **Stuck after `Running DevCommand` with no Cargo output** → the Rust

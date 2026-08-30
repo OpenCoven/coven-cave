@@ -767,7 +767,8 @@ bash scripts/dev-app.sh
 Run it in the foreground from your repo checkout or worktree and leave that
 terminal attached. Stop it with `Ctrl-C`. The wrapper:
 
-- picks the first free loopback port in `3000..3010`, or honors `PORT=3001`
+- resolves one dedicated loopback port from `COVEN_CAVE_PORT`, then `PORT`, then
+  the fixed dev default `3000`; it does not scan for a free port
 - starts the Next custom dev server on that port when needed
 - writes a temporary Tauri config so `devUrl` points at the actual port
 - runs `pnpm exec tauri dev` against the desktop shell
@@ -775,22 +776,25 @@ terminal attached. Stop it with `Ctrl-C`. The wrapper:
 Expected early output looks like:
 
 ```text
-[dev:app] port 3001 is free
-[dev:app] starting dev server on 3001
-Running BeforeDevCommand (`PORT=3001 pnpm dev`)
-> Ready on http://127.0.0.1:3001
+[dev:app] dedicated dev port 3000
+[dev:app] starting dev server on 3000
+Running BeforeDevCommand (`PORT=3000 pnpm dev`)
+> Ready on http://127.0.0.1:3000
 Running DevCommand (`cargo run --no-default-features --color always --`)
 ```
 
 First launch may spend several minutes downloading and compiling Rust crates
 before the window appears. Treat Cargo `Compiling ...` lines as progress, not a
-hang. If port `3000` is occupied, for example by Docker, the wrapper should move
-to `3001`; if all ports in the range are occupied, free one or run with an
-explicit port:
+hang. If the resolved port is already serving CovenCave, the wrapper should
+attach to it. If another or gated process owns it, the wrapper refuses by
+identity; a silent holder is left for the wrapper's own bind to report. Free
+the process or choose another explicit port:
 
 ```bash
-PORT=3007 bash scripts/dev-app.sh
+COVEN_CAVE_PORT=3007 bash scripts/dev-app.sh
 ```
+
+`PORT=3007` remains a fallback when `COVEN_CAVE_PORT` is unset.
 
 `pnpm dev:app` calls the same wrapper. Prefer the direct `bash` form in agent
 handoffs because its logs make the startup sequence and selected port obvious.
