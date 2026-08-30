@@ -14,7 +14,6 @@ const baseCtx = {
   projectRoot: "/Users/dev/coven-cave" as string | null,
   hasTurns: true,
   showThinking: false,
-  activityMapVisible: true,
   reflectAvailable: true,
   reflecting: false,
 };
@@ -26,8 +25,8 @@ const baseCtx = {
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(
     ids,
-    ["continue-on-phone", "project", "thinking", "activity-map", "reflect", "debug"],
-    "full context yields the slim six-item menu in two sections",
+    ["continue-on-phone", "project", "thinking", "reflect", "debug"],
+    "full context yields the slim five-item menu in two sections",
   );
   assert.equal(sections.length, 2, "primary and tools sections");
 }
@@ -57,33 +56,31 @@ const baseCtx = {
   assert.equal(sections.length, 1, "empty primary section is dropped (no dangling separator)");
 }
 
-// ---- activity-map toggle --------------------------------------------------
+// ---- the retired activity-map toggle --------------------------------------
+// The transcript's right-side instrument is automatic (cave-5m5hv): the run
+// rail replaced the thread minimap and carries no visibility preference. A
+// menu item here would be the one surviving way to switch it back off, so the
+// menu must not offer one under ANY context — including the contexts that
+// previously produced it.
 
-{
-  const on = sessionMenuSections(baseCtx).flat().find((i) => i.id === "activity-map")!;
-  assert.equal(on.checked, true, "a visible activity map renders the checkmark");
-  assert.equal(on.label, "Hide activity map", "the label names the map users can see");
-  assert.equal(on.title, "Hide the activity timeline and tool summary");
-
-  const off = sessionMenuSections({ ...baseCtx, activityMapVisible: false })
-    .flat()
-    .find((i) => i.id === "activity-map")!;
-  assert.equal(off.checked, false);
-  assert.equal(off.label, "Show activity map");
-  assert.equal(off.title, "Show the activity timeline and tool summary");
-  assert.equal(on.icon, off.icon, "both states share one curated glyph");
+for (const ctx of [
+  baseCtx,
+  { ...baseCtx, hasTurns: false },
+  { ...baseCtx, sessionId: null, projectPickerAvailable: false, reflectAvailable: false },
+]) {
+  const ids = sessionMenuSections(ctx).flat().map((i) => i.id) as string[];
+  assert.ok(
+    !ids.some((id) => id.includes("activity") || id.includes("map") || id.includes("instrument")),
+    "no context may produce an activity-map / instruments toggle",
+  );
 }
 
 {
-  // Gated on hasTurns for the same reason Show-thinking is: offering to hide
-  // furniture that is not on screen reads as a broken setting.
-  const ids = sessionMenuSections({ ...baseCtx, hasTurns: false })
-    .flat()
-    .map((i) => i.id);
-  assert.ok(
-    !ids.includes("activity-map"),
-    "an empty transcript has nothing to navigate, so the toggle stays away",
-  );
+  // Show thinking is the neighbour the retired item sat beside; keep it pinned
+  // so the sweep above can never pass by emptying the tools section.
+  const thinking = sessionMenuSections(baseCtx).flat().find((i) => i.id === "thinking")!;
+  assert.equal(thinking.checked, false);
+  assert.equal(thinking.label, "Show thinking", "the surviving toggle still works");
 }
 
 {
