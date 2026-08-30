@@ -26,6 +26,7 @@ import {
   type AutoMissionNotification,
   type AutoMissionTranscript,
 } from "@/lib/auto-mission-supervisor";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 function browserStorage(): AutoMissionStorage | null {
   if (typeof window === "undefined") return null;
@@ -95,6 +96,10 @@ export function AutoMissionSupervisor({
   const rerunRequestedRef = useRef(false);
   const runRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
+  usePausablePoll(() => {
+    void runRef.current();
+  }, intervalMs);
+
   useEffect(() => {
     let disposed = false;
 
@@ -159,14 +164,12 @@ export function AutoMissionSupervisor({
     };
     window.addEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
     window.addEventListener("storage", onStorage);
-    const timer = window.setInterval(() => void run(), intervalMs);
     void run();
 
     return () => {
       disposed = true;
       window.removeEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
       window.removeEventListener("storage", onStorage);
-      window.clearInterval(timer);
       for (const unsubscribe of subscriptionsRef.current.values()) unsubscribe();
       subscriptionsRef.current.clear();
       runRef.current = () => Promise.resolve();
