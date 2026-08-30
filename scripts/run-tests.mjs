@@ -1314,6 +1314,7 @@ export const SUITES = {
     "src/components/ui/popover-submenu.test.ts",
     "src/lib/submenu-position.test.ts",
     "src/components/ui/overflow-menu.test.ts",
+    "src/components/ui/overflow-menu-submenu.test.tsx",
     "src/components/ui/surface-toolbar.test.ts",
     "src/components/minimalism-invariants.test.ts",
     "src/components/dead-ui-removal.test.ts",
@@ -2435,6 +2436,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",
+  "src/components/ui/overflow-menu-submenu.test.tsx",
   "src/lib/home-composer-context.test.ts",
   "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
