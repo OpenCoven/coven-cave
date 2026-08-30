@@ -129,6 +129,7 @@ export const SUITES = {
     "src/lib/research-source-url.test.ts",
     "src/lib/document-reader.test.ts",
     "src/lib/research-findings-doc.test.ts",
+    "src/lib/research-findings-integrity.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-host-state.test.ts",
     "src/components/role-surface-shell.test.ts",
@@ -137,6 +138,7 @@ export const SUITES = {
     "src/components/role-surfaces/familiar-room-interactions.test.tsx",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-reader-shared.test.ts",
+    "src/components/role-surfaces/research-evidence-components.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
     "src/components/role-surfaces/research-tab-prompt.test.ts",
@@ -2109,6 +2111,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/links/route.test.ts",
   // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
   "src/app/api/research/github-repo/route.test.ts",
+  // the mission-file route resolves the validated store and shared source
+  // parser through "@/lib/..." runtime imports.
+  "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -2452,6 +2457,7 @@ const VITEST_TESTS = new Set([
   "src/components/role-surfaces/research-github-repo-viewer.test.tsx",
   "src/components/research-resource-browser-modal.test.tsx",
   "src/components/role-surfaces/use-research-resources.test.tsx",
+  "src/components/role-surfaces/research-evidence-components.test.ts",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.
   "src/components/role-surfaces/research-topic-card.test.tsx",
   "src/components/role-surfaces/use-research-topic-discovery.test.tsx",

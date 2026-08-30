@@ -1516,7 +1516,7 @@ test("an active private owner blocks lifecycle, artifact, and schedule mutations
   );
 });
 
-test("manual sources normalize, dedupe, and remain revisable", async () => {
+test("manual sources normalize, preserve same-URL versions, and remain revisable", async () => {
   let stored = checkpointMission();
   const runner = makeResearchMissionRunner(deps({
     loadMission: async () => structuredClone(stored),
@@ -1535,9 +1535,13 @@ test("manual sources normalize, dedupe, and remain revisable", async () => {
     sourceId: "manual-1",
     patch: { status: "conflicting", note: "Different target cohort" },
   });
-  assert.equal(result.sources.length, 1);
-  assert.equal(result.sources[0].status, "conflicting");
-  assert.equal(result.sources[0].note, "Different target cohort");
+  assert.equal(result.sources.length, 2);
+  assert.equal(result.sources.find((source) => source.id === "manual-1")?.status, "conflicting");
+  assert.equal(
+    result.sources.find((source) => source.id === "manual-1")?.note,
+    "Different target cohort",
+  );
+  assert.equal(result.sources.find((source) => source.id === "manual-2")?.status, "used");
 });
 
 test("attach-saved-link materializes a matching familiar's Article and remains idempotent", async () => {

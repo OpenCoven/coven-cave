@@ -7,7 +7,12 @@ import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { getResearchMissionFile, type ResearchMissionFile } from "@/lib/research-mission-client";
-import type { ResearchArtifactKind, ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+import type {
+  ResearchArtifactKind,
+  ResearchArtifactRef,
+  ResearchMission,
+  ResearchSourceLedgerSnapshot,
+} from "@/lib/research-missions";
 
 // The typeset reader is interaction-only and carries its own stylesheet; lazy
 // so its JS+CSS stay out of the researcher route's first-load bundle.
@@ -81,6 +86,14 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
       setPending(false);
     }
   };
+
+  const retryReaderSources =
+    async (): Promise<ResearchSourceLedgerSnapshot> => {
+      const file = await loadFile();
+      if (!file) return { state: "failed", sources: [] };
+      setReaderFile(file);
+      return file.sourceLedger;
+    };
 
   const view = async () => {
     if (pending) return;
@@ -186,12 +199,14 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
           <pre className="research-artifact-viewer__content">{viewing.content}</pre>
         )}
       </Modal>
-      {readerOpen ? (
+      {readerOpen && readerFile ? (
         <ResearchReader
           mission={mission}
           artifact={artifact}
-          markdown={readerFile?.content ?? null}
+          markdown={readerFile.content}
+          sourceLedger={readerFile.sourceLedger}
           onClose={() => setReaderOpen(false)}
+          onRetrySources={retryReaderSources}
           onPublish={onPublish ? () => onPublish(artifact.key) : undefined}
         />
       ) : null}

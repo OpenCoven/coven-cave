@@ -6,8 +6,11 @@ import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { daemonSessionAlreadyGone } from "./daemon-session-error.ts";
 import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
+  indexDistinctResearchSourceIds,
   normalizeResearchSource,
   parseResearchControl,
+  parseResearchSourcesFile,
+  researchSourcesShareSecondaryIdentity,
   renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   type ResearchProvenance,
@@ -68,8 +71,9 @@ import {
 } from "./research-mission-lifecycle.ts";
 
 export {
+  parseResearchSourcesFile,
   withinStartupGrace,
-} from "./research-mission-lifecycle.ts";
+};
 export type { ResearchFlowStartResult } from "./research-mission-lifecycle.ts";
 
 export const RESEARCH_SESSION_OWNER_REPAIR_REQUIRED =
@@ -284,11 +288,7 @@ function mergeResearchSource(
   sources: ResearchSourceRef[],
   source: ResearchSourceRef,
 ): ResearchSourceRef[] {
-  const index = sources.findIndex((item) => (
-    source.url && item.url === source.url
-  ) || (
-    source.localPath && item.localPath === source.localPath
-  ) || item.id === source.id);
+  const index = sources.findIndex((item) => item.id === source.id);
   if (index < 0) return [source, ...sources];
   return sources.map((item, itemIndex) => itemIndex === index ? {
     ...item,
@@ -301,19 +301,57 @@ function mergeResearchSource(
  * Merge the flow-written sources.json ledger into the stored mission sources
  * instead of replacing them: manually attached sources live only in
  * mission.json (attach-source), so a wholesale replace silently wiped them on
- * every settle. File entries win on url/localPath/id collision; manual-only
- * entries survive.
+ * every settle. File entries win on exact ids; manual-only entries survive.
+ * A unique provider-backed URL/path bridge carries Cave-owned identity fields
+ * onto an agent-written entry without collapsing ordinary versioned sources.
  */
 function mergeFileSources(
   stored: ResearchSourceRef[],
   file: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const matches = (source: ResearchSourceRef, item: ResearchSourceRef) => (
-    source.url && item.url === source.url
-  ) || (
-    source.localPath && item.localPath === source.localPath
-  ) || source.id === item.id;
-  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => matches(source, item));
+  const storedIdOwners = indexDistinctResearchSourceIds(stored);
+  indexDistinctResearchSourceIds(file);
+  const storedIndexByFileIndex = new Map<number, number>();
+  const matchedStoredIndexes = new Set<number>();
+
+  file.forEach((source, fileIndex) => {
+    const storedIndex = storedIdOwners.get(source.id);
+    if (storedIndex === undefined) return;
+    storedIndexByFileIndex.set(fileIndex, storedIndex);
+    matchedStoredIndexes.add(storedIndex);
+  });
+
+  const candidateFileIndexesByStored = new Map<number, number[]>();
+  file.forEach((source, fileIndex) => {
+    if (storedIndexByFileIndex.has(fileIndex)) return;
+    const candidateStoredIndexes: number[] = [];
+    stored.forEach((item, storedIndex) => {
+      if (
+        !matchedStoredIndexes.has(storedIndex) &&
+        item.provider !== undefined &&
+        researchSourcesShareSecondaryIdentity(source, item)
+      ) {
+        candidateStoredIndexes.push(storedIndex);
+      }
+    });
+    if (candidateStoredIndexes.length > 1) {
+      throw new Error("Research source identities are ambiguous");
+    }
+    const storedIndex = candidateStoredIndexes[0];
+    if (storedIndex === undefined) return;
+    const candidateFileIndexes = candidateFileIndexesByStored.get(storedIndex) ?? [];
+    candidateFileIndexes.push(fileIndex);
+    candidateFileIndexesByStored.set(storedIndex, candidateFileIndexes);
+  });
+
+  for (const [storedIndex, fileIndexes] of candidateFileIndexesByStored) {
+    if (fileIndexes.length > 1) {
+      throw new Error("Research source identities are ambiguous");
+    }
+    matchedStoredIndexes.add(storedIndex);
+    storedIndexByFileIndex.set(fileIndexes[0], storedIndex);
+  }
+
   // The agent's sources.json wins on every field it owns, but external-provider
   // IDENTITY is Cave's, not the agent's: it is written by the attach route and
   // by hydration, and the agent is never told to reproduce it. Without this
@@ -321,10 +359,11 @@ function mergeFileSources(
   // the identity-only ref and silently drops provider/externalId/availability,
   // so a COMPLETED mission — which never hydrates again — would keep no record
   // that the source was an X post at all (cave-v3ajh, #4816 criterion 4).
-  const merged = file.map((source) => {
+  const merged = file.map((source, fileIndex) => {
     if (source.provider !== undefined) return source;
-    const displaced = stored.find((item) => item.provider !== undefined && matches(source, item));
-    if (!displaced) return source;
+    const storedIndex = storedIndexByFileIndex.get(fileIndex);
+    const displaced = storedIndex === undefined ? undefined : stored[storedIndex];
+    if (displaced?.provider === undefined) return source;
     return {
       ...source,
       provider: displaced.provider,
@@ -332,7 +371,10 @@ function mergeFileSources(
       ...(displaced.availability !== undefined ? { availability: displaced.availability } : {}),
     };
   });
-  return [...merged, ...stored.filter((item) => !matchesFileEntry(item))];
+  return [
+    ...merged,
+    ...stored.filter((_, storedIndex) => !matchedStoredIndexes.has(storedIndex)),
+  ];
 }
 
 const PATCHABLE_SOURCE_FIELDS = [
@@ -2058,54 +2100,6 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     },
     act,
   };
-}
-
-/** An agent-written envelope around the ledger — `{ sources: [...] }` with any
- *  sibling keys it chose to record alongside. */
-function isSourceEnvelope(value: unknown): value is { sources: unknown[] } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Array.isArray((value as { sources?: unknown }).sources)
-  );
-}
-
-/**
- * Read the flow-written source ledger.
- *
- * Accepts either a top-level array or an object with a `sources` array,
- * because flow-written `sources.json` content may include an envelope around
- * the list of sources.
- *
- * Per-entry validation remains strict: each source must still normalize
- * successfully, and failures are reported with the source index. Only the
- * accepted top-level shape is relaxed.
- */
-export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("sources.json is malformed");
-  }
-  const list = Array.isArray(parsed)
-    ? parsed
-    : isSourceEnvelope(parsed)
-      ? parsed.sources
-      : null;
-  if (!list) {
-    throw new Error("sources.json must contain an array, or an object with a `sources` array");
-  }
-  return list.map((item, index) => {
-    const normalized = normalizeResearchSource(
-      item as Parameters<typeof normalizeResearchSource>[0],
-    );
-    if (!normalized.ok) {
-      throw new Error(`sources.json source ${index + 1}: ${normalized.reason}`);
-    }
-    return normalized.value;
-  });
 }
 
 /**
