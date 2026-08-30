@@ -2592,13 +2592,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
-  // The session's live git branch for the context row. Rides the shared
-  // changes-summary gate (cave-v8hh) that the composer git chip and the header
-  // meta line already subscribe to, so this adds no extra requests.
-  const { branch: sessionGitBranch } = useChangesSummary(
-    session?.project_root ?? projectRoot ?? undefined,
-    Boolean(session?.project_root ?? projectRoot),
-  );
   // The project the most recent chat ran in — the default a brand-new chat
   // inherits (kept live: sessions can land seconds after boot).
   const recentProjectRoot = useMemo(
@@ -7313,15 +7306,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
 
-  // Facts for the slim context row. Same derivations the header meta line
+  // Facts for the slim context row. Same derivation the header meta line
   // uses, hoisted here so the two rows can never disagree about which model
-  // answered or which directory the session runs in.
-  const contextRowProject = projectIdDraft ? chatProjectById(projectIdDraft, projects) : null;
+  // answered.
   const contextRowModel =
     responseMetadataModel(lastSettledAssistantTurn?.responseMetadata) ??
     visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
     visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined);
-  const contextRowBranch = sessionGitBranch;
 
   // ── Composer placement (Chat.dc.html 2b) ────────────────────────────────
   // One composer, two positions. On a brand-new chat the design puts the brief
@@ -8176,29 +8167,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
-      {/* Chat.dc.html 2a ③: the slim mono context band under the title —
-          project · branch · model · cwd on the left, what the last run cost on
-          the right. Everything here is machine-decided, so it reads in mono
-          and never invents a fact: a chip with no value doesn't render. A
-          brand-new chat (no session yet) renders no band at all (2b): the
-          new-session dashboard already states the harness and model, so a lone
-          model chip here would say it twice. */}
+      {/* Chat.dc.html 2a ③: the slim mono context band under the title — what
+          the last run cost, on the right. The band used to also carry
+          project/branch/model/cwd chips (with a project selector), but the
+          header's identity line one row up already states familiar · model ·
+          branch, so those were dropped as redundant chrome (cave ultraminimalist
+          pass). A brand-new chat (no session yet) renders no band at all. */}
       {sessionId !== null || turns.length > 0 ? (
       <ChatSessionContextRow
-        projectName={contextRowProject?.name ?? null}
-        projectRoot={session?.project_root ?? projectRoot ?? null}
-        runtime={lastSettledAssistantTurn?.responseMetadata?.runtime ?? session?.runtime ?? null}
-        harness={familiar.harness}
-        branch={contextRowBranch}
         model={contextRowModel}
         turns={turns}
         usage={lastSettledAssistantTurn?.usage}
         costUsd={lastSettledAssistantTurn?.costUsd}
         durationMs={lastSettledAssistantTurn?.durationMs}
-        projects={projects}
-        projectId={projectIdDraft}
-        onProjectChange={setProjectIdDraft}
-        onAddProject={overflowAddProject.beginAddProject}
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />

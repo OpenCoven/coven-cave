@@ -49,11 +49,6 @@ test("2a ③ — the context row renders under the header, from the same facts a
     /const contextRowModel =\s*\n\s*responseMetadataModel\(lastSettledAssistantTurn\?\.responseMetadata\) \?\?/,
     "the row's model comes from the settled turn's response metadata first",
   );
-  assert.match(
-    chatView,
-    /const \{ branch: sessionGitBranch \} = useChangesSummary\(/,
-    "the branch rides the shared changes-summary gate rather than its own fetch",
-  );
   // 2b: a brand-new chat renders NO context band — the new-session dashboard
   // already states the harness and model, so a lone model chip would repeat it.
   assert.match(
@@ -63,36 +58,31 @@ test("2a ③ — the context row renders under the header, from the same facts a
   );
 });
 
-test("2a ③ — the row is presentation over a pure model and never renders empty chrome", () => {
+test("2a ③ — the row is presentation over a pure model and never renders empty chrome; project/branch/model chips were dropped as redundant with the header identity line", () => {
   assert.match(
     contextRow,
-    /import \{\s*\n\s*chatContextChips,\s*\n\s*chatContextStats,/,
-    "chips and stats derive from the pure chat-session-context model",
+    /import \{\s*\n\s*chatContextStats,/,
+    "stats derive from the pure chat-session-context model",
+  );
+  assert.doesNotMatch(
+    contextRow,
+    /chatContextChips/,
+    "the row no longer renders project/branch/model/cwd chips — the header identity line already states them",
+  );
+  assert.doesNotMatch(
+    contextRow,
+    /ProjectPickerPopover/,
+    "the project selector was dropped from this row along with the other chips",
   );
   assert.match(
     contextRow,
-    /if \(!chips\.length && !stats\.length\) return null;/,
+    /if \(!stats\.length\) return null;/,
     "a session with no facts yet renders no band at all",
-  );
-  assert.match(
-    contextRow,
-    /if \(chip\.id === "project" && pickerAvailable\)/,
-    "only the project chip is interactive — the rest are facts, not controls",
-  );
-  assert.match(
-    contextRow,
-    /<ProjectPickerPopover/,
-    "the project chip opens the shared project picker rather than a private menu",
   );
   assert.match(
     contextRow,
     /<div className="cave-chat-context-row" role="group" aria-label="Session context">/,
     "the context row exposes its accessible name through a semantic group",
-  );
-  assert.match(
-    chatView,
-    /harness=\{familiar\.harness\}[\s\S]*turns=\{turns\}/,
-    "the strip receives the familiar runtime and the transcript it summarizes",
   );
   assert.match(
     contextRow,
