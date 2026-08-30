@@ -172,7 +172,7 @@ test.describe("research reader", () => {
   test.describe.configure({ timeout: 180_000 });
 
   test("typesets semantic findings and links evidence back to its supported claim", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1920, height: 1080 });
     await openReader(page);
     const reader = page.locator(".research-reader");
 
@@ -242,6 +242,8 @@ test.describe("research reader", () => {
     await expect(reader).toHaveAttribute("data-inspector", "true");
     await expect(reader.locator(".document-reader")).not.toHaveAttribute("inert", "");
     const railHandle = reader.locator(".rr-railhandle");
+    await expect(railHandle).toBeVisible();
+    await expect(marginReference).toBeVisible();
     const handleBox = await railHandle.boundingBox();
     const readerBox = await reader.boundingBox();
     expect(handleBox).not.toBeNull();
@@ -278,13 +280,11 @@ test.describe("research reader", () => {
       minimumHandleBox!.y + minimumHandleBox!.height / 2,
     );
     await page.mouse.up();
-    const claimWidthAtMaxRail = await measuredClaim
-      .locator(":scope > :first-child")
-      .evaluate((element) => element.getBoundingClientRect().width);
-    expect(claimWidthAtMaxRail).toBeCloseTo(
-      claimWidthBeforeInspector.actual,
-      0,
-    );
+    await expect.poll(
+      () => measuredClaim
+        .locator(":scope > :first-child")
+        .evaluate((element) => element.getBoundingClientRect().width),
+    ).toBeCloseTo(claimWidthBeforeInspector.actual, 0);
     const inspector = reader.locator(".research-evidence-inspector");
     const s14card = inspector.locator('[data-source-id="S14"]');
     await expect(inspector).toBeVisible();
