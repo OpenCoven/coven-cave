@@ -36,7 +36,7 @@
 
 import { statSync } from "node:fs";
 import path from "node:path";
-import { windowsShimLaunchCommandForBinary } from "./coven-bin.ts";
+import { environmentValue, windowsShimLaunchCommandForBinary } from "./coven-bin.ts";
 
 export type BdLaunchCommand = {
   /** argv[0] to hand to spawn/execFile. */
@@ -91,26 +91,40 @@ function defaultIsFile(candidate: string): boolean {
  * Directories to probe for a `bd` launcher, PATH first.
  *
  * PATH order is authoritative — an explicitly installed `bd` earlier on PATH
- * must win over the npm global prefix. The npm directories are appended, not
- * prepended, so they only rescue a minimal PATH (a GUI-launched process, a
- * stripped CI env) rather than overriding a deliberate one.
+ * must win over the known installer directories. Those directories are
+ * appended, not prepended, so they only rescue a minimal PATH (a GUI-launched
+ * process, a stripped CI env) rather than overriding a deliberate one. The
+ * release installer uses `%LOCALAPPDATA%\\Programs\\bd`; a source install
+ * commonly lands in the user's Go bin directory.
  */
 export function bdSearchDirs(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): string[] {
   const pathApi = pathApiFor(platform);
-  const fromPath = (env.PATH ?? env.Path ?? "").split(pathApi.delimiter);
-  const npmDirs =
+  const fromPath = (environmentValue(env, "PATH", platform) ?? env.Path ?? "").split(
+    pathApi.delimiter,
+  );
+  const appData = environmentValue(env, "APPDATA", platform);
+  const localAppData = environmentValue(env, "LOCALAPPDATA", platform);
+  const npmPrefix = environmentValue(env, "npm_config_prefix", platform);
+  const goBin = environmentValue(env, "GOBIN", platform);
+  const goPath = environmentValue(env, "GOPATH", platform);
+  const userProfile = environmentValue(env, "USERPROFILE", platform);
+  const knownDirs =
     platform === "win32"
       ? [
-          env.APPDATA ? pathApi.join(env.APPDATA, "npm") : null,
-          env.npm_config_prefix ?? null,
+          appData ? pathApi.join(appData, "npm") : null,
+          npmPrefix ?? null,
+          localAppData ? pathApi.join(localAppData, "Programs", "bd") : null,
+          goBin ?? null,
+          goPath ? pathApi.join(goPath, "bin") : null,
+          userProfile ? pathApi.join(userProfile, "go", "bin") : null,
         ]
       : [];
   const seen = new Set<string>();
   const dirs: string[] = [];
-  for (const dir of [...fromPath, ...npmDirs]) {
+  for (const dir of [...fromPath, ...knownDirs]) {
     const trimmed = dir?.trim();
     if (!trimmed || seen.has(trimmed)) continue;
     seen.add(trimmed);
@@ -148,7 +162,7 @@ export function resolveBdLaunchCommand(
     ((binary, shimPlatform) =>
       windowsShimLaunchCommandForBinary(binary, shimPlatform) as BdLaunchCommand);
 
-  const override = env[BD_BIN_ENV_KEY]?.trim();
+  const override = environmentValue(env, BD_BIN_ENV_KEY, platform)?.trim();
   if (override) {
     if (isFile(override)) return launchForBinary(override, platform, resolveShim);
     (dependencies.warn ?? ((message: string) => console.error(message)))(
