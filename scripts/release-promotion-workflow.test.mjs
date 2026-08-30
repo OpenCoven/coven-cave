@@ -113,8 +113,8 @@ test("candidate validation requires signed tag provenance and calls every deferr
   );
   assert.match(
     full.jobs.rust.steps.map((step) => step.run ?? "").join("\n"),
-    /cargo check --locked[\s\S]*cargo test --locked --lib/,
-    "Rust validation includes the persisted mobile-token library coverage",
+    /cargo check --locked[\s\S]*(?:^|\n)cargo test --locked(?:\n|$)/m,
+    "Rust validation includes the library and rustdoc test coverage",
   );
   const e2eRuns = full.jobs.e2e.steps.map((step) => step.run ?? "").join("\n");
   assert.match(
