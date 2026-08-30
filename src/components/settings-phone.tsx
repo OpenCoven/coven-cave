@@ -343,6 +343,15 @@ function DesktopReachabilityCard() {
       : "Prevent idle sleep whenever this Mac has a paired phone."
     : "Starts after a phone pairs. Off leaves the Mac’s normal sleep settings unchanged.";
 
+  // Desktop reachability is a macOS-only feature: the sleep policy and the
+  // LaunchAgent-backed background helper have no Windows or browser equivalent.
+  // While the native status is unresolved, and once it reports an unsupported
+  // platform, render nothing so Windows never sees macOS-specific reachability
+  // copy (issue #5191). A failed native read keeps the retry card below — that
+  // failure shape belongs to the desktop shell too.
+  if (!status && !error) return null;
+  if (status && !status.supported) return null;
+
   return (
     <section
       id={settingsGroupId("Keep this Mac reachable")}
@@ -350,7 +359,7 @@ function DesktopReachabilityCard() {
       className="settings-phone-card settings-phone-reachability"
     >
       <p className="settings-phone-card__kicker">Keep this Mac reachable</p>
-      {!status && error ? (
+      {!status ? (
         <ErrorState
           compact
           headline="Couldn’t load Mac reachability settings"
@@ -361,14 +370,6 @@ function DesktopReachabilityCard() {
             </Button>
           }
         />
-      ) : !status ? (
-        <p role="status" className="settings-phone-card__status">
-          Loading Mac reachability…
-        </p>
-      ) : !status.supported ? (
-        <p role="status" className="settings-phone-card__status">
-          {status.detail ?? "These controls are available in the macOS desktop app."}
-        </p>
       ) : (
         <>
           {status.pairedPhoneSeen && (!status.config.daemonMode || !status.launchAgentInstalled) ? (
