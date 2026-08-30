@@ -113,17 +113,22 @@ export type DocumentReaderDocument<TBlock, TLede = TBlock> = {
 
 export type DocumentReaderApi = {
   scrollToSection: (id: string) => void;
+  scrollToTarget: (id: string, focus?: boolean) => void;
 };
 
 type DocumentReaderProps<TBlock, TLede> = {
   document: DocumentReaderDocument<TBlock, TLede>;
   navigation?: "compact" | "rail" | "none";
   kicker?: ReactNode;
+  context?: ReactNode;
+  collapsibleSections?: boolean;
   empty?: ReactNode;
   tocMeta?: ReactNode;
+  contentsId?: string;
   className?: string;
   apiRef?: MutableRefObject<DocumentReaderApi | null>;
   onScrollProgress?: (progress: number) => void;
+  onActiveSectionChange?: (section: { id: string; heading: string } | null) => void;
   renderLede: (lede: TLede) => ReactNode;
   renderBlock: (block: TBlock, key: string) => ReactNode;
 };
@@ -140,11 +145,15 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   document,
   navigation = "none",
   kicker,
+  context,
+  collapsibleSections = true,
   empty,
   tocMeta,
+  contentsId,
   className,
   apiRef,
   onScrollProgress,
+  onActiveSectionChange,
   renderLede,
   renderBlock,
 }: DocumentReaderProps<TBlock, TLede>) {
@@ -157,6 +166,9 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   const [activeSection, setActiveSection] = useState<string | null>(
     document.sections.find((section) => section.heading)?.id ?? null,
   );
+  const activeSectionRef = useRef(activeSection);
+  const onActiveSectionChangeRef = useRef(onActiveSectionChange);
+  onActiveSectionChangeRef.current = onActiveSectionChange;
   const [openSections, setOpenSections] = useState<Set<string>>(
     () => new Set(document.sections.map((section) => section.id)),
   );
@@ -189,17 +201,35 @@ export function DocumentReader<TBlock, TLede = TBlock>({
     [document.sections],
   );
 
-  useEffect(() => {
-    setOpenSections(new Set(document.sections.map((section) => section.id)));
-    setActiveSection(namedSections[0]?.id ?? null);
-  }, [document.sections, namedSections]);
+  const activeSectionForId = useCallback(
+    (id: string | null) => {
+      const section = namedSections.find((candidate) => candidate.id === id);
+      return section ? { id: section.id, heading: section.heading } : null;
+    },
+    [namedSections],
+  );
 
-  const scrollToSection = useCallback((id: string) => {
+  const activateSection = useCallback(
+    (id: string | null) => {
+      if (activeSectionRef.current === id) return;
+      activeSectionRef.current = id;
+      setActiveSection(id);
+      onActiveSectionChangeRef.current?.(activeSectionForId(id));
+    },
+    [activeSectionForId],
+  );
+
+  useEffect(() => {
+    const resetActiveSection = namedSections[0]?.id ?? null;
+    setOpenSections(new Set(document.sections.map((section) => section.id)));
+    activeSectionRef.current = resetActiveSection;
+    setActiveSection(resetActiveSection);
+    onActiveSectionChangeRef.current?.(activeSectionForId(resetActiveSection));
+  }, [activeSectionForId, document.sections, namedSections]);
+
+  const scrollToElement = useCallback((target: HTMLElement) => {
     const scroller = scrollerRef.current;
-    const target = scroller?.querySelector<HTMLElement>(
-      `[data-document-section="${CSS.escape(id)}"]`,
-    );
-    if (!scroller || !target) return;
+    if (!scroller) return;
     const top =
       target.getBoundingClientRect().top -
       scroller.getBoundingClientRect().top +
@@ -210,17 +240,38 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       ? "auto"
       : "smooth";
     scroller.scrollTo({ top, behavior });
-    setActiveSection(id);
-    setContentsOpen(false);
   }, []);
+
+  const scrollToSection = useCallback((id: string) => {
+    const scroller = scrollerRef.current;
+    const target = scroller?.querySelector<HTMLElement>(
+      `[data-document-section="${CSS.escape(id)}"]`,
+    );
+    if (!target) return;
+    scrollToElement(target);
+    activateSection(id);
+    setContentsOpen(false);
+  }, [activateSection, scrollToElement]);
+
+  const scrollToTarget = useCallback((id: string, focus?: boolean) => {
+    const scroller = scrollerRef.current;
+    const target = scroller?.querySelector<HTMLElement>(
+      `[data-document-target="${CSS.escape(id)}"]`,
+    );
+    if (!target) return;
+    scrollToElement(target);
+    if (focus) {
+      window.requestAnimationFrame(() => target.focus());
+    }
+  }, [scrollToElement]);
 
   useEffect(() => {
     if (!apiRef) return;
-    apiRef.current = { scrollToSection };
+    apiRef.current = { scrollToSection, scrollToTarget };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, scrollToSection]);
+  }, [apiRef, scrollToSection, scrollToTarget]);
 
   const onScroll = () => {
     const scroller = scrollerRef.current;
@@ -239,7 +290,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
         current = section.id;
       }
     }
-    if (current) setActiveSection(current);
+    if (current) activateSection(current);
   };
 
   const toggleSection = (id: string) => {
@@ -333,6 +384,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
 
   const hasBody =
     document.title !== null ||
+    (context !== null && context !== undefined) ||
     document.lede !== null ||
     document.sections.length > 0;
 
@@ -352,6 +404,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       <div className="document-reader__layout">
       {navigation === "rail" && namedSections.length > 0 ? (
         <nav
+          id={contentsId}
           className="document-reader__toc rr-col rr-toc"
           aria-label="Contents"
         >
@@ -384,6 +437,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
               ref={preferencesTriggerRef}
               type="button"
               className="document-reader__preferences-trigger focus-ring"
+              title="Reading preferences"
               aria-label="Reading preferences"
               aria-haspopup="dialog"
               aria-expanded={preferencesOpen}
@@ -489,6 +543,9 @@ export function DocumentReader<TBlock, TLede = TBlock>({
               {document.title ? (
                 <h1 className="document-reader__title">{document.title}</h1>
               ) : null}
+              {context !== null && context !== undefined ? (
+                <div className="document-reader__context">{context}</div>
+              ) : null}
               {document.lede ? (
                 <div className="document-reader__lede rr-lede">
                   {renderLede(document.lede)}
@@ -523,23 +580,27 @@ export function DocumentReader<TBlock, TLede = TBlock>({
                         "data-document-section": section.id,
                         id: section.id,
                       },
-                      <button
-                        type="button"
-                        className="document-reader__section-toggle rr-h2-btn focus-ring"
-                        data-open={open}
-                        aria-expanded={open}
-                        onClick={() => toggleSection(section.id)}
-                      >
-                        <span>{section.heading}</span>
-                        <Icon
-                          name="ph:caret-down"
-                          width={13}
-                          className="document-reader__section-caret rr-sec-caret"
-                          aria-hidden
-                        />
-                      </button>,
+                      collapsibleSections ? (
+                        <button
+                          type="button"
+                          className="document-reader__section-toggle rr-h2-btn focus-ring"
+                          data-open={open}
+                          aria-expanded={open}
+                          onClick={() => toggleSection(section.id)}
+                        >
+                          <span>{section.heading}</span>
+                          <Icon
+                            name="ph:caret-down"
+                            width={13}
+                            className="document-reader__section-caret rr-sec-caret"
+                            aria-hidden
+                          />
+                        </button>
+                      ) : (
+                        section.heading
+                      ),
                     )}
-                    {open ? (
+                    {!collapsibleSections || open ? (
                       <div className="document-reader__section-body rr-doc__section-body">
                         {section.blocks.map((block, index) =>
                           <Fragment key={`${section.id}:block:${index}`}>

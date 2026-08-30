@@ -10,6 +10,7 @@ import {
   ensureStandardArtifactRefs,
   normalizeResearchBounds,
   parseResearchMission,
+  parseResearchSources,
   RESEARCH_AUDIENCE_MAX_LENGTH,
   RESEARCH_BOUND_LIMITS,
   RESEARCH_CONSTRAINT_MAX_COUNT,
@@ -111,6 +112,24 @@ test("mission parser refuses unknown external-provider identity on a source", ()
   // array is exactly what an agent writing sources.json can put there.
   assert.equal(withSource({ provider: ["x"] }), null);
   assert.equal(withSource({ availability: ["deleted"] }), null);
+});
+
+test("source-array parser reuses mission source validation without a mission wrapper", () => {
+  const validSource = {
+    id: "manual-primary-source",
+    title: "Primary source",
+    url: "https://example.com/source",
+    sourceType: "web",
+    status: "used",
+  } as const;
+
+  assert.deepEqual(parseResearchSources([validSource]), [validSource]);
+  assert.deepEqual(parseResearchSources([]), []);
+  assert.equal(parseResearchSources({ sources: [validSource] }), null);
+  assert.equal(
+    parseResearchSources([{ ...validSource, status: "invented" }]),
+    null,
+  );
 });
 
 test("mission parser preserves valid title provenance and rejects unknown values", () => {

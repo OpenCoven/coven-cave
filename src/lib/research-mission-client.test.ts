@@ -191,6 +191,17 @@ test("getResearchMissionFile fetches the file payload with encoded segments", as
         content: "[]",
         workspacePath: "/tmp/research-missions/mission-1",
         updatedAt: "2026-07-24T00:00:00.000Z",
+        sourceLedger: {
+          state: "available",
+          sources: [
+            {
+              id: "manual-primary",
+              title: "Primary source",
+              sourceType: "web",
+              status: "used",
+            },
+          ],
+        },
       },
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
@@ -199,6 +210,87 @@ test("getResearchMissionFile fetches the file payload with encoded segments", as
     assert.deepEqual(calls, ["/api/research/missions/mission%201/files/source-ledger"]);
     assert.equal(file.content, "[]");
     assert.equal(file.workspacePath, "/tmp/research-missions/mission-1");
+    assert.equal(file.sourceLedger.state, "available");
+    assert.equal(file.sourceLedger.sources[0]?.id, "manual-primary");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getResearchMissionFile fails closed when legacy responses omit the source-ledger snapshot", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({
+    ok: true,
+    file: {
+      key: "findings",
+      kind: "findings",
+      title: "Findings",
+      fileName: "findings.md",
+      relativePath: "findings.md",
+      content: "# Findings",
+      workspacePath: "/workspace/mission-1",
+      updatedAt: "2026-07-24T00:00:00.000Z",
+    },
+  })) as typeof fetch;
+  try {
+    const file = await getResearchMissionFile("mission-1", "findings");
+    assert.deepEqual(file.sourceLedger, { state: "failed", sources: [] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getResearchMissionFile rejects inconsistent source-ledger claims as failed", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({
+    ok: true,
+    file: {
+      key: "findings",
+      kind: "findings",
+      title: "Findings",
+      fileName: "findings.md",
+      relativePath: "findings.md",
+      content: "# Findings",
+      workspacePath: "/workspace/mission-1",
+      updatedAt: "2026-07-24T00:00:00.000Z",
+      sourceLedger: { state: "available", sources: [] },
+    },
+  })) as typeof fetch;
+  try {
+    const file = await getResearchMissionFile("mission-1", "findings");
+    assert.deepEqual(file.sourceLedger, { state: "failed", sources: [] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getResearchMissionFile strips stale sources from an explicit failed ledger", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({
+    ok: true,
+    file: {
+      key: "findings",
+      kind: "findings",
+      title: "Findings",
+      fileName: "findings.md",
+      relativePath: "findings.md",
+      content: "# Findings",
+      workspacePath: "/workspace/mission-1",
+      updatedAt: "2026-07-24T00:00:00.000Z",
+      sourceLedger: {
+        state: "failed",
+        sources: [{
+          id: "stale-source",
+          title: "Stale source",
+          sourceType: "web",
+          status: "used",
+        }],
+      },
+    },
+  })) as typeof fetch;
+  try {
+    const file = await getResearchMissionFile("mission-1", "findings");
+    assert.deepEqual(file.sourceLedger, { state: "failed", sources: [] });
   } finally {
     globalThis.fetch = originalFetch;
   }
