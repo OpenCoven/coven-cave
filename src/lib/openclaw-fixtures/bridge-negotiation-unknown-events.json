@@ -1,0 +1,68 @@
+{
+  "source": {
+    "note": "Conformance frames for the issue #4892 fail-closed unknown-event path. Each frame is shaped like an OpenClaw agent tool event but violates the reviewed profile contract (unregistered event name, unregistered stream, unknown lifecycle phase, and a frame that fails the pinned AgentEventSchema). Cave must classify every one as unknown, surface one value-free diagnostic, and retain plain chat. Derived from the lifecycle shapes in tool-lifecycle-v1.json; not an upstream OpenClaw release.",
+    "modeledOn": [
+      "src/lib/openclaw-fixtures/tool-lifecycle-v1.json"
+    ]
+  },
+  "frames": [
+    {
+      "event": "presence",
+      "payload": {
+        "runId": "run-1",
+        "seq": 11,
+        "stream": "tool",
+        "ts": 1400,
+        "data": {
+          "phase": "start",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "args": { "command": "echo hi" }
+        }
+      }
+    },
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 12,
+        "stream": "chat",
+        "ts": 1410,
+        "data": {
+          "phase": "start",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "args": { "command": "echo hi" }
+        }
+      }
+    },
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 13,
+        "stream": "tool",
+        "ts": 1420,
+        "data": {
+          "phase": "mystery",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "args": { "command": "echo hi" }
+        }
+      }
+    },
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 14,
+        "stream": "tool",
+        "ts": 1430,
+        "data": {
+          "phase": "start",
+          "toolCallId": "tool-1"
+        }
+      }
+    }
+  ]
+}
