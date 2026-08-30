@@ -1,33 +1,20 @@
 // Pure model for the chat session's slim context row (Chat.dc.html 2a ③).
 //
-// The design splits the old single header band in two: a human title row
-// (serif title + lifecycle actions) and a machine-readable context row —
-// everything you'd otherwise hunt for in a kebab: which project the session
-// runs in, on which branch, through which model and working directory, plus
-// the live cost of the thread on the right.
+// The row states what a machine decided about the last run — done, elapsed,
+// context window, tokens, cost — beneath the human title row (serif title +
+// lifecycle actions). It used to also carry project/branch/model/cwd chips,
+// but those duplicated the header's identity line one row up and were
+// dropped as redundant chrome.
 //
-// Kept free of React so the chip/stat derivation is unit-testable and so the
-// row never invents facts: every chip is dropped when its fact is unknown.
+// Kept free of React so the stat derivation is unit-testable and so the row
+// never invents facts: every stat is dropped when its fact is unknown.
 
 import { computeContextMeter } from "./context-meter.ts";
-import { formatRuntime } from "./chat-response-metadata.ts";
 import { formatCost, formatTokens, type TurnUsage } from "./usage-format.ts";
 
-/** Accent used for the chip glyph / stat dot. Maps to a CSS custom property
- *  in the stylesheet rather than a raw colour so themes stay in charge. */
+/** Accent used for the stat dot. Maps to a CSS custom property in the
+ *  stylesheet rather than a raw colour so themes stay in charge. */
 export type ChatContextTint = "accent" | "success" | "warning" | "danger" | "muted";
-
-export type ChatContextChip = {
-  id: "runtime" | "project" | "branch" | "cwd";
-  /** Phosphor name from the curated subset (src/lib/icon.tsx). */
-  icon: "ph:folder" | "ph:git-branch" | "ph:sparkle" | "ph:terminal-window";
-  /** Dim key, e.g. "project". */
-  label: string;
-  /** Bright value, e.g. "coven-cave". */
-  value: string;
-  title: string;
-  tint: ChatContextTint;
-};
 
 export type ChatContextStat = {
   id: "done" | "elapsed" | "context" | "tokens" | "cost";
@@ -82,76 +69,6 @@ export function formatContextDuration(ms?: number): string | null {
   if (mins < 60) return `${mins}m ${String(secs).padStart(2, "0")}s`;
   const hours = Math.floor(mins / 60);
   return `${hours}h ${String(mins % 60).padStart(2, "0")}m`;
-}
-
-/** Model id trimmed to its display tail — "anthropic/claude-opus-5" → "opus-5".
- *  Mirrors chat-view's header label so the two rows never disagree. */
-export function shortContextModel(model: string): string {
-  const afterVendor = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-  return afterVendor.replace(/^claude-/i, "") || afterVendor;
-}
-
-export function chatContextChips(args: {
-  projectName?: string | null;
-  projectRoot?: string | null;
-  harness?: string | null;
-  runtime?: string | null;
-  branch?: string | null;
-  model?: string | null;
-}): ChatContextChip[] {
-  const chips: ChatContextChip[] = [];
-  // Both sides go through formatRuntime before they're compared — its titles
-  // are home-relative, so comparing one against a raw root would never match.
-  const projectDir = formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
-  const dir = formatRuntime(args.runtime) ?? projectDir;
-  const projectName = args.projectName?.trim();
-  const harness = args.harness?.trim();
-  const model = args.model?.trim();
-  const runtimeValue = [harness, model ? shortContextModel(model) : null].filter(Boolean).join(" / ");
-  if (runtimeValue) {
-    chips.push({
-      id: "runtime",
-      icon: "ph:terminal-window",
-      label: "runtime",
-      value: runtimeValue,
-      title: `Runtime ${runtimeValue}`,
-      tint: "accent",
-    });
-  }
-  const branch = args.branch?.trim();
-  if (branch) {
-    chips.push({
-      id: "branch",
-      icon: "ph:git-branch",
-      label: "branch",
-      value: branch,
-      title: `Git branch ${branch}`,
-      tint: "success",
-    });
-  }
-  if (projectName) {
-    chips.push({
-      id: "project",
-      icon: "ph:folder",
-      label: "project",
-      value: projectName,
-      title: args.projectRoot ? `Project ${projectName} — ${args.projectRoot}` : `Project ${projectName}`,
-      tint: "accent",
-    });
-  }
-  // The cwd only earns its own chip when it isn't already implied by the
-  // project chip — otherwise the row says the same thing twice.
-  if (dir && (!projectName || dir.title !== projectDir?.title)) {
-    chips.push({
-      id: "cwd",
-      icon: "ph:terminal-window",
-      label: "cwd",
-      value: dir.label,
-      title: dir.title,
-      tint: "muted",
-    });
-  }
-  return chips;
 }
 
 function positiveMs(value: number | undefined): number {
