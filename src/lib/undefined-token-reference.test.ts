@@ -219,6 +219,7 @@ const names = (list: { name: string }[]) => list.map((x) => x.name);
       <p className="text-[var(--fg-primary)] caret-[var(--fg-secondary)]">{note}</p>
       <small className="text-[var(--fg-secondary)]">{sub}</small>
       <footer className="text-[var(--fg-primary)]" />
+      <i className="bg-[var(--surface-muted)]" />
     </div>
   );
 }`;
@@ -230,20 +231,21 @@ const names = (list: { name: string }[]) => list.map((x) => x.name);
   const tally = tallyByName(fixture.undefinedRefs) as Map<string, number>;
   assert.deepEqual(
     Object.fromEntries(tally),
-    { "--text-danger": 3, "--fg-primary": 7, "--fg-secondary": 2 },
-    "the three undefined tokens are found, and --bg-base on the same line is not flagged",
+    { "--text-danger": 3, "--fg-primary": 7, "--fg-secondary": 2, "--surface-muted": 1 },
+    "the undefined tokens are found, and --bg-base on the same line is not flagged",
   );
   assert.ok(
     fixture.references.some((r: Ref) => r.name === "--bg-base"),
     "--bg-base is still counted as a reference — it is simply a defined one",
   );
 
-  // Now the gate, not just the scanner. The three tokens take three DIFFERENT
+  // Now the gate, not just the scanner. The four tokens take three DIFFERENT
   // paths through it, which is why the fixture keeps the real multiplicities:
-  //   --fg-secondary  unbanked        -> fails outright
-  //   --fg-primary    banked at 5, 7  -> fails as "went UP"
-  //   --text-danger   banked at 7, 3  -> does NOT fail, and must not
-  // An equivalent mutant would reach only the first and still look green.
+  //   --fg-secondary  unbanked             -> fails outright
+  //   --fg-primary    retired by z2sbd      -> fails outright
+  //   --text-danger   retired by z2sbd      -> fails outright
+  //   --surface-muted banked at 1, used 1  -> does NOT fail, and must not
+  // An equivalent mutant would reach only the unbanked path and still look green.
   const verdict = assessTokenReferences({
     undefinedRefs: fixture.undefinedRefs,
     themeScopedOnlyRefs: [],
@@ -255,11 +257,15 @@ const names = (list: { name: string }[]) => list.map((x) => x.name);
     `an unbanked undefined token must fail outright: ${verdict.failures.join(" | ")}`,
   );
   assert.ok(
-    verdict.failures.some((f: string) => f.includes("--fg-primary") && f.includes("went UP")),
-    `a banked token used more must fail: ${verdict.failures.join(" | ")}`,
+    verdict.failures.some((f: string) => f.includes("--fg-primary") && f.includes("undefined token, NO fallback")),
+    `a retired undefined token must fail outright: ${verdict.failures.join(" | ")}`,
   );
   assert.ok(
-    !verdict.failures.some((f: string) => f.includes("--text-danger")),
+    verdict.failures.some((f: string) => f.includes("--text-danger") && f.includes("undefined token, NO fallback")),
+    `a second retired undefined token must fail outright: ${verdict.failures.join(" | ")}`,
+  );
+  assert.ok(
+    !verdict.failures.some((f: string) => f.includes("--surface-muted")),
     "a banked token still under its count is not a new defect",
   );
   assert.ok(
@@ -269,8 +275,8 @@ const names = (list: { name: string }[]) => list.map((x) => x.name);
 
   // The "went UP" branch, isolated: a banked name over its banked count.
   const overBank = assessTokenReferences({
-    undefinedRefs: Array.from({ length: 6 }, (_, i) => ({
-      name: "--fg-primary",
+    undefinedRefs: Array.from({ length: 2 }, (_, i) => ({
+      name: "--surface-muted",
       fallback: false,
       file: "src/components/research-run-surface.tsx",
       line: 240 + i,
@@ -280,17 +286,17 @@ const names = (list: { name: string }[]) => list.map((x) => x.name);
   });
   assert.equal(overBank.ok, false);
   assert.ok(
-    overBank.failures.some((f: string) => f.includes("--fg-primary") && f.includes("went UP")),
+    overBank.failures.some((f: string) => f.includes("--surface-muted") && f.includes("went UP")),
     `a banked name over its count must fail: ${overBank.failures.join(" | ")}`,
   );
 
   // …and exactly at the banked count it must NOT fail, or the gate fires on
   // the tree it was measured against.
   const atBank = assessTokenReferences({
-    undefinedRefs: Array.from({ length: 5 }, (_, i) => ({
-      name: "--fg-primary",
+    undefinedRefs: Array.from({ length: 1 }, (_, i) => ({
+      name: "--surface-muted",
       fallback: false,
-      file: "src/components/quick-chat-primitives.tsx",
+      file: "src/components/research-run-surface.tsx",
       line: 32 + i,
     })),
     themeScopedOnlyRefs: [],

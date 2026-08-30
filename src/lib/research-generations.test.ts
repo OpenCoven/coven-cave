@@ -38,8 +38,17 @@ test("extractive and media kind unions stay explicit and composable", () => {
   assert.equal(isResearchGenerationMediaKind("slides"), false);
 });
 
-test("generation directions use the shared 10,000-character ceiling", () => {
-  assert.equal(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH, 10_000);
+test("generation directions use the shared 5,000-character ceiling", () => {
+  assert.equal(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH, 5_000);
+  const overLimit = validateCreateResearchGenerationInput({
+    familiarId: "nova", kind: "blog", sourceMissionId: "m-1",
+    directions: "x".repeat(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH + 1),
+  });
+  assert.equal(overLimit.ok, false);
+  assert.equal(
+    overLimit.ok ? null : overLimit.error,
+    `directions must be at most ${RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH} characters`,
+  );
   assert.equal(
     validateCreateResearchGenerationInput({
       familiarId: "nova", kind: "blog", sourceMissionId: "m-1",

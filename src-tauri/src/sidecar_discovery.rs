@@ -291,12 +291,14 @@ pub(super) enum PathProbe {
 /// reaching another machine on Windows 11 — `fs` read
 /// `\\localhost\C$\Windows\win.ini` through each of them:
 ///
-///     \\.\UNC\host\share\coven.exe
-///     \\?\GLOBALROOT\Device\Mup\host\share\coven.exe
-///     \\?\GLOBALROOT\Device\LanmanRedirector\host\share\coven.exe
-///     \\?\GLOBALROOT\??\UNC\host\share\coven.exe
-///     \\.\C:\..\..\UNC\host\share\coven.exe
-///     \\?\C:\..\..\UNC\host\share\coven.exe
+/// ```text
+/// \\.\UNC\host\share\coven.exe
+/// \\?\GLOBALROOT\Device\Mup\host\share\coven.exe
+/// \\?\GLOBALROOT\Device\LanmanRedirector\host\share\coven.exe
+/// \\?\GLOBALROOT\??\UNC\host\share\coven.exe
+/// \\.\C:\..\..\UNC\host\share\coven.exe
+/// \\?\C:\..\..\UNC\host\share\coven.exe
+/// ```
 ///
 /// The last three show the set does not close by enumeration: `GLOBALROOT` re-
 /// enters the object-manager root so remote routes nest arbitrarily, and a `..`

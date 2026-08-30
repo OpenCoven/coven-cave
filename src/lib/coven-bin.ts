@@ -392,7 +392,8 @@ function verifiedAbsoluteBinary(
   }
 }
 
-function environmentValue(
+/** Read one process environment key case-insensitively on Windows. */
+export function environmentValue(
   env: NodeJS.ProcessEnv,
   key: string,
   platform: NodeJS.Platform,

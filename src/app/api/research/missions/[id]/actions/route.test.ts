@@ -50,6 +50,8 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   assert.match(source, /message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED\) return 409/);
   assert.match(source, /message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT\) return 409/);
   assert.match(source, /VALIDATION_ERRORS\.has\(message\)/);
+  assert.match(source, /RESEARCH_DIRECTION_MAX_LENGTH/);
+  assert.doesNotMatch(source, /refined direction must be at most 2000 characters/);
   assert.match(source, /startsWith\('Project root "'\)/);
   assert.match(source, /startsWith\("invalid source"\)/);
   assert.match(source, /return 400;/);

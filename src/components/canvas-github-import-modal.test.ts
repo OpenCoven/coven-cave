@@ -48,6 +48,21 @@ assert.match(
 );
 assert.match(
   modal,
+  /PROJECT_ROOT_WORKSPACE_HELP/,
+  "the local-checkout creation field uses the shared workspace guidance",
+);
+assert.match(
+  modal,
+  /aria-describedby="canvas-github-import-root-workspace-help canvas-github-import-root-help"/,
+  "the local-checkout field exposes both constraint and purpose help to assistive technology",
+);
+assert.match(
+  modal,
+  /id="canvas-github-import-root-workspace-help"[\s\S]*\{PROJECT_ROOT_WORKSPACE_HELP\}/,
+  "workspace guidance is visible before a root is chosen",
+);
+assert.match(
+  modal,
   /\{busy \? "Loading…" : `Load \$\{fileName\}`\}/,
   "the primary action describes the actual next step",
 );

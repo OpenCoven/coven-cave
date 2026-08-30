@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { StandardSelect } from "@/components/ui/select";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectErrorCode } from "@/lib/project-errors";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 import type { CanvasArtifactSource } from "@/lib/canvas-artifacts";
 import {
   CREATE_CANVAS_IMPORT_PROJECT,
@@ -410,6 +411,7 @@ export function CanvasGitHubImportModal({
                         setErrorCode(null);
                       }}
                       placeholder="/Users/you/code/project"
+                      aria-describedby="canvas-github-import-root-workspace-help canvas-github-import-root-help"
                     />
                     {nativeFolderPickerAvailable ? (
                       <Button
@@ -422,7 +424,10 @@ export function CanvasGitHubImportModal({
                       </Button>
                     ) : null}
                   </span>
-                  <small>
+                  <small id="canvas-github-import-root-workspace-help">
+                    {PROJECT_ROOT_WORKSPACE_HELP}
+                  </small>
+                  <small id="canvas-github-import-root-help">
                     Choose an existing checkout for {parsed.owner}/{parsed.repo}.
                     Canvas doesn’t clone repositories.
                   </small>

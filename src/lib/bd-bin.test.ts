@@ -106,6 +106,48 @@ const silent = () => {};
   );
 }
 
+// The stock Windows release installer uses %LOCALAPPDATA%\Programs\bd. The
+// environment object can arrive with PowerShell/Explorer casing (`Path` and
+// `LocalAppData`), so discovery must not require the user to edit PATH in the
+// already-running Cave process.
+{
+  const stockDir = "C:\\Users\\dev\\AppData\\Local\\Programs\\bd";
+  const stockExe = path.win32.join(stockDir, "bd.exe");
+  const launch = resolveBdLaunchCommand({
+    platform: "win32",
+    env: {
+      Path: "C:\\Windows\\system32",
+      LocalAppData: "C:\\Users\\dev\\AppData\\Local",
+    },
+    isFile: onlyFiles([stockExe]),
+    resolveShim,
+    warn: silent,
+  });
+  assert.deepEqual(launch, { command: stockExe, fixedArgs: [] });
+  assert.ok(
+    bdSearchDirs(
+      { Path: "C:\\Windows\\system32", LocalAppData: "C:\\Users\\dev\\AppData\\Local" },
+      "win32",
+    ).includes(stockDir),
+    "the documented stock install directory belongs in Windows discovery",
+  );
+}
+
+// A source install commonly lands in the default Go bin directory when no
+// PATH entry was inherited.
+{
+  const goDir = "C:\\Users\\dev\\go\\bin";
+  const goExe = path.win32.join(goDir, "bd.exe");
+  const launch = resolveBdLaunchCommand({
+    platform: "win32",
+    env: { Path: "C:\\Windows\\system32", UserProfile: "C:\\Users\\dev" },
+    isFile: onlyFiles([goExe]),
+    resolveShim,
+    warn: silent,
+  });
+  assert.deepEqual(launch, { command: goExe, fixedArgs: [] });
+}
+
 // Nothing found: fall back to the bare name so the caller's existing ENOENT
 // path reports what it always did, rather than a novel message.
 {
@@ -154,7 +196,7 @@ const silent = () => {};
   const overrideShim = "C:\\custom\\bd.cmd";
   const launch = resolveBdLaunchCommand({
     platform: "win32",
-    env: { BD_BIN: overrideShim, PATH: NPM_DIR },
+    env: { Bd_Bin: overrideShim, PATH: NPM_DIR },
     isFile: onlyFiles([overrideShim]),
     resolveShim: (binary) => ({ command: "node.exe", fixedArgs: [`${binary}-target`] }),
     warn: silent,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { SavedLink } from "./link-organizer.ts";
+import { RESEARCH_INTENT_MAX_LENGTH } from "./research-missions.ts";
 import type { ResearchMission } from "./research-missions.ts";
 import {
   buildResearchRecommendationContext,
@@ -38,7 +39,7 @@ function link(id: string): SavedLink {
 }
 
 test("bounds and compacts long mission and link context before fingerprinting", () => {
-  const longIntent = "x".repeat(25_000);
+  const longIntent = "x".repeat(RESEARCH_INTENT_MAX_LENGTH);
   const missions = Array.from({ length: 30 }, (_, index) => mission(String(index), longIntent));
   const links = Array.from({ length: 30 }, (_, index) => link(String(index)));
 

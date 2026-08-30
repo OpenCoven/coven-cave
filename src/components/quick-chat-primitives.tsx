@@ -29,7 +29,7 @@ export function FamiliarMark({ familiar, size = "sm" }: { familiar: Familiar; si
       alt=""
       className={`${sizeClass} rounded-[var(--radius-control)] object-cover`}
       fallback={
-        <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--fg-primary)]`}>
+        <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--text-primary)]`}>
           {initials(familiar)}
         </span>
       }

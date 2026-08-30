@@ -18,6 +18,23 @@ export const INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC =
 export const OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC =
   "Unattended Research writes require the owner-local Coven daemon socket. Remove the remote COVEN_SOCKET override, restart Cave, and try again.";
 
+export const LOCAL_RESEARCH_DAEMON_UNAVAILABLE_DIAGNOSTIC =
+  "The local Coven daemon is temporarily unavailable while the Coven CLI updates. Wait for the update to finish, then retry Research.";
+
+export type ResearchSessionLaunchDiagnostic = {
+  code: "local-unavailable";
+  message: typeof LOCAL_RESEARCH_DAEMON_UNAVAILABLE_DIAGNOSTIC;
+  retryable: true;
+};
+
+export function localResearchDaemonUnavailableDiagnostic(): ResearchSessionLaunchDiagnostic {
+  return {
+    code: "local-unavailable",
+    message: LOCAL_RESEARCH_DAEMON_UNAVAILABLE_DIAGNOSTIC,
+    retryable: true,
+  };
+}
+
 export type ResearchSessionLaunchPolicy = {
   approval: "never";
   sandbox: "workspace-write";
@@ -111,6 +128,7 @@ export function isOwnerLocalResearchDaemonTarget(
   target: LocalDaemonTarget,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
+  if (target.socketResolution?.refusedSources?.length) return false;
   const socketPath = target.socketPath.trim();
   if (!socketPath || socketPath.includes("\0")) return false;
   if (platform === "win32") {
@@ -118,6 +136,33 @@ export function isOwnerLocalResearchDaemonTarget(
     return socketPath.toLowerCase().startsWith(prefix) && socketPath.length > prefix.length;
   }
   return path.posix.isAbsolute(socketPath);
+}
+
+export type ResearchDaemonTargetClassification =
+  | "owner-local"
+  | "local-unavailable"
+  | "nonlocal";
+
+/**
+ * Keep the Windows canonical fallback distinct from an explicitly refused
+ * target. The former is the expected gap while the local CLI replaces a
+ * stopped daemon; the latter is a trust-boundary violation and must fail
+ * closed even when a later fallback happens to expose a local pipe.
+ */
+export function classifyResearchDaemonTarget(
+  target: LocalDaemonTarget,
+  platform: NodeJS.Platform = process.platform,
+): ResearchDaemonTargetClassification {
+  const resolution = target.socketResolution;
+  if (resolution?.refusedSources?.length) return "nonlocal";
+  if (
+    platform === "win32"
+    && resolution?.source === "canonical-local"
+    && resolution.availability === "unavailable"
+  ) {
+    return "local-unavailable";
+  }
+  return isOwnerLocalResearchDaemonTarget(target, platform) ? "owner-local" : "nonlocal";
 }
 
 /**

@@ -439,12 +439,17 @@ export function ReviewInspector({
             maxLength={GITHUB_REVIEW_BODY_MAX_LENGTH}
             disabled={!selected}
             aria-invalid={noteError ? true : undefined}
+            aria-describedby="rd-inspector-note-count"
+            aria-errormessage={noteError ? "rd-inspector-note-error" : undefined}
             onChange={(event) =>
               onNote(event.target.value.slice(0, GITHUB_REVIEW_BODY_MAX_LENGTH))
             }
           />
+          <span id="rd-inspector-note-count" className="rd-character-count">
+            {note.length.toLocaleString()} / {GITHUB_REVIEW_BODY_MAX_LENGTH.toLocaleString()}
+          </span>
           {noteError ? (
-            <span className="rd-error" role="alert">
+            <span id="rd-inspector-note-error" className="rd-error" role="alert">
               {noteError}
             </span>
           ) : null}

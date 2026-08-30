@@ -133,7 +133,85 @@ type CommandResult = {
   status: number | null;
   stdout: string;
   stderr: string;
+  /** Set when the OS could not start the requested executable. */
+  executionError?: string;
 };
+
+const BEADS_ROLE_WARNING = /^\s*warning:\s*beads\.role\s+not configured\b/i;
+const BEADS_ROLE_FIX = /^\s*Fix:\s*git\s+config\s+beads\.role\b.*$/i;
+
+/**
+ * Remove Beads' informational role warning while preserving every other
+ * stderr line. `bd list --json` remains valid JSON when this warning is the
+ * only diagnostic, so treating all stderr as a failed inventory would turn a
+ * harmless first-run hint into an exit-1 lifecycle refusal.
+ */
+export function filterBeadsInventoryStderr(stderr: string): string {
+  const retained: string[] = [];
+  let suppressRoleFix = false;
+  for (const line of stderr.split(/\r?\n/)) {
+    if (BEADS_ROLE_WARNING.test(line)) {
+      suppressRoleFix = true;
+      continue;
+    }
+    if (suppressRoleFix && line.trim().length === 0) continue;
+    if (suppressRoleFix && BEADS_ROLE_FIX.test(line)) {
+      suppressRoleFix = false;
+      continue;
+    }
+    suppressRoleFix = false;
+    retained.push(line);
+  }
+  return retained.join("\n").trim();
+}
+
+export type LifecycleInventoryFailureKind =
+  | "beads-execution"
+  | "github-transient"
+  | "inventory";
+
+/** Classify only the failure families that change the operator's next action. */
+export function classifyLifecycleInventoryFailure(
+  message: string,
+): LifecycleInventoryFailureKind {
+  if (
+    /Beads CLI could not be executed|bd invocation failed|spawn(?:Sync)?\s+bd\b[^\n]*(?:ENOENT|not found|cannot find the file)/i.test(
+      message,
+    )
+  ) {
+    return "beads-execution";
+  }
+  if (
+    /could not query GitHub|associated PR inventory query failed|workflow inventory failed for|\b(?:rate limit|secondary rate limit|quota)\b|GitHub[^\n;]*(?:unavailable|failed|timed out)|(?:API|GraphQL)[^\n;]*(?:unavailable|failed|timed out|rate limit|quota)/i.test(
+      message,
+    )
+  ) {
+    return "github-transient";
+  }
+  return "inventory";
+}
+
+/**
+ * Keep exit-1 lifecycle diagnostics actionable: a missing/unlaunchable `bd`
+ * needs a local install fix, while a GitHub or GraphQL quota/read failure
+ * needs a retry. All other validation failures retain the existing wording.
+ */
+export function formatLifecycleInventoryFailure(errors: readonly string[]): string {
+  const unique = [...new Set(errors.map((error) => error.trim()).filter(Boolean))];
+  const beadsExecution = unique.filter(
+    (error) => classifyLifecycleInventoryFailure(error) === "beads-execution",
+  );
+  if (beadsExecution.length > 0) {
+    return `lifecycle inventory could not execute bd: ${beadsExecution.join("; ")}`;
+  }
+  const githubTransient = unique.filter(
+    (error) => classifyLifecycleInventoryFailure(error) === "github-transient",
+  );
+  if (githubTransient.length > 0) {
+    return `lifecycle inventory is unavailable due to a transient GitHub/GraphQL failure; retry: ${githubTransient.join("; ")}`;
+  }
+  return `lifecycle inventory is incomplete: ${unique.join("; ")}`;
+}
 
 type WorktreeEntry = {
   path: string;
@@ -411,15 +489,16 @@ function runCommand(
       status: result.status,
       stdout: typeof result.stdout === "string" ? result.stdout : "",
       stderr: [stderr, spawnError].filter(Boolean).join(": "),
+      ...(spawnError ? { executionError: spawnError } : {}),
     };
   } catch (error) {
+    const executionError = error instanceof Error ? error.message : "unknown spawn error";
     return {
       ok: false,
       status: null,
       stdout: "",
-      stderr: `${executable} invocation failed: ${
-        error instanceof Error ? error.message : "unknown spawn error"
-      }`,
+      stderr: `${executable} invocation failed: ${executionError}`,
+      executionError,
     };
   }
 }
@@ -1957,8 +2036,15 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
     root,
     120_000,
   );
-  if (!result.ok || result.stderr) {
-    return { tasks: [], error: result.stderr || "Beads inventory unavailable" };
+  const meaningfulStderr = filterBeadsInventoryStderr(result.stderr);
+  if (result.executionError) {
+    return {
+      tasks: [],
+      error: `Beads CLI could not be executed: ${meaningfulStderr || result.executionError}`,
+    };
+  }
+  if (!result.ok || meaningfulStderr) {
+    return { tasks: [], error: meaningfulStderr || "Beads inventory unavailable" };
   }
   try {
     const parsed = parseJson<

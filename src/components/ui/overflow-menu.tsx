@@ -110,6 +110,10 @@ export function OverflowMenu({
     const item = (e.target as Element).closest?.(
       '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]',
     );
+    // A submenu trigger is itself a menuitem, but its click opens a child
+    // flyout. Let PopoverSubmenu own that transition; closing the root here
+    // would unmount the flyout before it can render.
+    if (item?.getAttribute("aria-haspopup") === "menu") return;
     if (
       item &&
       !(item as HTMLButtonElement).disabled &&

@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import {
+  GITHUB_REVIEW_BODY_MAX_LENGTH,
+  validateGitHubReviewBody,
+} from "../../../../lib/github-review.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
@@ -25,5 +29,13 @@ assert.doesNotMatch(source, /:\s*token\b/, "review route must not return token m
 console.log("github-review-route.test.ts OK");
 assert.match(source, /new Set\(\["APPROVE", "REQUEST_CHANGES", "COMMENT"\]\)/, "review events are allow-listed");
 assert.match(source, /event !== "APPROVE" && !text/, "non-approve reviews require a body");
-assert.match(source, /GITHUB_REVIEW_BODY_MAX_LENGTH/, "review body cap is shared between the UI and route");
-assert.match(source, /review body must be at most/, "oversized review bodies fail before GitHub dispatch");
+assert.match(source, /validateGitHubReviewBody/, "oversized review bodies fail before GitHub dispatch");
+
+const exactBody = validateGitHubReviewBody("x".repeat(GITHUB_REVIEW_BODY_MAX_LENGTH));
+assert.equal(exactBody.ok, true, "the exact review body boundary is accepted");
+const oversizedBody = validateGitHubReviewBody("x".repeat(GITHUB_REVIEW_BODY_MAX_LENGTH + 1));
+assert.equal(oversizedBody.ok, false, "an over-limit review body is refused");
+assert.equal(
+  oversizedBody.ok ? null : oversizedBody.error,
+  `review body must be at most ${GITHUB_REVIEW_BODY_MAX_LENGTH} characters`,
+);
