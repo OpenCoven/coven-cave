@@ -16,7 +16,7 @@ import {
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending, hasFamiliarSettingsPending } from "@/lib/chat-tab-events";
 import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
@@ -387,6 +387,14 @@ export function ChatSurface({
     window.addEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
   }, []);
+
+  // Studio actions navigate through the same Chat document, but retain their
+  // Familiar Settings target in localStorage so it survives the reload. The
+  // target must select the Familiar scope before its nested consumer can open
+  // Settings; otherwise the first Chat mount stays on generic Sessions.
+  useEffect(() => {
+    if (hasFamiliarSettingsPending()) setScope("familiar");
+  }, [setScope]);
 
   useEffect(() => {
     if (!pendingChatAction) return;
