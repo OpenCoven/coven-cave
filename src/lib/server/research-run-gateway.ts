@@ -348,7 +348,6 @@ function replayFromLog(
 }
 
 export function missionIdForResearchRunPath(rawId: string): string | null {
-  if (isValidResearchMissionId(rawId)) return rawId;
   if (rawId.startsWith("run_")) {
     try {
       const missionId = missionIdForResearchRunId(rawId);
@@ -357,7 +356,7 @@ export function missionIdForResearchRunPath(rawId: string): string | null {
       return null;
     }
   }
-  return null;
+  return isValidResearchMissionId(rawId) ? rawId : null;
 }
 
 export async function loadResearchRunGateway(
