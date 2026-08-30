@@ -33,6 +33,8 @@ type Reaction = { content: string; count: number };
 
 type Comment = {
   id: string;
+  /** Numeric id of the parent review comment, when this is a reply. */
+  inReplyToId?: string | null;
   author: Person | null;
   body: string;
   createdAt: string | null;
@@ -160,6 +162,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
               comments(first:50){
                 nodes{
                   databaseId author{login avatarUrl url}
+                  replyTo{databaseId}
                   body createdAt path diffHunk url
                   authorAssociation
                   reactionGroups{content reactors{totalCount}}
@@ -188,6 +191,10 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
           const co = c as Record<string, unknown>;
           return {
             id: String(co.databaseId ?? ""),
+            inReplyToId: (() => {
+              const parent = co.replyTo as Record<string, unknown> | undefined;
+              return typeof parent?.databaseId === "number" ? String(parent.databaseId) : null;
+            })(),
             author: person(co.author),
             body: typeof co.body === "string" ? co.body : "",
             createdAt: typeof co.createdAt === "string" ? co.createdAt : null,
