@@ -111,7 +111,7 @@ evidence. Full cross-layer correlation remains `cave-58eoq.3`.
 | 6 | High | Shipped in PR #4495: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
 | 7 | Medium | Fixed in this branch | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
 | 8 | Medium | Open: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs are component-local and no shared correlation/diagnostic-bundle contract was found | Add correlation IDs, structured lifecycle events, bounded retention, and a redacted export manifest |
-| 9 | Medium | Open: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | Coverage is strong for helpers but sparse for full post-ready crash/revive and cross-component fault sequences | Add deterministic OS-matrix fault injection and repeated lifecycle stress |
+| 9 | Medium | Shipped in PR #4496: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | The bounded harness covers delayed readiness, crashes, hangs, stale ownership, permission ambiguity, version skew, duplicate starts, cancellation, sleep/wake, stale completions, unusual paths, and repeated lifecycle cleanup | Routine PR conformance runs these assertions on Ubuntu when path selection enables the conformance lane; full-validation and release platform validation run the same harness on Ubuntu, Windows, and macOS |
 | 10 | Medium | Implemented in this branch: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
 | 11 | Medium | Open: `cave-58eoq.6` | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
 
@@ -284,9 +284,9 @@ work.
 
 | Risk | Owner |
 | --- | --- |
-| Windows post-ready supervision is shipped; release-host fault injection is still required | `cave-58eoq.4` |
+| Windows post-ready supervision and cross-platform fault injection are shipped; release-host validation remains a release gate | Release platform validation |
 | No cross-component correlation/export contract | `cave-58eoq.3` |
-| Full OS fault-injection and lifecycle stress matrix is incomplete | `cave-58eoq.4` |
+| Routine pull-request fault coverage is path-gated; documentation-only changes do not run the bounded harness | Explicit coverage boundary in `cave-5tpxy` |
 | Exhaustive remaining CLI spawn and socket/pipe security proof is incomplete after closing the PTY and remote tokenless-development authentication bypasses | `cave-58eoq.6` |
 | Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
@@ -294,8 +294,10 @@ work.
 
 ## Daemon fault-injection CI coverage decision
 
-Routine pull-request validation runs the bounded daemon fault-injection suite
-on Ubuntu as part of cross-environment conformance. It does not currently
+Routine pull-request validation is path-aware. When changed paths select the
+Ubuntu frontend/conformance lane, that lane runs the bounded daemon
+fault-injection suite as part of cross-environment conformance; documentation-
+only changes do not run it. The routine pull-request workflow does not
 provision a Windows or macOS fault-injection runner for every pull request.
 Release-candidate and release platform validation run the same bounded fault
 harness on `ubuntu-24.04`, `windows-latest`, and `macos-15`, so Windows and
