@@ -6,10 +6,11 @@ import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { daemonSessionAlreadyGone } from "./daemon-session-error.ts";
 import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
+  indexDistinctResearchSourceIds,
   normalizeResearchSource,
   parseResearchControl,
   parseResearchSourcesFile,
-  researchSourcesShareIdentity,
+  researchSourcesShareSecondaryIdentity,
   renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   type ResearchProvenance,
@@ -287,9 +288,7 @@ function mergeResearchSource(
   sources: ResearchSourceRef[],
   source: ResearchSourceRef,
 ): ResearchSourceRef[] {
-  const index = sources.findIndex((item) =>
-    researchSourcesShareIdentity(source, item)
-  );
+  const index = sources.findIndex((item) => item.id === source.id);
   if (index < 0) return [source, ...sources];
   return sources.map((item, itemIndex) => itemIndex === index ? {
     ...item,
@@ -302,15 +301,57 @@ function mergeResearchSource(
  * Merge the flow-written sources.json ledger into the stored mission sources
  * instead of replacing them: manually attached sources live only in
  * mission.json (attach-source), so a wholesale replace silently wiped them on
- * every settle. File entries win on url/localPath/id collision; manual-only
- * entries survive.
+ * every settle. File entries win on exact ids; manual-only entries survive.
+ * A unique provider-backed URL/path bridge carries Cave-owned identity fields
+ * onto an agent-written entry without collapsing ordinary versioned sources.
  */
 function mergeFileSources(
   stored: ResearchSourceRef[],
   file: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const matchesFileEntry = (item: ResearchSourceRef) =>
-    file.some((source) => researchSourcesShareIdentity(source, item));
+  const storedIdOwners = indexDistinctResearchSourceIds(stored);
+  indexDistinctResearchSourceIds(file);
+  const storedIndexByFileIndex = new Map<number, number>();
+  const matchedStoredIndexes = new Set<number>();
+
+  file.forEach((source, fileIndex) => {
+    const storedIndex = storedIdOwners.get(source.id);
+    if (storedIndex === undefined) return;
+    storedIndexByFileIndex.set(fileIndex, storedIndex);
+    matchedStoredIndexes.add(storedIndex);
+  });
+
+  const candidateFileIndexesByStored = new Map<number, number[]>();
+  file.forEach((source, fileIndex) => {
+    if (storedIndexByFileIndex.has(fileIndex)) return;
+    const candidateStoredIndexes: number[] = [];
+    stored.forEach((item, storedIndex) => {
+      if (
+        !matchedStoredIndexes.has(storedIndex) &&
+        item.provider !== undefined &&
+        researchSourcesShareSecondaryIdentity(source, item)
+      ) {
+        candidateStoredIndexes.push(storedIndex);
+      }
+    });
+    if (candidateStoredIndexes.length > 1) {
+      throw new Error("Research source identities are ambiguous");
+    }
+    const storedIndex = candidateStoredIndexes[0];
+    if (storedIndex === undefined) return;
+    const candidateFileIndexes = candidateFileIndexesByStored.get(storedIndex) ?? [];
+    candidateFileIndexes.push(fileIndex);
+    candidateFileIndexesByStored.set(storedIndex, candidateFileIndexes);
+  });
+
+  for (const [storedIndex, fileIndexes] of candidateFileIndexesByStored) {
+    if (fileIndexes.length > 1) {
+      throw new Error("Research source identities are ambiguous");
+    }
+    matchedStoredIndexes.add(storedIndex);
+    storedIndexByFileIndex.set(fileIndexes[0], storedIndex);
+  }
+
   // The agent's sources.json wins on every field it owns, but external-provider
   // IDENTITY is Cave's, not the agent's: it is written by the attach route and
   // by hydration, and the agent is never told to reproduce it. Without this
@@ -318,14 +359,11 @@ function mergeFileSources(
   // the identity-only ref and silently drops provider/externalId/availability,
   // so a COMPLETED mission — which never hydrates again — would keep no record
   // that the source was an X post at all (cave-v3ajh, #4816 criterion 4).
-  const merged = file.map((source) => {
+  const merged = file.map((source, fileIndex) => {
     if (source.provider !== undefined) return source;
-    const displaced = stored.find(
-      (item) =>
-        item.provider !== undefined &&
-        researchSourcesShareIdentity(source, item),
-    );
-    if (!displaced) return source;
+    const storedIndex = storedIndexByFileIndex.get(fileIndex);
+    const displaced = storedIndex === undefined ? undefined : stored[storedIndex];
+    if (displaced?.provider === undefined) return source;
     return {
       ...source,
       provider: displaced.provider,
@@ -333,7 +371,10 @@ function mergeFileSources(
       ...(displaced.availability !== undefined ? { availability: displaced.availability } : {}),
     };
   });
-  return [...merged, ...stored.filter((item) => !matchesFileEntry(item))];
+  return [
+    ...merged,
+    ...stored.filter((_, storedIndex) => !matchedStoredIndexes.has(storedIndex)),
+  ];
 }
 
 const PATCHABLE_SOURCE_FIELDS = [

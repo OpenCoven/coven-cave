@@ -196,7 +196,7 @@ function ambiguousResearchSourceIdentities(): never {
   throw new Error("Research source identities are ambiguous");
 }
 
-function indexDistinctResearchSourceIds(
+export function indexDistinctResearchSourceIds(
   sources: ResearchSourceRef[],
 ): Map<string, number> {
   const owners = new Map<string, number>();
@@ -209,7 +209,7 @@ function indexDistinctResearchSourceIds(
   return owners;
 }
 
-function researchSourcesShareSecondaryIdentity(
+export function researchSourcesShareSecondaryIdentity(
   left: ResearchSourceRef,
   right: ResearchSourceRef,
 ): boolean {
