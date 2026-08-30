@@ -46,6 +46,7 @@ import {
   type ResearchMissionActionInput,
 } from "@/lib/research-missions";
 import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
+import type { ResearchRunEventState } from "@/lib/research-run-event-reducer";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
@@ -53,6 +54,8 @@ import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evide
 
 type Props = {
   mission: ResearchMission | null;
+  /** Canonical ResearchRun state when the gateway has connected. */
+  canonicalRun?: ResearchRunEventState | null;
   showEvidence: boolean;
   /** Collapse the evidence rail to its spine. Absent = not collapsible here
    *  (focus mode already hides the rail outright). */
@@ -125,6 +128,7 @@ function stopDirectionRun(runId: string | null) {
 
 export function ResearchMissionDetail({
   mission,
+  canonicalRun,
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
@@ -798,7 +802,14 @@ export function ResearchMissionDetail({
                     : `checkpoint every ${mission.bounds.checkpointEvery} iterations`}
                 </span>
               </div>
-              {iteration?.steps?.length ? (
+              {canonicalRun?.activity ? (
+                <ul className="research-desk-activity" data-source="canonical-research-run">
+                  <li data-status="running">
+                    <em>{canonicalRun.activity.label}</em>
+                    <span>{canonicalRun.activity.detail || "Reported by the ResearchRun gateway"}</span>
+                  </li>
+                </ul>
+              ) : iteration?.steps?.length ? (
                 <ul className="research-desk-activity">
                   {iteration.steps.map((step) => (
                     <li key={step.id} data-status={step.status}>
