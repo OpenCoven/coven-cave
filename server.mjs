@@ -1263,6 +1263,7 @@ server.listen(port, hostname, () => {
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
   }
+  logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
 let httpShutdownStarted = false;
@@ -1309,6 +1310,9 @@ function heapDiagnosticsDir() {
   return join(caveHome, "diagnostics");
 }
 const mb = (bytes) => `${Math.round(bytes / (1024 * 1024))}MB`;
+function logStartupHeapCeiling() {
+  console.log(`[heap-ceiling] heapLimit=${mb(getHeapStatistics().heap_size_limit)}`);
+}
 function pruneHeapSnapshots(dir) {
   const snapshots = readdirSync(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
   while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
