@@ -138,9 +138,13 @@ function notificationFor(
 
 type TerminalAutoMissionPing = AutoMissionPing & { state: "failed" | "done" };
 
+function isTerminalPing(ping: AutoMissionPing): ping is TerminalAutoMissionPing {
+  return ping.state === "failed" || ping.state === "done";
+}
+
 function terminalPing(pings: readonly AutoMissionPing[]): TerminalAutoMissionPing | null {
   for (const ping of [...pings].reverse()) {
-    if (ping.state === "failed" || ping.state === "done") return ping;
+    if (isTerminalPing(ping)) return ping;
   }
   return null;
 }
