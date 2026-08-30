@@ -138,6 +138,13 @@ echo "server_command $$" >>"${pidFile}"
 exit 0
 `;
 
+const fakeOomPnpm = (pidFile) => `#!/usr/bin/env bash
+echo "server_command $$" >>"${pidFile}"
+sleep 0.2
+echo "FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory" >&2
+exit 134
+`;
+
 const readPids = (pidFile) =>
   Object.fromEntries(
     readFileSync(pidFile, "utf8")
@@ -310,7 +317,67 @@ async function assertUnavailableOriginNeverOpensTauri() {
   }
 }
 
+async function assertOomExitIsPromptAndDistinct() {
+  const port = await freePort();
+  const pidFile = path.join(root, "pids-oom.txt");
+  writeFileSync(path.join(fakeBin, "pnpm"), fakeOomPnpm(pidFile));
+  chmodSync(path.join(fakeBin, "pnpm"), 0o755);
+
+  const wrapper = spawn("bash", [path.join(fakeScripts, "dev-app.sh")], {
+    cwd: root,
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      PORT: String(port),
+      COVEN_CAVE_AUTH_TOKEN: "",
+      // A regression that falls back to the origin probe's full grace period
+      // must not make this test wait three minutes to learn about the OOM.
+      COVEN_CAVE_DEV_SERVER_GRACE_SECONDS: "30",
+    },
+  });
+  wrapper.unref();
+
+  const output = [];
+  wrapper.stdout.on("data", (chunk) => output.push(chunk.toString()));
+  wrapper.stderr.on("data", (chunk) => output.push(chunk.toString()));
+  const closed = new Promise((resolve) => wrapper.once("close", resolve));
+  const startedAt = Date.now();
+  try {
+    await waitFor(() => wrapper.exitCode !== null, {
+      timeoutMs: 5_000,
+      label: "the launcher to report the owned dev-server OOM promptly",
+    });
+    await closed;
+
+    const elapsedMs = Date.now() - startedAt;
+    const logs = output.join("");
+    assert.ok(elapsedMs < 5_000, `the OOM diagnosis took ${elapsedMs}ms`);
+    assert.match(
+      logs,
+      /owned dev server exited with status 134 after running out of memory/,
+      "an owned dev-server OOM must report the child status and cause",
+    );
+    assert.match(
+      logs,
+      /Ineffective mark-compacts near heap limit/,
+      "the OOM signature must remain visible in the launcher diagnosis",
+    );
+    assert.doesNotMatch(
+      logs,
+      /did not return the root document within 30s/,
+      "an OOM must not be disguised as the full generic origin timeout",
+    );
+  } finally {
+    try {
+      process.kill(wrapper.pid, "SIGKILL");
+    } catch {}
+  }
+}
+
 try {
+  await assertOomExitIsPromptAndDistinct();
   await assertTeardown("SIGTERM");
   await assertTeardown("SIGINT");
   await assertHungOriginStopsOwnedTree();
