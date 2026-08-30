@@ -254,11 +254,13 @@ button:active > .edge-rail-chip {
     order: -1;
     display: flex;
     align-items: center;
+    justify-content: center;
     flex: 0 0 var(--shell-nav-chrome-width);
     width: var(--shell-nav-chrome-width);
     height: 100%;
     min-width: 0;
     padding-left: max(var(--titlebar-lights-inset), var(--space-3));
+    padding-right: var(--space-3);
     overflow: hidden;
     background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
     border-right: 1px solid var(--border-hairline);
@@ -380,6 +382,10 @@ button:active > .edge-rail-chip {
 
 @media (max-width: 1023px) {
   :root[data-tauri-titlebar] .shell-window-titlebar__controls {
+    display: none;
+  }
+
+  :root[data-tauri-titlebar] .shell-window-titlebar__title {
     display: none;
   }
 }

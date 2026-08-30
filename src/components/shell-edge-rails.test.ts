@@ -42,8 +42,13 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window" \/>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<div className="shell-window-titlebar__rail">[\s\S]*?<span className="shell-window-titlebar__title">OpenCoven<\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
   "the functional controls share one titlebar row from left toggle through search/actions to the right toggle",
+);
+assert.equal(
+  shell.match(/<span className="shell-window-titlebar__title">OpenCoven<\/span>/g)?.length,
+  1,
+  "the expanded native siderail should expose one OpenCoven identity label",
 );
 // `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
 // bare region on DIRECT presses on the attributed element, so empty chrome
@@ -424,6 +429,26 @@ assert.match(
   css,
   /:root\[data-tauri-titlebar\]\[data-window-fullscreen\] \.shell-window-titlebar__rail \{\s*padding-left: var\(--space-3\);/,
   "fullscreen titlebar controls sit flush with the standard app gutter",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*justify-content:\s*center;[^}]*padding-left:\s*max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);[^}]*padding-right:\s*var\(--space-3\);[^}]*overflow:\s*hidden;/,
+  "the siderail identity is centered inside the traffic-light-safe portion of the expanded rail",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-window-titlebar__title \{\s*visibility:\s*hidden;/,
+  "the identity label stays hidden with the collapsed desktop rail",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-window-fullscreen\] \.shell-window-titlebar__rail \{\s*padding-left:\s*var\(--space-3\);/,
+  "fullscreen centers the identity without reserving space for absent traffic lights",
+);
+assert.match(
+  css,
+  /@media \(max-width: 1023px\) \{[\s\S]*?:root\[data-tauri-titlebar\] \.shell-window-titlebar__title \{\s*display:\s*none;/,
+  "the siderail identity stays out of the mobile drawer titlebar",
 );
 assert.match(
   css,
