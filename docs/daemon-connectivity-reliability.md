@@ -294,12 +294,15 @@ work.
 
 ## Daemon fault-injection CI coverage decision
 
-Per-pull-request daemon fault-injection coverage is intentionally funded on
-Ubuntu and Windows only. The release platform-validation matrix runs the same
-bounded fault harness on `ubuntu-24.04`, `windows-latest`, and `macos-15`, so
-macOS host behavior is exercised in release validation without adding a third
-runner to every pull request. This is an explicit coverage boundary for
-`cave-58eoq.4`, not a claim that macOS is unsupported or untested.
+Routine pull-request validation runs the bounded daemon fault-injection suite
+on Ubuntu as part of cross-environment conformance. It does not currently
+provision a Windows or macOS fault-injection runner for every pull request.
+Release-candidate and release platform validation run the same bounded fault
+harness on `ubuntu-24.04`, `windows-latest`, and `macos-15`, so Windows and
+macOS host behavior is exercised before release without restoring the costly
+three-OS matrix to routine pull requests. This is an explicit coverage boundary
+for `cave-58eoq.4`, not a claim that Windows or macOS is unsupported or
+untested.
 
 ## Reliability measurement contract
 This contract measures local reliability without turning diagnostics into an
