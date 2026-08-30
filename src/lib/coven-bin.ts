@@ -31,6 +31,7 @@ import {
   scrubSidecarInternalEnv,
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
+import { covenHomePath } from "./coven-home.ts";
 import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
 import { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
@@ -739,7 +740,7 @@ function spawnEnv(
   }
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
-    process.env.COVEN_HOME,
+    covenHomePath(process.env, HOME, process.platform),
   );
   // npm emits `npm warn Unknown env config <key>` to stderr for any config
   // key it no longer recognizes (e.g. a stale `_jsr-registry`,

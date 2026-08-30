@@ -1,19 +1,21 @@
-// Contract tests for the transcript's navigation instruments (cave-j86la):
-// the pure derivation both the run spine and the thread minimap consume, plus
-// source pins for how chat-view mounts them.
+// Contract tests for the transcript's LEFT turn spine (cave-j86la): the pure
+// derivation it consumes, plus source pins for how chat-view mounts it.
+//
+// The thread minimap that used to share this module is permanently removed
+// (cave-5m5hv). The pins at the bottom are what keep it removed AND what keep
+// the spine mounted — a removal PR is exactly where "nothing renders" quietly
+// passes for "the old thing is gone".
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
+import * as instrumentModel from "./chat-thread-instruments.ts";
 import {
-  formatTookLabel,
   instrumentSummary,
   instrumentTime,
   spineSegmentHeights,
   spineNodes,
   spineStackHeight,
-  threadMapEvents,
-  toolBarWidth,
   toolCategory,
   type InstrumentTurn,
 } from "./chat-thread-instruments.ts";
@@ -89,53 +91,28 @@ test("spine segment heights stay within one stack even with a dominant category"
   assert.ok(heights.reduce((sum, height) => sum + height, 0) <= 100.0001);
 });
 
-test("threadMapEvents orders prompt → tools → answer and attributes owners", () => {
-  const events = threadMapEvents(
-    [
-      turn({ id: "u1", role: "user", text: "Go" }),
-      turn({
-        id: "a1",
-        durationMs: 51_000,
-        tools: [
-          { id: "1", name: "bash", input: "gh run list --limit 5", status: "ok", durationMs: 900 },
-          { id: "2", name: "edit", input: "release.yml", status: "error" },
-        ],
-      }),
-    ],
-    names,
-  );
-  assert.deepEqual(
-    events.map((e) => e.kind),
-    ["turn", "shell", "edit", "answer"],
-  );
-  // Turn and answer bars span the row; tool bars are duration/name-keyed.
-  assert.equal(events[0].width, 100);
-  assert.equal(events[3].width, 100);
-  assert.ok(events[1].width >= 24 && events[1].width <= 96);
-  // Owner attribution: every event on an assistant turn belongs to the familiar.
-  assert.equal(events[1].ownerName, "Kitty");
-  assert.equal(events[2].error, true, "a failed tool keeps its error flag");
-  assert.equal(events[3].took, "51s");
-  assert.equal(events[0].turnLabel, "VAL");
-  // Ids are stable so React keys and selection survive re-renders.
-  assert.equal(events[1].id, "a1:tool:1");
-});
-
-test("bar widths are deterministic and clamped", () => {
-  assert.equal(toolBarWidth("bash", 900), toolBarWidth("bash", 900));
-  assert.ok(toolBarWidth("bash", 50) >= 24);
-  assert.ok(toolBarWidth("bash", 90 * 60_000) <= 96);
-  // No duration → stable name-keyed spread, not randomness.
-  assert.equal(toolBarWidth("read"), toolBarWidth("read"));
-  assert.notEqual(toolBarWidth("read"), toolBarWidth("web_fetch"));
+test("the minimap derivation is gone from the module, not merely unused", () => {
+  // The minimap's model was `threadMapEvents` plus the two helpers only it
+  // called. Naming them individually is the point: a removal that leaves the
+  // derivation exported keeps a working minimap one import away, and the next
+  // reader has no way to tell "retired" from "not currently mounted" — which
+  // is exactly the state this change found the codebase in.
+  for (const retired of ["threadMapEvents", "toolBarWidth", "formatTookLabel"]) {
+    assert.ok(
+      !(retired in instrumentModel),
+      `${retired} was minimap-only and must not survive the removal`,
+    );
+  }
+  // What the spine actually needs is still here — the sweep above must not be
+  // satisfiable by deleting the module.
+  for (const kept of ["spineNodes", "spineStackHeight", "spineSegmentHeights", "toolCategory"]) {
+    assert.ok(kept in instrumentModel, `${kept} is the spine's own derivation and must survive`);
+  }
 });
 
 test("formatting helpers stay honest on absent data", () => {
   assert.equal(instrumentTime(undefined), null);
   assert.equal(instrumentTime("not a date"), null);
-  assert.equal(formatTookLabel(undefined), null);
-  assert.equal(formatTookLabel(400), "400ms");
-  assert.equal(formatTookLabel(83_000), "1m 23s");
   assert.equal(instrumentSummary("one line\nrest"), "one line");
   assert.equal(instrumentSummary("x".repeat(200)).length, 96);
 });
@@ -206,38 +183,105 @@ test("the spine stamp sits in its own lane, never under the node ring", () => {
   );
 });
 
-test("instrument controls use the shared focus ring and no dead running class", () => {
+test("spine controls use the shared focus ring and no dead running class", () => {
   assert.match(instruments, /className=\{`cave-thread-spine__node focus-ring/);
-  assert.match(instruments, /className=\{`cave-thread-map__row focus-ring/);
   assert.doesNotMatch(instruments, /is-running/);
 });
 
-test("instrument tint mappings use theme-aware semantic tokens", () => {
+test("spine tint mappings use theme-aware semantic tokens", () => {
   assert.doesNotMatch(instrumentStyles, /--tim-[^:]+:\s*oklch\(/);
-  assert.match(instrumentStyles, /\.cave-thread-map \.is-read \{ --tim: var\(--color-info\); \}/);
+  assert.match(instrumentStyles, /\.cave-thread-spine \.is-read \{ --tim: var\(--color-info\); \}/);
 });
 
-test("chat-view mounts the activity map over the SAME activePath the transcript renders", () => {
+// ── the left turn spine SURVIVES the minimap's removal ──────────────────────
+// This is the constraint the removal is most likely to violate by accident:
+// both instruments lived in one file behind one preference, so deleting the
+// preference or the file takes the spine with it and every remaining test
+// still passes. Assert the spine renders, not merely that it compiles.
+test("chat-view mounts the left turn spine over the transcript's own activePath", () => {
   assert.match(
     chatView,
-    /<ChatActivityMap turns=\{activePath\}/,
-    "the activity map reads the branch-aware visible path, not raw turns",
+    /^import \{ ChatThreadSpine \} from "@\/components\/chat-thread-instruments";$/m,
+    "chat-view imports the spine",
   );
-  assert.doesNotMatch(chatView, /ChatThreadMinimap|ChatThreadSpine/);
+  assert.match(
+    chatView,
+    /<ChatThreadSpine\s+turns=\{activePath\}\s+scrollRef=\{scrollRef\}/,
+    "the spine reads the branch-aware visible path and the transcript's own scroller",
+  );
+  // Inside the scroller, not beside it: the spine is an overlay in the left
+  // gutter, so it must be mounted within the element it measures and scrolls
+  // with. Mounted outside, it would render against the wrong box and jump
+  // nodes to offsets computed in another coordinate space.
+  const scroller = chatView.indexOf('className="cave-chat-transcript');
+  const spine = chatView.indexOf("<ChatThreadSpine");
+  const thread = chatView.indexOf('className="cave-chat-thread"');
+  assert.ok(scroller > 0 && spine > 0 && thread > 0, "scroller, spine and thread are all present");
+  assert.ok(
+    spine > scroller && spine < thread,
+    "the spine mounts inside the transcript scroller, above the conversation log",
+  );
 });
 
-test("instruments are overlays: self-gated by pane width, jump via data-turn-id", () => {
+test("the spine draws real per-turn nodes, not an empty nav", () => {
+  // "Nothing renders" satisfies "the minimap is gone", so pin the marks a
+  // reader would actually see: a labelled nav, one button per placed turn,
+  // each carrying the tool-category stack that makes it an instrument.
+  assert.match(instruments, /aria-label="Turns in this thread"/, "the spine is a named landmark");
+  assert.match(instruments, /placed\.map\(\(node\) => \(\s*\n\s*<SpineNodeButton/, "one node per placed turn");
+  assert.match(
+    instruments,
+    /node\.cats\.map\(\(c, index\) => \(/,
+    "each node renders its tool-category stack",
+  );
+  assert.match(
+    instruments,
+    /aria-label=\{`Jump to \$\{node\.name\}'s turn/,
+    "every node is an operable, named jump target",
+  );
+});
+
+test("the retired minimap leaves no component, markup or stylesheet behind", () => {
+  // Strip comments first. Both files explain in prose WHY the minimap is gone,
+  // and an unanchored search happily matches that explanation — the "satisfied
+  // by a comment" trap chat-run-rail.test.ts already guards against. Scan the
+  // code, not the paragraph about the code.
+  const code = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  assert.doesNotMatch(code(chatView), /ChatThreadMinimap/, "chat-view cannot mount it");
+  assert.doesNotMatch(
+    code(instruments),
+    /ChatThreadMinimap|cave-thread-map|MapRow|MapHoverCard|threadMapEvents/,
+    "the component, its rows and its hover card are deleted",
+  );
+  assert.doesNotMatch(code(instrumentStyles), /cave-thread-map/, "its stylesheet rules are deleted");
+  // The stripper must not be doing the work on its own.
+  assert.match(code(instruments), /ChatThreadSpine/, "the spine is still real code, not a comment");
+});
+
+test("the spine is an overlay: self-gated by pane width, jumps via data-turn-id", () => {
   assert.match(
     instruments,
     /THREAD_INSTRUMENTS_MIN_WIDTH = 1360/,
-    "one shared wide-pane gate for both instruments",
+    "the spine's wide-pane gate",
   );
   assert.match(
     instruments,
     /querySelector<HTMLElement>\(`\[data-turn-id="\$\{CSS\.escape\(turnId\)\}"\]`\)/,
     "jumps target the transcript's existing turn anchors",
   );
-  // rAF-coalescing refs must null on cancel (the #2659 wedge) — both cleanups.
+  // The spine is `position: absolute` inside the scroller, so it can never add
+  // a horizontal axis to the transcript — the property phone widths depend on.
+  assert.match(
+    instrumentStyles,
+    /\.cave-thread-spine \{[^}]*position: absolute;/,
+    "the spine is an overlay, never layout",
+  );
+  // rAF-coalescing refs must null on cancel (the #2659 wedge). One guard now
+  // that the minimap's scroll tracker is gone; the count is the assertion, so
+  // a re-added guard that forgets to null still fails.
   const cancels = instruments.match(/cancelAnimationFrame\(frameRef\.current\);\s*\n\s*frameRef\.current = null;/g) ?? [];
-  assert.equal(cancels.length, 2, "every rAF guard nulls its ref when cancelling");
+  const raf = instruments.match(/requestAnimationFrame\(/g) ?? [];
+  assert.equal(raf.length, 1, "the spine keeps exactly one rAF-coalesced measure");
+  assert.equal(cancels.length, 1, "every rAF guard nulls its ref when cancelling");
 });

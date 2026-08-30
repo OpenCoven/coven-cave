@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import * as registryFs from "node:fs/promises";
-import { homedir } from "node:os";
+import { covenHomePath } from "./coven-home.ts";
 
 type RegistryFs = typeof registryFs;
 
@@ -627,7 +627,7 @@ function localPathChild(parent: string, child: string): string {
 
 function cachePath(): string {
   // The registry cache is mutable per-user state, never an application asset.
-  const covenRoot = process.env.COVEN_HOME || localPathChild(homedir(), ".coven");
+  const covenRoot = covenHomePath();
   const caveRoot = process.env.COVEN_CAVE_HOME || localPathChild(covenRoot, "cave");
   return localPathChild(caveRoot, CACHE_FILE);
 }

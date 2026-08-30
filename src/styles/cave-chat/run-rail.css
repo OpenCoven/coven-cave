@@ -4,15 +4,19 @@
    lib/chat-run-rail.ts for why PLAN, LEFT, CONTEXT WINDOW and COST are absent
    rather than stubbed.
 
-   Category colors come from the SAME semantic tokens the spine and minimap use
+   Category colors come from the SAME semantic tokens the left turn spine uses
    (thread-instruments.css) rather than a component-local palette, so the rail's
-   legend and the transcript's gutters can never drift apart. */
+   legend and the transcript's left gutter can never drift apart.
+
+   The rail is AUTOMATIC (cave-5m5hv): it replaced the retired thread minimap on
+   the right edge and carries no visibility preference. What still gates it is
+   data (no tool calls yet → nothing to draw) and width (see below). */
 
 :root {
   /* Shared with the component: the width gate must know what the rail costs,
-     or it admits the rail at widths that push the transcript below the
-     instruments threshold — the spine and minimap would vanish while the rail
-     that displaced them stayed. */
+     or it admits the rail at widths that push the transcript below the turn
+     spine's own threshold — the spine would vanish while the rail that
+     displaced it stayed. */
   --runrail-min-w: 232px;
   --runrail-max-w: 300px;
 }
