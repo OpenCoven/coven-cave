@@ -213,14 +213,6 @@ export const QUARANTINED_FAILURES = new Map([
     { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
   ],
   [
-    "testOpenChatForTaskSessionFetchesAuthoritativeSessionWhenCacheIsEmpty",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
-    "testOpenChatForTaskSessionUsesAuthoritativeSessionFamiliarOverTaskAndCaller",
-    { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
-  ],
-  [
     "testSessionUnlinkRelinkKeepsTheLatestOptimisticState",
     {
       bead: "cave-jiox8",
