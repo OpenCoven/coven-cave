@@ -232,6 +232,15 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       COVEN_CAVE_E2E: "1",
+      // Full Turbopack eviction only runs after a filesystem-cache snapshot.
+      // Next 16.3's own eviction fixture removes the minimum active window and
+      // shortens the idle checkpoint so a cold multi-surface compile can be
+      // persisted and reclaimed before the next one. Without these timings,
+      // shard 3 reached 19.67 GiB across next-server and its compiler children
+      // before the first eviction; with them it repeatedly reclaimed at a
+      // 12.70 GiB combined peak and completed all 51 tests.
+      TURBO_ENGINE_SNAPSHOT_IDLE_TIMEOUT_MILLIS: "1000",
+      TURBO_ENGINE_SNAPSHOT_MIN_ACTIVE_TIME_MILLIS: "0",
       // Crafts stay hidden in production by default. Their dedicated E2E
       // specs exercise the explicitly enabled surface through this fixture.
       NEXT_PUBLIC_CAVE_CRAFTS: "1",
