@@ -64,6 +64,25 @@ assert.doesNotMatch(
 assert.doesNotMatch(shell, /NavSectionTabs/, "the retired section switcher is not resurrected here");
 assert.match(shell, /VISIBLE_WORKSPACE_NAV_ITEMS/, "standalone sidebar rows come from the shared navigation registry");
 
+// Settings, Dashboard and Analytics render THIS rail, not the workspace's, so
+// anything the workspace rail leads with and this one lacks reads as a
+// different sidebar rather than the same one on a different route. New chat
+// was exactly that gap (cave-10kr8).
+const railHeader = await source("components/sidebar-rail-header.tsx");
+assert.match(railHeader, /rail-header__new/, "the workspace rail leads with New chat");
+assert.match(shell, /rail-header__new/, "…and so does the standalone rail");
+assert.match(shell, /rail-header__new-label[^>]*>\s*New chat\s*</, "with the same label");
+// A client link, not a button or raw anchor: there is no workspace mounted on
+// these routes to hand a compose to, so it deep-links without reloading the
+// Next/Tauri document.
+assert.match(shell, /import Link from "next\/link";/, "the standalone control uses Next Link");
+assert.match(
+  shell,
+  /<Link\s+className="rail-header__new focus-ring"\s+href="\/\?mode=chat"\s+title="New chat">[\s\S]*?<span className="rail-header__new-label">New chat<\/span>[\s\S]*?<\/Link>/,
+  "the standalone control preserves its link destination, styling, title, and accessible label",
+);
+assert.doesNotMatch(shell, /<a\b[^>]*\bhref="\/\?mode=chat"/, "New chat is not a raw same-origin anchor");
+
 // Settings and Dashboard render through this shell, so its rail is the one the
 // user sees on those pages. It must be grouped the way the workspace rail is —
 // a flat list here made them the only two pages whose sidebar looked different.
