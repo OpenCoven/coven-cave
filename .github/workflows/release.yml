@@ -1201,9 +1201,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Routine PR conformance runs this bounded fault harness on Ubuntu.
-      # Release-candidate and release platform validation supply the Windows
-      # and macOS host proof without restoring the costly three-OS PR matrix.
+      # PR CI runs this same bounded fault harness on Linux and Windows.
+      # Release CI supplies the macOS host proof without restoring the costly
+      # full PR matrix.
       - name: Test daemon connectivity fault recovery
         shell: bash
         run: |
