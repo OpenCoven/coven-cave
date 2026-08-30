@@ -1695,6 +1695,18 @@ function openClawProfileRevision(profile: OpenClawToolProfile): string {
   return createHash("sha256").update(stableJson(profile)).digest("hex");
 }
 
+/**
+ * True when exactly this revision of the profile is quarantined. Mirrors the
+ * quarantine check inside `loadOpenClawCompatibility` so a caller that selects
+ * its profile through another validated set (the issue #4892 per-conversation
+ * bridge negotiation) enforces the same fail-closed quarantine.
+ */
+export function isOpenClawProfileQuarantined(profile: OpenClawToolProfile): boolean {
+  const valid = validateOpenClawToolProfiles([profile])?.[0];
+  if (!valid) return false;
+  return quarantinedOpenClawProfileRevisions.get(valid.id) === openClawProfileRevision(valid);
+}
+
 export function quarantineOpenClawProfile(profile: OpenClawToolProfile): void {
   const valid = validateOpenClawToolProfiles([profile])?.[0];
   if (!valid) return;
