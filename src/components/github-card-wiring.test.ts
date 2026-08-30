@@ -77,6 +77,14 @@ assert.match(card, /countChecks\(data\.runs\)/, "strip buckets come from the sha
 assert.match(card, /aria-expanded=\{expanded\}/, "check details expand in place with an accessible toggle");
 assert.match(card, /\/api\/github\/comments\?repo=.*isPull=1/, "review-thread cards hydrate from /api/github/comments");
 assert.match(card, /connect GitHub to see review threads/, "unauthenticated review threads degrade legibly");
+assert.match(card, /import \{ TextArea \} from "@\/components\/ui\/text-area"/, "review-thread replies use the shared textarea primitive");
+assert.match(card, /import \{ Button \} from "@\/components\/ui\/button"/, "review-thread replies use the shared button primitive");
+assert.match(card, /fetch\("\/api\/github\/reply"/, "review-thread replies use the dedicated reply route");
+assert.match(card, /commentId,/, "review-thread replies target the top-level comment id");
+assert.match(card, /comments\.find\(\(comment\) => !comment\.inReplyToId\)\?\.id/, "reply target selection prefers the root review comment");
+assert.match(card, /aria-label=\{replyThread === t\.id \? "Cancel reply" : "Reply to this thread"\}/, "reply toggle exposes distinct accessible names");
+assert.match(card, /announce\("Reply posted\."\)/, "successful review-thread replies are announced");
+assert.match(card, /\/api\/github\/resolve-thread/, "review-thread resolve remains available beside reply");
 assert.match(
   card,
   /t\.comments\.some\(\(c\) => c\.id === descriptor\.threadId\)/,

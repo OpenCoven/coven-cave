@@ -160,14 +160,126 @@ test("the merge driver is registered regardless of the hook decision", () => {
         git(dir, "config", "core.hooksPath", ".beads/hooks");
       }
       runInstaller(dir);
-      assert.equal(
+      assert.match(
         git(dir, "config", "--get", "merge.beads-jsonl.driver"),
-        'node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"',
+        /^"[^"]+node[^"]*" scripts\/beads-jsonl-merge-driver\.mjs "%O" "%A" "%B"$/,
         `driver must be registered when hooksPath is ${preset}`,
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("cave-f13bp: the driver resolves to an ABSOLUTE node path, not a bare 'node'", () => {
+  // GitHub Desktop invokes git with a PATH that cannot resolve nvm/homebrew/
+  // asdf installs of node, so a bare "node" left a GUI-driven merge
+  // conflicted with "node: command not found". The installer must bake in
+  // this machine's resolved node path instead of trusting the invoker's PATH.
+  const dir = scaffold();
+  try {
+    runInstaller(dir);
+    const driver = git(dir, "config", "--get", "merge.beads-jsonl.driver");
+    const match = /^"([^"]+)" scripts\/beads-jsonl-merge-driver\.mjs "%O" "%A" "%B"$/.exec(driver);
+    assert.ok(match, `driver config must quote an absolute node path, got: ${driver}`);
+    const [, nodePath] = match;
+    assert.notEqual(nodePath, "node", "must not fall back to the bare, PATH-dependent 'node'");
+    assert.ok(
+      nodePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(nodePath),
+      `resolved node path must be absolute, got: ${nodePath}`,
+    );
+
+    // The config must actually run: invoke it exactly as git would, with an
+    // empty PATH, to prove the fix (a bare "node" fails here with ENOENT).
+    const [nodeBinary, scriptRelPath] = driver
+      .match(/^"([^"]+)" (\S+) "%O" "%A" "%B"$/)
+      ?.slice(1) ?? [];
+    assert.ok(nodeBinary && scriptRelPath, "driver config must be parseable");
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    cpSync(
+      join(repoRoot, "scripts", "beads-jsonl-merge-driver.mjs"),
+      join(dir, "scripts", "beads-jsonl-merge-driver.mjs"),
+    );
+    writeFileSync(join(dir, "a.jsonl"), "");
+    writeFileSync(join(dir, "b.jsonl"), "");
+    writeFileSync(join(dir, "o.jsonl"), "");
+    execFileSync(nodeBinary, [scriptRelPath, "o.jsonl", "a.jsonl", "b.jsonl"], {
+      cwd: dir,
+      env: { PATH: "" },
+      encoding: "utf8",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cave-f13bp: a shell FUNCTION named 'node' does not count as a resolved node — install still fails", () => {
+  // `command -v` can report a shell function or alias instead of a real
+  // executable. Neither means anything once baked into a git config that a
+  // different process (git, from a GUI client) will later run directly — so
+  // the installer must require an executable regular file, not just any
+  // non-empty `command -v` output.
+  const dir = scaffold();
+  try {
+    const wrapper = join(dir, "run-with-fake-node-function.sh");
+    writeFileSync(
+      wrapper,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "node() { echo fake; }",
+        "export -f node",
+        `exec bash "${join(dir, "scripts", "install-git-hooks.sh")}"`,
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    assert.throws(
+      () => execFileSync("bash", [wrapper], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
+      /node/i,
+      "installer must fail when the only 'node' on PATH is a shell function",
+    );
+
+    assert.throws(
+      () => git(dir, "config", "--get", "merge.beads-jsonl.driver"),
+      "no driver config must be written when node resolves to a non-file",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cave-f13bp: install FAILS LOUDLY when node cannot be resolved, rather than writing a config we already know will break later", () => {
+  // A silent fallback to the bare "node" would just relocate the failure to
+  // whatever GUI merge eventually runs the driver — exactly the bug being
+  // fixed. Restrict the installer's PATH to directories that hold bash/git
+  // but never node (they are unrelated install trees on every platform this
+  // matters on), and require the script to exit non-zero and change nothing.
+  const dir = scaffold();
+  try {
+    const bashDir = dirname(execFileSync("which", ["bash"], { encoding: "utf8" }).trim());
+    const gitDir = dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim());
+    const restrictedPath = Array.from(new Set([bashDir, gitDir])).join(":");
+
+    assert.throws(
+      () =>
+        execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh")], {
+          cwd: dir,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { PATH: restrictedPath },
+        }),
+      /node/i,
+      "installer must fail (and mention node) when node is unresolvable",
+    );
+
+    assert.throws(
+      () => git(dir, "config", "--get", "merge.beads-jsonl.driver"),
+      "no driver config must be written on a failed install",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

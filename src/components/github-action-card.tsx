@@ -22,8 +22,9 @@ export function describeGitHubAction(a: GitHubActionDescriptor): string {
   const target = a.number ? `${a.repo}#${a.number}` : a.repo;
   switch (a.kind) {
     case "comment":
-    case "reply":
       return `Comment on ${target}`;
+    case "reply":
+      return `Reply in a review thread on ${target}`;
     case "resolve":
       return `Resolve a review thread on ${target}`;
     case "unresolve":
@@ -67,9 +68,17 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
 
   switch (a.kind) {
     case "comment":
-    case "reply":
       if (!a.body) return "no comment text proposed";
       return post("/api/github/comment", { repo: a.repo, number: a.number, body: a.body });
+    case "reply":
+      if (!a.body) return "no reply text proposed";
+      if (!a.threadId) return "no review comment specified — the proposal must carry a comment id";
+      return post("/api/github/reply", {
+        repo: a.repo,
+        number: a.number,
+        commentId: a.threadId,
+        body: a.body,
+      });
     case "resolve":
     case "unresolve": {
       // The marker must name the target comment (databaseId) — resolving "the
