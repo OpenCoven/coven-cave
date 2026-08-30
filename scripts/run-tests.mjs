@@ -1823,6 +1823,7 @@ export const SUITES = {
     "src/app/api/github/merge/route.test.ts",
     "src/app/api/github/rerun/route.test.ts",
     "src/app/api/github/review/route.test.ts",
+    "src/app/api/github/reply/route.test.ts",
     "src/app/api/github/issue/route.test.ts",
     "src/app/api/github/runs/route.test.ts",
     "src/app/api/salem/strip-mdx.test.ts",
