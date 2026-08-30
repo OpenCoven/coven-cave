@@ -287,9 +287,7 @@ function mergeResearchSource(
   sources: ResearchSourceRef[],
   source: ResearchSourceRef,
 ): ResearchSourceRef[] {
-  const index = sources.findIndex((item) =>
-    researchSourcesShareIdentity(source, item)
-  );
+  const index = sources.findIndex((item) => item.id === source.id);
   if (index < 0) return [source, ...sources];
   return sources.map((item, itemIndex) => itemIndex === index ? {
     ...item,
