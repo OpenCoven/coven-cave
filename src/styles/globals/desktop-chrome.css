@@ -2121,9 +2121,9 @@ a.mobile-handoff__link:hover {
 .mobile-handoff__error {
   margin: 0;
   padding: var(--space-2) 10px;
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-hairline));
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--border-hairline));
   border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
   color: var(--text-primary);
   font-size: var(--text-sm);
   line-height: 1.45;
@@ -2146,5 +2146,5 @@ a.mobile-handoff__link:hover {
    quiet card treatment so it reads as diagnostics, not another CTA. */
 .mobile-handoff__steps {
   margin: 0;
-  background: color-mix(in srgb, var(--surface-raised, transparent) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-raised, transparent) 55%, transparent);
 }

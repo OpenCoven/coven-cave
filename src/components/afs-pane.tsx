@@ -131,7 +131,7 @@ export function AfsPane({ sessionId }: { sessionId: string }) {
             aria-selected={tab === id}
             className={`focus-ring rounded px-2 py-1 text-[length:var(--text-xs)] transition-colors ${
               tab === id
-                ? "bg-[var(--surface-raised)] text-[var(--text-primary)]"
+                ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
             onClick={() => setTab(id)}
@@ -155,7 +155,7 @@ export function AfsPane({ sessionId }: { sessionId: string }) {
 function PaneError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="flex items-center gap-2 p-3 text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-      <span className="text-[var(--text-danger)]">{message}</span>
+      <span className="text-[var(--danger-text)]">{message}</span>
       <Button size="sm" variant="ghost" onClick={onRetry}>
         Retry
       </Button>
@@ -223,7 +223,7 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
     return <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading changes…</p>;
   }
   if (state.phase === "error") {
-    return <p className="text-[length:var(--text-xs)] text-[var(--text-danger)]">{state.message}</p>;
+    return <p className="text-[length:var(--text-xs)] text-[var(--danger-text)]">{state.message}</p>;
   }
 
   const diff = state.data;
@@ -242,7 +242,7 @@ function ChangesPane({ sessionId }: { sessionId: string }) {
             {diff.counts.bytes} bytes
           </p>
           {diff.truncated ? (
-            <p className="mb-1 text-[length:var(--text-xs)] text-[var(--text-warning)]">
+            <p className="mb-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
               Diff truncated — this list is incomplete.
             </p>
           ) : null}
@@ -312,7 +312,7 @@ function TreeRow({
       ) : null}
       {node.change?.attribution === "unknown" ? (
         <span
-          className="shrink-0 text-[var(--text-warning)]"
+          className="shrink-0 text-[var(--color-warning)]"
           title="No provenance record explains this change"
         >
           unattributed
@@ -376,7 +376,7 @@ function PatchPanel({
         </span>
       </div>
       {selected.attribution === "unknown" ? (
-        <p className="text-[length:var(--text-xs)] text-[var(--text-warning)]">
+        <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
           This selected change has no recorded provenance.
         </p>
       ) : null}
@@ -384,14 +384,14 @@ function PatchPanel({
         <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading patch…</p>
       ) : null}
       {fileDiff?.phase === "error" ? (
-        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-danger)]">
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
           {fileDiff.message}
         </p>
       ) : null}
       {fileDiff?.phase === "ready" ? (
         <>
           {fileDiff.data.truncated ? (
-            <p className="text-[length:var(--text-xs)] text-[var(--text-warning)]">
+            <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
               Patch truncated — the daemon response is incomplete.
             </p>
           ) : null}
@@ -466,7 +466,7 @@ function TimelinePane({ sessionId }: { sessionId: string }) {
     return <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">Loading timeline…</p>;
   }
   if (state.phase === "error") {
-    return <p className="text-[length:var(--text-xs)] text-[var(--text-danger)]">{state.message}</p>;
+    return <p className="text-[length:var(--text-xs)] text-[var(--danger-text)]">{state.message}</p>;
   }
   if (groups.length === 0) {
     return <p className="text-[length:var(--text-xs)] text-[var(--text-secondary)]">No recorded operations.</p>;
@@ -508,7 +508,7 @@ function TimelinePane({ sessionId }: { sessionId: string }) {
         </Button>
       ) : null}
       {moreError ? (
-        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-danger)]">
+        <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
           {moreError}
         </p>
       ) : null}
@@ -533,7 +533,7 @@ function TimelineRow({ entry, onTrace }: { entry: AfsTimelineEntry; onTrace: () 
         ) : null}
       </div>
       {entry.toolCallId == null ? (
-        <p className="pl-12 text-[var(--text-warning)]">unlinked</p>
+        <p className="pl-12 text-[var(--color-warning)]">unlinked</p>
       ) : entry.toolCall ? (
         <details className="mt-1 pl-12 text-[var(--text-secondary)]">
           <summary className="focus-ring cursor-pointer rounded-[var(--radius-control)]">
@@ -549,7 +549,7 @@ function TimelineRow({ entry, onTrace }: { entry: AfsTimelineEntry; onTrace: () 
           </div>
         </details>
       ) : (
-        <p className="pl-12 text-[var(--text-warning)]">Linked tool details unavailable</p>
+        <p className="pl-12 text-[var(--color-warning)]">Linked tool details unavailable</p>
       )}
     </li>
   );
@@ -648,7 +648,7 @@ function CommitPane({
       <label className="flex flex-col gap-1">
         <span className="text-[var(--text-secondary)]">Branch</span>
         <input
-          className="focus-ring rounded border border-[var(--border-subtle)] bg-[var(--surface-sunken)] px-2 py-1 text-[var(--text-primary)]"
+          className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-2 py-1 text-[var(--text-primary)]"
           value={branch}
           onChange={(event) => {
             previewRequestRef.current += 1;
@@ -662,7 +662,7 @@ function CommitPane({
       </label>
 
       {availability.enabled ? null : (
-        <p className="text-[var(--text-warning)]">{availability.reason}</p>
+        <p className="text-[var(--color-warning)]">{availability.reason}</p>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -687,7 +687,7 @@ function CommitPane({
         <p className="text-[var(--text-secondary)]">Validating the commit with the daemon…</p>
       ) : null}
       {preview?.phase === "error" ? (
-        <p role="alert" className="text-[var(--text-danger)]">
+        <p role="alert" className="text-[var(--danger-text)]">
           {preview.message}
         </p>
       ) : null}
@@ -708,7 +708,7 @@ function CommitPane({
       {result ? (
         <p
           role={result.kind === "error" ? "alert" : "status"}
-          className={result.kind === "ok" ? "text-[var(--text-success)]" : "text-[var(--text-danger)]"}
+          className={result.kind === "ok" ? "text-[var(--color-success)]" : "text-[var(--danger-text)]"}
         >
           {result.message}
         </p>
