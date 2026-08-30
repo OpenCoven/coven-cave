@@ -216,6 +216,7 @@ const contracts: RouteContract[] = [
   { route: "/github/reactions", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/rerun", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/resolve-thread", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/reply", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/review", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/runs", methods: ["GET"], kind: "json" },
   { route: "/github/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
