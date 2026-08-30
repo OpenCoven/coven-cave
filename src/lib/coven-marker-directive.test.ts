@@ -154,6 +154,7 @@ for (const stage of ["loaded", "running", "done", "error"]) {
 assert.match(directive, /issue-state \(state="open" or "closed"\)/);
 assert.match(directive, /issue-create \(title="…"\)/);
 assert.match(directive, /dispatch \(workflow="…" ref="…"\)/);
+assert.match(directive, /reply \(thread="top-level review comment id"\)/);
 
 // ── Wiring: rides every chat turn beside the next-paths directive ───────────
 import { readFileSync } from "node:fs";
