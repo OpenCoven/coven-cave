@@ -26,6 +26,45 @@ confirmation token's shape (`### Approval and exact preview`), and the receipt
 storing full post text rather than a `textSha256` (`### Idempotency and
 receipts`). Full reasoning for all five is on the bead as a `bd note`.
 
+**Status refresh (2026-08-30 sweep).** Re-verified against `main` at
+`bdbf971593` (2026-08-30; the only commit after this document's 2026-08-30
+landing is the beads-jsonl merge driver). Nothing in this record regressed
+and nothing new remains in code:
+
+- The shipped surface is present at that commit: `src/lib/x-api.ts`,
+  `src/lib/server/x-credentials.ts`, `x-client.ts`, `x-access.ts`,
+  `x-oauth.ts`, `x-sources.ts`, `x-publications.ts`; the local routes
+  `GET/DELETE /api/x/connection`, `POST /api/x/oauth/start`,
+  `POST /api/x/posts/lookup`, `POST /api/x/posts/search`,
+  `GET/POST/DELETE /api/x/sources`, `GET/POST /api/x/publish`; and every
+  behavioral test this document names, including
+  `src/app/api/x/publish-route-behavior.test.ts` and
+  `src/components/role-surfaces/x-publish-panel-behavior.test.tsx`.
+- Local verification on 2026-08-30 (node 24.19.0, `--ignore-scripts`
+  install): all 19 focused X suites pass — 16 `node:test` suites (`x-api`,
+  `x-client`, `x-credentials`, `x-access`, `x-oauth`, `x-sources`,
+  `x-publications`, `x-publish-composer`, mission hydration,
+  account/connection/research/sources route behaviors, `x-surface-gating`,
+  `familiar-x-section`) and 3 vitest behavior suites (`research-x-sources`,
+  `x-publish-panel-behavior`, `familiar-x-section-behavior`; 90 tests);
+  `tsc --noEmit` clean; `pnpm lint` clean at `--max-warnings=0`;
+  `check:tests-wired` reports 1977 test files wired.
+- Every PR this record cites is merged: #4206, #4235, #4823, #4828, #4858,
+  #4988, #5094 — plus post-audit hardening fixes #5100 (cache purge on
+  disconnect is best-effort, not a disconnect failure), #5101 (a cache sweep
+  failure no longer fails `GET /api/x/sources`), and #5105 (stranded drafts
+  surface a retire action). All three tighten the fail-closed behavior this
+  spec requires; none reopen an acceptance criterion. X Article ingestion
+  (#4730) extends the surface beyond this MVP's post scope as a separate
+  feature and does not alter this record's post-path verdicts.
+- Verdict: unchanged from the audit below — the issue's acceptance criteria
+  are implemented on `main` with tests. What remains is evidence, not code,
+  and both gates are external to a headless sweep: the native-room pass
+  through the real Tauri shell (`bash scripts/dev-app.sh`), and the live X
+  smoke evidence (lookup, search, refresh, publish-success, ambiguous-write)
+  against a configured client ID and funded API account. Issue #4816 stays
+  open for exactly those two gates; bead `cave-8i8q5` remains authoritative.
+
 ## Objective
 
 Let a user connect one X account to Coven Cave, save and use X posts as
