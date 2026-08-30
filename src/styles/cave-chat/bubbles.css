@@ -230,7 +230,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px var(--space-3);
-  border: 1px solid var(--border-panel);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-muted);
@@ -304,7 +304,7 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  border: 1px solid var(--border-panel);
+  border: 1px solid var(--border-hairline);
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-elevated) 78%, transparent);
   padding: var(--space-2) 11px;
@@ -413,7 +413,7 @@
 }
 
 .cave-chat-empty-prompt:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 34%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
   color: var(--text-primary);
   transform: translateY(-1px);
@@ -465,7 +465,7 @@
 
 .cave-chat-empty-prompt:focus-visible {
   outline: none;
-  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-hairline));
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 28%, transparent);
 }
 
@@ -525,7 +525,7 @@
 }
 
 button.cave-chat-empty-task:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--accent-presence) 34%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
   color: var(--text-primary);
 }
@@ -537,7 +537,7 @@ button.cave-chat-empty-task:hover:not(:disabled) {
 
 .cave-chat-empty-task:focus-visible {
   outline: none;
-  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-hairline));
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 28%, transparent);
 }
 
@@ -674,7 +674,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   align-items: center;
   gap: var(--space-2);
   min-height: 38px;
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 38%, var(--border-panel));
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   border-radius: 7px;
   background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
   padding: 0 11px;
@@ -708,7 +708,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 }
 
 .cave-chat-empty-task-tile:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
 }
 
@@ -723,7 +723,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   align-items: center;
   gap: var(--space-2);
   min-height: 38px;
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, var(--border-panel));
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
   border-radius: 7px;
   background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
   padding: 0 11px;
@@ -790,7 +790,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 
 .cave-chat-empty-recent:focus-visible {
   outline: none;
-  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-panel));
+  border-color: color-mix(in oklch, var(--accent-presence) 62%, var(--border-hairline));
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 28%, transparent);
 }
 

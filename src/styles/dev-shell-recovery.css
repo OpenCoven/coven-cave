@@ -22,7 +22,7 @@
   padding: var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  background: var(--surface-raised, var(--background));
+  background: var(--bg-raised, var(--background));
   box-shadow: var(--shadow-panel, none);
   text-align: left;
 }

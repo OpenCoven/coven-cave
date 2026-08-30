@@ -153,7 +153,7 @@ export function TrayQuickChat() {
   }, [addTab, closeTab]);
 
   return (
-    <main className="tray-quick-chat min-h-screen text-[var(--fg-primary)]">
+    <main className="tray-quick-chat min-h-screen text-[var(--text-primary)]">
       <h1 className="sr-only">Quick chat</h1>
       <section className="tray-quick-chat__frame">
         {/* The tray window is created with decorations(false) (see lib.rs), so
