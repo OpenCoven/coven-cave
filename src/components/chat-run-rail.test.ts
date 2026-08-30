@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 const component = readFileSync(new URL("./chat-run-rail.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/cave-chat/run-rail.css", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const header = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
+const menuModel = readFileSync(new URL("../lib/chat-session-menu-model.ts", import.meta.url), "utf8");
 const facade = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
 // ── mounted and styled, or it is dead code ──────────────────────────────────
@@ -18,15 +20,48 @@ assert.match(
   /<ChatActivityMap\s+turns=\{activePath\}/,
   "the activity map derives from the SAME activePath the transcript renders",
 );
+
+// ── AUTOMATIC: the rail is the right-side instrument, with nothing to switch ─
+// (cave-5m5hv) The rail replaced the thread minimap. "The minimap is gone" is
+// also satisfied by rendering nothing at all, so these assert the positive: the
+// rail mounts whenever there is a transcript, and no preference stands between
+// a reader and it.
+{
+  const mount = chatView.match(/\{([^{}]*?)\?\s*\(\s*\n\s*<ChatActivityMap/);
+  assert.ok(mount, "the rail's mount condition is readable");
+  assert.equal(
+    mount[1].trim(),
+    "activePath.length > 0",
+    "the ONLY condition on the rail is that a transcript exists — no preference, no flag",
+  );
+}
+// Comments are stripped first, the same discipline the `order: 1` guard below
+// uses: all three files now EXPLAIN in prose that the toggle is retired, and an
+// unanchored search matches the explanation. Scan the code, not the paragraph.
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+for (const revived of ["activityMapVisible", "useActivityMapVisible", "thread-instruments-visibility"]) {
+  assert.ok(
+    !code(chatView).includes(revived) && !code(header).includes(revived),
+    `${revived} is retired: re-introducing it gives a reader a way to switch the rail back off`,
+  );
+}
+assert.ok(
+  !code(menuModel).includes("activity-map"),
+  "the session kebab carries no activity-map toggle — the rail is not optional",
+);
+// …and the stripper is not doing the work on its own.
+assert.ok(code(menuModel).includes('"thinking"'), "the menu model still declares its real items");
+assert.ok(
+  !code(chatView).includes("ChatThreadMinimap"),
+  "chat no longer mounts the retired thread minimap",
+);
+// The LEFT turn spine is deliberately retained and mounted; its own pins live
+// in lib/chat-thread-instruments.test.ts. Pinned here too because this file is
+// the one that previously asserted it was gone.
 assert.match(
   chatView,
-  /activePath\.length > 0 && activityMapVisible \? \(\s*\n\s*<ChatActivityMap/,
-  "the activity map follows its session-header visibility toggle",
-);
-assert.doesNotMatch(
-  chatView,
-  /ChatThreadMinimap|ChatThreadSpine/,
-  "chat no longer mounts the retired thread spine or minimap",
+  /<ChatThreadSpine\s+turns=\{activePath\}/,
+  "the left turn spine survives the minimap's removal and is still mounted",
 );
 assert.match(
   component,
