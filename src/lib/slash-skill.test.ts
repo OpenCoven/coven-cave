@@ -151,6 +151,19 @@ assert.deepEqual(
   { text: "/skill code-review ", caret: 19 },
   "re-picking replaces the previous command rather than nesting it",
 );
+// Regression for #5198: once the picker has selected a skill, a paste must
+// land after the command head so the skill remains resolvable and the pasted
+// prompt becomes its argument instead of corrupting `/skill <id>`.
+const selectedSkill = skillComposerInsertion("/skill", SKILLS[1]);
+const pastedAfterSelection =
+  selectedSkill.text.slice(0, selectedSkill.caret) +
+  "inspect the auth path" +
+  selectedSkill.text.slice(selectedSkill.caret);
+assert.deepEqual(
+  resolveSkillInvocation(pastedAfterSelection.slice("/skill ".length), SKILLS),
+  { skill: SKILLS[1], args: "inspect the auth path" },
+  "pasted prompt stays attached to the selected skill at the restored caret",
+);
 
 // ── resolveSkillInvocation: whole name first, then first-token + args ────────
 assert.deepEqual(
@@ -205,6 +218,16 @@ assert.match(chatView, /const carried = skillCarryOverText\(input\);/, "chat-vie
 assert.match(chatView, /const invokeSkillOption = \(s: SkillOption\)/, "chat-view shares one skill-invoke helper across picker, menu and clicks");
 assert.match(chatView, /onPickSkill: \(s\) => invokeSkillOption\(s\)/, "the hook's skill picks route through chat-view's invoke helper");
 assert.match(chatView, /s\.argumentHint && !carried && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/, "a hinted skill autofills /skill <id> only over scaffolding, never over a typed message");
+assert.match(
+  chatView,
+  /if \(s\.argumentHint && !carried && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)\) \{[\s\S]*?completeComposerText\(next, next\.length\);/,
+  "a picked hinted skill commits its caret with the controlled value before pasted text can arrive",
+);
+assert.match(
+  chatView,
+  /if \(skill\.argumentHint && !skillArgs && trimmed\.toLowerCase\(\) !== `\/skill \$\{skill\.id\}`\.toLowerCase\(\)\) \{[\s\S]*?completeComposerText\(next, next\.length\);/,
+  "typed hinted-skill autofill uses the same caret-safe handoff",
+);
 assert.match(menusHook, /skillCommandMatches\(activeInvocation\.commandToken, skills\)/, "the shared hook surfaces skills at the active slash token");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
 assert.match(menusHook, /fetch\("\/api\/skills\/local"/, "the shared hook sources skills from the local skill scan");
