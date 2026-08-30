@@ -1020,6 +1020,7 @@ export const SUITES = {
     "src/lib/automations/automation-entry.test.ts",
     "src/lib/automations/cron-health.test.ts",
     "src/lib/automations/cron-detail-state.test.ts",
+    "src/lib/automations/daemon-projection.test.ts",
     "src/lib/automations/live-run.test.ts",
     "src/lib/automations/list-input.test.ts",
     "src/lib/automations/run-status.test.ts",
