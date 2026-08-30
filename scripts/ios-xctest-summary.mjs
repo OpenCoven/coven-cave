@@ -197,10 +197,6 @@ export function countXCTestMethodsInDirectory(dir, { readDir = readdirSync, read
 export const QUARANTINED_FAILURES = new Map([
   // ── Residue after #4958. Each needs a decision, not a patch ──────────────
   [
-    "testConcurrentTaskChatOpensReuseOneAuthoritativeThread",
-    { bead: "cave-22b4y", reason: "resolveProjectNavigation answers .pending until .projects has succeeded in the current generation, and openChat treats pending as failure.", expires: "2026-09-27" },
-  ],
-  [
     "testOpenChatForExistingDirectTaskThreadRepairsStaleSessionFamiliarBinding",
     { bead: "cave-22b4y", reason: "openChat(for:) returns nil while project navigation is .pending; which side is wrong needs a decision.", expires: "2026-09-27" },
   ],

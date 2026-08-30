@@ -6610,10 +6610,27 @@ final class AppModel {
         return project
     }
 
+    /// Materializing a task chat and publishing its project-aware navigation
+    /// have different completion boundaries. An authoritative session can be
+    /// safely materialized before the current connection's project catalog has
+    /// finished hydrating; in that case the pending navigation is not a failed
+    /// open, and callers still need the one canonical thread that was created
+    /// or reused. A terminal navigation failure remains a failed open.
+    private func taskChatOpenResult(for thread: ChatThread) -> ChatThread? {
+        guard requestOpen(thread) else {
+            guard pendingProjectNavigationIntent?.threadId == thread.id,
+                  lastProjectNavigationFailure == nil else {
+                return nil
+            }
+        }
+        return thread
+    }
+
     /// Open (or create) the chat linked to a card and navigate to it. For an
     /// unlinked card it starts a fresh thread with `familiarId` (the card's
-    /// assignee, or a caller-supplied pick) and links it. Returns nil only if no
-    /// familiar could be resolved.
+    /// assignee, or a caller-supplied pick) and links it. A thread whose
+    /// project-aware navigation is still hydrating is returned immediately;
+    /// only an unresolved session or terminal navigation failure returns nil.
     @discardableResult
     func openChat(for card: BoardCard, familiarId: String? = nil) async -> ChatThread? {
         let requestedFamiliarID = normalizedFamiliarID(familiarId ?? card.familiarId)
@@ -6646,16 +6663,14 @@ final class AppModel {
                 } else {
                     setLocalTaskThreadLink(materialized.id, for: card.id)
                 }
-                guard requestOpen(materialized) else { return nil }
-                return materialized
+                return taskChatOpenResult(for: materialized)
             case .confirmedMissing:
                 if let toastText = resolution.toastText,
                    let systemImage = resolution.systemImage {
                     showToast(toastText, systemImage: systemImage, style: .warning)
                 }
                 if let recovery = taskRecoveryThread(for: card, sessionID: sessionID) {
-                    guard requestOpen(recovery) else { return nil }
-                    return recovery
+                    return taskChatOpenResult(for: recovery)
                 }
                 return nil
             case .transientLoadFailure:
@@ -6671,8 +6686,7 @@ final class AppModel {
             fallbackFamiliarID: requestedFamiliarID
         ) {
             setLocalTaskThreadLink(explicit.id, for: card.id)
-            guard requestOpen(explicit) else { return nil }
-            return explicit
+            return taskChatOpenResult(for: explicit)
         }
 
         if let existing = linkedThread(for: card) {
@@ -6697,8 +6711,7 @@ final class AppModel {
             }
             if canOpenExisting {
                 setLocalTaskThreadLink(existing.id, for: card.id)   // backfill from a sessionId match
-                guard requestOpen(existing) else { return nil }
-                return existing
+                return taskChatOpenResult(for: existing)
             }
         }
         guard let requestedFamiliarID else { return nil }
@@ -6715,8 +6728,7 @@ final class AppModel {
         threads.insert(thread, at: 0)
         setLocalTaskThreadLink(thread.id, for: card.id)
         persistThreads()
-        guard requestOpen(thread) else { return nil }
-        return thread
+        return taskChatOpenResult(for: thread)
     }
 
     /// Link an existing task to a thread (from the chat side). Best-effort PATCH
