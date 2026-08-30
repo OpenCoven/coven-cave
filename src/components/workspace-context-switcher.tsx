@@ -33,6 +33,8 @@ export type WorkspaceContextSwitcherProps = {
   responseNeeded?: Set<string>;
   contextNotice?: string | null;
   variant?: "rail" | "titlebar";
+  /** Chat's titlebar selects one actor; aggregate scope remains available elsewhere. */
+  singleFamiliarRequired?: boolean;
 };
 
 /**
@@ -64,6 +66,7 @@ export function WorkspaceContextSwitcher({
   responseNeeded,
   contextNotice,
   variant = "rail",
+  singleFamiliarRequired = false,
 }: WorkspaceContextSwitcherProps) {
   return (
     <div className={`workspace-context-switcher workspace-context-switcher--${variant}`}>
@@ -107,6 +110,7 @@ export function WorkspaceContextSwitcher({
           aggregateDescription={projectId ? `${projectCrew.length} with access` : undefined}
           placement="bottom-start"
           labeled
+          singleRequired={singleFamiliarRequired}
           disabled={projectCrewLoading || Boolean(projectCrewError)}
         />
       </div>

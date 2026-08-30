@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const chatStyles = await readFile(new URL("../styles/cave-chat/auxiliary-surfaces.css", import.meta.url), "utf8");
 const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const agentsMemoryView = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
@@ -108,13 +109,17 @@ assert.match(
   /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
   "ChatSurface should render GroupChatView for the coven scope",
 );
-// Familiar selection now lives in a shared full-width context row above the
-// scope tabs (cave-3pnnq) — the header still carries only its scope tabs below
-// that row, so the selector is not a duplicate of the sidebar switcher.
+// The in-surface familiar selector is retained only as the mobile fallback;
+// desktop uses the shell titlebar as the single selector authority.
 assert.match(
   chatSurface,
   /chat-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?familiars=\{resolvedFamiliars\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onSetActiveFamiliar\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?chat-scope-tabs chat-scope-tabs--minimal/,
-  "ChatSurface renders the shared familiar selector above its section tabs, wired through onSetActiveFamiliar",
+  "ChatSurface retains a mobile familiar selector wired through onSetActiveFamiliar",
+);
+assert.match(
+  chatStyles,
+  /\.chat-familiar-context \{[\s\S]*?display: none;[\s\S]*?@media \(max-width: 1023px\) \{[\s\S]*?\.chat-familiar-context \{[\s\S]*?display: flex;/,
+  "the in-surface familiar selector is hidden on desktop and restored on mobile",
 );
 assert.match(
   chatSurface,

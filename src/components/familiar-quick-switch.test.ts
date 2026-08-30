@@ -45,6 +45,11 @@ assert.match(
   /<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
   "Workspace owns the persistent title-bar familiar selector",
 );
+assert.match(
+  workspace,
+  /<WorkspaceContextSwitcher[\s\S]*?singleFamiliarRequired=\{mode === "chat"\}/,
+  "Chat makes the titlebar the single actor-selection authority",
+);
 // No rail swap survives: one sidebar renders always, and the chat surface
 // docks its own threads rail beside the conversation (cave-fh9so).
 assert.match(

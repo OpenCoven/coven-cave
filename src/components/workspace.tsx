@@ -4718,6 +4718,7 @@ export function Workspace() {
                 sessions={sessions}
                 responseNeeded={responseNeeded}
                 variant="titlebar"
+                singleFamiliarRequired={mode === "chat"}
               />
             </div>
             <FamiliarMenuBar

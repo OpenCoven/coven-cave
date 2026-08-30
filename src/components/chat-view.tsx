@@ -7289,8 +7289,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   // The linked-context strip (task/GitHub chips + link/create affordances)
-  // rides the composer footer band — beside the project, runtime, and git
-  // context — so the chat's metadata reads where the message is written; the
+  // rides the composer footer band — beside runtime and git context — so the
+  // chat's metadata reads where the message is written; the shell titlebar is
+  // the single project selector on desktop.
   // composer menu's linked-work group offers the same flows as menu rows.
   const linkedContextRow = (
     <LinkedContextRow
@@ -7363,6 +7364,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       projects={projects}
       projectValue={resolvedProjectId}
       onProjectChange={setProjectIdDraft}
+      showProject={false}
       familiarId={familiar.id ?? null}
       createProject={createProject}
       createProjectOrThrow={createProjectOrThrow}

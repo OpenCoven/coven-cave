@@ -11,6 +11,11 @@ const css = readFileSync(
 assert.match(source, /<ProjectPicker/, "project is the first context control");
 assert.match(source, /allProjectsLabel="All projects"/, "the shell exposes operator scope");
 assert.match(source, /<FamiliarSwitcher/, "familiar identity remains visible");
+assert.match(
+  source,
+  /singleRequired=\{singleFamiliarRequired\}/,
+  "surfaces can make the shared familiar selector require one actor",
+);
 assert.match(source, /familiars=\{projectId \? projectCrew : allFamiliars\}/);
 assert.match(source, /aggregateLabel=\{projectId \? "Project crew" : "All familiars"\}/);
 assert.match(
@@ -32,6 +37,33 @@ assert.match(source, /No familiars have access to this project/, "empty crew is 
 assert.match(source, /role="note"/, "non-pilot context notices are explicit");
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "styles use tokens only");
 assert.match(css, /\.shell-nav--rail \.workspace-context-switcher/, "collapsed rail is explicit");
+
+// ── Desktop hierarchy: project mark first, familiar identity predominant ────
+assert.match(
+  css,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \{[\s\S]*?max-width:\s*calc\(var\(--space-8\) - var\(--space-1\)\);/,
+  "the titlebar project rests at icon width",
+);
+assert.match(
+  css,
+  /\.workspace-context-switcher__project:is\(:hover, :focus-within\) \{[\s\S]*?max-width:\s*calc\(var\(--space-10\) \* 6\);/,
+  "hover and keyboard focus reveal the project name",
+);
+assert.match(
+  css,
+  /\.workspace-context-switcher--titlebar \.cave-project-picker__trigger-label \{[\s\S]*?max-width:\s*0;[\s\S]*?opacity:\s*0;/,
+  "the project name is visually collapsed at rest",
+);
+assert.match(
+  css,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \{[\s\S]*?min-width:\s*calc\(var\(--space-10\) \* 3 \+ var\(--space-3\)\);/,
+  "the familiar keeps the predominant named segment",
+);
+assert.match(
+  css,
+  /@media \(prefers-reduced-motion: reduce\)[\s\S]*?transition:\s*none;/,
+  "the project reveal respects reduced motion",
+);
 
 // ── Project ordering: ProjectPicker must appear before FamiliarSwitcher ─────
 const projectIndex = source.indexOf("<ProjectPicker");

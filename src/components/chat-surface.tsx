@@ -543,9 +543,9 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. The shared
-            familiar selector row (cave-3pnnq) sits directly above the section
-            tabs so a familiar is established before a scope is chosen. */}
+            Chat keeps Projects discoverable as a first-class tab. Desktop
+            familiar selection belongs to the shell titlebar; this row remains
+            only as the mobile fallback where that titlebar is hidden. */}
         <div className="chat-familiar-context">
           <FamiliarQuickSwitch
             familiars={resolvedFamiliars}
