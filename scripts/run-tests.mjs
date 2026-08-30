@@ -1619,6 +1619,7 @@ export const SUITES = {
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
     "src/lib/openclaw-compatibility.test.ts",
+    "src/lib/openclaw-registry-bundle.test.ts",
     "src/lib/openclaw-gateway.test.ts",
     "src/lib/server/openclaw-device-credentials.test.ts",
     "src/lib/coven-identity-canon.test.ts",
@@ -1673,6 +1674,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-claude-availability.integration.test.ts",
     "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+    "src/app/api/chat/send/route-openclaw-negotiation.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
@@ -2216,7 +2218,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-claude-availability.integration.test.ts",
   "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
   "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
+  // These route tests import the send route, whose runtime graph resolves
+  // Cave modules through the `@/lib` alias.
   "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+  "src/app/api/chat/send/route-openclaw-negotiation.integration.test.ts",
   "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts",
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
