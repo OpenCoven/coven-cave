@@ -8,7 +8,15 @@ import {
   validateOpenClawToolProfiles,
   type OpenClawGatewayDiscovery,
   type OpenClawParsedToolEvent,
+  type OpenClawRegistryCheckpoint,
+  type OpenClawRegistryKeyring,
+  type OpenClawToolProfile,
 } from "./openclaw-compatibility.ts";
+
+import {
+  adoptOpenClawRegistryProfileBundle,
+  OpenClawRegistryBundleLedger,
+} from "./openclaw-registry-bundle.ts";
 
 import { covenHome } from "./coven-paths.ts";
 import type { ChatAttachment } from "./chat-attachments.ts";
@@ -430,6 +438,83 @@ export function openClawBridgeCapabilitiesFromNegotiation(
     ...openClawBridgeCapabilities(),
     streaming: negotiation.outcome === "structured",
     toolEvents: negotiation.outcome === "structured",
+  };
+}
+
+/**
+ * The OpenClaw runtime bridge the chat send path negotiates through. The
+ * optional `RuntimeBridge.negotiateSession` hook decides per conversation
+ * whether a turn may stream structured tool activity; a runtime bridge
+ * without it stays at the implementation-level `capabilities()` above and
+ * every conversation defaults to plain chat.
+ */
+export const openClawRuntimeBridge: Pick<RuntimeBridge, "id" | "capabilities" | "negotiateSession"> = {
+  id: "openclaw",
+  capabilities: openClawBridgeCapabilities,
+  negotiateSession: negotiateOpenClawBridgeSession,
+};
+
+export type OpenClawBridgeTurnNegotiation = {
+  negotiation: OpenClawBridgeNegotiation;
+  /** The negotiated streaming/toolEvents outcome for this turn. */
+  capabilities: OpenClawBridgeCapabilities;
+  /** Visible, value-free user-facing diagnostic for a degraded turn. */
+  diagnostic: string | null;
+  /** The validated profile set the negotiation ran against. */
+  profiles: OpenClawToolProfile[];
+};
+
+/**
+ * Compose one turn's bridge negotiation: adopt a candidate registry profile
+ * bundle (when one is provided through the registry seam), then negotiate the
+ * conversation against the discovered gateway record using the adopted set —
+ * or the conversation's retained set / the built-in profile when nothing was
+ * adopted. Fixture-driven and fail-closed; no live OpenClaw calls.
+ */
+export function negotiateOpenClawBridgeTurn(input: {
+  conversationId: string;
+  /** Raw, untrusted discovered gateway record; validated before any use. */
+  discovery: unknown;
+  registryBundle?: unknown;
+  registryBundleSource?: "inline" | "cache";
+  registryPublicKeys?: OpenClawRegistryKeyring;
+  registryCheckpoint?: OpenClawRegistryCheckpoint;
+  registryLedger?: OpenClawRegistryBundleLedger;
+  ledger?: OpenClawBridgeNegotiationLedger;
+  now?: number;
+}): OpenClawBridgeTurnNegotiation {
+  const adoption = adoptOpenClawRegistryProfileBundle({
+    conversationId: input.conversationId,
+    bundle: input.registryBundle,
+    ...(input.registryBundleSource ? { source: input.registryBundleSource } : {}),
+    ...(input.registryPublicKeys ? { publicKeys: input.registryPublicKeys } : {}),
+    ...(input.registryCheckpoint ? { checkpoint: input.registryCheckpoint } : {}),
+    ...(input.registryLedger ? { ledger: input.registryLedger } : {}),
+    ...(input.now !== undefined ? { now: input.now } : {}),
+  });
+  const profiles = adoption.outcome === "adopted" ? adoption.validated.profiles : adoption.profiles;
+  const negotiation: OpenClawBridgeNegotiation = openClawRuntimeBridge.negotiateSession
+    ? openClawRuntimeBridge.negotiateSession({
+        conversationId: input.conversationId,
+        discovery: input.discovery,
+        profiles,
+        ...(input.ledger ? { ledger: input.ledger } : {}),
+      })
+    : {
+        // A runtime bridge without the optional negotiation hook defaults to
+        // plain chat instead of structured tool activity.
+        outcome: "degraded",
+        diagnostic: "gateway-discovery-unavailable",
+        gatewayVersion: null,
+        protocol: null,
+        discoveredSchemaHash: null,
+        capabilities: { streaming: false, toolEvents: false },
+      };
+  return {
+    negotiation,
+    capabilities: openClawBridgeCapabilitiesFromNegotiation(negotiation),
+    diagnostic: openClawBridgeNegotiationDiagnostic(negotiation),
+    profiles,
   };
 }
 

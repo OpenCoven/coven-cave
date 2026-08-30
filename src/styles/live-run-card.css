@@ -29,6 +29,12 @@
   border-color: color-mix(in oklch, var(--color-danger) 40%, var(--border-hairline));
 }
 
+/* A cancelled run is a deliberate stop — quieter than failed/succeeded, but a
+   border of its own so the card does not render as a success. */
+.live-run-card--cancelled {
+  border-color: color-mix(in oklch, var(--foreground) 18%, var(--border-hairline));
+}
+
 .live-run-card__mark {
   display: grid;
   flex: none;
@@ -42,6 +48,10 @@
 
 .live-run-card--failed .live-run-card__mark {
   color: var(--color-danger);
+}
+
+.live-run-card--cancelled .live-run-card__mark {
+  color: var(--text-muted);
 }
 
 .live-run-card__pulse {

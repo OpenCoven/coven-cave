@@ -20,6 +20,13 @@ const startIdx = src.indexOf(START);
 const endIdx = src.indexOf(END, startIdx);
 assert.ok(startIdx !== -1, "server.ts contains the heap telemetry section");
 assert.ok(endIdx !== -1, "the telemetry section ends by starting the monitor");
+const listenIdx = src.indexOf("server.listen(port, hostname, () => {");
+const readyIdx = src.indexOf("console.log(`> Ready", listenIdx);
+assert.ok(
+  listenIdx !== -1 && readyIdx !== -1 &&
+    src.slice(listenIdx, readyIdx).includes("logStartupHeapCeiling();"),
+  "server startup logs the heap ceiling before announcing readiness",
+);
 // Strip types the same way build:server does, so the harness evaluates the
 // exact logic that ships in server.mjs.
 const section = transformSync(src.slice(startIdx, endIdx), { loader: "ts", format: "esm" }).code;
@@ -27,6 +34,7 @@ const section = transformSync(src.slice(startIdx, endIdx), { loader: "ts", forma
 /** Evaluate the monitor section with fakes; returns handles to drive it. */
 function harness({ env = {} } = {}) {
   const state = {
+    logs: [],
     warns: [],
     snapshots: [],
     tick: null,
@@ -42,6 +50,7 @@ function harness({ env = {} } = {}) {
     pid: 4242,
   };
   const fakeConsole = {
+    log: (...args) => state.logs.push(args.join(" ")),
     warn: (...args) => state.warns.push(args.join(" ")),
   };
   const fakeSetInterval = (fn, ms) => {
@@ -60,9 +69,9 @@ function harness({ env = {} } = {}) {
     "process", "console", "setInterval",
     "getHeapStatistics", "writeHeapSnapshot",
     "mkdirSync", "readdirSync", "unlinkSync", "join", "homedir", "sessions",
-    `${section}\nstartHeapMonitor();`,
+    `${section}\nstartHeapMonitor();\nreturn { logStartupHeapCeiling };`,
   );
-  factory(
+  const handles = factory(
     fakeProcess, fakeConsole, fakeSetInterval,
     () => state.heap, fakeWriteHeapSnapshot,
     (dir, opts) => mkdirSync(dir, opts),
@@ -72,7 +81,22 @@ function harness({ env = {} } = {}) {
     () => state.dir,
     sessions,
   );
+  Object.assign(state, handles);
   return state;
+}
+
+// ── Startup ceiling is observable even when periodic telemetry is disabled ──
+{
+  const h = harness({ env: { COVEN_CAVE_HEAP_MONITOR: "0" } });
+  h.heap = { used_heap_size: 1, heap_size_limit: 768 * 1024 * 1024 };
+  h.logStartupHeapCeiling();
+  assert.deepEqual(
+    h.logs,
+    ["[heap-ceiling] heapLimit=768MB"],
+    "startup logs the effective V8 ceiling as one bounded line",
+  );
+  assert.equal(h.tick, null, "periodic telemetry remains disabled independently");
+  rmSync(h.dir, { recursive: true, force: true });
 }
 
 // ── Disabled by env kill-switch: no timer is ever registered ─────────────────

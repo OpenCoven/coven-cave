@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  classifyLifecycleInventoryFailure,
+  filterBeadsInventoryStderr,
+  formatLifecycleInventoryFailure,
   parseRestPullRequestLines,
   parseRestPullRequestPages,
 } from "./worktree-lifecycle-inventory.ts";
@@ -60,6 +63,55 @@ test("the lifecycle PR inventory uses REST endpoints and never invokes GraphQL",
   assert.match(source, /commits\/\$\{encodeURIComponent\(oid\)\}\/pulls\?per_page=100/);
   assert.match(source, /pulls\?state=all&per_page=100/);
   assert.match(source, /"--jq"/);
+});
+
+test("Beads role guidance is ignorable, while unrelated stderr remains an inventory error", () => {
+  assert.equal(
+    filterBeadsInventoryStderr(
+      "warning: beads.role not configured (GH#2950).\n    Fix: git config beads.role maintainer\n",
+    ),
+    "",
+  );
+  assert.equal(
+    filterBeadsInventoryStderr(
+      "warning: beads.role not configured (GH#2950).\n\n    Fix: git config beads.role contributor\nBeads inventory omitted records\n",
+    ),
+    "Beads inventory omitted records",
+  );
+  assert.equal(
+    filterBeadsInventoryStderr("Fix: git config beads.role maintainer\n"),
+    "Fix: git config beads.role maintainer",
+    "a fix line without its warning is not silently discarded",
+  );
+});
+
+test("exit-1 inventory diagnostics distinguish bd execution from transient GitHub failures", () => {
+  assert.equal(
+    classifyLifecycleInventoryFailure(
+      "Beads CLI could not be executed: spawnSync bd ENOENT",
+    ),
+    "beads-execution",
+  );
+  assert.equal(
+    classifyLifecycleInventoryFailure(
+      "pull request inventory could not query GitHub — API rate limit exceeded",
+    ),
+    "github-transient",
+  );
+  assert.equal(
+    classifyLifecycleInventoryFailure("Beads inventory returned malformed data"),
+    "inventory",
+  );
+  assert.match(
+    formatLifecycleInventoryFailure(["Beads CLI could not be executed: spawnSync bd ENOENT"]),
+    /could not execute bd/i,
+  );
+  assert.match(
+    formatLifecycleInventoryFailure([
+      "pull request inventory could not query GitHub — API rate limit exceeded",
+    ]),
+    /inventory is unavailable.*transient GitHub\/GraphQL.*retry/i,
+  );
 });
 
 test("the normal test runner enables TypeScript stripping for this suite", () => {

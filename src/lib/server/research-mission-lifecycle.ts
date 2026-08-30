@@ -13,6 +13,7 @@ import {
   STANDARD_RESEARCH_ARTIFACTS,
 } from "../research-missions.ts";
 import type { FlowRunRecord } from "../flows.ts";
+import type { ResearchSessionLaunchDiagnostic } from "./research-launch-policy.ts";
 
 export type ResearchFlowStartResult = {
   ok: boolean;
@@ -27,6 +28,7 @@ export type ResearchFlowStartResult = {
   run?: FlowRunRecord;
   queued?: boolean;
   unavailable?: boolean;
+  diagnostic?: ResearchSessionLaunchDiagnostic;
   /** A start failed after launch and its process owner could not prove cleanup. */
   cleanupUnconfirmed?: boolean;
   /** Exact in-process owner cleanup; ignored by durable mission serialization. */

@@ -192,16 +192,31 @@ import {
 import type { OpenClawDeviceCredentialStore } from "@/lib/server/openclaw-device-credentials";
 import {
   OpenClawAgentResolutionError,
+  OpenClawBridgeNegotiationLedger,
+  createOpenClawBridgeToolProjector,
   extractOpenClawSessionId,
   extractOpenClawText,
   hasValidOpenClawPayloadEnvelope,
   isOpenClawGatewayCredentialFailure,
   openClawAgentArgs,
+  openClawBridgeCapabilitiesFromNegotiation,
+  openClawBridgeNegotiationDiagnostic,
   openClawCliExecutionMode,
+  openClawRuntimeBridge,
   openClawSessionKey,
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
+  type OpenClawBridgeNegotiation,
+  type OpenClawBridgeToolProjector,
 } from "@/lib/openclaw-bridge";
+import {
+  adoptOpenClawRegistryProfileBundle,
+  OpenClawRegistryBundleLedger,
+} from "@/lib/openclaw-registry-bundle";
+import type {
+  OpenClawRegistryCheckpoint,
+  OpenClawRegistryKeyring,
+} from "@/lib/openclaw-compatibility";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ChatTurn,
@@ -462,7 +477,34 @@ type OfflineChatQueuePayload = Pick<
 
 type ChatSendRouteDependencies = {
   openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
+  /**
+   * Slice 2 (issue #4892) route-input seam: the discovered OpenClaw gateway
+   * record this turn's bridge negotiation runs against. Raw and untrusted —
+   * it is validated by the negotiation, never by the caller's claim. When it
+   * is absent, the Gateway dispatch's authenticated hello provides the
+   * discovered record instead.
+   */
+  openClawBridgeDiscovery?: unknown;
+  /**
+   * Registry-bundle seam: a candidate compatibility profile bundle to adopt
+   * in place of the built-in profile. Verified (ed25519 signature, expiry,
+   * checkpoint, rollback) before use; a failing bundle never replaces the
+   * conversation's last validated set. No network: the caller supplies the
+   * bytes (inline or from an offline cache).
+   */
+  openClawRegistryBundle?: unknown;
+  openClawRegistryBundleSource?: "inline" | "cache";
+  openClawRegistryPublicKeys?: OpenClawRegistryKeyring;
+  openClawRegistryCheckpoint?: OpenClawRegistryCheckpoint;
 };
+
+// Slice 2 (issue #4892): per-conversation bridge negotiation state. The
+// negotiation ledger remembers each conversation's last validated schema so a
+// degraded turn can never adopt an unvalidated discovery; the registry ledger
+// remembers each conversation's last validated bundle so a failing candidate
+// never rolls the validated set back.
+const openClawBridgeNegotiationLedger = new OpenClawBridgeNegotiationLedger();
+const openClawRegistryBundleLedger = new OpenClawRegistryBundleLedger();
 
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -731,6 +773,11 @@ function openClawChatResponse(args: {
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
   openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
+  openClawBridgeDiscovery?: unknown;
+  openClawRegistryBundle?: unknown;
+  openClawRegistryBundleSource?: "inline" | "cache";
+  openClawRegistryPublicKeys?: OpenClawRegistryKeyring;
+  openClawRegistryCheckpoint?: OpenClawRegistryCheckpoint;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -831,6 +878,89 @@ function openClawChatResponse(args: {
         sessionKey: openClawSessionKey(conversationId),
       };
 
+      // Slice 2 (issue #4892): per-conversation bridge negotiation. The
+      // discovered gateway record arrives through existing seams — the route
+      // input seam below, or the Gateway dispatch's authenticated hello —
+      // never stdout parsing, and no live OpenClaw call happens here. The
+      // negotiated outcome (not the hardcoded bridge capability flags)
+      // decides whether this turn may stream structured tool activity; a
+      // degraded turn stays on plain chat and surfaces one visible,
+      // value-free diagnostic on the same progress channel as every other
+      // gateway outcome message.
+      const registryAdoption = adoptOpenClawRegistryProfileBundle({
+        conversationId,
+        bundle: args.openClawRegistryBundle,
+        ...(args.openClawRegistryBundleSource
+          ? { source: args.openClawRegistryBundleSource }
+          : {}),
+        ...(args.openClawRegistryPublicKeys
+          ? { publicKeys: args.openClawRegistryPublicKeys }
+          : {}),
+        ...(args.openClawRegistryCheckpoint
+          ? { checkpoint: args.openClawRegistryCheckpoint }
+          : {}),
+        ledger: openClawRegistryBundleLedger,
+      });
+      const negotiationProfiles = registryAdoption.outcome === "adopted"
+        ? registryAdoption.validated.profiles
+        : registryAdoption.profiles;
+      if (registryAdoption.outcome === "retained" && registryAdoption.diagnostic !== "registry-bundle-absent") {
+        // A candidate bundle failed validation: the conversation keeps its
+        // last validated set (or the built-in profile) and the rejection is
+        // visible without carrying any bundle payload.
+        pushProgress(
+          "openclaw-registry-bundle",
+          "OpenClaw registry bundle rejected",
+          "notice",
+          registryAdoption.diagnostic,
+        );
+      }
+      const negotiateOpenClawTurn = (discovery: unknown): OpenClawBridgeNegotiation =>
+        openClawRuntimeBridge.negotiateSession
+          ? openClawRuntimeBridge.negotiateSession({
+              conversationId,
+              discovery,
+              profiles: negotiationProfiles,
+              ledger: openClawBridgeNegotiationLedger,
+            })
+          : {
+              // A runtime bridge without the optional negotiation hook
+              // defaults to plain chat for every conversation.
+              outcome: "degraded",
+              diagnostic: "gateway-discovery-unavailable",
+              gatewayVersion: null,
+              protocol: null,
+              discoveredSchemaHash: null,
+              capabilities: { streaming: false, toolEvents: false },
+            };
+      // Active projector for this turn: created from the negotiated outcome
+      // that decided tool projection, and null whenever the turn is plain
+      // chat (degraded negotiation) so no tool activity can stream.
+      let bridgeProjector: OpenClawBridgeToolProjector | null = null;
+      let negotiationDegradedDiagnostic: string | null = null;
+      const negotiateFromDiscoveredRecord = (discovery: unknown): OpenClawBridgeNegotiation => {
+        const negotiation = negotiateOpenClawTurn(discovery);
+        bridgeProjector = negotiation.outcome === "structured"
+          ? createOpenClawBridgeToolProjector(negotiation)
+          : null;
+        negotiationDegradedDiagnostic = openClawBridgeNegotiationDiagnostic(negotiation);
+        return negotiation;
+      };
+      let seamNegotiation: OpenClawBridgeNegotiation | null = null;
+      if (args.openClawBridgeDiscovery !== undefined) {
+        seamNegotiation = negotiateFromDiscoveredRecord(args.openClawBridgeDiscovery);
+        const seamDiagnostic = openClawBridgeNegotiationDiagnostic(seamNegotiation);
+        if (seamDiagnostic) {
+          pushProgress(
+            "openclaw-negotiation",
+            "OpenClaw tool activity unavailable",
+            "notice",
+            seamDiagnostic,
+          );
+          negotiationDegradedDiagnostic = null;
+        }
+      }
+
       // Gateway dispatch owns a turn only after it returns the authoritative
       // run id. Until then this branch leaves the existing CLI bridge as the
       // safe compatibility fallback; after a request might have reached the
@@ -838,12 +968,32 @@ function openClawChatResponse(args: {
       let gatewayAssistantText = "";
       let gatewayAssistantTextEmitted = false;
       const gatewayToolTracker = new ToolCallTracker(Date.now, "openclaw:");
-      let gatewayToolProjectionEnabled = true;
+      // The negotiated outcome decides the turn's tool behavior. With a seam
+      // record the negotiation already ran; without one the Gateway dispatch
+      // negotiates against its own authenticated hello before dispatching.
+      let gatewayToolProjectionEnabled = seamNegotiation
+        ? openClawBridgeCapabilitiesFromNegotiation(seamNegotiation).toolEvents
+        : true;
       let gatewayCompatibilityDiagnosticSent = false;
       const settleOpenGatewayTools = (output: string) => {
         for (const tool of gatewayToolTracker.failOpenCalls(output)) {
           push({ kind: "tool_use", ...tool });
         }
+      };
+      // Slice 2 (issue #4892): every Gateway tool frame streams through the
+      // negotiation's bridge projector first. It fail-closes unknown shapes,
+      // pauses after the first violation, and projects nothing for a
+      // degraded (plain-chat) negotiation — so an event that projects empty
+      // never reaches tool activity or persistence.
+      const projectOpenClawGatewayToolEvent = (
+        event:
+          | { kind: "tool_start"; id: string; name: string; input: unknown; seq: number }
+          | { kind: "tool_progress"; id: string; output: unknown; seq: number }
+          | { kind: "tool_end"; id: string; name: string; output: unknown; isError: boolean; seq: number },
+      ): boolean => {
+        const projector = bridgeProjector;
+        if (!projector) return false;
+        return projector.project(event).length > 0;
       };
       const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
         args.openClawGatewayCredentialStore,
@@ -858,6 +1008,16 @@ function openClawChatResponse(args: {
         // retry observable to the Gateway instead of creating another run.
         idempotencyKey: args.body.runId ?? "",
         credentialStore: args.openClawGatewayCredentialStore,
+        // Unless the route-input seam already negotiated this turn (and
+        // degraded it to plain chat), the dispatch negotiates the
+        // conversation against its own authenticated hello record before
+        // any tool event may stream.
+        ...(seamNegotiation && seamNegotiation.outcome !== "structured"
+          ? {}
+          : {
+              negotiateSession: negotiateFromDiscoveredRecord,
+              negotiationProfiles,
+            }),
         onEvent: (event) => {
           if (event.kind === "compatibility") {
             if (gatewayToolProjectionEnabled) {
@@ -879,6 +1039,7 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "tool_start" && gatewayToolProjectionEnabled) {
+            if (!projectOpenClawGatewayToolEvent(event)) return;
             const rawInput = formatToolInputValue(redactSecretsDeep(event.input));
             const input = rawInput === undefined ? undefined : redactSecretText(rawInput);
             const tool = gatewayToolTracker.envelopeToolUse(
@@ -895,6 +1056,7 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "tool_progress" && gatewayToolProjectionEnabled) {
+            if (!projectOpenClawGatewayToolEvent(event)) return;
             const safeOutput = redactSecretsDeep(event.output);
             const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
             const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
@@ -906,6 +1068,7 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "tool_end" && gatewayToolProjectionEnabled) {
+            if (!projectOpenClawGatewayToolEvent(event)) return;
             const safeOutput = redactSecretsDeep(event.output);
             const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
             const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
@@ -986,6 +1149,19 @@ function openClawChatResponse(args: {
         push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
         close();
         return;
+      }
+      if (gatewayDispatch.kind === "unavailable" && negotiationDegradedDiagnostic) {
+        // The per-conversation negotiation degraded the turn to plain chat
+        // before the Gateway dispatched anything: surface its value-free
+        // diagnostic on the usual progress channel, then keep the existing
+        // CLI plain-chat path below.
+        pushProgress(
+          "openclaw-negotiation",
+          "OpenClaw tool activity unavailable",
+          "notice",
+          negotiationDegradedDiagnostic,
+        );
+        negotiationDegradedDiagnostic = null;
       }
       if (gatewayDispatch.kind === "accepted") {
         responseMetadata.gatewaySessionId = gatewayDispatch.runId;
@@ -2834,6 +3010,11 @@ async function postChat(
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
       ownsFirstExchangeTitle,
       openClawGatewayCredentialStore: dependencies.openClawGatewayCredentialStore,
+      openClawBridgeDiscovery: dependencies.openClawBridgeDiscovery,
+      openClawRegistryBundle: dependencies.openClawRegistryBundle,
+      openClawRegistryBundleSource: dependencies.openClawRegistryBundleSource,
+      openClawRegistryPublicKeys: dependencies.openClawRegistryPublicKeys,
+      openClawRegistryCheckpoint: dependencies.openClawRegistryCheckpoint,
     });
   }
 

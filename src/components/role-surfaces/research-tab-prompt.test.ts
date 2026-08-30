@@ -27,6 +27,10 @@ test("intent keeps the shared min-length gate with aria-invalid wiring", () => {
   assert.match(composer, /trimmed\.length < RESEARCH_INTENT_MIN_LENGTH \|\| submitting/);
   // …and too-short input explains itself accessibly.
   assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
+  assert.match(composer, /maxLength=\{RESEARCH_INTENT_MAX_LENGTH\}/);
+  assert.match(composer, /aria-describedby=\{`\$\{intentDescriptionId\} research-intent-count`\}/);
+  assert.match(composer, /id="research-intent-count"/);
+  assert.doesNotMatch(composer, /research-intent-count" aria-live/);
   assert.match(composer, /id="research-intent-minimum"/);
   assert.match(composer, /"research-intent-minimum"\s*:\s*"research-plan-review"/);
   // Start failures stay visible as alerts; the daemon-offline note is honest.

@@ -20,7 +20,7 @@
 
 import type { AutomationRunRecord } from "../automation-runs.ts";
 
-export type LiveRunPhase = "running" | "succeeded" | "failed";
+export type LiveRunPhase = "running" | "succeeded" | "failed" | "cancelled";
 
 export type LiveRunView = {
   runId: string;
@@ -52,6 +52,7 @@ export function formatElapsed(ms: number): string {
 function phaseOf(status: AutomationRunRecord["status"]): LiveRunPhase {
   if (status === "failed") return "failed";
   if (status === "succeeded") return "succeeded";
+  if (status === "cancelled") return "cancelled";
   // `queued` is not yet running, but from the card's point of view the run is
   // in flight and has not settled — collapsing it into "running" keeps the
   // card's contract (settled or not) rather than inventing a fourth state the
@@ -87,13 +88,18 @@ export function liveRunView(
     headline = "Running…";
   } else if (phase === "succeeded") {
     headline = `Finished in ${formatElapsed(elapsedMs)}`;
-  } else {
+  } else if (phase === "failed") {
     // Name the exit code when there is one: "failed" alone sends the reader to
     // the log for something the record already knows.
     headline =
       run.exitCode != null && run.exitCode !== 0
         ? `Failed (exit ${run.exitCode}) after ${formatElapsed(elapsedMs)}`
         : `Failed after ${formatElapsed(elapsedMs)}`;
+  } else {
+    // Cancelled is its own settled outcome — a deliberate stop, never a
+    // success and never an endless "Running…". Without this branch a
+    // cancelled run used to keep the card in the running phase forever.
+    headline = `Cancelled after ${formatElapsed(elapsedMs)}`;
   }
 
   return {

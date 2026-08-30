@@ -2634,7 +2634,7 @@
   color: var(--accent-presence);
 }
 .fa-board__summary-copy > b {
-  font-family: var(--font-display);
+  font-family: var(--font-serif);
   font-size: var(--text-xl);
   font-weight: 600;
   color: var(--text-primary);
@@ -2891,7 +2891,7 @@
   grid-template-columns: 1fr auto;
   gap: var(--space-1) var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   background: var(--bg-subtle);
 }
@@ -2917,7 +2917,7 @@
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
 }
 .fa-runtime-attempt > span {
