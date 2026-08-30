@@ -86,6 +86,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Integrity and integrations
 
 - [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
+- [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry
 - [`discord-rich-presence.md`](discord-rich-presence.md) — privacy-safe local activity publishing
 
