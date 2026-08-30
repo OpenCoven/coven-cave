@@ -123,6 +123,14 @@ Signal classification and terminal-state rules:
   Ending at a repeated choice prompt is incomplete, not a successful refinement.
 - "persistentBlockers" contains only problems unresolved at the end of the
   thread. Do not carry forward a transient problem that the thread recovered.
+- A "persistentBlockers" entry requires evidence in the THREAD ABOVE that the
+  dependency prevents that thread's current objective. A remediation prompt
+  quoting an older blocker, durable memory describing a prerequisite, or an
+  unrelated unresolved dependency is not evidence that it blocked this thread.
+- When the thread exists only to diagnose or remediate a previously reported
+  blocker, report the exact human input still needed in the response, but do not
+  re-file that dependency in "persistentBlockers" unless it also prevented the
+  remediation thread's own requested deliverable.
 
 Delivery evidence rule:
 - Do NOT infer completion from plans, narration, or intent ("I will push", "about
