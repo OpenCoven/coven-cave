@@ -1472,6 +1472,7 @@ export const SUITES = {
     "scripts/main-health-workflow.test.mjs",
     "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
+    "src/lib/coven-home.test.ts",
     "src/lib/server/cave-home-migration-backup-recovery.test.ts",
     "src/lib/server/cave-home-migration-json-merge.test.ts",
     "src/lib/server/cave-home-migration-status-recovery.test.ts",
