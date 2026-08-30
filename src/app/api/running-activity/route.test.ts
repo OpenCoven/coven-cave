@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { buildRunningActivityPayload } from "@/lib/running-activity";
+import {
+  buildRunningActivityPayload,
+  emptyRunningActivityPayload,
+} from "@/lib/running-activity";
+import { GET } from "./route";
 
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const lib = await readFile(new URL("../../../lib/running-activity.ts", import.meta.url), "utf8");
@@ -39,6 +43,52 @@ test("each source is isolated so one failure cannot sink the response", () => {
 test("sessions use the read-only, subprocess-free projection", () => {
   assert.match(route, /sweepArchives: false/);
   assert.match(route, /enrichGit: false/);
+});
+
+test("daemon-less E2E returns a complete idle payload before loading live sources", async () => {
+  const handler = route.slice(route.indexOf("export async function GET"));
+  const guard = handler.indexOf('process.env.COVEN_CAVE_E2E === "1"');
+  const liveSources = handler.indexOf("const sessionsSource");
+
+  assert.ok(guard >= 0, "the route recognizes the Playwright daemon-less environment");
+  assert.ok(liveSources > guard, "the E2E response returns before any live source is loaded");
+  assert.match(handler, /return NextResponse\.json\(emptyRunningActivityPayload\(\)\)/);
+
+  const payload = emptyRunningActivityPayload("2026-08-30T00:00:00.000Z");
+  assert.equal(payload.ok, true);
+  assert.equal(payload.total, 0);
+  assert.deepEqual(payload.items, []);
+  assert.deepEqual(payload.unavailable, []);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(payload.sources).map(([id, state]) => [id, state.count])),
+    { sessions: 0, board: 0, automations: 0, flows: 0, workflows: 0 },
+  );
+
+  const previousE2E = process.env.COVEN_CAVE_E2E;
+  process.env.COVEN_CAVE_E2E = "1";
+  try {
+    const response = await GET();
+    const routedPayload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(routedPayload.total, 0);
+    assert.deepEqual(routedPayload.items, []);
+    assert.deepEqual(routedPayload.unavailable, []);
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(routedPayload.sources).map(([id, state]) => [id, state]),
+      ),
+      {
+        sessions: { ok: true, count: 0 },
+        board: { ok: true, count: 0 },
+        automations: { ok: true, count: 0 },
+        flows: { ok: true, count: 0 },
+        workflows: { ok: true, count: 0 },
+      },
+    );
+  } finally {
+    if (previousE2E === undefined) delete process.env.COVEN_CAVE_E2E;
+    else process.env.COVEN_CAVE_E2E = previousE2E;
+  }
 });
 
 test("automations use the daemon run ledger after local run-history retirement", () => {

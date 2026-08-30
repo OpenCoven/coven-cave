@@ -124,12 +124,31 @@ const defaultE2e = ciWorkflow.jobs["frontend-e2e"].steps.find(
 assert.ok(defaultE2e, "CI keeps default-off end-to-end coverage");
 assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
 assert.equal(ciWorkflow.jobs["frontend-e2e"].strategy["fail-fast"], false);
-assert.equal(
-  defaultE2e.run,
-  "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
-  "default end-to-end coverage is distributed across independently retryable runners",
+assert.deepEqual(
+  defaultE2e.env,
+  { PLAYWRIGHT_SHARD: "${{ matrix.shard }}" },
+  "the shard number is available to both the runner and its diagnostics",
 );
-assert.equal(defaultE2e.env, undefined, "default end-to-end coverage does not enable agentic recommendations");
+assert.match(
+  defaultE2e.run,
+  /pnpm exec playwright test \\\n\s+--shard="\$PLAYWRIGHT_SHARD\/8" \\\n\s+--workers=1 \\\n\s+--reporter="github,line"/,
+  "default end-to-end coverage is distributed across named, independently retryable runners",
+);
+assert.match(
+  defaultE2e.run,
+  /if \[ "\$PLAYWRIGHT_SHARD" = "3" \]; then[\s\S]*free -h[\s\S]*df -h \/[\s\S]*\/sys\/fs\/cgroup\/memory\.events[\s\S]*ps -eo pid,ppid,stat,etimes,rss,pcpu,pmem,comm[\s\S]*sleep 30/,
+  "the repeatedly terminated shard streams bounded host telemetry before a runner can disappear",
+);
+assert.match(
+  defaultE2e.run,
+  /trap 'kill "\$telemetry_pid" 2>\/dev\/null \|\| true; wait "\$telemetry_pid" 2>\/dev\/null \|\| true' EXIT/,
+  "the shard telemetry process is reaped after Playwright exits",
+);
+assert.equal(
+  defaultE2e.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS,
+  undefined,
+  "default end-to-end coverage does not enable agentic recommendations",
+);
 
 const agenticE2e = ciWorkflow.jobs["frontend-e2e-agentic"].steps.find(
   (step) => step.name === "Validate flag-enabled agentic journeys",
