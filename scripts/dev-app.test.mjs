@@ -75,7 +75,7 @@ assert.match(
 
 assert.match(
   source,
-  /HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" NODE_OPTIONS="\$dev_node_options" pnpm dev &/,
+  /run_owned_dev_server\(\) \{[\s\S]*?HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" NODE_OPTIONS="\$dev_node_options" pnpm dev 2>&1 \| tee "\$DEV_SERVER_LOG"/,
   "the launcher must bind its owned dev server to the Tauri loopback devUrl on Windows and POSIX",
 );
 assert.match(
@@ -91,7 +91,7 @@ assert.match(
 // unbounded one — the same shape as the port capture above.
 assert.ok(
   source.indexOf("dev_node_options=") <
-    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev 2>&1 | tee "$DEV_SERVER_LOG"'),
   "the heap ceiling must be resolved before the owned dev server starts",
 );
 assert.match(
@@ -110,6 +110,32 @@ assert.match(
 
 assert.match(
   source,
+  /DEV_SERVER_LOG="\$\(mktemp\)"[\s\S]*?DEV_SERVER_EXIT_STATUS="\$\(mktemp\)"/,
+  "the launcher must retain owned server output and its exit status for diagnosis",
+);
+assert.match(
+  source,
+  /run_owned_dev_server\(\) \{[\s\S]*?pnpm dev 2>&1 \| tee "\$DEV_SERVER_LOG"[\s\S]*?PIPESTATUS\[0\][\s\S]*?DEV_SERVER_EXIT_STATUS/,
+  "the owned server wrapper must preserve the child status while still streaming output",
+);
+assert.match(
+  source,
+  /report_owned_server_exit\(\) \{[\s\S]*?Ineffective mark-compacts near heap limit[\s\S]*?after running out of memory[\s\S]*?dev-server-oom/,
+  "the launcher must identify the V8 OOM signature with a distinct diagnosis",
+);
+assert.match(
+  source,
+  /origin_is_ready "\$dev_port" "\$initial_timeout_ms" &[\s\S]*?DEV_SERVER_EXIT_STATUS[\s\S]*?report_owned_server_exit/,
+  "initial readiness must be interruptible when the owned server exits",
+);
+assert.match(
+  source,
+  /watch_dev_server\(\) \{[\s\S]*?DEV_SERVER_EXIT_STATUS[\s\S]*?report_owned_server_exit[\s\S]*?terminate_process_tree "\$tauri_pid"/,
+  "the running watchdog must report an owned server exit before generic origin grace expires",
+);
+
+assert.match(
+  source,
   /if \[ -z "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("hex"\)[\s\S]*?export COVEN_CAVE_AUTH_TOKEN[\s\S]*?if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
   "the launcher must mint a missing sidecar token and carry it into the desktop webview",
 );
@@ -120,7 +146,7 @@ assert.match(
 );
 assert.ok(
   source.indexOf("export COVEN_CAVE_DEV_PROBE_TOKEN") <
-    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev 2>&1 | tee "$DEV_SERVER_LOG"'),
   "the readiness-only token must be exported before the owned dev server starts",
 );
 
@@ -131,12 +157,12 @@ assert.match(
 );
 assert.ok(
   source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
-    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev 2>&1 | tee "$DEV_SERVER_LOG"'),
   "the sidecar token must be exported before the owned dev server starts",
 );
 assert.ok(
   source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
-    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev 2>&1 | tee "$DEV_SERVER_LOG"'),
   "the minted token must be exported before the owned dev server starts",
 );
 assert.match(
