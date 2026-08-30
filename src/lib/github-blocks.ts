@@ -82,8 +82,8 @@ export type GitHubActionDescriptor = {
   /** Explicit issue state (issue-state) — required so the proposal card can
    *  say exactly which direction fires (review finding, cave-jqke). */
   state?: "open" | "closed";
-  /** Target review-comment databaseId (resolve/unresolve) — the same id
-   *  `#discussion_r<id>` URLs carry; without it the card refuses to fire
+  /** Target review-comment databaseId (reply/resolve/unresolve) — the same id
+   *  `#discussion_r<id>` URLs carry; without it the action refuses to fire
    *  rather than picking an arbitrary thread (review finding, cave-jqke). */
   threadId?: string;
   /** Comment/review/issue body text. */
@@ -124,8 +124,16 @@ function actionFromAttrs(attrs: Record<string, string>): GitHubActionDescriptor 
   const base = { repo, note, body };
   switch (kind as GitHubActionKind) {
     case "comment":
-    case "reply":
-      return number ? { kind: kind as GitHubActionKind, ...base, number } : null;
+      return number ? { kind: "comment", ...base, number } : null;
+    case "reply": {
+      if (!number) return null;
+      // Review-comment replies must name the top-level comment they belong to.
+      // GitHub does not accept a GraphQL thread id here, and it also rejects a
+      // reply-to-reply, so keep the numeric database id explicit in the marker.
+      const threadRaw = attrs.thread?.trim();
+      const threadId = positiveInt(threadRaw) != null ? threadRaw : undefined;
+      return threadId ? { kind: "reply", ...base, number, threadId } : null;
+    }
     case "resolve":
     case "unresolve": {
       if (!number) return null;
