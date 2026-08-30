@@ -13,6 +13,32 @@
 > file trees, and the two plan documents linked above. That account holds
 > **no push access to `OpenCoven/chat`** (see [Handoff](#6-handoff)).
 
+## 0. Refresh — second verification pass (2026-08-30 ~15:01 UTC)
+
+Re-verified the same day by `CompleteDotTech`, after this record landed on
+`fork/main` ([PR #10](https://github.com/CompleteDotTech/coven-cave/pull/10), merged
+2026-08-30T10:45:22Z) and on `OpenCoven/coven-cave` `main`
+([PR #5211](https://github.com/OpenCoven/coven-cave/pull/5211), merged
+2026-08-30T11:42:49Z). Every claim in §1–§7 was re-checked against the current
+heads; none needed correction, so the body below stands unmodified. The verdict
+and the §4 claimable scope are unchanged.
+
+| # | Claim re-checked | Result at 2026-08-30T15:01Z | Evidence |
+| --- | --- | --- | --- |
+| 1 | Verification heads (§ header, §3) | **All unchanged.** `OpenCoven/chat` `main` is still `b3146263e` (2026-08-30T09:46:58Z) — zero commits since the morning pass, so every §3 tree observation carries over by head identity. `OpenCoven/sdk` `main` is still `66edd4d9d` (2026-08-30T09:50:25Z) | `repos/OpenCoven/{chat,sdk}/commits?sha=main` REST reads, 2026-08-30T15:01Z |
+| 2 | Cave-side base | `OpenCoven/coven-cave` `main` advanced `dacbe6173` → [`bdbf97159`](https://github.com/OpenCoven/coven-cave/commit/bdbf971593dab88d439361f60963ebdb539a1cfa) (2026-08-30T12:30:42Z) with exactly two commits, neither Chat-v1-P2 implementation: [#5211](https://github.com/OpenCoven/coven-cave/pull/5211) is a fork sync (ten 2026-08-30 working records including this one, plus unrelated fork-side lanes — OpenClaw bridge negotiation, research generations, stuck-run cancellation tooling); [#5212](https://github.com/OpenCoven/coven-cave/pull/5212) is git-hooks/node-path tooling (`scripts/install-git-hooks*`) | `git diff --stat dacbe6173..origin/main` at `bdbf97159`; per-commit file lists |
+| 3 | Search is still unclaimed everywhere (§1.3, §4.C) | No `conversations/search` route on `main`: `src/app/api/client/v1/conversations/` contains only `route.ts`, `[id]/route.ts`, `[id]/messages/route.ts` (+ tests). REST code search `searchConversations`: **0 hits** in `OpenCoven/sdk` and **0 hits** in `OpenCoven/chat` | Local tree at `bdbf97159`; `search/code` REST, 2026-08-30T15:01Z |
+| 4 | Issue tracker mirror | #4837 is open and its body is byte-identical to the one quoted on the issue (updated 2026-08-22T04:40:29Z) — the "**Not started** (verified 2026-08-22)" claim remains stale against §3. Blockers [#4834](https://github.com/OpenCoven/coven-cave/issues/4834)/[#4835](https://github.com/OpenCoven/coven-cave/issues/4835)/[#4836](https://github.com/OpenCoven/coven-cave/issues/4836) still closed; gate [#4839](https://github.com/OpenCoven/coven-cave/issues/4839) and conformance [#4838](https://github.com/OpenCoven/coven-cave/issues/4838) still open with no activity since 2026-08-22/23 | `repos/OpenCoven/coven-cave/issues/{4834,4835,4836,4837,4838,4839}` REST, 2026-08-30T15:01Z |
+| 5 | Bead export | `.beads/interactions.jsonl` at `bdbf97159` still carries `cave-ff3j6` only as the 2026-08-21T06:57:01Z `open → blocked` flip; the two blocker close lines cited in §7 (lines 2128/2130) are byte-identical. No new bead events for `cave-ff3j6`, `cave-8ywi2`, or `cave-hjy2f` | `git show origin/main:.beads/interactions.jsonl` at `bdbf97159` |
+| 6 | New Chat-v1 work landed today | **None landed.** In-flight only, in `OpenCoven/chat`, both conformance-lane adjacent and neither touching the shell: [PR #41](https://github.com/OpenCoven/chat/pull/41) "fix: harden Phase 1 real-authority conformance" (open, updated 2026-08-30T14:38:11Z) reworks the Phase 1 harness/supervisor/evidence tooling; [PR #42](https://github.com/OpenCoven/chat/pull/42) "feat: produce schema-v2 conformance evidence" (draft, opened 2026-08-30T11:35:16Z) adds a schema-v2 cross-repository evidence producer and a `client-v1-conformance.yml` workflow. Neither modifies `src/chat-shell.tsx`, and neither adds the §4.E1 `tests/canonical-reads.spec.ts` real-authority E2E — so #4838's Chat third remains outstanding | `repos/OpenCoven/chat/pulls/{41,42}` + `pulls/{41,42}/files` REST, 2026-08-30T15:01Z |
+| 7 | Distinguish same-name work | Four open `OpenCoven/coven-cave` PRs with "chat" in the title today ([#5214](https://github.com/OpenCoven/coven-cave/pull/5214), [#5215](https://github.com/OpenCoven/coven-cave/pull/5215), [#5216](https://github.com/OpenCoven/coven-cave/pull/5216), [#5221](https://github.com/OpenCoven/coven-cave/pull/5221)) target this repository's own desktop chat surface, not the `OpenCoven/chat` shell lane of bead `cave-ff3j6` — they neither claim nor close any §4 item | `repos/OpenCoven/coven-cave/pulls?state=open` REST, 2026-08-30T15:01Z |
+
+**Refresh verdict:** unchanged — bead `cave-ff3j6` is **partially started; first
+canonical shell landed; search, groupings, degraded-state rendering, and
+real-authority conformance outstanding.** The only movement since the morning
+pass is the record's own upstream landing (#5211) and the two in-flight
+`OpenCoven/chat` conformance PRs above.
+
 ## 1. Verdict — the recorded state is stale
 
 Issue #4837's recorded state ("Not started — no implementation in
