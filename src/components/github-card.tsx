@@ -16,6 +16,9 @@ import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { Button } from "@/components/ui/button";
+import { TextArea } from "@/components/ui/text-area";
 
 // The composer keeps its own chunk. chat-view is in the `/` startup graph, so a
 // static import would drag gh-card-composer.css into the home first load for
@@ -140,7 +143,7 @@ type ReviewThreadDetail = {
   path: string | null;
   /** Comment id is the numeric databaseId — the same id `#discussion_r<id>`
    *  URLs carry, which is what descriptor.threadId matches against. */
-  comments: { id: string; author: { login: string } | null; body: string; createdAt: string | null }[];
+  comments: { id: string; inReplyToId?: string | null; author: { login: string } | null; body: string; createdAt: string | null }[];
 };
 
 type ThreadState =
@@ -464,6 +467,11 @@ function ReviewThreadBody({
   const state = useReviewThreads(descriptor.repo, descriptor.number, true);
   const [busyThread, setBusyThread] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [replyThread, setReplyThread] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyBusy, setReplyBusy] = useState<string | null>(null);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
 
   // Tier-1: resolve/unresolve fires directly through the existing GraphQL
   // route (threadId here IS the node id the mutation wants).
@@ -486,6 +494,47 @@ function ReviewThreadBody({
       setActionError("network error");
     } finally {
       setBusyThread(null);
+    }
+  };
+
+  const toggleReply = (threadId: string) => {
+    setReplyThread((current) => (current === threadId ? null : threadId));
+    setReplyText("");
+    setReplyError(null);
+  };
+
+  const postReply = async (thread: ReviewThreadDetail) => {
+    // GitHub normally returns a thread root first, but use replyTo metadata
+    // when present so a reordered response can never target a reply-to-reply.
+    const commentId = thread.comments.find((comment) => !comment.inReplyToId)?.id ?? thread.comments[0]?.id;
+    const body = replyText.trim();
+    if (!commentId || !body || !descriptor.number || replyBusy) return;
+    setReplyBusy(thread.id);
+    setReplyError(null);
+    try {
+      const res = await fetch("/api/github/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo: descriptor.repo,
+          number: descriptor.number,
+          commentId,
+          body,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setReplyError(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
+        return;
+      }
+      setReplyThread(null);
+      setReplyText("");
+      announce("Reply posted.");
+      state.refresh();
+    } catch {
+      setReplyError("network error");
+    } finally {
+      setReplyBusy(null);
     }
   };
 
@@ -527,6 +576,53 @@ function ReviewThreadBody({
                 <span className="text-[var(--text-secondary)]">{t.comments[0].author.login}: </span>
               ) : null}
               {t.comments[0].body}
+            </div>
+          ) : null}
+          {t.comments[0] ? (
+            <div className="mt-1.5">
+              <Button
+                size="xs"
+                variant="ghost"
+                leadingIcon="ph:chat-circle-dots"
+                aria-label={replyThread === t.id ? "Cancel reply" : "Reply to this thread"}
+                onClick={() => toggleReply(t.id)}
+                disabled={replyBusy != null}
+              >
+                {replyThread === t.id ? "Cancel" : "Reply"}
+              </Button>
+              {replyThread === t.id ? (
+                <div className="mt-1.5 space-y-1.5">
+                  <TextArea
+                    aria-label="Reply to this thread"
+                    placeholder="Reply…"
+                    value={replyText}
+                    onChange={(event) => {
+                      setReplyText(event.target.value);
+                      setReplyError(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        void postReply(t);
+                      }
+                    }}
+                    rows={2}
+                    disabled={replyBusy != null}
+                  />
+                  {replyError ? <div className="text-[length:var(--text-2xs)] text-[var(--color-danger)]" role="alert">{replyError}</div> : null}
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="xs"
+                      variant="primary"
+                      loading={replyBusy === t.id}
+                      disabled={!replyText.trim() || replyBusy != null}
+                      onClick={() => void postReply(t)}
+                    >
+                      Reply
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -2,9 +2,10 @@ import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { covenHomePath } from "./coven-home.ts";
 
 export function covenHome(): string {
-  return process.env.COVEN_HOME || path.join(/* turbopackIgnore: true */ homedir(), ".coven");
+  return covenHomePath(process.env, homedir(), process.platform);
 }
 
 /**

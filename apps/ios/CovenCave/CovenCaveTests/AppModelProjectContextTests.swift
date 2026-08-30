@@ -4432,6 +4432,11 @@ final class AppModelProjectContextTests: XCTestCase {
         let first = try XCTUnwrap(firstResult)
         let second = try XCTUnwrap(secondResult)
 
+        // Session resolution can finish before the current-generation project
+        // catalog publishes navigation. The authoritative open must still
+        // return its canonical thread; wait only for the deferred UI handoff.
+        await waitFor { app.threadToOpen === first }
+
         XCTAssertTrue(first === second)
         XCTAssertEqual(app.threads.count, 1)
         XCTAssertEqual(first.familiarIds, ["sage"])
@@ -4440,7 +4445,10 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.cardThreadLinks[task.id], first.id)
         XCTAssertTrue(app.threadToOpen === first)
         XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.toast)
+        let calls = await controlledClient.callLog.snapshot()
+        XCTAssertEqual(calls.sessions, 1)
     }
 
     @MainActor

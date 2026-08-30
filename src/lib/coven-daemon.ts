@@ -21,11 +21,13 @@ import {
   recordDaemonDiagnosticEvent,
   type DaemonDiagnosticContext,
 } from "./server/daemon-diagnostics.ts";
+import { covenHomePath } from "./coven-home.ts";
 import { isRemoteWindowsPath } from "./windows-local-path.ts";
 
 // Re-exported so the socket resolver's own callers and tests keep importing the
 // boundary from the module that applies it.
 export { isRemoteWindowsPath } from "./windows-local-path.ts";
+export { covenHomePath } from "./coven-home.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -253,19 +255,6 @@ function recordRefusedRemoteTarget(source: RefusedSocketSource): void {
  * So this is a deliberate stopping point, not an oversight. Read the paragraph
  * above before "fixing" it.
  */
-function covenHomePath(
-  env: Record<string, string | undefined>,
-  homeDir: string,
-  platform: NodeJS.Platform,
-): string {
-  const configured = env.COVEN_HOME;
-  if (configured) {
-    if (!(platform === "win32" && isRemoteWindowsPath(configured))) return configured;
-    reportRefusedRemoteTarget("coven-home-env", configured);
-  }
-  return path.join(homeDir, ".coven");
-}
-
 function daemonStatusSocket(
   covenHome: string,
   readFile: ReadTextFile,
@@ -344,7 +333,12 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
       }
     });
 
-  const covenHome = covenHomePath(env, homeDir, platform);
+  const covenHome = covenHomePath(
+    env,
+    homeDir,
+    platform,
+    (configured) => reportRefusedRemoteTarget("coven-home-env", configured),
+  );
 
   if (env.COVEN_SOCKET) {
     if (platform !== "win32") return env.COVEN_SOCKET;

@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { writeJsonAtomic } from "./atomic-write.ts";
+import { covenHomePath } from "../coven-home.ts";
 import type { CraftDraft } from "../craft-draft.ts";
 
 const DRAFTS_DIR = "craft-drafts";
@@ -18,7 +18,7 @@ export type CraftDraftStoreOptions = {
 };
 
 function covenHome(opts: CraftDraftStoreOptions = {}): string {
-  return opts.covenHome ?? process.env.COVEN_HOME ?? path.join(homedir(), ".coven");
+  return opts.covenHome ?? covenHomePath();
 }
 
 function draftDir(opts: CraftDraftStoreOptions = {}): string {
