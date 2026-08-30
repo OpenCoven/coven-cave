@@ -46,6 +46,12 @@ assert.match(
 );
 
 // ── Paste: files win over text, plain-text paste untouched ───────────────────
+const pasteHandler = src.match(/const handlePaste = useCallback\([\s\S]*?\[addFiles\],\s*\);/)?.[0] ?? "";
+assert.match(
+  pasteHandler,
+  /if \(!hasDraggedFiles\(e\.clipboardData\.types\)\) return;/,
+  "text-only clipboard data skips WebView file-item inspection so native paste remains responsive",
+);
 assert.match(
   src,
   /\.filter\(\(item\) => item\.kind === "file"\)[\s\S]*?if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void addFiles\(pastedFiles\);/,

@@ -4836,8 +4836,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const filled = `/skill ${s.id}`;
     const carried = skillCarryOverText(input);
     if (s.argumentHint && !carried && input.trim().toLowerCase() !== filled.toLowerCase()) {
-      setInput(`${filled} `);
-      inputRef.current?.focus();
+      const next = `${filled} `;
+      // A picker selection replaces the controlled value. Keep the hook's
+      // caret and the native textarea selection in the same commit before a
+      // paste can arrive (Windows WebView otherwise pastes at the old
+      // `/skill` caret and leaves the selected skill detached).
+      completeComposerText(next, next.length);
       return;
     }
     setInput("");
@@ -5020,7 +5024,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // A hinted skill submitted without arguments (and not already the exact
       // `/skill <id>` form — that means "run it anyway") autofills for editing.
       if (skill.argumentHint && !skillArgs && trimmed.toLowerCase() !== `/skill ${skill.id}`.toLowerCase()) {
-        setInput(`/skill ${skill.id} `);
+        const next = `/skill ${skill.id} `;
+        completeComposerText(next, next.length);
         return true;
       }
       setInput("");
