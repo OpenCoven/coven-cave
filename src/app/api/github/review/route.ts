@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
+import { validateGitHubReviewBody } from "@/lib/github-review";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const repo = typeof body.repo === "string" ? body.repo.trim() : "";
   const number = Number.parseInt(String(body.number ?? ""), 10);
   const event = typeof body.event === "string" ? body.event.toUpperCase() : "";
-  const text = typeof body.body === "string" ? body.body.trim() : "";
+  const reviewBody = validateGitHubReviewBody(body.body);
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -43,14 +43,12 @@ export async function POST(req: Request) {
   if (!EVENTS.has(event)) {
     return NextResponse.json({ ok: false, error: "invalid event" }, { status: 400 });
   }
+  if (!reviewBody.ok) {
+    return NextResponse.json({ ok: false, error: reviewBody.error }, { status: 400 });
+  }
+  const text = reviewBody.value;
   if (event !== "APPROVE" && !text) {
     return NextResponse.json({ ok: false, error: "review body required" }, { status: 400 });
-  }
-  if (text.length > GITHUB_REVIEW_BODY_MAX_LENGTH) {
-    return NextResponse.json(
-      { ok: false, error: `review body must be at most ${GITHUB_REVIEW_BODY_MAX_LENGTH} characters` },
-      { status: 400 },
-    );
   }
 
   const token = resolveGitHubToken();

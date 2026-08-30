@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   allowedResearchActions,
+  RESEARCH_DIRECTION_MAX_LENGTH,
   type ResearchMissionActionInput,
   type ResearchMissionStatus,
 } from "@/lib/research-missions";
@@ -49,7 +50,7 @@ const VALIDATION_ERRORS = new Set([
   "research source not found",
   "refined direction required",
   "invalid refined direction",
-  "refined direction must be at most 2000 characters",
+  `refined direction must be at most ${RESEARCH_DIRECTION_MAX_LENGTH} characters`,
   "invalid project root override",
   "research mission is not settled yet",
   "rejected artifacts need a new working version before publishing",

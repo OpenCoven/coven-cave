@@ -509,7 +509,7 @@ test("the current maximum Research input is measured and pathological quoting fa
   assert.equal(plainPrompt.split(plainDeliverable).length - 1, 1);
   assert.equal(plainPrompt.split(plainAudience).length - 1, 1);
   const plainArgs = flowLaunchArgs(plainPrompt);
-  // cave-r3vmj raised RESEARCH_INTENT_MAX_LENGTH to 25k so real briefs can carry
+  // cave-e8z sets RESEARCH_INTENT_MAX_LENGTH to 20k so real briefs can carry
   // pasted context. The supervised transport still carries the prompt on argv,
   // so a maximum-length intent exceeds the bounded Windows command line even
   // with plain quoting — the guard fails closed with the actionable message
