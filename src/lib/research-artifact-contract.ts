@@ -163,10 +163,18 @@ export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
   } catch {
     throw new Error("sources.json is malformed");
   }
-  if (!Array.isArray(parsed)) {
-    throw new Error("sources.json must contain an array");
+  const list = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        Array.isArray((parsed as { sources?: unknown }).sources)
+      ? (parsed as { sources: unknown[] }).sources
+      : null;
+  if (!list) {
+    throw new Error("sources.json must contain an array, or an object with a `sources` array");
   }
-  return parsed.map((item, index) => {
+  return list.map((item, index) => {
     const normalized = normalizeResearchSource(
       item as Parameters<typeof normalizeResearchSource>[0],
     );
