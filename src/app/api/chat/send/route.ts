@@ -960,12 +960,6 @@ function openClawChatResponse(args: {
           negotiationDegradedDiagnostic = null;
         }
       }
-      // The negotiated outcome decides the turn's tool behavior. With a seam
-      // record the negotiation already ran; without one the Gateway dispatch
-      // negotiates against its own authenticated hello before dispatching.
-      let gatewayToolProjectionEnabled = seamNegotiation
-        ? openClawBridgeCapabilitiesFromNegotiation(seamNegotiation).toolEvents
-        : true;
 
       // Gateway dispatch owns a turn only after it returns the authoritative
       // run id. Until then this branch leaves the existing CLI bridge as the
@@ -974,6 +968,12 @@ function openClawChatResponse(args: {
       let gatewayAssistantText = "";
       let gatewayAssistantTextEmitted = false;
       const gatewayToolTracker = new ToolCallTracker(Date.now, "openclaw:");
+      // The negotiated outcome decides the turn's tool behavior. With a seam
+      // record the negotiation already ran; without one the Gateway dispatch
+      // negotiates against its own authenticated hello before dispatching.
+      let gatewayToolProjectionEnabled = seamNegotiation
+        ? openClawBridgeCapabilitiesFromNegotiation(seamNegotiation).toolEvents
+        : true;
       let gatewayCompatibilityDiagnosticSent = false;
       const settleOpenGatewayTools = (output: string) => {
         for (const tool of gatewayToolTracker.failOpenCalls(output)) {

@@ -83,8 +83,13 @@ assert.doesNotMatch(
 );
 assert.match(
   chatRoute,
-  /const gatewayToolTracker = new ToolCallTracker\(Date\.now, "openclaw:"\);\s*let gatewayToolProjectionEnabled = true;\s*let gatewayCompatibilityDiagnosticSent = false;/,
-  "Gateway tool activity must use a dedicated stable id namespace and per-turn compatibility fences",
+  // Issue #4892 slice 2: the projection fence is no longer hardcoded — the
+  // per-conversation bridge negotiation (a seam record when provided, else
+  // the Gateway dispatch's own hello) decides it; the default without any
+  // negotiated outcome stays `true` for the dispatcher's own compatibility
+  // check.
+  /const gatewayToolTracker = new ToolCallTracker\(Date\.now, "openclaw:"\);[\s\S]{0,400}?let gatewayToolProjectionEnabled = seamNegotiation\s*\?\s*openClawBridgeCapabilitiesFromNegotiation\(seamNegotiation\)\.toolEvents\s*:\s*true;\s*let gatewayCompatibilityDiagnosticSent = false;/,
+  "Gateway tool activity must use a dedicated stable id namespace and a per-turn negotiation-decided projection fence",
 );
 assert.match(
   chatRoute,
