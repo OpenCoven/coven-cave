@@ -6617,11 +6617,10 @@ final class AppModel {
     /// open, and callers still need the one canonical thread that was created
     /// or reused. A terminal navigation failure remains a failed open.
     private func taskChatOpenResult(for thread: ChatThread) -> ChatThread? {
-        guard requestOpen(thread) else {
-            guard pendingProjectNavigationIntent?.threadId == thread.id,
-                  lastProjectNavigationFailure == nil else {
-                return nil
-            }
+        if requestOpen(thread) { return thread }
+        guard pendingProjectNavigationIntent?.threadId == thread.id,
+              lastProjectNavigationFailure == nil else {
+            return nil
         }
         return thread
     }
