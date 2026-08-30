@@ -517,7 +517,35 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Validate end-to-end behavior
-        run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+        env:
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+
+          telemetry_pid=""
+          if [ "$PLAYWRIGHT_SHARD" = "3" ]; then
+            telemetry() {
+              while true; do
+                echo "::group::E2E shard 3 telemetry $(date --iso-8601=seconds)"
+                free -h || true
+                df -h / || true
+                if [ -r /sys/fs/cgroup/memory.events ]; then
+                  cat /sys/fs/cgroup/memory.events || true
+                fi
+                ps -eo pid,ppid,stat,etimes,rss,pcpu,pmem,comm --sort=-rss | head -n 21 || true
+                echo "::endgroup::"
+                sleep 30
+              done
+            }
+            telemetry &
+            telemetry_pid=$!
+            trap 'kill "$telemetry_pid" 2>/dev/null || true; wait "$telemetry_pid" 2>/dev/null || true' EXIT
+          fi
+
+          pnpm exec playwright test \
+            --shard="$PLAYWRIGHT_SHARD/8" \
+            --workers=1 \
+            --reporter="github,line"
 
   frontend-e2e-agentic:
     name: Frontend E2E (agentic)

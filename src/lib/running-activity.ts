@@ -278,6 +278,22 @@ export function buildRunningActivityPayload(
   return { ok: true, generatedAt, total: items.length, items, sources: state, unavailable };
 }
 
+/** A complete, schema-valid idle response for daemon-less callers. */
+export function emptyRunningActivityPayload(
+  generatedAt = new Date().toISOString(),
+): RunningActivityPayload {
+  return buildRunningActivityPayload(
+    {
+      sessions: { ok: true, items: [] },
+      board: { ok: true, items: [] },
+      automations: { ok: true, items: [] },
+      flows: { ok: true, items: [] },
+      workflows: { ok: true, items: [] },
+    },
+    generatedAt,
+  );
+}
+
 /** Fetch the aggregated running activity; resolves null on any failure. */
 export async function fetchRunningActivity(
   fetchImpl: typeof fetch = fetch,
