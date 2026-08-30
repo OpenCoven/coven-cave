@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
-const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
 
@@ -61,51 +60,6 @@ assert.match(
   chatList,
   /defaultFamiliarId/,
   "Project group launch should carry the latest familiar for that working directory",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*if \(!hasSearch\) onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*className=\{\[[\s\S]*flex min-h-\[38px\] min-w-0 flex-1 items-center/,
-  "Project rows should make the full label/count area the collapse trigger instead of only the caret",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /<section[\s\S]*aria-label=\{organization\.label\}[\s\S]*<button[\s\S]*type="button"[\s\S]*className="focus-ring[\s\S]*aria-expanded=\{organizationVisible\}/,
-  "Open project mode should render accessible organization sections with full-row disclosure buttons",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /onOpenProjectsTab\?: \(\) => void/,
-  "Chat project rail should accept a Projects-tab jump callback",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /aria-label="Open Projects tab"[\s\S]{0,180}onClick=\{openProjectsTab\}/,
-  "Chat project rail should expose a keyboard-accessible Projects-tab button",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /CHAT_OPEN_PROJECTS_EVENT/,
-  "Chat project rail should know how to route the shortcut through the shared Projects event",
-);
-
-assert.match(
-  chatProjectSidebar,
-  /function openProjectsTab\(\) \{[\s\S]*?onOpenProjectsTab\(\);[\s\S]*?window\.dispatchEvent\(new CustomEvent\(CHAT_OPEN_PROJECTS_EVENT\)\);[\s\S]*?\}/,
-  "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
-);
-
-// The router no longer mounts ChatProjectSidebar (the project-grouped rail is
-// retired there — cave-fh9so); the rail keeps its own CHAT_OPEN_PROJECTS_EVENT
-// fallback for hosts that omit the callback.
-assert.doesNotMatch(
-  chatRouter,
-  /<ChatProjectSidebar|onOpenProjectsTab/,
-  "ChatRouter should not render the retired project rail or wire its Projects-tab handler",
 );
 
 assert.match(

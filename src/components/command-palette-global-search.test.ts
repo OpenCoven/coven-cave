@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
-const chatSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const familiarsView = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 
 /* ---------------------------------------------------------------------- */
@@ -182,11 +181,6 @@ assert.match(
   chatList,
   /requestGlobalSearch\("type:chat"\)/,
   "chat search shortcut focuses global search with type:chat",
-);
-assert.match(
-  chatSidebar,
-  /placeholder="Filter chats…"/,
-  "chat sidebar rail search uses canonical Filter copy",
 );
 assert.match(
   familiarsView,
