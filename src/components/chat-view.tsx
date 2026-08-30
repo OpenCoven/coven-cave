@@ -324,7 +324,8 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
+import { ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { purgeRetiredChatPreferences } from "@/lib/retired-chat-preferences";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
@@ -2686,7 +2687,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [activityMapVisible] = useActivityMapVisible();
+  // The retired activity-map toggle wrote `cave:chat:thread-instruments`, and an
+  // opt-out "0" can still be sitting in a browser from an older build. Nothing
+  // reads it any more — the rail is automatic (cave-5m5hv) — so clear it once
+  // per mount rather than leaving a machine carrying a switch for a feature it
+  // can no longer reach.
+  useEffect(() => {
+    purgeRetiredChatPreferences();
+  }, []);
   const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
@@ -8131,6 +8139,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
+        {/* Left turn spine (Chat.dc.html 2a, cave-j86la). One node per turn in
+            the transcript's left gutter, derived from the SAME activePath the
+            transcript renders. An absolutely-positioned overlay inside the
+            scroller, so it costs no layout and adds no horizontal axis; it
+            gates itself to panes wide enough to have a gutter and stays home
+            everywhere else. Retained deliberately through the minimap's removal
+            (cave-5m5hv) — it annotates the left side, which the right rail that
+            replaced the minimap never occupied. */}
+        {activePath.length > 0 ? (
+          <ChatThreadSpine
+            turns={activePath}
+            scrollRef={scrollRef}
+            familiarName={familiar.display_name}
+          />
+        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
@@ -8323,17 +8346,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
               {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
                   timeline, tool mix and live step, derived from the SAME
-                  activePath the transcript renders. Shares the instruments
-                  toggle — it is the same class of furniture as the spine and
-                  minimap, and two settings for one idea is a choice nobody
-                  asked for.
+                  activePath the transcript renders.
+
+                  AUTOMATIC (cave-5m5hv). This is the transcript's right-side
+                  instrument now — it replaced the thread minimap — and it
+                  carries no visibility preference: no kebab item, no stored
+                  key, nothing a person can switch off. The only condition left
+                  here is "there is a transcript at all"; the rail's own gates
+                  (no tool calls yet → renders nothing, narrow row → CSS
+                  display:none) are about data and room, not about choice.
 
                   Mounted AFTER the transcript on purpose. It was briefly the
                   row's first child with CSS `order` doing the visual placement,
                   which put the rail ahead of the conversation for screen
                   readers — `order` moves boxes, never reading order. DOM order
                   is the accessible order, so the annotation follows the log. */}
-              {activePath.length > 0 && activityMapVisible ? (
+              {activePath.length > 0 ? (
                 <ChatActivityMap turns={activePath} conversationCreatedAt={session?.created_at} />
               ) : null}
       </div>

@@ -17,8 +17,8 @@
 // off the `.json` extension the CLI scans, and let the caller retry the turn.
 
 import { rename, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { covenHomePath } from "../coven-home.ts";
 
 export type BuiltinAdapterConflict = {
   /** Adapter id the CLI reported (e.g. "copilot"). */
@@ -50,8 +50,7 @@ export function detectBuiltinAdapterConflict(
 
 /** The adapters directory Cave scaffolds into (honors COVEN_HOME). */
 export function covenAdaptersDir(): string {
-  const home = process.env.COVEN_HOME?.trim() || path.join(homedir(), ".coven");
-  return path.join(home, "adapters");
+  return path.join(covenHomePath(), "adapters");
 }
 
 export function shadowedMarkerPath(manifestPath: string): string {
