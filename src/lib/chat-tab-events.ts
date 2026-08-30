@@ -15,14 +15,18 @@ export const CHAT_OPEN_COVEN_EVENT = "cave:chat-open-coven";
  * the ordinary Chat destination without unmounting the surface. */
 export const CHAT_OPEN_CONVERSATION_EVENT = "cave:chat-open-conversation";
 
-/** Nested tab in Chat → Familiar → Settings for a studio handoff. */
+/** Nested destination in Chat → Familiar → Settings for a studio handoff. */
 export type FamiliarSettingsTab =
   | "chat"
   | "identity"
   | "brain"
   | "memory"
   | "projects"
-  | "vault";
+  | "vault"
+  // Contract is rendered inside the Identity editor rather than as a visible
+  // tab, but it remains a distinct handoff target so Open Contract can land on
+  // the real Grimoire section instead of merely selecting Identity.
+  | "contract";
 
 export type FamiliarSettingsTarget = {
   tab?: FamiliarSettingsTab;
@@ -40,6 +44,16 @@ export function markFamiliarSettingsPending(tab?: FamiliarSettingsTab): void {
     );
   } catch {
     /* storage may be unavailable */
+  }
+}
+
+/** Check whether a fresh Chat mount has a one-shot Familiar destination. */
+export function hasFamiliarSettingsPending(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FAMILIAR_SETTINGS_TARGET_KEY) !== null;
+  } catch {
+    return false;
   }
 }
 

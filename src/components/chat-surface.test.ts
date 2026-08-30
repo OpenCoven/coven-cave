@@ -141,6 +141,12 @@ assert.match(
 
 assert.match(
   chatSurface,
+  /hasFamiliarSettingsPending\(\)[\s\S]*?setScope\("familiar"\)/,
+  "a persisted Studio handoff must select the Familiar scope on a fresh Chat mount",
+);
+
+assert.match(
+  chatSurface,
   /scopeHistoryId = "chat:scope"[\s\S]*?id:\s*scopeHistoryId/,
   "ChatSurface should register its scope strip as a navigation level so Back steps between tabs instead of leaving Chat",
 );
@@ -295,6 +301,12 @@ assert.match(
   workspace,
   /mode === "chat"[\s\S]*<ChatSurface/,
   "Workspace should mount ChatSurface for the internal chat mode",
+);
+
+assert.match(
+  workspace,
+  /const familiarSettingsPending = hasFamiliarSettingsPending\(\)[\s\S]*?commitMode\("chat"\)[\s\S]*?if \(familiarSettingsPending\) return;/,
+  "Workspace must not emit the generic conversation landing after a Familiar Settings handoff",
 );
 
 assert.match(

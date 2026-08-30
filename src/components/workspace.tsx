@@ -174,7 +174,7 @@ import {
   SettingsShell,
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { RightChatPanel } from "@/components/right-chat-panel";
@@ -852,7 +852,13 @@ export function Workspace() {
       return;
     }
     if (next === "chat") {
+      const familiarSettingsPending = hasFamiliarSettingsPending();
       commitMode("chat");
+      // A Studio handoff already has a concrete nested Chat destination. Do
+      // not emit the ordinary conversation landing event after the Chat
+      // surface consumes that handoff, or it would overwrite Familiar with
+      // generic Sessions during the same mount.
+      if (familiarSettingsPending) return;
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_CONVERSATION_EVENT)), 0);
       return;
     }
