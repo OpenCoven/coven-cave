@@ -1981,6 +1981,7 @@ server.listen(port, hostname, () => {
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
   }
+  logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
 
@@ -2057,6 +2058,11 @@ function heapDiagnosticsDir(): string {
 }
 
 const mb = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))}MB`;
+
+/** Log the effective V8 heap ceiling once, alongside the ready/port line. */
+function logStartupHeapCeiling(): void {
+  console.log(`[heap-ceiling] heapLimit=${mb(getHeapStatistics().heap_size_limit)}`);
+}
 
 /** Prune oldest heap snapshots so the diagnostics dir never grows unbounded. */
 function pruneHeapSnapshots(dir: string): void {
