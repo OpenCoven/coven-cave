@@ -7,7 +7,23 @@ on unit-test proxies alone.** This runbook is the repeatable form of that
 evidence.
 
 ```bash
-pnpm build                                   # the run drives the assembled artifact
+pnpm build
+pnpm test:client-v1:authority-takeover
+node scripts/client-v1-conformance.mjs --include-authority-takeover
+```
+
+The build command assembles the release artifact both socket proofs drive. The
+focused command safely approves an isolated pairing, Auth-opens its bound
+exchange, proves the issued bearer on a live bound `projects.list`, then
+replaces the listener. Both the pairing-secret and bearer requests expose only
+HPKE metadata/ciphertext, the replacement key cannot open either request, and
+plaintext or replacement-key Auth responses are rejected. The conformance
+command records those five aggregate assertions alongside the current Client
+v1 behavior.
+
+For the ordinary or TTL conformance runs:
+
+```bash
 pnpm test:client-v1:conformance              # ~40 s, exit 0 or 1
 pnpm test:client-v1:conformance --include-ttl \
   --out docs/client-v1-conformance-results/<date>-v<version>-<platform>.json
@@ -35,6 +51,9 @@ The run therefore starts a Cave, drives it over `127.0.0.1`, and stops it.
 #4838 names Cave, the SDK and Chat. **The SDK and Chat halves live in other
 repositories and are not exercised here.** A green record from this harness is
 evidence about Cave and about nothing else.
+
+The listener-takeover proof has the same boundary: it is Cave-only evidence and
+does not prove SDK or Chat integration.
 
 The run also says, in its own evidence record (`notCovered`), what a pass does
 not mean:
@@ -75,9 +94,10 @@ tombstone surviving a store reload, and the revoked bearer being refused **by
 all five canonical reads** — `read-guard.ts` keeps the credential decision
 written out in each route module rather than delegated, so there are five copies
 of it and a single-route probe clears one; and
-every admin route answering `503` when `COVEN_CAVE_AUTH_TOKEN` is unset —
-together with the consequence that matters, which is that a pairing opened on a
-tokenless Cave can only ever answer `pairing_pending`.
+the tokenless non-bundled development path proving direct-loopback admin
+authorization over the real proxy: empty approval and credential lists, 404 for
+unknown decision/revocation ids, pairing creation, and an undecided exchange
+remaining `pairing_pending`.
 
 **Canonical reads (#4838)** — all five routes; empty first page, exact-multiple
 page, continuation, partial final page, and `hasMore` in both directions;
@@ -204,8 +224,9 @@ records the gap. Two stand today, both documentation-level — the gates
 themselves hold:
 
 1. **The backslash half of the escaped-target refusal is unreachable.**
-   `docs/api/client-v1.md` says a target inside `/api/client/v1` containing `%`
-   *or* `\` is answered `400 invalid client v1 path`. The `%` half holds. A `\`
+   `docs/api/client-v1.md` says malformed/noncanonical escapes, escaped
+   non-conversation targets, and backslash targets are answered
+   `400 invalid client v1 path`. The observable `%` cases hold. A `\`
    is normalised to `/` by Next in the request target and answered `308` to the
    normalised target before `proxy.ts` runs; that target is not a client-v1
    route and is refused `401`. Nothing is served and no handler is reached, so

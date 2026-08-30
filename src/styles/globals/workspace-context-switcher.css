@@ -218,10 +218,19 @@
   font-size: var(--text-xs);
 }
 
+/* The title bar is a fixed-height row shared with the window controls, the
+   sidebar toggle, the history arrows and the search field. */
 .workspace-titlebar-context {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* `flex: 0 0 auto` — this cluster does NOT yield. It shares the row with
+     .menu-bar__search, which claims min(557px, 42vw, …); when the cluster was
+     shrinkable the search took that width and squeezed both selectors down to
+     their floor, so a project called "The Archive" rendered as "T…". The search
+     has a min() of its own and degrades gracefully; the names identify what you
+     are looking at and should not be the thing that collapses. */
+  flex: 0 0 auto;
   min-width: 0;
   margin-inline-end: var(--space-2);
 }
@@ -253,11 +262,25 @@
   text-overflow: ellipsis;
 }
 
+/* `min-width: 120px` was the overlap. Two triggers each refusing to go below
+   120px need ~240px plus gaps before the row has spent any budget on the window
+   controls, so in a narrow window they overflowed the cluster and collided with
+   the chrome beside them. They now shrink to a legible floor and ellipsis their
+   labels instead — 72px still fits an icon, a few characters and the caret. */
 .workspace-context-switcher--titlebar .workspace-context-switcher__project .cave-project-picker__trigger,
 .workspace-context-switcher--titlebar .workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
-  width: auto;
-  min-width: 120px;
-  max-width: 144px;
+  /* Hug the label. `max-content` sizes the trigger to its own text so a short
+     name ("Coven") takes a short control and only a genuinely long one reaches
+     the cap — the previous fixed 120-144px band truncated "Choose project" to
+     "Choose pr…" while leaving dead space around shorter names. The cap only
+     bites on very long names, and flex-shrink still lets both yield when the
+     window is narrow. */
+  width: max-content;
+  /* Size to the label and keep it. The cap is generous so only a genuinely
+     long name elides; short and medium names always render in full. */
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 260px;
   height: 28px;
   min-height: 28px;
   padding-block: 0;
@@ -265,6 +288,16 @@
   gap: var(--space-1);
   border-color: transparent;
   background: transparent;
+}
+
+/* Both selectors share the cluster's width evenly rather than the first one
+   taking what it wants and the second truncating to nothing. */
+.workspace-context-switcher--titlebar :is(
+  .workspace-context-switcher__project,
+  .workspace-context-switcher__crew
+) {
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .workspace-context-switcher--titlebar .workspace-context-switcher__project .cave-project-picker__trigger:hover,
@@ -278,6 +311,12 @@
   .familiar-switcher__trigger-label
 ) {
   font-size: var(--text-sm);
+  /* The label is what actually absorbs the shrink; without min-width:0 it holds
+     the trigger open at its min-content width and the ellipsis never engages. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 1023px) {

@@ -33,6 +33,7 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
  */
 const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/ui/thinking-indicator.tsx", "elapsed-time ticker while a turn is pending; no network"],
+  ["components/automations/live-run-card.tsx", "elapsed-time ticker for a run in flight; no network — the runs poll itself is usePausablePoll in automations-view"],
   ["components/voice-call-overlay.tsx", "live call-duration ticker; pausing it would misreport the call"],
   ["components/home/home-feed.tsx", "minute ticker for relative timestamps; no network"],
   ["components/calendar-view-primitives.tsx", "wall-clock minute ticker for the now-line; no network"],
@@ -66,7 +67,10 @@ for (const file of walk(SRC)) {
   const firstLines = source.slice(0, 200);
   if (!firstLines.includes('"use client"')) continue;
 
-  const rel = path.relative(SRC, file);
+  // RAW_INTERVAL_ALLOWLIST keys are forward-slash paths; path.relative
+  // yields platform separators, so a Windows checkout would report every
+  // allowlisted file as an offender (cave-oc7dh). Normalize before lookup.
+  const rel = path.relative(SRC, file).split(path.sep).join("/");
   let index = 0;
   let unguardedHere = 0;
   while ((index = source.indexOf("setInterval(", index)) !== -1) {

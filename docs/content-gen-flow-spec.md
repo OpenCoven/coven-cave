@@ -1,8 +1,15 @@
 # Content Generation Flow — Design Spec
 
-**Status:** Resolved — ready for implementation plan
+**Status:** Superseded (tombstoned 2026-08-28, cave-a6zmc)
 **Owner:** Val
 **Date:** 2026-06-28
+
+> **Tombstone.** The host subsystem this design targets — `FLOW_TEMPLATES` in
+> `src/lib/flow/flow-templates.ts` — was removed in #3902, so this design can
+> never be implemented as written. Long-form content generation now lives in
+> the Research Desk surfaces (blog direction controls, podcast rendering, X
+> publishing) under their own reviewed contracts. Keep this document only for
+> citation and history; do not build from it.
 **Surface:** `src/lib/flow/flow-templates.ts` — adds a new template to the existing Flow subsystem
 **Refs:** Builds on patterns from `deep-research` (research pipeline), `pr-review` (per-branch fan-out), `flow-required-inputs` design (#1983/#1994/#1997/#1998)
 

@@ -24,6 +24,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`branch-cleanup-relaxation.md`](branch-cleanup-relaxation.md) — design for retiring clean landed branches/worktrees despite missing lifecycle metadata or stale bead paperwork: clean/dirty/active definitions, evidence, safety checks, review command shape, phased rollout (`cave-jcdgb`)
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
 - [`workflows/`](workflows) — branching, release, and PR mechanics
@@ -48,6 +49,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
 - [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
 - [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
+- [`ios-webrtc-dsym-symbolication.md`](ios-webrtc-dsym-symbolication.md) — why TestFlight uploads warn that the vendored WebRTC.framework has no dSYM, and how the release pipeline audits and restores symbolication coverage
 
 ### Chat, familiars, and tasks
 
@@ -97,6 +99,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 - [`golden-paths.md`](golden-paths.md) — the eight journeys the Cave must make effortless, with per-item shipped/broken status
 - [`craft-ux.md`](craft-ux.md) — a friction inventory of the craft authoring flow with a reuse-first enablement plan
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
+- [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout (`cave-7kix8.8`): signed promotion, full validation, and the parallel `PR checks` context have shipped; retiring routine PR fanout and the protection switch remain
 
 ---
 
@@ -104,7 +107,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 
 Point-in-time records. Read for intent, not for current behavior.
 
-- [`content-gen-flow-spec.md`](content-gen-flow-spec.md) and [`content-gen-flow-plan.md`](content-gen-flow-plan.md) — ⚠️ both target `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which no longer exists; the symbol appears nowhere in the tree (removed in #3902)
+- [`content-gen-flow-spec.md`](content-gen-flow-spec.md) and [`content-gen-flow-plan.md`](content-gen-flow-plan.md) — ⚠️ tombstoned 2026-08-28 (cave-a6zmc): both target `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which no longer exists; the symbol appears nowhere in the tree (removed in #3902). Content generation continues in the Research Desk surfaces.
 - [`ios-native-rebuild.md`](ios-native-rebuild.md) — the multi-phase rebuild plan; its tokenless tailnet-trust model was replaced by pair-once mobile access tokens (#3310)
 - [`ios-connection-cloud-plan.md`](ios-connection-cloud-plan.md) — draft planning anchor for onboarding, constant connection, and cloud persistence
 - [`nav-history-tracking.md`](nav-history-tracking.md) — the read-only inventory (PR #4407)
@@ -115,6 +118,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
 - [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
+- [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
 ---
 

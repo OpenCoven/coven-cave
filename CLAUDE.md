@@ -554,25 +554,49 @@ closed** on absent data. `=== false` would be the bug — it would treat a
 missing or malformed entry as "not disabled, therefore fine" and waive the
 exclusion silently. Don't tidy it in that direction.
 
-### The three-hour cooldown, and how to discharge it deliberately
+### The 15-minute cooldown, and how to discharge it deliberately
 
 A just-merged unit classifies `cooldown` — *"landed work remains inside the
-mandatory 3-hour cooldown"* — and the patrol will not retire it. Read what that
+mandatory 15-minute cooldown"* — and the patrol will not retire it. Read what that
 gate is before reaching past it: by the time it applies, the unit is **already**
 proven landed, clean, non-divergent and retained on a remote ref. It is not a
 correctness check. It is a *"let a concurrent session notice"* window, and the
 one risk it covers — somebody else still sitting in that directory — is the one
-thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991.
+thing no amount of git evidence can answer. It was 8h (#4215), 3h since #4991,
+and 15m since `cave-0pu26`.
 
-If you know the unit is idle, say so explicitly (`cave-jinkd`):
+If you know the unit is idle, say so explicitly — and say WHICH unit
+(`cave-jinkd`, scoped in `cave-qamzg`):
 
 ```bash
-pnpm beads:worktrees:apply --allow-unenforced-planes --allow-cooldown-override
+pnpm beads:worktrees:apply --allow-unenforced-planes \
+  --allow-cooldown-override --only <path|branch|ref|head>
 ```
 
-The patrol prints that exact line for you whenever cooldown is the only thing
-left, so you never have to look it up — the same affordance the create gate
-gives for its budget exception.
+`--only` is **required** with the override and repeatable. It must name a unit
+that exists, and name exactly one — an ambiguous or unknown value is refused
+rather than resolved, because a scope that quietly covered a neighbour would
+defeat the point of having one.
+
+**Why it is required.** The flag began as an all-or-nothing lever over the
+whole cooldown lane, and the very first real use showed why that is unsafe
+here: the patrol's hint listed two cooldown units and the second belonged to
+**another live session** (`cave-iizwt`, PR #5021, landed mid-session). Running
+the unscoped override would have retired that session's worktree alongside the
+operator's own — the class of incident `scripts/worktree-autolock.mjs` exists
+to prevent. The override went unused and three units were hand-retired instead,
+which is what a lever nobody dares pull is worth.
+
+The patrol still prints the admissible line for you whenever cooldown is the
+only thing left — with an `--only` line per unit — the same affordance the
+create gate gives for its budget exception. It deliberately does **not** hand
+you a prefilled command covering every unit it lists: take the `--only` lines
+for units that are yours, and leave the rest alone.
+
+Note `--only` scopes the **override and nothing else**. Every other unit still
+retires on the gate's own evidence, which needs no assertion from you; passing
+`--only` without the override is refused rather than silently ignored, so it
+cannot be mistaken for a way to narrow the whole apply.
 
 **What the flag can and cannot do.** `cooldownIsTheOnlyBlocker` answers
 admission by re-running the real classifier one cooldown into the future and
@@ -613,6 +637,76 @@ existed only inside GitHub's PR record for #4426, so removing it without tagging
 first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
 "is it pushed" check on these branches: the upstream ref is gone, so the command
 errors and a naive `| wc -l` reports a reassuring `0`.
+
+### A worktree parked outside your granted roots is de-registered, not removed
+
+Some agent sessions run inside a filesystem boundary that grants only named
+roots. `git worktree remove` **deletes the target directory**, so it is refused
+outright when the worktree lives somewhere the session cannot write. The usual
+offender is a raw `git worktree add` run from another agent's state folder,
+which parks a checkout at a path like
+`~/.copilot/session-state/<id>/files/<name>` — outside this repository and
+outside every granted root.
+
+**A chat approval does not widen a filesystem boundary.** So the approval a
+session obtains for the removal changes nothing, the removal is never performed,
+and the same blocker is re-reported by every thread that meets it. Verified
+2026-08-28 (`cave-iqz90`): `.copilot/session-state/33c071ed-…/files/cave-2a0ff923`
+survived at least one approved-but-unexecuted removal for exactly this reason.
+
+**The registration is not in the worktree.** It lives at `.git/worktrees/<name>/`
+inside this repository, which *is* in the primary root. Deleting that admin
+directory is precisely what `git worktree prune` does internally, so it
+de-registers the unit without touching the external path — the budget stops
+counting it and the patrol stops reporting it.
+
+Three preconditions, all fail-closed, because you cannot read the tree you are
+about to disown:
+
+1. **Prove the head is retained.** Salvage is unavailable to you, so
+   uncommitted work there is invisible and would be orphaned silently.
+
+   ```bash
+   head=$(cat .git/worktrees/<name>/HEAD)
+   git branch -r --contains "$head" | head
+   git merge-base --is-ancestor "$head" origin/main && echo "ancestor of main"
+   git tag --contains "$head" | grep -E 'archive/|retention/'
+   ```
+
+   None of those hold ⇒ **stop and report it**; leave the entry in place.
+2. **Prove the owning session is dead.** The session id is normally a path
+   segment of the worktree, so match it against live processes — a running
+   owner makes the unit live work, whatever its path:
+
+   ```bash
+   ps -eo pid,command | grep -o -- '--session-id [0-9a-f-]*' | sort -u
+   ```
+3. **Confirm no bead owns it.** A unit with `metadata.coven.worktree` naming
+   that path goes through the normal lifecycle route instead.
+
+Then, from the primary checkout:
+
+```bash
+mkdir -p ~/.coven/cave/worktree-admin-backups
+cp -R .git/worktrees/<name> ~/.coven/cave/worktree-admin-backups/<name>
+rm -rf .git/worktrees/<name>
+git worktree prune -v
+git worktree list        # the entry is gone
+```
+
+Keep that backup inside a granted root — `/tmp` is usually outside the boundary
+and the copy is refused there. To undo, copy the admin directory back and run
+`git worktree repair <external-path>`.
+
+⚠️ **Say what you actually did.** The orphaned directory remains on disk; you
+de-registered it, you did not delete it. That is the outcome the repository
+needs, but reporting it as a removal is a claim nobody can check. Deleting the
+directory itself requires an actor whose boundary covers that path.
+
+⚠️ **This is not a licence to hand-remove managed units.** It applies only to a
+worktree whose *directory* is unreachable from your boundary. Anything under
+`.worktrees/` is reachable and goes through the patrol or the archive-tag route
+above.
 
 ### Reading worktree state fast — `pnpm wt:status`
 
@@ -998,6 +1092,93 @@ Every push and every failure is appended to
 command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
 always exits 0.
 
+
+## New surface CSS goes in its own sheet, never the globals facade
+
+**Rule:** a new stylesheet for a mode- or dialog-gated surface is
+component-imported by the component that renders it. Do **not** add it to the
+`@import` list in `src/app/globals.css`, and do not append it to an existing
+sheet that is on that list (`surface-compact-calendar.css`, `calendar-agenda.css`,
+…).
+
+**Why:** the root CSS bundle every route downloads runs at essentially zero
+headroom against `BUNDLE_MAX_HOME_CSS_KB`. A build after adding ~2 KB to a
+faceted sheet reads:
+
+```text
+✗ bundle-budget: initial / route CSS 942 KB exceeds budget 940 KB.
+```
+
+The failure is *not* about your 2 KB — every route pays for CSS only one gated
+surface uses. **This was hit three separate times in one session** (the Rituals
+crons sheet, the schedule-plan preview, the cron-detail state band), each time
+costing a full rebuild, because the mistake looks natural: the related rules
+already live in a faceted sheet, so appending seems like tidiness.
+
+**How to apply:**
+
+```ts
+// in the component that renders it
+import "@/styles/<surface>.css";
+```
+
+The `surface-research-*.css` family and `marketplace-view.tsx` are the existing
+precedents. Note the facade order is also pinned by
+`src/app/css-module-order.test.ts`, so adding an import there is a two-file
+change with a test to update — another sign it is the wrong move for surface CSS.
+
+## `bd --metadata` takes an OBJECT — never a pre-serialized string
+
+**Rule:** when you write lifecycle metadata by hand, pass `--metadata` a JSON
+object whose `coven` value is itself an **object**. Never serialize `coven`
+first and nest the string.
+
+```bash
+# RIGHT — coven is an object inside the payload
+bd update <id> --metadata '{"coven":{"worktree":{"branch":"…","path":"…"}}}'
+
+# WRONG — coven is a STRING containing JSON. bd accepts this silently.
+bd update <id> --metadata '{"coven":"{\"worktree\":{…}}"}'
+```
+
+**Why this is worth a section.** `bd` does not validate the shape. Verified on a
+throwaway bead: handed an object it stores an object; handed a pre-serialized
+string it stores that string **verbatim**. So the mistake is invisible at write
+time and only surfaces later, somewhere else.
+
+What it cost on 2026-08-27: two beads — `cave-bnay4` and `cave-16uo9`, both
+already **closed and archived** — carried a string-valued `coven`, and
+`pnpm beads:worktrees:create` then refused for **every bead in the checkout**,
+across three live sessions:
+
+```text
+worktree-lifecycle-create: lifecycle inventory is incomplete:
+Bead cave-bnay4 coven metadata: coven must be an object
+```
+
+An unreadable `coven` produces no records, and a *record* is what carries the
+branch and path that errors are scoped by — so with nothing to name, the error
+is repository-wide. The only way out was hand-editing another owner's lifecycle
+record, which is the one repair [the worktree rules forbid](#worktree-convention).
+
+`cave-7bfpz` now decodes a double-encoded value, so a recurrence degrades to a
+per-unit problem rather than a checkout-wide outage. That is containment, not a
+fix: the record is still wrong, and every one still needs repairing by hand.
+
+**No script does this.** `worktree-lifecycle-create.ts` and
+`worktree-lifecycle-metadata-repair.ts` both emit `JSON.stringify({ coven: <object> })`,
+retirement writes no metadata at all, and the copy of these scripts under
+`sdk/.worktrees/` is byte-identical. Both corrupted records carried
+`mergeCommit`, `pr` and `reason` — fields **no script here writes** — so they
+were hand-authored during session close. That is why this rule is addressed to
+you rather than fixed in code.
+
+**Check before you write**, not after:
+
+```bash
+bd show <id> --json | python3 -c "import sys,json;d=json.load(sys.stdin);d=d[0] if isinstance(d,list) else d;c=(d.get('metadata') or {}).get('coven');print(type(c).__name__)"
+# expect: dict   (str means you double-encoded it)
+```
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker

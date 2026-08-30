@@ -106,7 +106,7 @@ export type CavePreferences = {
   appearance: {
     theme: CaveThemePreferences;
     fonts: CaveFontPreferences;
-    screenScale: 100 | 110 | 125 | 150;
+    screenScale: 100 | 105 | 125 | 150;
     reading: CaveReadingPreferences;
     datetime: CaveDateTimePreferences;
     recentColors: string[];
@@ -324,7 +324,28 @@ const FONT_IDS_BY_SLOT = {
   sans: new Set(FONT_OPTIONS.filter((option) => option.slot === "sans").map((option) => option.id)),
   mono: new Set(FONT_OPTIONS.filter((option) => option.slot === "mono").map((option) => option.id)),
 };
-const SCREEN_SCALES = [100, 110, 125, 150] as const;
+const SCREEN_SCALES = [100, 105, 125, 150] as const;
+
+/**
+ * Steps this app used to offer → the nearest one it still does.
+ *
+ * Applied on the READ path only, and that placement is the point: stored
+ * preferences are normalized here BEFORE `screen-magnification.ts` ever sees
+ * them, so migrating only there would be dead code — `oneOf` would already
+ * have answered a stored 110 with the 100 default and silently taken a user's
+ * magnification away. The write path stays strict: 110 is no longer a choice
+ * anyone may set.
+ *
+ * Kept in step with SCREEN_SCALE_OPTIONS by screen-magnification.test.ts
+ * rather than imported, because this module sits underneath that one.
+ */
+const LEGACY_SCREEN_SCALES: Record<number, (typeof SCREEN_SCALES)[number]> = { 110: 105 };
+
+function migrateScreenScale(value: unknown): unknown {
+  return typeof value === "number" && value in LEGACY_SCREEN_SCALES
+    ? LEGACY_SCREEN_SCALES[value]
+    : value;
+}
 const MODE_PREFERENCES = ["light", "dark", "system"] as const;
 const MODES = ["light", "dark"] as const;
 const READING_LEADING = ["compact", "normal", "relaxed"] as const;
@@ -505,7 +526,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
         mono: typeof fonts.mono === "string" && FONT_IDS_BY_SLOT.mono.has(fonts.mono)
           ? fonts.mono : "jetbrains-mono",
       },
-      screenScale: oneOf(appearance.screenScale, SCREEN_SCALES, 100),
+      screenScale: oneOf(migrateScreenScale(appearance.screenScale), SCREEN_SCALES, 100),
       reading: {
         size: oneOf(reading.size, [0, 1, 2, 3, 4] as const, 1),
         leading: oneOf(reading.leading, READING_LEADING, "normal"),

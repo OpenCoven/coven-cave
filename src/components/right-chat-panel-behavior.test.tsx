@@ -220,15 +220,10 @@ function isLoadingFrame(renderer: ReactTestRenderer): boolean {
   return renderer.root.findAll((node) => node.props.className === "right-chat__loading").length > 0;
 }
 
-/** The header's own rendered title span (`<span title={title}>{title}</span>`
- *  inside `.right-chat__identity`) — the "header" half of "T remains
- *  active/header" (cave-rl980 Task 4 final review tests below), distinct
- *  from `sessionIdAttr`'s router-selection check. */
-function headerTitle(renderer: ReactTestRenderer): string {
-  const node = renderer.root.find(
-    (n) => n.type === "span" && typeof n.props.title === "string",
-  );
-  return node.props.children as string;
+/** The rail switcher's tooltip tracks the selected title independently from
+ *  `sessionIdAttr`'s router-selection check. */
+function switcherTitle(renderer: ReactTestRenderer): string {
+  return threadSwitcher(renderer).props.title as string;
 }
 
 /** Controllable stand-in for an in-flight archive/delete/discard request:
@@ -592,7 +587,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
       (router.latestProps!.onActiveSessionChange as (id: string | null) => void)("cody-s");
     });
     expect(sessionIdAttr(renderer)).toBe("cody-s");
-    expect(headerTitle(renderer)).toBe("cody-s");
+    expect(switcherTitle(renderer)).toBe("cody-s");
 
     // Capture the exact onSessionRemoved instance ChatView's in-flight
     // archiveChat(S) would retain right now — this is the object identity
@@ -610,7 +605,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
       threadSwitcher(renderer).props.onChange("cody-t");
     });
     expect(sessionIdAttr(renderer)).toBe("cody-t");
-    expect(headerTitle(renderer)).toBe("cody-t");
+    expect(switcherTitle(renderer)).toBe("cody-t");
 
     // The archive's PATCH settles now — late, after the user already left S
     // — and fires the same onSessionRemoved(id, reason) archiveChat always
@@ -625,7 +620,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
     // selection and the rendered header — untouched by S's now-irrelevant
     // completion.
     expect(sessionIdAttr(renderer)).toBe("cody-t");
-    expect(headerTitle(renderer)).toBe("cody-t");
+    expect(switcherTitle(renderer)).toBe("cody-t");
 
     // No stale reconciliation: the stale signal must not have left
     // pendingRemovalRef incorrectly armed for T. Proven by a LATER, entirely
@@ -647,7 +642,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
     let props = baseProps({ activeFamiliar: cody, familiars: [cody, nova], sessions: [codySession, novaSession] });
     const renderer = await renderPanel(props);
     expect(sessionIdAttr(renderer)).toBe("cody-s");
-    expect(headerTitle(renderer)).toBe("cody-s");
+    expect(switcherTitle(renderer)).toBe("cody-s");
 
     const staleOnSessionRemoved = router.latestProps!.onSessionRemoved as (id: string, reason: string) => void;
     const archivePatch = deferred<void>();
@@ -658,7 +653,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
     props = { ...props, activeFamiliar: nova };
     await update(renderer, props);
     expect(sessionIdAttr(renderer)).toBe("nova-t");
-    expect(headerTitle(renderer)).toBe("nova-t");
+    expect(switcherTitle(renderer)).toBe("nova-t");
 
     await act(async () => {
       archivePatch.settle();
@@ -668,7 +663,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
 
     // nova/T must remain exactly where the user left it.
     expect(sessionIdAttr(renderer)).toBe("nova-t");
-    expect(headerTitle(renderer)).toBe("nova-t");
+    expect(switcherTitle(renderer)).toBe("nova-t");
 
     // No stale reconciliation leaking into nova's own state: an unrelated
     // ordinary null on nova/T must still clear immediately.

@@ -1,0 +1,46 @@
+/* Cron detail — the state band.
+
+   Component-imported by cron-detail-panel.tsx, NOT on the globals.css facade.
+   The root CSS bundle every route downloads sits at zero headroom against
+   BUNDLE_MAX_HOME_CSS_KB, so ANY addition there fails the build — this is the
+   third sheet this session to learn that. Surface CSS ships with the chunk
+   that renders it (#3264 pattern).
+
+   surface says what will happen and when it will next happen. The pane was all
+   configuration; this is the sentence that answers the first half. */
+
+.cron-detail-insight {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+.cron-detail-upcoming {
+  display: flex;
+  margin: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cron-detail-upcoming__label {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.cron-detail-upcoming__at {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+}

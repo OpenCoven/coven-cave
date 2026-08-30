@@ -122,6 +122,29 @@ test("Phone never promotes prototype-only device facts to production UI", () => 
   assert.doesNotMatch(component, /PAIR CODE|fake QR/i);
 });
 
+test("Phone hides the macOS-only reachability card on unsupported platforms", () => {
+  assert.match(
+    component,
+    /if \(!status && !error\) return null;/,
+    "the reachability card renders nothing while the native status is unresolved",
+  );
+  assert.match(
+    component,
+    /if \(status && !status\.supported\) return null;/,
+    "unsupported platforms render no reachability card instead of macOS copy (issue #5191)",
+  );
+  assert.doesNotMatch(
+    component,
+    /Loading Mac reachability/,
+    "the loading state must not flash macOS-specific reachability copy",
+  );
+  assert.doesNotMatch(
+    component,
+    /These controls are available in the macOS desktop app\./,
+    "the unsupported-platform note is replaced by hiding the card entirely",
+  );
+});
+
 test("Phone CSS follows the token and responsive-pane contracts", () => {
   assert.match(
     css,

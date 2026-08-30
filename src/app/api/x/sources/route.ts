@@ -28,6 +28,7 @@ import {
   setXSourceMissionAttached,
   sweepExpiredXCache,
 } from "@/lib/server/x-sources";
+import { sweepResearchMissionXRuntime } from "@/lib/server/research-mission-x-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -76,9 +77,22 @@ export async function GET(req: Request) {
     // per-post-id — getCachedXPost drops an entry it is asked for and finds
     // expired — so a post nobody looks up again keeps its text, author id and
     // handle on disk forever, which is not the bounded cache the design
-    // promises (cave-1tu16). Awaited rather than fired-and-forgotten so a
-    // symlinked cache root surfaces as an error instead of being swallowed.
-    await sweepExpiredXCache();
+    // promises (cave-1tu16). Awaited so the load still performs the sweep, but
+    // housekeeping must never fail the read (cave-xl73s): a lock timeout, a
+    // permissions problem or a symlinked cache root is logged, not turned
+    // into an error response — listing saved sources needs no cache at all.
+    await sweepExpiredXCache().catch((error) => {
+      console.warn("[x-sources] X cache sweep failed:", error);
+    });
+    // Second trigger for the runtime crash-residue sweep (cave-3zc94): the
+    // startup hook alone lets sub-24h residue survive indefinitely when the
+    // owning mission is never reopened. Age-gated inside the sweep, so a live
+    // run's files are never robbed. Best-effort like the startup trigger —
+    // residue removal has two retry mechanisms, and a sweep failure must not
+    // take down the Research Desk listing.
+    void sweepResearchMissionXRuntime().catch((error) => {
+      console.warn("[x-sources] X mission runtime sweep failed:", error);
+    });
     const sources = await listSavedXSources(familiarId);
     return NextResponse.json({ ok: true, sources });
   } catch (error) {

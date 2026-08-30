@@ -23,8 +23,6 @@ import {
   workspacePaneRequestKey,
   type WorkspacePaneRequest,
 } from "@/lib/workspace-pane-request";
-import { navSectionForMode, type NavSection } from "@/lib/nav-section";
-import { useIsMobile } from "@/lib/use-viewport";
 import {
   clearChatHash,
   clearModeParam,
@@ -67,7 +65,6 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
-import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -177,8 +174,7 @@ import {
   SettingsShell,
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
-import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { RightChatPanel } from "@/components/right-chat-panel";
@@ -220,7 +216,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
-import { RunningSessionsPopover } from "@/components/running-sessions-popover";
+import { RunningActivityPopover } from "@/components/running-activity-popover";
+import type { RunningActivityItem } from "@/lib/running-activity";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -229,7 +226,6 @@ import {
   covenRunPillSnapshot,
   subscribeCovenRunPill,
 } from "@/lib/coven-run-signal";
-import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import { fetchProjectsFromCache } from "@/lib/use-projects-cache";
@@ -275,6 +271,10 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import {
+  GLOBAL_SEARCH_REQUEST_EVENT,
+  globalSearchRequestFromDetail,
+} from "@/lib/global-search-request";
 import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
@@ -720,6 +720,21 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
+
+  // Relocation (cave-ychtl.6): chat/tasks/files/familiars search shortcuts
+  // focus global search with the right type: filter instead of opening a
+  // second search surface. They dispatch a named event; this is the one
+  // listener that opens the palette with the preset query.
+  useEffect(() => {
+    const onGlobalSearchRequest = (event: Event) => {
+      const query = globalSearchRequestFromDetail((event as CustomEvent).detail);
+      if (query === null) return;
+      setTopSearchQuery(query);
+      openPalette();
+    };
+    window.addEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+    return () => window.removeEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+  }, []);
   const [
     pendingCanonicalMemorySelection,
     setPendingCanonicalMemorySelection,
@@ -837,7 +852,13 @@ export function Workspace() {
       return;
     }
     if (next === "chat") {
+      const familiarSettingsPending = hasFamiliarSettingsPending();
       commitMode("chat");
+      // A Studio handoff already has a concrete nested Chat destination. Do
+      // not emit the ordinary conversation landing event after the Chat
+      // surface consumes that handoff, or it would overwrite Familiar with
+      // generic Sessions during the same mount.
+      if (familiarSettingsPending) return;
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_CONVERSATION_EVENT)), 0);
       return;
     }
@@ -1012,7 +1033,9 @@ export function Workspace() {
         // (either truly no attention ever existed, or it was already patched to
         // none by an earlier optimistic clear and tells us nothing new).
         const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
-        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+        // Guard rows that carry no attention record (e.g. minimal list mocks):
+        // missing attention reads as "none" for baseline purposes, never a crash.
+        const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
           ? acceptedRow.attention
           : null;
         const baselineAttention = acceptedCanonical ??
@@ -3562,6 +3585,11 @@ export function Workspace() {
       shellRef.current?.dismissNavMobile();
       return;
     }
+    if (intent.kind === "open-href") {
+      // Global-search result actions are in-app hrefs (never filesystem paths).
+      nextRouter.push(intent.href);
+      return;
+    }
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
@@ -3843,15 +3871,6 @@ export function Workspace() {
     [openTaskCards, activeId],
   );
 
-  // Live daemon activity for the top bar's running-processes control: sessions
-  // whose status reads as running (shared sessionStatusTone vocabulary —
-  // running / starting / working), excluding archived rows. Derived from the
-  // same 4s-polled sessions list every other chrome badge uses.
-  const runningSessions = useMemo(
-    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running"),
-    [sessions],
-  );
-
   // Ephemeral bridge: turn each "needs response" familiar into a transient
   // InboxItem so the bell badge, inbox view, and inspector tab all surface it
   // without writing anything to disk. IDs are prefixed `eph:` so dismiss/snooze
@@ -4062,34 +4081,18 @@ export function Workspace() {
     deactivateAllNativeBrowserWebviews();
   }, [browserVisible]);
 
-  // The global left-rail section (cave-24d2r). Derived from the active surface
-  // rather than stored, so the rail and the surface can never disagree — deep
-  // links, ⌘K and restored last-surface strings all land in the right room.
-  const navSection = navSectionForMode(mode);
   // Mirrors the Shell's nav panel open/collapsed state (Shell already fires
-  // onNavOpenChange; this is the first consumer). Drives which component the
-  // nav hosts when collapsed — see contextualNav below. Starts open to match
-  // the Shell's own pre-hydration assumption for the Code room.
-  const [navOpen, setNavOpen] = useState(true);
-  // Same breakpoint the Shell uses; on mobile the nav is a drawer, not a rail.
-  const isMobile = useIsMobile();
-  const handleSectionChange = useCallback(
-    (next: NavSection) => {
-      if (navSectionForMode(modeRef.current) === next) return;
-      // Each room has a landing surface: Code opens Chat (its session list is
-      // right there in the rail), Home opens the overview.
-      setMode(next === "code" ? "chat" : "home");
-      shellRef.current?.dismissNavMobile();
-    },
-    [setMode],
-  );
+  // onNavOpenChange). Kept because the Shell contract expects the callback,
+  // even though the nav no longer swaps components when collapsed.
+  const [, setNavOpen] = useState(true);
 
   const sidebar = (
     <SidebarMinimal
       mode={mode}
-      section={navSection}
-      onSectionChange={handleSectionChange}
       splitPageModes={splitPageModes}
+      // No chat-list wiring here any more: the full thread list is docked
+      // inside the chat screen (chat-list.tsx), which owns those mutations.
+      // The sidebar keeps only the read-only recent rollup.
       // Registered Role Surfaces visible for the active scope — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
       roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
@@ -4149,67 +4152,6 @@ export function Workspace() {
     />
   );
 
-  const chatSidebar = (
-    <WorkspaceSidebar
-      sessions={sessions}
-      familiars={resolvedFamiliars}
-      activeFamiliarId={activeId}
-      activeSessionId={activeChatSessionId}
-      responseNeeded={responseNeeded}
-      onSelectFamiliar={selectFamiliarScope}
-      onOpenSession={(session) => {
-        openFamiliarSession(session.id, session.familiarId);
-        shellRef.current?.dismissNavMobile();
-      }}
-      onOpenSessionInSplit={(session) => {
-        // Open beside the current chat: same pending-action pipeline as a
-        // plain open, but the chat surface routes it into a split pane
-        // (falling back to a normal open when splits are unavailable). The
-        // active familiar is left alone — the pane carries its own.
-        setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
-        setMode("chat");
-        shellRef.current?.dismissNavMobile();
-      }}
-      onNewChat={() => startWorkspaceChat()}
-      onNavigate={(nextMode) => {
-        setMode(nextMode);
-        shellRef.current?.dismissNavMobile();
-      }}
-      onSectionChange={handleSectionChange}
-      onDeleteSession={async (session) => {
-        const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-        const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error ?? "delete failed");
-        }
-
-        handleSessionsDeleted([session.id]);
-      }}
-      onSessionsChanged={loadSessions}
-      onOpenUrl={(url) => {
-        shellRef.current?.dismissNavMobile();
-        openUrlInApp(url);
-      }}
-      onOpenSettings={() => {
-        shellRef.current?.dismissNavMobile();
-        nextRouter.push("/settings");
-      }}
-      projects={registeredProjects}
-      projectId={selectedWorkspaceProjectId}
-      project={selectedWorkspaceProject}
-      projectLoading={projectsLoading}
-      projectError={projectsError}
-      reloadProjects={reloadProjects}
-      onProjectChange={selectWorkspaceProject}
-      createProjectOrThrow={createProjectOrThrow}
-      projectCrew={resolvedProjectCrew}
-      projectCrewLoading={effectiveProjectCrewLoading}
-      projectCrewError={projectCrewError}
-      reloadProjectCrew={reloadProjectCrew}
-      contextNotice={null}
-      selectedFamiliarIds={scopeIds}
-    />
-  );
 
   // The Code room keeps the session-list rail across all of its surfaces (Chat,
   // the workbench, the browser); Home uses the destination rail.
@@ -4230,8 +4172,11 @@ export function Workspace() {
   // tracks the desktop panel rather than the drawer (it reads false while the
   // drawer is open). Without this the mobile Chat drawer rendered the
   // destination sidebar and lost its search field.
-  const contextualNav =
-    navSection === "code" && (navOpen || isMobile) ? chatSidebar : sidebar;
+  // One sidebar, always. The Home/Chat section toggle used to swap this between
+  // SidebarMinimal and the chat rail, so the sidebar's identity changed under
+  // the user and the chat list existed only inside the Code room. The chat list
+  // is now a permanent collapsible section inside SidebarMinimal (cave-fh9so).
+  const contextualNav = sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
@@ -4292,7 +4237,12 @@ export function Workspace() {
         daemonRunning={daemonRunning}
         localDaemonReady={localDaemonReady}
         routerRef={routerRef}
-        hideThreadRail
+        // The thread-rail suppression flag is deliberately NOT set any more.
+        // It existed because the outer sidebar owned the project-grouped chat
+        // list, so an in-surface rail would have duplicated it. The sidebar
+        // carries no chat list now and the full list IS the in-surface rail,
+        // so suppressing it left the chat page with no thread list at all
+        // (cave-fh9so).
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
         familiarsLoaded={familiarsLoaded}
@@ -4311,7 +4261,14 @@ export function Workspace() {
         onSessionsChanged={loadSessions}
         onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        onOpenUrl={openUrlInApp}
+        // Dismiss the mobile nav BEFORE handing off to the in-app browser. The
+        // retired chat sidebar wrapped this the same way; when its thread list
+        // moved into the surface the wrapper was dropped, which left a PR-badge
+        // tap on mobile opening the browser behind an still-open drawer.
+        onOpenUrl={(url) => {
+          shellRef.current?.dismissNavMobile();
+          openUrlInApp(url);
+        }}
         onOpenPreview={openPreviewBeside}
         initialScope={variant === "group" ? "coven" : "conversation"}
         scopeHistoryId={instanceId ? `chat:scope:${instanceId}` : undefined}
@@ -4432,6 +4389,8 @@ export function Workspace() {
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
         }
+        activeFamiliarId={activeId}
+        onSetActiveFamiliar={setActiveId}
         onRequestActingFamiliar={requestActingFamiliar}
         onValidateActingFamiliar={validateActingFamiliar}
         sessions={sessions}
@@ -4720,18 +4679,25 @@ export function Workspace() {
         onCloseSplitTile={closeSplitTile}
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
-        navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
+        // Chat used `chat-contextual` while it swapped a DIFFERENT nav into the
+        // rail — the chat list — which justified force-opening it on entry and
+        // never writing the user's remembered preference. The rail is the same
+        // SidebarMinimal on every surface now (cave-fh9so), so that exemption
+        // would only mean Chat re-opens a sidebar the user deliberately
+        // collapsed, under a toggle still labelled "Collapse Chat sidebar".
+        // The policy itself stays supported; Chat just no longer needs it.
+        navPolicy="remembered"
         onNavOpenChange={setNavOpen}
         rightChat={rightChat}
         onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
             <div className="workspace-titlebar-context">
-              <NavSectionTabs
-                section={navSection}
-                onSectionChange={handleSectionChange}
-                variant="titlebar"
-              />
+              {/* The Home/Chat switcher used to sit here. It duplicated the
+                  sidebar's own Home row (both rendered active at once) and,
+                  because it swapped the whole sidebar component, it hid the
+                  chat list on Home and every non-coding room on Chat. Both are
+                  permanent sidebar rows now — see cave-fh9so. */}
               <WorkspaceContextSwitcher
                 projects={registeredProjects}
                 projectId={selectedWorkspaceProjectId}
@@ -4756,13 +4722,33 @@ export function Workspace() {
             </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              // Running processes: clicking the waveform trigger lists each
-              // live daemon session; a row jumps into that chat.
+              // Running activity: the waveform trigger opens the live activity
+              // popover — chats, Board tasks, ritual runs, Flow and Workflow
+              // runs — with direct navigation per row (cave-21rp).
               runningStatus={
-                <RunningSessionsPopover
-                  sessions={runningSessions}
+                <RunningActivityPopover
                   familiars={familiars}
-                  onOpenSession={openFamiliarSession}
+                  onOpenItem={(item: RunningActivityItem) => {
+                    switch (item.kind) {
+                      case "session":
+                        openFamiliarSession(item.targetId, item.familiarId);
+                        return;
+                      case "board-task":
+                        onPaletteIntent({ kind: "focus-card", cardId: item.targetId });
+                        return;
+                      case "automation":
+                        setMode("inbox");
+                        return;
+                      case "flow":
+                      case "workflow":
+                        // Flow/Workflow surfaces are retired; a run backed by a
+                        // live chat jumps to that chat, otherwise to Rituals.
+                        if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
+                        else setMode("inbox");
+                        return;
+                    }
+                  }}
+                  onViewAll={() => setMode("inbox")}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile
@@ -4782,21 +4768,15 @@ export function Workspace() {
                   onPrefsChanged={refreshPrefs}
                 />
               }
-              taskCount={boardTaskCount}
-              scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
                 openPalette();
               }}
-              onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
-              onViewSchedules={() => setMode("inbox")}
-              onOpenSettings={() => nextRouter.push("/settings")}
-              onOpenQuickChat={startWorkspaceChat}
             />
             <TopBar
               onOpenPalette={() => openPalette()}

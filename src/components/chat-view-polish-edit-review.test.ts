@@ -11,19 +11,9 @@ import {
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
-// Follow-ups are ephemeral intent cards beside the composer, never transcript
-// history. Their visual grammar belongs to the shared component rather than
-// the legacy send-on-click chip row.
-assert.match(
-  source,
-  /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/,
-  "ChatView imports the shared typed follow-up cards",
-);
-assert.equal(
-  [...source.matchAll(/<FollowUpCards/g)].length,
-  1,
-  "historical transcript turns never render follow-up cards",
-);
+// The composer stays minimal: recommendation cards are neither transcript
+// history nor an attached footer band.
+assert.doesNotMatch(source, /FollowUpCards|FollowUpTaskReview|cave-chat-followups/);
 assert.match(
   styles,
   /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\)/,

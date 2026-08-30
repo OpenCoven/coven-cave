@@ -59,6 +59,33 @@ assert.match(
   "Visual edits reattach the stable hidden metadata prefix",
 );
 
+// Reader mode reuses the live editor mount so a draft and its scroll position
+// survive the round trip, while the rendering becomes visual and read-only.
+assert.match(shell, /readerMode\?: boolean/, "MdEditor exposes Reader mode");
+assert.match(shell, /const renderedMode: MdEditorMode = readerMode \? "visual" : mode/, "Reader mode forces the visual renderer without overwriting the editing preference");
+assert.match(shell, /readOnly=\{readOnly \|\| readerMode\}/, "Reader mode makes the visual document non-editable");
+assert.match(shell, /\{!readerMode \? \(\s*<div className="md-editor__topbar/, "Reader mode suppresses the editor command bar");
+assert.match(shell, /\{!readerMode \? \(\s*<div className="md-editor__footer/, "Reader mode suppresses the editor footer");
+assert.match(shell, /const \[metadataOpen, setMetadataOpen\][\s\S]{0,220}return !initial\.title && initial\.tags\.length === 0 && !initial\.body\.trim\(\)/, "metadata starts open only for genuinely blank entries, not body-only documents");
+assert.match(shell, /aria-expanded=\{metadataOpen\}/, "the compact metadata disclosure exposes its state");
+assert.match(shell, /scrollPositionRef/, "Reader mode retains the active document's relative scroll position");
+assert.match(shell, /viewport !== currentScrollViewport\(\)/, "position capture ignores nested code-block scrollers and follows only the active renderer viewport");
+assert.match(shell, /onScrollCapture=\{\(event\) => captureScrollPosition\(event\.target as HTMLElement\)\}/, "position capture follows the active renderer even when its viewport mounts asynchronously");
+assert.match(shell, /onReady=\{restoreScrollPosition\}/, "the visual renderer restores position after its asynchronous mount");
+assert.match(shell, /<CodeEditor[\s\S]{0,320}onReady=\{restoreScrollPosition\}/, "the Markdown renderer restores position after CodeMirror creates its viewport");
+assert.match(visual, /onReadyRef\.current\?\.\(\)/, "the visual editor reports when its scrollable document is ready");
+assert.match(shell, /visualLifecycleQueueRef/, "the editor shell owns a lifecycle queue that survives keyed visual remounts");
+assert.match(visual, /const mounted = lifecycleQueueRef\.current\.catch/, "visual mounts wait for the prior instance to finish teardown even after a rejected queue");
+assert.match(visual, /onErrorRef\.current\?\.\("Unable to load the visual editor/, "visual mount failures surface an actionable error");
+assert.match(shell, /onSave=\{readerMode \? undefined : \(\) => void save\(\)\}/, "Reader mode cannot invoke the nested visual save shortcut");
+assert.match(shell, /if \(!autoSave \|\| readOnly \|\| readerMode/, "Reader mode pauses debounced autosave writes");
+assert.match(shell, /readerMode && conflict[\s\S]{0,260}Return to Edit to resolve/, "Reader mode exposes conflicts without mutating resolution actions");
+assert.match(shell, /readerMode && saveError[\s\S]{0,180}role="alert"/, "Reader mode keeps asynchronous save failures visible");
+assert.match(shell, /visualLifecycleQueueRef: MutableRefObject<Promise<void>>/, "every remounting owner must provide a stable visual lifecycle queue");
+assert.doesNotMatch(shell, /fallbackVisualLifecycleQueueRef/, "whole-editor remounts cannot fall back to a per-instance lifecycle queue");
+assert.match(memory, /visualLifecycleQueueRef: MutableRefObject<Promise<void>>/, "memory reloads require their stable owner queue");
+assert.match(memory, /visualLifecycleQueueRef=\{visualLifecycleQueueRef\}/, "memory reloads share the owner queue");
+
 // ── Visual mode: Milkdown Crepe wiring ───────────────────────────────────────
 
 assert.match(visual, /new Crepe\(\{/, "visual mode is Milkdown Crepe");
@@ -66,7 +93,7 @@ assert.match(visual, /markdownUpdated\(/, "edits stream back via markdownUpdated
 assert.match(visual, /\[Crepe\.Feature\.AI\]: false/, "Crepe AI feature disabled");
 assert.match(visual, /\[Crepe\.Feature\.Latex\]: false/, "Crepe LaTeX feature disabled (katex weight)");
 assert.match(visual, /\[Crepe\.Feature\.TopBar\]: false/, "Crepe top bar disabled — shell owns chrome");
-assert.match(visual, /void crepe\.destroy\(\)/, "Crepe destroyed on unmount");
+assert.match(visual, /lifecycleQueueRef\.current = mounted\.then\(destroyActiveCrepe\)\.catch/, "Crepe teardown leaves the shared lifecycle queue resolved for the next mount");
 assert.match(visual, /setReadonly/, "read-only state forwarded to Crepe");
 assert.match(visual, /@milkdown\/crepe\/theme\/common\/style\.css/, "crepe common theme imported");
 assert.match(visual, /\[Crepe\.Feature\.CodeMirror\]: \{ theme: caveCodeMirrorTheme \}/, "code blocks use the shared Cave CodeMirror theme, not Crepe's bundled one-dark");
@@ -108,8 +135,8 @@ assert.match(fileRoute, /resolveAllowedMemoryFilePath\(target\)[\s\S]*?stat/, "s
 assert.match(shell, /autoSave = false/, "autoSave is opt-in, off by default");
 assert.match(
   shell,
-  /if \(!autoSave \|\| readOnly \|\| saving \|\| conflict !== null \|\| !dirty \|\| !raw\.trim\(\)\) return/,
-  "autosave skips when off, read-only, mid-save, conflicted, clean, or empty",
+  /if \(!autoSave \|\| readOnly \|\| readerMode \|\| saving \|\| conflict !== null \|\| !dirty \|\| !raw\.trim\(\)\) return/,
+  "autosave skips when off, read-only, reading, mid-save, conflicted, clean, or empty",
 );
 assert.match(
   shell,

@@ -156,8 +156,11 @@ assert.match(
   /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
   "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
-// Context controls are placed adaptively via chatContextControls — new-chat
-// footer when inlineComposer, active-chat header when not. Not in the utility row.
+// Context controls are constructed once and rendered in exactly ONE place:
+// the composer footer band, for new and active chats alike (cave-zfmqm). The
+// session header is a title and its verbs now, so the adaptive header/footer
+// split is gone — gating the footer on inlineComposer again would strand an
+// active chat with no way to change project or model.
 assert.match(
   source,
   /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
@@ -165,8 +168,13 @@ assert.match(
 );
 assert.match(
   source,
+  /cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the composer footer band carries chatContextControls for new and active chats alike (cave-zfmqm)",
+);
+assert.doesNotMatch(
+  source,
   /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
-  "new-chat footer carries chatContextControls when inlineComposer",
+  "footer placement is no longer gated on inlineComposer — the header strip moved the controls home",
 );
 assert.doesNotMatch(
   source,
@@ -939,8 +947,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\{inlineComposer \? null : following \? composerNode : null\}/,
-  "The active-chat composer disappears while the reader is away from latest and returns when following resumes",
+  /\{inlineComposer \? null : showDockedComposer \? composerNode : null\}/,
+  "The active-chat composer uses the measured threshold and staged-input visibility policy",
 );
 assert.match(
   source,

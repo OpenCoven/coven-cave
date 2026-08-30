@@ -22,8 +22,8 @@ const DAY = 24 * 60 * 60 * 1000;
 
 assert.equal(
   RETIREMENT_COOLDOWN_MS,
-  3 * HOUR,
-  "retirement cooldown remains the mandatory three-hour window",
+  15 * 60 * 1000,
+  "retirement cooldown remains the mandatory 15-minute window",
 );
 
 {
@@ -410,7 +410,7 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "cooldown");
-  assert.match(item.reasons.join("\n"), /3-hour cooldown/);
+  assert.match(item.reasons.join("\n"), /15-minute cooldown/);
 }
 
 {
@@ -423,7 +423,7 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "retire-after-gate", "old exact merged heads become owner-actionable");
-  assert.match(item.reasons.join("\n"), /at least 3 hours old/);
+  assert.match(item.reasons.join("\n"), /at least 15 minutes old/);
   assert.match(item.reasons.join("\n"), /maintenance gate/);
 }
 
@@ -1367,4 +1367,111 @@ console.log("worktree-lifecycle.test.ts: ok");
     false,
     "unknown recency is refused, never overridden — the clock cannot answer it",
   );
+}
+
+// ── cave-eg1ag: the patrol surfaces a lock reason alongside the live verdict ──
+// A lock is a point-in-time claim the classifier cannot evaluate, so it never
+// changes the lane. What changes is the report: it names the lock reason next
+// to the unit's cleanliness/retention verdict, so a lock contradicted by
+// current state (clean + retained, yet held by "active … PR completion") is
+// visible at a glance instead of forcing an operator to diff lock reasons
+// against merged PRs by hand.
+{
+  const budgets = {
+    worktrees: { count: 4, registered: 4, detached: 0, warning: 28, exceeded: false },
+    branches: { count: 4, warning: 38, exceeded: false },
+    exceptions: { active: 0, expired: 0 },
+  };
+  const foreignReason = "active cave-1c8zf PR completion";
+  const staleAutoLock =
+    "auto-locked 2026-08-14: 1 commit not on any remote — a removal would lose this";
+
+  // Clean + retained: the live verdict says "retire-after-gate", yet the lock
+  // reason claims live work. That contradiction is the stale-lock signal.
+  const lockedClean = classifyLifecycleUnit(
+    observation({
+      branch: "feat/clean",
+      ref: "refs/heads/feat/clean",
+      headOnDefaultBranch: true,
+      updatedAtMs: NOW - 2 * DAY,
+      lockReason: foreignReason,
+    }),
+    NOW,
+  );
+  assert.equal(lockedClean.lane, "retire-after-gate");
+  // The lock must not reclassify the unit: a stale lock is still, in git's
+  // eyes, a clean landed unit — that is what makes it visible as stale.
+  assert.ok(
+    lockedClean.reasons.join("\n").includes("clean landed work"),
+    "the lock does not disturb the live cleanliness/retention verdict",
+  );
+
+  // Dirty: the live verdict says "active", so the lock's risk may still hold.
+  const lockedDirty = classifyLifecycleUnit(
+    observation({
+      branch: "feat/dirty",
+      ref: "refs/heads/feat/dirty",
+      changes: ["? src/live.ts"],
+      lockReason: foreignReason,
+    }),
+    NOW,
+  );
+  assert.equal(lockedDirty.lane, "active");
+
+  // Hook-written auto-lock on clean/retained work: also surfaced, and the
+  // reason self-identifies as machine-generated.
+  const lockedAuto = classifyLifecycleUnit(
+    observation({
+      branch: "feat/auto",
+      ref: "refs/heads/feat/auto",
+      headOnDefaultBranch: true,
+      updatedAtMs: NOW - 2 * DAY,
+      lockReason: staleAutoLock,
+    }),
+    NOW,
+  );
+  assert.equal(lockedAuto.lane, "retire-after-gate");
+
+  const bareLock = classifyLifecycleUnit(
+    observation({
+      branch: "feat/bare",
+      ref: "refs/heads/feat/bare",
+      headOnDefaultBranch: true,
+      updatedAtMs: NOW - 2 * DAY,
+      lockReason: "",
+    }),
+    NOW,
+  );
+
+  const text = renderWorktreeLifecycleReport(
+    summarizeWorktreeLifecycle([lockedClean, lockedDirty, lockedAuto, bareLock], budgets),
+  );
+  assert.match(text, /worktree locked: active cave-1c8zf PR completion/);
+  assert.equal(
+    text.split("worktree locked: active cave-1c8zf PR completion").length - 1,
+    2,
+    "each locked unit names its own lock reason, not one shared echo",
+  );
+  assert.match(text, /worktree locked: auto-locked 2026-08-14/);
+  assert.match(text, /worktree locked: \(no reason recorded\)/);
+
+  // The lock line sits on the same unit as the verdict that contradicts it, so
+  // the juxtaposition is what a reader sees at a glance — not two detached
+  // facts. The clean unit's block must contain both the "clean landed work"
+  // reason and the foreign lock reason.
+  const cleanStart = text.indexOf("- feat/clean");
+  const cleanEnd = text.indexOf("\n\n", cleanStart);
+  const cleanBlock = text.slice(cleanStart, cleanEnd === -1 ? undefined : cleanEnd);
+  assert.match(cleanBlock, /worktree locked: active cave-1c8zf PR completion/);
+  assert.match(cleanBlock, /clean landed work is at least 15 minutes old/);
+
+  // An unlocked unit gains no lock line at all.
+  const unlocked = classifyLifecycleUnit(
+    observation({ headOnDefaultBranch: true, updatedAtMs: NOW - 2 * DAY }),
+    NOW,
+  );
+  const unlockedText = renderWorktreeLifecycleReport(
+    summarizeWorktreeLifecycle([unlocked], budgets),
+  );
+  assert.doesNotMatch(unlockedText, /worktree locked/);
 }

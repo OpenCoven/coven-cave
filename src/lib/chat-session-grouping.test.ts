@@ -207,11 +207,34 @@ test("chat-list: activity bands head the default recency order", () => {
   );
 });
 
-test("chat-list: group-by menu + persisted key + count line", () => {
+test("chat-list: segmented Flat/Project/Date grouping + persisted key + count line", () => {
+  // cave-zdbij: the group-by dropdown (and its overflow-menu copies) are
+  // replaced by a direct three-choice segmented control in the toolbar. The
+  // ids ARE the canonical groupBy values, so grouping behavior is unchanged.
   assert.match(
     chatList,
-    /ariaLabel="Session view options"[\s\S]{0,1200}checked=\{groupBy === "none"\}[\s\S]{0,240}No grouping[\s\S]{0,400}checked=\{groupBy === "project"\}[\s\S]{0,240}Group by project[\s\S]{0,400}checked=\{groupBy === "date"\}[\s\S]{0,240}Group by date/,
-    "the session-view menu offers none / project / date",
+    /const CHAT_GROUP_BY_OPTIONS: ReadonlyArray<\{[\s\S]*?id: "none", label: "Flat"[\s\S]*?id: "project", label: "Project"[\s\S]*?id: "date", label: "Date"/,
+    "Sessions grouping must expose Flat, Project, and Date choices",
+  );
+  assert.match(
+    chatList,
+    /role="group"[\s\S]*?aria-label="Group sessions by"/,
+    "Sessions grouping must expose an explicitly labeled pressed-button group",
+  );
+  assert.match(
+    chatList,
+    /aria-pressed=\{groupBy === option\.id\}/,
+    "Sessions grouping buttons must bind pressed state to the current groupBy value",
+  );
+  assert.doesNotMatch(
+    chatList,
+    /<select[\s\S]*?aria-label="Group sessions by"/,
+    "Sessions grouping must not use a native select",
+  );
+  assert.doesNotMatch(
+    chatList,
+    /role="tab"|role="tablist"|aria-controls=|idPrefix|<Tabs<ChatSessionGroupBy>/,
+    "Sessions grouping must not use tab roles, aria-controls, idPrefix, or the Tabs primitive",
   );
   assert.match(
     chatList,

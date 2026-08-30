@@ -4,7 +4,7 @@
 > Use [`../ios-current-direction.md`](../ios-current-direction.md) for current
 > priorities.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Remove the native iOS bottom tab bar, make the Cave drawer the complete primary navigation surface, and replace the cold connection spinner with the approved Quiet Portal.
 

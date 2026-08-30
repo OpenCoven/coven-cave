@@ -18,6 +18,7 @@ const contextRow = readFileSync(new URL("./chat-session-context-row.tsx", import
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
+const sidebarMinimal = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 // Facade sheets resolve to their effective content: run-tests.mjs loads
 // scripts/css-source-contract-hook.cjs, which patches readFileSync so
 // cave-chat.css yields everything it @imports. Run these files through the
@@ -140,30 +141,16 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — composer follow-ups are equal-width recommendation pills", () => {
-  // The typed follow-ups keep their equal-width one-row geometry, but their
-  // composer placement reads as quiet single-line recommendation pills.
+test("2a ⑤ — the composer omits the recommendation-card band", () => {
   assert.match(
     styles,
     /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
-    "follow-up cards take equal shares of one row",
+    "the shared follow-up component keeps its standalone layout",
   );
-  assert.match(
-    styles,
-    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?text-align: center;/,
-    "composer follow-ups use the shared pill radius and centered label",
-  );
-  assert.match(
-    styles,
-    /\.cave-chat-followups \.cave-followup-card__type,\s*\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
-    "composer pills suppress visual metadata while preserving their accessible name",
-  );
-  // The pill-era override is gone: nothing renders .cave-next-path inside the
-  // follow-up strip, so the orphaned selector must not linger in the cascade.
   assert.doesNotMatch(
     styles,
-    /\.cave-chat-followups \.cave-next-path\b/,
-    "the orphaned pill override does not survive the typed-card grammar",
+    /\.cave-chat-followups/,
+    "composer-specific recommendation chrome stays removed",
   );
   // The shared in-turn chip grammar (intrinsic width, count-keyed row) is
   // untouched.
@@ -265,7 +252,9 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     /\.cnav__tick\.cnav__dot--running \{[\s\S]*?animation: none;/,
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
-  assert.match(sidebar, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  // The hint moved with the New-chat button: the chat sidebar's rail header is
+  // gone and SidebarMinimal's is the one that is always mounted (cave-fh9so).
+  assert.match(sidebarMinimal, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {

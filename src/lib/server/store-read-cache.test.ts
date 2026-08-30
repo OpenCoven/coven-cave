@@ -38,9 +38,9 @@ test("a second read of an unchanged file never calls the loader", async (t) => {
 
 test("an external write is observed on the very next read", async (t) => {
   // The whole safety argument rests on this: the cache is keyed on the file's
-  // stat, so anything that rewrites the file — another process, a migration
-  // replacement, a user editing config.json by hand — invalidates it without
-  // anyone having to remember to call invalidate().
+  // inode metadata and bytes, so anything that rewrites it — another process,
+  // a migration replacement, a user editing config.json by hand — invalidates
+  // it without anyone having to remember to call invalidate().
   clearCaveStoreReadCache();
   const file = await scratchFile('{"n":1}');
   t.after(() => rm(path.dirname(file), { recursive: true, force: true }));
@@ -65,6 +65,39 @@ test("a same-size rewrite is still observed", async (t) => {
   const before = await stat(file);
   assert.equal(before.size, 7, "the rewrite is byte-identical in length");
   assert.deepEqual(await readCachedStore(file, load), { n: 9 });
+});
+
+test("a content change invalidates even when every stat field collides", async (t) => {
+  // Deterministically model the WSL clock-tick failure: two same-size writes
+  // can have the same inode and timestamp identity. The digest must remain an
+  // independent part of the key rather than an informational field.
+  clearCaveStoreReadCache();
+  const file = await scratchFile('{"n":1}');
+  t.after(() => rm(path.dirname(file), { recursive: true, force: true }));
+
+  let digest = "first-bytes";
+  const inspectFile = async () => ({
+    dev: BigInt(1),
+    ino: BigInt(2),
+    mtimeNs: BigInt(3),
+    ctimeNs: BigInt(3),
+    size: BigInt(7),
+    digest,
+  });
+  let loads = 0;
+  const load = async () => {
+    loads += 1;
+    return JSON.parse(await import("node:fs").then((fs) => fs.readFileSync(file, "utf8")));
+  };
+
+  assert.deepEqual(await readCachedStore(file, load, { inspectFile }), { n: 1 });
+  assert.deepEqual(await readCachedStore(file, load, { inspectFile }), { n: 1 });
+  assert.equal(loads, 1, "unchanged bytes still use the cache");
+
+  await writeFile(file, '{"n":9}');
+  digest = "second-bytes";
+  assert.deepEqual(await readCachedStore(file, load, { inspectFile }), { n: 9 });
+  assert.equal(loads, 2, "changed bytes bypass the colliding metadata entry");
 });
 
 test("mutating a returned value cannot poison the cache", async (t) => {
@@ -104,7 +137,7 @@ test("invalidate forces the next read through the loader", async (t) => {
 });
 
 test("a missing file is never cached", async (t) => {
-  // A store with no file has no stat to key on, and the loader returns
+  // A store with no file has no identity to key on, and the loader returns
   // defaults. Caching that would hide the file the moment it appears.
   clearCaveStoreReadCache();
   const dir = await mkdtemp(path.join(tmpdir(), "store-read-cache-"));
@@ -131,9 +164,8 @@ test("a missing file is never cached", async (t) => {
 });
 
 test("an entry older than the ttl is re-read even with an unchanged stat", async (t) => {
-  // Belt and braces for filesystems that quantize timestamps coarser than they
-  // report them. The stat key does the real work; this bounds how long a
-  // wrong answer could survive if it ever failed to.
+  // Belt and braces: even an unchanged identity is periodically reloaded so an
+  // entry never lives indefinitely.
   clearCaveStoreReadCache();
   const file = await scratchFile('{"n":1}');
   t.after(() => rm(path.dirname(file), { recursive: true, force: true }));
@@ -158,8 +190,8 @@ test("an entry older than the ttl is re-read even with an unchanged stat", async
 test("an atomic write drops the cached entry for the file it replaced", async (t) => {
   // The single integration point. writeFileAtomic invalidates by path, so every
   // store write — the seven config sites, the state site, and any added later —
-  // is covered without a call-site edit that someone can forget. The stat key
-  // would catch the change on the next read regardless; this makes a
+  // is covered without a call-site edit that someone can forget. The file
+  // identity would catch the change on the next read regardless; this makes a
   // same-process write-then-read exact whatever the filesystem's timestamp
   // resolution turns out to be.
   clearCaveStoreReadCache();

@@ -1,5 +1,10 @@
 import { execFile, execFileSync } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import {
   chmodSync,
   closeSync,
@@ -110,10 +115,30 @@ if (
   !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()
 ) {
   try {
-    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    const file = persistedMobileAccessSecretFile();
+    const stats = lstatSync(file);
+    // The boot re-arm reads a plaintext credential with no ownership check in
+    // the versions before this guard, and this server cannot import the async
+    // guard (it runs unbundled). Verify synchronously on POSIX: the file must
+    // not be a symlink, must be owned by the current user, and must not be
+    // writable by group or others. Windows cannot answer synchronously, so the
+    // pairing route re-verifies the armed value with the async DACL guard
+    // before trusting it (cave-8pd39); here the read proceeds and is announced.
+    if (stats.isSymbolicLink()) throw new Error("the persisted mobile access secret must not be a symbolic link");
+    if (typeof process.getuid === "function") {
+      if (stats.uid !== process.getuid()) throw new Error("the persisted mobile access secret must be owned by the current user");
+      if ((stats.mode & 0o022) !== 0) throw new Error("the persisted mobile access secret must not be writable by group or others");
+    } else {
+      console.warn(
+        "[cave] boot re-arm reads the persisted mobile access secret without an ownership check on "
+        + process.platform + "; the pairing route re-verifies it with the async guard (cave-8pd39).",
+      );
+    }
+    const persisted = readFileSync(file, "utf8").trim();
     if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
   } catch {
-    // No provisioned secret — stay tokenless, exactly as before.
+    // No provisioned (or unverifiable) secret — stay tokenless, exactly as
+    // before. A refusal here never crashes boot.
   }
 }
 
@@ -126,8 +151,117 @@ function accessToken(): string {
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 
 const CLIENT_V1_DISCOVERY_FILE = "client-v1-discovery.json";
-const CLIENT_V1_DISCOVERY_NONCE = randomUUID();
 const CLIENT_V1_DISCOVERY_STARTED_AT = new Date().toISOString();
+const CLIENT_V1_AUTHORITY_MODE_ENV =
+  "COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE";
+
+type StandaloneClientV1AuthorityMode = "off" | "advertise" | "enforce";
+
+type StandaloneClientV1AuthorityBootstrap = {
+  mode: "advertise" | "enforce";
+  suite: import("@hpke/core").CipherSuite;
+  keyPair: CryptoKeyPair;
+  publicKey: Uint8Array;
+  keyId: Uint8Array;
+  runtimeNonce: Uint8Array;
+};
+
+type StandaloneClientV1AuthorityBootstrapState =
+  | StandaloneClientV1AuthorityBootstrap
+  | {
+    mode: "advertise" | "enforce";
+    unavailable: true;
+  };
+
+function parseStandaloneClientV1AuthorityMode(
+  raw: string | undefined,
+): StandaloneClientV1AuthorityMode {
+  const value = raw?.trim() || "off";
+  if (value === "off" || value === "advertise" || value === "enforce") {
+    return value;
+  }
+  throw new Error(
+    `${CLIENT_V1_AUTHORITY_MODE_ENV} must be off, advertise, or enforce.`,
+  );
+}
+
+function standaloneClientV1HpkeKeyId(publicKey: Uint8Array): Uint8Array {
+  if (publicKey.byteLength !== 32) {
+    throw new Error("Client v1 authority public key length is invalid.");
+  }
+  return new Uint8Array(
+    createHash("sha256")
+      .update("OpenCoven/client-v1/hpke-bound-v1/key-id\0", "utf8")
+      .update(publicKey)
+      .digest(),
+  );
+}
+
+async function createStandaloneClientV1AuthorityBootstrap(
+  mode: "advertise" | "enforce",
+): Promise<StandaloneClientV1AuthorityBootstrap> {
+  const [
+    { Aes256Gcm, CipherSuite, HkdfSha256 },
+    { DhkemX25519HkdfSha256 },
+  ] = await Promise.all([
+    import("@hpke/core"),
+    import("@hpke/dhkem-x25519"),
+  ]);
+  const suite = new CipherSuite({
+    kem: new DhkemX25519HkdfSha256(),
+    kdf: new HkdfSha256(),
+    aead: new Aes256Gcm(),
+  });
+  const keyPair = await suite.kem.generateKeyPair();
+  const publicKey = new Uint8Array(
+    await suite.kem.serializePublicKey(keyPair.publicKey),
+  );
+  return {
+    mode,
+    suite,
+    keyPair,
+    publicKey,
+    keyId: standaloneClientV1HpkeKeyId(publicKey),
+    runtimeNonce: randomBytes(32),
+  };
+}
+
+const CLIENT_V1_AUTHORITY_MODE =
+  parseStandaloneClientV1AuthorityMode(
+    process.env.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE,
+  );
+let clientV1AuthorityInitializationError: Error | null = null;
+let CLIENT_V1_AUTHORITY_BOOTSTRAP:
+  | StandaloneClientV1AuthorityBootstrapState
+  | undefined;
+
+if (CLIENT_V1_AUTHORITY_MODE !== "off") {
+  try {
+    CLIENT_V1_AUTHORITY_BOOTSTRAP =
+      await createStandaloneClientV1AuthorityBootstrap(
+        CLIENT_V1_AUTHORITY_MODE,
+      );
+  } catch {
+    clientV1AuthorityInitializationError = new Error(
+      "Client v1 HPKE authority initialization failed.",
+    );
+    CLIENT_V1_AUTHORITY_BOOTSTRAP = {
+      mode: CLIENT_V1_AUTHORITY_MODE,
+      unavailable: true,
+    };
+  }
+}
+
+globalThis.__covenCaveClientV1AuthorityBootstrap =
+  CLIENT_V1_AUTHORITY_BOOTSTRAP;
+
+const CLIENT_V1_DISCOVERY_NONCE =
+  CLIENT_V1_AUTHORITY_BOOTSTRAP
+  && !("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP)
+    ? Buffer.from(
+        CLIENT_V1_AUTHORITY_BOOTSTRAP.runtimeNonce,
+      ).toString("base64url")
+    : randomUUID();
 let clientV1DiscoveryPublished = false;
 
 function standaloneCaveHome(): string {
@@ -279,6 +413,7 @@ if (-not (Test-Exclusive $state)) {
   $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
+  $acl.SetOwner($me)
   $acl.SetAccessRuleProtection($true, $false)
   foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
   $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
@@ -358,7 +493,7 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
         env: probeEnv,
         encoding: "utf8",
         windowsHide: true,
-        timeout: 15_000,
+        timeout: 60_000,
         maxBuffer: 1024 * 1024,
       },
     ));
@@ -492,19 +627,67 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
 
   const path = clientV1DiscoveryFile();
   assertStandaloneDiscoveryTarget(path);
+  let record:
+    | {
+      version: 1;
+      endpoint: string;
+      pid: number;
+      nonce: string;
+      startedAt: string;
+    }
+    | {
+      version: 2;
+      endpoint: string;
+      pid: number;
+      nonce: string;
+      startedAt: string;
+      authority: {
+        mechanism: "hpke-bound-v1";
+        mode: "advertise" | "enforce";
+        keyId: string;
+        publicKey: string;
+        suite: { kemId: 32; kdfId: 1; aeadId: 2 };
+      };
+    };
+  if (CLIENT_V1_AUTHORITY_MODE === "off") {
+    record = {
+      version: 1,
+      endpoint,
+      pid: process.pid,
+      nonce: CLIENT_V1_DISCOVERY_NONCE,
+      startedAt: CLIENT_V1_DISCOVERY_STARTED_AT,
+    };
+  } else {
+    if (CLIENT_V1_AUTHORITY_BOOTSTRAP === undefined) {
+      throw new Error("Client v1 HPKE authority initialization failed.");
+    }
+    if ("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP) {
+      throw clientV1AuthorityInitializationError
+        ?? new Error("Client v1 HPKE authority initialization failed.");
+    }
+    const bootstrap = CLIENT_V1_AUTHORITY_BOOTSTRAP;
+    record = {
+      version: 2,
+      endpoint,
+      pid: process.pid,
+      nonce: CLIENT_V1_DISCOVERY_NONCE,
+      startedAt: CLIENT_V1_DISCOVERY_STARTED_AT,
+      authority: {
+        mechanism: "hpke-bound-v1",
+        mode: bootstrap.mode,
+        keyId: Buffer.from(bootstrap.keyId).toString("base64url"),
+        publicKey: Buffer.from(bootstrap.publicKey).toString("base64url"),
+        suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+      },
+    };
+  }
   const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
   let fd: number | null = null;
   let ownsTemporaryPath = false;
   try {
     fd = openSync(temporaryPath, "wx", 0o600);
     ownsTemporaryPath = true;
-    writeFileSync(fd, `${JSON.stringify({
-      version: 1,
-      endpoint,
-      pid: process.pid,
-      nonce: CLIENT_V1_DISCOVERY_NONCE,
-      startedAt: CLIENT_V1_DISCOVERY_STARTED_AT,
-    }, null, 2)}\n`, "utf8");
+    writeFileSync(fd, `${JSON.stringify(record, null, 2)}\n`, "utf8");
     fsyncSync(fd);
     closeSync(fd);
     fd = null;

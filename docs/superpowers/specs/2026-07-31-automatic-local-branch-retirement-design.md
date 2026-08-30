@@ -6,7 +6,8 @@
 **Depends on:** `cave-wqa0b`
 
 > Recency amendment: `cave-vwt75` reduced the mandatory retirement cooldown
-> from 8 hours to 3 hours on 2026-08-24. All other safety gates in this design
+> from 8 hours to 3 hours on 2026-08-24; `cave-0pu26` reduced it to 15 minutes
+> on 2026-08-25. All other safety gates in this design
 > remain unchanged.
 
 ## Goal
@@ -193,7 +194,7 @@ maintenance transaction:
    request, or active workflow owns the path, branch, or exact OID.
 6. Every liveness query is complete and schema-valid.
 7. The latest commit, branch reflog, worktree HEAD reflog, and exact merge are
-   outside the mandatory 3-hour cooldown.
+   outside the mandatory 15-minute cooldown.
 8. The exact local OID is on the freshly fetched default branch or exactly
    matches the recorded head of a pull request merged into that default branch.
 9. Structured lifecycle metadata exists and no unexpired exception or recovery

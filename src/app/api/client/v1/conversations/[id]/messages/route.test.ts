@@ -4,16 +4,24 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import type { ChatTurn, ConversationFile } from "@/lib/cave-conversations.ts";
+import {
+  CLIENT_V1_HPKE_HEADERS,
+  CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+} from "@/lib/server/client-v1/authority-contract.ts";
 import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
 import { encodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
+import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 import { createClientV1ConversationMessagesGetHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-messages-");
 const STAMP = "loopback-secret";
+const INSTANCE_ID = "client-v1-messages-route-test";
+const BOUND_NOW = 55_000;
 
 function turn(
   id: string,
@@ -439,4 +447,126 @@ test("an unprojectable turn answers an envelope, not a Next error page", async (
     assert.equal(body.error.retryable, false);
     assert.equal(body.apiVersion, "1.0");
   });
+});
+
+test("bound messages preserve encoded query punctuation, spaces, and Unicode", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    await withClientV1HpkeRouteTestAuthority(
+      { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 91 },
+      async (authority) => {
+        const conversationId = "conversation one?# with snow 雪";
+        const encodedPath =
+          `/api/client/v1/conversations/${encodeURIComponent(conversationId)}/messages`;
+        const boundConversation: ConversationFile = {
+          ...BRANCHED,
+          sessionId: conversationId,
+        };
+        const runtime = createClientV1Runtime({
+          authority: authority.runtime,
+          credentialRoot: root,
+          loopbackSecret: STAMP,
+          now: () => BOUND_NOW,
+        });
+        const issued = await runtime.credentialStore.issue({
+          appName: "OpenCoven Chat",
+          installationId: "chat-install-bound-messages",
+          scopes: ["chat:read"],
+        });
+        const originalFind =
+          runtime.credentialStore.findByBearer.bind(runtime.credentialStore);
+        const originalCharge =
+          runtime.rateLimiter.consumeAuthenticated.bind(runtime.rateLimiter);
+        let findCalls = 0;
+        let chargeCalls = 0;
+        let sourceCalls = 0;
+        runtime.credentialStore.findByBearer = async (bearer) => {
+          findCalls += 1;
+          return originalFind(bearer);
+        };
+        runtime.rateLimiter.consumeAuthenticated = (credentialId) => {
+          chargeCalls += 1;
+          return originalCharge(credentialId);
+        };
+        const handler = createClientV1ConversationMessagesGetHandler(
+          runtime,
+          sources({
+            loadConversation: async (id) => {
+              sourceCalls += 1;
+              return id === conversationId ? boundConversation : null;
+            },
+          }),
+        );
+
+        const downgrade = await handler(
+          request(
+            conversationId,
+            { authorization: ["Bearer", issued.bearer].join(" ") },
+          ),
+          context(conversationId),
+        );
+        assert.equal(downgrade.status, 426);
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 0,
+          chargeCalls: 0,
+          sourceCalls: 0,
+        });
+
+        const prepared = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "messages.list",
+          url: `http://127.0.0.1:3020${encodedPath}`,
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(16),
+          authorization: { kind: "bearer", value: issued.bearer },
+        });
+        const headers = new Headers(prepared.request.headers);
+        headers.set(LOCAL_PEER_HEADER, STAMP);
+        const valid = await handler(
+          new Request(prepared.request, { headers }),
+          context(conversationId),
+        );
+        assert.equal(valid.status, 200);
+        assert.equal(
+          valid.headers.get("content-type"),
+          CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+        );
+        const opened = await prepared.open(valid);
+        assert.equal(opened.status, 200);
+        assert.deepEqual(
+          (JSON.parse(new TextDecoder().decode(opened.body)) as {
+            data: { messages: { id: string }[] };
+          }).data.messages.map(({ id }) => id),
+          ["t1", "t3", "t4"],
+        );
+        assert.equal(new URL(prepared.request.url).pathname, encodedPath);
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 1,
+          chargeCalls: 1,
+          sourceCalls: 1,
+        });
+
+        const aadHeaders = new Headers(headers);
+        aadHeaders.set(
+          CLIENT_V1_HPKE_HEADERS.issuedAt,
+          String(BOUND_NOW + 1),
+        );
+        const beforeAadDrift = { findCalls, chargeCalls, sourceCalls };
+        const wrongAad = await handler(
+          new Request(prepared.request, { headers: aadHeaders }),
+          context(conversationId),
+        );
+        assert.equal(wrongAad.status, 400);
+        assert.deepEqual(
+          { findCalls, chargeCalls, sourceCalls },
+          beforeAadDrift,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });

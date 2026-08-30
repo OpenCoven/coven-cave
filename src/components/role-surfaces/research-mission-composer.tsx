@@ -49,10 +49,12 @@ import {
   assembleBrief,
   parseBrief,
   promptStrength,
+  summarizeRecommendationTitle,
   type ResearchPromptRecommendation,
 } from "@/lib/research-prompt-brief";
 import { ResearchPromptBuilder } from "./research-prompt-builder";
 import { ResearchPromptStrengthMeter } from "./research-prompt-strength";
+import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 
 type StartResult =
   | { ok: true; mission: ResearchMission }
@@ -83,6 +85,8 @@ type Props = {
   onDraftChange?(draft: string): void;
   /** An explicitly accepted recommendation replaces the composer draft once. */
   recommendedDraft?: { value: string; revision: number } | null;
+  /** An accepted Topic Discovery proposal pre-fills intent/mode/bounds once. */
+  initialDraft?: TopicProposalDraftV1;
 };
 
 const MODE_LABELS: Record<ResearchMissionMode, string> = {
@@ -225,6 +229,7 @@ export function ResearchMissionComposer({
   recommendations = [],
   onDraftChange,
   recommendedDraft,
+  initialDraft,
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
@@ -240,6 +245,9 @@ export function ResearchMissionComposer({
   const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
   const [model, setModel] = useState("");
   const modelSelectionDirtyRef = useRef(false);
+  // The familiar whose model state the effect below last loaded, so a daemon
+  // status transition can be told apart from an actual familiar switch.
+  const loadedFamiliarIdRef = useRef<string | null>(null);
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -260,19 +268,40 @@ export function ResearchMissionComposer({
   const appliedRecommendedDraftRevision = useRef<number | null>(null);
 
   useEffect(() => {
-    modelSelectionDirtyRef.current = false;
+    const familiarChanged = loadedFamiliarIdRef.current !== familiarId;
+    if (familiarChanged) {
+      loadedFamiliarIdRef.current = familiarId;
+      modelSelectionDirtyRef.current = false;
+    } else if (modelSelectionDirtyRef.current) {
+      return;
+    }
+    // A clean daemon transition must immediately restore the safe fallback
+    // before capability re-evaluation; an explicit user pick returns above.
+    setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+    setModel("");
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
-          { cache: "no-store" },
-        );
+        const [response, researchStatus] = await Promise.all([
+          fetch(
+            `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
+            { cache: "no-store" },
+          ),
+          fetch("/api/daemon/status?scope=research-local", { cache: "no-store" })
+            .then((result) => result.json() as Promise<{
+              research?: { sessionLaunchPolicy?: boolean };
+            }>)
+            .catch(() => null),
+        ]);
         const json = (await response.json()) as {
           ok?: boolean;
           state?: ChatModelState;
         };
         if (cancelled || modelSelectionDirtyRef.current || !json.ok || !json.state) return;
+        if (
+          json.state.harness === "codex"
+          && researchStatus?.research?.sessionLaunchPolicy !== true
+        ) return;
         setHarness(json.state.harness);
         setModel(json.state.effectiveModel);
       } catch {
@@ -282,7 +311,7 @@ export function ResearchMissionComposer({
     return () => {
       cancelled = true;
     };
-  }, [familiarId]);
+  }, [familiarId, daemonRunning]);
 
   useEffect(() => {
     if (
@@ -310,6 +339,25 @@ export function ResearchMissionComposer({
   useEffect(() => {
     if (initialMode) setMode(initialMode);
   }, [initialMode, setMode]);
+
+  // An accepted Topic Discovery proposal is a one-shot prefill: the question
+  // becomes the intent, the suggested mode is selected, and the suggested
+  // sourceTarget/wallClockMinutes land in the plan bounds. Other plan fields
+  // (iterations, checkpointEvery) come from the mode's default plan.
+  const appliedInitialDraftId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialDraft || appliedInitialDraftId.current === initialDraft.proposalId) return;
+    appliedInitialDraftId.current = initialDraft.proposalId;
+    setIntent(initialDraft.question);
+    setMode(initialDraft.mode);
+    boundsDirtyRef.current = true;
+    const draftPlan = defaultResearchPlan(initialDraft.mode).bounds;
+    setBounds({
+      ...draftPlan,
+      sourceTarget: initialDraft.sourceTarget,
+      wallClockMinutes: initialDraft.wallClockMinutes,
+    });
+  }, [initialDraft, setMode]);
 
   const inferred = useMemo(() => inferResearchMissionMode(intent), [intent]);
   const effectiveMode = mode === "auto" ? inferred.mode : mode;
@@ -636,10 +684,13 @@ export function ResearchMissionComposer({
                 key={chip.title}
                 type="button"
                 className="research-intake__angle"
-                title="Fill the prompt with a detailed brief"
+                // The seed is a whole pasted prompt, so the full text is the
+                // tooltip and the pill carries a headline. Rendering the seed
+                // raw put "## Report topic **…" markdown on the chip.
+                title={chip.title}
                 onClick={() => setIntent(chip.brief)}
               >
-                {chip.title}
+                {summarizeRecommendationTitle(chip.title)}
               </button>
             ))}
           </div>

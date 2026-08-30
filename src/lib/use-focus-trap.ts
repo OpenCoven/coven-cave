@@ -19,6 +19,8 @@ type Options = {
    *  focusable child exists, focuses the container itself — caller MUST give
    *  the container `tabIndex={-1}` so this is reachable. */
   focusFirst?: boolean;
+  /** Late-bound restoration gate for transitions directly into another layer. */
+  restoreFocus?: () => boolean;
 };
 
 /**
@@ -90,8 +92,9 @@ export const FocusTrapOwnerHiddenContext = createContext(false);
 /**
  * Trap focus inside `containerRef` while `active` is true. Saves the
  * previously-focused element on activate→deactivate and restores it on
- * deactivate. Tab/Shift+Tab cycle through focusable descendants. Escape
- * calls onEscape.
+ * deactivate unless `restoreFocus` declines a direct transition into another
+ * layer. Tab/Shift+Tab cycle through focusable descendants. Escape calls
+ * onEscape.
  *
  * Stack-aware: every active trap in the app registers on a shared
  * module-level stack (see trapStack above), and only the TOPMOST one ever
@@ -113,10 +116,11 @@ export const FocusTrapOwnerHiddenContext = createContext(false);
 export function useFocusTrap(
   active: boolean,
   containerRef: RefObject<HTMLElement | null>,
-  { onEscape, focusFirst = true }: Options = {},
+  { onEscape, focusFirst = true, restoreFocus = () => true }: Options = {},
 ) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const onEscapeRef = useRef(onEscape);
+  const restoreFocusRef = useRef(restoreFocus);
   // Stable per-hook-instance identity for the trap stack — assigned once
   // (lazy ref init) and unaffected by StrictMode's double render/effect
   // invocation, which reuses this same ref cell rather than re-creating it.
@@ -129,6 +133,9 @@ export function useFocusTrap(
   useEffect(() => {
     onEscapeRef.current = onEscape;
   }, [onEscape]);
+  useEffect(() => {
+    restoreFocusRef.current = restoreFocus;
+  }, [restoreFocus]);
 
   useEffect(() => {
     if (!active) return;
@@ -165,7 +172,11 @@ export function useFocusTrap(
       if (e.key === "Tab" && container) {
         const focusables = Array.from(
           container.querySelectorAll<HTMLElement>(FOCUSABLE),
-        ).filter((el) => !el.hasAttribute("disabled"));
+        ).filter(
+          (el) =>
+            !el.hasAttribute("disabled") &&
+            (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
+        );
         if (focusables.length === 0) {
           e.preventDefault();
           return;
@@ -205,7 +216,7 @@ export function useFocusTrap(
       // back to us (if we're still mounted and active) or, chaining
       // outward, to whatever was focused before the outermost trap ever
       // activated.
-      if (!hadTrapAbove) {
+      if (!hadTrapAbove && restoreFocusRef.current() !== false) {
         returnFocusRef.current?.focus();
       }
     };

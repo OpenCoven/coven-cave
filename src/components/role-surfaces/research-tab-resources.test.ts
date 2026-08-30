@@ -9,6 +9,10 @@ const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
 );
+const readerStyles = readFileSync(
+  new URL("../../styles/research-paper-focus-reader.css", import.meta.url),
+  "utf8",
+);
 const researchLinksHook = readFileSync(new URL("./use-research-links.ts", import.meta.url), "utf8");
 const xArticles = readFileSync(new URL("../../lib/x-articles.ts", import.meta.url), "utf8");
 const readerUrl = new URL("../research-x-article-reader.tsx", import.meta.url);
@@ -73,14 +77,16 @@ test("add-to-run uses the evidence ledger's attach-source candidate mechanism", 
   assert.match(source, /selectedMission\.sources\.some\(\s*\(source\) => source\.url && savedLinkDedupeKey\(source\.url\) === key/);
 });
 
-test("remove is a two-step inline confirm wired to useResearchLinks.remove", () => {
+test("remove is a two-step inline confirm wired to durable resources with compatibility fallback", () => {
   assert.match(source, /Remove from saves/);
-  assert.match(source, /Remove this save\? It leaves Resources and quick saves\./);
-  assert.match(source, /Yes, remove/);
+  assert.match(source, /permanently deletes its durable local snapshots and evidence/);
+  assert.match(source, /This can’t be undone/);
+  assert.match(source, /Delete resource/);
+  assert.match(source, /Remove save/);
   assert.match(source, /\{confirmingRemove \?/);
   assert.match(source, />\s*Keep\s*<\/Button>/);
   assert.match(source, /setConfirmingRemove\(true\)/);
-  assert.match(source, /await remove\(openLink\.id\)/);
+  assert.match(source, /resource \? await local\.remove\(resource\.id\) : await remove\(openLink\.id\)/);
   // Opening a different resource never inherits a pending confirm — nor an
   // already-expanded paper viewer, which would otherwise show paper A's
   // document under paper B's title and start its fetch unasked.
@@ -88,6 +94,38 @@ test("remove is a two-step inline confirm wired to useResearchLinks.remove", () 
     source,
     /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setReaderExpanded\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
   );
+});
+
+test("local evidence search is authoritative, truthful, and operational", () => {
+  assert.match(source, /useResearchResources\(\)/);
+  assert.match(source, /void local\.search\(trimmedQuery\)/);
+  assert.match(source, /Exact and full-text matches from verified local snapshots\./);
+  assert.match(source, /Semantic unavailable/);
+  assert.match(source, /hit\.resourceRevision/);
+  assert.match(source, /resourceForQueryHit\(local\.resources, hit\)/);
+  assert.match(source, /catalog metadata changed/);
+  assert.match(source, /=== 1 \? "match" : "matches"/);
+  assert.match(source, /Retry ingestion/);
+  assert.match(source, /await local\.retry\(resource\.id\)/);
+  assert.match(source, /finally \{\s*setResourceMutationBusy\(null\)/);
+  assert.match(source, /"Couldn’t retry ingestion\.", ok \? "polite" : "assertive"/);
+  assert.match(styles, /Local evidence: dense authority-first rows/);
+  assert.match(styles, /@container research-desk \(max-width: 560px\)/);
+});
+
+test("the durable local catalog renders every manifest with truthful operations", () => {
+  assert.match(source, /local\.resources\.map\(\(resource, index\) =>/);
+  assert.match(source, /Ingest status and controls for every durable local resource\./);
+  assert.match(source, /resource\.ingest\.state === "failed" && resource\.ingest\.retryable !== false/);
+  assert.match(source, /await local\.retry\(resource\.id\)/);
+  assert.match(source, /await local\.remove\(resource\.id\)/);
+  assert.match(source, /aria-expanded=\{expanded\}/);
+  assert.match(source, /context\.openUrl\(resource\.sourceUri!\)/);
+  assert.match(source, /Delete this resource\? This permanently deletes its durable local snapshots and/);
+  assert.match(source, /role="alert"[\s\S]{0,200}\{local\.error\}/);
+  assert.match(source, /onClick=\{\(\) => void local\.load\(\)\}>Retry/);
+  assert.match(styles, /Durable local catalog: every manifest remains visible and operable/);
+  assert.match(styles, /\.research-res-catalog-row__confirm/);
 });
 
 test("grid/rows view persists under cave:research:res-view with an SSR guard", () => {
@@ -124,17 +162,69 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
 });
 
-test("the paper reader expands in place and Escape collapses before closing", () => {
+test("browser preview keeps rollout availability separate from Context Pack consent", () => {
+  assert.match(
+    source,
+    /remoteContentRolloutEnabled=\{caveResearchRemoteContent\(\)\}/,
+    "the public flag is passed only as rollout availability",
+  );
+  assert.match(
+    source,
+    /contextPackConsent=\{undefined\}/,
+    "Resources fails closed while it has no authoritative explicit pack selection",
+  );
+  assert.doesNotMatch(
+    source,
+    /allowRemoteContent=\{caveResearchRemoteContent\(\)\}/,
+    "the rollout flag must never be wired directly as consent",
+  );
+});
+
+test("the paper reader opens directly into a near-bezelless focus mode", () => {
+  assert.match(
+    source,
+    /import "@\/styles\/research-paper-focus-reader\.css"/,
+    "reader chrome loads with the Resources surface, before the lazy PDF chunk mounts",
+  );
   assert.match(source, /const \[readerExpanded, setReaderExpanded\] = useState\(false\)/);
+  assert.match(source, /const readerFocusControlRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(
+    source,
+    /if \(reading && readerExpanded\) readerFocusControlRef\.current\?\.focus\(\)/,
+    "focus moves from the removed Read button to a surviving reader control",
+  );
   assert.match(
     source,
     /if \(readerExpanded\) \{\s*setReaderExpanded\(false\);\s*return;\s*\}\s*closeOverlay\(\)/,
   );
+  assert.match(
+    source,
+    /onClick=\{\(\) => \{\s*setReading\(true\);\s*setReaderExpanded\(true\);\s*\}\}/,
+    "Read enters focus mode without requiring a second expansion click",
+  );
+  assert.match(source, /data-reader=\{reading && readerExpanded \|\| undefined\}/);
   assert.match(source, /data-expanded=\{readerExpanded \|\| undefined\}/);
-  assert.match(source, /aria-label=\{readerExpanded \? "Collapse paper reader" : "Expand paper reader"\}/);
+  assert.match(source, /aria-label=\{readerExpanded \? "Exit focus reader" : "Enter focus reader"\}/);
   assert.match(source, /name=\{readerExpanded \? "ph:corners-in" : "ph:corners-out"\}/);
-  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\]/);
-  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\] \.research-paper-view__stage/);
+  assert.match(source, /aria-label="Download PDF"/);
+  assert.match(readerStyles, /\.research-res-overlay\[data-reader\]/);
+  assert.match(readerStyles, /\.research-res-overlay__dialog\[data-reader\]/);
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-res-overlay__source[\s\S]*display: none/,
+  );
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-res-overlay__actions[\s\S]*display: none/,
+  );
+  assert.match(
+    readerStyles,
+    /\.research-res-overlay__dialog\[data-reader\] \.research-paper-view__stage[\s\S]*max-height: none/,
+  );
+  assert.match(readerStyles, /var\(--sai-top\)/);
+  assert.match(readerStyles, /var\(--sai-right\)/);
+  assert.match(readerStyles, /var\(--sai-bottom\)/);
+  assert.match(readerStyles, /var\(--sai-left\)/);
 });
 
 test("resources expose a labeled multiline batch intake with truthful preview", () => {
@@ -213,7 +303,11 @@ test("resources filter by type before workflow-first grouping", () => {
   assert.match(source, /link\.xArticle\?\.excerpt/);
   assert.match(source, /link\.xArticle\?\.publishedAt/);
   assert.match(source, /linkSearchText\(link\)\.includes\(q\)/);
-  assert.match(source, /setQuery\(""\);\s*setFilter\("all"\)/);
+  assert.match(
+    source,
+    /updateResourceQuery\(""\);\s*setFilter\("all"\)/,
+    "clearing legacy filters synchronously invalidates local evidence before the debounce",
+  );
   assert.match(source, />\s*Clear filters\s*<\/Button>/);
 });
 

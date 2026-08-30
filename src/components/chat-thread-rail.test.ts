@@ -42,7 +42,7 @@ assert.match(
 );
 
 // ── Search only; no mode filters (All / Active / Tasks / Pinned) ─────────────
-assert.match(source, /placeholder="Search chats…"/, "Rail offers inline chat search");
+assert.match(source, /placeholder="Filter chats…"/, "Rail offers inline chat search");
 assert.doesNotMatch(source, /type ChatFilter =/, "Rail no longer owns filter tab state");
 assert.doesNotMatch(source, /role="tablist"/, "All/Active/Tasks/Pinned tablist is removed");
 assert.doesNotMatch(source, /s\.origin === "board"/, "Tasks filtering is gone from this simplified rail");
@@ -143,20 +143,13 @@ assert.match(
   /if \(sessionsLoaded === false\) return;\s*sidebarPrefsLoadedRef\.current = true;/,
   "ChatRouter hydrates raw sidebar preferences after the first session attempt without waiting for projects",
 );
-assert.match(
+// The project-grouped rail is retired (cave-fh9so); the disclosure-key
+// hydration/migration/persistence that only served it must not survive as
+// dead state the retired rail's storage keeps feeding.
+assert.doesNotMatch(
   chatRouter,
-  /const storedExpansionVersion = readPersisted<unknown>\(\s*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*null,\s*\);[\s\S]*if \(Array\.isArray\(storedExpanded\)\) \{\s*setExpandedKeys\(storedExpanded\.filter\(\(k\): k is string => typeof k === "string"\)\);\s*sidebarOrganizationMigrationPendingRef\.current =\s*storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;\s*\} else \{\s*setExpandedKeys\(projectSelectionKeys\(sidebarGroups\)\);\s*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}[\s\S]*if \(!sidebarOrganizationMigrationPendingRef\.current\) \{[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,[\s\S]*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\)/,
-  "ChatRouter migrates only stored arrays from an older expansion version and marks defaults/current arrays current",
-);
-assert.match(
-  chatRouter,
-  /const sidebarSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\),[\s\S]*const sidebarGroups = useMemo\([\s\S]*const migrationGroups = useMemo\(\s*\(\) => \{[\s\S]*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return \[\];[\s\S]*filterVisibleChatSessions\(sessions, null\)/,
-  "ChatRouter keeps visible rail groups familiar-filtered and only derives all-familiar migration groups while a migration is pending",
-);
-assert.match(
-  chatRouter,
-  /const migratedExpandedKeys = migrateOrganizationExpansionKeys\(\s*expandedKeys,\s*migrationGroups,\s*projects,\s*\);[\s\S]*PROJECT_SIDEBAR_KEYS\.expanded,\s*JSON\.stringify\(migratedExpandedKeys\),[\s\S]*PROJECT_SIDEBAR_KEYS\.expandedVersion,\s*JSON\.stringify\(PROJECT_SIDEBAR_EXPANSION_VERSION\),[\s\S]*sidebarOrganizationMigrationPendingRef\.current = false;\s*\}, \[[^\]]*migrationGroups[^\]]*projects[^\]]*\]\);/,
-  "ChatRouter migrates against all-session groups plus the unscoped project registry before marking the global organization version current",
+  /expandedKeys|PROJECT_SIDEBAR_EXPANSION_VERSION|migrateOrganizationExpansionKeys|useAutoExpandNewGroups|organizationExpansionKey/,
+  "ChatRouter no longer hydrates, migrates, or persists the retired rail's disclosure keys",
 );
 assert.match(
   chatRouter,
@@ -165,8 +158,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(nextSelection\)[\s\S]*organizationExpansionKey\(group\.organization\.key\)[\s\S]*if \(!next\.includes\(organizationKey\)\) next\.push\(organizationKey\);[\s\S]*if \(!next\.includes\(nextSelection\)\) next\.push\(nextSelection\);/,
-  "ChatRouter opens both the organization ancestor and project without toggling already-expanded keys",
+  /const syncSidebarProjectRoot = useCallback\([\s\S]*setSelection\(selectionForProjectRoot\(/,
+  "ChatRouter still follows the active project root as the list's selection",
 );
 assert.match(
   chatRouter,
@@ -175,19 +168,26 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatList[\s\S]*selection=\{selection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelectionChange=\{setSelection\}[\s\S]*onToggleExpanded=\{toggleSidebarExpanded\}/,
-  "ChatRouter passes its project selection and disclosure state into ChatList",
+  /<ChatList[\s\S]*selection=\{selection\}[\s\S]*onSelectionChange=\{setSelection\}/,
+  "ChatRouter passes its project selection into ChatList",
 );
 assert.match(
   chatList,
-  /selection: ProjectSelection;[\s\S]*expandedKeys: string\[\];[\s\S]*onSelectionChange: \(selection: ProjectSelection\) => void;[\s\S]*onToggleExpanded: \(key: string\) => void;/,
-  "ChatList requires Router-owned project selection and disclosure props",
+  /selection: ProjectSelection;[\s\S]*onSelectionChange: \(selection: ProjectSelection\) => void;/,
+  "ChatList requires Router-owned project selection props",
 );
-assert.match(
+assert.doesNotMatch(
   chatList,
-  /<ChatProjectSidebar[\s\S]*selection=\{effectiveSelection\}[\s\S]*expandedKeys=\{expandedKeys\}[\s\S]*onSelect=\{onSelectionChange\}[\s\S]*onToggleExpanded=\{onToggleExpanded\}/,
-  "ChatList consumes Router-owned project selection and disclosure callbacks",
+  /expandedKeys|onToggleExpanded|hideRail/,
+  "ChatList carries no disclosure or rail-hiding props for the retired project rail",
 );
+// The project-grouped rail is retired; ChatList still receives the router's
+// selection state for its own grouping (cave-fh9so).
+assert.match(
+  chatSurface,
+  /<SidebarChatsSection[\s\S]*activeSessionId=\{railActiveSessionId\}/,
+  "the docked rail tracks the open session",
+)
 assert.doesNotMatch(
   chatList,
   /PROJECT_SIDEBAR_KEYS|migrateOrganizationExpansionKeys|useAutoExpandNewGroups/,

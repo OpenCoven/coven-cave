@@ -325,6 +325,11 @@ assert.ok(
   "desktop reachability must remain before Phone write access in the Phone settings flow",
 );
 assert.match(
+  phoneSettings,
+  /if \(!status && !error\) return null;[\s\S]{0,120}if \(status && !status\.supported\) return null;/,
+  "the reachability card must render nothing while the platform is unsupported so Windows never shows macOS-only copy (issue #5191)",
+);
+assert.match(
   bridge,
   /desktop_reachability_configure/,
   "the Settings controls must persist through the native macOS authority",

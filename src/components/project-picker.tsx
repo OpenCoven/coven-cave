@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import {
   RECENT_SECTION_SIZE,
   loadFrecencyStore,
@@ -38,6 +39,8 @@ export type AddProjectFlow = {
   addProjectModal: ReactNode;
   adding: boolean;
   addError: string | null;
+  /** Stable server code of the last add failure, when the API returned one. */
+  addErrorCode: string | null;
 };
 
 /**
@@ -65,12 +68,14 @@ export function useAddProjectFlow(args: {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [addErrorCode, setAddErrorCode] = useState<string | null>(null);
 
   const registerRoot = async (dir: string) => {
     const root = dir.trim();
     if (!root) return;
     setAdding(true);
     setAddError(null);
+    setAddErrorCode(null);
     const existing = args.projects.find((project) => project.root === root);
     const result = await addChatProject({
       root,
@@ -81,7 +86,10 @@ export function useAddProjectFlow(args: {
     });
     setAdding(false);
     if (result.ok) args.onAdded(result.projectId);
-    else setAddError(result.error);
+    else {
+      setAddError(result.error);
+      setAddErrorCode(result.code ?? null);
+    }
   };
 
   const beginAddProject = () => {
@@ -112,7 +120,7 @@ export function useAddProjectFlow(args: {
     />
   );
 
-  return { beginAddProject, addProjectModal, adding, addError };
+  return { beginAddProject, addProjectModal, adding, addError, addErrorCode };
 }
 
 
@@ -140,6 +148,7 @@ export function ProjectPickerPopover({
   ariaLabel,
   allProjectsLabel,
   onSelectAllProjects,
+  familiarLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -163,6 +172,10 @@ export function ProjectPickerPopover({
   /** When both are provided, renders an "All projects" row before the No project row. */
   allProjectsLabel?: string;
   onSelectAllProjects?: () => void;
+  /** Display name of the familiar currently in scope. Its presence enables the
+   *  familiar-scoped section between Recent and the A-Z list; omit it (or pass
+   *  null in an All-familiars scope) and that section is not rendered. */
+  familiarLabel?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const [showAllProjects, setShowAllProjects] = useState(false);
@@ -209,27 +222,50 @@ export function ProjectPickerPopover({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `open` is the sampling edge.
   }, [open, sortedProjects, query]);
 
+  // The scoped familiar's own projects, between Recent and the A-Z list.
+  // `access` is only populated on familiar-scoped reads (see CaveProject), so
+  // its presence IS the "this familiar can reach this project" signal — there
+  // is no separate membership list to consult.
+  //
+  // Sampled on the same `open` edge as Recent so the two sections cannot
+  // reshuffle independently mid-interaction, and suppressed while filtering for
+  // the same reason Recent is: a query is already the narrower answer.
+  //
+  // Recent entries are excluded here (unlike the A-Z list, which deliberately
+  // stays complete) purely to stop the top of the popover repeating itself two
+  // rows apart. A-Z below still holds every project.
+  const familiarProjects = useMemo(() => {
+    if (!open || query.trim() || !familiarLabel) return [];
+    const recentIds = new Set(recent.map((entry) => entry.id));
+    return sortedProjects.filter((entry) => entry.access && !recentIds.has(entry.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `open` is the sampling edge.
+  }, [open, sortedProjects, query, familiarLabel, recent]);
+
   const renderProjectRow = (entry: CaveProject, key: string) => (
-    <PopoverItem
-      key={key}
-      leading={<ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />}
-      checked={entry.id === selected?.id}
-      active={entry.id === selected?.id}
-      title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
-      onSelect={() => pick(entry)}
-    >
-      <span className="cave-project-picker__option">
-        <span className="cave-project-picker__option-heading">
-          <span className="cave-project-picker__option-name">{entry.name}</span>
-          {entry.access ? (
-            <span className="cave-project-picker__option-access">
-              {projectAccessLabel(entry.access)}
-            </span>
-          ) : null}
+    <div className="cave-project-picker__row" role="presentation" key={key}>
+      {/* Expandable avatar leads the row as its own zoom button — a sibling of
+          the menuitem, never nested inside it. Clicking the image peeks at the
+          full-size project icon; clicking the row still selects it. */}
+      <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" expandable />
+      <PopoverItem
+        checked={entry.id === selected?.id}
+        active={entry.id === selected?.id}
+        title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
+        onSelect={() => pick(entry)}
+      >
+        <span className="cave-project-picker__option">
+          <span className="cave-project-picker__option-heading">
+            <span className="cave-project-picker__option-name">{entry.name}</span>
+            {entry.access ? (
+              <span className="cave-project-picker__option-access">
+                {projectAccessLabel(entry.access)}
+              </span>
+            ) : null}
+          </span>
+          <span className="cave-project-picker__option-root">{entry.root}</span>
         </span>
-        <span className="cave-project-picker__option-root">{entry.root}</span>
-      </span>
-    </PopoverItem>
+      </PopoverItem>
+    </div>
   );
 
   const pick = (project: { id: string; root: string }) => {
@@ -320,8 +356,17 @@ export function ProjectPickerPopover({
             <PopoverLabel>Recent</PopoverLabel>
             {recent.map((entry) => renderProjectRow(entry, `recent-${entry.id}`))}
             <PopoverSeparator />
-            <PopoverLabel>All projects</PopoverLabel>
           </>
+        ) : null}
+        {familiarProjects.length > 0 ? (
+          <>
+            <PopoverLabel>{`${familiarLabel}'s projects`}</PopoverLabel>
+            {familiarProjects.map((entry) => renderProjectRow(entry, `familiar-${entry.id}`))}
+            <PopoverSeparator />
+          </>
+        ) : null}
+        {recent.length > 0 || familiarProjects.length > 0 ? (
+          <PopoverLabel>All projects</PopoverLabel>
         ) : null}
         {displayedProjects.map((entry) => renderProjectRow(entry, entry.id))}
         {!query.trim() && (showAllProjects || hiddenProjectCount > 0) ? (
@@ -395,6 +440,7 @@ export function ProjectPicker({
   className,
   allProjectsLabel,
   onSelectAllProjects,
+  familiarLabel,
 }: {
   projects: CaveProject[];
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
@@ -422,6 +468,8 @@ export function ProjectPicker({
   /** When both are provided, renders an "All projects" row before the No project row. */
   allProjectsLabel?: string;
   onSelectAllProjects?: () => void;
+  /** Scoped familiar's display name — enables the familiar-scoped section. */
+  familiarLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -495,11 +543,15 @@ export function ProjectPicker({
         ariaLabel={ariaLabel}
         allProjectsLabel={allProjectsLabel}
         onSelectAllProjects={onSelectAllProjects}
+        familiarLabel={familiarLabel}
       />
       {addFlow.addError ? (
-        <span className="cave-project-picker__error" role="alert">
-          {addFlow.addError}
-        </span>
+        <ProjectRootWorkspaceNotice
+          as="span"
+          className="cave-project-picker__error"
+          code={addFlow.addErrorCode}
+          error={addFlow.addError}
+        />
       ) : null}
       {canAddProject ? addFlow.addProjectModal : null}
     </>

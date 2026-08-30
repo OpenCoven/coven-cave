@@ -17,7 +17,12 @@ export async function POST(req: Request) {
   if (!archiveBase64) return NextResponse.json({ ok: false, error: "archiveBase64 is required" }, { status: 400 });
   try {
     const restored = await restoreBackupArchive(Buffer.from(archiveBase64, "base64"), passphrase);
-    return NextResponse.json({ ok: true, manifest: restored.manifest, restored: restored.restored });
+    return NextResponse.json({
+      ok: true,
+      manifest: restored.manifest,
+      restored: restored.restored,
+      ...(restored.researchRecovery ? { researchRecovery: restored.researchRecovery } : {}),
+    });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "backup restore failed" }, { status: 400 });
   }

@@ -63,6 +63,9 @@ export const SIDECAR_FORBIDDEN_ROOTS = Object.freeze([
 ]);
 
 export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
+  "@hpke/common",
+  "@hpke/core",
+  "@hpke/dhkem-x25519",
   "@next/env",
   "@swc/helpers",
   "node-pty",
@@ -744,6 +747,12 @@ export async function verifySidecarRuntime(root) {
     ".next/required-server-files.json",
     "marketplace/catalog.json",
     "marketplace/marketplace.json",
+    "node_modules/@hpke/common/esm/mod.js",
+    "node_modules/@hpke/common/package.json",
+    "node_modules/@hpke/core/esm/mod.js",
+    "node_modules/@hpke/core/package.json",
+    "node_modules/@hpke/dhkem-x25519/esm/mod.js",
+    "node_modules/@hpke/dhkem-x25519/package.json",
     "node_modules/@next/env/package.json",
     "node_modules/@swc/helpers/package.json",
     "node_modules/next/package.json",

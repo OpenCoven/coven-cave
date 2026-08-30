@@ -41,25 +41,24 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
 {
   assert.equal(
-    shouldAllowMagicDnsFallback({
-      serveOk: false,
-      statusOk: false,
-    }),
+    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: false }),
     false,
-    "a failed Serve mutation, including macOS CLIError 3, needs a matching route in status before a handoff can succeed",
+    "a failed Serve mutation with no status proof stays fail-closed",
   );
   assert.equal(
-    shouldAllowMagicDnsFallback({
-      serveOk: true,
-      statusOk: false,
-    }),
+    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: true }),
+    false,
+    "a readable status does not by itself authorize MagicDNS fallback after mutation failure",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: false }),
     true,
-    "a successful Serve mutation may use MagicDNS when its follow-up status read is unavailable",
+    "an acknowledged Serve mutation may use MagicDNS when status is unavailable",
   );
   assert.equal(
     shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
-    false,
-    "a readable Serve status remains authoritative",
+    true,
+    "status-schema drift must not veto an acknowledged Serve mutation",
   );
 }
 
@@ -79,6 +78,13 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   });
   assert.match(missingRoute.error, /tailscale serve route not found/);
   assert.equal(missingRoute.stderr, undefined);
+
+  const nonHttpsRoute = serveRouteFailure({
+    backendUrl: "http://127.0.0.1:3020",
+    routeReason: "tailscale serve route for http://127.0.0.1:3020 is not an HTTPS listener",
+  });
+  assert.match(nonHttpsRoute.error, /not an HTTPS listener/);
+  assert.match(nonHttpsRoute.error, /Enable HTTPS for this tailnet/);
 }
 
 {
@@ -104,6 +110,78 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     findServeUrl(variants, "http://127.0.0.1:3000"),
     serveUrl,
   );
+}
+
+{
+  // An HTTP-only Serve listener must never be relabeled as HTTPS. The
+  // explicit route also blocks the MagicDNS fallback, even after a successful
+  // `serve --bg` mutation, because the listener is known to be non-HTTPS.
+  const backend = "http://127.0.0.1:3020";
+  const httpOnlyStatus = {
+    TCP: {
+      "3020": { HTTP: true },
+    },
+    Web: {
+      [`${serveHost}:3020`]: {
+        Handlers: {
+          "/": {
+            Proxy: backend,
+          },
+        },
+      },
+    },
+  };
+  assert.equal(findServeUrl(httpOnlyStatus, backend), null);
+
+  const browserProof = tailnetDiscoveryProof({
+    selfStatus: { Self: { DNSName: `${serveHost}.` } },
+    serveStatus: httpOnlyStatus,
+    backendUrl: backend,
+    allowMagicDnsFallback: true,
+  });
+  assert.deepEqual(browserProof, {
+    ok: false,
+    reason: `tailscale serve route for ${backend} is not an HTTPS listener`,
+  });
+
+  // The native app's explicitly supported Tailscale-IP HTTP path remains
+  // available, but it is not a browser invite proof.
+  assert.deepEqual(
+    nativeAppDiscoveryProof({
+      selfStatus: {
+        Self: {
+          DNSName: `${serveHost}.`,
+          TailscaleIPs: ["100.101.102.103"],
+        },
+      },
+      serveStatus: httpOnlyStatus,
+      backendUrl: backend,
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: true,
+      host: "100.101.102.103:3020",
+      serveUrl: "http://100.101.102.103:3020/",
+      source: "tailscale-ip-http",
+    },
+  );
+}
+
+{
+  // HTTPS Serve on a non-default port is accepted only when the listener
+  // protocol is explicit in the Serve status.
+  const backend = "http://127.0.0.1:3020";
+  const httpsStatus = {
+    TCP: {
+      "3020": { HTTPS: true },
+    },
+    Web: {
+      [`${serveHost}:3020`]: {
+        Handlers: { "/": { Proxy: backend } },
+      },
+    },
+  };
+  assert.equal(findServeUrl(httpsStatus, backend), `https://${serveHost}:3020/`);
 }
 
 {
@@ -228,7 +306,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       ok: false,
       reason: "tailscale serve route not found for http://127.0.0.1:3000",
     },
-    "a readable empty Serve status must not promote a bare MagicDNS name to a live route",
+    "a readable empty Serve status must not promote a bare MagicDNS name unless mutation evidence allows it",
   );
   const linuxMismatchedServeStatus = {
     Web: {
@@ -248,7 +326,37 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       ok: false,
       reason: "tailscale serve route not found for http://127.0.0.1:3000",
     },
-    "a Linux Serve status for another loopback backend must not promote MagicDNS to a live route",
+    "a stale Serve status for another loopback backend must not promote MagicDNS without mutation evidence",
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: linuxMismatchedServeStatus,
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: true,
+    }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "magicdns-self-status",
+    },
+    "after an acknowledged reclaim mutation, stale status-schema data cannot veto the recovered route",
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: { FutureSchema: { routes: [] } },
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: true,
+    }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "magicdns-self-status",
+    },
+    "an unknown future Serve status schema cannot veto an acknowledged successful mutation",
   );
   assert.deepEqual(
     nativeAppDiscoveryProof({

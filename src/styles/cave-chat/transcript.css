@@ -351,150 +351,6 @@
   padding: var(--space-5) clamp(16px, 3vw, 34px) var(--space-4);
 }
 
-/* ── Typed follow-up options in the composer footer ───────────────────────── */
-/* The toggle shares the pills' row rather than sitting above it. Stacking it
-   made the DEFAULT state 19px TALLER (panel 211 -> 230, measured), which is the
-   opposite of the point: nobody should have to collapse the row just to get
-   back the height the control itself cost. Side by side, the row is
-   max(toggle, pills) = the pills' own touch-target height, so expanded is no
-   worse than before and collapsing is pure gain. */
-.cave-chat-followups {
-  display: flex;
-  flex: 0 0 100%;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-width: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-hairline);
-}
-
-/* The cards take the remaining width; the toggle keeps its intrinsic size. */
-.cave-chat-followups > [id^="chat-followups-"] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Collapse control (cave-vgj6z). The pills below cannot be made shorter —
-   they carry min-height: var(--touch-target) and chat-follow-up-layout.test.ts
-   pins it as a touch-safety contract — so the only way to give the composer
-   its ~29px back is to let the reader put the row away. The strip stays when
-   collapsed, which is why it renders as a sibling of the cards rather than
-   inside them. */
-.cave-chat-followups__toggle {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-1) var(--space-1) 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-2xs);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.cave-chat-followups__toggle:hover {
-  color: var(--text-primary);
-}
-
-/* Expanded, the strip is redundant with the pills it labels, so it stays out
-   of the way until hover/focus rather than spending a permanent row on a count
-   the reader can already see. Collapsed, it is the only thing left and must
-   always read clearly. */
-.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle {
-  opacity: 0.55;
-}
-
-.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle:hover,
-.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle:focus-visible {
-  opacity: 1;
-}
-
-.cave-chat-followups .cave-followup-cards__grid {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-template-columns: none;
-}
-
-/* The footer is the one place next steps read as a compact prompt palette: the
-   full typed-action metadata remains available to assistive technology through
-   each button's aria-label, while the visual row stays as quiet as the input. */
-.cave-chat-followups .cave-followup-cards > small {
-  display: none;
-}
-
-.cave-chat-followups .cave-followup-card {
-  display: flex;
-  min-width: 0;
-  min-height: var(--touch-target);
-  align-items: center;
-  gap: var(--space-2);
-  border-color: var(--border-strong);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
-  padding: var(--space-1) var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.cave-chat-followups .cave-followup-card:hover {
-  border-color: color-mix(in oklch, var(--foreground) 52%, var(--border-strong));
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.cave-chat-followups .cave-followup-card__type,
-.cave-chat-followups .cave-followup-card__outcome {
-  display: none;
-}
-
-.cave-chat-followups .cave-followup-card__type {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 0 0 auto;
-  min-width: 0;
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-
-.cave-chat-followups .cave-followup-card__recommended {
-  margin-left: 0;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--color-success) 14%, transparent);
-  color: var(--color-success);
-  font-size: var(--text-2xs);
-  line-height: 1;
-}
-
-.cave-chat-followups .cave-followup-card__separator {
-  display: inline;
-  flex: 0 0 auto;
-  color: var(--text-muted);
-}
-
-.cave-chat-followups .cave-followup-card__title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 /* Typed assistant suggestions keep their effect legible before activation.
    The card owns presentation only; ChatView owns routing and side effects. */
 .cave-followup-cards {
@@ -660,11 +516,6 @@
     grid-auto-flow: row;
     grid-auto-columns: unset;
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .cave-chat-followups .cave-followup-card {
-    min-height: var(--touch-target);
-    padding-left: var(--space-2);
   }
 
   .cave-followup-card__entry:has(.cave-followup-card__why-trigger) .cave-followup-card {
@@ -881,15 +732,8 @@
     display: none;
   }
 
-  /* Keep the header context strip visible on mobile with full touch targets. */
-  .cave-chat-header-context {
-    display: block;
-    padding-inline-start: 0;
-  }
-
-  .cave-chat-header-context .cave-context-chip {
-    min-height: var(--touch-target);
-  }
+  /* No header context strip to re-show here any more (cave-zfmqm): the
+     context controls live in the composer footer at every width. */
 
   .cave-mobile-header-identity {
     position: relative;

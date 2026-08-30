@@ -13,8 +13,9 @@
  * drifted — but to make the declaration derivable from route ownership and then
  * assert that derivation against the routes on disk. This module is the
  * reviewed half of that pair: one record per invokable operation, naming the
- * method and path that serve it, the authority class that reaches it, the scope
- * it requires, and the broad capability families it contributes to.
+ * method and path that serve it, its ingress class, credential and authority
+ * binding, the scope it requires, and the broad capability families it
+ * contributes to.
  *
  * WHAT IS AND IS NOT AUTHORITATIVE HERE. This file is a *review record*, not a
  * derivation from the filesystem. It cannot prove a route exists; it states
@@ -39,10 +40,14 @@
  * PURITY. Frozen data with no side effects and no route imports, so
  * `contract.ts` — which `proxy-helpers.ts` pulls in precisely because it costs
  * the proxy no runtime dependency — can read it without dragging a handler
- * graph along. Its imports from `contract.ts` are all `import type`, which is
- * erased, so the two modules do not form a runtime cycle.
+ * graph along. All local imports are `import type`, which is erased, so these
+ * contract modules do not form a runtime cycle.
  */
 
+import type {
+  ClientV1OperationBinding,
+  ClientV1OperationCredential,
+} from "./authority-contract.ts";
 import type {
   ClientV1Capability,
   ClientV1Operation,
@@ -54,10 +59,10 @@ import type {
  *
  * These are three genuinely different credentials, not three strengths of one:
  *
- *   - `public` — the credential-free bootstrap surface. Reachable before a
- *     client holds anything, and listed in `CLIENT_V1_PUBLIC_ROUTES`. Still
- *     loopback-only; "public" names the absence of a *credential*, never the
- *     absence of an ingress rule.
+ *   - `public` — the bootstrap surface listed in `CLIENT_V1_PUBLIC_ROUTES`.
+ *     It is not reached with a bearer or admin sidecar token, though pairing
+ *     poll/exchange carry their pairing secret. Still loopback-only; "public"
+ *     names the absence of bearer/admin ingress, never an open network route.
  *   - `authenticated` — a paired client's bearer, carrying the declared scope.
  *     This is the only class an external application can ever hold.
  *   - `admin` — the Cave's own per-launch sidecar token (`requireClientV1Admin`),
@@ -76,11 +81,14 @@ export type ClientV1OperationDefinition = {
   /**
    * The scope `requireScope` demands, or null.
    *
-   * Null is a claim, not a gap: a public operation needs no credential and an
-   * admin operation is not reached with a scoped bearer at all. An
-   * `authenticated` operation must name one.
+   * Null is a claim, not a gap: public and admin operations are not reached
+   * with a scoped bearer. An `authenticated` operation must name one.
    */
   scope: ClientV1Scope | null;
+  /** The credential carried by this operation, independent of ingress class. */
+  credential: ClientV1OperationCredential;
+  /** Whether the credential is atomically carried by the HPKE authority. */
+  binding: ClientV1OperationBinding;
   /**
    * The broad capability families this operation contributes to.
    *
@@ -114,6 +122,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/health",
       ingress: "public",
       scope: null,
+      credential: "none",
+      binding: "none",
       families: ["health"],
     }),
     freezeDefinition({
@@ -122,6 +132,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/pairing/requests",
       ingress: "public",
       scope: null,
+      credential: "none",
+      binding: "none",
       families: ["pairing"],
     }),
     freezeDefinition({
@@ -130,6 +142,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/pairing/requests/:id",
       ingress: "public",
       scope: null,
+      credential: "pairing-secret",
+      binding: "hpke-bound-v1",
       families: ["pairing"],
     }),
     freezeDefinition({
@@ -138,6 +152,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/pairing/requests/:id/exchange",
       ingress: "public",
       scope: null,
+      credential: "pairing-secret",
+      binding: "hpke-bound-v1",
       families: ["pairing"],
     }),
     freezeDefinition({
@@ -146,6 +162,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/admin/pairing-requests",
       ingress: "admin",
       scope: null,
+      credential: "admin",
+      binding: "none",
       families: ["pairing"],
     }),
     freezeDefinition({
@@ -154,6 +172,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/admin/pairing-requests/:id/decision",
       ingress: "admin",
       scope: null,
+      credential: "admin",
+      binding: "none",
       families: ["pairing"],
     }),
     freezeDefinition({
@@ -162,6 +182,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/admin/credentials",
       ingress: "admin",
       scope: null,
+      credential: "admin",
+      binding: "none",
       families: ["credentials"],
     }),
     freezeDefinition({
@@ -170,7 +192,23 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/admin/credentials/:id",
       ingress: "admin",
       scope: null,
+      credential: "admin",
+      binding: "none",
       families: ["credentials"],
+    }),
+    freezeDefinition({
+      id: "status.admin.read",
+      method: "GET",
+      path: "/api/client/v1/admin/status",
+      ingress: "admin",
+      scope: null,
+      credential: "admin",
+      binding: "none",
+      // The operational-state family: like health.read, this answers what
+      // state the surface is in, never user data. It is administrator-only —
+      // the discovery record and the ownership waiver are host configuration —
+      // so a paired bearer can never read it.
+      families: ["health"],
     }),
     freezeDefinition({
       id: "familiars.list",
@@ -178,6 +216,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/familiars",
       ingress: "authenticated",
       scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
       families: ["familiars", "cursors"],
     }),
     freezeDefinition({
@@ -186,6 +226,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/projects",
       ingress: "authenticated",
       scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
       families: ["projects", "cursors"],
     }),
     freezeDefinition({
@@ -194,6 +236,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/conversations",
       ingress: "authenticated",
       scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
       families: ["conversations", "cursors"],
     }),
     freezeDefinition({
@@ -202,6 +246,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/conversations/:id",
       ingress: "authenticated",
       scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
       // No `cursors`: this route serves one transcript header and refuses
       // `limit` and `cursor` outright. Listing it here would make the family
       // summary claim paging on a route that answers invalid_request for it.
@@ -213,6 +259,8 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       path: "/api/client/v1/conversations/:id/messages",
       ingress: "authenticated",
       scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
       families: ["conversation-messages", "cursors"],
     }),
   ]);
@@ -282,6 +330,8 @@ export function clientV1OperationRecords(): {
   path: string;
   ingress: string;
   scope: string | null;
+  credential: ClientV1OperationCredential;
+  binding: ClientV1OperationBinding;
   families: string[];
 }[] {
   return CLIENT_V1_OPERATION_DEFINITIONS.map((definition) => ({
@@ -290,6 +340,8 @@ export function clientV1OperationRecords(): {
     path: definition.path,
     ingress: definition.ingress,
     scope: definition.scope,
+    credential: definition.credential,
+    binding: definition.binding,
     families: [...definition.families],
   }));
 }

@@ -26,6 +26,8 @@ import {
 } from "./worktree-lifecycle-retirement.ts";
 import {
   createMetadataRepairOperations,
+  dropExpiredOrphanedExceptions,
+  expiredOrphanedExceptionCandidates,
   repairOrphanedWorktreeMetadata,
 } from "./worktree-lifecycle-metadata-repair.ts";
 
@@ -55,6 +57,13 @@ type Options = {
    * job has nobody to make that assertion.
    */
   allowCooldownOverride: boolean;
+  /**
+   * Units the operator is asserting are idle, for --allow-cooldown-override.
+   *
+   * Required with that flag and meaningless without it. Matches a worktree
+   * path, a branch, a ref, or a head OID.
+   */
+  cooldownOverrideOnly: string[];
 };
 
 type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
@@ -62,6 +71,7 @@ type PatrolSummary = ReturnType<typeof summarizeWorktreeLifecycle>;
 type MaintenanceCapabilities = ReturnType<typeof repositoryMaintenanceCapabilities>;
 type RetirementReport = ReturnType<typeof retireLifecycleUnits>;
 type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
+type ExceptionDropReport = ReturnType<typeof dropExpiredOrphanedExceptions>;
 type PatrolItem = PatrolSummary["items"][number];
 type RetirementBlock = RetirementReport["blocked"][number];
 type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
@@ -98,6 +108,13 @@ type RetirementApplyDependencies = {
   retireLifecycleUnits: typeof retireLifecycleUnits;
   createMetadataRepairOperations: typeof createMetadataRepairOperations;
   repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
+  /**
+   * Optional for the same reason {@link createFenceRenewal} is: the existing
+   * apply tests build explicit dependency literals, so a required field would
+   * arrive undefined in every one of them and fail inside the try/catch as a
+   * confusing postInventoryError. Defaults to the real sweep.
+   */
+  dropExpiredOrphanedExceptions?: typeof dropExpiredOrphanedExceptions;
   collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
   /**
    * Optional, and injected so a test can observe renewal without waiting out
@@ -129,12 +146,14 @@ const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
   retireLifecycleUnits,
   createMetadataRepairOperations,
   repairOrphanedWorktreeMetadata,
+  dropExpiredOrphanedExceptions,
   collectWorktreeLifecycleInventory,
   createFenceRenewal,
 };
 
 type RetirementApplyResult = {
   metadataRepair: MetadataRepairReport;
+  exceptionDrop: ExceptionDropReport;
   retirement: RetirementReport;
   postInventory?: PatrolInventory;
   postInventoryError?: string;
@@ -143,6 +162,7 @@ type RetirementApplyResult = {
 
 type ApplyFailureReason =
   | "metadata-repair-blocked"
+  | "exception-drop-blocked"
   | "retirement-blocked"
   | "maintenance-gate-release-failed"
   | "post-apply-inventory-failed";
@@ -165,6 +185,7 @@ export function parseArgs(argv: string[]): Options {
     maxRetire: parseMaxRetire(undefined),
     allowUnenforcedPlanes: false,
     allowCooldownOverride: false,
+    cooldownOverrideOnly: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -189,6 +210,16 @@ export function parseArgs(argv: string[]): Options {
       case "--allow-cooldown-override":
         options.allowCooldownOverride = true;
         break;
+      case "--only": {
+        const value = argv[++index];
+        if (value === undefined || value.trim().length === 0) {
+          throw new Error(
+            "--only requires a worktree path, branch, ref, or head OID",
+          );
+        }
+        options.cooldownOverrideOnly.push(value.trim());
+        break;
+      }
       case "--max-retire": {
         const value = argv[++index];
         if (value === undefined) {
@@ -425,7 +456,7 @@ export function evaluateRetirementApplyOutcome(
   result: Pick<
     RetirementApplyResult,
     "retirement" | "metadataRepair" | "warning" | "postInventoryError"
-  > & { metadataRepair?: MetadataRepairReport },
+  > & { metadataRepair?: MetadataRepairReport; exceptionDrop?: ExceptionDropReport },
 ): RetirementApplyOutcome {
   const failures: ApplyFailureReason[] = [];
   if (
@@ -434,6 +465,13 @@ export function evaluateRetirementApplyOutcome(
       result.metadataRepair.partial.length > 0)
   ) {
     failures.push("metadata-repair-blocked");
+  }
+  if (
+    result.exceptionDrop &&
+    (result.exceptionDrop.blocked.length > 0 ||
+      result.exceptionDrop.partial.length > 0)
+  ) {
+    failures.push("exception-drop-blocked");
   }
   if (result.retirement.blocked.length > 0) failures.push("retirement-blocked");
   if (result.warning) failures.push("maintenance-gate-release-failed");
@@ -454,9 +492,11 @@ export function renderApplyReport(
   warning?: string,
   postInventoryError?: string,
   metadataRepair: MetadataRepairReport = emptyMetadataRepairReport(),
+  exceptionDrop: ExceptionDropReport = emptyExceptionDropReport(),
 ) {
   const outcome = evaluateRetirementApplyOutcome({
     metadataRepair,
+    exceptionDrop,
     retirement,
     warning,
     postInventoryError,
@@ -473,6 +513,10 @@ export function renderApplyReport(
   const blockedMetadata = metadataRepair.blocked.map(formatMetadataRepairBlock);
   const partialMetadata = metadataRepair.partial.map(formatMetadataRepairBlock);
   const pendingMetadata = metadataRepair.pending.map(formatMetadataRepairCandidate);
+  const droppedExceptions = exceptionDrop.dropped.map(formatExceptionDrop);
+  const blockedExceptionDrops = [...exceptionDrop.blocked, ...exceptionDrop.partial].map(
+    formatExceptionDropBlock,
+  );
   const lines = [
     ...(postInventoryError
       ? [
@@ -486,6 +530,8 @@ export function renderApplyReport(
     `Apply result: ${outcome.ok ? "ok" : `failed (${outcome.reason})`}`,
     `Metadata repaired: ${metadataRepair.repaired.length}`,
     `Metadata blocked: ${metadataRepair.blocked.length + metadataRepair.partial.length}`,
+    `Exceptions dropped: ${exceptionDrop.dropped.length}`,
+    `Exception drops blocked: ${exceptionDrop.blocked.length + exceptionDrop.partial.length}`,
     `Retired: ${retirement.retired.length}`,
     `Blocked: ${retirement.blocked.length}`,
     `Cleanup-ready remaining: ${
@@ -496,6 +542,8 @@ export function renderApplyReport(
   pushSection(lines, "Orphaned metadata blocked", blockedMetadata);
   pushSection(lines, "Orphaned metadata partial", partialMetadata);
   pushSection(lines, "Orphaned metadata pending", pendingMetadata);
+  pushSection(lines, "Expired, orphaned exceptions dropped", droppedExceptions);
+  pushSection(lines, "Expired, orphaned exception drops blocked", blockedExceptionDrops);
   pushSection(lines, "Locally retired", retired);
   pushSection(lines, "Cleanup-ready but not processed", cleanupReady);
   pushSection(lines, "Blocked during apply", blocked);
@@ -542,6 +590,27 @@ function emptyMetadataRepairReport(): MetadataRepairReport {
     partial: [],
     pending: [],
   };
+}
+
+function emptyExceptionDropReport(): ExceptionDropReport {
+  return {
+    dropped: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+}
+
+function formatExceptionDrop(drop: ExceptionDropReport["dropped"][number]): string {
+  return `- ${drop.beadId} ${drop.branch} @ ${drop.path} (owner ${drop.owner}; expired ${drop.expiresAt})`;
+}
+
+function formatExceptionDropBlock(
+  blocked:
+    | ExceptionDropReport["blocked"][number]
+    | ExceptionDropReport["partial"][number],
+): string {
+  return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
 }
 
 function formatMetadataRepairCandidate(
@@ -616,7 +685,10 @@ function renderCooldownOverrideHint(
   const waiting = items.filter((item) => cooldownIsTheOnlyBlocker(item, nowMs));
   if (waiting.length === 0) return null;
   const names = waiting
-    .map((item) => `  - ${formatItemIdentity(item)}`)
+    .map((item) => {
+      const scope = item.path ?? item.branch ?? item.ref ?? item.head;
+      return `  - ${formatItemIdentity(item)}\n      --only ${scope}`;
+    })
     .sort(compareText);
   return [
     `${waiting.length} unit(s) are retirable except for the cooldown:`,
@@ -624,9 +696,18 @@ function renderCooldownOverrideHint(
     "",
     "The cooldown is the 'let a concurrent session notice' window — the work is",
     "already proven landed, clean and retained. If you know nobody is working in",
-    "them, discharge it explicitly:",
+    "them, discharge it explicitly, naming the units you know are idle:",
     "",
-    `  pnpm beads:worktrees:apply --allow-unenforced-planes --allow-cooldown-override`,
+    "  pnpm beads:worktrees:apply --allow-unenforced-planes \\",
+    "    --allow-cooldown-override --only <path|branch>",
+    "",
+    // Deliberately NOT a prefilled command containing every unit above. This
+    // list routinely includes other live sessions' worktrees — the first real
+    // use of the override found exactly that (cave-qamzg) — and a ready-made
+    // line covering all of them is how someone retires a colleague's work with
+    // one paste. Copy the --only lines you can vouch for, and no others.
+    "Take only the --only lines for units that are YOURS. Others in this list",
+    "may belong to a live session that has not finished with them.",
     "",
     applying
       ? "Every overridden retirement is recorded as such in the attempt log."
@@ -693,6 +774,7 @@ export function runRetirementApply(
   }
 
   let metadataRepair: MetadataRepairReport | undefined;
+  let exceptionDrop: ExceptionDropReport | undefined;
   let retirement: RetirementReport | undefined;
   let postInventory: PatrolInventory | undefined;
   let postInventoryError: string | undefined;
@@ -700,6 +782,14 @@ export function runRetirementApply(
   try {
     const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
       (candidate) => candidate.repairable,
+    );
+    // Expired-orphaned exceptions are the residue the metadata-repair sweep
+    // will never remove: repairable orphans have their whole record removed
+    // (exception included), so this pass is scoped to the non-repairable ones
+    // (cave-4oor6). See expiredOrphanedExceptionCandidates.
+    const expiredOrphanedExceptions = expiredOrphanedExceptionCandidates(
+      inventory.orphanedMetadata ?? [],
+      options.nowMs,
     );
     // Reserve a retirement slot before metadata repair spends the budget.
     //
@@ -739,16 +829,38 @@ export function runRetirementApply(
       Math.max(0, options.maxRetire - retirementReservation),
       repairableOrphans.length,
     );
+    // The exception drop is the same class of mutation as a metadata repair —
+    // a `bd update --metadata` under the same fence — so it shares the one
+    // maxRetire allowance rather than inventing a second budget. It is served
+    // after repair (repair unblocks bead creation, the more urgent job) and
+    // before retirement, and its candidates never overlap the repair's: this
+    // pass only sees non-repairable records, which repairOrphanedWorktreeMetadata
+    // skips, so the exact-match discipline of both stays intact (cave-4oor6).
+    const dropLimit = Math.min(
+      Math.max(0, options.maxRetire - repairLimit - retirementReservation),
+      expiredOrphanedExceptions.length,
+    );
+    const metadataOperations = dependencies.createMetadataRepairOperations({
+      root: options.root,
+    });
     metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
       candidates: inventory.orphanedMetadata ?? [],
       maxRepairs: repairLimit,
       gateHandle: acquired.handle,
       repositoryRoot: options.root,
-      operations: dependencies.createMetadataRepairOperations({
-        root: options.root,
-      }),
+      operations: metadataOperations,
     });
-    const gitLimit = options.maxRetire - repairLimit;
+    const dropExpiredOrphanedExceptionsImpl =
+      dependencies.dropExpiredOrphanedExceptions ?? dropExpiredOrphanedExceptions;
+    exceptionDrop = dropExpiredOrphanedExceptionsImpl({
+      candidates: expiredOrphanedExceptions,
+      maxDrops: dropLimit,
+      gateHandle: acquired.handle,
+      repositoryRoot: options.root,
+      nowMs: options.nowMs,
+      operations: metadataOperations,
+    });
+    const gitLimit = options.maxRetire - repairLimit - dropLimit;
     const operations = dependencies.createGitRetirementOperations({
       root: options.root,
       repo: options.repo!,
@@ -763,6 +875,7 @@ export function runRetirementApply(
             operations,
             maxRetire: String(gitLimit),
             allowCooldownOverride: options.allowCooldownOverride,
+            cooldownOverrideOnly: options.cooldownOverrideOnly,
             nowMs: options.nowMs,
           })
         : {
@@ -849,10 +962,26 @@ export function runRetirementApply(
                   candidate.path === repaired.path,
               ),
             );
+            // A dropped exception must be gone from the post-apply inventory
+            // too: if it still rides the fresh orphaned record, the persistence
+            // did not take and the report must not claim a clean sweep.
+            const unreconciledDrops = exceptionDrop.dropped.filter((dropped) =>
+              (candidatePostInventory.orphanedMetadata ?? []).some(
+                (candidate) =>
+                  candidate.beadId === dropped.beadId &&
+                  candidate.location === dropped.location &&
+                  candidate.record.exception?.expiresAt === dropped.expiresAt,
+              ),
+            );
             if (unreconciled.length > 0) {
               postInventoryError =
                 `post-apply inventory still reports repaired orphaned metadata: ${unreconciled
                   .map((candidate) => `${candidate.beadId}:${candidate.location}`)
+                  .join(", ")}`;
+            } else if (unreconciledDrops.length > 0) {
+              postInventoryError =
+                `post-apply inventory still reports dropped expired-orphaned exceptions: ${unreconciledDrops
+                  .map((drop) => `${drop.beadId}:${drop.location}`)
                   .join(", ")}`;
             } else {
               postInventory = candidatePostInventory;
@@ -887,12 +1016,17 @@ export function runRetirementApply(
     throw thrown;
   }
 
-  if (metadataRepair === undefined || retirement === undefined) {
-    throw new Error("apply completed without metadata repair and retirement results");
+  if (
+    metadataRepair === undefined ||
+    exceptionDrop === undefined ||
+    retirement === undefined
+  ) {
+    throw new Error("apply completed without metadata repair, exception drop, and retirement results");
   }
 
   return {
     metadataRepair,
+    exceptionDrop,
     retirement,
     ...(postInventory ? { postInventory } : {}),
     ...(postInventoryError ? { postInventoryError } : {}),
@@ -900,7 +1034,96 @@ export function runRetirementApply(
   };
 }
 
-export function main(argv = process.argv.slice(2)): number {
+export /**
+ * Which unit a single `--only` value names, if exactly one.
+ *
+ * Matching is exact on the identities a unit actually has — path, ref, branch,
+ * head — plus the worktree's directory name, which is what an operator reads
+ * off the patrol's own output. Deliberately NOT a substring or prefix match:
+ * this decides which unit an idleness assertion covers, and a value that
+ * quietly widened to a neighbour would recreate the very bug the scope exists
+ * to close.
+ */
+function unitsNamedBy(value: string, items: readonly PatrolItem[]): PatrolItem[] {
+  return items.filter((item) => {
+    if (item.path === value || item.ref === value || item.branch === value) return true;
+    if (item.head === value) return true;
+    if (item.path !== null && item.path.split("/").pop() === value) return true;
+    return false;
+  });
+}
+
+/**
+ * Refuse an invocation whose cooldown override is not scoped to named units.
+ *
+ * `--allow-cooldown-override` began as an all-or-nothing lever over the whole
+ * cooldown lane, and that is unsafe on a shared checkout: the first real use
+ * found the patrol's hint listing two cooldown units, the second belonging to
+ * ANOTHER live session (cave-iizwt, PR #5021, landed mid-session). Applying it
+ * would have retired that session's worktree alongside the operator's own —
+ * the class of incident worktree-autolock.mjs exists to prevent. The override
+ * went unused and three units were hand-retired instead, which is what a lever
+ * nobody dares pull is worth.
+ *
+ * The flag's whole basis is an operator ASSERTING that a unit is idle, and an
+ * assertion has to be about something specific. So the scope is required, each
+ * value must name a unit that exists, and it must name exactly one.
+ *
+ * Returns the refusal lines, or [] to proceed.
+ */
+function cooldownOverrideScopeRefusal(
+  options: Options,
+  items: readonly PatrolItem[],
+): string[] {
+  const P = "worktree-lifecycle-patrol:";
+  if (!options.allowCooldownOverride) {
+    if (options.cooldownOverrideOnly.length === 0) return [];
+    // Refused rather than ignored: silently accepting a scope that governs
+    // nothing invites the reading that --only narrows the whole apply.
+    return [
+      `${P} --only is meaningless without --allow-cooldown-override.`,
+      "  --only scopes the cooldown override and nothing else; every other unit",
+      "  is retired on the gate's own evidence, which needs no assertion from you.",
+    ];
+  }
+  if (options.cooldownOverrideOnly.length === 0) {
+    const waiting = items.filter((item) => cooldownIsTheOnlyBlocker(item, options.nowMs));
+    return [
+      `${P} --allow-cooldown-override requires --only <path|branch|ref|head>.`,
+      "  The flag asserts that a unit is IDLE, and that assertion has to name",
+      "  something. Applied to the whole lane it also retires units belonging to",
+      "  other live sessions, which is how a colleague loses a worktree mid-edit.",
+      ...(waiting.length > 0
+        ? [
+            "  Units currently held only by cooldown — name the ones that are YOURS:",
+            ...waiting.map(
+              (item) => `    --only ${item.path ?? item.branch ?? item.ref ?? item.head}`,
+            ),
+          ]
+        : ["  Nothing is currently held only by cooldown."]),
+    ];
+  }
+  const refusal: string[] = [];
+  for (const value of options.cooldownOverrideOnly) {
+    const matches = unitsNamedBy(value, items);
+    if (matches.length === 0) {
+      refusal.push(
+        `${P} --only ${value} names no unit in this checkout.`,
+        "  A typo here would assert idleness about something that does not exist.",
+      );
+    } else if (matches.length > 1) {
+      refusal.push(
+        `${P} --only ${value} is ambiguous — it names ${matches.length} units:`,
+        ...matches.map((item) => `    ${item.path ?? item.ref ?? item.branch ?? item.head}`),
+        "  Name one unambiguously; a scope that covers a unit you did not mean is",
+        "  the failure this flag is scoped to avoid.",
+      );
+    }
+  }
+  return refusal;
+}
+
+function main(argv = process.argv.slice(2)): number {
   const options = parseArgs(argv);
   const inventory = collectWorktreeLifecycleInventory({
     repo: options.repo!,
@@ -910,6 +1133,11 @@ export function main(argv = process.argv.slice(2)): number {
   const summary = summarizeInventory(inventory);
 
   if (options.apply) {
+    const scopeRefusal = cooldownOverrideScopeRefusal(options, inventory.items);
+    if (scopeRefusal.length > 0) {
+      for (const line of scopeRefusal) console.error(line);
+      return 2;
+    }
     const capabilities = repositoryMaintenanceCapabilities();
     const admission = assessMaintenancePlaneAdmission({
       capabilities: capabilities as unknown as MaintenancePlaneCapabilities,
@@ -947,6 +1175,7 @@ export function main(argv = process.argv.slice(2)): number {
   if (options.apply) {
     const {
       metadataRepair,
+      exceptionDrop,
       retirement,
       postInventory,
       postInventoryError,
@@ -954,6 +1183,7 @@ export function main(argv = process.argv.slice(2)): number {
     } = runRetirementApply(options, inventory);
     const outcome = evaluateRetirementApplyOutcome({
       metadataRepair,
+      exceptionDrop,
       retirement,
       postInventoryError,
       warning,
@@ -969,6 +1199,7 @@ export function main(argv = process.argv.slice(2)): number {
             inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
             ...(postInventoryError ? { postInventoryError } : {}),
             metadataRepair,
+            exceptionDrop,
             retirement,
           })
         : `${renderApplyReport(
@@ -977,6 +1208,7 @@ export function main(argv = process.argv.slice(2)): number {
             warning,
             postInventoryError,
             metadataRepair,
+            exceptionDrop,
           )}${renderOrphanedMetadataClaims(reportingInventory)}`,
     );
     return outcome.status;

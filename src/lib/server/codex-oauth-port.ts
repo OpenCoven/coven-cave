@@ -66,6 +66,11 @@ export async function portIsFree(port: number): Promise<boolean> {
  * processes hold it (refuses to disambiguate — safer to print instructions).
  */
 export async function pidHoldingPort(port: number): Promise<number | null> {
+  // lsof is a POSIX tool; on Windows the probe could only ENOENT and report
+  // "no holder" anyway. Skip it explicitly so the caller's HeldUnknown branch
+  // is a deliberate platform fact rather than a swallowed spawn failure
+  // (cave-drb8w).
+  if (process.platform === "win32") return null;
   let stdout: string;
   try {
     const result = await execFileAsync("lsof", ["-ti", `tcp:${port}`], {
@@ -99,6 +104,11 @@ export async function pidHoldingPort(port: number): Promise<number | null> {
  * Returns an empty string if the process is gone or ps is unavailable.
  */
 export async function describePid(pid: number): Promise<string> {
+  // ps is a POSIX tool; pidHoldingPort never returns a pid on Windows, so
+  // this probe is unreachable there — guard it explicitly anyway so the
+  // "unknown" result is deliberate rather than a swallowed spawn failure
+  // (cave-drb8w).
+  if (process.platform === "win32") return "";
   try {
     // `command=` (with the trailing =) suppresses the header so we get
     // just the argv line. Works on both macOS and Linux ps.

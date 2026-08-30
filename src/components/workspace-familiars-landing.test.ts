@@ -331,29 +331,29 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]{0,3000}projectId=\{selectedWorkspaceProjectId\}/,
-  "WorkspaceSidebar receives selectedWorkspaceProjectId",
+  /<SidebarMinimal[\s\S]{0,3000}projectId=\{selectedWorkspaceProjectId\}/,
+  "the sidebar receives selectedWorkspaceProjectId",
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]{0,3000}project=\{selectedWorkspaceProject\}/,
-  "WorkspaceSidebar receives selectedWorkspaceProject",
+  /<SidebarMinimal[\s\S]{0,3000}project=\{selectedWorkspaceProject\}/,
+  "the sidebar receives selectedWorkspaceProject",
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]{0,3000}projects=\{registeredProjects\}/,
-  "WorkspaceSidebar receives registeredProjects",
+  /<SidebarMinimal[\s\S]{0,3000}projects=\{registeredProjects\}/,
+  "the sidebar receives registeredProjects",
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]{0,3000}projectCrew=\{resolvedProjectCrew\}/,
-  "WorkspaceSidebar receives resolvedProjectCrew",
+  /<SidebarMinimal[\s\S]{0,3000}projectCrew=\{resolvedProjectCrew\}/,
+  "the sidebar receives resolvedProjectCrew",
 );
-const workspaceSidebarMount = workspace.match(/<WorkspaceSidebar[\s\S]*?\/>/)?.[0] ?? "";
+const workspaceSidebarMount = workspace.match(/<SidebarMinimal[\s\S]*?\/>/)?.[0] ?? "";
 assert.match(
   workspaceSidebarMount,
-  /projectCrew=\{resolvedProjectCrew\}[\s\S]{0,200}selectedFamiliarIds=\{scopeIds\}/,
-  "WorkspaceSidebar receives the full shell familiar set rather than a collapsed first member",
+  /selectedFamiliarIds=\{scopeIds\}[\s\S]{0,1200}projectCrew=\{resolvedProjectCrew\}/,
+  "the sidebar receives the full shell familiar set rather than a collapsed first member",
 );
 // ── effectiveProjectCrewLoading: both rails get the fail-closed value ────────
 // When a project ID is selected but the registry is still loading, has not
@@ -383,8 +383,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]{0,3000}projectCrewLoading=\{effectiveProjectCrewLoading\}/,
-  "WorkspaceSidebar receives effectiveProjectCrewLoading, not raw projectCrewLoading",
+  /<SidebarMinimal[\s\S]{0,3000}projectCrewLoading=\{effectiveProjectCrewLoading\}/,
+  "the sidebar receives effectiveProjectCrewLoading, not raw projectCrewLoading",
 );
 assert.doesNotMatch(
   workspace,
@@ -440,10 +440,10 @@ assert.match(
 const sidebarMinimalSrc = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspaceSidebarSrc = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 
-for (const [label, src] of [
-  ["SidebarMinimalProps", sidebarMinimalSrc],
-  ["WorkspaceSidebar Props", workspaceSidebarSrc],
-]) {
+// Only SidebarMinimal carries the Task 6 project/crew context now. The chat
+// list is embedded inside it and reads that context from its host rather than
+// re-declaring it (cave-fh9so).
+for (const [label, src] of [["SidebarMinimalProps", sidebarMinimalSrc]]) {
   // Scope checks to the Task 6 props block to avoid false matches in other types.
   const task6Block =
     src.match(/\/\/ ── Project \/ workspace context \(Task 6\)([\s\S]*?)(?=\n\}|\n  \/\/ ─)/)?.[0] ?? src;
@@ -481,12 +481,10 @@ for (const [label, src] of [
     `${label}.createProjectOrThrow remains optional (creation not always available)`,
   );
 }
-const workspaceSidebarTask6Block =
-  workspaceSidebarSrc.match(/\/\/ ── Project \/ workspace context \(Task 6\)([\s\S]*?)(?=\n\}|\n  \/\/ ─)/)?.[0] ?? workspaceSidebarSrc;
-assert.match(
+assert.doesNotMatch(
   workspaceSidebarSrc,
-  /selectedFamiliarIds: ReadonlySet<string>;/,
-  "WorkspaceSidebar.selectedFamiliarIds is required in the Task 6 block (no ? modifier)",
+  /\/\/ ── Project \/ workspace context \(Task 6\)/,
+  "the embedded chat list no longer re-declares the Task 6 context block",
 );
 // b7ecf460e ("decouple heartbeat from daemon diagnostics") retired the 5s
 // usePausablePoll for daemon status: the connection supervisor owns its own

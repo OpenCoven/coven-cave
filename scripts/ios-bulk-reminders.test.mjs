@@ -57,7 +57,7 @@ assert.match(
 );
 assert.match(
   model,
-  /func reportPartial\(_ failed: Int, of total: Int, verb: String\)/,
+  /func reportPartial\([\s\S]*?_ failed: Int,[\s\S]*?of total: Int,[\s\S]*?verb: String,[\s\S]*?retry: \(@MainActor \(\) -> Void\)\? = nil[\s\S]*?\)[\s\S]*?\{/,
   "a partly-applied batch needs its own message — 'reverted' alone is misleading",
 );
 

@@ -107,6 +107,14 @@ const QUIESCE_POLL_MS = 100;
 const MUTATION_LOCK_POLL_MS = 10;
 const MUTATION_LOCK_WAIT_MS = 1_000;
 const GATE_CLEANUP_TIMEOUT_MS = 5_000;
+// WSL can step CLOCK_REALTIME backwards while synchronizing with the host. The
+// lifecycle-create baseline measured repeated 1.32s corrections, and the WSL
+// host has since produced a measured 2.936s correction. Treating either as
+// tampering aborts owned lifecycle transactions, including compensation paths.
+// Five seconds remains deliberately small relative to the two-minute writer
+// lease: materially future-dated records still fail closed, and tolerated
+// corrections never move a persisted heartbeat backwards.
+const MAX_TRANSIENT_CLOCK_REGRESSION_MS = 5_000;
 
 /** Synchronous sleep without CPU spin (callers are sync CLI/hook processes). */
 function sleepSync(ms) {
@@ -263,7 +271,11 @@ function refusalDetail(gate) {
 }
 
 function clockRegressed(lease, now) {
-  return now < Date.parse(lease.heartbeatAt);
+  return Date.parse(lease.heartbeatAt) - now > MAX_TRANSIENT_CLOCK_REGRESSION_MS;
+}
+
+function monotonicHeartbeatAt(lease, now) {
+  return new Date(Math.max(now, Date.parse(lease.heartbeatAt))).toISOString();
 }
 
 function intentExpired(intent, now) {
@@ -498,7 +510,7 @@ export function heartbeatWriterIntent(lease) {
     if (existing.value.token !== lease.token) return { ok: false, reason: "not-owner" };
     const now = Date.now();
     if (intentExpired(existing.value, now)) return { ok: false, reason: "expired" };
-    if (now < Date.parse(existing.value.heartbeatAt)) {
+    if (clockRegressed(existing.value, now)) {
       return { ok: false, reason: "heartbeat-regressed" };
     }
 
@@ -511,7 +523,7 @@ export function heartbeatWriterIntent(lease) {
     }
     const updated = {
       ...existing.value,
-      heartbeatAt: new Date(now).toISOString(),
+      heartbeatAt: monotonicHeartbeatAt(existing.value, now),
     };
     replaceAtomically(filePath, updated);
     audit(lease.root, "intent-heartbeat", { writerId: lease.writerId });
@@ -925,7 +937,7 @@ function refreshDrainingGate(handle) {
     const now = Date.now();
     if (clockRegressed(owned.gate, now)) return { ok: false, reason: "clock-regressed" };
     if (gateExpired(owned.gate, now)) return { ok: false, reason: "expired" };
-    if (now === Date.parse(owned.gate.heartbeatAt)) return { ok: true };
+    if (now <= Date.parse(owned.gate.heartbeatAt)) return { ok: true };
     replaceAtomically(gatePath(handle.root), {
       ...owned.gate,
       heartbeatAt: new Date(now).toISOString(),
@@ -958,12 +970,12 @@ export function heartbeatMaintenanceGate(handle) {
     if (!owned.ok) return { ok: false, reason: owned.reason };
     const now = Date.now();
     if (gateExpired(owned.gate, now)) return { ok: false, reason: "expired" };
-    if (now < Date.parse(owned.gate.heartbeatAt)) {
+    if (clockRegressed(owned.gate, now)) {
       return { ok: false, reason: "heartbeat-regressed" };
     }
     const updated = {
       ...owned.gate,
-      heartbeatAt: new Date(now).toISOString(),
+      heartbeatAt: monotonicHeartbeatAt(owned.gate, now),
     };
     replaceAtomically(gatePath(handle.root), updated);
     if (gateExpired(updated, Date.now())) {

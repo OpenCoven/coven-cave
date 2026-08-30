@@ -34,7 +34,11 @@ assert.match(
 );
 assert.match(surface, /onNewChat=\{startProjectChat\}/, "projects panel wires onNewChat to startProjectChat");
 assert.match(surface, /addEventListener\(CHAT_OPEN_PROJECTS_EVENT/, "listens for the reroute event");
-assert.match(surface, /onOpenProjectsTab=\{\(\) => setScope\("projects"\)\}/, "chat project rail can jump directly to the Projects tab");
+assert.doesNotMatch(
+  surface,
+  /onOpenProjectsTab/,
+  "the retired in-chat project rail's Projects-tab jump is gone; the reroute event covers it",
+);
 
 assert.doesNotMatch(surface, /isCodeSurface|CodeInlineToolbar/, "retired Code surface should not gate alternate chat tabs");
 

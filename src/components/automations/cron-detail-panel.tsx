@@ -8,6 +8,9 @@ import { StandardSelect } from "@/components/ui/select";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { CodexAutomation, CodexAutomationPatch } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
+import { cronInsight, cronNextRuns, recordedRunStats } from "@/lib/automations/cron-detail-state";
+// Component-imported: the globals facade has no headroom left (see the sheet).
+import "@/styles/cron-detail-state.css";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { RRULE_DAY_LABEL, RRULE_DAY_ORDER, buildCodexRrule, parseCodexRrule, composeAutomationPrompt, splitAutomationPrompt } from "@/lib/codex-automation-form";
@@ -31,6 +34,18 @@ const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs
 // never reads "3d ago" in the list but "Jul 20, 2:15 PM" in this panel.
 function relTime(iso: string | undefined | null): string {
   return iso ? relativeTimeSigned(iso) : "—";
+}
+
+/** Compact duration for the run-history summary: 45s, 2m 10s, 1h 4m. */
+function formatDurationMs(ms: number): string {
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
 }
 
 export function CodexDetailPanel({
@@ -182,6 +197,13 @@ export function CodexDetailPanel({
     });
   };
   const latestRun = runs[0];
+  // The *state* half the pane never had: when this fires next, and one
+  // sentence explaining where it stands. Shares recurrenceFromRrule with the
+  // create dialog's preview and the calendar's projection, so all three
+  // answer "when does this run" the same way.
+  const upcoming = cronNextRuns(auto, Date.now(), 3);
+  const insight = cronInsight(auto, latestRun, upcoming[0] ?? null);
+  const runStats = recordedRunStats(runs);
   const latestRunLabel = latestRun
     ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
     : "No runs yet";
@@ -384,7 +406,19 @@ export function CodexDetailPanel({
     </CronDetailSection>
   );
   const runsSection = runs.length > 0 ? (
-    <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
+    <CronDetailSection
+      title="Recent runs"
+      // Scoped on purpose: this store holds runs started FROM Cave, so the
+      // durations describe those and not the daemon's schedule. Saying
+      // "recent runs" unqualified would read as the cron's whole history —
+      // the same overclaim the crons list refuses when it declines to invent
+      // a stale status. No reliability percentage for the same reason.
+      description={
+        runStats.medianMs !== null
+          ? `Runs started from Cave — median ${formatDurationMs(runStats.medianMs)}, longest ${formatDurationMs(runStats.maxMs ?? 0)}. Open one to inspect its log.`
+          : "Runs started from Cave. Open one to inspect its log without leaving this cron."
+      }
+    >
       <ul className="mt-1 space-y-1">
         {runs.slice(0, 10).map((r) => (
           <li key={r.id}>
@@ -479,7 +513,30 @@ export function CodexDetailPanel({
           <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
+          {/* The tile the pane was missing. A surface that can describe a cron
+              in nine configuration fields without ever saying when it next
+              fires is exactly the gap the handoff spec names. "—" when the
+              rule cannot be read or the cron is paused: both are honest, and
+              the insight line above says which. */}
+          <CronSummaryTile
+            label="Next run"
+            value={upcoming[0] ? formatTimestamp(upcoming[0], readDateTimePrefs()) : "—"}
+          />
         </div>
+
+        {/* One sentence for the state, above the fields that configure it. */}
+        <p className="cron-detail-insight" role="status">{insight}</p>
+
+        {upcoming.length > 1 ? (
+          <p className="cron-detail-upcoming">
+            <span className="cron-detail-upcoming__label">then</span>
+            {upcoming.slice(1).map((iso) => (
+              <span key={iso} className="cron-detail-upcoming__at">
+                {formatTimestamp(iso, readDateTimePrefs())}
+              </span>
+            ))}
+          </p>
+        ) : null}
 
         {expanded ? (
           <div className="grid items-start gap-5 lg:grid-cols-2">

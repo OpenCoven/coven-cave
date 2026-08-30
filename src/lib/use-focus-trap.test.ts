@@ -32,6 +32,11 @@ assert.match(
   /querySelectorAll<HTMLElement>\(FOCUSABLE\)/,
   "re-queries focusables on each Tab event",
 );
+assert.match(
+  source,
+  /typeof el\.getClientRects !== "function" \|\| el\.getClientRects\(\)\.length > 0/,
+  "excludes controls hidden by an active dialog mode from the Tab cycle",
+);
 
 // Exports the shared FOCUSABLE selector for consumers who want to use it directly.
 assert.match(source, /export const FOCUSABLE\s*=/, "exports FOCUSABLE selector constant");
@@ -144,8 +149,13 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!hadTrapAbove\) \{\s*\n\s*returnFocusRef\.current\?\.focus\(\);\s*\n\s*\}/,
+  /if \(!hadTrapAbove && restoreFocusRef\.current\(\) !== false\) \{\s*\n\s*returnFocusRef\.current\?\.focus\(\);\s*\n\s*\}/,
   "focus restoration on deactivate is skipped while a nested trap is still active above it",
+);
+assert.match(
+  source,
+  /restoreFocusRef\.current\(\) !== false/,
+  "callers can suppress restoration when focus is deliberately moving into a replacement layer",
 );
 
 // Test seam: a stray trap left registered by a failed test must not leak

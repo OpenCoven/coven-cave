@@ -38,6 +38,22 @@ final class CaveInviteTests: XCTestCase {
         XCTAssertEqual(invite?.token, "raw-sidecar")
     }
 
+    func testBrowserInvitePreservesRequestedChatFragment() {
+        let invite = CaveInvite.parse(
+            "https://cave.example.ts.net/?coven_access_token=v1.5.n.s#chat-thread-123"
+        )
+
+        XCTAssertEqual(invite?.threadId, "thread-123")
+    }
+
+    func testUnrelatedBrowserFragmentDoesNotRequestAChat() {
+        let invite = CaveInvite.parse(
+            "https://cave.example.ts.net/?coven_access_token=v1.5.n.s#settings"
+        )
+
+        XCTAssertNil(invite?.threadId)
+    }
+
     // MARK: - bare hosts
 
     func testBareHostPassesThrough() {

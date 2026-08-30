@@ -4,20 +4,30 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+} from "@/lib/server/client-v1/authority-contract.ts";
+import {
   CLIENT_V1_CREDENTIAL_STORE_FILE,
   type CredentialStore,
 } from "@/lib/server/client-v1/credential-store.ts";
 import {
   CLIENT_V1_PAIRING_CREATE_LIMIT,
-  CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+  CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
 } from "@/lib/server/client-v1/rate-limit.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import {
+  createClientV1HpkeTestClient,
+  type ClientV1HpkeTestClient,
+} from "@/lib/server/client-v1/testing/hpke-client.ts";
+import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 import { createPairingExchangePostHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-exchange-");
 const secretHeader = "X-Coven-Pairing-Secret";
+const INSTANCE_ID = "client-v1-exchange-route-test";
+const BOUND_NOW = 30_000;
 const pairingInput = {
   appName: "OpenCoven Chat",
   installationId: "chat-install-1",
@@ -39,6 +49,23 @@ function request(id: string, secret: string): Request {
       },
     },
   );
+}
+
+async function openBoundJson(
+  prepared: ClientV1HpkeTestClient,
+  response: Response,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("content-type"),
+    CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+  );
+  const inner = await prepared.open(response);
+  return {
+    status: inner.status,
+    body: JSON.parse(new TextDecoder().decode(inner.body)) as
+      Record<string, unknown>,
+  };
 }
 
 /**
@@ -379,7 +406,7 @@ test("polling a pending-then-approved pairing with the correct secret is never r
     // holder nothing at all.
     const polls = 150;
     assert.ok(polls > CLIENT_V1_PAIRING_CREATE_LIMIT);
-    assert.ok(polls > CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT);
+    assert.ok(polls > CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT);
     for (let poll = 0; poll < polls; poll += 1) {
       const pending = await handler(request(issued.id, issued.secret), context(issued.id));
       assert.equal(pending.status, 409, `poll ${poll} must stay pending, not rate limited`);
@@ -426,7 +453,7 @@ test("wrong pairing secrets are bounded per pairing request and leave other pair
 
     for (
       let attempt = 0;
-      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt < CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT;
       attempt += 1
     ) {
       const rejected = await handler(
@@ -462,6 +489,45 @@ test("wrong pairing secrets are bounded per pairing request and leave other pair
       context(bystander.id),
     );
     assert.equal(untouched.status, 200);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a replayed exchange reports conflict without charging the comparison budget (cave-ngro8)", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 13_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+
+    const first = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(first.status, 200);
+    const remainingAfterExchange = runtime.rateLimiter.peekPairingComparisonFailure(issued.id).remaining;
+
+    // The replayed exchange walks the 'consumed' branch: it must answer the
+    // conflict WITHOUT spending the holder's failure budget — charging there
+    // would turn a crashed client's retry into a lockout of the legitimate
+    // holder, and no test caught it (cave-ngro8).
+    const replay = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(replay.status, 409);
+    const replayBody = await replay.json() as {
+      error: { code: string; details: { reason: string } };
+    };
+    assert.equal(replayBody.error.code, "conflict");
+    assert.equal(replayBody.error.details.reason, "pairing_replayed");
+    assert.equal(
+      runtime.rateLimiter.peekPairingComparisonFailure(issued.id).remaining,
+      remainingAfterExchange,
+      "a replay must not charge the shared comparison budget",
+    );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });
@@ -537,6 +603,160 @@ test("a failed credential issue answers in the client-v1 envelope and leaves the
       ((await replay.json()) as { error: { details?: { reason?: string } } })
         .error.details?.reason,
       "pairing_replayed",
+    );
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("two identical concurrent bound exchanges issue one credential and encrypt one replay refusal", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    await withClientV1HpkeRouteTestAuthority(
+      { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 41 },
+      async (authority) => {
+        const runtime = createClientV1Runtime({
+          authority: authority.runtime,
+          credentialRoot: root,
+          loopbackSecret: "loopback-secret",
+          now: () => BOUND_NOW,
+        });
+        const pairing = runtime.pairingStore.create(pairingInput);
+        assert.equal(
+          runtime.pairingStore.decide(pairing.id, "approved", BOUND_NOW),
+          true,
+        );
+        const originalConsume =
+          runtime.pairingStore.consumeForExchange.bind(runtime.pairingStore);
+        const originalIssue =
+          runtime.credentialStore.issue.bind(runtime.credentialStore);
+        let consumeCalls = 0;
+        let issueCalls = 0;
+        runtime.pairingStore.consumeForExchange = (id, secret) => {
+          consumeCalls += 1;
+          return originalConsume(id, secret);
+        };
+        runtime.credentialStore.issue = async (input) => {
+          issueCalls += 1;
+          return originalIssue(input);
+        };
+        const handler = createPairingExchangePostHandler(runtime);
+
+        const downgrade = await handler(
+          request(pairing.id, pairing.secret),
+          context(pairing.id),
+        );
+        assert.equal(downgrade.status, 426);
+        assert.equal(consumeCalls, 0);
+        assert.equal(issueCalls, 0);
+        assert.equal((await runtime.credentialStore.reload()).size, 0);
+
+        const replacement = await withClientV1HpkeRouteTestAuthority(
+          { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 42 },
+          async (otherAuthority) =>
+            createClientV1HpkeTestClient({
+              authority: otherAuthority.authority,
+              instanceId: INSTANCE_ID,
+              runtimeNonce: otherAuthority.runtimeNonce,
+              operation: "pairing.exchange",
+              url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}/exchange`,
+              method: "POST",
+              issuedAt: BOUND_NOW,
+              requestNonce: new Uint8Array(32).fill(4),
+              authorization: {
+                kind: "pairing-secret",
+                value: pairing.secret,
+              },
+            }),
+        );
+        const replacementHeaders = new Headers(replacement.request.headers);
+        replacementHeaders.set(LOCAL_PEER_HEADER, "loopback-secret");
+        const replacementResponse = await handler(
+          new Request(replacement.request, { headers: replacementHeaders }),
+          context(pairing.id),
+        );
+        assert.equal(replacementResponse.status, 409);
+        assert.equal(consumeCalls, 0);
+        assert.equal(issueCalls, 0);
+
+        const bodyBound = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "pairing.exchange",
+          url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}/exchange`,
+          method: "POST",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(5),
+          authorization: { kind: "pairing-secret", value: pairing.secret },
+        });
+        const bodyHeaders = new Headers(bodyBound.request.headers);
+        bodyHeaders.set(LOCAL_PEER_HEADER, "loopback-secret");
+        const bodyResponse = await handler(
+          new Request(bodyBound.request.url, {
+            method: "POST",
+            headers: bodyHeaders,
+            body: new Uint8Array([1]),
+          }),
+          context(pairing.id),
+        );
+        assert.equal(bodyResponse.status, 400);
+        assert.equal(consumeCalls, 0);
+        assert.equal(issueCalls, 0);
+
+        const prepared = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "pairing.exchange",
+          url: `http://127.0.0.1:3020/api/client/v1/pairing/requests/${pairing.id}/exchange`,
+          method: "POST",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(6),
+          authorization: { kind: "pairing-secret", value: pairing.secret },
+        });
+        const headers = new Headers(prepared.request.headers);
+        headers.set(LOCAL_PEER_HEADER, "loopback-secret");
+        const boundRequest = new Request(prepared.request, { headers });
+        const [leftResponse, rightResponse] = await Promise.all([
+          handler(boundRequest.clone(), context(pairing.id)),
+          handler(boundRequest.clone(), context(pairing.id)),
+        ]);
+        const opened = await Promise.all([
+          openBoundJson(prepared, leftResponse),
+          openBoundJson(prepared, rightResponse),
+        ]);
+        assert.deepEqual(
+          opened.map(({ status }) => status).sort((left, right) => left - right),
+          [200, 409],
+        );
+        const success = opened.find(({ status }) => status === 200)!;
+        const replayed = opened.find(({ status }) => status === 409)!;
+        assert.match(
+          (success.body as { data: { bearer: string } }).data.bearer,
+          /^[A-Za-z0-9_-]{43}$/u,
+        );
+        assert.deepEqual(
+          (replayed.body as {
+            error: {
+              code: string;
+              message: string;
+              details: { reason: string };
+              retryable: boolean;
+            };
+          }).error,
+          {
+            code: "conflict",
+            message: "The authority request was already used.",
+            details: { reason: "authority_replayed" },
+            retryable: true,
+          },
+        );
+        assert.equal(consumeCalls, 1);
+        assert.equal(issueCalls, 1);
+        assert.equal((await runtime.credentialStore.reload()).size, 1);
+      },
     );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);

@@ -41,6 +41,7 @@ test("declares exactly the reviewed operation inventory, in order", () => {
     "pairing.admin.decide",
     "credentials.admin.list",
     "credentials.admin.revoke",
+    "status.admin.read",
     "familiars.list",
     "projects.list",
     "conversations.list",
@@ -158,9 +159,9 @@ test("binds every operation's authority class to its id and its scope", () => {
         `${definition.id} is bearer-authenticated and must name a contract scope`,
       );
     } else {
-      // Null is a claim, not an omission: a public operation needs no
-      // credential, and an admin operation is not reached with a scoped bearer
-      // at all, so naming a scope there would imply a bearer could satisfy it.
+      // Null is a claim, not an omission: public and admin operations are not
+      // reached with a scoped bearer, so naming a scope there would imply a
+      // bearer could satisfy them.
       assert.equal(
         definition.scope,
         null,
@@ -177,6 +178,85 @@ test("binds every operation's authority class to its id and its scope", () => {
       `${definition.id}: the admin path family and ingress "${definition.ingress}" disagree`,
     );
   }
+});
+
+test("pins every operation's credential and authority binding", () => {
+  assert.deepEqual(
+    Object.fromEntries(
+      CLIENT_V1_OPERATION_DEFINITIONS.map((operation) => [
+        operation.id,
+        {
+          credential: operation.credential,
+          binding: operation.binding,
+        },
+      ]),
+    ),
+    {
+      "health.read": { credential: "none", binding: "none" },
+      "pairing.create": { credential: "none", binding: "none" },
+      "pairing.poll": {
+        credential: "pairing-secret",
+        binding: "hpke-bound-v1",
+      },
+      "pairing.exchange": {
+        credential: "pairing-secret",
+        binding: "hpke-bound-v1",
+      },
+      "pairing.admin.list": { credential: "admin", binding: "none" },
+      "pairing.admin.decide": { credential: "admin", binding: "none" },
+      "credentials.admin.list": { credential: "admin", binding: "none" },
+      "credentials.admin.revoke": { credential: "admin", binding: "none" },
+      "status.admin.read": { credential: "admin", binding: "none" },
+      "familiars.list": { credential: "bearer", binding: "hpke-bound-v1" },
+      "projects.list": { credential: "bearer", binding: "hpke-bound-v1" },
+      "conversations.list": {
+        credential: "bearer",
+        binding: "hpke-bound-v1",
+      },
+      "conversations.read": {
+        credential: "bearer",
+        binding: "hpke-bound-v1",
+      },
+      "messages.list": { credential: "bearer", binding: "hpke-bound-v1" },
+    },
+  );
+});
+
+test("binds HPKE only to pairing-secret and bearer operations", () => {
+  for (const definition of CLIENT_V1_OPERATION_DEFINITIONS) {
+    if (definition.binding === "hpke-bound-v1") {
+      assert.ok(
+        definition.credential === "pairing-secret" || definition.credential === "bearer",
+        `${definition.id}: HPKE binding cannot carry ${definition.credential}`,
+      );
+    }
+    if (definition.ingress === "admin") {
+      assert.equal(
+        definition.credential,
+        "admin",
+        `${definition.id}: admin ingress must use the admin credential`,
+      );
+      assert.equal(
+        definition.binding,
+        "none",
+        `${definition.id}: admin authority is outside hpke-bound-v1`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    CLIENT_V1_OPERATION_DEFINITIONS.filter((definition) =>
+      definition.id === "health.read" || definition.id === "pairing.create"
+    ).map((definition) => ({
+      id: definition.id,
+      credential: definition.credential,
+      binding: definition.binding,
+    })),
+    [
+      { id: "health.read", credential: "none", binding: "none" },
+      { id: "pairing.create", credential: "none", binding: "none" },
+    ],
+  );
 });
 
 test("matches the reviewed public bootstrap routes exactly", () => {
@@ -201,7 +281,7 @@ test("serves one operation per method and path", () => {
   }
 });
 
-test("renders JSON-safe records for the generated fixture", () => {
+test("renders public JSON-safe records for the generated fixture", () => {
   const records = clientV1OperationRecords();
   assert.equal(records.length, CLIENT_V1_OPERATION_DEFINITIONS.length);
   assert.deepEqual(records[0], {
@@ -210,6 +290,8 @@ test("renders JSON-safe records for the generated fixture", () => {
     path: "/api/client/v1/health",
     ingress: "public",
     scope: null,
+    credential: "none",
+    binding: "none",
     families: ["health"],
   });
   assert.deepEqual(records.at(-1), {
@@ -218,12 +300,29 @@ test("renders JSON-safe records for the generated fixture", () => {
     path: "/api/client/v1/conversations/:id/messages",
     ingress: "authenticated",
     scope: "chat:read",
+    credential: "bearer",
+    binding: "hpke-bound-v1",
     families: ["conversation-messages", "cursors"],
   });
   // A copy, not the frozen registry: the fixture builder mutates nothing, but a
   // caller that did would otherwise poison every later render.
   records[0].families.push("poisoned");
   assert.deepEqual(clientV1OperationRecords()[0].families, ["health"]);
+});
+
+test("publishes credential and binding on every manifest record", () => {
+  assert.deepEqual(
+    clientV1OperationRecords().map(({ id, credential, binding }) => ({
+      id,
+      credential,
+      binding,
+    })),
+    CLIENT_V1_OPERATION_DEFINITIONS.map(({ id, credential, binding }) => ({
+      id,
+      credential,
+      binding,
+    })),
+  );
 });
 
 test("resolves an operation by id and refuses an unknown one", () => {

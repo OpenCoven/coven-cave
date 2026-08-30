@@ -1,18 +1,15 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
-import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { Shell, type ShellHandle } from "@/components/shell";
 import { SidebarFooter, type SidebarFooterDestination } from "@/components/sidebar-footer";
+import { SidebarSection } from "@/components/sidebar-section";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import {
-  DEFAULT_NAV_SECTION,
-  navItemsForSection,
-  type NavSection,
-} from "@/lib/nav-section";
+import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
 import "@/styles/analytics-page-shell.css";
 
 function activeFooterDestination(pathname: string): SidebarFooterDestination {
@@ -38,44 +35,86 @@ function destinationTitle(pathname: string): string {
 
 function DestinationSidebar({ pathname }: { pathname: string }) {
   const router = useRouter();
-  const [section, setSection] = useState<NavSection>(DEFAULT_NAV_SECTION);
   const navScrollRef = useRef<HTMLDivElement | null>(null);
   useRovingTabIndex({
     containerRef: navScrollRef,
     itemSelector: ".sidebar-folder-row",
     orientation: "vertical",
-    itemsVersion: section,
   });
 
-  const rows = navItemsForSection(section);
+  // Same grouping as the workspace rail (cave-fh9so): Navigation, then Explore
+  // for the quiet destinations. Settings and Dashboard render through this
+  // shell, and a flat list here made them the two pages whose sidebar did not
+  // match the rest of the app.
+  //
+  // The rows stay anchors rather than SidebarMinimal's FolderRow buttons: this
+  // shell is a standalone Next route, so a destination is a navigation to
+  // `/?mode=…`, not an in-place mode switch. What has to be shared is the
+  // structure and the registry, and both are.
+  const primaryRows = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => !item.quiet);
+  const exploreRows = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.quiet);
+
+  const renderRow = (item: (typeof VISIBLE_WORKSPACE_NAV_ITEMS)[number]) => (
+    <a
+      key={item.id}
+      // No --quiet-lead here. That class drew the unlabelled step that used to
+      // separate Explore from Navigation; the heading carries that meaning now,
+      // and keeping both would read as a gap inside a titled group.
+      className={`sidebar-folder-row focus-ring${item.quiet ? " sidebar-folder-row--quiet" : ""}`}
+      href={`/?mode=${item.id}`}
+      title={`${item.label} — ${item.description}${item.kbd ? ` (${item.kbd})` : ""}`}
+    >
+      <Icon
+        name={item.iconName}
+        width={CAVE_ICON_SIZE.sidePanelNav}
+        height={CAVE_ICON_SIZE.sidePanelNav}
+        className="sidebar-folder-icon"
+        aria-hidden
+      />
+      <span className="sidebar-folder-label">{item.label}</span>
+    </a>
+  );
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
-      <NavSectionTabs section={section} onSectionChange={setSection} />
-      <div
-        className="sidebar-nav-scroll"
-        ref={navScrollRef}
-        role="tabpanel"
-        id={`nav-section-panel-${section}`}
-        aria-labelledby={`nav-section-tab-${section}`}
-      >
-        {rows.map((item, index) => (
-          <a
-            key={item.id}
-            className={`sidebar-folder-row focus-ring${item.quiet ? " sidebar-folder-row--quiet" : ""}${item.quiet && !rows[index - 1]?.quiet ? " sidebar-folder-row--quiet-lead" : ""}`}
-            href={`/?mode=${item.id}`}
-            title={`${item.label} — ${item.description}${item.kbd ? ` (${item.kbd})` : ""}`}
-          >
-            <Icon
-              name={item.iconName}
-              width={CAVE_ICON_SIZE.sidePanelNav}
-              height={CAVE_ICON_SIZE.sidePanelNav}
-              className="sidebar-folder-icon"
-              aria-hidden
-            />
-            <span className="sidebar-folder-label">{item.label}</span>
-          </a>
-        ))}
+      {/* New chat leads this rail exactly as it leads the workspace rail
+          (SidebarRailHeader). Its absence was the one thing that made
+          Settings, Dashboard and Analytics read as a different sidebar rather
+          than the same one on a different route (cave-10kr8).
+
+          It is a client link, not a button: these are standalone Next routes with
+          no workspace mounted to hand a compose to, so it navigates by the
+          same `/?mode=chat` deep link the other standalone surfaces already
+          use (familiar-growth-report, familiar-studio-context). Same classes
+          as the workspace control, so the two render identically. */}
+      <div className="rail-header__actions sidebar-minimal__new">
+        <Link className="rail-header__new focus-ring" href="/?mode=chat" title="New chat">
+          <Icon
+            name="ph:note-pencil"
+            className="rail-header__new-icon"
+            width={CAVE_ICON_SIZE.sidePanelAction}
+            height={CAVE_ICON_SIZE.sidePanelAction}
+            aria-hidden
+          />
+          <span className="rail-header__new-label">New chat</span>
+        </Link>
+      </div>
+      <div className="sidebar-nav-scroll" ref={navScrollRef}>
+        <SidebarSection id="navigation" label="Navigation">
+          {primaryRows.map(renderRow)}
+        </SidebarSection>
+        <SidebarSection
+          id="explore"
+          label="Explore"
+          hideWhenEmpty
+          isEmpty={exploreRows.length === 0}
+        >
+          {exploreRows.map(renderRow)}
+        </SidebarSection>
+        {/* No Rooms section: role surfaces are registered by the workspace and
+            there are none to list on a standalone route. SidebarSection's
+            hideWhenEmpty is the same reason a heading over nothing is worse
+            than no heading. */}
       </div>
       <SidebarFooter
         onOpenSettings={() => router.push("/settings")}

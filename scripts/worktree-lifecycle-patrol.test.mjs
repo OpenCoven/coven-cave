@@ -30,7 +30,10 @@ import {
 import { probeRecordedPathAbsence } from "./worktree-lifecycle-inventory.ts";
 import {
   createMetadataRepairOperations,
+  dropExpiredOrphanedExceptions,
+  expiredOrphanedExceptionCandidates,
   probeMetadataRepairPathPresence,
+  removeLifecycleException,
   removeLifecycleRecord,
   repairOrphanedWorktreeMetadata,
 } from "./worktree-lifecycle-metadata-repair.ts";
@@ -299,6 +302,156 @@ try {
         ),
       /ambiguous/,
       "the transform rejects a fresh branch/path identity collision",
+    );
+  }
+
+  {
+    // cave-4oor6: the exception sweep removes ONLY the exception sub-object,
+    // never the worktree record — the record is the retirement gate's evidence
+    // and hand-editing it is forbidden (cave-l52dt).
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const recordWithException = { ...orphanRecord, exception };
+    assert.deepEqual(
+      removeLifecycleException(
+        { theme: "moon", worktree: recordWithException },
+        "primary",
+        exception,
+      ),
+      { theme: "moon", worktree: orphanRecord },
+      "dropping an exception leaves the record and every sibling field intact",
+    );
+    const firstAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-next",
+      path: "/repo/.worktrees/cave-next",
+      exception,
+    };
+    const secondAdditional = {
+      ...orphanRecord,
+      branch: "fix/cave-last",
+      path: "/repo/.worktrees/cave-last",
+    };
+    assert.deepEqual(
+      removeLifecycleException(
+        { worktree: orphanRecord, worktrees: [firstAdditional, secondAdditional] },
+        "additional:0",
+        exception,
+      ),
+      {
+        worktree: orphanRecord,
+        worktrees: [
+          { ...orphanRecord, branch: "fix/cave-next", path: "/repo/.worktrees/cave-next" },
+          secondAdditional,
+        ],
+      },
+      "dropping an additional-record exception preserves the record itself",
+    );
+    assert.throws(
+      () => removeLifecycleException({ worktree: orphanRecord }, "primary", exception),
+      /exception changed at primary/,
+      "an exception that is absent where the sweep expects it blocks as changed",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          {},
+          "primary",
+          exception,
+        ),
+      /record is missing at primary/,
+      "a record that vanished blocks instead of guessing",
+    );
+    const movedException = {
+      ...orphanRecord,
+      exception: { ...exception, owner: "Moved" },
+    };
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          { worktree: movedException, worktrees: [firstAdditional] },
+          "primary",
+          exception,
+        ),
+      /exception moved from primary to additional:0/,
+      "an exception that moved locations is named as moved, not changed",
+    );
+    assert.throws(
+      () =>
+        removeLifecycleException(
+          { worktree: { ...recordWithException, exception: { ...exception, owner: "X" } } },
+          "primary",
+          exception,
+        ),
+      /exception changed at primary/,
+      "an exception whose fields drifted blocks as changed",
+    );
+  }
+
+  {
+    // cave-4oor6: the apply sweep targets only the residue the metadata-repair
+    // sweep cannot touch — non-repairable orphaned records whose exceptions
+    // have expired. Repairable records are removed wholesale by the repair
+    // (exception included), so dropping there first would double-spend a slot
+    // and break the repair's exact-match discipline.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const nowMs = Date.parse("2026-08-12T00:00:00.000Z");
+    const expiredNonRepairable = repairCandidate({
+      repairable: false,
+      reasons: ["branch cave-x appears in 2 structured metadata records"],
+      record: { ...orphanRecord, exception },
+    });
+    const expiredRepairable = repairCandidate({
+      record: { ...orphanRecord, exception },
+    });
+    const liveException = {
+      ...exception,
+      expiresAt: "2026-08-15T00:00:00.000Z",
+    };
+    const liveNonRepairable = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception: liveException },
+    });
+    const noException = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+    });
+    const malformedExpiry = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        exception: { ...exception, expiresAt: "not-a-timestamp" },
+      },
+    });
+    assert.deepEqual(
+      expiredOrphanedExceptionCandidates(
+        [
+          expiredNonRepairable,
+          expiredRepairable,
+          liveNonRepairable,
+          noException,
+          malformedExpiry,
+        ],
+        nowMs,
+      ),
+      [expiredNonRepairable],
+      "only expired exceptions on non-repairable orphaned records are dropped",
+    );
+    assert.deepEqual(
+      expiredOrphanedExceptionCandidates([expiredRepairable], nowMs),
+      [],
+      "repairable records are left to the whole-record repair, not the drop",
     );
   }
 
@@ -781,6 +934,291 @@ try {
     );
   }
 
+  // ── cave-4oor6 apply side: drop expired exceptions from orphaned records ──
+  //
+  // The drop is the surgical sibling of the whole-record repair: it deletes
+  // ONLY the exception sub-object, keeps the worktree record, and re-verifies
+  // fresh (same exception, still expired, unit still orphaned) before it
+  // persists. These tests drive it with the same fake operations the repair
+  // tests use.
+  {
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, [
+      {
+        beadId: "cave-orphan",
+        location: "primary",
+        branch: candidate.branch,
+        path: candidate.path,
+        owner: "Kitty",
+        expiresAt: "2026-08-08T00:00:00.000Z",
+      },
+    ]);
+    assert.deepEqual(report.blocked, []);
+    assert.deepEqual(report.partial, []);
+    assert.deepEqual(report.pending, []);
+    assert.deepEqual(
+      fixture.storedCoven,
+      { theme: "moon", worktree: orphanRecord },
+      "the exception is removed while the worktree record survives",
+    );
+    assert.deepEqual(fixture.calls, [
+      "gate",
+      "read:cave-orphan",
+      "branch",
+      "registered",
+      "gate",
+      "persist:cave-orphan",
+      "gate",
+      "read:cave-orphan",
+    ]);
+  }
+
+  {
+    // The drop shares the one maxRetire mutation budget: a maxDrops cap
+    // leaves the rest pending, exactly like maxRepairs.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const first = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const second = repairCandidate({
+      beadId: "cave-second",
+      branch: "fix/cave-second-old",
+      path: "/repo/.worktrees/cave-second-old",
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-second-old",
+        path: "/repo/.worktrees/cave-second-old",
+        exception,
+      },
+    });
+    const fixture = repairOperations({
+      coven: {
+        theme: "moon",
+        worktree: { ...orphanRecord, exception },
+      },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [first, second],
+      maxDrops: 1,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.equal(report.dropped.length, 1);
+    assert.deepEqual(report.pending, [second]);
+    assert.equal(
+      fixture.calls.filter((call) => call === "persist:cave-orphan").length,
+      1,
+      "the batch cap permits exactly one exception drop",
+    );
+  }
+
+  {
+    // A bead that closed between inventory and apply is left alone.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+      statuses: ["closed"],
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /closed before exception drop/);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a closed bead is never mutated",
+    );
+  }
+
+  {
+    // Fail-closed probes: if the branch or the registered path came back
+    // between inventory and apply, the exception stays — the pairing of an
+    // expired grant on a LIVE unit is deliberately kept visible.
+    for (const [probe, reason] of [
+      ["branch", /exact local branch still exists/],
+      ["registered", /registered path still exists/],
+    ]) {
+      const exception = {
+        owner: "Kitty",
+        reason: "over budget",
+        expiresAt: "2026-08-08T00:00:00.000Z",
+        additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+      };
+      const candidate = repairCandidate({
+        repairable: false,
+        reasons: ["contested"],
+        record: { ...orphanRecord, exception },
+      });
+      const fixture = repairOperations({
+        coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+        branch: probe === "branch" ? { ok: true, present: true } : undefined,
+        registered:
+          probe === "registered" ? { ok: true, present: true } : undefined,
+      });
+      const report = dropExpiredOrphanedExceptions({
+        candidates: [candidate],
+        maxDrops: 3,
+        gateHandle: { generation: 7, token: "token" },
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+        operations: fixture.operations,
+      });
+      assert.deepEqual(report.dropped, []);
+      assert.equal(report.blocked.length, 1);
+      assert.match(report.blocked[0].reason, reason);
+      assert.equal(
+        fixture.calls.includes("persist:cave-orphan"),
+        false,
+        "a unit that came back alive is never mutated",
+      );
+    }
+  }
+
+  {
+    // The drop re-verifies expiry from the FRESH read: a candidate handed in
+    // with a live exception is blocked, never dropped, even though the caller
+    // already pre-filtered.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-15T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /no longer expired/);
+    assert.equal(
+      fixture.calls.includes("persist:cave-orphan"),
+      false,
+      "a grant that is still live is never dropped",
+    );
+  }
+
+  {
+    // Gate failure before the first read halts the whole drop run: no
+    // further mutation is attempted once the fence is in doubt.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: { ...orphanRecord, exception } },
+      gateResults: [{ ok: false, reason: "fixture gate down" }],
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /fixture gate down/);
+    assert.equal(
+      fixture.calls.includes("read:cave-orphan"),
+      false,
+      "a dead fence stops the sweep before its first remote read",
+    );
+  }
+
+  {
+    // The exception drop is NOT a whole-record repair: an exception missing
+    // from the fresh read blocks the drop (something changed) instead of
+    // treating the record as repairable residue.
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const candidate = repairCandidate({
+      repairable: false,
+      reasons: ["contested"],
+      record: { ...orphanRecord, exception },
+    });
+    const fixture = repairOperations({
+      coven: { theme: "moon", worktree: orphanRecord },
+    });
+    const report = dropExpiredOrphanedExceptions({
+      candidates: [candidate],
+      maxDrops: 3,
+      gateHandle: { generation: 7, token: "token" },
+      nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      operations: fixture.operations,
+    });
+    assert.deepEqual(report.dropped, []);
+    assert.equal(report.blocked.length, 1);
+    assert.match(report.blocked[0].reason, /exception is missing at primary/);
+  }
+
   const packageJson = JSON.parse(
     readFileSync(path.join(sourceRoot, "package.json"), "utf8"),
   );
@@ -1203,6 +1641,75 @@ process.exit(2);
         });
       }
     }
+        // Same adapter, same gate, one floor lower: the exception drop is
+    // exercised through the production bd stub and a REAL maintenance gate,
+    // proving the whole chain (reread, probes, persist, verify) works end to
+    // end — and that only the exception sub-object lands in the state file.
+    const dropState = path.join(fixtureRoot, "metadata-drop-state.json");
+    const dropException = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: [adapterRecord.path],
+    };
+    const dropRecord = { ...adapterRecord, exception: dropException };
+    writeFileSync(
+      dropState,
+      JSON.stringify({
+        id: "cave-adapter",
+        status: "open",
+        metadata: {
+          unrelated: "preserved",
+          coven: { sibling: "preserved", worktree: dropRecord },
+        },
+      }),
+    );
+    const originalRepairState = process.env.METADATA_REPAIR_STATE;
+    process.env.METADATA_REPAIR_STATE = dropState;
+    const acquiredDropGate = acquireMaintenanceGate({
+      ownerId: "metadata-drop-adapter-test",
+      purpose: "verify production exception drop gate handling",
+      repoDir: repairGateRepo,
+    });
+    assert.equal(acquiredDropGate.ok, true);
+    try {
+      const productionDrop = dropExpiredOrphanedExceptions({
+        candidates: [
+          repairCandidate({
+            beadId: "cave-adapter",
+            branch: adapterRecord.branch,
+            path: adapterRecord.path,
+            repairable: false,
+            reasons: ["contested"],
+            record: dropRecord,
+            rawRecord: dropRecord,
+          }),
+        ],
+        maxDrops: 1,
+        gateHandle: acquiredDropGate.handle,
+        repositoryRoot: repo,
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+        operations,
+      });
+      assert.deepEqual(
+        productionDrop.dropped.map((drop) => drop.beadId),
+        ["cave-adapter"],
+        "production operations drop the exception through the real bd stub",
+      );
+      const after = JSON.parse(readFileSync(dropState, "utf8"));
+      assert.deepEqual(
+        after.metadata.coven.worktree,
+        adapterRecord,
+        "only the exception sub-object is removed; the worktree record survives",
+      );
+    } finally {
+      if (acquiredDropGate.ok) {
+        assert.deepEqual(releaseMaintenanceGate(acquiredDropGate.handle), {
+          ok: true,
+        });
+      }
+      process.env.METADATA_REPAIR_STATE = originalRepairState;
+    }
     const invalidGate = operations.heartbeatAndVerifyGate({
       root: maintenanceGateRoot(repairGateRepo),
       ownerId: "metadata-repair-adapter-test",
@@ -1266,7 +1773,7 @@ process.exit(2);
   git(["reset", "-q", "--hard", "HEAD"], recentReflog, {
     env: {
       ...process.env,
-      GIT_COMMITTER_DATE: "2026-08-10T21:00:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   const recentReflogHead = git(["rev-parse", "HEAD"], recentReflog).trim();
@@ -1325,8 +1832,8 @@ process.exit(2);
   git(["merge", "-q", "--no-ff", "feat/manual-recent", "-m", "land manual work today"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
 
@@ -1353,8 +1860,8 @@ process.exit(2);
     {
       env: {
         ...process.env,
-        GIT_AUTHOR_DATE: "2026-08-10T21:30:00Z",
-        GIT_COMMITTER_DATE: "2026-08-10T21:30:00Z",
+        GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+        GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
       },
     },
   );
@@ -1384,8 +1891,8 @@ process.exit(2);
   git(["commit", "-q", "-m", "later default work"], repo, {
     env: {
       ...process.env,
-      GIT_AUTHOR_DATE: "2026-08-10T21:45:00Z",
-      GIT_COMMITTER_DATE: "2026-08-10T21:45:00Z",
+      GIT_AUTHOR_DATE: "2026-08-10T21:50:00Z",
+      GIT_COMMITTER_DATE: "2026-08-10T21:50:00Z",
     },
   });
   git(["push", "-q", "origin", "main"], repo);
@@ -2203,7 +2710,7 @@ if [ "$1" = "api" ] &&
         elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
           printf '%s\\n' '[[{"number":142,"html_url":"https://github.com/ArchiveOrg/archive/pull/142","state":"closed","draft":false,"merged_at":null,"head":{"ref":"archived-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"archive","repo":{"full_name":"ArchiveOrg/archive"}}}],[{"number":99,"html_url":"https://github.com/OtherOrg/other-repo/pull/99","state":"open","draft":false,"merged_at":null,"head":{"ref":"different-head-name","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OtherOrg/other-repo"}}}]]'
         elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
-          printf '%s\\n' '[[{"number":98,"html_url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"closed","draft":false,"merged_at":"2026-08-10T21:30:00Z","head":{"ref":"different-merged-head","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+          printf '%s\\n' '[[{"number":98,"html_url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"different-merged-head","sha":"${oldHead}","repo":{"full_name":"ForkOwner/fork"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
         elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ] ||
              [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
           DRAFT=false
@@ -2217,12 +2724,12 @@ if [ "$1" = "api" ] &&
           printf '[[{"number":42,"html_url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
         fi
       elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
-        printf '[[{"number":43,"html_url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"closed","draft":false,"merged_at":"2026-08-10T21:00:00Z","head":{"ref":"feat/recent-merge","sha":"${recentMergeHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+        printf '[[{"number":43,"html_url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/recent-merge","sha":"${recentMergeHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
         printf '[[{"number":44,"html_url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"closed","draft":false,"merged_at":"2026-07-21T12:00:00Z","head":{"ref":"feat/recent-reflog","sha":"${recentReflogHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
            [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
-        printf '[[{"number":45,"html_url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"closed","draft":false,"merged_at":"2026-08-10T21:30:00Z","head":{"ref":"feat/fast-forward","sha":"${fastForwardHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
+        printf '[[{"number":45,"html_url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"closed","draft":false,"merged_at":"2026-08-10T21:50:00Z","head":{"ref":"feat/fast-forward","sha":"${fastForwardHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"%s","repo":{"full_name":"OpenCoven/coven-cave"}}}]]\\n' "$BASE_REF"
       else
         printf '%s\\n' '[[]]'
       fi
@@ -2340,7 +2847,7 @@ if [ "$1" = "api" ] &&
       elif [ "\${LIFECYCLE_OUTBOUND_OPEN:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":142,"url":"https://github.com/ArchiveOrg/archive/pull/142","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"archived-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"archive","baseRepository":{"nameWithOwner":"ArchiveOrg/archive"}}],"pageInfo":{"hasNextPage":true,"endCursor":"assoc-1"}}}}}},{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":2,"nodes":[{"number":99,"url":"https://github.com/OtherOrg/other-repo/pull/99","state":"OPEN","isDraft":false,"mergedAt":null,"headRefName":"different-head-name","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OtherOrg/other-repo"}}],"pageInfo":{"hasNextPage":false,"endCursor":"assoc-2"}}}}}}]'
       elif [ "\${LIFECYCLE_EXACT_MERGED_DIFFERENT_HEAD:-0}" = "1" ]; then
-        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
+        printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":98,"url":"https://github.com/OpenCoven/coven-cave/pull/98","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"different-merged-head","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"ForkOwner/fork"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"merged-different"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_UNMERGED:-0}" = "1" ]; then
         printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":97,"url":"https://github.com/OpenCoven/coven-cave/pull/97","state":"CLOSED","isDraft":false,"mergedAt":null,"headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"closed"}}}}}}]'
       elif [ "\${LIFECYCLE_CLOSED_DRAFT:-0}" = "1" ]; then
@@ -2352,12 +2859,12 @@ if [ "$1" = "api" ] &&
         printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":42,"url":"https://github.com/OpenCoven/coven-cave/pull/42","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/old","headRefOid":"${oldHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"old"}}}}}}]\\n' "$REPOSITORY" "$BASE_REF"
       fi
     elif [ "$OID_ARG" = "${recentMergeHead}" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:00:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":43,"url":"https://github.com/OpenCoven/coven-cave/pull/43","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/recent-merge","headRefOid":"${recentMergeHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"recent"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${recentReflogHead}" ]; then
       printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":44,"url":"https://github.com/OpenCoven/coven-cave/pull/44","state":"MERGED","isDraft":false,"mergedAt":"2026-07-21T12:00:00Z","headRefName":"feat/recent-reflog","headRefOid":"${recentReflogHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"reflog"}}}}}}]\\n' "$BASE_REF"
     elif [ "$OID_ARG" = "${fastForwardHead}" ] &&
          [ "\${LIFECYCLE_FAST_FORWARD_MERGED_PR:-0}" = "1" ]; then
-      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:30:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
+      printf '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":45,"url":"https://github.com/OpenCoven/coven-cave/pull/45","state":"MERGED","isDraft":false,"mergedAt":"2026-08-10T21:50:00Z","headRefName":"feat/fast-forward","headRefOid":"${fastForwardHead}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"%s","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":"fast-forward"}}}}}}]\\n' "$BASE_REF"
     else
       printf '[{"data":{"repository":{"nameWithOwner":"%s","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]\\n' "$REPOSITORY"
     fi
@@ -3019,15 +3526,15 @@ exit 0
     "cooldown",
     "a fresh direct default-branch landing supplies cooldown evidence without a matching PR",
   );
-  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
+  assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
   assert.equal(directLanding.mergedPr, null);
   const postLandingCooldown = JSON.parse(
-    patrol(["--json", "--now", "2026-08-11T00:30:00Z"]),
+    patrol(["--json", "--now", "2026-08-10T22:05:00Z"]),
   ).items.find((item) => item.branch === "feat/direct-landing");
   assert.equal(
     postLandingCooldown.lane,
     "retire-after-gate",
-    "the stable direct landing becomes eligible after 3 hours",
+    "the stable direct landing becomes eligible after 15 minutes",
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.
@@ -3190,7 +3697,7 @@ exit 0
     const fastForward = byBranch.get("feat/fast-forward");
     assert.notEqual(fastForward.head, defaultHead);
     assert.equal(fastForward.lane, "cooldown");
-    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(fastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(byBranch.get("main").lane, "protected");
   });
 
@@ -3203,12 +3710,12 @@ exit 0
     );
     assert.equal(mergedFastForward.head, fastForwardHead);
     assert.equal(mergedFastForward.lane, "cooldown");
-    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:45:00Z"));
+    assert.equal(mergedFastForward.updatedAtMs, Date.parse("2026-08-10T21:50:00Z"));
     assert.equal(mergedFastForward.mergedPr.number, 45);
 
     const eligibleFastForward = JSON.parse(
       patrol(
-        ["--json", "--now", "2026-08-11T21:45:01Z"],
+        ["--json", "--now", "2026-08-10T22:05:01Z"],
         { LIFECYCLE_FAST_FORWARD_MERGED_PR: "1" },
       ),
     ).items.find((item) => item.branch === "feat/fast-forward");
@@ -4354,6 +4861,12 @@ exit 0
     partial: [],
     pending: [],
   };
+  const emptyExceptionDrop = {
+    dropped: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
   const metadataApplyDependencies = {
     createMetadataRepairOperations: () => ({ fixture: "metadata-ops" }),
     repairOrphanedWorktreeMetadata: ({ maxRepairs }) => {
@@ -4604,6 +5117,7 @@ exit 0
     });
     assert.deepEqual(result, {
       metadataRepair: emptyMetadataRepair,
+      exceptionDrop: emptyExceptionDrop,
       retirement: fakeRetirement,
       postInventory: fakePostInventory,
     });
@@ -4951,6 +5465,156 @@ exit 0
       applyOptions.maxRetire,
       "no reservation is taken when nothing is retirable",
     );
+  // ── cave-4oor6: the apply path drops expired-orphaned exceptions ──────────
+  //
+  // The drop runs under the same maintenance gate as repair and retirement,
+  // shares the one maxRetire mutation budget, and only ever sees the
+  // non-repairable residue (repairable records are removed wholesale by the
+  // repair). A blocked drop is a run failure, exactly like a blocked repair.
+  {
+    const exception = {
+      owner: "Kitty",
+      reason: "over budget",
+      expiresAt: "2026-08-08T00:00:00.000Z",
+      additionalPaths: ["/repo/.worktrees/cave-orphan-old"],
+    };
+    const expiredOrphaned = repairCandidate({
+      beadId: "cave-oenag",
+      repairable: false,
+      reasons: ["contested"],
+      record: {
+        ...orphanRecord,
+        branch: "fix/cave-oenag-detached-budget",
+        path: "/repo/.worktrees/cave-oenag-detached-budget",
+        exception,
+      },
+    });
+    const dropReport = {
+      dropped: [
+        {
+          beadId: "cave-oenag",
+          location: "primary",
+          branch: "fix/cave-oenag-detached-budget",
+          path: "/repo/.worktrees/cave-oenag-detached-budget",
+          owner: "Kitty",
+          expiresAt: "2026-08-08T00:00:00.000Z",
+        },
+      ],
+      blocked: [],
+      partial: [],
+      pending: [],
+    };
+    const events = [];
+    const result = runRetirementApply(
+      {
+        ...applyOptions,
+        nowMs: Date.parse("2026-08-12T00:00:00.000Z"),
+      },
+      {
+        ...applyInventory,
+        orphanedMetadata: [expiredOrphaned],
+      },
+      {
+        ...metadataApplyDependencies,
+        acquireMaintenanceGate: () => ({ ok: true, handle: acquiredHandle }),
+        heartbeatMaintenanceGate: () => ({ ok: true }),
+        verifyMaintenanceGateOwnership: () => ({ ok: true }),
+        releaseMaintenanceGate: () => ({ ok: true }),
+        createGitRetirementOperations: () => ({ fixture: "ops" }),
+        retireLifecycleUnits: () => fakeRetirement,
+        dropExpiredOrphanedExceptions: ({ candidates, maxDrops, operations }) => {
+          events.push("drop");
+          assert.deepEqual(candidates, [expiredOrphaned]);
+          assert.equal(
+            maxDrops,
+            1,
+            "the drop shares the maxRetire budget after the retirement reservation",
+          );
+          assert.deepEqual(operations, { fixture: "metadata-ops" });
+          return dropReport;
+        },
+        collectWorktreeLifecycleInventory: () => ({
+          ...fakePostInventory,
+          orphanedMetadata: [],
+        }),
+      },
+    );
+    assert.deepEqual(result.exceptionDrop, dropReport);
+    assert.deepEqual(events, ["drop"], "the drop runs inside the same apply");
+    assert.deepEqual(evaluateRetirementApplyOutcome({
+      metadataRepair: emptyMetadataRepair,
+      exceptionDrop: dropReport,
+      retirement: fakeRetirement,
+    }), {
+      ok: true,
+      status: 0,
+    });
+  }
+
+  {
+    // A drop that blocks must fail the run: an expired-orphaned exception
+    // that could not be removed is residue that remains, so the report must
+    // not read as a clean sweep.
+    const result = evaluateRetirementApplyOutcome({
+      metadataRepair: emptyMetadataRepair,
+      exceptionDrop: {
+        dropped: [],
+        blocked: [{ beadId: "cave-oenag", location: "primary", reason: "fixture" }],
+        partial: [],
+        pending: [],
+      },
+      retirement: fakeRetirement,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      status: 1,
+      reason: "exception-drop-blocked",
+    });
+    assert.match(
+      renderApplyReport(
+        report,
+        fakeRetirement,
+        undefined,
+        undefined,
+        emptyMetadataRepair,
+        {
+          dropped: [],
+          blocked: [{ beadId: "cave-oenag", location: "primary", reason: "fixture" }],
+          partial: [],
+          pending: [],
+        },
+      ),
+      /Exception drops blocked: 1/,
+      "the human apply report counts blocked exception drops",
+    );
+    assert.match(
+      renderApplyReport(
+        report,
+        fakeRetirement,
+        undefined,
+        undefined,
+        emptyMetadataRepair,
+        {
+          dropped: [
+            {
+              beadId: "cave-oenag",
+              location: "primary",
+              branch: "fix/cave-oenag-detached-budget",
+              path: "/repo/.worktrees/cave-oenag-detached-budget",
+              owner: "Kitty",
+              expiresAt: "2026-08-08T00:00:00.000Z",
+            },
+          ],
+          blocked: [],
+          partial: [],
+          pending: [],
+        },
+      ),
+      /Expired, orphaned exceptions dropped \(1\)/,
+      "the human apply report enumerates dropped exceptions",
+    );
+  }
+
     assert.equal(retirementRan, false, "and retirement is not invoked for an empty candidate set");
   }
 
@@ -5231,6 +5895,57 @@ exit 0
       false,
       "a worktree registered mid-run is out of scope for this report",
     );
+  }
+
+  // cave-eg1ag: the read-only patrol surfaces each locked unit's lock reason
+  // alongside its live cleanliness/retention verdict — so a lock contradicted
+  // by current state (clean + retained, yet held by "active … PR completion")
+  // is visible at a glance. It never releases a lock the hook did not write:
+  // it only names it. feat/old is clean/landed (retire-after-gate), feat/live
+  // is dirty (active); both get a foreign reason the hook cannot evaluate.
+  {
+    const foreignReason = "active cave-1c8zf PR completion";
+    git(["worktree", "lock", "--reason", foreignReason, old], repo);
+    git(["worktree", "lock", "--reason", foreignReason, live], repo);
+    try {
+      const lockedReport = JSON.parse(patrol(["--json"]));
+      const lockedOld = lockedReport.items.find((item) => item.branch === "feat/old");
+      const lockedLive = lockedReport.items.find((item) => item.branch === "feat/live");
+      assert.equal(
+        lockedOld.lane,
+        "retire-after-gate",
+        "a lock never changes the live cleanliness/retention verdict",
+      );
+      assert.equal(
+        lockedOld.lockReason,
+        foreignReason,
+        "a clean/retained locked unit carries its lock reason into the report",
+      );
+      assert.equal(
+        lockedLive.lane,
+        "active",
+        "a dirty unit stays active under a lock, exactly as when unlocked",
+      );
+      assert.equal(
+        lockedLive.lockReason,
+        foreignReason,
+        "a dirty locked unit carries its lock reason into the report",
+      );
+
+      const humanReport = patrol();
+      assert.match(
+        humanReport,
+        /worktree locked: active cave-1c8zf PR completion/,
+        "the human report names the lock reason verbatim",
+      );
+      // The stale-lock signal is the juxtaposition: the clean unit still says
+      // "clean landed work is at least 15 minutes old" while naming a lock that
+      // claims live work. Both facts appear for the same unit.
+      assert.match(humanReport, /clean landed work is at least 15 minutes old/);
+    } finally {
+      git(["worktree", "unlock", old], repo);
+      git(["worktree", "unlock", live], repo);
+    }
   }
 } finally {
   if (existsSync(registeredDrift)) {

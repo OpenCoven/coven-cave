@@ -141,6 +141,11 @@ type WorktreeEntry = {
   ref: string | null;
   branch: string | null;
   refError: string | null;
+  /**
+   * The worktree's lock reason from `git worktree list --porcelain -z`.
+   * `null` = not locked; `""` = locked with no reason recorded.
+   */
+  lockReason: string | null;
 };
 
 type LocalBranchRef = {
@@ -536,7 +541,15 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       const worktreeFields = fields.filter((field) => field.startsWith("worktree "));
       const headFields = fields.filter((field) => field.startsWith("HEAD "));
       const branchFields = fields.filter((field) => field.startsWith("branch "));
-      if (worktreeFields.length !== 1 || headFields.length !== 1 || branchFields.length > 1) {
+      const lockFields = fields.filter(
+        (field) => field === "locked" || field.startsWith("locked "),
+      );
+      if (
+        worktreeFields.length !== 1 ||
+        headFields.length !== 1 ||
+        branchFields.length > 1 ||
+        lockFields.length > 1
+      ) {
         throw new Error("malformed git worktree inventory");
       }
       const worktreePath = worktreeFields[0]!.slice("worktree ".length);
@@ -545,6 +558,9 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       if (normalizedWorktreePath === null || !OID.test(head)) {
         throw new Error("malformed git worktree inventory");
       }
+      const lockField = lockFields[0] ?? null;
+      const lockReason =
+        lockField === null ? null : lockField === "locked" ? "" : lockField.slice("locked ".length);
       const ref = branchFields[0]?.slice("branch ".length) ?? null;
       if (ref === null) {
         return {
@@ -554,6 +570,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
           ref: null,
           branch: null,
           refError: null,
+          lockReason,
         };
       }
       const match = ref.match(/^refs\/heads\/(.+)$/);
@@ -564,6 +581,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
           ref,
           branch: null,
           refError: `worktree ref is not a direct refs/heads ref: ${ref}`,
+          lockReason,
         };
       }
       return {
@@ -572,6 +590,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
         ref,
         branch: match[1],
         refError: null,
+        lockReason,
       };
     });
 }
@@ -1832,21 +1851,40 @@ function parseStructuredMetadata(
   if (value.coven === undefined || value.coven === null) {
     return { records: [], errors: [] };
   }
-  if (!isRecord(value.coven)) {
+  // A DOUBLE-ENCODED blob is readable, so read it. Some writer stores
+  // `metadata.coven` with an extra JSON.stringify, and the value is then a
+  // string whose contents parse cleanly into the expected object.
+  //
+  // Why that matters far more than the tidiness of it: an unreadable coven
+  // produces no records, and a record is what carries the branch and path that
+  // cave-g9byt scopes errors by. With nothing to name, the error lands in
+  // `globalErrors` and aborts creation for EVERY bead in the checkout — the
+  // cave-l11sw outage, reached by a different road. Observed 2026-08-27: two
+  // closed, already-archived beads refused `--bead` for every live session
+  // until their records were normalised by hand.
+  //
+  // Decoding removes the outage at its source rather than reclassifying the
+  // error, which would have meant ignoring a record that might claim your path.
+  // A blob that genuinely cannot be read still fails closed and still global,
+  // because then nobody can say what it claims.
+  const covenRaw = value.coven;
+  const coven = isRecord(covenRaw) ? covenRaw : decodeDoubleEncodedCoven(covenRaw);
+  if (coven === null) {
     return {
       records: [],
       errors: [`Bead ${taskId} coven metadata: coven must be an object`],
     };
   }
+  const doubleEncoded = !isRecord(covenRaw);
 
   const records: StructuredMetadataRecord[] = [];
   const errors: string[] = [];
   const primaryPresent =
-    value.coven.worktree !== undefined && value.coven.worktree !== null;
+    coven.worktree !== undefined && coven.worktree !== null;
   if (primaryPresent) {
     const primary = parseStructuredRecord(
       taskId,
-      value.coven.worktree,
+      coven.worktree,
       "worktree",
       "primary",
       root,
@@ -1854,16 +1892,16 @@ function parseStructuredMetadata(
     records.push(primary);
   }
 
-  if (value.coven.worktrees !== undefined) {
-    if (!Array.isArray(value.coven.worktrees)) {
+  if (coven.worktrees !== undefined) {
+    if (!Array.isArray(coven.worktrees)) {
       errors.push(`Bead ${taskId} worktrees metadata: worktrees must be an array`);
     } else {
-      if (!primaryPresent && value.coven.worktrees.length > 0) {
+      if (!primaryPresent && coven.worktrees.length > 0) {
         errors.push(
           `Bead ${taskId} worktrees metadata: additional records require a primary worktree`,
         );
       }
-      value.coven.worktrees.forEach((record, index) => {
+      coven.worktrees.forEach((record, index) => {
         const parsed = parseStructuredRecord(
           taskId,
           record,
@@ -1876,7 +1914,31 @@ function parseStructuredMetadata(
     }
   }
 
+  // Deliberately NOT reported as an error on the decoded records. `record.errors`
+  // is not a warning channel: the orphan scan treats ANY record error as
+  // malformed and refuses the record as a clean candidate, so attaching a note
+  // here would silently change how a perfectly readable unit classifies —
+  // trading the outage for a subtler misclassification. Surfacing it properly
+  // needs a warnings channel this type does not have; the writer defect is
+  // tracked separately in cave-7bfpz.
+  void doubleEncoded;
+
   return { records, errors };
+}
+
+/**
+ * Decode a `coven` value that was stored as a JSON string, or null if it is not
+ * one. Only an object is accepted: a string encoding a scalar or an array is
+ * not the metadata shape, so it stays a hard error.
+ */
+function decodeDoubleEncodedCoven(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
@@ -3295,6 +3357,7 @@ function collectInventory(
       ref: entry.ref,
       branch: entry.branch,
       head: entry.head,
+      lockReason: entry.lockReason,
       initialErrors: [
         entry.refError,
         entry.ref && !localRefByName.has(entry.ref)
@@ -3322,6 +3385,7 @@ function collectInventory(
         ref: localRef.ref,
         branch: localRef.branch,
         head: localRef.oid,
+        lockReason: null,
         initialErrors: [] as string[],
       })),
   ];
@@ -3570,6 +3634,7 @@ function collectInventory(
       ref: unit.ref,
       branch: unit.branch,
       head: unit.head,
+      lockReason: unit.lockReason,
       isPrimary: unit.path !== null && normalizePath(unit.path) === primaryPath,
       protectedBranch:
         unit.branch !== null &&

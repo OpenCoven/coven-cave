@@ -34,3 +34,59 @@ assert.match(
 );
 
 console.log("automation-create-dialog.test.ts: ok");
+
+// ── Plan preview · `Scheduling Spec.dc.html` P0 ─────────────────────────────
+// "No plan preview, no confirmation of behavior; users can't tell what they
+// built until it runs."
+{
+  const dialog = source;
+  const preview = await readFile(
+    new URL("./schedule/schedule-plan-preview.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    dialog,
+    /const plan = planFromRrule\(rrule,/,
+    "the plan reads off buildCodexRrule's output, so the weekly builder, the daily builder and the raw RRULE box cannot render three previews that disagree",
+  );
+  assert.match(
+    dialog,
+    /<SchedulePlanPreview plan=\{plan\}/,
+    "the dialog actually renders the preview it computes",
+  );
+  assert.match(
+    dialog,
+    /planLabel \? `Create · \$\{planLabel\}` : "Create"/,
+    "the CTA names its outcome, and falls back rather than inventing one",
+  );
+  assert.match(
+    dialog,
+    /readDateTimePrefs\(\)\.clock !== "24h"/,
+    "the plan uses the same clock preference the reminder modal reads",
+  );
+  assert.match(
+    dialog,
+    /automation-create-dialog__rrule/,
+    "the raw RRULE echo survives for experts — the preview adds a translation, it does not replace the machine form",
+  );
+  assert.match(
+    preview,
+    /aria-live="polite"/,
+    "the plan is the confirmation, so it reaches assistive tech without stealing focus from the field being typed in",
+  );
+  const planStyles = await readFile(
+    new URL("../styles/schedule-plan.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    dialog,
+    /import "@\/styles\/schedule-plan\.css"|SchedulePlanPreview/,
+    "the preview arrives with its own sheet rather than through the globals facade",
+  );
+  assert.match(
+    planStyles,
+    /\.schedule-plan \{(?=[^}]*min-height: 58px;)[^}]*\}/,
+    "the plan slot reserves its height, so typing never shifts the controls below it",
+  );
+}

@@ -1,15 +1,27 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  let caveHomeReady: Promise<unknown> = Promise.resolve();
   // Move legacy ~/.coven/cave-*.json state into ~/.coven/cave/ before anything
   // reads it. Store reads remain gated on this same promise, but the route
   // registry must not await it: shell delivery is independent of persistence.
   try {
     const migration = await import("@/lib/server/cave-home-migration");
-    void migration.migrateCaveHomeOnce().catch((error) => {
+    caveHomeReady = migration.migrateCaveHomeOnce();
+    void caveHomeReady.catch((error) => {
       console.warn("[instrumentation] cave home migration failed:", error);
     });
   } catch (error) {
     console.warn("[instrumentation] cave home migration could not start:", error);
+  }
+  try {
+    const resources = await import("@/lib/server/research-resource-recovery");
+    void caveHomeReady
+      .then(() => resources.recoverInterruptedResearchResourceRestore())
+      .catch((error) => {
+        console.warn("[instrumentation] Research Resource restore recovery failed:", error);
+      });
+  } catch (error) {
+    console.warn("[instrumentation] Research Resource restore recovery could not start:", error);
   }
   try {
     const mediaJobs = await import("@/lib/server/research-media-jobs");

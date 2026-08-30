@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { MAX_ARTIFACT_CODE_CHARS, looksLikeReact } from "@/lib/canvas-artifacts";
+import { isSupportedCanvasGitHubFile } from "@/lib/canvas-github-import";
 import { parseGitHubFileUrl } from "@/lib/github-repo-link";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { requireTrustedHumanCanvasMutation } from "@/lib/server/trusted-grant-mutation";
@@ -10,7 +11,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const FETCH_TIMEOUT_MS = 12_000;
-const SUPPORTED_FILE = /\.(?:html?|jsx|tsx)$/i;
 
 export async function POST(req: Request) {
   const denied = await requireTrustedHumanCanvasMutation(req);
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  if (!SUPPORTED_FILE.test(parsed.filePath)) {
+  if (!isSupportedCanvasGitHubFile(parsed.filePath)) {
     return NextResponse.json(
       { ok: false, error: "Canvas can import HTML, HTM, JSX, or TSX files." },
       { status: 415 },

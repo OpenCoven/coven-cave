@@ -7,8 +7,86 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-08-27
+
+> Streamlines iOS navigation, adds packaged mobile recovery, and strengthens
+> local Research, authenticated clients, and everyday workspace reliability.
+
+Patch release on top of v0.3.11. Native iOS now keeps Chats and Tasks focused
+as primary destinations while grouping project and familiar context beneath
+them. Cave also gains packaged mobile transport recovery, local Research
+resource contracts, stronger authenticated-client authority, and a collection
+of focused Chat, Code, Calendar, and maintenance fixes.
+
 ### Changes
+- Simplify the iOS navigation drawer (#5058)
+- Plan the simplified Canvas GitHub import modal (#5057)
+- Clarify Beads skill trigger boundary (#5030)
+- Stop GitHubActionPopover positioning itself inside a Popover (#5047)
+- Define local Research resource contracts (#5054)
+- Retry blank failed Copilot resumes (#5052)
+- Add packaged Cave mobile transport recovery
+- Define the Cave mobile recovery contract
+- Match OpenClaw profiles to real Gateway discovery (#5050)
+- Remove stale hydration test helper (#5049)
+- Portal the Code Desk action popovers so the drawer cannot clip them (cave-cadp4) (#5046)
+- Bind authenticated client requests to Cave authority (#5044)
+- Say which calendar cells are short when a projection is truncated (cave-fdcd4) (#5043)
+- Scope --allow-cooldown-override to named units (#5041)
+- Add a focus-first Research PDF reader (#5039)
+- Credit worktree-retention tags by OID rather than only local tag name (#5040)
+- Adopt the shared surface toolbar
+- Keep X hydration cache fixtures fresh (cave-290os)
+- Restore focused sidebar contracts
 - Correct the port-claim occupant docs and harden the two contracts that pin them (#4980)
+
+## [0.3.11] - 2026-08-25
+
+> Makes iOS pairing land on the requested chat reliably, adds richer Familiar
+> insight, and sharpens everyday Chat, Research, Rituals, and Calendar flows.
+
+Patch release on top of v0.3.10. Native iOS now preserves invite destinations
+through approval, pairing, discovery relocation, and delayed reconnects, while
+Familiar profiles gain a comprehensive overview and truthful analytics.
+Shared surfaces add calendar-backed cron visibility, live run feedback,
+stronger research recommendations, compact chat chrome, and hardened release
+and recovery gates.
+
+### Changes
+- Refuse to report a worktree creation whose unit is not present (#5036)
+- Route paired iOS invites to requested chats (#5035)
+- Project cron runs into Day, Week and Month calendar views (cave-aa10e) (#5034)
+- Show the run you just started (#5031)
+- Scale Research resources and ground topic suggestions (#5032)
+- Tell the cron detail pane when the cron next runs (#5029)
+- Compact Chat workspace chrome (#5028)
+- Put the crons on the calendar (#5027)
+- Show the cron dialog what it will actually do (#5026)
+- Make the first magnification step a nudge, not a jump (#5025)
+- Keep Research runnable without Codex launch policy (#5024)
+- Require the signed OpenClaw release contract (#5015)
+- Make project identity host and worktree aware (#5017)
+- Use dropdowns for podcast voices (#5023)
+- Let an operator discharge the retirement cooldown, on the record (#5022)
+- Say what the last run did, and stay legible while hovered (#5020)
+- Match Research Desk to familiar model defaults (#5021)
+- Rebuild the Rituals Crons tab from the design handoff (#5019)
+- Modernize branded destination cards (#5018)
+- iOS: add truthful Familiar analytics digest (#5004)
+- Refine chat continuation controls (#5013)
+- fix(gate): report a coven spawn that never ran as a timeout, not a bad version (#5014)
+- Reconcile X publish surface with its design spec (cave-uajyn) (#4988)
+- perf(chat): share large-list project grouping (#5012)
+- fix(ci): skip desktop publishing for iOS releases (#5011)
+- fix(rituals): compress calendar chrome (#4998)
+- fix(ios): restore deterministic XCTest gate (#5010)
+- iOS: build Familiar Overview command center (#5005)
+- ci: shard final release E2E validation (#5009)
+- Refine the command palette into a sleek search surface (#4995)
+- fix: make Client v1 fixture cursors canonical
+- ci: isolate PR and release E2E servers (#5008)
+- feat(ios): build comprehensive Familiar profile (#5003)
+- feat(projects): finish AI-generated project icons
 
 ## [0.3.10] - 2026-08-24
 

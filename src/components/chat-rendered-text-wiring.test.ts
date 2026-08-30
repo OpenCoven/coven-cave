@@ -28,10 +28,6 @@ assert.match(
   /extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply"\) \?\? null/,
   "recommended composer autofill reads reply suggestions from the shared projection",
 );
-assert.match(
-  view,
-  /const suggestions = contextualizeNextPaths\(extractChatRenderedText\(last\.text\)\.nextPaths, \{/,
-  "follow-up cards contextualize next-path suggestions from the shared projection",
-);
+assert.doesNotMatch(view, /contextualizeNextPaths|<FollowUpCards/, "the removed recommendation band has no second projection path");
 
 console.log("chat-rendered-text-wiring.test.ts passed");

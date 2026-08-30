@@ -262,6 +262,75 @@ export function removeLifecycleRecord(
   return next;
 }
 
+function matchingExceptionLocations(coven: JsonRecord, expected: JsonRecord): string[] {
+  const matches: string[] = [];
+  const visit = (record: unknown, location: OrphanedWorktreeMetadataRecord["location"]) => {
+    if (isRecord(record) && isDeepStrictEqual(record.exception, expected)) {
+      matches.push(location);
+    }
+  };
+  visit(coven.worktree, "primary");
+  if (Array.isArray(coven.worktrees)) {
+    for (const [index, record] of coven.worktrees.entries()) {
+      visit(
+        record,
+        `additional:${index}` as OrphanedWorktreeMetadataRecord["location"],
+      );
+    }
+  }
+  return matches;
+}
+
+/**
+ * Remove ONLY the managed-creation exception sub-object from one lifecycle
+ * record (cave-4oor6), leaving every other field — and the record itself —
+ * untouched.
+ *
+ * The worktree record is the retirement gate's evidence and the record
+ * CLAUDE.md and cave-l52dt forbid hand-writing; the exception is a grant on
+ * top of it, and an expired grant on a worktree that no longer exists is
+ * residue with value only to readers. The sweep therefore deletes
+ * `exception` alone, never the record. The whole-record removal that
+ * {@link removeLifecycleRecord} performs is a different job (cave-xbc87) and
+ * is deliberately not used here.
+ *
+ * Fail-closed like {@link removeLifecycleRecord}: the record must still exist
+ * at `location`, its exception must still deep-equal the one the inventory
+ * saw, and an exception that moved to another location is reported as such
+ * rather than guessed at. Throws on any drift; the caller converts the throw
+ * into a blocked report entry.
+ */
+export function removeLifecycleException(
+  coven: JsonRecord,
+  location: OrphanedWorktreeMetadataRecord["location"],
+  expectedException: JsonRecord,
+  root = process.cwd(),
+): JsonRecord {
+  currentLifecycleRecords(coven, root);
+  const current = exactRecordAt(coven, location);
+  if (current === undefined || !isRecord(current)) {
+    throw new Error("expired-orphaned exception record is missing at " + location);
+  }
+  if (!isDeepStrictEqual(current.exception, expectedException)) {
+    const moved = matchingExceptionLocations(coven, expectedException).filter(
+      (candidate) => candidate !== location,
+    );
+    if (moved.length > 0) {
+      throw new Error(
+        "expired-orphaned exception moved from " + location + " to " + moved.join(", "),
+      );
+    }
+    throw new Error("expired-orphaned exception changed at " + location);
+  }
+  const next = cloneRecord(coven);
+  const nextRecord = exactRecordAt(next, location);
+  if (!isRecord(nextRecord)) {
+    throw new Error("expired-orphaned exception record is missing at " + location);
+  }
+  delete nextRecord.exception;
+  return next;
+}
+
 function safeOperation(
   label: string,
   operation: () => OperationResult,
@@ -619,6 +688,384 @@ export function repairOrphanedWorktreeMetadata({
     }
   }
   report.pending.push(...repairable.slice(maxRepairs));
+  return report;
+}
+
+/**
+ * An orphaned-metadata record whose exception the apply sweep may drop.
+ *
+ * The patrol feeds these from its inventory: records whose worktrees are gone
+ * AND whose managed-creation exception has expired. Repairable records are
+ * deliberately excluded — {@link repairOrphanedWorktreeMetadata} removes those
+ * records wholesale (exception included), so dropping the exception first
+ * would only break its exact-match discipline and spend a second mutation on
+ * the same bead. This sweep is for the residue the repair cannot touch
+ * (cave-4oor6): an exception on a record that nothing else will ever clean.
+ */
+export type ExpiredOrphanedExceptionCandidate = OrphanedWorktreeMetadataRecord & {
+  record: OrphanedWorktreeMetadataRecord["record"] & {
+    exception: NonNullable<OrphanedWorktreeMetadataRecord["record"]["exception"]>;
+  };
+};
+
+export function expiredOrphanedExceptionCandidates(
+  candidates: readonly OrphanedWorktreeMetadataRecord[],
+  nowMs: number,
+): ExpiredOrphanedExceptionCandidate[] {
+  const found: ExpiredOrphanedExceptionCandidate[] = [];
+  for (const candidate of candidates) {
+    if (candidate.repairable) continue;
+    const exception = candidate.record.exception;
+    if (!exception) continue;
+    const expiresAtMs = Date.parse(exception.expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) continue;
+    found.push(candidate as ExpiredOrphanedExceptionCandidate);
+  }
+  return found;
+}
+
+export type ExpiredOrphanedExceptionDrop = {
+  beadId: string;
+  location: OrphanedWorktreeMetadataRecord["location"];
+  branch: string;
+  path: string;
+  owner: string;
+  expiresAt: string;
+};
+
+export type ExpiredOrphanedExceptionDropReport = {
+  dropped: ExpiredOrphanedExceptionDrop[];
+  blocked: Array<{
+    beadId: string;
+    location: OrphanedWorktreeMetadataRecord["location"];
+    reason: string;
+  }>;
+  partial: Array<{
+    beadId: string;
+    location: OrphanedWorktreeMetadataRecord["location"];
+    reason: string;
+  }>;
+  pending: OrphanedWorktreeMetadataRecord[];
+};
+
+type DropOneResult =
+  | { kind: "dropped" }
+  | { kind: "blocked"; reason: string; halt: boolean }
+  | { kind: "partial"; reason: string; halt: true };
+
+function dropBlocked(
+  report: ExpiredOrphanedExceptionDropReport,
+  candidate: OrphanedWorktreeMetadataRecord,
+  reason: string,
+): void {
+  report.blocked.push({
+    beadId: candidate.beadId,
+    location: candidate.location,
+    reason,
+  });
+}
+
+function dropPartial(
+  report: ExpiredOrphanedExceptionDropReport,
+  candidate: OrphanedWorktreeMetadataRecord,
+  reason: string,
+): void {
+  report.partial.push({
+    beadId: candidate.beadId,
+    location: candidate.location,
+    reason,
+  });
+}
+
+function dropOne(
+  candidate: ExpiredOrphanedExceptionCandidate,
+  gateHandle: MetadataRepairGateHandle,
+  repositoryRoot: string,
+  nowMs: number,
+  operations: MetadataRepairOperations,
+): DropOneResult {
+  const beforeRead = checkpoint(operations, gateHandle, "before exact Bead reread");
+  if (!beforeRead.ok) {
+    return { kind: "blocked", reason: beforeRead.reason, halt: true };
+  }
+
+  const fresh = readFreshBead(operations, candidate);
+  if (!fresh.ok) {
+    return { kind: "blocked", reason: fresh.reason, halt: false };
+  }
+  if (fresh.bead.status === "closed") {
+    return {
+      kind: "blocked",
+      reason: "exact Bead reread found " + candidate.beadId + " closed before exception drop",
+      halt: false,
+    };
+  }
+
+  const freshException = exactRecordAt(fresh.coven, candidate.location);
+  if (!isRecord(freshException) || !isRecord(freshException.exception)) {
+    return {
+      kind: "blocked",
+      reason: "expired-orphaned exception is missing at " + candidate.location,
+      halt: false,
+    };
+  }
+  if (!isDeepStrictEqual(freshException.exception, candidate.record.exception)) {
+    const moved = matchingExceptionLocations(
+      fresh.coven,
+      candidate.record.exception as JsonRecord,
+    ).filter((candidateLocation) => candidateLocation !== candidate.location);
+    if (moved.length > 0) {
+      return {
+        kind: "blocked",
+        reason:
+          "expired-orphaned exception moved from " +
+          candidate.location +
+          " to " +
+          moved.join(", "),
+        halt: false,
+      };
+    }
+    return {
+      kind: "blocked",
+      reason: "expired-orphaned exception changed at " + candidate.location,
+      halt: false,
+    };
+  }
+  const expiresAtMs = Date.parse(freshException.exception.expiresAt as string);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) {
+    return {
+      kind: "blocked",
+      reason: "exception at " + candidate.location + " is no longer expired",
+      halt: false,
+    };
+  }
+
+  let nextCoven: JsonRecord;
+  try {
+    nextCoven = removeLifecycleException(
+      fresh.coven,
+      candidate.location,
+      freshException.exception as JsonRecord,
+      repositoryRoot,
+    );
+  } catch (error) {
+    return { kind: "blocked", reason: errorMessage(error), halt: false };
+  }
+
+  const branch = probeAbsent(
+    "exact local branch probe",
+    () => operations.probeLocalBranch(candidate.branch),
+    "exact local branch still exists: " + candidate.branch,
+  );
+  if (!branch.ok) {
+    return { kind: "blocked", reason: branch.reason, halt: false };
+  }
+
+  const registered = probeAbsent(
+    "registered worktree path probe",
+    () => operations.probeRegisteredPath(candidate.path),
+    "registered path still exists: " + candidate.path,
+  );
+  if (!registered.ok) {
+    return { kind: "blocked", reason: registered.reason, halt: false };
+  }
+
+  const beforePersistence = checkpoint(
+    operations,
+    gateHandle,
+    "before metadata persistence",
+  );
+  if (!beforePersistence.ok) {
+    return {
+      kind: "blocked",
+      reason: beforePersistence.reason,
+      halt: true,
+    };
+  }
+
+  const expectedMetadata = {
+    ...fresh.bead.metadata,
+    coven: nextCoven,
+  };
+  const persistence = safeOperation("metadata persistence failed", () =>
+    operations.persistCoven(candidate.beadId, nextCoven),
+  );
+  if (!persistence.ok) {
+    const afterFailure = checkpoint(
+      operations,
+      gateHandle,
+      "before failed-persistence verification",
+    );
+    if (!afterFailure.ok) {
+      return {
+        kind: "partial",
+        reason:
+          persistence.reason +
+          "; " +
+          afterFailure.reason +
+          "; persistence outcome is unverifiable",
+        halt: true,
+      };
+    }
+    const verification = readFreshBead(operations, candidate);
+    if (!verification.ok) {
+      return {
+        kind: "partial",
+        reason:
+          persistence.reason +
+          "; persistence outcome is unverifiable: " +
+          verification.reason,
+        halt: true,
+      };
+    }
+    if (verification.bead.status === "closed") {
+      return {
+        kind: "partial",
+        reason:
+          persistence.reason +
+          "; " +
+          candidate.beadId +
+          " closed after persistence was attempted; persistence outcome is unverifiable",
+        halt: true,
+      };
+    }
+    if (isDeepStrictEqual(verification.bead.metadata, expectedMetadata)) {
+      return {
+        kind: "partial",
+        reason: persistence.reason + "; exact reread confirmed the intended metadata landed",
+        halt: true,
+      };
+    }
+    if (isDeepStrictEqual(verification.bead.metadata, fresh.bead.metadata)) {
+      return {
+        kind: "blocked",
+        reason: persistence.reason + "; exact reread confirmed metadata remained unchanged",
+        halt: false,
+      };
+    }
+    return {
+      kind: "partial",
+      reason:
+        persistence.reason +
+        "; exact reread found an unexpected metadata snapshot, so persistence is unverifiable",
+      halt: true,
+    };
+  }
+
+  const beforeVerification = checkpoint(
+    operations,
+    gateHandle,
+    "before post-persistence verification",
+  );
+  if (!beforeVerification.ok) {
+    return {
+      kind: "partial",
+      reason:
+        beforeVerification.reason +
+        "; metadata persistence completed but verification did not",
+      halt: true,
+    };
+  }
+
+  const verification = readFreshBead(operations, candidate);
+  if (!verification.ok) {
+    return {
+      kind: "partial",
+      reason: "metadata persistence verification failed: " + verification.reason,
+      halt: true,
+    };
+  }
+  if (verification.bead.status === "closed") {
+    return {
+      kind: "partial",
+      reason:
+        "metadata persistence verification failed: " +
+        candidate.beadId +
+        " closed after persistence; drop is partial",
+      halt: true,
+    };
+  }
+  if (!isDeepStrictEqual(verification.bead.metadata, expectedMetadata)) {
+    return {
+      kind: "partial",
+      reason:
+        "metadata persistence verification failed: fresh metadata does not exactly match the intended snapshot",
+      halt: true,
+    };
+  }
+  return { kind: "dropped" };
+}
+
+export function dropExpiredOrphanedExceptions({
+  candidates,
+  maxDrops,
+  gateHandle,
+  repositoryRoot = process.cwd(),
+  nowMs,
+  operations,
+}: {
+  candidates: ExpiredOrphanedExceptionCandidate[];
+  maxDrops: number;
+  gateHandle: MetadataRepairGateHandle;
+  repositoryRoot?: string;
+  nowMs: number;
+  operations: MetadataRepairOperations;
+}): ExpiredOrphanedExceptionDropReport {
+  if (!Number.isSafeInteger(maxDrops) || maxDrops < 0) {
+    throw new Error("maxDrops must be a non-negative safe integer");
+  }
+  const selected = candidates.slice(0, maxDrops);
+  const report: ExpiredOrphanedExceptionDropReport = {
+    dropped: [],
+    blocked: [],
+    partial: [],
+    pending: [],
+  };
+  const work = selected.map((candidate, index) => ({ candidate, index }));
+  const byBead = new Map<string, typeof work>();
+  for (const item of work) {
+    const grouped = byBead.get(item.candidate.beadId) ?? [];
+    grouped.push(item);
+    byBead.set(item.candidate.beadId, grouped);
+  }
+  const results = new Map<number, DropOneResult>();
+  let halted = false;
+  for (const group of byBead.values()) {
+    group.sort(compareRepairOrder);
+    for (const item of group) {
+      if (halted) break;
+      const result = dropOne(
+        item.candidate,
+        gateHandle,
+        repositoryRoot,
+        nowMs,
+        operations,
+      );
+      results.set(item.index, result);
+      if (result.kind !== "dropped" && result.halt) halted = true;
+    }
+    if (halted) break;
+  }
+  for (const [index, candidate] of selected.entries()) {
+    const result = results.get(index);
+    if (result === undefined) {
+      report.pending.push(candidate);
+    } else if (result.kind === "dropped") {
+      report.dropped.push({
+        beadId: candidate.beadId,
+        location: candidate.location,
+        branch: candidate.branch,
+        path: candidate.path,
+        owner: candidate.record.exception.owner,
+        expiresAt: candidate.record.exception.expiresAt,
+      });
+    } else if (result.kind === "partial") {
+      dropPartial(report, candidate, result.reason);
+    } else {
+      dropBlocked(report, candidate, result.reason);
+    }
+  }
+  report.pending.push(...candidates.slice(maxDrops));
   return report;
 }
 

@@ -15,6 +15,8 @@ import {
   buildResearchChatRunInput,
   formatResearchRunStarted,
 } from "@/lib/research-chat-command";
+import { researchRunBootstrapSnapshot } from "@/lib/research-run-surface";
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -105,10 +107,12 @@ import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import {
   chatFoldAriaLabel,
+  chatFoldFadedGroupIndexes,
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
@@ -119,7 +123,8 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
-import { useFollowUpsCollapsed } from "@/lib/use-followups-collapsed";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
@@ -228,9 +233,6 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
-import { FollowUpCards } from "@/components/chat-follow-up-cards";
-import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -261,6 +263,11 @@ import {
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  APPROVE_MISSION_MESSAGE,
+  DENY_MISSION_MESSAGE,
+  isAutoApprovalPending,
+} from "@/lib/auto-mission-approval";
 import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
@@ -310,6 +317,7 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -1633,6 +1641,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
+  /** Session action verbs, rendered after the conversation title. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1695,7 +1704,13 @@ function MetaLine({
       ? `Task: ${task.title}`
       : null;
   return (
-    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} role="status" aria-live="polite" data-lifecycle={state}>
+    // The live region is the META SPAN, not this row. It used to be the row
+    // itself, which meant every interactive control on the header — the
+    // actions cluster, and now the inline pickers — sat inside an aria-live
+    // region and got re-announced on each lifecycle tick. Narrowing it to the
+    // text that actually changes keeps the announcements and takes the
+    // controls out of them (cave-fh9so).
+    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
       {/* Chat-revamp 1b: the session's familiar leads the header as a small
           circular avatar, so the title row reads avatar · title · meta. */}
@@ -1711,14 +1726,14 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
-        {/* Chat-revamp 1b: the settled header carries a quiet, always-visible
-            identity line — "· <familiar> · <model> · <branch>" — while the
-            heavier provenance (cwd · duration · tokens · cost + meters) stays
-            in the reveal-on-hover cluster below, so nothing is deleted, just
-            demoted. Streaming/failed/offline states keep their live meta. */}
+      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
+        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+            — "<familiar> · <model> · <branch>" — while the heavier provenance
+            (cwd · duration · tokens · cost + meters) stays in the adjacent
+            reveal-on-hover cluster, so nothing is deleted, just demoted.
+            Streaming/failed/offline states keep their live meta. */}
         {state === "complete" ? (
-          <span className="cave-chat-meta-line__identity">
+          <span className="cave-chat-meta-line__identity reveal-on-hover">
             {familiar.display_name}
             {metaModel ? ` · ${shortModelLabel(metaModel)}` : ""}
             {gitBranch ? (
@@ -1761,6 +1776,12 @@ function MetaLine({
         {state === "streaming" ? " · esc to cancel" : null}
         {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
+      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
+          project/model/context chips inline here to collapse three stacked
+          header rows into one; one row of five controls is still a toolbar.
+          Choosing a project or a model belongs to the composer, which is where
+          you are when the choice matters and which still carries them. The
+          header is a title and the verbs that act on this conversation. */}
       {children}
     </div>
   );
@@ -2021,6 +2042,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Open daily note" from the completed Reflect: pre-arm the Familiars
+  // surface preferences (same registry the detail panel reads), then switch
+  // modes — the roster mounts already on the familiar's Daily Notes tab.
+  const [, setFamiliarsSelectedId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
+  const [, setFamiliarsViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  const [, setFamiliarsDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  const openFamiliarDailyNote = useCallback((familiarId: string) => {
+    setThreadSignalReport(null);
+    setFamiliarsSelectedId(familiarId);
+    setFamiliarsViewMode("detail");
+    setFamiliarsDetailTab("daily-notes");
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
+  }, [setFamiliarsDetailTab, setFamiliarsSelectedId, setFamiliarsViewMode]);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
@@ -2225,11 +2259,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setAutoMission(record);
   }, [sessionId]);
 
-  // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
-  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
-  // leaves the mission armed (answering it resumes the work); failed and done
-  // end the mission and flag feedback as pending.
+  // Watch settled assistant turns for a `<coven:auto-status>` marker
+  // (auto-status-blocks.ts). Only needs-approval/blocked/failed/done draw the
+  // human back in — see buildAutoModeDirective. needs-approval and blocked
+  // fire a response-needed inbox item and leave the mission armed (answering
+  // it resumes the work); failed and done end the mission and flag feedback as
+  // pending.
   useEffect(() => {
     const pings = pendingAutoMissionPings(autoMission, turns);
     if (!pings.length || !autoMission) return;
@@ -2238,8 +2273,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     let ended = false;
     for (const ping of pings) {
       next.notified.push(ping.turnId);
-      const blocked = ping.state === "blocked";
-      if (!blocked) {
+      const attention = ping.state === "needs-approval" || ping.state === "blocked";
+      if (!attention) {
         ended = true;
         next = {
           ...next,
@@ -2252,12 +2287,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          kind: blocked ? "response-needed" : "agent",
-          title: blocked
-            ? "Auto mission needs you"
-            : ping.state === "failed"
-              ? "Auto mission couldn't finish"
-              : "Auto mission complete",
+          kind: attention ? "response-needed" : "agent",
+          title:
+            ping.state === "needs-approval"
+              ? "Auto mission needs your go-ahead"
+              : ping.state === "blocked"
+                ? "Auto mission needs you"
+                : ping.state === "failed"
+                  ? "Auto mission couldn't finish"
+                  : "Auto mission complete",
           body: ping.note || autoMission.mission,
           source: "agent",
           familiarId: familiar.id,
@@ -2334,7 +2372,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
-  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -2756,6 +2793,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
+  const [releasedScrollDistance, setReleasedScrollDistance] = useState(0);
+  const [composerHeight, setComposerHeight] = useState(0);
+  const composerDockRef = useRef<HTMLElement | null>(null);
   const [newResponseContent, setNewResponseContent] = useState(false);
   const observedAssistantTurnIdRef = useRef<string | null>(null);
   const observedAssistantSourceRef = useRef("");
@@ -2828,13 +2868,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
+      setReleasedScrollDistance(0);
       setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
         cancelAnimationFrame(releasedAnchorFrameRef.current);
         releasedAnchorFrameRef.current = null;
       }
-    } else if (!historyExpandedRef.current) {
+    } else {
+      const el = scrollRef.current;
+      if (el) {
+        setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
+      }
+    }
+    if (!next && !historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
       // the current view instead of jumping it.
@@ -4108,62 +4155,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // The latest settled turn's follow-up suggestions render directly above the
-  // composer. Suggestions are ephemeral actions, not transcript history, so
-  // assistant rows only strip their control blocks and never render old cards.
-  const followUp = useMemo(() => {
-    const empty = { suggestions: [] as NextPath[] };
-    const last = [...activePath]
-      .reverse()
-      .find((t) => t.role === "assistant" && !t.pending && !t.error);
-    if (!last?.text) return empty;
-    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
-      messageId: last.id,
-      taskId: linkedContext?.task?.id ?? null,
-      toolOutcomeIds: (last.tools ?? [])
-        .filter((tool) => tool.status === "ok" || tool.status === "error")
-        .map((tool) => tool.id),
-    });
-    return suggestions.length ? { suggestions } : empty;
-  }, [activePath, linkedContext?.task?.id]);
-
-  const followUpsCollapsed = useFollowUpsCollapsed();
-  const followUpsPanelId = `chat-followups-${useId().replaceAll(":", "")}`;
-
-  const handleFollowUp = useCallback((path: NextPath) => {
-    if (path.kind === "reply") {
-      setInput(path.prompt);
-      requestAnimationFrame(() => inputRef.current?.focus());
-      return;
-    }
-    if (path.kind === "task") {
-      setTaskSuggestion(path);
-      return;
-    }
-    if (path.actionId === "open-tasks") {
-      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
-    }
-  }, []);
-
-  const handleTaskCreated = useCallback((card: Card) => {
-    const linked = {
-      id: card.id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      lifecycle: card.lifecycle,
-      labels: card.labels,
-      cwd: card.cwd,
-      projectId: card.projectId ?? null,
-      notes: card.notes.trim() || null,
-    };
-    setLinkedContext((previous) => {
-      const context = previous ?? { task: null, tasks: [], github: [] };
-      if (context.tasks.some((task) => task.id === linked.id)) return context;
-      return { ...context, task: context.task ?? linked, tasks: [...context.tasks, linked] };
-    });
-  }, []);
-
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
   // chunk). Lookups are O(1).
@@ -4613,6 +4604,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (followingRef.current) return;
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setReleasedScrollDistance(Math.max(0, gap));
       if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -4837,8 +4829,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const filled = `/skill ${s.id}`;
     const carried = skillCarryOverText(input);
     if (s.argumentHint && !carried && input.trim().toLowerCase() !== filled.toLowerCase()) {
-      setInput(`${filled} `);
-      inputRef.current?.focus();
+      const next = `${filled} `;
+      // A picker selection replaces the controlled value. Keep the hook's
+      // caret and the native textarea selection in the same commit before a
+      // paste can arrive (Windows WebView otherwise pastes at the old
+      // `/skill` caret and leaves the selected skill detached).
+      completeComposerText(next, next.length);
       return;
     }
     setInput("");
@@ -5021,7 +5017,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // A hinted skill submitted without arguments (and not already the exact
       // `/skill <id>` form — that means "run it anyway") autofills for editing.
       if (skill.argumentHint && !skillArgs && trimmed.toLowerCase() !== `/skill ${skill.id}`.toLowerCase()) {
-        setInput(`/skill ${skill.id} `);
+        const next = `/skill ${skill.id} `;
+        completeComposerText(next, next.length);
         return true;
       }
       setInput("");
@@ -5106,12 +5103,55 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       setInput("");
       void createResearchMission(built.input)
-        .then((result) => {
+        .then(async (result) => {
           if (!result.ok || !result.mission) {
             appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
             return;
           }
-          appendSystem(formatResearchRunStarted(result.mission));
+          // Persist the run id on the turns, not a frozen copy of the card's UI
+          // state (#4808): after a reload the inline projection rehydrates from
+          // the canonical ResearchMission via researchRunId.
+          const now = new Date().toISOString();
+          const targetSessionId = currentSessionRef.current;
+          const live = targetSessionId ? readLiveChatGeneration(targetSessionId) : null;
+          const parentId = (live?.activeLeafId ?? activeLeafId) || null;
+          const userTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId,
+            role: "user",
+            text: `/research ${args}`,
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          const assistantTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId: userTurn.id,
+            role: "assistant",
+            text: formatResearchRunStarted(result.mission),
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+          // The appended pair becomes the active path (same as the /image flow) so
+          // the confirmation and its run card render immediately.
+          setActiveLeafId(assistantTurn.id);
+          if (targetSessionId) {
+            invalidateConversation(targetSessionId);
+            try {
+              await fetch(`/api/chat/conversation/${encodeURIComponent(targetSessionId)}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  turns: [userTurn, assistantTurn],
+                  activeLeafId: assistantTurn.id,
+                  familiarId: familiar.id,
+                  harness: modelHarness,
+                }),
+              });
+            } catch {
+              // Optimistic — the transcript already shows the run card.
+            }
+          }
         })
         .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
@@ -6322,6 +6362,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Reassigned every render so TranscriptRows — which deliberately does NOT
   // re-render on composer keystrokes — always invokes closures that read the
   // CURRENT busy/turns/attachments state at call time. See TranscriptHandlers.
+  // Approve/deny for a `needs-approval` mission (cave-l9hsu): both send an
+  // inline answer through the ordinary send machinery — the same path a typed
+  // reply takes — so the familiar resumes in place. Approve is the go-ahead;
+  // deny keeps the mission armed and lets the familiar respond to the no.
+  const approveAutoMission = () => {
+    announce("Mission approved — resuming.", "polite");
+    void send(APPROVE_MISSION_MESSAGE);
+  };
+  const denyAutoMission = () => {
+    announce("Mission denied — resuming.", "polite");
+    void send(DENY_MISSION_MESSAGE);
+  };
   const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
   transcriptHandlersRef.current = {
     siblingsFor,
@@ -6333,6 +6385,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
+    approveAutoMission,
+    denyAutoMission,
   };
   transcriptHandlersRef.current.cancelSend = cancelSend;
 
@@ -7276,9 +7330,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
   // Context controls follow the same pattern: constructed once as
-  // chatContextControls and placed adaptively — footer cluster for new chats
-  // (inlineComposer) and session header for active chats (!inlineComposer)
-  // so picker state is never duplicated.
+  // chatContextControls and rendered in exactly ONE place — the composer's
+  // footer cluster, for new and active chats alike (cave-zfmqm). They were
+  // placed adaptively before, which is how the session header ended up
+  // carrying a picker toolbar.
   // Tool-only commands such as /image and /auto can produce transcript turns
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
@@ -7286,6 +7341,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const offlineReadOnly = historyState === "offline";
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const hasStagedComposerInput =
+    input.length > 0 ||
+    attachments.length > 0 ||
+    replyTarget !== null ||
+    taskArmed ||
+    dictation.listening ||
+    dropActive;
+  const showDockedComposer = shouldShowDockedComposer({
+    following,
+    hasStagedInput: hasStagedComposerInput,
+    releasedScrollDistance,
+    composerHeight,
+  });
+  useLayoutEffect(() => {
+    const node = composerDockRef.current;
+    if (!node) return;
+    const measure = () => {
+      const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+      setComposerHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inlineComposer, showDockedComposer]);
   const chatContextControls = (
     <ComposerContextChips
       projects={projects}
@@ -7314,6 +7395,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const composerNode = (
     <footer
+      ref={composerDockRef}
       className="cave-composer-dock"
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
     >
@@ -7897,51 +7979,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — carries linked work and latest assistant options.
-                  Context controls ride here only for new chats (inlineComposer);
-                  active chats show them in the session header instead. */}
+              {/* Footer band — carries linked work and the context controls.
+                  They used to ride here for new chats ONLY, with active chats
+                  showing them in the session header; the header is a title and
+                  the verbs that act on the conversation now (cave-zfmqm), so
+                  this is their one home. That is also where they belong: you
+                  pick a project or a model at the moment you are composing, not
+                  while reading back a transcript.
+
+                  Gating this on `inlineComposer` again would silently strand an
+                  active chat with no way to change either. */}
               <div className="cave-composer-footer-band">
-                {inlineComposer ? (
+                {!offlineReadOnly ? (
                   <div className="cave-composer-footer-band__cluster">
                     {chatContextControls}
                   </div>
                 ) : null}
                 {linkedContextRow}
-                {followUp.suggestions.length > 0 && !busy ? (
-                  <div
-                    className="cave-chat-followups"
-                    data-collapsed={followUpsCollapsed.collapsed ? "" : undefined}
-                  >
-                    {/* The toggle is a SIBLING of the cards, never inside them:
-                        a control rendered within the collapsed region would
-                        disappear along with it and strand the reader with no
-                        way back. Collapsed still shows this strip and the
-                        count, so the suggestions stay discoverable rather than
-                        silently gone. */}
-                    <button
-                      type="button"
-                      className="cave-chat-followups__toggle focus-ring"
-                      aria-expanded={!followUpsCollapsed.collapsed}
-                      aria-controls={followUpsPanelId}
-                      onClick={followUpsCollapsed.toggle}
-                    >
-                      <Icon
-                        name={followUpsCollapsed.collapsed ? "ph:caret-right" : "ph:caret-down"}
-                        width={12}
-                        height={12}
-                        aria-hidden
-                      />
-                      <span>
-                        {followUp.suggestions.length === 1
-                          ? "1 suggestion"
-                          : `${followUp.suggestions.length} suggestions`}
-                      </span>
-                    </button>
-                    <div id={followUpsPanelId} hidden={followUpsCollapsed.collapsed}>
-                      <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
@@ -8076,9 +8130,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )}
             {overflowAddProject.addError ? (
-              <p className="cave-project-picker__error" role="alert">
-                {overflowAddProject.addError}
-              </p>
+              <ProjectRootWorkspaceNotice
+                className="cave-project-picker__error"
+                code={overflowAddProject.addErrorCode}
+                error={overflowAddProject.addError}
+              />
             ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal
@@ -8093,9 +8149,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
-        {!inlineComposer && !offlineReadOnly ? (
-          <div className="cave-chat-header-context">{chatContextControls}</div>
-        ) : null}
+        {/* No mobile header strip either. It existed as the counterpart to the
+            inline desktop copy, because `.cave-chat-meta-line` is display:none
+            below the breakpoint — with both retired the composer carries the
+            controls on every width, so there is nothing left to double-mount. */}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -8270,6 +8327,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             groupedTurns={groupedTurns}
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
+            autoMission={autoMission}
             historyExpanded={historyExpanded}
             foldOpen={foldOpen}
             onToggleFold={toggleFold}
@@ -8318,6 +8376,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <ThreadSignalCard
             report={threadSignalReport}
             onDismiss={() => setThreadSignalReport(null)}
+            onOpenDailyNote={openFamiliarDailyNote}
             onViewFull={() => {
               const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
               window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;
@@ -8455,21 +8514,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
-      {inlineComposer ? null : following ? composerNode : null}
-      {taskSuggestion && sessionId && !offlineReadOnly ? (
-        <FollowUpTaskReview
-          open
-          sessionId={sessionId}
-          suggestion={taskSuggestion}
-          context={{
-            turns: activePath,
-            familiarId: familiar.id,
-            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
-          }}
-          onCreated={handleTaskCreated}
-          onClose={() => setTaskSuggestion(null)}
-        />
-      ) : null}
+      {inlineComposer ? null : showDockedComposer ? composerNode : null}
       {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
           familiar={familiar}
@@ -8769,6 +8814,8 @@ type TranscriptHandlers = {
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   cancelSend?: () => void;
   send: (override?: string) => Promise<void>;
+  approveAutoMission: () => void;
+  denyAutoMission: () => void;
 };
 
 /**
@@ -8805,10 +8852,12 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl,
   onOpenPreview,
   handlersRef,
+  autoMission,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
+  autoMission: AutoMissionRecord | null;
   historyExpanded: boolean;
   /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
    *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
@@ -8845,6 +8894,14 @@ const TranscriptRows = memo(function TranscriptRows({
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
   const latestAssistantId =
     allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
+  // Prose-dimming hint ("Chat Session - Prototype.dc.html", cave-4akqc): below
+  // a CLOSED fold the first visible turns sit slightly dimmed, suggesting the
+  // transcript continues above. Purely visual - the DOM and accessibility
+  // tree are unchanged - so it must also be a hover/focus restore, and the
+  // reduced-transparency preference disables it entirely (see
+  // session-chrome.css). Computed over the rendered slice so the cap path
+  // never fades anything either: the hint belongs to the fold alone.
+  const fadedGroups = chatFoldFadedGroupIndexes(renderGroups, folded);
   const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
@@ -8885,6 +8942,7 @@ const TranscriptRows = memo(function TranscriptRows({
           turn={t}
           familiar={familiar}
           announceLifecycle={t.id === latestAssistantId}
+          foldFaded={fadedGroups.has(groupIndex)}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
           onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8901,6 +8959,7 @@ const TranscriptRows = memo(function TranscriptRows({
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
+          autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
         />
       );
       if (!gapLabel) return row;
@@ -8954,6 +9013,7 @@ const TranscriptRows = memo(function TranscriptRows({
               turn={t}
               familiar={familiar}
               announceLifecycle={t.id === latestAssistantId}
+              foldFaded={fadedGroups.has(groupIndex)}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
               onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8970,6 +9030,7 @@ const TranscriptRows = memo(function TranscriptRows({
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
+              autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
             />
           );
         })}
@@ -9010,6 +9071,7 @@ function TurnRowImpl({
   announceLifecycle,
   showTimestamp = true,
   found = false,
+  foldFaded = false,
   onEdit,
   onRegenerate,
   onReply,
@@ -9024,6 +9086,7 @@ function TurnRowImpl({
   handlersRef,
   feedbackContext,
   branchNav,
+  autoApprovalPending = false,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
@@ -9036,6 +9099,10 @@ function TurnRowImpl({
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
    *  applies the temporary cave-turn-found highlight flash. */
   found?: boolean;
+  /** Prose-dimming hint (cave-4akqc): first visible turns below a closed fold
+   *  render slightly dimmed. Visual only; hover/focus and reduced-transparency
+   *  restore full contrast. */
+  foldFaded?: boolean;
   /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
@@ -9059,6 +9126,9 @@ function TurnRowImpl({
   feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
+  /** True when this turn's `needs-approval` marker is the live, unanswered one —
+   *  the AutoStatusCard then renders the approve/deny affordance. */
+  autoApprovalPending?: boolean;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -9125,7 +9195,7 @@ function TurnRowImpl({
     return (
       <div
         data-turn-id={turn.id}
-        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}`}
+        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
       >
         <div className="cave-linear-turn-content cave-linear-turn-content--with-avatar">
           {turn.role === "user" ? (
@@ -9280,6 +9350,27 @@ function TurnRowImpl({
       ghFamiliar,
     );
     renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+
+    // A /research-started run leaves no <coven:research> marker in the turn
+    // text — the run id is persisted on the turn instead. Rehydrate the inline
+    // projection from the canonical mission API through the bootstrap snapshot
+    // so the card survives reload and stays a view of the same run the Research
+    // Desk works on (#4808).
+    const researchRunId = turn.researchRunId;
+    if (turn.role === "assistant" && researchRunId && currentProjection.researchRuns.length === 0) {
+      const researchBlock: MessageBubbleSegment = {
+        kind: "block",
+        key: `research-${researchRunId}`,
+        node: (
+          <div className="my-3">
+            <ResearchRunInlineCard snapshot={researchRunBootstrapSnapshot(researchRunId)} />
+          </div>
+        ),
+      };
+      renderSegments = renderSegments
+        ? [...renderSegments, researchBlock]
+        : [{ kind: "text", text: visible }, researchBlock];
+    }
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
@@ -9388,7 +9479,12 @@ function TurnRowImpl({
       ) : null}
       {autoStatusUpdate ? (
         <div className="mt-2">
-          <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
+          <AutoStatusCard
+            state={autoStatusUpdate.state}
+            note={autoStatusUpdate.note}
+            onApprove={autoApprovalPending ? () => handlersRef.current?.approveAutoMission() : undefined}
+            onDeny={autoApprovalPending ? () => handlersRef.current?.denyAutoMission() : undefined}
+          />
         </div>
       ) : null}
       {/* Edit cards stay visible rather than being buried in activity. */}
@@ -9441,7 +9537,7 @@ function TurnRowImpl({
   return (
     <div
       data-turn-id={turn.id}
-      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
+      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
     >
       <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
@@ -10209,6 +10305,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.announceLifecycle === next.announceLifecycle &&
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
+    prev.foldFaded === next.foldFaded &&
     prev.expanded === next.expanded &&
     prev.handlersRef === next.handlersRef &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
@@ -10220,6 +10317,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // every parent render and would defeat memoization.
     prev.branchNav?.index === next.branchNav?.index &&
     prev.branchNav?.total === next.branchNav?.total &&
+    prev.autoApprovalPending === next.autoApprovalPending &&
     // Feedback stamp: compare by value — the memoized context object gets a
     // fresh identity when the model/runtime actually changes.
     prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&

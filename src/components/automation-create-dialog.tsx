@@ -17,6 +17,9 @@ import { StandardSelect } from "@/components/ui/select";
 import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { CronPromptBar } from "@/components/cron-prompt-bar";
+import { SchedulePlanPreview } from "@/components/schedule/schedule-plan-preview";
+import { planCtaSuffix, planFromRrule } from "@/lib/schedule-plan-model";
+import { readDateTimePrefs } from "@/lib/datetime-format";
 import type { CronPromptUpdate } from "@/lib/cron-prompt";
 
 export type AutomationCreateInput = {
@@ -94,6 +97,15 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
   };
 
   const rrule = buildCodexRrule(scheduleMode, time, days, rawRrule);
+  // ONE plan for all three input modes. The weekly builder, the daily builder
+  // and the raw RRULE box all serialize through buildCodexRrule, so reading
+  // the plan off THAT is what makes the spec's "all three syntaxes reconcile
+  // into one canonical plan" true rather than aspirational — three separate
+  // previews could disagree about the same schedule.
+  // Same clock the reminder modal reads, so the two dialogs render a schedule
+  // the same way rather than one saying "9 AM" while the other says "09:00".
+  const plan = planFromRrule(rrule, new Date(), { hour12: readDateTimePrefs().clock !== "24h" });
+  const planLabel = planCtaSuffix(plan);
   const validSchedule =
     scheduleMode === "raw"
       ? rawRrule.trim().startsWith("RRULE:")
@@ -232,6 +244,12 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                       />
                     </div>
                   )}
+
+                  {/* The plan the user can actually check, above the machine
+                      form. The spec keeps the RRULE echo for experts but files
+                      its being the ONLY readout as a P1 — "raw RRULE exposed
+                      with no plain-English translation". */}
+                  <SchedulePlanPreview plan={plan} ariaLabel="Cron schedule plan" />
 
                   <p
                     className="automation-create-dialog__rrule"
@@ -378,7 +396,12 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
             onClick={handleCreate}
             leadingIcon="ph:plus-bold"
           >
-            Create
+            {/* The CTA names its outcome. The spec files a bare "+ Create" as a
+                P1 — it never says what it creates — and the plan is already
+                computed, so the label costs nothing it does not already know.
+                It falls back to plain "Create" rather than inventing a summary
+                when there is no readable plan to name. */}
+            {planLabel ? `Create · ${planLabel}` : "Create"}
           </Button>
         </div>
       </div>

@@ -308,11 +308,13 @@ import {
   validateModelControlValues,
   type ModelControlValues,
 } from "@/lib/model-control-capabilities";
+import { emitSessionFinishedItem } from "@/lib/session-finished-inbox-emit";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import {
   daemonSessionCwd,
   filterUsableLocalDirectories,
   resolveFamiliarWorkspace,
+  shouldRetryBlankCopilotResume,
 } from "./chat-send-runtime";
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
@@ -1608,7 +1610,25 @@ export async function __postChatForTests(
   return postChat(req, dependencies);
 }
 
-async function postChat(req: Request, dependencies: ChatSendRouteDependencies = {}) {
+/**
+ * Entry point for the dedicated generation surface (/api/chat/generate/<origin>,
+ * cave-cst0g). The route's path names the origin and the server stamps it —
+ * the request body's origin claim is never trusted. This is the ONLY path that
+ * may mint a projectless generation origin (canvas/journal/enhance) on a new
+ * conversation; /api/chat/send mints none.
+ */
+export async function postChatForGeneration(req: Request, origin: SessionOrigin) {
+  return postChat(req, {}, origin);
+}
+
+async function postChat(
+  req: Request,
+  dependencies: ChatSendRouteDependencies = {},
+  /** Server-minted origin for a brand-new conversation (cave-cst0g). The
+   *  dedicated generation surface passes the origin from its own route path;
+   *  the chat surface (/api/chat/send) passes nothing. */
+  surfaceOrigin?: SessionOrigin,
+) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
@@ -1638,6 +1658,17 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
   body.runId = normalizeChatAttentionOperationId(
     (body as { runId?: unknown }).runId,
   ) ?? undefined;
+  // Server-owned provenance (cave-cst0g): a brand-new conversation's origin is
+  // minted by the authenticated surface — the route that received the request —
+  // never by the request body. /api/chat/send is the chat surface: it mints no
+  // projectless origin, so a caller cannot label a new conversation as a hidden
+  // generation (canvas/journal/enhance) to suppress the knowledge vault or keep
+  // it out of the chat lists. The dedicated generation surface
+  // (/api/chat/generate/<origin>) is the only route allowed to mint a
+  // projectless origin, and it stamps the origin from its own path. Persisted
+  // conversations still own their provenance: every downstream read prefers
+  // existingConversation.origin over this value, so a resume never relabels.
+  body.origin = surfaceOrigin;
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
@@ -4094,6 +4125,16 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             );
             if (ended) push({ kind: "tool_use", ...ended });
           },
+          onUsage: (ev) => {
+            // Terminal step_finish token counters (input/output/cache) plus
+            // cost, normalized by the shared defensive validators at the
+            // Cave boundary. A client that omits either leaves it un-emitted.
+            result = {
+              ...result,
+              usage: parseStreamJsonUsage(ev.usage),
+              costUsd: parseCostUsd(ev.totalCostUsd),
+            };
+          },
           onError: (ev) => {
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
@@ -4218,6 +4259,12 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
             // stripped every payload from this event.
             result = { ...result, is_error: true };
             recordStdoutErrorTail("Codex reported a failure event", true);
+            return;
+          }
+          case "usage": {
+            // turn.completed token counters (input/output/cache). Codex reports
+            // no cost, so costUsd stays absent and the meter shows null for it.
+            result = { ...result, usage: parseStreamJsonUsage(event.usage) };
             return;
           }
           case "unknown": {
@@ -5332,21 +5379,22 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         await runAttempt(args);
       }
 
-      // Copilot can silently close an expired native session with exit code 0:
-      // no result frame, no assistant text, and no "session not found" stderr.
-      // Treat that exact resumed-attempt shape as a stale session so the
-      // existing bounded context-replay retry can answer the user's turn.
-      if (
-        copilotStream &&
-        resumeTarget &&
-        !runtimeAccessRefreshNeeded &&
-        !inferenceRouteRefreshNeeded &&
-        !runHandle.stopRequested &&
-        !launchFailure &&
-        !assistantText.trim() &&
-        result.duration_ms == null &&
-        result.is_error == null
-      ) {
+      // Copilot can silently close an expired native session with no result
+      // frame or assistant text. This can surface as either exit code 0 or a
+      // nonzero process exit, so retry both blank resumed-attempt shapes while
+      // preserving explicit successful empty results and every fresh-session
+      // boundary above.
+      if (shouldRetryBlankCopilotResume({
+        hasCopilotStream: Boolean(copilotStream),
+        resumeTarget,
+        runtimeAccessRefreshNeeded,
+        inferenceRouteRefreshNeeded,
+        stopRequested: runHandle.stopRequested,
+        launchFailed: Boolean(launchFailure),
+        assistantText,
+        durationMs: result.duration_ms,
+        resultIsError: result.is_error,
+      })) {
         resumeFailed = true;
       }
 
@@ -5958,6 +6006,25 @@ async function postChat(req: Request, dependencies: ChatSendRouteDependencies = 
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,
       });
+      // Session-finished inbox item (cave-fgey): when the turn completed while
+      // the user wasn't watching this chat, surface one 'agent' inbox item
+      // ("<familiar> finished: <session title>") so finished long-running work
+      // is not silent outside Recent Activity. "Watching" is the same signal
+      // the detach cap already uses: the initiating request is still attached
+      // (fetch open) and no detached-run re-attach is pending — a transport
+      // drop arms detachKillTimer, a re-attach clears it, and a deliberate
+      // Stop never arms it. Long turns notify even when watched. Best-effort:
+      // never fails the turn; deduped per session.
+      if (finalSessionId) {
+        await emitSessionFinishedItem({
+          familiarId: body.familiarId,
+          familiarName:
+            config.familiars[body.familiarId]?.display_name?.trim() || body.familiarId,
+          sessionId: finalSessionId,
+          watchedByUser: detachKillTimer == null,
+          durationMs: result.duration_ms,
+        });
+      }
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.

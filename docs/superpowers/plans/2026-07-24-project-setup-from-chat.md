@@ -1,6 +1,6 @@
 # Project Setup From a Chat's Unregistered Folder — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** When a chat runs in an ad-hoc folder that maps to no registered Cave project, offer an in-place "Set up as project" flow (picker row + dismissible banner) that explains what registering entails and lets the human pick access for the chat's familiar and the familiar's access groups.
 

@@ -2,7 +2,18 @@
 // provisions the pairing secret in dev instead of dead-ending on
 // "run `pnpm mobile:tailscale`".
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, type TestContext } from "node:test";
@@ -27,6 +38,15 @@ function devEnv(overrides: Record<string, string | undefined> = {}): Record<stri
     PORT: "3000",
     ...overrides,
   };
+}
+
+/** Symlink creation is a privilege on some platforms; skip rather than fail. */
+function isUnsupportedSymlinkError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "ENOSYS"
+    || code === "ENOTSUP"
+    || code === "EOPNOTSUPP"
+    || (process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
 }
 
 // ── Windows seams (cave-fawvh) ───────────────────────────────────────────────
@@ -172,9 +192,11 @@ test("restricts the state directory and the token file on Windows, where chmod d
   assert.ok(secret, "an exclusive Windows path still provisions");
 
   const file = mobileAccessSecretFile(env);
+  // The guard probes the realpath'd target (cave-8p0hn): on macOS the mkdtemp
+  // path under /var resolves to /private/var, so the pinned paths resolve too.
   assert.deepEqual(
     probed,
-    [path.dirname(file), file],
+    [realpathSync(path.dirname(file)), realpathSync(file)],
     "the directory is restricted BEFORE the secret is written into it, then the file is verified",
   );
 
@@ -188,7 +210,7 @@ test("restricts the state directory and the token file on Windows, where chmod d
     await provisionMobileAccessSecret(env, { ownership: windowsOwnership(again) }),
     secret,
   );
-  assert.deepEqual(again, [path.dirname(file), file]);
+  assert.deepEqual(again, [realpathSync(path.dirname(file)), realpathSync(file)]);
 });
 
 test("a token file that cannot be restricted is never left on disk", async () => {
@@ -209,7 +231,7 @@ test("a token file that cannot be restricted is never left on disk", async () =>
     null,
     "a state directory another principal can write must not receive a plaintext secret",
   );
-  assert.deepEqual(sharedProbes, [path.dirname(mobileAccessSecretFile(shared))]);
+  assert.deepEqual(sharedProbes, [realpathSync(path.dirname(mobileAccessSecretFile(shared)))]);
   assert.equal(existsSync(mobileAccessSecretFile(shared)), false);
 
   // And when only the file itself fails the check, the secret written a moment
@@ -220,8 +242,12 @@ test("a token file that cannot be restricted is never left on disk", async () =>
     await provisionMobileAccessSecret(late, {
       warn: () => {},
       ownership: windowsOwnership([], async (target) => {
-        if (target === lateFile) throw new Error("spawn powershell.exe ENOENT");
-        return exclusiveReport();
+        // The directory probe passes; only the token file's probe fails, so
+        // the secret written a moment earlier must be removed. The probed
+        // paths are the realpath'd ones (cave-8p0hn), and the file does not
+        // exist until the mint writes it, so the comparison resolves the dir.
+        if (target === realpathSync(path.dirname(lateFile))) return exclusiveReport();
+        throw new Error("spawn powershell.exe ENOENT");
       }),
     }),
     null,
@@ -231,6 +257,71 @@ test("a token file that cannot be restricted is never left on disk", async () =>
     false,
     "a plaintext secret must not survive on a path whose ACL could not be verified",
   );
+});
+
+test("a symlinked state directory is refused before anything is written into it", async (t: TestContext) => {
+  // mkdirSync(recursive) and writeFileSync FOLLOW a reparse point, so a
+  // symlinked state dir would land the plaintext secret in a directory whose
+  // DACL was never the one verified — and lstat of the link itself reports
+  // the current user, so the ownership guard would pass it (cave-8p0hn).
+  const env = devEnv();
+  const stateDir = path.dirname(mobileAccessSecretFile(env));
+  const target = mkdtempSync(path.join(tmpdir(), "cave-mobile-dir-target-"));
+  let linked = false;
+  try {
+    symlinkSync(target, stateDir, process.platform === "win32" ? "junction" : "dir");
+    linked = true;
+  } catch (error) {
+    if (isUnsupportedSymlinkError(error)) {
+      t.skip(`directory symlinks are unsupported on this platform (${(error as NodeJS.ErrnoException).code})`);
+      return;
+    }
+    throw error;
+  }
+  try {
+    assert.equal(
+      await provisionMobileAccessSecret(env, { warn: () => {} }),
+      null,
+      "a symlinked state directory must not receive a plaintext secret",
+    );
+    assert.deepEqual(readdirSync(target), [], "nothing was written through the link");
+  } finally {
+    if (linked) rmSync(stateDir, { force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("a symlinked token file is refused instead of followed", async (t: TestContext) => {
+  // The minted secret would be written THROUGH the link to its target, so the
+  // file guard must refuse the reparse point rather than verify the link's own
+  // (trivially current-user) metadata and hand the secret back (cave-8p0hn).
+  const env = devEnv();
+  const file = mobileAccessSecretFile(env);
+  mkdirSync(path.dirname(file), { recursive: true });
+  const targetDir = mkdtempSync(path.join(tmpdir(), "cave-mobile-file-target-"));
+  const target = path.join(targetDir, "access-token");
+  writeFileSync(target, "decoy\n", "utf8");
+  let linked = false;
+  try {
+    symlinkSync(target, file, "file");
+    linked = true;
+  } catch (error) {
+    if (isUnsupportedSymlinkError(error)) {
+      t.skip(`file symlinks are unsupported on this platform (${(error as NodeJS.ErrnoException).code})`);
+      return;
+    }
+    throw error;
+  }
+  try {
+    assert.equal(
+      await provisionMobileAccessSecret(env, { warn: () => {} }),
+      null,
+      "a symlinked token file must not be trusted",
+    );
+  } finally {
+    if (linked) rmSync(file, { force: true });
+    rmSync(targetDir, { recursive: true, force: true });
+  }
 });
 
 test("a refusal to restrict the token path is announced, not swallowed", async () => {

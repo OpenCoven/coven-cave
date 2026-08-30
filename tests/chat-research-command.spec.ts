@@ -109,9 +109,13 @@ test("/research starts a run stamped with the conversation it was invoked from",
 }) => {
   await setup(page);
 
-  const requests: Array<Record<string, unknown>> = [];
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
   await page.route("**/api/research/missions**", async (route) => {
-    requests.push(route.request().postDataJSON() as Record<string, unknown>);
+    const request = route.request();
+    requests.push({
+      method: request.method(),
+      body: (request.postDataJSON() ?? {}) as Record<string, unknown>,
+    });
     await route.fulfill({ json: { ok: true, mission: CREATED_MISSION } });
   });
 
@@ -130,15 +134,26 @@ test("/research starts a run stamped with the conversation it was invoked from",
   await composer.fill("/research compare managed vector stores for a small team");
   await composer.press("Enter");
 
+  // Wait for the create request to have fired, then pin requests[0] to the
+  // POST contract. Do NOT assert the total count: the inline run card mounted
+  // by the resulting turn legitimately rehydrates the same mission
+  // (GET /api/research/missions/research-1) and re-polls every 2s while the
+  // mocked mission stays in a pollable status, so on a warm CI runner its
+  // first GET can land inside the ~180ms between the POST firing and
+  // `press("Enter")` resolving — the poll's first evaluation then reads 2 and
+  // can never see 1 (observed on #5161 as "Expected: 1, Received: 17", both
+  // retries). requests[0] is deterministic: nothing else on this page touches
+  // this URL before the command creates the run.
   await expect
     .poll(() => requests.length, { timeout: 30_000 })
-    .toBe(1);
+    .toBeGreaterThanOrEqual(1);
 
   // The run records this conversation — not the executor session it will spawn,
   // which does not exist yet — and goes through the ordinary create contract.
-  expect(requests[0].origin).toEqual({ surface: "chat", sessionId: SESSION_ID });
-  expect(requests[0].familiarId).toBe("nova");
-  expect(requests[0].intent).toBe("compare managed vector stores for a small team");
+  expect(requests[0].method).toBe("POST");
+  expect(requests[0].body.origin).toEqual({ surface: "chat", sessionId: SESSION_ID });
+  expect(requests[0].body.familiarId).toBe("nova");
+  expect(requests[0].body.intent).toBe("compare managed vector stores for a small team");
 
   // The command is handled in chat, never forwarded to the familiar.
   expect(sends).toBe(0);

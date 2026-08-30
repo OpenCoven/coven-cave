@@ -22,7 +22,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 /**
  * Shared frame for every loading/error/chooser state: a named `<aside>` plus
- * a header carrying a title and a Close action. The panel can render inside a
+ * a slim control rail carrying identity and Close. The panel can render inside a
  * focus-trapped mobile modal, so every one of those states — not just the
  * fully resolved chat — must expose a discoverable way out instead of
  * trapping focus with no escape affordance.
@@ -69,8 +69,16 @@ function RightChatPanelFrame({
 }) {
   return (
     <aside className="right-chat" aria-label="Chat panel" aria-hidden={!open} inert={!open}>
-      <header className="right-chat__header">
-        <strong>{title}</strong>
+      <div
+        className="right-chat__rail"
+        role="toolbar"
+        aria-label="Chat panel controls"
+        aria-orientation="vertical"
+      >
+        <span className="right-chat__rail-mark" title={title}>
+          <Icon name="ph:chats" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+        </span>
+        <span className="right-chat__rail-spacer" aria-hidden />
         <button
           type="button"
           className="focus-ring right-chat__icon-button"
@@ -79,8 +87,11 @@ function RightChatPanelFrame({
         >
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
-      </header>
-      <FocusTrapOwnerHiddenContext.Provider value={!open}>{children}</FocusTrapOwnerHiddenContext.Provider>
+      </div>
+      <div className="right-chat__body">
+        <h2 className="sr-only">{title}</h2>
+        <FocusTrapOwnerHiddenContext.Provider value={!open}>{children}</FocusTrapOwnerHiddenContext.Provider>
+      </div>
     </aside>
   );
 }
@@ -602,16 +613,27 @@ export function RightChatPanel(props: Props) {
       inert={!open}
       data-session-id={selectedSessionId ?? "new"}
     >
-      <header className="right-chat__header">
-        {resolvedActiveFamiliar ? <FamiliarAvatar familiar={resolvedActiveFamiliar} size="sm" /> : null}
-        <span className="right-chat__identity">
-          <strong>{activeFamiliar.display_name}</strong>
-          <span title={title}>{title}</span>
+      <div
+        className="right-chat__rail"
+        role="toolbar"
+        aria-label="Chat panel controls"
+        aria-orientation="vertical"
+      >
+        <span
+          className="right-chat__rail-mark"
+          title={`${activeFamiliar.display_name} · ${title}`}
+        >
+          {resolvedActiveFamiliar ? <FamiliarAvatar familiar={resolvedActiveFamiliar} size="sm" /> : null}
         </span>
         <StandardSelect
           className="right-chat__thread-switcher"
-          label="Switch Chat panel thread"
+          label={`Switch Chat panel thread, current: ${title}`}
+          title={title}
           value={selectedSessionId ?? "__new__"}
+          showCaret={false}
+          renderValue={() => (
+            <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+          )}
           onChange={(nextId) => {
             if (nextId === "__new__") {
               routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
@@ -644,6 +666,7 @@ export function RightChatPanel(props: Props) {
         >
           <Icon name="ph:plus" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
+        <span className="right-chat__rail-spacer" aria-hidden />
         <button
           type="button"
           className="focus-ring right-chat__icon-button"
@@ -652,7 +675,7 @@ export function RightChatPanel(props: Props) {
         >
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
-      </header>
+      </div>
       {/*
         FocusTrapOwnerHiddenContext.Provider value={!open} (cave-rl980 Task 5
         finding #2) — see RightChatPanelFrame's doc comment above for the
@@ -662,21 +685,22 @@ export function RightChatPanel(props: Props) {
         the transcript below is asked to close the instant this panel
         becomes hidden/inert, through its own existing onEscape callback.
       */}
-      <FocusTrapOwnerHiddenContext.Provider value={!open}>
-        {transientErrorHeadline ? (
-          <ErrorState
-            compact
-            headline={transientErrorHeadline}
-            subtitle={familiarsError ?? "Your conversations are still safe."}
-            actions={
-              <Button onClick={familiarsError ? props.onRetryFamiliars : props.onRetrySessions}>
-                Retry
-              </Button>
-            }
-          />
-        ) : null}
-        <div className="right-chat__content">
-          <ChatRouter
+      <div className="right-chat__body">
+        <FocusTrapOwnerHiddenContext.Provider value={!open}>
+          {transientErrorHeadline ? (
+            <ErrorState
+              compact
+              headline={transientErrorHeadline}
+              subtitle={familiarsError ?? "Your conversations are still safe."}
+              actions={
+                <Button onClick={familiarsError ? props.onRetryFamiliars : props.onRetrySessions}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : null}
+          <div className="right-chat__content">
+            <ChatRouter
             ref={routerRef}
             familiar={activeFamiliar}
             familiars={familiars}
@@ -700,13 +724,13 @@ export function RightChatPanel(props: Props) {
             onActiveSessionChange={handleActiveSessionChange}
             composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
             compact
-            hideRail
             syncUrlHash={false}
             enableSplitPanes={false}
             activeFamiliarId={activeFamiliar.id}
-          />
-        </div>
-      </FocusTrapOwnerHiddenContext.Provider>
+            />
+          </div>
+        </FocusTrapOwnerHiddenContext.Provider>
+      </div>
     </aside>
   );
 }

@@ -89,7 +89,33 @@ const BASELINES = {
 // tokenize-css.mjs is a no-op over all three, so tier 1 stays clean.
 // -1: the compact Research mode picker replaces an off-grid spacing literal
 // with the shared control rhythm.
-BASELINES.offScaleSpacingPx = 1607;
+// +1: the calendar's cron density strip (cave-aa10e, "Rituals Redesign.dc.html"
+// CALENDAR TAB) — `gap: 2px` between the six four-hour bands. This is the one
+// spacing value in the new block that is not on scale, and --space-1 is the
+// wrong answer for it: at six bands inside a week column that can be as narrow
+// as 80px, 4px gaps spend a quarter of the strip on the spaces between bars,
+// and the strip stops reading as one chart and starts reading as six. It is
+// the same 1/2px micro-mark family the Chart Room, Weaves, Review Deck and
+// GitHub-composer handoffs already banked above, for the same reason each time.
+// Everything else the strip adds IS on scale: the band ramp is --space-1..-6
+// (the frame's 4/9/14/19/24/29 is the same even ramp off the scale, and a
+// density chart only needs its steps even), the row is --space-8, and the
+// padding and label gaps are --space-1/-2. Heights do not reach this ratchet
+// anyway — SPACING_PROPS is padding/margin/gap — so the ramp was snapped for
+// its own sake rather than to move this number.
+// measured, not derived: 1608 is the count on this branch rebased onto
+// cae54fb6e5, which is what CI scans. Measured 1607 before the rebase, because
+// the branch predated its own live-run-card merge; re-measure after the base
+// moves, never derive a baseline from another baseline.
+// +2: the project picker's option rows (cave-ocy8) lead with an expandable
+// avatar as a sibling zoom button, and the row wrapper owns the menuitem's
+// inset so the tile lines up exactly where the leading slot sat. It mirrors
+// the shared .ui-popover-item inset (6px 10px) — itself already banked drift
+// above — and --space-1/-2 (4px/8px) would misalign the avatar rows against
+// the icon rows in the same list, so the value is genuinely off-scale by
+// design (docs/coven-design-language.md §9 rule 1). Everything else the rows
+// add (the avatar-to-text gap) is on --space-2.
+BASELINES.offScaleSpacingPx = 1610;
 // +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
 // cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
 // five: the two rail widths the USER DRAGS (one `style` object carrying

@@ -593,6 +593,30 @@ test("owner capability holds through postconditions and dies on tampering, expir
   assert.equal(heartbeatMaintenanceGate(acquired.handle).ok, true);
   const gateFile = path.join(root, "gate.json");
   const heartbeated = JSON.parse(readFileSync(gateFile, "utf8"));
+  const boundedFutureHeartbeat = new Date(Date.now() + 500).toISOString();
+  writeFileSync(
+    gateFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: boundedFutureHeartbeat,
+    }),
+  );
+  assert.equal(
+    heartbeatMaintenanceGate(acquired.handle).ok,
+    true,
+    "a bounded host-clock correction must not abort the current owner",
+  );
+  const boundedHeartbeated = JSON.parse(readFileSync(gateFile, "utf8"));
+  assert.ok(
+    Date.parse(boundedHeartbeated.heartbeatAt) >= Date.parse(boundedFutureHeartbeat),
+    "tolerating a clock correction must never move the persisted heartbeat backwards",
+  );
+  assert.equal(
+    maintenanceGateStatus(repo).gate.clockRegressed,
+    false,
+    "a bounded correction remains a live, non-regressed gate",
+  );
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).ok, true);
   writeFileSync(
     gateFile,
     JSON.stringify({
@@ -621,6 +645,38 @@ test("owner capability holds through postconditions and dies on tampering, expir
   writeFileSync(gateFile, JSON.stringify(heartbeated));
   assert.equal(releaseMaintenanceGate(acquired.handle).ok, true);
   assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "gate-missing");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("a bounded WSL-sized clock correction remains live but a material future timestamp fails closed", (t) => {
+  const fixedNow = Date.now();
+  t.mock.method(Date, "now", () => fixedNow);
+  const repo = makeRepo();
+  const root = maintenanceGateRoot(repo);
+  const acquired = acquireMaintenanceGate({ ownerId: "clock-boundary", repoDir: repo, ttlMs: 60_000 });
+  assert.equal(acquired.ok, true);
+  const gateFile = path.join(root, "gate.json");
+  const original = JSON.parse(readFileSync(gateFile, "utf8"));
+  const correctionMs = 3_500;
+  const acceptedFutureHeartbeat = new Date(Date.now() + correctionMs).toISOString();
+  writeJsonAtomic(gateFile, { ...original, heartbeatAt: acceptedFutureHeartbeat });
+  assert.equal(
+    heartbeatMaintenanceGate(acquired.handle).ok,
+    true,
+    "the observed WSL-sized correction keeps the current owner live",
+  );
+  const accepted = JSON.parse(readFileSync(gateFile, "utf8"));
+  assert.ok(
+    Date.parse(accepted.heartbeatAt) >= Date.parse(acceptedFutureHeartbeat),
+    "a tolerated correction never moves the heartbeat backwards",
+  );
+  // Leave margin for filesystem work between sampling the clock and verifying
+  // the record: this proves a material future timestamp still fails closed
+  // without making the boundary assertion depend on scheduler latency.
+  const rejectedFutureHeartbeat = new Date(Date.now() + 7_000).toISOString();
+  writeJsonAtomic(gateFile, { ...accepted, heartbeatAt: rejectedFutureHeartbeat });
+  assert.equal(verifyMaintenanceGateOwnership(acquired.handle).reason, "clock-regressed");
+  assert.equal(heartbeatMaintenanceGate(acquired.handle).reason, "heartbeat-regressed");
   rmSync(repo, { recursive: true, force: true });
 });
 
@@ -1068,7 +1124,7 @@ test("concurrent multi-process acquisition: exactly one winner", async () => {
   rmSync(repo, { recursive: true, force: true });
 });
 
-test("writer lease heartbeat keeps a long-running mutation live", async () => {
+test("writer lease heartbeat keeps a long-running mutation live", async (t) => {
   const gate = await import("./local-maintenance-gate.mjs");
   assert.equal(typeof gate.heartbeatWriterIntent, "function", "writer leases need a token-fenced heartbeat");
 
@@ -1078,6 +1134,33 @@ test("writer lease heartbeat keeps a long-running mutation live", async () => {
   assert.equal(gate.heartbeatWriterIntent(intent.lease).ok, true);
   const intentFile = intentFileForLease(intent.lease);
   const heartbeated = JSON.parse(readFileSync(intentFile, "utf8"));
+  const fixedNow = Date.now();
+  t.mock.method(Date, "now", () => fixedNow);
+  const boundedFutureHeartbeat = new Date(Date.now() + 3_500).toISOString();
+  writeFileSync(
+    intentFile,
+    JSON.stringify({
+      ...heartbeated,
+      heartbeatAt: boundedFutureHeartbeat,
+    }),
+  );
+  assert.equal(
+    gate.heartbeatWriterIntent(intent.lease).ok,
+    true,
+    "a bounded host-clock correction must not abort the current writer",
+  );
+  const boundedHeartbeated = JSON.parse(readFileSync(intentFile, "utf8"));
+  assert.ok(
+    Date.parse(boundedHeartbeated.heartbeatAt) >= Date.parse(boundedFutureHeartbeat),
+    "tolerating a clock correction must never move the writer heartbeat backwards",
+  );
+  const boundedStatus = maintenanceGateStatus(repo);
+  assert.deepEqual(boundedStatus.liveIntents, ["long-writer"]);
+  assert.deepEqual(
+    boundedStatus.clockRegressedIntents,
+    [],
+    "a bounded correction remains a live, non-regressed writer intent",
+  );
   writeFileSync(
     intentFile,
     JSON.stringify({

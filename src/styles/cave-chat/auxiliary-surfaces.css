@@ -970,8 +970,8 @@
 }
 
 /* Ultra-minimal Code pull tab. The full-height button remains an easy target
-   and an in-flow flex child, but reserves only 14px. Its centered tab is nearly
-   transparent at rest and reveals dark-grey glass on hover or keyboard focus. */
+   and an in-flow flex child, but reserves only 14px. Its opaque shell keeps the
+   familiar backdrop from leaking through the collapsed workspace edge. */
 .workspace-rail-reopen {
   position: relative;
   display: flex;
@@ -982,7 +982,7 @@
   height: 100%;
   padding: 0;
   border: 0;
-  background: transparent;
+  background: var(--bg-panel);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -1176,4 +1176,23 @@
   margin-top: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+
+/* ── Familiar context row (cave-3pnnq) ─────────────────────────────────────
+ *   The shared familiar selector sits directly above the Chat section tabs so
+ *   a familiar is established before a scope is chosen. Its bottom border is
+ *   the single divider between the selector and the tab row; the tab row keeps
+ *   its own bottom border for the content boundary below. */
+.chat-familiar-context {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.chat-familiar-context .familiar-quickswitch,
+.chat-familiar-context .familiar-switcher__trigger--labeled {
+  width: 100%;
+  max-width: none;
 }

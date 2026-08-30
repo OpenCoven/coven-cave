@@ -15,6 +15,38 @@ async function box(page: Page, selector: string) {
   });
 }
 
+// cave-vkb2d: the mobile composer dock is position:sticky;bottom:0 (with a
+// transform transition driven by --composer-kb-offset), and its containing
+// surface keeps settling after .cave-chat-linear appears — CI has measured
+// the SAME dock at bottom 663.5 (under the bottom tabs) on one run and at
+// 348.9/406.9 on identical others, all from reading the box immediately
+// after waitForSelector. Poll until the dock's bottom edge holds still for a
+// continuous 400ms before asserting on geometry, so the assertion sees the
+// settled sticky state rather than a mid-layout box.
+async function waitForComposerSettled(page: Page) {
+  await expect.poll(
+    () =>
+      page.evaluate(() => {
+        const dock = document.querySelector<HTMLElement>(".cave-composer-dock");
+        if (!dock) return false;
+        const settle = (window as unknown as { __caveVkb2dComposerSettle?: { bottom: number; since: number } })
+          .__caveVkb2dComposerSettle ??= { bottom: Number.NaN, since: 0 };
+        const bottom = dock.getBoundingClientRect().bottom;
+        const now = performance.now();
+        if (Number.isNaN(settle.bottom) || Math.abs(bottom - settle.bottom) > 0.5) {
+          settle.bottom = bottom;
+          settle.since = now;
+          return false;
+        }
+        return now - settle.since >= 400;
+      }),
+    {
+      message: "composer dock should settle into its sticky position before measuring",
+      timeout: 10_000,
+    },
+  ).toBe(true);
+}
+
 async function expectNoHorizontalOverflow(page: Page, label: string) {
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -74,6 +106,10 @@ test.describe("mobile command center pages", () => {
     // row) collapsed into one "New session" button in the surface title row.
     await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");
+
+    // The dock is sticky and its surface is still settling at this point —
+    // wait for the composer geometry to hold still before measuring it.
+    await waitForComposerSettled(page);
 
     await expectNoHorizontalOverflow(page, "Chat detail");
 

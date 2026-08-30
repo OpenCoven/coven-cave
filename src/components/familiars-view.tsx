@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { requestGlobalSearch } from "@/lib/global-search-request";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -31,6 +32,10 @@ import {
 } from "@/lib/summon-events";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import {
+  deriveGrowthReport,
+  type FamiliarGrowthReport as GrowthReportModel,
+} from "@/lib/familiar-growth-signals";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import {
   emptyStats,
@@ -141,6 +146,9 @@ export function FamiliarsView({
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
   const [selectedFamiliarId, setSelectedFamiliarId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
   const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  // Detail-tab setter shares the SAME registry as the detail panel (cave-mo4q):
+  // the rite's "open daily notes" hint lands on the Daily Notes tab in one move.
+  const [, setDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
   const rejectedPendingSelectionRef =
     useRef<PendingCanonicalMemorySelection | null>(null);
   const memoryRequestGateRef = useRef<ReturnType<
@@ -370,6 +378,22 @@ export function FamiliarsView({
   );
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
+  // Growth health per familiar, derived from the SAME stats the roster already
+  // renders (retro state is null here — the dashboard owns retro runs). The
+  // roster card shows this as the status-dot + word pattern (cave-mo4q).
+  const healthByFamiliar = useMemo(() => {
+    const map = new Map<string, GrowthReportModel["healthLabel"]>();
+    for (const familiar of familiars) {
+      const cardStats = stats.get(familiar.id);
+      if (!cardStats) continue;
+      map.set(
+        familiar.id,
+        deriveGrowthReport({ familiar, stats: cardStats, retroState: null }).healthLabel,
+      );
+    }
+    return map;
+  }, [familiars, stats]);
+
   const visibleFamiliars = useMemo(
     () => resolvedFamiliars.filter((f) => familiarMatches(f, query)),
     [resolvedFamiliars, query],
@@ -442,6 +466,16 @@ export function FamiliarsView({
     setViewMode("detail");
   }, []);
 
+  // The Enhancement Rite's memory hint lands here: close the rite, open the
+  // familiar's detail panel on the Daily Notes tab (cave-mo4q).
+  const openDailyNotes = useCallback((id: string) => {
+    setCreateOpen(false);
+    setEnhanceTarget(null);
+    setSelectedFamiliarId(id);
+    setViewMode("detail");
+    setDetailTab("daily-notes");
+  }, [setDetailTab, setSelectedFamiliarId, setViewMode]);
+
   const backToRoster = useCallback(() => {
     setViewMode("roster");
     setSelectedFamiliarId(null);
@@ -497,7 +531,7 @@ export function FamiliarsView({
             <input
               ref={searchRef}
               type="search"
-              aria-label="Search familiars"
+              aria-label="Filter familiars"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -506,7 +540,7 @@ export function FamiliarsView({
                   setQuery("");
                 }
               }}
-              placeholder="Search familiars…"
+              placeholder="Filter familiars…"
               className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 font-mono text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
             {!query && (
@@ -518,6 +552,15 @@ export function FamiliarsView({
               </kbd>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => requestGlobalSearch("type:familiar")}
+            aria-label="Search all familiars globally"
+            title="Search all familiars globally (type:familiar)"
+            className="focus-ring ml-2 shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            Search all familiars
+          </button>
           {memoryError ? (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2 py-1 text-[length:var(--text-xs)] text-[var(--color-warning)]">
               <Icon name="ph:warning-circle" width={12} />
@@ -618,7 +661,7 @@ export function FamiliarsView({
                     stats.get(familiar.id) ??
                     emptyStats(canonicalMemoryAvailability)
                   }
-                  daemonRunning={daemonRunning}
+                  healthLabel={healthByFamiliar.get(familiar.id) ?? "steady"}
                   responseNeeded={responseNeeded.has(familiar.id)}
                   memoryStatus={
                     canonicalMemoryAvailability === "ready"
@@ -665,6 +708,14 @@ export function FamiliarsView({
         onEnhanced={(id) => onFamiliarCreated?.(id)}
         daemonRunning={daemonRunning}
         onStartChat={onStartChat}
+        onOpenDailyNotes={openDailyNotes}
+        memoryCount={
+          enhanceTarget
+            ? stats.get(enhanceTarget.id)?.memoryAvailability === "ready"
+              ? stats.get(enhanceTarget.id)?.memoryCount ?? null
+              : null
+            : null
+        }
       />
     </div>
   );

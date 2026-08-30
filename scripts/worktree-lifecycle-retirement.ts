@@ -147,12 +147,33 @@ export function parseMaxRetire(value: string | undefined): number {
   throw new Error("--max-retire must be an integer from 1 through 10");
 }
 
+/**
+ * Whether an operator's `--only` scope names this unit.
+ *
+ * Exact identities only, mirroring unitsNamedBy() in
+ * worktree-lifecycle-patrol.ts. An empty scope names nothing: the patrol
+ * refuses that invocation up front, and if some other caller forgets the flag
+ * the override must admit nothing rather than everything.
+ */
+function namedByScope(item: WorktreeLifecycleItem, scope: readonly string[]): boolean {
+  if (scope.length === 0) return false;
+  return scope.some(
+    (value) =>
+      item.path === value ||
+      item.ref === value ||
+      item.branch === value ||
+      item.head === value ||
+      (item.path !== null && item.path.split("/").pop() === value),
+  );
+}
+
 export function retireLifecycleUnits({
   items,
   gateHandle,
   operations,
   maxRetire,
   allowCooldownOverride = false,
+  cooldownOverrideOnly = [],
   nowMs = Date.now(),
 }: {
   items: WorktreeLifecycleItem[];
@@ -162,6 +183,15 @@ export function retireLifecycleUnits({
   /** Operator assertion that the cooldown units are idle — see the flag's
    *  documentation in worktree-lifecycle-patrol.ts. Never set by the sweep. */
   allowCooldownOverride?: boolean;
+  /**
+   * The units that assertion covers, from `--only`. The override admits NOTHING
+   * outside this list: an assertion about your own worktree is not an assertion
+   * about whatever else happens to share the cooldown lane, which on a shared
+   * checkout is routinely another live session's work (cave-qamzg). The patrol
+   * refuses an override with an empty scope, so an empty list here admits
+   * nothing rather than everything — the safe direction if a caller forgets.
+   */
+  cooldownOverrideOnly?: string[];
   nowMs?: number;
 }): RetirementReport {
   const report: RetirementReport = {
@@ -185,6 +215,7 @@ export function retireLifecycleUnits({
     .filter((item) => {
       if (item.lane === "retire-after-gate") return true;
       if (!allowCooldownOverride) return false;
+      if (!namedByScope(item, cooldownOverrideOnly)) return false;
       if (!cooldownIsTheOnlyBlocker(item, nowMs)) return false;
       overridden.add(overriddenKey(item));
       return true;

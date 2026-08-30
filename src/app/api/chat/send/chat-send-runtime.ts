@@ -26,6 +26,28 @@ export async function conversationCwd(sessionId?: string): Promise<string | unde
 
 type DaemonSessionRow = { id?: string; project_root?: string };
 
+export function shouldRetryBlankCopilotResume(input: {
+  hasCopilotStream: boolean;
+  resumeTarget: string | null;
+  runtimeAccessRefreshNeeded: boolean;
+  inferenceRouteRefreshNeeded: boolean;
+  stopRequested: boolean;
+  launchFailed: boolean;
+  assistantText: string;
+  durationMs?: number;
+  resultIsError?: boolean;
+}): boolean {
+  return input.hasCopilotStream &&
+    Boolean(input.resumeTarget) &&
+    !input.runtimeAccessRefreshNeeded &&
+    !input.inferenceRouteRefreshNeeded &&
+    !input.stopRequested &&
+    !input.launchFailed &&
+    !input.assistantText.trim() &&
+    input.durationMs == null &&
+    input.resultIsError !== false;
+}
+
 /**
  * Resume-cwd fallback for sessions the Cave conversation store has no local
  * runtime for — e.g. threads opened from Familiar analytics (`/#chat-<id>`)

@@ -140,6 +140,23 @@ export type WorktreeLifecycleObservation = {
   metadataGlobalErrors: string[];
   remoteRef: WorktreeRemoteRef | null;
   sessionIds: string[];
+  /**
+   * The worktree's lock reason, exactly as `git worktree list --porcelain`
+   * reports it. `null` means the worktree is not locked; an empty string means
+   * it is locked with no reason recorded.
+   *
+   * Deliberately NOT a classification input. A lock is a point-in-time claim
+   * the classifier cannot evaluate — a foreign reason like "active cave-1c8zf
+   * PR completion" says nothing about dirtiness or retention — so it never
+   * changes the lane. It is surfaced in the report alongside the unit's live
+   * cleanliness/retention verdict, so a lock contradicted by current state is
+   * visible at a glance instead of forcing an operator to diff lock reasons
+   * against merged PRs by hand (cave-eg1ag).
+   *
+   * Optional so legacy callers that never populate it keep their old behaviour;
+   * absent reads as "not locked".
+   */
+  lockReason?: string | null;
 };
 
 type LegacyWorktreeObservation = Pick<
@@ -183,6 +200,9 @@ type WorktreeObservationCompatibilityFields = Partial<
     // Optional because only a platform with a directory-hold probe can answer
     // it; absent reads as "no such evidence", never as "proven free".
     | "directoryHeldOpen"
+    // Optional so legacy observations that predate lock surfacing still parse;
+    // absent reads as "not locked".
+    | "lockReason"
   >
 >;
 
@@ -343,14 +363,15 @@ function headMismatchReason(pr: WorktreeMergedPrRef): string {
  * non-divergent and retained — so this is not a correctness check. It is a
  * "let a concurrent session notice" window: the one risk left is that someone
  * else is still sitting in the directory, and no amount of git evidence can
- * answer that. 8h originally (#4215), 3h since #4991 (`cave-vwt75`).
+ * answer that. 8h originally (#4215), 3h since #4991 (`cave-vwt75`), and
+ * 15m since `cave-0pu26`.
  *
  * An operator who KNOWS the unit is idle can discharge the wait explicitly
  * with `--allow-cooldown-override` — see {@link cooldownIsTheOnlyBlocker}.
  * The scheduled sweep never passes it, because a cron job has nobody to make
  * that assertion.
  */
-export const RETIREMENT_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+export const RETIREMENT_COOLDOWN_MS = 15 * 60 * 1000;
 /** Branch namespaces whose content is a snapshot to preserve, never retire.
  *
  *  `wip/` is a NAMESPACE here, not a token anywhere in the name. The previous
@@ -785,7 +806,7 @@ function classifyLifecycleUnitInternal(
   // exception granted to escape a full budget went on to hold the budget full,
   // forcing the next session to request another one.
   //
-  // Retirement stays gated by the 3-hour cooldown, the repository-wide
+  // Retirement stays gated by the 15-minute cooldown, the repository-wide
   // maintenance gate, and the deletion proof below, so dropping the exception
   // here reclassifies landed work without authorizing any new deletion.
 
@@ -806,13 +827,13 @@ function classifyLifecycleUnitInternal(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
       ...reviewAfterReasons(observation.metadata, nowMs),
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
     ...reviewAfterReasons(observation.metadata, nowMs),
   ]);
@@ -855,12 +876,12 @@ function classifyLifecycleUnitWithoutMetadata(
   const ageMs = nowMs - observation.updatedAtMs;
   if (ageMs < RETIREMENT_COOLDOWN_MS) {
     return withReasons(observation, "cooldown", [
-      "landed work remains inside the mandatory 3-hour cooldown",
+      "landed work remains inside the mandatory 15-minute cooldown",
     ]);
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is at least 3 hours old",
+    "clean landed work is at least 15 minutes old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
   ]);
 }
@@ -947,6 +968,7 @@ function normalizeWorktreeObservation(
       metadataGlobalErrors: observation.metadataGlobalErrors ?? [],
       remoteRef: observation.remoteRef ?? null,
       sessionIds: observation.sessionIds ?? [],
+      lockReason: observation.lockReason ?? null,
     },
   };
 }
@@ -1147,6 +1169,16 @@ export function renderWorktreeLifecycleReport(
       const location = item.kind === "branch-only" || !item.path ? "" : ` @ ${item.path}`;
       const kind = item.kind === "branch-only" ? " [branch-only]" : "";
       lines.push(`- ${labelFor(item)}${kind}${location}`);
+      // cave-eg1ag: surface a locked unit's lock reason alongside its live
+      // verdict, so a stale lock contradicted by the verdict (clean + retained,
+      // yet held by "active … PR completion") is visible at a glance. Printed
+      // first so it reads as the unit's most salient caveat, before the reasons
+      // that describe what the tree actually is. Never a lane input.
+      if (item.lockReason != null) {
+        lines.push(
+          `  worktree locked: ${item.lockReason.length > 0 ? item.lockReason : "(no reason recorded)"}`,
+        );
+      }
       // Drop the copies of a checkout-level failure that were already stated
       // above. `reasons` keeps them — this is presentation, not classification,
       // and every consumer reading the item still sees the full list.

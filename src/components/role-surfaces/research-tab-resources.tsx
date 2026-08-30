@@ -16,6 +16,7 @@
  */
 
 import dynamic from "next/dynamic";
+import "@/styles/research-paper-focus-reader.css";
 import {
   useCallback,
   useEffect,
@@ -27,14 +28,17 @@ import {
   type KeyboardEvent,
 } from "react";
 import { ResearchXArticleReader } from "@/components/research-x-article-reader";
+import { ResearchResourceBrowserModal } from "@/components/research-resource-browser-modal";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { copyText } from "@/lib/clipboard";
+import { caveResearchRemoteContent } from "@/lib/feature-flags";
 import { Icon } from "@/lib/icon";
 import { paperArxivUrl, paperDownloadUrl } from "@/lib/research-paper-view";
+import { researchResourceSourceUrl } from "@/lib/research-resource-browser";
 import {
   groupSavedLinksByUsage,
   linkCategoryMeta,
@@ -46,6 +50,8 @@ import {
   type SavedLinkSummary,
 } from "@/lib/link-organizer";
 import type { ResearchMission } from "@/lib/research-missions";
+import type { ResourceManifestV1 } from "@/lib/research-resource-contracts";
+import { resourceForQueryHit } from "@/lib/research-resource-client";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   MAX_X_ARTICLES_PER_INGEST,
@@ -53,8 +59,10 @@ import {
   type XArticleIngestFailure,
 } from "@/lib/x-articles";
 import type { ResearchTabProps } from "./researcher-surface";
+import { ResearchGithubRepoViewer } from "./research-github-repo-viewer";
 import { ResearchXSources } from "./research-x-sources";
 import { useResearchLinks } from "./use-research-links";
+import { useResearchResources } from "./use-research-resources";
 
 // pdf.js is browser-only (it dies on `DOMMatrix` under Node), so the paper
 // viewer never renders on the server. The dynamic boundary also keeps the PDF
@@ -100,8 +108,17 @@ function linkSearchText(link: SavedLinkSummary): string {
     .toLowerCase();
 }
 
+function ingestStateLabel(resource: ResourceManifestV1): string {
+  return resource.ingest.state.replaceAll("_", " ");
+}
+
+function localResourceCount(count: number): string {
+  return `${count} local ${count === 1 ? "resource" : "resources"}`;
+}
+
 export function ResearchTabResources({ research, context, onNavigate }: ResearchTabProps) {
   const { links, loading, error, load, save, loadDetail, remove } = useResearchLinks();
+  const local = useResearchResources();
   const { announce } = useAnnouncer();
 
   const [query, setQuery] = useState("");
@@ -125,13 +142,27 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
+  const [resourceMutationBusy, setResourceMutationBusy] = useState<string | null>(null);
+  const [expandedResourceId, setExpandedResourceId] = useState<string | null>(null);
+  const [confirmingResourceId, setConfirmingResourceId] = useState<string | null>(null);
+  // Browser-capable preview: { title, url } of the resource whose source URL the
+  // user chose to open in the modal. The modal itself enforces the
+  // consent.allowRemoteContent gate before ever loading the URL.
+  const [browserPreview, setBrowserPreview] = useState<{ title: string; url: string | null } | null>(null);
+  const resourceSearchRef = useRef<HTMLInputElement | null>(null);
   const articleRequestRef = useRef(0);
   const activeArticleIdRef = useRef<string | null>(null);
   const articleReaderRef = useRef<HTMLElement | null>(null);
   const pendingArticleFocusRef = useRef(false);
+  const readerFocusControlRef = useRef<HTMLButtonElement>(null);
   const selectedMission = research.selected;
   const act = research.act;
   const intake = useMemo(() => summarizeLinkIntake(draft, links), [draft, links]);
+  const resourceByLegacyId = useMemo(() => new Map(
+    local.resources.flatMap((resource) => resource.legacySavedLink
+      ? [[resource.legacySavedLink.id, resource] as const]
+      : []),
+  ), [local.resources]);
   const xArticleCandidates = useMemo(() => {
     const candidates = new Map<string, string>();
     for (const item of [...intake.ready, ...intake.duplicates]) {
@@ -194,6 +225,31 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     filter !== "all" && !categoryCounts.has(filter) ? "all" : filter;
 
   const trimmedQuery = query.trim();
+  const updateResourceQuery = useCallback((next: string) => {
+    // Query text and evidence authority change as one UI transaction. Invalidate
+    // the previous generation before React renders the new text; the debounce
+    // must never leave evidence from query A labelled as query B.
+    local.clearSearch();
+    setQuery(next);
+  }, [local.clearSearch]);
+  const clearResourceQuery = useCallback(() => {
+    updateResourceQuery("");
+    announce("Cleared local evidence search.", "polite");
+    queueMicrotask(() => resourceSearchRef.current?.focus());
+  }, [announce, updateResourceQuery]);
+  const retryResourceSearch = useCallback(async () => {
+    resourceSearchRef.current?.focus();
+    announce("Retrying local evidence search.", "polite");
+    const ok = await local.search(trimmedQuery);
+    announce(
+      ok ? "Local evidence search refreshed." : "Local evidence search is still unavailable.",
+      ok ? "polite" : "assertive",
+    );
+  }, [announce, local.search, trimmedQuery]);
+  useEffect(() => {
+    const timer = setTimeout(() => { void local.search(trimmedQuery); }, 250);
+    return () => clearTimeout(timer);
+  }, [local.search, trimmedQuery]);
   const visibleLinks = useMemo(() => {
     const q = trimmedQuery.toLowerCase();
     return links.filter((link) =>
@@ -349,6 +405,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
 
   // ── Detail overlay: focus-trapped dialog over the open link.
   const openLink = openId ? links.find((link) => link.id === openId) ?? null : null;
+  const openDurableResource = openLink ? resourceByLegacyId.get(openLink.id) : undefined;
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeOverlay = useCallback(() => {
     articleRequestRef.current += 1;
@@ -362,6 +419,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     closeOverlay();
   }, [closeOverlay, readerExpanded]);
   useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
+
+  useEffect(() => {
+    if (reading && readerExpanded) readerFocusControlRef.current?.focus();
+  }, [reading, readerExpanded]);
 
   // A fresh overlay never inherits the previous one's confirm/copied/reading
   // state — closing the overlay or opening a different resource both land
@@ -430,13 +491,52 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
 
   const removeOpenLink = async () => {
     if (!openLink) return;
-    const ok = await remove(openLink.id);
+    const resource = openDurableResource;
+    setResourceMutationBusy(resource?.id ?? openLink.id);
+    let ok = false;
+    try {
+      ok = resource ? await local.remove(resource.id) : await remove(openLink.id);
+      if (ok && resource) await load();
+    } finally {
+      setResourceMutationBusy(null);
+    }
     setConfirmingRemove(false);
     if (ok) {
-      announce("Removed from saves.");
+      announce(resource
+        ? `Deleted “${resource.title}” and its durable local evidence.`
+        : "Removed from saves.");
       setOpenId(null);
     } else {
       announce("Couldn’t remove the save — try again.", "assertive");
+    }
+  };
+
+  const retryResource = async (resource: ResourceManifestV1) => {
+    setResourceMutationBusy(resource.id);
+    let ok = false;
+    try {
+      ok = await local.retry(resource.id);
+    } finally {
+      setResourceMutationBusy(null);
+    }
+    announce(ok ? `Retry queued for “${resource.title}”.` : "Couldn’t retry ingestion.", ok ? "polite" : "assertive");
+  };
+
+  const deleteResource = async (resource: ResourceManifestV1) => {
+    setResourceMutationBusy(resource.id);
+    let ok = false;
+    try {
+      ok = await local.remove(resource.id);
+      if (ok && resource.legacySavedLink) await load();
+    } finally {
+      setResourceMutationBusy(null);
+    }
+    if (ok) {
+      setExpandedResourceId((current) => current === resource.id ? null : current);
+      setConfirmingResourceId(null);
+      announce(`Deleted “${resource.title}” and its durable local snapshots and evidence.`);
+    } else {
+      announce("Couldn’t delete the local resource — try again.", "assertive");
     }
   };
 
@@ -451,6 +551,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           {links.length} saved · from pastes, /save, and run citations
         </span>
       </header>
+
+      {/* cave-vy5vp: browse a GitHub repository's files and README. The fetch
+          is opt-in (no network until "Load repository"), which is the remote-
+          content consent surface for the Research Desk. */}
+      <ResearchGithubRepoViewer openUrl={context.openUrl} />
 
       {/* cave-lsj8u: src/app/api/x/ never landed, so this section's every
           fetch (/api/x/sources, /posts/search, /posts/lookup) 404s and it
@@ -547,9 +652,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
 
       <div className="research-res__toolbar">
         <SearchInput
+          ref={resourceSearchRef}
           value={query}
-          onValueChange={setQuery}
-          onClear={() => setQuery("")}
+          onValueChange={updateResourceQuery}
+          onClear={clearResourceQuery}
           placeholder="Search resources…"
           aria-label="Search resources"
           containerClassName="research-res__search"
@@ -587,6 +693,199 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         </div>
       </div>
 
+      {local.available && trimmedQuery.length >= 2 ? (
+        <section className="research-res__evidence" aria-label="Local evidence results" aria-busy={local.searching}>
+          <header className="research-res__evidence-head">
+            <div>
+              <h3>Local evidence</h3>
+              <p>Exact and full-text matches from verified local snapshots.</p>
+            </div>
+            <span>{local.searching
+              ? "Searching…"
+              : `${local.result?.hits.length ?? 0} ${(local.result?.hits.length ?? 0) === 1 ? "match" : "matches"}`}</span>
+          </header>
+          {local.searchError ? (
+            <div className="research-res__evidence-error" role="alert">
+              <span>{local.searchError}</span>
+              <div>
+                <Button size="xs" variant="ghost" onClick={() => void retryResourceSearch()}>
+                  Retry search
+                </Button>
+                <Button size="xs" variant="ghost" onClick={clearResourceQuery}>
+                  Clear search
+                </Button>
+              </div>
+            </div>
+          ) : !local.searching && local.result?.hits.length === 0 ? (
+            <p className="research-res__evidence-state">No ingested passages match this search.</p>
+          ) : (
+            <div className="research-res__evidence-list">
+              {local.result?.hits.map((hit) => {
+                const resource = resourceForQueryHit(local.resources, hit);
+                const legacyId = resource?.legacySavedLink?.id;
+                return (
+                  <article className="research-res-evidence" key={`${hit.resourceId}:${hit.snapshotId}`}>
+                    <div className="research-res-evidence__identity">
+                      <strong>{resource?.title ?? "Local resource"}</strong>
+                      <span>{resource
+                        ? `${resource.kind.replaceAll("-", " ")} · revision ${hit.resourceRevision}`
+                        : `revision ${hit.resourceRevision} · catalog metadata changed`}</span>
+                    </div>
+                    <p>{hit.excerpt}</p>
+                    <footer>
+                      <span>
+                        {hit.retrieval.exact ? "Exact" : null}
+                        {hit.retrieval.exact && hit.retrieval.lexical.matched ? " + " : null}
+                        {hit.retrieval.lexical.matched ? "Full text" : null}
+                        {hit.retrieval.semantic.state === "unavailable" ? " · Semantic unavailable" : null}
+                      </span>
+                      {legacyId ? (
+                        <Button size="xs" variant="ghost" onClick={() => setOpenId(legacyId)}>
+                          View resource
+                        </Button>
+                      ) : resource?.sourceUri ? (
+                        <Button size="xs" variant="ghost" onClick={() => context.openUrl(resource.sourceUri!)}>
+                          Open source
+                        </Button>
+                      ) : null}
+                    </footer>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {local.error ? (
+        <div className="research-res__catalog-error" role="alert">
+          <span>{local.error}</span>
+          <Button size="xs" variant="ghost" onClick={() => void local.load()}>Retry</Button>
+        </div>
+      ) : null}
+
+      {local.available ? (
+        <section className="research-res__catalog" aria-labelledby="research-local-catalog-title">
+          <header className="research-res__catalog-head">
+            <div>
+              <h3 id="research-local-catalog-title">Local catalog</h3>
+              <p>Ingest status and controls for every durable local resource.</p>
+            </div>
+            <span>{local.loading ? "Refreshing…" : localResourceCount(local.resources.length)}</span>
+          </header>
+          {local.resources.length === 0 ? (
+            <p className="research-res__catalog-empty">No local resources yet.</p>
+          ) : (
+            <div className="research-res__catalog-list">
+              {local.resources.map((resource, index) => {
+                const detailId = `research-local-resource-${index}`;
+                const expanded = expandedResourceId === resource.id;
+                const confirmingDelete = confirmingResourceId === resource.id;
+                const retryable = resource.ingest.state === "failed" && resource.ingest.retryable !== false;
+                const previewUrl = researchResourceSourceUrl(resource);
+                return (
+                  <article className="research-res-catalog-row" key={`${resource.id}:${resource.revision}`}>
+                    <div className="research-res-catalog-row__summary">
+                      <div className="research-res-catalog-row__identity">
+                        <strong>{resource.title}</strong>
+                        <span>{resource.kind.replaceAll("-", " ")} · revision {resource.revision}</span>
+                      </div>
+                      <span className="research-res-catalog-row__state" data-state={resource.ingest.state}>
+                        {ingestStateLabel(resource)}
+                      </span>
+                      <div className="research-res-catalog-row__actions">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          aria-expanded={expanded}
+                          aria-controls={detailId}
+                          onClick={() => setExpandedResourceId(expanded ? null : resource.id)}
+                        >
+                          {expanded ? "Hide details" : "Details"}
+                        </Button>
+                        {retryable ? (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            loading={resourceMutationBusy === resource.id}
+                            onClick={() => void retryResource(resource)}
+                          >
+                            Retry
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="xs"
+                          variant="danger-ghost"
+                          disabled={resourceMutationBusy === resource.id}
+                          onClick={() => setConfirmingResourceId(resource.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                    {expanded ? (
+                      <div id={detailId} className="research-res-catalog-row__details">
+                        <dl>
+                          <div><dt>Source type</dt><dd>{resource.sourceType}</dd></div>
+                          <div><dt>Sensitivity</dt><dd>{resource.sensitivity}</dd></div>
+                          <div><dt>Ingest</dt><dd>{ingestStateLabel(resource)}</dd></div>
+                          {resource.ingest.lastFailureCode ? (
+                            <div><dt>Failure code</dt><dd>{resource.ingest.lastFailureCode}</dd></div>
+                          ) : null}
+                        </dl>
+                        {previewUrl || resource.sourceUri ? (
+                          <div className="flex items-center gap-2">
+                            {previewUrl ? (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                leadingIcon="ph:globe"
+                                onClick={() => setBrowserPreview({ title: resource.title, url: previewUrl })}
+                              >
+                                Preview in browser
+                              </Button>
+                            ) : null}
+                            {resource.sourceUri ? (
+                              <Button
+                                size="xs"
+                                variant="ghost"
+                                trailingIcon="ph:arrow-square-out"
+                                onClick={() => context.openUrl(resource.sourceUri!)}
+                              >
+                                Open source
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {confirmingDelete ? (
+                      <div className="research-res-catalog-row__confirm" role="alert">
+                        <span>
+                          Delete this resource? This permanently deletes its durable local snapshots and
+                          evidence. This can’t be undone.
+                        </span>
+                        <Button
+                          size="xs"
+                          variant="danger-ghost"
+                          loading={resourceMutationBusy === resource.id}
+                          onClick={() => void deleteResource(resource)}
+                        >
+                          Delete resource
+                        </Button>
+                        <Button size="xs" variant="ghost" onClick={() => setConfirmingResourceId(null)}>
+                          Keep resource
+                        </Button>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {loading ? (
         <p className="research-res__empty">Loading saved links…</p>
       ) : error ? (
@@ -598,14 +897,14 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         <p className="research-res__empty">
           Nothing saved yet — paste a link above, or use /save in chat.
         </p>
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 && (local.result?.hits.length ?? 0) > 0 ? null : groups.length === 0 ? (
         <div className="research-res__empty research-res__empty--filtered">
           <span>Nothing matches “{trimmedQuery}” — try a different term or clear the filter.</span>
           <Button
             size="xs"
             variant="ghost"
             onClick={() => {
-              setQuery("");
+              updateResourceQuery("");
               setFilter("all");
             }}
           >
@@ -630,6 +929,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 const cited = citingMissions(link);
                 const inRun = attachedToSelected(link);
                 const article = link.xArticle;
+                const resource = resourceByLegacyId.get(link.id);
                 return (
                   <article
                     key={link.id}
@@ -680,11 +980,21 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                     <span className="research-res-card__sub">{linkDomain(link.url)}</span>
                     <div className="research-res-card__footer">
                       <span className="research-res-card__meta">
-                        {cited.length > 0
+                        {resource ? `${resource.ingest.state.replaceAll("_", " ")} · ` : ""}{cited.length > 0
                           ? `Cited by ${cited.length} ${cited.length === 1 ? "run" : "runs"}`
                           : "Not cited yet"}
                       </span>
                       <div className="research-res-card__buttons">
+                        {resource?.ingest.state === "failed" && resource.ingest.retryable !== false ? (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            loading={resourceMutationBusy === resource.id}
+                            onClick={() => void retryResource(resource)}
+                          >
+                            Retry ingestion
+                          </Button>
+                        ) : null}
                         <Button
                           size="xs"
                           variant="ghost"
@@ -736,7 +1046,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       ) : null}
 
       {openLink ? (
-        <div className="research-res-overlay" onClick={closeOverlay}>
+        <div
+          className="research-res-overlay"
+          data-reader={reading && readerExpanded || undefined}
+          onClick={closeOverlay}
+        >
           <div
             ref={dialogRef}
             role="dialog"
@@ -744,6 +1058,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             aria-labelledby="research-res-overlay-title"
             className="research-res-overlay__dialog"
             data-expanded={readerExpanded || undefined}
+            data-reader={reading && readerExpanded || undefined}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
@@ -783,27 +1098,41 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
               </div>
               <div className="research-res-overlay__head-actions">
                 {openPaperId && reading ? (
-                  <button
-                    type="button"
-                    className="research-res-overlay__close focus-ring"
-                    onClick={() => setReaderExpanded((current) => !current)}
-                    aria-label={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                    aria-pressed={readerExpanded}
-                    title={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
-                  >
-                    <Icon
-                      name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
-                      width={13}
-                      height={13}
-                      aria-hidden
-                    />
-                  </button>
+                  <>
+                    {readerExpanded ? (
+                      <button
+                        type="button"
+                        className="research-res-overlay__close focus-ring"
+                        onClick={() => context.openUrl(paperDownloadUrl(openPaperId))}
+                        aria-label="Download PDF"
+                        title="Download PDF"
+                      >
+                        <Icon name="ph:download-simple" width={13} height={13} aria-hidden />
+                      </button>
+                    ) : null}
+                    <button
+                      ref={readerFocusControlRef}
+                      type="button"
+                      className="research-res-overlay__close focus-ring"
+                      onClick={() => setReaderExpanded((current) => !current)}
+                      aria-label={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                      aria-pressed={readerExpanded}
+                      title={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
+                    >
+                      <Icon
+                        name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
+                        width={13}
+                        height={13}
+                        aria-hidden
+                      />
+                    </button>
+                  </>
                 ) : null}
                 <button
                   type="button"
                   className="research-res-overlay__close focus-ring"
                   onClick={closeOverlay}
-                  aria-label="Close resource details"
+                  aria-label={reading ? "Close paper reader" : "Close resource details"}
                 >
                   <Icon name="ph:x" width={13} height={13} aria-hidden />
                 </button>
@@ -905,7 +1234,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       size="sm"
                       variant="secondary"
                       leadingIcon="ph:book-open"
-                      onClick={() => setReading(true)}
+                      onClick={() => {
+                        setReading(true);
+                        setReaderExpanded(true);
+                      }}
                     >
                       Read
                     </Button>
@@ -965,10 +1297,17 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 {confirmingRemove ? (
                   <>
                     <span className="research-res-overlay__remove-warn">
-                      Remove this save? It leaves Resources and quick saves.
+                      {openDurableResource
+                        ? "Delete this resource? This permanently deletes its durable local snapshots and evidence, and removes it from Resources and quick saves. This can’t be undone."
+                        : "Remove this save from Resources and quick saves?"}
                     </span>
-                    <Button size="xs" variant="danger-ghost" onClick={() => void removeOpenLink()}>
-                      Yes, remove
+                    <Button
+                      size="xs"
+                      variant="danger-ghost"
+                      loading={resourceMutationBusy !== null}
+                      onClick={() => void removeOpenLink()}
+                    >
+                      {openDurableResource ? "Delete resource" : "Remove save"}
                     </Button>
                     <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(false)}>
                       Keep
@@ -976,7 +1315,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   </>
                 ) : (
                   <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(true)}>
-                    Remove from saves
+                    {openDurableResource ? "Delete resource" : "Remove from saves"}
                   </Button>
                 )}
               </div>
@@ -1015,6 +1354,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 ) : null}
                 <Button
                   size="sm"
+                  variant="ghost"
+                  leadingIcon="ph:globe"
+                  onClick={() => setBrowserPreview({
+                    title: openLink.title,
+                    url: (openDurableResource
+                      ? researchResourceSourceUrl(openDurableResource)
+                      : null) ?? openLink.url,
+                  })}
+                >
+                  Preview in browser
+                </Button>
+                <Button
+                  size="sm"
                   variant="secondary"
                   trailingIcon="ph:arrow-square-out"
                   onClick={() => context.openUrl(openLink.url)}
@@ -1043,6 +1395,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           </div>
         </div>
       ) : null}
+
+      <ResearchResourceBrowserModal
+        open={browserPreview !== null}
+        onClose={() => setBrowserPreview(null)}
+        title={browserPreview?.title ?? ""}
+        url={browserPreview?.url ?? null}
+        remoteContentRolloutEnabled={caveResearchRemoteContent()}
+        /* Resources has no authoritative, explicitly selected Context Pack.
+         * The Topic Discovery picker owns private local state and auto-selects
+         * its first result, so it cannot be lifted here as consent. Keep the
+         * optional consent absent until an explicit owner threads it through. */
+        contextPackConsent={undefined}
+      />
     </section>
   );
 }

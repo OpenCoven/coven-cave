@@ -108,13 +108,13 @@ assert.match(
   /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
   "ChatSurface should render GroupChatView for the coven scope",
 );
-// Familiar selection now lives in the global top menu bar (and the sidebar /
-// mobile top-bar switcher), so the chat header carries only its scope tabs —
-// no duplicate switcher here.
-assert.doesNotMatch(
+// Familiar selection now lives in a shared full-width context row above the
+// scope tabs (cave-3pnnq) — the header still carries only its scope tabs below
+// that row, so the selector is not a duplicate of the sidebar switcher.
+assert.match(
   chatSurface,
-  /<FamiliarSwitcher/,
-  "ChatSurface should not duplicate the global familiar switcher in its header",
+  /chat-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?familiars=\{resolvedFamiliars\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onSetActiveFamiliar\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?chat-scope-tabs chat-scope-tabs--minimal/,
+  "ChatSurface renders the shared familiar selector above its section tabs, wired through onSetActiveFamiliar",
 );
 assert.match(
   chatSurface,
@@ -137,6 +137,12 @@ assert.match(
   chatSurface,
   /initialScope = "conversation"[\s\S]*?useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*initialScope/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
+);
+
+assert.match(
+  chatSurface,
+  /hasFamiliarSettingsPending\(\)[\s\S]*?setScope\("familiar"\)/,
+  "a persisted Studio handoff must select the Familiar scope on a fresh Chat mount",
 );
 
 assert.match(
@@ -207,15 +213,10 @@ assert.doesNotMatch(
   /surface\s*=\s*"chat"|surface === "code"|isCodeSurface|CodeInlineToolbar/,
   "ChatSurface should not keep the retired code-surface switch",
 );
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /const compactRail = hideThreadRail/,
-  "ChatSurface should fold chat mode's hideThreadRail into the compact rail flag",
-);
-assert.match(
-  chatSurface,
-  /<ChatRouter[\s\S]*?hideRail=\{compactRail\}/,
-  "ChatSurface should suppress only the in-chat project rail (hideRail) when chat-mode ChatSidebar owns threads — the full-width toolbar stays",
+  /compactRail|hideRail=/,
+  "ChatSurface should not forward a rail flag into ChatRouter — the in-list project rail is retired; hideThreadRail only gates the surface's own docked rail",
 );
 
 assert.match(
@@ -300,6 +301,12 @@ assert.match(
   workspace,
   /mode === "chat"[\s\S]*<ChatSurface/,
   "Workspace should mount ChatSurface for the internal chat mode",
+);
+
+assert.match(
+  workspace,
+  /const familiarSettingsPending = hasFamiliarSettingsPending\(\)[\s\S]*?commitMode\("chat"\)[\s\S]*?if \(familiarSettingsPending\) return;/,
+  "Workspace must not emit the generic conversation landing after a Familiar Settings handoff",
 );
 
 assert.match(

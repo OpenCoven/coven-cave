@@ -1,9 +1,9 @@
 # Eight-Hour Worktree Retirement Implementation Plan
 
-> Historical implementation record. Superseded on 2026-08-24 by `cave-vwt75`;
-> the current mandatory retirement recency window is 3 hours.
+> Historical implementation record. Superseded on 2026-08-25 by `cave-0pu26`;
+> the current mandatory retirement recency window is 15 minutes.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Change only the branch/worktree retirement recency window from 24 hours to a mandatory 8 hours.
 

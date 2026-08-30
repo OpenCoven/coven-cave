@@ -142,6 +142,41 @@ assert.doesNotMatch(
   "TestFlight publication failures must not block unrelated desktop artifacts",
 );
 
+// ── The archive audits dSYM coverage before export (cave-ea6dw) ─────────────
+// App Store Connect warns on every TestFlight upload that the vendored
+// WebRTC.framework has no matching dSYM: its SPM binary package (pinned in
+// project.yml) ships a DWARF-stripped framework with no dSYM anywhere, and no
+// matching artifact exists upstream to download. The release therefore audits
+// coverage between archive and export, injects any matching dSYM dropped into
+// apps/ios/vendor/WebRTC.dSYMs into the archive's dSYMs/ folder, and exports
+// with uploadSymbols — while never blocking the release: the missing vendored
+// symbol is a cosmetic warning, and v0.2.2 shipped with it present.
+assert.match(
+  iosJob,
+  /xcodebuild[\s\S]*archive[\s\S]{0,6000}ios-dsym-coverage\.mjs[\s\S]{0,6000}xcodebuild -exportArchive/,
+  "the dSYM coverage audit runs between the archive and the export so injected dSYMs reach the upload",
+);
+assert.match(
+  iosJob,
+  /--vendor-dsyms apps\/ios\/vendor\/WebRTC\.dSYMs/,
+  "the audit scans the vendored-dSYM drop-in directory for matching dSYMs",
+);
+assert.doesNotMatch(
+  iosJob,
+  /ios-dsym-coverage\.mjs[\s\S]{0,400}--fail-on-missing/,
+  "the release audit never fails the job on a missing vendored dSYM — the warning must not block an upload (cave-ea6dw)",
+);
+assert.match(
+  iosJob,
+  /<key>uploadSymbols<\/key>[\s\S]{0,40}<true\/>/,
+  "the export options carry uploadSymbols so the archive's dSYMs reach App Store Connect",
+);
+assert.doesNotMatch(
+  iosJob,
+  /ios-dsym-coverage\.mjs[\s\S]{0,200}\|\|\s*true/,
+  "the audit step does not paper over failures with an explicit || true — its warn-only contract lives in the script",
+);
+
 // ── The archive can actually resolve signing ────────────────────────────────
 // Release run 32496765932 failed the archive with "No profiles for
 // 'ai.opencoven.cave' were found ... Automatic signing is disabled", and run

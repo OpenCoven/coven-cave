@@ -1,6 +1,6 @@
 # Shell Left Panels Pixel Widths — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Convert the app shell's left nav and list panels from percentage widths (which balloon on wide monitors) to pixel widths matching the declared `--shell-nav-width`/`--shell-list-width` intents, so the main content gets the reclaimed width.
 

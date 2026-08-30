@@ -79,8 +79,10 @@ const contracts: RouteContract[] = [
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/conversation/[id]/turns/[turnId]", methods: ["DELETE"], kind: "json" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/broadcast", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/chat/rewrite", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
+  { route: "/chat/generate/[origin]", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
@@ -120,6 +122,11 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  // The client v1 operational state (cave-6rwq0): whether the discovery record
+  // was published and whether the unverified-ownership waiver is in force —
+  // the two degraded states that previously existed only on stderr. GET-only,
+  // no body, same admin credential as the rest of the family.
+  { route: "/client/v1/admin/status", methods: ["GET"], kind: "json" },
   // The Phase 2 canonical reads (cave-jfa9y). Every one is a GET with no body,
   // and every one authenticates its own bearer through requireScope — which is
   // load-bearing rather than routine, because these five paths are the first
@@ -142,6 +149,7 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
+  { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/config/workspace-path", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -307,6 +315,14 @@ const contracts: RouteContract[] = [
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
+  { route: "/research/context-packs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/context-packs/[id]", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
+  { route: "/research/topic-jobs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/topic-jobs/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/topic-jobs/[id]/cancel", methods: ["POST"], kind: "json", localOriginGuard: true },
+  { route: "/research/topic-proposals", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/topic-proposals/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/topic-proposals/[id]/accept", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/research/generations", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/generations/infographic", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
@@ -317,6 +333,7 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/media-ticket", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/github-repo", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/files/[key]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
@@ -327,8 +344,12 @@ const contracts: RouteContract[] = [
   // No pathGuard: the id is validated against a strict arXiv shape and
   // interpolated into a hard-coded host, so there is no filesystem path to deny.
   { route: "/research/papers/pdf", methods: ["GET"], kind: "stream", localOriginGuard: true },
+  { route: "/research/resources", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/resources/[id]", methods: ["GET", "POST", "DELETE"], kind: "json", localOriginGuard: true },
+  { route: "/research/resources/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
+  { route: "/running-activity", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -621,6 +642,7 @@ assert.deepEqual(
     "/client/v1/admin/credentials/[id]",
     "/client/v1/admin/pairing-requests",
     "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/admin/status",
     "/client/v1/conversations",
     "/client/v1/conversations/[id]",
     "/client/v1/conversations/[id]/messages",
@@ -846,6 +868,19 @@ for (const { file, route } of clientV1Routes) {
     )?.file;
     assert.ok(file, `client-v1 operation ${operation.id} resolved no route file`);
     const routeSource = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+    if (operation.binding === "hpke-bound-v1") {
+      assert.match(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} declares hpke-bound-v1 but its route never calls authority.handle`,
+      );
+    } else {
+      assert.doesNotMatch(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} is not part of hpke-bound-v1`,
+      );
+    }
     if (operation.ingress === "admin") {
       assert.match(
         routeSource,

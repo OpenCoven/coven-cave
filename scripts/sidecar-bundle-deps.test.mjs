@@ -12,6 +12,7 @@ const [
   windowsConfigSource,
   manifestSource,
   closureSource,
+  smokeSource,
   rustArchiveSource,
 ] = await Promise.all([
   readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8"),
@@ -19,10 +20,17 @@ const [
   readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8"),
+  readFile(new URL("./sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/src/sidecar_archive_manifest.rs", import.meta.url), "utf8"),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
+
+assert.match(
+  smokeSource,
+  /const covenHome = await realpath\(\s*await mkdtemp\(/,
+  "the packaged smoke must give COVEN_HOME its physical path on symlinked temp roots",
+);
 
 function sourceSection(source, startMarker, endMarker, label) {
   const startIndex = source.indexOf(startMarker);
@@ -48,6 +56,50 @@ assert.match(src, /PNPM_STAGE.*node_modules/, "final node_modules must come from
 assert.match(closureSource, /realpath\(source\)/, "dependency links must be resolved before copying");
 assert.match(closureSource, /sidecar dependency link escapes its allowed roots/, "dependency links must be confined");
 assert.match(closureSource, /sidecar runtime must not contain links/, "assembled runtime must reject surviving links");
+
+const launchSidecarSource = sourceSection(
+  smokeSource,
+  "function launchSidecar(",
+  "async function stopSidecar(",
+  "sidecar launch helper",
+);
+assert.match(
+  launchSidecarSource,
+  /const childEnvironment = \{ \.\.\.process\.env \};[\s\S]*delete childEnvironment\.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE;/,
+  "the packaged smoke must delete any inherited authority mode before launching its default child",
+);
+assert.ok(
+  launchSidecarSource.indexOf("delete childEnvironment.COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE;")
+    < launchSidecarSource.indexOf("...environment"),
+  "an explicit per-launch authority mode must be applied only after the inherited parent mode is removed",
+);
+assert.doesNotMatch(
+  launchSidecarSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE\s*(?:=|:)\s*["']off["']/,
+  "the default smoke must test an unset authority mode rather than forcing off",
+);
+const defaultLaunchSource = sourceSection(
+  smokeSource,
+  "const firstPort = await reservePort();",
+  "  try {\n    const earlyExit = Promise.race([",
+  "default packaged sidecar launch",
+);
+assert.doesNotMatch(
+  defaultLaunchSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE/,
+  "the first packaged sidecar launch must leave authority mode unset",
+);
+const activeLaunchSource = sourceSection(
+  smokeSource,
+  "const secondPort = await reservePort();",
+  "    const secondEarlyExit",
+  "active packaged sidecar launch",
+);
+assert.match(
+  activeLaunchSource,
+  /COVEN_CAVE_CLIENT_V1_AUTHORITY_MODE:\s*"enforce"/,
+  "the later packaged sidecar launch must explicitly select enforce mode",
+);
 
 // Runtime size: assemble the union of Next's NFT traces and explicit dynamic
 // packages/data, never the standalone repository root or full prod install.
@@ -103,6 +155,60 @@ assert.ok(
   Number.isSafeInteger(declaredSidecarBudget.fileCount) && declaredSidecarBudget.fileCount > 0,
   "the declared sidecar file-count budget must be a positive integer",
 );
+const sidecarMeasurement = declaredSidecarBudget.measurement;
+const measuredPlatforms = ["windows", "ubuntu", "macos"];
+assert.equal(sidecarMeasurement.on, "2026-08-25", "the Task9 HPKE budget review date must not drift");
+assert.equal(
+  sidecarMeasurement.reference,
+  "OpenCoven/coven-cave#4996",
+  "the Task9 HPKE budget must retain its governing issue reference",
+);
+const governingMeasurement = Math.max(
+  ...measuredPlatforms.map((platform) => sidecarMeasurement[platform]),
+);
+assert.equal(
+  sidecarMeasurement[sidecarMeasurement.governingPlatform],
+  governingMeasurement,
+  "the named governing platform must hold the reviewed maximum",
+);
+assert.equal(
+  governingMeasurement + sidecarMeasurement.headroom,
+  declaredSidecarBudget.fileCount,
+  "the governing measurement plus reviewed headroom must equal the single-source file budget",
+);
+assert.equal(
+  sidecarMeasurement.headroom,
+  150,
+  "the HPKE feature delta must preserve the established 150-file headroom",
+);
+assert.ok(
+  sidecarMeasurement.featureDelta
+    && Number.isSafeInteger(sidecarMeasurement.featureDelta.fileCount)
+    && sidecarMeasurement.featureDelta.fileCount > 0,
+  "budget metadata must declare the reviewed feature-only file delta",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.approximateDiskKiB,
+  868,
+  "the reviewed approximate HPKE disk footprint must not drift",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.runtimeKind,
+  "pure-js",
+  "the reviewed HPKE closure must remain pure JavaScript",
+);
+assert.equal(
+  sidecarMeasurement.featureDelta.nativeOrPlatformSubtree,
+  false,
+  "the reviewed HPKE closure must not include a native or platform subtree",
+);
+for (const platform of measuredPlatforms) {
+  assert.equal(
+    sidecarMeasurement[platform] - sidecarMeasurement.featureDelta.baseline[platform],
+    sidecarMeasurement.featureDelta.fileCount,
+    `${platform} must move by exactly the reviewed feature delta`,
+  );
+}
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [
   "dist/compiled/webpack/webpack-lib.js",

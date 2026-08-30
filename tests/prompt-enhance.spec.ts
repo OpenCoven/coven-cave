@@ -2,14 +2,15 @@ import { expect, test, type Locator, type Page, type Route } from "@playwright/t
 
 // The ultimate Enhance (cave-b6c2): the composer's Enhance action (now an
 // item in the "+" menu, chat revamp 1d) streams a real rewrite from the
-// familiar via /api/chat/send (SSE), applies it in place when the draft is
-// untouched, downgrades to a suggestion strip when the user typed mid-flight
-// (the old copies' race bug), falls back to the local rule engine on stream
-// failure, and exposes intent variants behind the Enhance-options view.
+// familiar via the dedicated generation surface /api/chat/generate/enhance
+// (SSE), applies it in place when the draft is untouched, downgrades to a
+// suggestion strip when the user typed mid-flight (the old copies' race bug),
+// falls back to the local rule engine on stream failure, and exposes intent
+// variants behind the Enhance-options view.
 //
-// Daemon-less: /api/chat/send is mocked with SSE frames; the home surface is
-// driven through the standard familiar/session mocks. Desktop-only — the
-// control is identical on chat and quick-chat (pinned in
+// Daemon-less: the generation surface is mocked with SSE frames; the home
+// surface is driven through the standard familiar/session mocks. Desktop-only
+// — the control is identical on chat and quick-chat (pinned in
 // composer-enhance.test.ts), so one surface exercises the shared behavior.
 
 const FAMILIAR = {
@@ -77,6 +78,15 @@ function fulfillFrames(route: Route, frames: Array<Record<string, unknown>>) {
     contentType: "text/event-stream",
     body: `${frames.map((frame) => `data: ${JSON.stringify(frame)}`).join("\n\n")}\n\n`,
   });
+}
+
+/**
+ * Server-minted provenance (cave-cst0g): hidden generations ride the dedicated
+ * generation surface, which names the origin in its path — the request body no
+ * longer carries an origin claim. Empty string means a plain /api/chat/send.
+ */
+function generationOriginOf(url: string): string {
+  return new URL(url).pathname.match(/^\/api\/chat\/generate\/([^/]+)$/)?.[1] ?? "";
 }
 
 async function seed(page: Page) {
@@ -197,14 +207,15 @@ async function seedChat(
     fixture.stopRequests.push(route.request().postDataJSON() as Record<string, unknown>);
     return route.fulfill({ json: { ok: true } });
   });
-  await page.route("**/api/chat/send", async (route) => {
+  await page.route(/\/api\/chat\/(?:send|generate\/[a-z]+)(?:\?.*)?$/, async (route) => {
     const request = route.request().postDataJSON() as Record<string, unknown>;
-    if (request.origin === "enhance") {
+    const origin = generationOriginOf(route.request().url());
+    if (origin === "enhance") {
       fixture.enhancementRequests.push(request);
       await handleEnhance(route, request, fixture);
       return;
     }
-    if (request.origin === "journal") {
+    if (origin === "journal") {
       await fulfillFrames(route, [{ kind: "done", sessionId: CHAT_SESSION.id }]);
       return;
     }
@@ -276,29 +287,30 @@ function waitForPoliteAnnouncement(page: Page, expected: string) {
   }), { message: expected, timeoutMs: 15_000 });
 }
 
-/** One POST body captured from `/api/chat/send`. */
-type SendEntry = Record<string, unknown>;
+/** One send recorded by the tests — the POST body plus its URL. */
+type SendEntry = Record<string, unknown> & { _sendUrl?: string };
 
 /**
  * The sends that are actually the composer's Enhance run.
  *
- * `/api/chat/send` is a SHARED endpoint, not Enhance's private one: the shell
+ * The generation surface is SHARED, not Enhance's private one: the shell
  * generates the home surface's daily narrative through it too
- * (`workspace.tsx` -> `generateDailyNarrative`, which tags itself
- * `origin: "journal"`). That call is unrelated background traffic on its own
- * schedule, so counting every POST made the count depend on whether the
+ * (`workspace.tsx` -> `generateDailyNarrative`, which rides
+ * /api/chat/generate/journal). That call is unrelated background traffic on its
+ * own schedule, so counting every POST made the count depend on whether the
  * narrative happened to land inside the test window — the same structural
  * weakness that made `tests/task-work-fit.spec.ts` fail with overall CI suite
  * load rather than with any change to the chat code (df1a25f78).
  *
  * Selecting the enhance-origin sends is strictly more precise than the bare
- * count, not weaker: a genuine duplicate Enhance run necessarily carries
- * `origin: "enhance"`, so every true positive survives and only the false ones
- * drop. The "never sends a chat message" half of this test's claim is kept by
- * `conversationSends` below rather than by the bare count.
+ * count, not weaker: a genuine duplicate Enhance run necessarily targets
+ * /api/chat/generate/enhance (cave-cst0g), so every true positive survives and
+ * only the false ones drop. The "never sends a chat message" half of this
+ * test's claim is kept by `conversationSends` below rather than by the bare
+ * count.
  */
 const enhanceSends = (sends: SendEntry[]): SendEntry[] =>
-  sends.filter((entry) => entry.origin === "enhance");
+  sends.filter((entry) => generationOriginOf(String(entry._sendUrl ?? "")) === "enhance");
 
 /**
  * Sends that would become a saved conversation.
@@ -309,7 +321,10 @@ const enhanceSends = (sends: SendEntry[]): SendEntry[] =>
  * and keep asserting that nothing else reached the endpoint.
  */
 const conversationSends = (sends: SendEntry[]): SendEntry[] =>
-  sends.filter((entry) => entry.origin !== "enhance" && entry.origin !== "journal");
+  sends.filter((entry) => {
+    const origin = generationOriginOf(String(entry._sendUrl ?? ""));
+    return origin !== "enhance" && origin !== "journal";
+  });
 
 /** Compact, quotable rendering of the send log for an assertion message: a
  *  bare "Received: 2" is undiagnosable, and the unrelated sends are precisely
@@ -321,7 +336,8 @@ function describeSends(sends: SendEntry[]): string {
     .map((entry, index) => {
       const prompt = String(entry.prompt ?? "");
       const head = prompt.length > 60 ? `${prompt.slice(0, 60)}…` : prompt;
-      return `#${index + 1} origin=${String(entry.origin ?? "?")} sessionId=${String(entry.sessionId ?? "none")} prompt=${JSON.stringify(head)}`;
+      const origin = generationOriginOf(String(entry._sendUrl ?? "")) || "chat";
+      return `#${index + 1} origin=${origin} sessionId=${String(entry.sessionId ?? "none")} prompt=${JSON.stringify(head)}`;
     })
     .join("; ");
 }
@@ -329,10 +345,10 @@ function describeSends(sends: SendEntry[]): string {
 test.describe("prompt enhance", () => {
   test("legacy Enhance remains available and never sends a chat message when recommendations are disabled", async ({ page }) => {
     await seed(page);
-    const sends: Array<Record<string, unknown>> = [];
-    await page.route("**/api/chat/send", (route) => {
+    const sends: Array<SendEntry> = [];
+    await page.route(/\/api\/chat\/(?:send|generate\/[a-z]+)(?:\?.*)?$/, (route) => {
       const request = route.request().postDataJSON() as Record<string, unknown>;
-      sends.push(request);
+      sends.push({ ...request, _sendUrl: route.request().url() });
       return fulfillSse(route, ENHANCED);
     });
 
@@ -374,7 +390,7 @@ test.describe("prompt enhance", () => {
     const gate = new Promise<void>((resolve) => {
       releaseSse = resolve;
     });
-    await page.route("**/api/chat/send", async (route) => {
+    await page.route("**/api/chat/generate/enhance", async (route) => {
       await gate; // hold the stream until the user has typed over the draft
       return fulfillSse(route, ENHANCED);
     });
@@ -404,9 +420,8 @@ test.describe("prompt enhance", () => {
   test("the intent view changes the instruction (Enhance options in the + menu)", async ({ page }) => {
     await seed(page);
     const sends: Array<Record<string, unknown>> = [];
-    await page.route("**/api/chat/send", (route) => {
-      const request = route.request().postDataJSON() as Record<string, unknown>;
-      if (request.origin === "enhance") sends.push(request);
+    await page.route("**/api/chat/generate/enhance", (route) => {
+      sends.push(route.request().postDataJSON() as Record<string, unknown>);
       return fulfillSse(route, "Shorter.");
     });
 
@@ -432,7 +447,7 @@ test.describe("prompt enhance", () => {
 
   test("a failed stream falls back to the local rule engine, labelled offline", async ({ page }) => {
     await seed(page);
-    await page.route("**/api/chat/send", (route) => route.fulfill({ status: 500, json: { ok: false } }));
+    await page.route("**/api/chat/generate/enhance", (route) => route.fulfill({ status: 500, json: { ok: false } }));
 
     const draft = await openHome(page);
     await draft.fill("explain docker networking");
@@ -638,7 +653,7 @@ test.describe("Chat agentic prompt enhancement", () => {
     release();
   });
 
-  test("cancels a reduced-motion enhancement and lets a contextual next path only fill the composer", async ({ page }) => {
+  test("cancels a reduced-motion enhancement and lets the contextual ghost path only fill the composer", async ({ page }) => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -664,11 +679,10 @@ test.describe("Chat agentic prompt enhancement", () => {
 
     await draft.fill("What should I verify next?");
     await chat.getByRole("button", { name: "Send message" }).click();
-    const nextPaths = chat.getByRole("group", { name: "Suggested next steps" });
-    const reply = nextPaths.getByRole("button", { name: /Reply: Verify the login flow/ });
-    await expect(reply).toBeVisible({ timeout: 15_000 });
-    await expect(reply).toHaveAccessibleName(/Why this: Verify the changed login flow/);
-    await reply.click();
+    await expect(draft).toHaveAttribute("placeholder", "Verify the login flow", { timeout: 15_000 });
+    await expect(chat.getByRole("group", { name: "Suggested next steps" })).toHaveCount(0);
+    await draft.focus();
+    await page.keyboard.press("Tab");
     await expect(draft).toHaveValue("Verify the login flow");
     expect(fixture.chatRequests).toHaveLength(1);
   });

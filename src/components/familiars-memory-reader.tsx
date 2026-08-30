@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { DocumentReader } from "@/components/document-reader";
@@ -48,6 +48,7 @@ export function MemoryReaderPane({
   // read view after an edit session so it shows what was saved.
   const [editing, setEditing] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const visualLifecycleQueueRef = useRef<Promise<void>>(Promise.resolve());
   // File rows always carry the absolute allow-listed content path.
   const fetchPath = row?.contentPath ?? null;
   const { text, error, loading } = useMemoryFile(fetchPath, { refreshToken });
@@ -197,6 +198,7 @@ export function MemoryReaderPane({
           <MemoryMdEditor
             path={row.contentPath}
             sourceLabel={row.sourceLabel}
+            visualLifecycleQueueRef={visualLifecycleQueueRef}
             onCancel={() => {
               setEditing(false);
               setRefreshToken((current) => current + 1);

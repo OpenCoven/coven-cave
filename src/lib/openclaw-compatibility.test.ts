@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import fs, { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
@@ -40,6 +40,11 @@ assert.equal(
   OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
   "ed68832d5ecbc52de7ad5394933cb2a0df7b0f0b6f7a880127f688becbd76bd2",
 );
+assert.equal(
+  openClawSchemaBundlePayloadHash(BUILTIN_OPENCLAW_SCHEMA_BUNDLE),
+  "c14d44e311bbf1f540836b6881403bd6147463bfaeebaaf756d4c6111dc0bb49",
+  "the built-in compatibility payload remains unchanged",
+);
 
 const beta4Discovery = openClawDiscoveryFromHello(gatewayBeta4);
 const beta5Discovery = openClawDiscoveryFromHello(gatewayBeta5);
@@ -54,15 +59,40 @@ assert.deepStrictEqual(beta4Discovery, {
   agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
 });
 
-assert.deepStrictEqual(beta5Discovery, {
-  serverVersion: "2026.7.2-beta.5",
-  protocol: 4,
-  methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
-  events: ["chat", "agent", "session.tool"],
-  serverCapabilities: ["chat-send-routing-contract"],
-  clientCapabilities: ["tool-events"],
-  agentEventSchemaHash: OPENCLAW_AGENT_EVENT_SCHEMA_HASH,
-});
+assert.equal(beta5Discovery.serverVersion, "2026.7.2-beta.5");
+assert.equal(beta5Discovery.protocol, 4);
+assert.equal(
+  beta5Discovery.methods.length,
+  new Set(beta5Discovery.methods).size,
+  "the pinned fixed method catalog is de-duplicated",
+);
+assert.equal(
+  beta5Discovery.events.length,
+  new Set(beta5Discovery.events).size,
+  "the pinned fixed event catalog is de-duplicated",
+);
+assert.ok(
+  beta5Discovery.methods.length >= 300,
+  "the beta5 fixture contains the substantial fixed core/auxiliary method catalog, not a hand-picked sample",
+);
+assert.ok(
+  beta5Discovery.events.length >= 40,
+  "the beta5 fixture contains the substantial fixed Gateway event catalog, not a hand-picked sample",
+);
+// Runtime-loaded channel plugin methods follow the fixed catalog upstream, but
+// are environment-dependent and intentionally cannot be frozen in this fixture.
+assert.equal(
+  createHash("sha256").update(JSON.stringify(gatewayBeta5.features)).digest("hex"),
+  "f9cd3f1a6f8711289ae754b5b4d0ff28c307ce75d4a45cad7c22e894c9f642ba",
+  "the fixed beta5 catalog matches the source-reviewed pinned fingerprint",
+);
+assert.deepStrictEqual(beta5Discovery.serverCapabilities, [
+  "board-widget-put-canvas-doc",
+  "chat-send-routing-contract",
+  "openclaw-setup-model-ref",
+]);
+assert.deepStrictEqual(beta5Discovery.clientCapabilities, ["tool-events"]);
+assert.equal(beta5Discovery.agentEventSchemaHash, OPENCLAW_AGENT_EVENT_SCHEMA_HASH);
 
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta4));
 assert.ok(Value.Check(HelloOkSchema, gatewayBeta5));
@@ -118,12 +148,52 @@ assert.deepStrictEqual(beta5Profile, {
   },
 });
 
+for (const field of ["methods", "events", "serverCapabilities", "clientCapabilities"] as const) {
+  for (const required of beta5Profile.requires[field]) {
+    assert.ok(
+      beta5Discovery[field].includes(required),
+      `the pinned beta5 fixture advertises required ${field} entry ${required}`,
+    );
+  }
+}
+
 assert.equal(selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta4Discovery), null, "beta4 must not match the beta5-only tool profile");
 assert.deepStrictEqual(
   selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, beta5Discovery),
   beta5Profile,
-  "beta5 discovery selects the reviewed built-in profile",
+  "the authentic beta5 Gateway catalog fixture selects the reviewed built-in profile",
 );
+assert.deepStrictEqual(
+  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+    ...beta5Discovery,
+    clientCapabilities: [...beta5Discovery.clientCapabilities, "future-client-capability"],
+  }),
+  beta5Profile,
+  "additional unique client capabilities do not invalidate a matching profile",
+);
+for (const field of ["methods", "events", "serverCapabilities", "clientCapabilities"] as const) {
+  for (const required of beta5Profile.requires[field]) {
+    assert.equal(
+      selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+        ...beta5Discovery,
+        [field]: beta5Discovery[field].filter((entry) => entry !== required),
+      }),
+      null,
+      `missing required ${field} entry ${required} is rejected`,
+    );
+  }
+
+  const duplicate = beta5Discovery[field][0];
+  assert.ok(duplicate);
+  assert.equal(
+    selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
+      ...beta5Discovery,
+      [field]: [...beta5Discovery[field], duplicate],
+    }),
+    null,
+    `duplicate ${field} entries are rejected`,
+  );
+}
 const { priority: _omittedPriority, ...beta5ProfileWithoutPriority } = {
   ...beta5Profile,
   id: "openclaw-agent-tool-default-priority",
@@ -149,30 +219,6 @@ assert.deepStrictEqual(
   ),
   { ...beta5Profile, id: "openclaw-agent-tool-priority-1", source: { ...beta5Profile.source }, priority: 1 },
   "explicit priorities still outrank the default effective priority deterministically",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    methods: [...beta5Discovery.methods, "chat.extra"],
-  }),
-  null,
-  "beta5 discovery with any extra method is unselectable",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    events: [...beta5Discovery.events, "session.extra"],
-  }),
-  null,
-  "beta5 discovery with any extra event is unselectable",
-);
-assert.equal(
-  selectOpenClawToolProfile(BUILTIN_OPENCLAW_TOOL_PROFILES, {
-    ...beta5Discovery,
-    serverCapabilities: [...beta5Discovery.serverCapabilities, "extra-capability"],
-  }),
-  null,
-  "beta5 discovery with any extra server capability is unselectable",
 );
 
 assert.deepStrictEqual(
@@ -200,8 +246,8 @@ assert.deepStrictEqual(
   "nested result.status is only consulted through the Cave-owned bounded envelope logic",
 );
 
-const unknownEvent = parseOpenClawToolEvent("chat", toolLifecycleV1.frames[0].payload, beta5Profile);
-assert.equal(unknownEvent.kind, "unknown");
+const unknownEvent = parseOpenClawToolEvent("presence", toolLifecycleV1.frames[0].payload, beta5Profile);
+assert.equal(unknownEvent.kind, "unknown", "extra advertised events do not expand the profile parser allowlist");
 assert.match(unknownEvent.fingerprint, /^[a-f0-9]{16}$/);
 
 const unknownStream = parseOpenClawToolEvent(

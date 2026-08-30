@@ -4,16 +4,28 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import type { ConversationSummary } from "@/lib/cave-conversations.ts";
+import {
+  CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+} from "@/lib/server/client-v1/authority-contract.ts";
+import { createClientV1Authenticator } from "@/lib/server/client-v1/auth.ts";
+import { createClientV1AuthorityRuntimeFromGlobal } from "@/lib/server/client-v1/authority-runtime.ts";
 import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
+import { createCredentialStore } from "@/lib/server/client-v1/credential-store.ts";
+import { createPairingStore } from "@/lib/server/client-v1/pairing-store.ts";
 import { decodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
+import { createClientV1RateLimiter } from "@/lib/server/client-v1/rate-limit.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
+import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 import { createClientV1ConversationsGetHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-conversations-");
 const STAMP = "loopback-secret";
+const INSTANCE_ID = "client-v1-conversations-route-test";
+const BOUND_NOW = 45_000;
 
 function summary(sessionId: string, createdAt: string, updatedAt = createdAt): ConversationSummary {
   return { sessionId, familiarId: "scribe", harness: "claude", createdAt, updatedAt };
@@ -452,4 +464,149 @@ test("a store that throws answers an envelope too", async () => {
     // The path the store named must not reach the wire.
     assert.equal(body.error.message.includes("/home/me"), false);
   });
+});
+
+test("a store whose ownership cannot be verified answers ownership_refused, not a bare 500 (cave-e7xwk)", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = () => 0;
+    const credentialStore = createCredentialStore({
+      root,
+      now,
+      ownership: {
+        platform: "win32",
+        getuid: null,
+        env: {},
+        warn: () => {},
+        probeWindowsAcl: async () => {
+          throw new Error("spawn powershell.exe ENOENT");
+        },
+      },
+    });
+    const runtime: ClientV1Runtime = {
+      authority: createClientV1AuthorityRuntimeFromGlobal({ now }),
+      authenticator: createClientV1Authenticator({ credentialStore, loopbackSecret: STAMP }),
+      credentialStore,
+      now,
+      pairingStore: createPairingStore({ now }),
+      rateLimiter: createClientV1RateLimiter({ now }),
+    };
+    const handler = createClientV1ConversationsGetHandler(runtime, sources());
+    const response = await handler(request("", { authorization: "Bearer some-bearer" }));
+    assert.equal(response.status, 403);
+    const body = await response.json() as { error: { code: string; retryable: boolean } };
+    assert.equal(body.error.code, "ownership_refused");
+    assert.equal(body.error.retryable, false);
+    // The refusal's operator-facing detail — path, SID, `icacls` remedy —
+    // must not reach the wire; the envelope is what a client can act on.
+    assert.equal(JSON.stringify(body).includes("icacls"), false);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("bound conversation lists encrypt results and reject downgrade or path drift before stores, budgets, and sources", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    await withClientV1HpkeRouteTestAuthority(
+      { instanceId: INSTANCE_ID, now: BOUND_NOW, seed: 71 },
+      async (authority) => {
+        const runtime = createClientV1Runtime({
+          authority: authority.runtime,
+          credentialRoot: root,
+          loopbackSecret: STAMP,
+          now: () => BOUND_NOW,
+        });
+        const issued = await runtime.credentialStore.issue({
+          appName: "OpenCoven Chat",
+          installationId: "chat-install-bound-conversations",
+          scopes: ["chat:read"],
+        });
+        const originalFind =
+          runtime.credentialStore.findByBearer.bind(runtime.credentialStore);
+        const originalCharge =
+          runtime.rateLimiter.consumeAuthenticated.bind(runtime.rateLimiter);
+        let findCalls = 0;
+        let chargeCalls = 0;
+        let sourceCalls = 0;
+        runtime.credentialStore.findByBearer = async (bearer) => {
+          findCalls += 1;
+          return originalFind(bearer);
+        };
+        runtime.rateLimiter.consumeAuthenticated = (credentialId) => {
+          chargeCalls += 1;
+          return originalCharge(credentialId);
+        };
+        const handler = createClientV1ConversationsGetHandler(
+          runtime,
+          sources({
+            listConversations: async () => {
+              sourceCalls += 1;
+              return LEDGER;
+            },
+          }),
+        );
+
+        const downgrade = await handler(
+          request("", { authorization: ["Bearer", issued.bearer].join(" ") }),
+        );
+        assert.equal(downgrade.status, 426);
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 0,
+          chargeCalls: 0,
+          sourceCalls: 0,
+        });
+
+        const prepared = await createClientV1HpkeTestClient({
+          authority: authority.authority,
+          instanceId: INSTANCE_ID,
+          runtimeNonce: authority.runtimeNonce,
+          operation: "conversations.list",
+          url: "http://127.0.0.1:3020/api/client/v1/conversations",
+          method: "GET",
+          issuedAt: BOUND_NOW,
+          requestNonce: new Uint8Array(32).fill(14),
+          authorization: { kind: "bearer", value: issued.bearer },
+        });
+        const headers = new Headers(prepared.request.headers);
+        headers.set(LOCAL_PEER_HEADER, STAMP);
+        const valid = await handler(
+          new Request(prepared.request, { headers }),
+        );
+        assert.equal(valid.status, 200);
+        assert.equal(
+          valid.headers.get("content-type"),
+          CLIENT_V1_HPKE_RESPONSE_MEDIA_TYPE,
+        );
+        const opened = await prepared.open(valid);
+        assert.equal(opened.status, 200);
+        assert.deepEqual(
+          (JSON.parse(new TextDecoder().decode(opened.body)) as {
+            data: { conversations: { id: string }[] };
+          }).data.conversations.map(({ id }) => id),
+          ["conversation-b", "conversation-a", "conversation-c"],
+        );
+        assert.deepEqual({ findCalls, chargeCalls, sourceCalls }, {
+          findCalls: 1,
+          chargeCalls: 1,
+          sourceCalls: 1,
+        });
+
+        const beforePathDrift = { findCalls, chargeCalls, sourceCalls };
+        const wrongPath = await handler(
+          new Request(
+            "http://127.0.0.1:3020/api/client/v1/conversations/other",
+            { headers },
+          ),
+        );
+        assert.equal(wrongPath.status, 400);
+        assert.deepEqual(
+          { findCalls, chargeCalls, sourceCalls },
+          beforePathDrift,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });

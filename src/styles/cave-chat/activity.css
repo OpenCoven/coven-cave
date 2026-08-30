@@ -850,19 +850,16 @@ details[open] > .cave-tool-summary::before {
   cursor: default;
 }
 
-/* Active-chat header context strip: sits beneath MetaLine and contains the
-   adaptive context controls without widening the pane or nesting in the
-   live region. */
-.cave-chat-header-context {
-  min-width: 0;
-  overflow: hidden;
-  padding-inline-start: calc(var(--space-6) + var(--space-2));
-}
-
-.cave-chat-header-context .cave-context-chip {
-  height: var(--space-6);
-  font-size: var(--text-xs);
-}
+/* No context controls on the title row, and no strip beneath it (cave-zfmqm).
+ *
+ * cave-fh9so pulled the project/model/context pickers up onto the title row to
+ * collapse a three-row header into one. One row carrying a title, three
+ * pickers, a meter and an action cluster is still a toolbar, so they moved to
+ * the composer footer instead — the surface you are on when the choice
+ * matters, and the only place they now render at any width.
+ *
+ * `.cave-chat-header-context` and `.cave-chat-meta-line__controls` are both
+ * retired; transcript.css's mobile re-show went with them. */
 
 .cave-chat-session-actions {
   display: inline-flex;

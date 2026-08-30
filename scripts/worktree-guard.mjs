@@ -574,6 +574,15 @@ function strictLiveProcesses(target) {
     process.env.WT_GUARD_TEST_MODE === "1" && process.env.WT_GUARD_TEST_LSOF_BIN
       ? process.env.WT_GUARD_TEST_LSOF_BIN
       : "lsof";
+  // Windows has no lsof, so the live-cwd-holder probe cannot answer there and
+  // the strict removal path must fail closed instead of silently skipping the
+  // liveness check (cave-1wus5). A test-mode override still runs: it models a
+  // supplied probe, never the missing POSIX tool.
+  if (process.platform === "win32" && testLsof === "lsof") {
+    throw new Error(
+      "live-worktree detection needs lsof, which Windows does not provide; strict removal is refused (fail closed)",
+    );
+  }
   const probe = spawnSync(testLsof, ["-d", "cwd", "-F", "pcn"], {
     cwd: path.parse(process.cwd()).root || path.sep,
     encoding: "utf8",
@@ -973,12 +982,21 @@ function tagsOnRemote(cwd, remote) {
   }
   const cached = perRemote.get(remote);
   if (cached) return cached;
-  const found = new Set();
+  const found = { names: new Set(), oids: new Set() };
   perRemote.set(remote, found);
   try {
     for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
-      const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
-      if (m) found.add(m[1]);
+      const trimmed = line.trim();
+      const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(trimmed);
+      if (m) found.names.add(m[1]);
+      // Both ref forms are collected. An annotated tag advertises the tag
+      // OBJECT at `refs/tags/x` and its commit at `refs/tags/x^{}`; a
+      // lightweight tag advertises the commit directly. Taking both means the
+      // peeled commit is always present, and a tag-object id can never collide
+      // with a commit id. Same parse as remoteTagCommits() in
+      // worktree-retention-push.mjs, which had to answer this first.
+      const oid = trimmed.slice(0, 40);
+      if (/^[0-9a-f]{40}$/.test(oid)) found.oids.add(oid);
     }
   } catch {
     /* this remote is unreachable — credit nothing from it */
@@ -1002,17 +1020,34 @@ function retainedOnRemote(oid, cwd) {
       .map((s) => s.trim())
       .filter(Boolean);
   } catch {
-    return "";
+    // A failed LOCAL enumeration is not evidence of absence, and the remote
+    // probe below is independent of it — so keep going with no local names
+    // rather than discarding proof this machine can still fetch.
+    tags = [];
   }
-  if (!tags.length) return "";
+  // NOT `if (!tags.length) return ""`. That early return is what made this
+  // helper contradict its own criterion: "retained" counts a tag pushed to a
+  // remote, but the only tags considered were ones this machine happens to have
+  // locally — and `worktree-retention-push.mjs` pushes `<sha>:refs/tags/<tag>`
+  // WITHOUT creating a local tag. So the retention this repository writes
+  // automatically was invisible here, and retiring a merged unit blocked with
+  // "exists on NO remote ref" while the tag sat on origin at exactly that SHA.
+  // Observed three times in one session on cave-kmrd3 (#5025) and again on
+  // cave-cgfx2; each was worked around with `git fetch origin --tags`, which
+  // treated a real defect as an operator chore. A tag pushed by another session,
+  // by CI, or from another machine was never visible either.
+  //
   // Every remote is probed — an archive tag pushed to a second remote is just as
   // durable as one on origin, and capping the scan would reintroduce exactly the
   // false block this helper exists to remove. Ordered scan with an early return
   // keeps the ordinary single-remote case at one ls-remote.
   for (const remote of remoteNames(cwd)) {
     const pushed = tagsOnRemote(cwd, remote);
-    const hit = tags.find((t) => pushed.has(t));
+    const hit = tags.find((t) => pushed.names.has(t));
     if (hit) return `remote tag ${hit} on ${remote}`;
+    // The local tag list is a convenience, not the evidence. ls-remote already
+    // advertises the OID, so ask it directly.
+    if (pushed.oids.has(oid)) return `a remote tag on ${remote}`;
   }
   return "";
 }

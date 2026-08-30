@@ -485,6 +485,15 @@ export type CopilotStreamLaunch = {
   addDirs: string[];
   /** Trusted, app-bundled skill-only plugins loaded for this process. */
   pluginDirs?: string[];
+  /**
+   * `argv` (default) — the prompt trails the prefix's `-p` flag as one argv
+   * token, exactly as the registered copilot manifest declares. `stdin` — the
+   * prompt is delivered as the child's complete stdin payload and argv carries
+   * flags and paths only (cave-cwjof), so a prompt of any length stays off the
+   * Windows command line. Both transports emit the identical JSONL stdout
+   * stream; the CLI's piped-stdin prompt mode is the same code path as `-p`.
+   */
+  promptTransport?: "argv" | "stdin";
 };
 
 /** A native resume id must be data, never a CLI option or control sequence. */
@@ -496,7 +505,11 @@ export function isSafeCopilotResumeSessionId(value: string | null | undefined): 
 }
 
 /** Direct-spawn argv for a copilot JSONL stream turn. Options ride ahead of
- *  the prefix args; the prompt trails the prefix's `-p` flag. */
+ *  the prefix args. In the default argv transport the prompt trails the
+ *  prefix's `-p` flag as one token; in the stdin transport the prompt is
+ *  delivered as the child's complete stdin payload instead (cave-cwjof), so
+ *  argv carries flags and paths only and any prompt size stays off the
+ *  Windows command line. */
 export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   const { spec } = launch;
   const args: string[] = [COPILOT_NO_AUTO_UPDATE_ARG];
@@ -532,6 +545,16 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
     args.push(...spec.sandboxReadOnlyArgs);
   } else if (launch.permissionMode === "full" || launch.permissionMode === "unattended") {
     args.push(...COPILOT_NONINTERACTIVE_APPROVAL_ARGS);
+  }
+  if (launch.promptTransport === "stdin") {
+    // The prompt is the child's stdin payload, so argv ends at the manifest
+    // prefix MINUS its trailing -p. Keeping -p would make the CLI ignore the
+    // piped input entirely (documented -p/piped-stdin precedence), so drop
+    // that one flag; every other prefix token (--output-format, --stream, …)
+    // still rides argv and keeps the identical JSONL stdout stream.
+    const trailing = spec.prefixArgs[spec.prefixArgs.length - 1];
+    args.push(...(trailing === "-p" ? spec.prefixArgs.slice(0, -1) : spec.prefixArgs));
+    return args;
   }
   args.push(...spec.prefixArgs, launch.prompt);
   return args;

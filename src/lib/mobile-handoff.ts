@@ -14,11 +14,13 @@ export function shouldAllowMagicDnsFallback({
   serveOk: boolean;
   statusOk: boolean;
 }) {
-  // A successful `serve` mutation proves the requested backend was published,
-  // even when a follow-up status read is unavailable. A failed mutation,
-  // including macOS CLIError 3, needs a matching route in status before it can
-  // be used; a MagicDNS name only identifies the machine, not a Serve route.
-  return serveOk && !statusOk;
+  // An acknowledged `serve --bg <backend>` mutation is authoritative evidence
+  // that Tailscale accepted the requested route. A follow-up status read is
+  // corroboration only: its schema/parser may drift independently and must not
+  // veto a successful mutation. When mutation fails, callers still require a
+  // matching parsed route before they may claim the backend is published.
+  void statusOk;
+  return serveOk;
 }
 
 export function serveRouteFailure({
@@ -44,6 +46,13 @@ export function serveRouteFailure({
 }
 
 type TailscaleServeStatus = {
+  TCP?: Record<
+    string,
+    {
+      HTTP?: unknown;
+      HTTPS?: unknown;
+    }
+  >;
   Web?: Record<
     string,
     {
@@ -57,8 +66,55 @@ type TailscaleServeStatus = {
   >;
 };
 
+type ServeRouteInspection = {
+  httpsUrl: string | null;
+  hasNonHttpsRoute: boolean;
+};
+
 function normalizeServeHost(host: string) {
-  return host.endsWith(":443") ? host.slice(0, -4) : host;
+  const trimmed = host.trim();
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  try {
+    const normalized = new URL(candidate).host;
+    return normalized.endsWith(":443") ? normalized.slice(0, -4) : normalized;
+  } catch {
+    return trimmed.endsWith(":443") ? trimmed.slice(0, -4) : trimmed;
+  }
+}
+
+function serveEndpointPort(host: string) {
+  const trimmed = host.trim();
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  try {
+    return new URL(candidate).port || "443";
+  } catch {
+    return trimmed.match(/:(\d+)$/)?.[1] ?? "443";
+  }
+}
+
+function serveRouteProtocol(status: TailscaleServeStatus, host: string) {
+  const scheme = host.match(/^([a-z][a-z\d+.-]*):\/\//i)?.[1].toLowerCase();
+  const port = serveEndpointPort(host);
+  const tcp = status.TCP?.[port];
+  if (tcp && typeof tcp === "object") {
+    const isHttps = tcp.HTTPS === true;
+    const isHttp = tcp.HTTP === true;
+    if (isHttps && !isHttp) return scheme === "http" ? ("unknown" as const) : ("https" as const);
+    if (isHttp && !isHttps) return scheme === "https" ? ("unknown" as const) : ("http" as const);
+    return "unknown" as const;
+  }
+
+  if (scheme === "https") return "https" as const;
+  if (scheme === "http") return "http" as const;
+
+  // A host key without an explicit port is the normal HTTPS Serve shape. For
+  // non-443 routes, an absent protocol declaration is not enough evidence to
+  // mint an HTTPS URL: it may be an HTTP-only listener.
+  return port === "443" ? ("https" as const) : ("unknown" as const);
 }
 
 // Tailscale may store the proxy target with a trailing slash or as `localhost`
@@ -250,7 +306,15 @@ export function tailnetDiscoveryProof({
   backendUrl: string;
   allowMagicDnsFallback?: boolean;
 }): TailnetDiscoveryProof {
-  const fromServe = findServeUrl(serveStatus, backendUrl);
+  const routes = inspectServeRoutes(serveStatus, backendUrl);
+  if (routes.hasNonHttpsRoute && !routes.httpsUrl) {
+    return {
+      ok: false,
+      reason: `tailscale serve route for ${backendUrl} is not an HTTPS listener`,
+    };
+  }
+
+  const fromServe = routes.httpsUrl;
   const host = magicDnsHost(selfStatus);
   if (fromServe) {
     return {
@@ -328,10 +392,19 @@ export function nativeAppDiscoveryProof({
 }
 
 export function findServeUrl(status: unknown, backendUrl: string) {
-  const web = (status as TailscaleServeStatus | null)?.Web;
-  if (!web || typeof web !== "object") return null;
+  return inspectServeRoutes(status, backendUrl).httpsUrl;
+}
+
+function inspectServeRoutes(status: unknown, backendUrl: string): ServeRouteInspection {
+  const typedStatus = status as TailscaleServeStatus | null;
+  const web = typedStatus?.Web;
+  if (!web || typeof web !== "object") {
+    return { httpsUrl: null, hasNonHttpsRoute: false };
+  }
 
   const wantTarget = normalizeProxyTarget(backendUrl);
+  let httpsUrl: string | null = null;
+  let hasNonHttpsRoute = false;
   for (const [host, config] of Object.entries(web)) {
     const handlers = config?.Handlers;
     if (!handlers || typeof handlers !== "object") continue;
@@ -339,11 +412,15 @@ export function findServeUrl(status: unknown, backendUrl: string) {
       if (!handler?.Proxy || normalizeProxyTarget(handler.Proxy) !== wantTarget) continue;
       const normalizedPath = path.startsWith("/") ? path : `/${path}`;
       const suffix = normalizedPath === "/" ? "/" : normalizedPath;
-      return `https://${normalizeServeHost(host)}${suffix}`;
+      if (serveRouteProtocol(typedStatus ?? {}, host) === "https") {
+        httpsUrl ??= `https://${normalizeServeHost(host)}${suffix}`;
+      } else {
+        hasNonHttpsRoute = true;
+      }
     }
   }
 
-  return null;
+  return { httpsUrl, hasNonHttpsRoute };
 }
 
 export function buildInviteUrl({

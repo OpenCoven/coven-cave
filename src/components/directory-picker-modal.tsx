@@ -9,6 +9,7 @@ import {
   LOCAL_PROJECT_CREATION_MESSAGE,
   LOCAL_REQUEST_REQUIRED_CODE,
 } from "@/lib/project-errors";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 import {
   isPinned,
   readPins,
@@ -507,6 +508,9 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             </span>
             <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Pick where this project&apos;s chats will live.
+            </span>
+            <span className="directory-picker-workspace-help max-w-[520px] text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
+              {PROJECT_ROOT_WORKSPACE_HELP}
             </span>
           </div>
           <Button

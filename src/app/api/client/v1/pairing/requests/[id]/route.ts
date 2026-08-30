@@ -19,10 +19,10 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
-  return async function pairingRequestGet(
+  const servePairingRequestGet = async (
     request: Request,
     { params: rawParams }: RouteContext,
-  ): Promise<Response> {
+  ): Promise<Response> => {
     // Defence in depth, and the direct lesson of cave-f1xki (#4854): this was
     // the ONLY public route that was both dynamic-segmented and free of a
     // locality check of its own, so when the proxy's ingress classification
@@ -54,7 +54,7 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
     // full exchange budget still in reserve once the poll oracle had given up
     // the secret. Read the budget before comparing, or a limit charged after
     // the fact would bound nothing.
-    const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
+    const limit = runtime.rateLimiter.peekPairingComparisonFailure(id);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 
     const result = runtime.pairingStore.lookup(id, secret);
@@ -62,7 +62,7 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
       // Only a wrong secret is charged. This route is polled while the client
       // waits on an administrator decision, so charging the correct secret
       // would rate limit the legitimate holder for waiting.
-      runtime.rateLimiter.consumePairingExchangeFailure(id);
+      runtime.rateLimiter.consumePairingComparisonFailure(id);
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
     }
     if (result.kind === "not_found") {
@@ -77,6 +77,18 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
       });
     }
     return clientV1SuccessResponse(result.pairing);
+  };
+
+  return async function pairingRequestGet(
+    request: Request,
+    context: RouteContext,
+  ): Promise<Response> {
+    return runtime.authority.handle({
+      operation: "pairing.poll",
+      request,
+      invoke: (authorizedRequest) =>
+        servePairingRequestGet(authorizedRequest, context),
+    });
   };
 }
 

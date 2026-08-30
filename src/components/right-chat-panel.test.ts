@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./right-chat-panel.tsx", import.meta.url), "utf8");
+const shellCss = await readFile(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
 assert.match(source, /<aside[^>]+aria-label="Chat panel"/, "desktop content is a named complementary landmark");
 assert.match(
   source,
-  /compact[\s\S]*hideRail[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
+  /compact[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
   "the auxiliary router remains compact, hash-neutral, and single-pane",
 );
 assert.match(
@@ -30,17 +31,37 @@ assert.match(
   /routerRef\.current\?\.newChat\(undefined, undefined, activeFamiliar\.id\)/,
   "no eligible chat opens a familiar-bound blank compose",
 );
-// The switcher is the design system's StandardSelect, whose `label` prop
-// becomes the trigger button's aria-label — a native <select> here would trip
-// the `components/no-native-select` drift ratchet.
 assert.match(
   source,
-  /<StandardSelect\b[\s\S]*?label="Switch Chat panel thread"/,
-  "the compact header exposes a labelled thread switcher",
+  /className="right-chat__rail"[\s\S]*?role="toolbar"[\s\S]*?aria-label="Chat panel controls"[\s\S]*?aria-orientation="vertical"/,
+  "Chat actions live in a dedicated vertical toolbar rail",
+);
+assert.doesNotMatch(source, /right-chat__header/, "the redundant horizontal header stays removed");
+// The switcher is the design system's StandardSelect, whose dynamic `label`
+// names the current thread for assistive technology.
+assert.match(
+  source,
+  /<StandardSelect\b[\s\S]*?label=\{`Switch Chat panel thread, current: \$\{title\}`\}[\s\S]*?showCaret=\{false\}/,
+  "the control rail exposes a labelled icon-only thread switcher",
 );
 assert.doesNotMatch(source, /<select\b/, "the thread switcher never regresses to a native select");
 assert.match(source, /aria-label="New Chat panel chat"/, "the compact header exposes New chat");
 assert.match(source, /aria-label="Close Chat panel"/, "the compact header exposes Close");
+assert.match(
+  shellCss,
+  /\.right-chat \.home-dash__board-head,[\s\S]*?\.right-chat \.cave-sf,[\s\S]*?display: none;/,
+  "the narrow new-chat panel keeps the composer and removes the full-width dashboard chrome",
+);
+assert.match(
+  shellCss,
+  /\.right-chat \.home-dash__board \{[\s\S]*?padding: 0 var\(--space-3\);/,
+  "the side-chat composer uses compact panel gutters",
+);
+assert.match(
+  shellCss,
+  /\.right-chat \.cave-chat-linear \.cave-chat-transcript \{[\s\S]*?padding-inline: var\(--space-2\);/,
+  "the auxiliary transcript releases the full-width reading gutters",
+);
 assert.doesNotMatch(
   source,
   /RightPanelKind|companionTabs|agent\?: ReactNode/,
@@ -519,6 +540,18 @@ assert.match(
   drawerSource,
   /\{open \? \(\s*\n\s*<button\s*\n\s*type="button"\s*\n\s*className="mobile-drawer-backdrop"/,
   "the backdrop renders only while any drawer is open, as a real <button>",
+);
+
+// Full-bleed close strip (cave-4snk9): on phones (≤480px) the drawer is
+// width:100vw and covers the backdrop at every pixel, so CSS hides the
+// backdrop for this slot and THIS button — the drawer's own first child,
+// inside the focus trap — is the close control pointer AND keyboard users
+// can reach. CSS (shell-responsive.css) shows it only at ≤480px; this pin
+// fixes its source shape and that it precedes the panel content.
+assert.match(
+  drawerSource,
+  /className="focus-ring mobile-right-chat-drawer__close"[\s\S]{0,120}aria-label="Close drawer"[\s\S]{0,60}onClick=\{onClose\}\s*\/>\s*\{rightChat\}/,
+  "the full-bleed close strip is the drawer's first child (inside the trap) and calls the same onClose the backdrop uses",
 );
 
 // Escape ownership: the legacy standalone listener must step aside for the

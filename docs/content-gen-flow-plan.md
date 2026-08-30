@@ -1,6 +1,12 @@
 # Content Generation Flow Template — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Superseded (tombstoned 2026-08-28, cave-a6zmc).** This plan builds on
+> `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which was removed in
+> #3902. Do not implement this plan. Content generation continues in the
+> Research Desk surfaces; see their current specs before starting new work.
+
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Add a new Flow template (`content-generation`) to `FLOW_TEMPLATES` that automates long-form content generation across blog, Twitter thread, and Discord surfaces from one research run, gated by a human approval after research synthesis.
 

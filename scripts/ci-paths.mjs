@@ -17,7 +17,7 @@ const E2E_PATH =
 const IOS_PATH =
   /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 const CLIENT_V1_PATH =
-  /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-contract|client-v1-release-smoke|client-v1-conformance)(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
+  /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-(?:contract|hpke-vectors)|client-v1-(?:release-smoke|conformance|authority-takeover))(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change
 // should not pay for lint, typecheck, and build. But that also meant the docs
 // index ratchet, which only fires when a doc is added or renamed, never ran on
