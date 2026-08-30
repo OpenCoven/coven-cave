@@ -64,6 +64,7 @@ offset like tool blocks do.
 ```
 <coven:github-action kind="merge" repo="o/r" number="7" method="squash" note="why" />
 kinds: comment | reply | resolve | review | merge | rerun | dispatch | issue-create | issue-state
+`reply` also requires `thread="<top-level review comment id>"` so the reply stays in the inline review thread.
 ```
 
 Always renders a proposal card; never auto-fires.
@@ -112,6 +113,7 @@ registered in `api-contracts.test.ts`, alphabetical):
 | `/api/github/labels` | GET | Repo label palette {repo} — the composer's label picker |
 | `/api/github/diff` | GET | PR changed files {repo, number}, hard-bounded for prompt use |
 | `/api/github/reactions` | GET, POST, DELETE | Reactions on an issue/PR — the card's resting chips |
+| `/api/github/reply` | POST | Reply to a top-level pull-request review comment in its inline thread |
 
 Existing `comment` and `resolve-thread` routes are reused unchanged.
 
@@ -346,9 +348,9 @@ seven-gap summary is fully closed (see the postscript in
 [the capability map](specs/2026-07-14-chat-github-capability-map.md)).
 Residual gaps, filed as follow-up beads rather than blocking the epic:
 
-- **Review-thread reply** — thread cards resolve/unresolve but can't reply in
-  place (needs the review-comment reply endpoint); agent `reply` proposals
-  fall back to conversation comments.
+- **Review-thread reply** — shipped: thread cards post through the dedicated
+  review-comment reply endpoint, and agent `reply` proposals require the
+  top-level review-comment id instead of falling back to conversation comments.
 - ~~**Marker adoption directive**~~ — shipped (cave-kj6j):
   `buildCovenMarkersDirective` (`src/lib/coven-marker-directive.ts`) rides
   every chat turn beside the next-paths directive, teaching

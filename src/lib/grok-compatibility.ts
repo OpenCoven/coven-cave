@@ -8,8 +8,8 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as fs from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { covenHomePath } from "./coven-home.ts";
 
 export type GrokRunCapabilities = {
   version: string | null;
@@ -462,7 +462,7 @@ function configuredGrokRegistrySource(): RegistrySource {
 }
 
 function defaultCachePath(): string {
-  return path.join(process.env.COVEN_CAVE_HOME || path.join(process.env.COVEN_HOME || homedir(), ".coven", "cave"), "grok-schema-bundle-v1.json");
+  return path.join(process.env.COVEN_CAVE_HOME || path.join(covenHomePath(), "cave"), "grok-schema-bundle-v1.json");
 }
 
 function trustAnchorPath(file: string): string { return `${file}.anchor`; }
