@@ -1,12 +1,16 @@
-// Pure model for the transcript's two navigation instruments (Chat.dc.html 2a,
-// cave-j86la): the vertical run spine in the left gutter (one node per turn,
-// that turn's tool calls rolled into a proportional category stack) and the
-// thread minimap on the right edge (one bar per event; click to jump).
+// Pure model for the transcript's LEFT turn spine (Chat.dc.html 2a,
+// cave-j86la): one node per turn in the left gutter, that turn's tool calls
+// rolled into a proportional category stack.
 //
-// Deliberately dependency-free: both instruments derive everything from the
-// Turn[] the transcript already renders — no fetches, no @/ imports — so the
+// Deliberately dependency-free: the spine derives everything from the Turn[]
+// the transcript already renders — no fetches, no @/ imports — so the
 // derivation is unit-testable with bare node and can never disagree with the
 // thread it annotates.
+//
+// The thread minimap that used to share this module is permanently removed
+// (cave-5m5hv); its derivation (`threadMapEvents` and helpers) went with it.
+// The right edge belongs to the Design run rail (src/lib/chat-run-rail.ts),
+// which is automatic and carries its own model.
 
 export type ThreadToolCategory =
   | "read"
@@ -147,105 +151,4 @@ export function spineSegmentHeights(cats: readonly { count: number }[]): number[
   const minimum = Math.min(8, 100 / counts.length);
   const remaining = 100 - minimum * counts.length;
   return counts.map((count) => minimum + (count / total) * remaining);
-}
-
-export type ThreadMapEvent = {
-  /** Stable per-thread id ("<turnId>:prompt" | "<turnId>:tool:<toolId>" | "<turnId>:answer"). */
-  id: string;
-  turnId: string;
-  kind: "turn" | "answer" | ThreadToolCategory;
-  /** Hover-card headline: "Val · prompt", "bash · gh run list", "Kitty · answer". */
-  label: string;
-  /** Mono initials shown inline on turn rows ("VAL"). */
-  turnLabel: string | null;
-  /** Owner attribution rows for the hover card. */
-  ownerName: string;
-  ownerTime: string | null;
-  /** Bar width, 24–100 (%). Turn/answer bars are full-width by design. */
-  width: number;
-  /** "1.2s" for tool events with a known duration. */
-  took: string | null;
-  error: boolean;
-};
-
-/** Deterministic tool-bar width: duration-scaled when known (log steps so 100ms
- *  and 10s both stay readable), otherwise a stable name-keyed spread — never
- *  random, so the map is identical across renders and resumes. */
-export function toolBarWidth(name: string, durationMs?: number): number {
-  if (durationMs != null && Number.isFinite(durationMs) && durationMs > 0) {
-    return Math.min(96, Math.max(24, Math.round(24 + Math.log10(1 + durationMs) * 16)));
-  }
-  let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 997;
-  return 32 + (hash % 41);
-}
-
-export function formatTookLabel(durationMs?: number): string | null {
-  if (durationMs == null || !Number.isFinite(durationMs) || durationMs <= 0) return null;
-  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
-  const secs = durationMs / 1000;
-  if (secs < 60) return `${Math.round(secs * 10) / 10}s`;
-  const mins = Math.floor(secs / 60);
-  return `${mins}m ${Math.round(secs % 60)}s`;
-}
-
-function initials(name: string): string {
-  const cleaned = name.trim();
-  if (!cleaned) return "?";
-  return cleaned.slice(0, 3).toUpperCase();
-}
-
-export function threadMapEvents(
-  turns: InstrumentTurn[],
-  names: { operatorName: string; familiarName: string },
-): ThreadMapEvent[] {
-  const events: ThreadMapEvent[] = [];
-  for (const turn of turns) {
-    if (turn.role === "user") {
-      events.push({
-        id: `${turn.id}:prompt`,
-        turnId: turn.id,
-        kind: "turn",
-        label: `${names.operatorName} · prompt`,
-        turnLabel: initials(names.operatorName),
-        ownerName: names.operatorName,
-        ownerTime: instrumentTime(turn.createdAt),
-        width: 100,
-        took: null,
-        error: false,
-      });
-      continue;
-    }
-    if (turn.role !== "assistant") continue;
-    const ownerTime = instrumentTime(turn.createdAt);
-    for (const tool of turn.tools ?? []) {
-      const cat = toolCategory(tool.name);
-      const arg = tool.input?.trim().split(/\n/, 1)[0] ?? "";
-      events.push({
-        id: `${turn.id}:tool:${tool.id}`,
-        turnId: turn.id,
-        kind: cat,
-        label: arg ? `${tool.name} · ${instrumentSummary(arg, 48)}` : tool.name,
-        turnLabel: null,
-        ownerName: names.familiarName,
-        ownerTime,
-        width: toolBarWidth(tool.name, tool.durationMs),
-        took: formatTookLabel(tool.durationMs),
-        error: tool.status === "error",
-      });
-    }
-    events.push({
-      id: `${turn.id}:answer`,
-      turnId: turn.id,
-      kind: "answer",
-      label: `${names.familiarName} · answer`,
-      turnLabel: initials(names.familiarName),
-      ownerName: names.familiarName,
-      ownerTime,
-      width: 100,
-      took: formatTookLabel(turn.durationMs),
-      error: Boolean(turn.error),
-    });
-  }
-  return events;
 }

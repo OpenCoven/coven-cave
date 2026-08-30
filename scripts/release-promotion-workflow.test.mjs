@@ -828,6 +828,11 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
 
 test("checksums publishes SHA256SUMS only for a wholly successful build", async () => {
   const release = await workflow("release.yml");
+  assert.deepEqual(
+    [...needs(release.jobs.checksums)].sort(),
+    ["build", "source-version"],
+    "checksums must wait for the complete build matrix and stamped source",
+  );
   const condition = release.jobs.checksums.if;
 
   assert.equal(

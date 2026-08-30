@@ -90,9 +90,12 @@ esac
 TAURI_OVERRIDE_CONFIG="$(mktemp)"
 WATCHDOG_VERDICT="$(mktemp)"
 DEV_STARTUP_MARKER="$(mktemp)"
+DEV_SERVER_LOG="$(mktemp)"
+DEV_SERVER_EXIT_STATUS="$(mktemp)"
 tauri_pid=""
 server_pid=""
 watchdog_pid=""
+readiness_pid=""
 
 # Every descendant of a pid, children before parents. The launcher only ever
 # walks PIDs it started, never a process guessed from a loopback port.
@@ -137,19 +140,63 @@ terminate_process_tree() {
 cleanup() {
   trap - EXIT INT TERM HUP
   if [ -n "$watchdog_pid" ]; then
-    kill "$watchdog_pid" 2>/dev/null || true
+    terminate_process_tree "$watchdog_pid"
+    wait "$watchdog_pid" 2>/dev/null || true
     watchdog_pid=""
   fi
+  terminate_process_tree "$readiness_pid"
+  if [ -n "$readiness_pid" ]; then
+    wait "$readiness_pid" 2>/dev/null || true
+    readiness_pid=""
+  fi
   terminate_process_tree "$tauri_pid"
-  terminate_process_tree "$server_pid"
+  if [ -n "$tauri_pid" ]; then
+    wait "$tauri_pid" 2>/dev/null || true
+    tauri_pid=""
+  fi
+  if [ -n "$server_pid" ]; then
+    if [ -s "$DEV_SERVER_EXIT_STATUS" ]; then
+      # The wrapper records the status immediately after the pipeline drains;
+      # reap that naturally completed job instead of treating a brief zombie
+      # state as a live process tree and waiting through the TERM/KILL grace.
+      wait "$server_pid" 2>/dev/null || true
+    else
+      terminate_process_tree "$server_pid"
+      wait "$server_pid" 2>/dev/null || true
+    fi
+    server_pid=""
+  fi
   if [ "${should_start_server:-false}" = true ] && port_is_listening "$dev_port" >/dev/null 2>&1; then
     echo "[dev:app] warning: 127.0.0.1:${dev_port} is still listening after teardown" >&2
   fi
-  rm -f "$TAURI_OVERRIDE_CONFIG" "$WATCHDOG_VERDICT" "$DEV_STARTUP_MARKER"
+  rm -f "$TAURI_OVERRIDE_CONFIG" "$WATCHDOG_VERDICT" "$DEV_STARTUP_MARKER" "$DEV_SERVER_LOG" "$DEV_SERVER_EXIT_STATUS"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
+
+server_exit_status() {
+  if [ -s "$DEV_SERVER_EXIT_STATUS" ]; then
+    tr -d '\r\n' <"$DEV_SERVER_EXIT_STATUS"
+  else
+    printf '%s\n' "unknown"
+  fi
+}
+
+report_owned_server_exit() {
+  local status
+  status="$(server_exit_status)"
+  if grep -Fq "Ineffective mark-compacts near heap limit" "$DEV_SERVER_LOG"; then
+    echo "[dev:app] ERROR: the owned dev server exited with status ${status} after running out of memory." >&2
+    echo "[dev:app]        V8 reported 'Ineffective mark-compacts near heap limit'; restart the dev server." >&2
+    echo "[dev:app]        Raising COVEN_CAVE_HEAP_LIMIT_MB only defers the upstream dev-toolchain retention." >&2
+    printf 'dev-server-oom\n' >"$WATCHDOG_VERDICT"
+  else
+    echo "[dev:app] ERROR: the owned dev server exited with status ${status} before the loopback origin was ready." >&2
+    echo "[dev:app]        Scroll up for the dev-server output and restart it." >&2
+    printf 'dev-server-exited\n' >"$WATCHDOG_VERDICT"
+  fi
+}
 
 # This credential is accepted only by the root-document readiness probe. Unlike
 # the mobile access secret, disclosing it to a process that later reclaims the
@@ -239,7 +286,19 @@ if [ "$should_start_server" = true ]; then
   echo "[dev:app] dev server heap ceiling: ${dev_node_options}"
   # Bind explicitly to loopback. Git Bash exports HOSTNAME from the host (often
   # a non-loopback machine name), so relying on server.ts's default is unsafe.
-  HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &
+  # Keep the child's status and output under this wrapper's control. The status
+  # file lets readiness and the long-lived watchdog interrupt their own bounded
+  # probes as soon as the server dies, while the log lets us distinguish V8's
+  # OOM signature from an ordinary failed start without hiding the server output
+  # from the operator.
+  run_owned_dev_server() {
+    set +e
+    HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev 2>&1 | tee "$DEV_SERVER_LOG"
+    local status="${PIPESTATUS[0]}"
+    printf '%s\n' "$status" >"$DEV_SERVER_EXIT_STATUS"
+    return "$status"
+  }
+  run_owned_dev_server &
   server_pid=$!
 fi
 
@@ -247,7 +306,34 @@ initial_timeout_ms=$((DEV_SERVER_GRACE_SECONDS * 1000))
 if [ "$initial_timeout_ms" -lt 100 ]; then
   initial_timeout_ms=100
 fi
-if ! origin_is_ready "$dev_port" "$initial_timeout_ms"; then
+if [ "$should_start_server" = true ]; then
+  # Run the long startup probe beside the launcher so a dead owned server can
+  # interrupt it. Calling origin_is_ready synchronously here used to hide an
+  # OOM behind the full 180-second origin timeout.
+  origin_is_ready "$dev_port" "$initial_timeout_ms" &
+  readiness_pid=$!
+  readiness_status=0
+  while kill -0 "$readiness_pid" 2>/dev/null; do
+    if [ -s "$DEV_SERVER_EXIT_STATUS" ]; then
+      report_owned_server_exit
+      terminate_process_tree "$readiness_pid"
+      wait "$readiness_pid" 2>/dev/null || true
+      readiness_pid=""
+      exit 1
+    fi
+    sleep 0.1
+  done
+  wait "$readiness_pid" || readiness_status=$?
+  readiness_pid=""
+  if [ -s "$DEV_SERVER_EXIT_STATUS" ]; then
+    report_owned_server_exit
+    exit 1
+  fi
+  if [ "$readiness_status" -ne 0 ]; then
+    echo "[dev:app] loopback origin on 127.0.0.1:${dev_port} did not return the root document within ${DEV_SERVER_GRACE_SECONDS}s; desktop shell was not opened" >&2
+    exit 1
+  fi
+elif ! origin_is_ready "$dev_port" "$initial_timeout_ms"; then
   echo "[dev:app] loopback origin on 127.0.0.1:${dev_port} did not return the root document within ${DEV_SERVER_GRACE_SECONDS}s; desktop shell was not opened" >&2
   exit 1
 fi
@@ -262,6 +348,11 @@ CONF
 watch_dev_server() {
   local down_for=0
   while kill -0 "$tauri_pid" 2>/dev/null; do
+    if [ -n "$server_pid" ] && [ -s "$DEV_SERVER_EXIT_STATUS" ]; then
+      report_owned_server_exit
+      terminate_process_tree "$tauri_pid"
+      return 0
+    fi
     if origin_is_ready "$dev_port"; then
       down_for=0
     else
@@ -307,6 +398,12 @@ fi
 tauri_status=0
 wait "$tauri_pid" || tauri_status=$?
 tauri_pid=""
+
+# The watchdog can race a very short Tauri exit. Preserve the owned server's
+# specific diagnosis even if its background loop did not get a scheduling turn.
+if [ -n "$server_pid" ] && [ -s "$DEV_SERVER_EXIT_STATUS" ] && [ ! -s "$WATCHDOG_VERDICT" ]; then
+  report_owned_server_exit
+fi
 
 if [ -s "$WATCHDOG_VERDICT" ]; then
   exit 1
