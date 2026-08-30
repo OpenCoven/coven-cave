@@ -13,6 +13,7 @@ import {
   automationActivityItems,
   boardTaskActivityItems,
   buildRunningActivityPayload,
+  emptyRunningActivityPayload,
   flowActivityItems,
   sessionActivityItems,
   workflowActivityItems,
@@ -69,6 +70,14 @@ async function listAutomationRuns(): Promise<AutomationRunRecord[]> {
 }
 
 export async function GET() {
+  // Browser E2E is explicitly daemon-less. The popover is mounted on every
+  // desktop page, so letting its poll fall through would fan each test into
+  // five real stores (including the Coven automation daemon) unless that
+  // individual spec happened to know about this shell-owned endpoint.
+  if (process.env.COVEN_CAVE_E2E === "1") {
+    return NextResponse.json(emptyRunningActivityPayload());
+  }
+
   // Sessions: read-only, subprocess-free projection (no archive sweeps, no git
   // enrichment) of the same list the workspace polls. A hard daemon outage is
   // honest partial-source status, not an empty-but-fine list.
