@@ -24,7 +24,10 @@ const MAX_RESPONSE_BYTES = 1 * 1024 * 1024;
 /**
  * Reads and parses the response body without ever buffering past
  * `maxBytes` — `response.json()` has no such cap and would hold the whole
- * body in memory before this function got a chance to reject it.
+ * body in memory before this function got a chance to reject it. A response
+ * with no readable stream fails closed rather than falling back to
+ * `response.json()`, which would silently drop the hard cap this function
+ * exists to guarantee.
  */
 async function readBoundedJson(
   response: Response,
@@ -34,11 +37,7 @@ async function readBoundedJson(
   if (contentLength && Number(contentLength) > maxBytes) return null;
 
   const reader = response.body?.getReader();
-  if (!reader) {
-    // No streamable body (e.g. some fetch mocks) — still bounded by
-    // TIMEOUT_MS above, just not by byte count.
-    return (await response.json()) as Record<string, unknown>;
-  }
+  if (!reader) return null;
 
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -53,7 +52,7 @@ async function readBoundedJson(
     }
     chunks.push(value);
   }
-  const text = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+  const text = Buffer.concat(chunks).toString("utf8");
   return JSON.parse(text) as Record<string, unknown>;
 }
 
