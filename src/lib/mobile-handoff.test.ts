@@ -722,6 +722,56 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "ownership conflict retains the credential",
   );
   {
+    const events: string[] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      beforeReset: async () => {
+        events.push("stop-process");
+      },
+      runTailscale: async (args: string[]) => {
+        events.push(args.join(" "));
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      events,
+      ["serve status --json"],
+      "a foreign reassignment is detected under the lease before process cleanup",
+    );
+  }
+  {
+    const events: string[] = [];
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => ({
+        release: async () => {
+          events.push("release");
+        },
+      }),
+      probeBackend: async () => false,
+      beforeReset: async () => {
+        events.push("stop-process");
+        throw new Error("process tree remained alive");
+      },
+      runTailscale: async (args: string[]) => {
+        call += 1;
+        events.push(args.join(" "));
+        return commandResult({ stdout: JSON.stringify(status) });
+      },
+    });
+    assert.equal(result.kind, "process-cleanup-failed");
+    assert.equal(call, 1, "failed process cleanup prevents Serve reset and postcheck");
+    assert.deepEqual(
+      events,
+      ["serve status --json", "stop-process", "release"],
+      "process cleanup runs after the owned status check while the machine lease is held",
+    );
+  }
+  {
     const commands: string[][] = [];
     const result = await resetTailscaleServeRoute({
       backendUrl: "http://[::1]:3000",
@@ -830,6 +880,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "cleanup-failed",
     "reset-failed",
     "verification-failed",
+    "process-cleanup-failed",
   ]) {
     assert.equal(
       serveResetAllowsCredentialRetirement({ kind }),
@@ -855,9 +906,13 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       probeBackend: async () => false,
       runTailscale: async () => {
         call += 1;
+        events.push(call === 1 ? "status" : call === 2 ? "reset" : "postcheck");
         if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
         if (call === 2) return commandResult();
         return commandResult({ stdout: "{}" });
+      },
+      beforeReset: async () => {
+        events.push("stop-process");
       },
       afterVerifiedRemoval: async () => {
         events.push("retire");
@@ -866,8 +921,8 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     assert.equal(result.kind, "removed");
     assert.deepEqual(
       events,
-      ["retire", "release"],
-      "credential retirement happens before the machine lease is released",
+      ["status", "stop-process", "reset", "postcheck", "retire", "release"],
+      "process cleanup, reset verification, and credential retirement all happen under the lease",
     );
   }
 }

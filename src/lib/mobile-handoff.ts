@@ -469,12 +469,14 @@ type TailscaleServeOperationOptions = {
   probeBackend: (target: string) => Promise<boolean>;
   acquireLease?: () => Promise<TailscaleServeLease | null>;
   env?: Record<string, string | undefined>;
+  beforeReset?: () => void | Promise<void>;
   afterVerifiedRemoval?: () => void | Promise<void>;
 };
 
 type TailscaleServeOperationFailure =
   | { kind: "busy" }
   | { kind: "cleanup-failed"; stderr: string }
+  | { kind: "process-cleanup-failed"; stderr: string }
   | { kind: "status-failed"; stderr: string }
   | { kind: "status-malformed"; stderr: string };
 
@@ -878,6 +880,7 @@ export async function resetTailscaleServeRoute({
   backendUrl,
   runTailscale,
   acquireLease = acquireTailscaleServeLease,
+  beforeReset,
   afterVerifiedRemoval,
 }: TailscaleServeOperationOptions): Promise<TailscaleServeResetResult> {
   const lease = await acquireLease();
@@ -887,6 +890,11 @@ export async function resetTailscaleServeRoute({
     if (current.kind !== "status") return current;
     const currentTargets = enumerateServeProxyBackends(current.status);
     if (currentTargets.length === 0) {
+      try {
+        await beforeReset?.();
+      } catch (error) {
+        return { kind: "process-cleanup-failed", stderr: (error as Error).message };
+      }
       await afterVerifiedRemoval?.();
       return { kind: "removed", alreadyAbsent: true };
     }
@@ -898,6 +906,11 @@ export async function resetTailscaleServeRoute({
       };
     }
 
+    try {
+      await beforeReset?.();
+    } catch (error) {
+      return { kind: "process-cleanup-failed", stderr: (error as Error).message };
+    }
     const reset = await runTailscale(["serve", "reset"]);
     if (reset.cleanupFailed) {
       return { kind: "cleanup-failed", stderr: reset.stderr };

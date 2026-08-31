@@ -10,6 +10,10 @@ import {
   type TailscaleServeClaimResult,
   type TailscaleServeResetResult,
 } from "../src/lib/mobile-handoff.ts";
+import {
+  stopOwnedProcessTree,
+  type StopOwnedProcessResult,
+} from "./mobile-process-ownership.ts";
 
 const EXIT_CONFLICT = 10;
 const EXIT_BUSY = 11;
@@ -43,7 +47,9 @@ function exitCode(kind: string): number {
   if (kind === "owned" || kind === "claimed" || kind === "removed") return 0;
   if (kind === "conflict" || kind === "not-owned") return EXIT_CONFLICT;
   if (kind === "busy") return EXIT_BUSY;
-  if (kind === "cleanup-failed") return EXIT_CLEANUP_FAILED;
+  if (kind === "cleanup-failed" || kind === "process-cleanup-failed") {
+    return EXIT_CLEANUP_FAILED;
+  }
   if (kind === "status-failed" || kind === "status-malformed") return EXIT_STATUS_FAILED;
   return EXIT_MUTATION_FAILED;
 }
@@ -66,6 +72,7 @@ type MobileServeOwnershipCliDependencies = {
   reset: (
     options: Parameters<typeof resetTailscaleServeRoute>[0],
   ) => Promise<TailscaleServeResetResult>;
+  stopProcessOwner?: (ownerPath: string) => Promise<StopOwnedProcessResult>;
   stdout: (value: string) => void;
   stderr: (value: string) => void;
   readStdin?: () => Promise<string>;
@@ -74,6 +81,7 @@ type MobileServeOwnershipCliDependencies = {
 const defaultDependencies: MobileServeOwnershipCliDependencies = {
   claim: claimTailscaleServeRoute,
   reset: resetTailscaleServeRoute,
+  stopProcessOwner: stopOwnedProcessTree,
   stdout: (value) => process.stdout.write(value),
   stderr: (value) => process.stderr.write(value),
   readStdin: async () => {
@@ -91,6 +99,7 @@ export async function runMobileServeOwnershipCli(
   const command = args[0];
   const backendUrl = argumentValue(args, "--backend");
   const channel = argumentValue(args, "--channel");
+  const processOwnerPath = argumentValue(args, "--process-owner");
   if (
     (command !== "claim" && command !== "reset" && command !== "url")
     || !backendUrl
@@ -101,7 +110,8 @@ export async function runMobileServeOwnershipCli(
     )
   ) {
     deps.stderr(
-      "usage: mobile-serve-ownership.ts {claim|reset} --backend <loopback-url> --channel {dev|packaged}\n"
+      "usage: mobile-serve-ownership.ts claim --backend <loopback-url> --channel {dev|packaged}\n"
+      + "       mobile-serve-ownership.ts reset --backend <loopback-url> --channel {dev|packaged} [--process-owner <state-file>]\n"
       + "       mobile-serve-ownership.ts url --backend <loopback-url> < status.json\n",
     );
     return 2;
@@ -158,6 +168,18 @@ export async function runMobileServeOwnershipCli(
     runTailscale: (args: string[]) => runTailscaleCommand(args, timeoutMs),
     probeBackend: probeLoopbackBackend,
     env,
+    ...(command === "reset" && processOwnerPath
+      ? {
+          beforeReset: async () => {
+            const stopProcessOwner = deps.stopProcessOwner
+              ?? defaultDependencies.stopProcessOwner!;
+            const stopped = await stopProcessOwner(processOwnerPath);
+            if (stopped.kind !== "stopped") {
+              throw new Error(`owned process cleanup failed: ${JSON.stringify(stopped)}`);
+            }
+          },
+        }
+      : {}),
   };
   const result = command === "claim"
     ? await deps.claim(options)

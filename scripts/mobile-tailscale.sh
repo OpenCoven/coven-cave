@@ -16,6 +16,8 @@ PRINT_URL="${PRINT_URL:-0}"
 COPY_INVITE="${COPY_INVITE:-1}"
 USE_TMUX="${USE_TMUX:-1}"
 TAILSCALE_BIN="${TAILSCALE_BIN:-tailscale}"
+SERVE_OWNERSHIP_HELPER="${COVEN_CAVE_SERVE_OWNERSHIP_HELPER:-$PWD/scripts/mobile-serve-ownership.ts}"
+PROCESS_OWNERSHIP_HELPER="${COVEN_CAVE_PROCESS_OWNERSHIP_HELPER:-$PWD/scripts/mobile-process-ownership.ts}"
 
 if [ -d "$HOME/.cargo/bin" ]; then
   PATH="$HOME/.cargo/bin:$PATH"
@@ -26,8 +28,7 @@ STATE_ROOT="${COVEN_CAVE_MOBILE_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state
 STATE_DIR="${COVEN_CAVE_MOBILE_STATE_DIR:-$STATE_ROOT/mobile-tailscale-${PORT}}"
 TOKEN_FILE="$STATE_DIR/access-token"
 SIDECAR_TOKEN_FILE="$STATE_DIR/sidecar-auth-token"
-PID_FILE="$STATE_DIR/next.pid"
-PID_IDENTITY_FILE="$STATE_DIR/next.identity"
+OWNER_FILE="$STATE_DIR/next.owner.json"
 MODE_FILE="$STATE_DIR/server.mode"
 INVITE_FILE="$STATE_DIR/invite.url"
 EXPIRES_FILE="$STATE_DIR/invite.expires"
@@ -70,55 +71,28 @@ backend_url() {
   fi
 }
 
-process_birth_token() {
-  local pid="$1" token
-  case "$pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  token="$(
-    LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null |
-      sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
-  )" || return 1
-  [ -n "$token" ] || return 1
-  printf '%s\n' "$token"
+process_owner_cmd() {
+  node --experimental-strip-types "$PROCESS_OWNERSHIP_HELPER" "$@"
 }
 
-process_identity_matches() {
-  local pid="$1" identity_file="$2" expected actual
-  [ -s "$identity_file" ] || return 1
-  expected="$(cat "$identity_file")"
-  [ -n "$expected" ] || return 1
-  actual="$(process_birth_token "$pid")" || return 1
-  [ "$actual" = "$expected" ]
+process_owner_field() {
+  process_owner_cmd field --state "$1" --name "$2"
 }
 
-record_process_identity() {
-  local pid_file="$1" identity_file="$2" pid token
-  [ -s "$pid_file" ] || return 1
-  pid="$(cat "$pid_file")"
-  kill -0 "$pid" >/dev/null 2>&1 || return 1
-  token="$(process_birth_token "$pid")" || return 1
-  printf '%s\n' "$token" >"$identity_file"
-  chmod 600 "$identity_file"
+record_process_owner() {
+  local pid="$1"
+  process_owner_cmd record \
+    --state "$OWNER_FILE" \
+    --pid "$pid" \
+    --backend "$(backend_url)"
 }
 
 recorded_process_is_running() {
-  local pid_file="$1" identity_file="$2" pid
-  if [ ! -s "$pid_file" ]; then
-    return 1
-  fi
-
-  pid="$(cat "$pid_file")"
-  case "$pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-
-  kill -0 "$pid" >/dev/null 2>&1 &&
-    process_identity_matches "$pid" "$identity_file"
+  process_owner_cmd matches --state "$1" >/dev/null 2>&1
 }
 
 recorded_server_is_running() {
-  recorded_process_is_running "$PID_FILE" "$PID_IDENTITY_FILE"
+  recorded_process_is_running "$OWNER_FILE"
 }
 
 describe_port_occupant() {
@@ -190,7 +164,7 @@ take_over_same_checkout_server_for_app() {
     describe_port_occupant "$PORT" >&2
     exit 1
   fi
-  rm -f "$PID_FILE" "$PID_IDENTITY_FILE" "$MODE_FILE"
+  rm -f "$OWNER_FILE" "$MODE_FILE"
   return 0
 }
 
@@ -242,27 +216,32 @@ resolve_active_port() {
     return 0
   fi
   if recorded_server_is_running; then
+    local recorded_host
+    recorded_host="$(process_owner_field "$OWNER_FILE" host)" || return 0
+    if [ "$recorded_host" != "$HOST" ]; then
+      exec env PORT="$PORT" HOST="$recorded_host" bash "$SELF" "$COMMAND"
+    fi
     return 0
   fi
 
-  local live="" dir port pid
+  local live="" live_host="" dir port host
   for dir in "$STATE_ROOT"/mobile-tailscale-*; do
     [ -d "$dir" ] || continue
-    port="${dir##*mobile-tailscale-}"
-    case "$port" in ''|*[!0-9]*) continue ;; esac
-    recorded_process_is_running "$dir/next.pid" "$dir/next.identity" || continue
-    pid="$(cat "$dir/next.pid")"
+    recorded_process_is_running "$dir/next.owner.json" || continue
+    port="$(process_owner_field "$dir/next.owner.json" port)" || continue
+    host="$(process_owner_field "$dir/next.owner.json" host)" || continue
     if [ -n "$live" ] && [ "$live" != "$port" ]; then
       # More than one live instance: ambiguous, keep the requested port.
       return 0
     fi
     live="$port"
+    live_host="$host"
   done
 
-  if [ -z "$live" ] || [ "$live" = "$PORT" ]; then
+  if [ -z "$live" ] || { [ "$live" = "$PORT" ] && [ "$live_host" = "$HOST" ]; }; then
     return 0
   fi
-  exec env PORT="$live" bash "$SELF" "$COMMAND"
+  exec env PORT="$live" HOST="$live_host" bash "$SELF" "$COMMAND"
 }
 
 write_server_mode() {
@@ -406,6 +385,7 @@ wait_for_server() {
 }
 
 start_with_tmux() {
+  local pid
   need tmux
   if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
     tmux kill-session -t "$TMUX_SESSION"
@@ -417,10 +397,10 @@ start_with_tmux() {
     # sufficient authorization because Serve exposes every /api route.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
       "bash -lc 'unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST; export COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-    tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
-    if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+    pid="$(tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}')"
+    if ! record_process_owner "$pid"; then
       tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
-      rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+      rm -f "$OWNER_FILE"
       echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
       return 1
     fi
@@ -429,10 +409,10 @@ start_with_tmux() {
 
   tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
     "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-  tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
-  if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+  pid="$(tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}')"
+  if ! record_process_owner "$pid"; then
     tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
-    rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+    rm -f "$OWNER_FILE"
     echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
     return 1
   fi
@@ -448,11 +428,9 @@ start_with_nohup() {
       PORT="$PORT" \
       pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
     pid="$!"
-    echo "$pid" >"$PID_FILE"
-    if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
-      kill "$pid" >/dev/null 2>&1 || true
-      rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
-      echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+    if ! record_process_owner "$pid"; then
+      rm -f "$OWNER_FILE"
+      echo "Could not record the started server process identity; refusing to signal an unverified PID. Inspect pid ${pid} manually." >&2
       return 1
     fi
     return 0
@@ -460,11 +438,9 @@ start_with_nohup() {
 
   nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
   pid="$!"
-  echo "$pid" >"$PID_FILE"
-  if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
-    kill "$pid" >/dev/null 2>&1 || true
-    rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
-    echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+  if ! record_process_owner "$pid"; then
+    rm -f "$OWNER_FILE"
+    echo "Could not record the started server process identity; refusing to signal an unverified PID. Inspect pid ${pid} manually." >&2
     return 1
   fi
 }
@@ -472,6 +448,10 @@ start_with_nohup() {
 start_next_server() {
   need pnpm
   need node
+  if ! process_owner_cmd token --pid "$$" >/dev/null; then
+    echo "Kernel-resolution process identity is unavailable; refusing to start an untrackable mobile backend." >&2
+    exit 1
+  fi
 
   if port_is_listening >/dev/null 2>&1; then
     ensure_state_dir
@@ -510,7 +490,7 @@ start_next_server() {
     echo "Server is running in tmux session: ${TMUX_SESSION}"
   else
     start_with_nohup
-    echo "Server is running as background pid: $(cat "$PID_FILE")"
+    echo "Server is running as background pid: $(process_owner_field "$OWNER_FILE" pid)"
   fi
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     write_server_mode app
@@ -642,7 +622,7 @@ app_command() {
   APP_URL=""
   serve_result=""
   if ! serve_result="$(
-    node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" claim \
+    node --experimental-strip-types "$SERVE_OWNERSHIP_HELPER" claim \
       --backend "$TAILSCALE_BACKEND" --channel dev
   )"; then
     echo "Tailscale Serve ownership refused the native app route: ${serve_result:-no result}" >&2
@@ -659,7 +639,7 @@ app_command() {
   url_result=""
   if url_result="$(
     printf '%s' "$status_json" |
-      node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" url \
+      node --experimental-strip-types "$SERVE_OWNERSHIP_HELPER" url \
         --backend "$TAILSCALE_BACKEND"
   )"; then
     APP_URL="$(
@@ -698,7 +678,7 @@ status_command() {
   ensure_state_dir
   if port_is_listening >/dev/null 2>&1; then
     if recorded_server_is_running; then
-      echo "CovenCave mobile server: running on ${HOST}:${PORT} (pid $(cat "$PID_FILE"))"
+      echo "CovenCave mobile server: running on ${HOST}:${PORT} (pid $(process_owner_field "$OWNER_FILE" pid))"
     else
       echo "CovenCave mobile server: not running. ${HOST}:${PORT} is in use by a server this script does not track."
       describe_port_occupant "$PORT"
@@ -708,8 +688,8 @@ status_command() {
   fi
   echo "State directory: ${STATE_DIR}"
   echo "Log file: ${LOG_FILE}"
-  if [ -s "$PID_FILE" ]; then
-    echo "Recorded pid: $(cat "$PID_FILE")"
+  if [ -s "$OWNER_FILE" ]; then
+    echo "Recorded pid: $(process_owner_field "$OWNER_FILE" pid 2>/dev/null || echo invalid)"
   fi
   if [ -s "$EXPIRES_FILE" ]; then
     echo "Last invite expires: $(cat "$EXPIRES_FILE")"
@@ -718,40 +698,18 @@ status_command() {
   warn_if_serve_targets_other_backend
 }
 
-stop_instance() {
-  local dir="$1" session="$2" pid_file identity_file pid
-  pid_file="$dir/next.pid"
-  identity_file="$dir/next.identity"
-  if [ -s "$pid_file" ]; then
-    pid="$(cat "$pid_file")"
-    case "$pid" in
-      ''|*[!0-9]*) ;;
-      *)
-        if process_identity_matches "$pid" "$identity_file"; then
-          if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$session" 2>/dev/null; then
-            tmux kill-session -t "$session"
-            echo "Stopped tmux session: ${session}"
-          elif kill -0 "$pid" >/dev/null 2>&1; then
-            kill "$pid" >/dev/null 2>&1 || true
-            echo "Stopped pid: ${pid}"
-          fi
-        elif kill -0 "$pid" >/dev/null 2>&1; then
-          echo "Ignored stale PID state for ${pid}; its process birth identity does not match." >&2
-        fi
-        ;;
-    esac
+stop_tracked_instance() {
+  local dir="$1" owner_file backend serve_result serve_status
+  owner_file="$dir/next.owner.json"
+  [ -e "$owner_file" ] || return 0
+  if ! backend="$(process_owner_field "$owner_file" backendUrl)"; then
+    echo "Tracked process ownership is malformed; preserving state without signaling or resetting Serve: ${owner_file}" >&2
+    return 1
   fi
-
-  rm -f "$dir/next.pid" "$dir/next.identity" "$dir/invite.url" "$dir/invite.expires" "$dir/server.mode"
-}
-
-stop_command() {
-  local backend serve_result serve_status
-  backend="$(backend_url)"
   serve_result=""
   if serve_result="$(
-    node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" reset \
-      --backend "$backend" --channel dev
+    node --experimental-strip-types "$SERVE_OWNERSHIP_HELPER" reset \
+      --backend "$backend" --channel dev --process-owner "$owner_file"
   )"; then
     serve_status=0
   else
@@ -760,37 +718,55 @@ stop_command() {
   case "$serve_result" in
     *'"kind":"removed"'*)
       if [ "$serve_status" -ne 0 ]; then
-        echo "Tailscale Serve ownership returned an inconsistent removal result; the tracked server remains running: ${serve_result}" >&2
-        exit 1
+        echo "Tailscale Serve ownership returned an inconsistent removal result; tracked state was retained: ${serve_result}" >&2
+        return 1
       fi
+      rm -f \
+        "$owner_file" \
+        "$dir/next.pid" \
+        "$dir/next.identity" \
+        "$dir/access-token" \
+        "$dir/invite.url" \
+        "$dir/invite.expires" \
+        "$dir/server.mode"
+      echo "Stopped tracked backend: ${backend}"
       ;;
     *'"kind":"not-owned"'*)
       if [ "$serve_status" -ne 10 ]; then
-        echo "Tailscale Serve ownership returned an inconsistent not-owned result; the tracked server remains running: ${serve_result}" >&2
-        exit 1
+        echo "Tailscale Serve ownership returned an inconsistent not-owned result; tracked state was retained: ${serve_result}" >&2
+        return 1
       fi
-      echo "Tailscale Serve belongs to another backend; preserving the foreign route while stopping this tracked server." >&2
+      echo "Tailscale Serve belongs to another backend; preserving the tracked backend process and its state: ${backend}" >&2
       ;;
     *)
-      echo "Tailscale Serve ownership could not safely classify reset; the tracked server remains running: ${serve_result:-no result}" >&2
-      exit 1
+      echo "Tailscale Serve ownership could not safely stop/reset this backend; tracked state was retained: ${serve_result:-no result}" >&2
+      return 1
       ;;
   esac
+}
 
-  stop_instance "$STATE_DIR" "$TMUX_SESSION"
-
-  # Sweep sibling per-port instances so a server started on a fallback port
-  # (see maybe_fallback_port) is not stranded by a default-port stop.
-  local dir port
+stop_command() {
+  local dir failures=0 found=0
+  if [ -e "$STATE_DIR/next.owner.json" ]; then
+    found=1
+    stop_tracked_instance "$STATE_DIR" || failures=1
+  fi
   for dir in "$STATE_ROOT"/mobile-tailscale-*; do
     [ -d "$dir" ] || continue
     [ "$dir" = "$STATE_DIR" ] && continue
-    port="${dir##*mobile-tailscale-}"
-    case "$port" in ''|*[!0-9]*) continue ;; esac
-    stop_instance "$dir" "coven-cave-mobile-${port}"
+    [ -e "$dir/next.owner.json" ] || continue
+    found=1
+    stop_tracked_instance "$dir" || failures=1
   done
 
-  echo "CovenCave mobile Tailscale state stopped."
+  if [ "$found" -eq 0 ]; then
+    echo "No identity-verified CovenCave mobile backends are tracked; Serve was not changed."
+  elif [ "$failures" -ne 0 ]; then
+    echo "One or more tracked backends could not be stopped safely; their state was retained." >&2
+    return 1
+  else
+    echo "CovenCave mobile Tailscale stop completed."
+  fi
 }
 
 main() {
@@ -799,7 +775,7 @@ main() {
     invite) resolve_active_port; invite_command ;;
     app) resolve_active_port; maybe_fallback_port; app_command ;;
     status) resolve_active_port; status_command ;;
-    stop) resolve_active_port; stop_command ;;
+    stop) stop_command ;;
     *)
       echo "Usage: pnpm mobile:tailscale[:invite|:app|:status|:stop]" >&2
       echo "       bash scripts/mobile-tailscale.sh {start|invite|app|status|stop}" >&2

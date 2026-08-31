@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,8 +11,12 @@ import {
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { recordProcessOwner } from "./mobile-process-ownership.ts";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
+const identityBinary = join(scriptsDir, `.mobile-process-identity-shell-test-${process.pid}`);
+process.env.COVEN_CAVE_PROCESS_IDENTITY_BIN = identityBinary;
+test.after(() => rmSync(identityBinary, { force: true }));
 const repoRoot = join(scriptsDir, "..");
 const scriptPath = join(scriptsDir, "mobile-tailscale.sh");
 const script = readFileSync(
@@ -31,25 +34,42 @@ const serveOwnershipHelper = fileURLToPath(
   new URL("./mobile-serve-ownership.ts", import.meta.url),
 );
 
-function processBirthToken(pid) {
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], {
-    encoding: "utf8",
-    env: { ...process.env, LC_ALL: "C" },
-  });
-  assert.equal(result.status, 0, result.stderr);
-  const token = result.stdout.trim();
-  assert.notEqual(token, "");
-  return token;
-}
-
-function installNotOwnedNodeShim(binDir) {
-  mkdirSync(binDir, { recursive: true });
-  const nodeShim = join(binDir, "node");
+function installServeOwnershipShim(fixture, outcomes) {
+  const helper = join(fixture, "serve-ownership-shim.mjs");
+  const log = join(fixture, "serve-ownership.log");
   writeFileSync(
-    nodeShim,
-    '#!/usr/bin/env bash\nprintf \'{"kind":"not-owned","backendUrl":"http://127.0.0.1:3000"}\\n\'\nexit 10\n',
+    helper,
+    `import { appendFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+const value = (name) => {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : null;
+};
+const backend = value("--backend");
+const outcome = ${JSON.stringify(outcomes)}[backend] ?? "not-owned";
+if (outcome === "removed") {
+  const state = value("--process-owner");
+  const stopped = spawnSync(process.execPath, [
+    "--experimental-strip-types",
+    process.env.COVEN_CAVE_PROCESS_OWNERSHIP_HELPER,
+    "stop",
+    "--state",
+    state,
+  ], { encoding: "utf8" });
+  if (stopped.status !== 0) {
+    process.stdout.write(JSON.stringify({ kind: "process-cleanup-failed", backendUrl: backend, stderr: stopped.stdout.trim() }) + "\\n");
+    process.exit(12);
+  }
+  process.stdout.write(JSON.stringify({ kind: "removed", backendUrl: backend }) + "\\n");
+  process.exit(0);
+}
+process.stdout.write(JSON.stringify({ kind: "not-owned", backendUrl: backend }) + "\\n");
+process.exit(10);
+`,
   );
-  chmodSync(nodeShim, 0o755);
+  return { helper, log };
 }
 
 test("mobile tailscale runner exposes operator commands", () => {
@@ -92,7 +112,7 @@ test("mobile tailscale app mode fails closed when HTTPS Serve is unavailable", (
   assert.doesNotMatch(script, /serve_url_from_status\(\)/);
   assert.match(
     script,
-    /mobile-serve-ownership\.ts" url[\s\S]{0,120}?--backend "\$TAILSCALE_BACKEND"/,
+    /"\$SERVE_OWNERSHIP_HELPER" url[\s\S]{0,120}?--backend "\$TAILSCALE_BACKEND"/,
   );
 });
 
@@ -102,8 +122,8 @@ test("supported shell mutations use the canonical Serve ownership executable", (
     true,
     "the shared structured Serve ownership executable exists",
   );
-  assert.match(script, /mobile-serve-ownership\.ts" claim\s+\\?\s*--backend "\$TAILSCALE_BACKEND" --channel dev/);
-  assert.match(script, /mobile-serve-ownership\.ts" reset\s+\\?\s*--backend "\$backend" --channel dev/);
+  assert.match(script, /"\$SERVE_OWNERSHIP_HELPER" claim\s+\\?\s*--backend "\$TAILSCALE_BACKEND" --channel dev/);
+  assert.match(script, /"\$SERVE_OWNERSHIP_HELPER" reset\s+\\?\s*--backend "\$backend" --channel dev --process-owner "\$owner_file"/);
   assert.doesNotMatch(script, /tailscale_cmd serve --bg/);
   assert.doesNotMatch(script, /tailscale_cmd serve reset/);
   assert.match(recovery, /mobile-serve-ownership\.ts" claim\s+\\?\s*--backend "\$backend" --channel packaged/);
@@ -111,25 +131,26 @@ test("supported shell mutations use the canonical Serve ownership executable", (
   assert.match(recovery, /"kind":"(?:owned|claimed)"/);
 });
 
-test("mobile tailscale stop preserves foreign Serve while stopping its tracked server", () => {
+test("mobile tailscale stop preserves a tracked backend after foreign reassignment", () => {
   assert.match(
     script,
-    /"kind":"not-owned"[\s\S]{0,240}?"\$serve_status" -ne 10[\s\S]{0,400}?preserving the foreign route[\s\S]{0,500}?stop_instance "\$STATE_DIR" "\$TMUX_SESSION"/,
+    /"kind":"not-owned"[\s\S]{0,240}?"\$serve_status" -ne 10[\s\S]{0,500}?preserving the tracked backend process/,
   );
   assert.match(
     script,
-    /"kind":"removed"[\s\S]{0,180}?"\$serve_status" -ne 0/,
-    "verified removal remains the normal successful stop path",
+    /--process-owner "\$owner_file"/,
+    "the Serve helper owns process cleanup while its machine lease is held",
   );
 });
 
-test("mobile tailscale stop terminates its tracked process after a not-owned reset", async () => {
+test("mobile tailscale stop retains a tracked process after a not-owned reset", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-stop-"));
   const stateRoot = join(fixture, "state");
   const stateDir = join(stateRoot, "mobile-tailscale-3000");
-  const binDir = join(fixture, "bin");
   mkdirSync(stateDir, { recursive: true });
-  installNotOwnedNodeShim(binDir);
+  const shim = installServeOwnershipShim(fixture, {
+    "http://127.0.0.1:3000": "not-owned",
+  });
 
   const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
@@ -138,8 +159,8 @@ test("mobile tailscale stop terminates its tracked process after a not-owned res
     sleeper.once("spawn", resolve);
     sleeper.once("error", reject);
   });
-  writeFileSync(join(stateDir, "next.pid"), String(sleeper.pid));
-  writeFileSync(join(stateDir, "next.identity"), processBirthToken(sleeper.pid));
+  const ownerPath = join(stateDir, "next.owner.json");
+  await recordProcessOwner(ownerPath, sleeper.pid, "http://127.0.0.1:3000");
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -148,22 +169,22 @@ test("mobile tailscale stop terminates its tracked process after a not-owned res
       timeout: 10_000,
       env: {
         ...process.env,
-        PATH: `${binDir}:/usr/bin:/bin`,
         HOME: fixture,
         PORT: "3000",
         HOST: "127.0.0.1",
         COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
         COVEN_CAVE_MOBILE_STATE_DIR: stateDir,
+        COVEN_CAVE_SERVE_OWNERSHIP_HELPER: shim.helper,
+        COVEN_CAVE_PROCESS_OWNERSHIP_HELPER: join(scriptsDir, "mobile-process-ownership.ts"),
       },
     });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stderr, /preserving the foreign route/);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.throws(
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    assert.match(result.stderr, /preserving the tracked backend process/);
+    assert.doesNotThrow(
       () => process.kill(sleeper.pid, 0),
-      (error) => error?.code === "ESRCH",
-      "the tracked local server is stopped even though Serve remains foreign",
+      "a foreign Serve reassignment must preserve the tracked backend process",
     );
+    assert.equal(existsSync(ownerPath), true);
   } finally {
     if (sleeper.exitCode === null) sleeper.kill("SIGKILL");
     rmSync(fixture, { recursive: true, force: true });
@@ -174,9 +195,10 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-stale-pid-"));
   const stateRoot = join(fixture, "state");
   const stateDir = join(stateRoot, "mobile-tailscale-3000");
-  const binDir = join(fixture, "bin");
   mkdirSync(stateDir, { recursive: true });
-  installNotOwnedNodeShim(binDir);
+  const shim = installServeOwnershipShim(fixture, {
+    "http://127.0.0.1:3000": "removed",
+  });
 
   const foreign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
@@ -185,8 +207,13 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     foreign.once("spawn", resolve);
     foreign.once("error", reject);
   });
-  writeFileSync(join(stateDir, "next.pid"), String(foreign.pid));
-  writeFileSync(join(stateDir, "next.identity"), "stale-process-birth-token");
+  const ownerPath = join(stateDir, "next.owner.json");
+  writeFileSync(ownerPath, JSON.stringify({
+    version: 1,
+    pid: foreign.pid,
+    processToken: "foreign-token",
+    backendUrl: "http://127.0.0.1:3000",
+  }));
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -195,23 +222,118 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
       timeout: 10_000,
       env: {
         ...process.env,
-        PATH: `${binDir}:/usr/bin:/bin`,
         HOME: fixture,
         PORT: "3000",
         HOST: "127.0.0.1",
         COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
         COVEN_CAVE_MOBILE_STATE_DIR: stateDir,
+        COVEN_CAVE_SERVE_OWNERSHIP_HELPER: shim.helper,
+        COVEN_CAVE_PROCESS_OWNERSHIP_HELPER: join(scriptsDir, "mobile-process-ownership.ts"),
       },
     });
-    assert.equal(result.status, 0, result.stderr);
+    assert.notEqual(result.status, 0, "unverified process cleanup must fail closed");
     assert.doesNotThrow(
       () => process.kill(foreign.pid, 0),
       "a stale state file must not authorize signaling a reused foreign PID",
     );
-    assert.equal(existsSync(join(stateDir, "next.pid")), false);
-    assert.equal(existsSync(join(stateDir, "next.identity")), false);
+    assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
     if (foreign.exitCode === null) foreign.kill("SIGKILL");
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("default stop evaluates each tracked backend identity independently", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-multi-stop-"));
+  const stateRoot = join(fixture, "state");
+  const ipv6Dir = join(stateRoot, "mobile-tailscale-3007");
+  const ipv4Dir = join(stateRoot, "mobile-tailscale-3008");
+  mkdirSync(ipv6Dir, { recursive: true });
+  mkdirSync(ipv4Dir, { recursive: true });
+  const shim = installServeOwnershipShim(fixture, {
+    "http://[::1]:3007": "not-owned",
+    "http://127.0.0.1:3008": "removed",
+  });
+  const ipv6 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const ipv4 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  await Promise.all([
+    new Promise((resolve, reject) => {
+      ipv6.once("spawn", resolve);
+      ipv6.once("error", reject);
+    }),
+    new Promise((resolve, reject) => {
+      ipv4.once("spawn", resolve);
+      ipv4.once("error", reject);
+    }),
+  ]);
+  const ipv6Owner = join(ipv6Dir, "next.owner.json");
+  const ipv4Owner = join(ipv4Dir, "next.owner.json");
+  const recordIpv6 = spawnSync(
+    "bash",
+    ["-c", 'source "$1"; record_process_owner "$2"', "mobile-tailscale-test", scriptPath, String(ipv6.pid)],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: fixture,
+        HOST: "::1",
+        PORT: "3007",
+        COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+        COVEN_CAVE_MOBILE_STATE_DIR: ipv6Dir,
+        COVEN_CAVE_PROCESS_OWNERSHIP_HELPER: join(scriptsDir, "mobile-process-ownership.ts"),
+      },
+    },
+  );
+  assert.equal(recordIpv6.status, 0, recordIpv6.stderr);
+  assert.equal(
+    JSON.parse(readFileSync(ipv6Owner, "utf8")).backendUrl,
+    "http://[::1]:3007",
+    "the IPv6 start path persists its exact normalized backend identity",
+  );
+  await recordProcessOwner(ipv4Owner, ipv4.pid, "http://127.0.0.1:3008");
+  writeFileSync(join(ipv4Dir, "access-token"), "dev-secret");
+  writeFileSync(join(ipv4Dir, "sidecar-auth-token"), "packaged-secret");
+  try {
+    const result = spawnSync("bash", [scriptPath, "stop"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        HOME: fixture,
+        COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+        COVEN_CAVE_SERVE_OWNERSHIP_HELPER: shim.helper,
+        COVEN_CAVE_PROCESS_OWNERSHIP_HELPER: join(scriptsDir, "mobile-process-ownership.ts"),
+      },
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    const calls = readFileSync(shim.log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      calls.map((args) => args[args.indexOf("--backend") + 1]).sort(),
+      ["http://127.0.0.1:3008", "http://[::1]:3007"],
+    );
+    assert.doesNotThrow(() => process.kill(ipv6.pid, 0));
+    assert.equal(existsSync(ipv6Owner), true, "foreign IPv6 reassignment remains tracked and alive");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.throws(
+      () => process.kill(ipv4.pid, 0),
+      (error) => error?.code === "ESRCH",
+      "owned IPv4 process is terminated by the lease-held reset callback",
+    );
+    assert.equal(existsSync(ipv4Owner), false, "verified removal deletes only owned state");
+    assert.equal(existsSync(join(ipv4Dir, "access-token")), false);
+    assert.equal(
+      existsSync(join(ipv4Dir, "sidecar-auth-token")),
+      true,
+      "verified dev cleanup preserves packaged sidecar credentials",
+    );
+  } finally {
+    if (ipv6.exitCode === null) ipv6.kill("SIGKILL");
+    if (ipv4.exitCode === null) ipv4.kill("SIGKILL");
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -262,7 +384,8 @@ test("mobile tailscale app mode takes over an untracked same-checkout dev server
 test("mobile tailscale runner persists state for remote invite regeneration", () => {
   assert.match(script, /STATE_DIR=/);
   assert.match(script, /TOKEN_FILE=/);
-  assert.match(script, /PID_FILE=/);
+  assert.match(script, /OWNER_FILE=.*next\.owner\.json/);
+  assert.match(script, /process_owner_cmd record/);
   assert.match(script, /INVITE_FILE=/);
   assert.match(script, /chmod 700 "\$STATE_DIR"/);
   assert.match(script, /chmod 600 "\$TOKEN_FILE"/);
@@ -272,7 +395,7 @@ test("mobile tailscale runner refuses untracked localhost listeners", () => {
   assert.match(script, /recorded_server_is_running\(\)/);
   assert.match(script, /require_recorded_server\(\)/);
   assert.match(script, /Refusing to contact an untracked server/);
-  assert.match(script, /kill -0 "\$pid"/);
+  assert.match(script, /process_owner_cmd matches/);
 });
 
 test("mobile tailscale status warns when Serve points at another backend", () => {

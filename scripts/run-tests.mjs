@@ -1996,6 +1996,7 @@ export const SUITES = {
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-serve-ownership.test.ts",
+    "scripts/mobile-process-ownership.test.ts",
     "scripts/mobile-tailscale.test.mjs",
     "src/components/mobile-handoff.test.ts",
     "src/app/api/mobile-handoff/route.test.ts",

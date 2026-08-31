@@ -36,19 +36,70 @@ assert.equal(
 
 {
   const stdout: string[] = [];
+  let stoppedState = "";
   const exit = await runMobileServeOwnershipCli(
-    ["reset", "--backend", "http://127.0.0.1:3007", "--channel", "dev"],
+    [
+      "reset",
+      "--backend",
+      "http://127.0.0.1:3007",
+      "--channel",
+      "dev",
+      "--process-owner",
+      "/state/mobile-tailscale-3007/next.owner.json",
+    ],
     {
       claim: async () => {
         throw new Error("claim must not run");
       },
-      reset: async () => ({ kind: "removed", alreadyAbsent: false }),
+      reset: async (options) => {
+        assert.equal(typeof options.beforeReset, "function");
+        await options.beforeReset?.();
+        return { kind: "removed", alreadyAbsent: false };
+      },
+      stopProcessOwner: async (ownerPath) => {
+        stoppedState = ownerPath;
+        return { kind: "stopped", escalated: false };
+      },
       stdout: (value: string) => stdout.push(value),
       stderr: () => undefined,
     },
   );
   assert.equal(exit, 0);
   assert.equal(JSON.parse(stdout.join("")).kind, "removed");
+  assert.equal(stoppedState, "/state/mobile-tailscale-3007/next.owner.json");
+}
+
+{
+  const stdout: string[] = [];
+  const exit = await runMobileServeOwnershipCli(
+    [
+      "reset",
+      "--backend",
+      "http://127.0.0.1:3007",
+      "--channel",
+      "dev",
+      "--process-owner",
+      "/state/mobile-tailscale-3007/next.owner.json",
+    ],
+    {
+      claim: async () => {
+        throw new Error("claim must not run");
+      },
+      reset: async (options) => {
+        try {
+          await options.beforeReset?.();
+          throw new Error("failed process cleanup must abort reset");
+        } catch (error) {
+          return { kind: "process-cleanup-failed", stderr: (error as Error).message };
+        }
+      },
+      stopProcessOwner: async () => ({ kind: "still-running" }),
+      stdout: (value: string) => stdout.push(value),
+      stderr: () => undefined,
+    },
+  );
+  assert.equal(exit, 12);
+  assert.equal(JSON.parse(stdout.join("")).kind, "process-cleanup-failed");
 }
 
 {
