@@ -60,10 +60,11 @@ type TrapEntry = {
   readonly order: number;
   readonly rootId: number;
   readonly rootOrder: number;
+  readonly releaseRoot: () => void;
 };
 
 const trapStack: TrapEntry[] = [];
-const trapRoots = new Map<number, { order: number; count: number }>();
+const portalLayerRoots = new Map<number, { order: number; count: number }>();
 let nextTrapId = 1;
 let nextTrapOrder = 1;
 let nextTrapRootOrder = 1;
@@ -72,36 +73,63 @@ function compareTrapOrder(a: TrapEntry, b: TrapEntry): number {
   return a.rootOrder - b.rootOrder || a.depth - b.depth || a.order - b.order;
 }
 
-function acquireTrapRoot(rootId: number): number {
-  const current = trapRoots.get(rootId);
+export function acquirePortalLayerRoot(rootId: number): {
+  order: number;
+  release: () => void;
+} {
+  const current = portalLayerRoots.get(rootId);
+  let order: number;
   if (current) {
     current.count += 1;
-    return current.order;
+    order = current.order;
+  } else {
+    order = nextTrapRootOrder++;
+    portalLayerRoots.set(rootId, { order, count: 1 });
   }
-  const order = nextTrapRootOrder++;
-  trapRoots.set(rootId, { order, count: 1 });
-  return order;
+  let released = false;
+  return {
+    order,
+    release: () => {
+      if (released) return;
+      released = true;
+      releasePortalLayerRoot(rootId);
+    },
+  };
 }
 
-function releaseTrapRoot(rootId: number): void {
-  const current = trapRoots.get(rootId);
+function releasePortalLayerRoot(rootId: number): void {
+  const current = portalLayerRoots.get(rootId);
   if (!current) return;
   current.count -= 1;
-  if (current.count === 0) trapRoots.delete(rootId);
+  if (current.count === 0) portalLayerRoots.delete(rootId);
+}
+
+export function isTopmostPortalLayerRoot(rootId: number): boolean {
+  let topmostId: number | null = null;
+  let topmostOrder = -1;
+  for (const [candidateId, candidate] of portalLayerRoots) {
+    if (candidate.order > topmostOrder) {
+      topmostId = candidateId;
+      topmostOrder = candidate.order;
+    }
+  }
+  return topmostId === rootId;
 }
 
 function registerTrap(id: number, depth: number, rootId: number): void {
   const stale = trapStack.findIndex((entry) => entry.id === id);
   if (stale !== -1) {
-    releaseTrapRoot(trapStack[stale].rootId);
+    trapStack[stale].releaseRoot();
     trapStack.splice(stale, 1);
   }
+  const root = acquirePortalLayerRoot(rootId);
   trapStack.push({
     id,
     depth,
     order: nextTrapOrder++,
     rootId,
-    rootOrder: acquireTrapRoot(rootId),
+    rootOrder: root.order,
+    releaseRoot: root.release,
   });
 }
 
@@ -115,7 +143,7 @@ function unregisterTrap(id: number): { hadTrapAbove: boolean } {
   const entry = trapStack[index];
   const hadTrapAbove = trapStack.some((candidate) => compareTrapOrder(candidate, entry) > 0);
   trapStack.splice(index, 1);
-  releaseTrapRoot(entry.rootId);
+  entry.releaseRoot();
   return { hadTrapAbove };
 }
 
@@ -133,7 +161,7 @@ function isTopmostTrap(id: number): boolean {
  *  later test in the same file/process. */
 export function resetFocusTrapStackForTest(): void {
   trapStack.length = 0;
-  trapRoots.clear();
+  portalLayerRoots.clear();
 }
 
 /**

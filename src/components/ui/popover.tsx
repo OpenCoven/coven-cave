@@ -16,8 +16,12 @@ import {
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/lib/icon";
 import {
+  acquirePortalLayerRoot,
   FocusTrapPortalLayersContext,
+  isTopmostPortalLayerRoot,
   PortalLayerDepthContext,
+  PortalLayerRootContext,
+  usePortalLayerRootId,
 } from "@/lib/use-focus-trap";
 import { computeSubmenuPosition } from "@/lib/submenu-position";
 
@@ -38,9 +42,7 @@ type PopoverLayers = {
   cover: () => () => void;
 };
 export const PopoverLayersContext = createContext<PopoverLayers | null>(null);
-const PopoverEscapeRootContext = createContext<number | null>(null);
 const NOOP = () => {};
-let nextEscapeRootId = 1;
 
 /**
  * Registers `el` as an "inside" layer of an ancestor Popover (if any) for as
@@ -84,11 +86,8 @@ type EscapeLayer = {
   order: number;
   rootId: number;
 };
-type EscapeRoot = { id: number; order: number };
 const submenuEscapeStack: EscapeLayer[] = [];
-const popoverEscapeRoots: EscapeRoot[] = [];
 let nextEscapeLayerOrder = 1;
-let nextEscapeRootOrder = 1;
 
 function usePopoverLayerRegistry(
   ownerRef: React.RefObject<HTMLElement | null>,
@@ -209,7 +208,7 @@ export function usePopoverInitialFocus(open: boolean, panelSelector: string) {
 export function usePopoverEscapeLayer(active: boolean, close: () => void) {
   const closeRef = useRef(close);
   const ownerDepth = useContext(PortalLayerDepthContext);
-  const rootId = useContext(PopoverEscapeRootContext);
+  const rootId = useContext(PortalLayerRootContext);
   useEffect(() => {
     closeRef.current = close;
   });
@@ -249,12 +248,9 @@ export function Popover({
 }: PopoverProps) {
   const parentLayers = useContext(PopoverLayersContext);
   const parentLayerDepth = useContext(PortalLayerDepthContext);
-  const inheritedEscapeRootId = useContext(PopoverEscapeRootContext);
   const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const ownEscapeRootIdRef = useRef(0);
-  if (ownEscapeRootIdRef.current === 0) ownEscapeRootIdRef.current = nextEscapeRootId++;
-  const escapeRootId = inheritedEscapeRootId ?? ownEscapeRootIdRef.current;
+  const escapeRootId = usePortalLayerRootId();
   const isEscapeRoot = parentLayers === null;
   const [style, setStyle] = useState<CSSProperties>({});
   const [compact, setCompact] = useState(false);
@@ -266,12 +262,7 @@ export function Popover({
   useRegisterPopoverOwner(open, popoverRef, parentLayers, focusTrapPortalLayers);
   useEffect(() => {
     if (!open || !isEscapeRoot) return;
-    const entry = { id: escapeRootId, order: nextEscapeRootOrder++ };
-    popoverEscapeRoots.push(entry);
-    return () => {
-      const index = popoverEscapeRoots.indexOf(entry);
-      if (index !== -1) popoverEscapeRoots.splice(index, 1);
-    };
+    return acquirePortalLayerRoot(escapeRootId).release;
   }, [open, isEscapeRoot, escapeRootId]);
   usePopoverEscapeLayer(
     Boolean(parentLayers && open),
@@ -350,12 +341,7 @@ export function Popover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (parentLayers) return;
-        const activeRoot = popoverEscapeRoots.reduce<EscapeRoot | undefined>(
-          (current, candidate) =>
-            !current || candidate.order > current.order ? candidate : current,
-          undefined,
-        );
-        if (activeRoot?.id !== escapeRootId) return;
+        if (!isTopmostPortalLayerRoot(escapeRootId)) return;
         // Consume the Escape so it doesn't bubble to a parent dialog's keydown
         // handler (e.g. the Settings panel, which closes itself on Escape). The
         // listener is registered in the capture phase below so it runs before any
@@ -452,11 +438,11 @@ export function Popover({
         }}
       >
         <PopoverLayersContext.Provider value={layers}>
-          <PopoverEscapeRootContext.Provider value={escapeRootId}>
+          <PortalLayerRootContext.Provider value={escapeRootId}>
             <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
               <SubmenuGroup>{children}</SubmenuGroup>
             </PortalLayerDepthContext.Provider>
-          </PopoverEscapeRootContext.Provider>
+          </PortalLayerRootContext.Provider>
         </PopoverLayersContext.Provider>
       </div>
     </div>,

@@ -13,6 +13,7 @@ vi.mock("@/lib/icon", () => ({
 }));
 
 import { AvatarLightbox } from "./avatar-lightbox";
+import { Modal } from "./modal";
 import { Popover, PopoverLayersContext, PopoverSubmenu } from "./popover";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -147,16 +148,27 @@ function dispatchDocument(type, target) {
 
 function dispatchEscape() {
   let stopped = false;
+  let immediateStopped = false;
   const event = {
     key: "Escape",
     stopPropagation() {
       stopped = true;
     },
+    stopImmediatePropagation() {
+      stopped = true;
+      immediateStopped = true;
+    },
   };
   const listeners = windowListeners.get("keydown") ?? [];
-  for (const { listener } of listeners.filter((entry) => entry.capture)) listener(event);
+  for (const { listener } of listeners.filter((entry) => entry.capture)) {
+    listener(event);
+    if (immediateStopped) return;
+  }
   if (stopped) return;
-  for (const { listener } of listeners.filter((entry) => !entry.capture)) listener(event);
+  for (const { listener } of listeners.filter((entry) => !entry.capture)) {
+    listener(event);
+    if (immediateStopped) return;
+  }
 }
 
 function dispatchTab() {
@@ -221,6 +233,58 @@ describe("AvatarLightbox nested in Popover", () => {
     expect(firstClose).not.toHaveBeenCalled();
     expect(secondClose).toHaveBeenCalledOnce();
     expect(secondClose).toHaveBeenCalledWith(false);
+  });
+
+  test("a newer independent Modal owns Escape over a covered Popover tree", () => {
+    const ownerClose = vi.fn();
+    const independentClose = vi.fn();
+
+    function Scene() {
+      const anchorRef = useRef(null);
+      const [independentOpen, setIndependentOpen] = useState(false);
+      return (
+        <>
+          <button ref={anchorRef}>anchor</button>
+          <Popover open onOpenChange={ownerClose} anchorRef={anchorRef} ariaLabel="Avatar menu">
+            <AvatarLightbox src="/wren.png" label="Wren">
+              <span>wren</span>
+            </AvatarLightbox>
+          </Popover>
+          <button
+            aria-label="Open independent modal"
+            onClick={() => setIndependentOpen(true)}
+          >
+            Open
+          </button>
+          <Modal
+            open={independentOpen}
+            onClose={() => {
+              independentClose();
+              setIndependentOpen(false);
+            }}
+            ariaLabel="Independent modal"
+          >
+            Independent
+          </Modal>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => hostButton("Enlarge Wren avatar").props.onClick());
+    act(() => hostButton("Open independent modal").props.onClick());
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(3);
+
+    act(() => dispatchEscape());
+    expect(independentClose).toHaveBeenCalledOnce();
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(2);
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
   });
 
   test("ordinary parent re-renders do not churn layer registration", () => {
