@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, type ReactNode } from "react";
+import { useCallback, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -26,6 +26,13 @@ type ModalProps = {
   ariaLabel?: string;
   /** Description element inside the modal body. */
   ariaDescribedBy?: string;
+  /** Called with the dialog's DOM node once mounted, and null on unmount. For
+   *  a caller that needs to register the dialog with something outside this
+   *  component's own tree — e.g. AvatarLightbox marking it as an "inside"
+   *  layer of an ancestor Popover, so the Popover's outside-click/focus-out
+   *  dismissal doesn't fire the instant this focus-trapped dialog steals
+   *  focus (cave-fzr4p). Optional; Modal itself stays Popover-agnostic. */
+  onDialogElement?: (el: HTMLDivElement | null) => void;
 };
 
 export function Modal({
@@ -40,9 +47,17 @@ export function Modal({
   dismissOnEscape = true,
   ariaLabel,
   ariaDescribedBy,
+  onDialogElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
+  const setDialogElement = useCallback(
+    (el: HTMLDivElement | null) => {
+      dialogRef.current = el;
+      onDialogElement?.(el);
+    },
+    [onDialogElement],
+  );
 
   // Keep the trap active regardless of dismissability — an undefined onEscape
   // makes Esc a no-op without releasing Tab cycling or focus return.
@@ -57,7 +72,7 @@ export function Modal({
       role="presentation"
     >
       <div
-        ref={dialogRef}
+        ref={setDialogElement}
         className={`ui-modal${wide ? " ui-modal--wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

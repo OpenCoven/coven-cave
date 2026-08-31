@@ -41,9 +41,28 @@ type TailscaleResult = {
   status: number | null;
   stdout: string;
   stderr: string;
+  cleanupFailed: boolean;
 };
 
-function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
+const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
+const TAILSCALE_TERMINATION_FAILED =
+  "Tailscale command timed out and its process tree could not be stopped";
+
+// The local Tailscale daemon/system-extension IPC occasionally stalls a
+// single CLI invocation for several seconds (observed on macOS with the
+// managed/sysext install) even while Tailscale itself is fully connected.
+// Any of the sequential probes below can be the one that stalls — not just
+// the first. A retried invocation almost always returns immediately, so one
+// bounded retry turns a spurious "Tailscale command timed out" (which used
+// to hard-block the whole pairing screen, including the QR code, even though
+// Tailscale was connected) into a brief, invisible delay. cave-j2056
+async function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
+  const first = await runTailscaleOnce(args, timeoutMs);
+  if (first.ok || first.cleanupFailed || first.stderr !== TAILSCALE_TIMED_OUT) return first;
+  return runTailscaleOnce(args, timeoutMs);
+}
+
+function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
   return new Promise((resolve) => {
     const bin = tailscaleBin();
     const child = spawn(bin, args, {
@@ -62,15 +81,15 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
       clearTimeout(timer);
       resolve(result);
     };
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       timedOut = true;
-      void terminateProcessTree(child).then(() => {
-        finish({
-          ok: false,
-          status: null,
-          stdout: stdout.text(),
-          stderr: "Tailscale command timed out",
-        });
+      const terminated = await terminateProcessTree(child);
+      finish({
+        ok: false,
+        status: null,
+        stdout: stdout.text(),
+        stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
+        cleanupFailed: !terminated,
       });
     }, timeoutMs);
 
@@ -81,6 +100,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
       stderr.append(chunk);
     });
     child.on("error", (error) => {
+      if (timedOut) return;
       const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
       finish({
         ok: false,
@@ -89,23 +109,17 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
         stderr: missing
           ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
           : safeProcessErrorMessage(error, "Tailscale CLI"),
+        cleanupFailed: false,
       });
     });
     child.on("close", (status) => {
-      if (timedOut) {
-        finish({
-          ok: false,
-          status: null,
-          stdout: stdout.text(),
-          stderr: "Tailscale command timed out",
-        });
-        return;
-      }
+      if (timedOut) return;
       finish({
         ok: status === 0,
         status,
         stdout: stdout.text(),
         stderr: stderr.text(),
+        cleanupFailed: false,
       });
     });
   });
@@ -237,6 +251,13 @@ function mobileUnavailableResponse(
   details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
 ) {
   return NextResponse.json({ ok: false, unavailable: true, error, ...details });
+}
+
+function tailscaleCleanupFailureResponse(result: TailscaleResult, backend: string) {
+  return mobileUnavailableResponse(
+    "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
+    { stderr: result.stderr, backendUrl: backend },
+  );
 }
 
 function mobileAccessUnavailableResponse() {
@@ -384,12 +405,14 @@ async function ensureNativeAppServeReady(
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
   const serve = await runTailscale(["serve", "--bg", backend]);
+  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
   const serveWarning = serve.ok
     ? null
     : serve.stderr || "Tailscale Serve could not be (re)started.";
 
   let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
+  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
@@ -568,6 +591,7 @@ async function mobileHandoffReady(
   // though the serve config (and tunnel) is already live in the daemon. Capture
   // the error as a non-fatal warning and try to produce a working link anyway.
   const serve = await runTailscale(["serve", "--bg", backend]);
+  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
   const serveWarning = serve.ok
     ? null
     : serve.stderr || "Tailscale Serve could not be (re)started.";
@@ -575,6 +599,7 @@ async function mobileHandoffReady(
   // Prefer the real serve config when it's readable.
   let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
+  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
