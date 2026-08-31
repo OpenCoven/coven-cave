@@ -1,7 +1,7 @@
 // @ts-nocheck
 // New-chat dashboard — the work-led dashboard (launcher 3a) relocated from
 // Home into the brand-new-chat view, then simplified (cave-gxap): the context
-// rail is retired and the board is a capped, no-scroll column.
+// rail is retired and the board is a compact, safely scrolling column.
 // Pins:
 //   (1) chat-view splits its empty state: a null sessionId (brand-new chat)
 //       renders <ChatNewDashboard>; existing zero-turn sessions keep the
@@ -9,8 +9,8 @@
 //   (2) body-only shell: the board alone (ChatView owns the chrome above and
 //       the composer below) — no chrome header, no docked composer, and no
 //       context rail (the composer owns project picking + prompt snippets);
-//   (3) no scrolling: the board clips instead of scrolling, and its content
-//       is capped — open work at 5 rows, recent threads at 3;
+//   (3) common desktop heights fit without scrolling; smaller split panes keep
+//       every option reachable through safe overflow;
 //   (4) the board reads the live Tasks board + the inbox "needs you" tier
 //       and offers the trimmed All/Needs-you filter tabs;
 //   (5) self-contained navigation: the component reaches other surfaces
@@ -84,23 +84,23 @@ assert.match(
 );
 assert.match(
   css,
-  /\.home-dash__board-inner \{[\s\S]{0,180}?width: 100%;[\s\S]{0,100}?max-width: none;[\s\S]{0,100}?margin: 0;/,
-  "the new-session launcher fills the available Chat pane width",
+  /\.home-dash__board-inner \{[\s\S]{0,180}?width: 100%;[\s\S]{0,140}?max-width: min\(calc\(var\(--space-10\) \* 24\), 100%\);[\s\S]{0,100}?margin: 0 auto;/,
+  "the new-session heading, composer, and launcher share one readable measure",
 );
 assert.doesNotMatch(css, /home-dash__chrome/, "the retired chrome styles are gone");
 assert.doesNotMatch(css, /home-dash__dock/, "the retired dock styles are gone");
 assert.doesNotMatch(css, /home-dash__rail/, "the retired rail styles are gone");
 
-// ── (3) No scrolling — the board clips, and its content is capped ────────
+// ── (3) Compact by default, safely scrollable in short split panes ────────
 assert.match(
   css,
-  /\.home-dash__board \{[\s\S]{0,200}?overflow: hidden/,
-  "the board clips instead of scrolling",
+  /\.home-dash__board \{[\s\S]{0,240}?overflow-y: auto/,
+  "short split panes scroll rather than clipping reachable options",
 );
-assert.doesNotMatch(
+assert.match(
   css,
-  /overflow-y: auto/,
-  "no internal scroll region survives in the dashboard sheet",
+  /@container \(max-height: 680px\) \{[\s\S]{0,500}?\.home-dash__lede \{[\s\S]{0,40}?display: none/,
+  "short panes shed explanatory copy before overflow is needed",
 );
 assert.match(dash, /const OPEN_WORK_ROWS_CAP = 5/, "open work is capped at 5 rows");
 assert.match(dash, /const RECENT_THREADS_CAP = 3/, "recent threads are capped at 3 rows");
@@ -117,18 +117,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@container \(max-height: 650px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="queue"\] \{[\s\S]{0,40}?display: none/,
-  "short panes shed the Queue band instead of clipping",
-);
-assert.match(
-  css,
-  /@container \(max-height: 560px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="chats"\] \{[\s\S]{0,40}?display: none/,
-  "the resumable Chats band is the last one standing, not the first to go",
-);
-assert.match(
-  css,
-  /@container \(max-height: 480px\) \{[\s\S]{0,600}?\.cave-sf__tile:nth-child\(n \+ 3\) \{[\s\S]{0,40}?display: none/,
-  "very short panes trim each strip to two tiles",
+  /@container \(max-height: 680px\) \{[\s\S]{0,600}?\.cave-sf__tile \{[\s\S]{0,80}?min-height: calc\(var\(--space-10\) \+ var\(--space-4\)\)/,
+  "short panes tighten launcher tiles without removing them",
 );
 // An element can never match its own @container query — a `.home-dash__board`
 // rule inside a tier is silently dead (shipped once: the 430px tier's padding
@@ -142,7 +132,7 @@ for (const [, tier] of css.matchAll(/@container[^{]*\{([\s\S]*?)\n\}/g)) {
 }
 assert.match(
   css,
-  /\.home-dash__board-inner \{[\s\S]{0,200}?padding: var\(--space-6\) 0/,
+  /\.home-dash__board-inner \{[\s\S]{0,220}?padding: var\(--space-5\) 0/,
   "vertical board padding lives on the inner wrapper so tiers can shrink it",
 );
 
