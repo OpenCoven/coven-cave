@@ -355,20 +355,24 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     const win = makeWindowStub();
     restoreGlobals = stubDomGlobals(activeHolder, win);
 
+    const trigger = makeElement("trigger", activeHolder);
     const parentFocusable = makeElement("parent-focusable", activeHolder);
     const childFocusable = makeElement("child-focusable", activeHolder);
     const parentContainer = makeContainer([parentFocusable], activeHolder);
     const childContainer = makeContainer([childFocusable], activeHolder);
     let parentEscapeCount = 0;
     let childEscapeCount = 0;
+    activeHolder.current = trigger;
 
     function Scene() {
       const parentRef = useRef<unknown>(null);
+      const [parentActive, setParentActive] = useState(true);
       const [showChild, setShowChild] = useState(true);
       const rootId = usePortalLayerRootId();
-      useFocusTrap(true, parentRef as never, {
+      useFocusTrap(parentActive, parentRef as never, {
         onEscape: () => {
           parentEscapeCount += 1;
+          setParentActive(false);
         },
         portalRootId: rootId,
       });
@@ -403,6 +407,13 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     });
     expect(childEscapeCount).toBe(1);
     expect(parentEscapeCount).toBe(0);
+    expect(activeHolder.current).toBe(parentFocusable);
+
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(parentEscapeCount).toBe(1);
+    expect(activeHolder.current).toBe(trigger);
   });
 
   test("a newer independent root outranks an older deeper root", () => {

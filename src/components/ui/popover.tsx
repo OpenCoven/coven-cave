@@ -42,7 +42,10 @@ type PopoverLayers = {
   cover: () => () => void;
 };
 export const PopoverLayersContext = createContext<PopoverLayers | null>(null);
+const PopoverEscapeTreeContext = createContext<number | null>(null);
 const NOOP = () => {};
+let nextEscapeTreeId = 1;
+let nextEscapeHandlerId = 1;
 
 /**
  * Registers `el` as an "inside" layer of an ancestor Popover (if any) for as
@@ -85,9 +88,18 @@ type EscapeLayer = {
   depth: number;
   order: number;
   rootId: number;
+  treeId: number;
+};
+type EscapeHandler = {
+  id: number;
+  rootId: number;
+  treeId: number;
+  order: number;
 };
 const submenuEscapeStack: EscapeLayer[] = [];
+const popoverEscapeHandlers: EscapeHandler[] = [];
 let nextEscapeLayerOrder = 1;
+let nextEscapeHandlerOrder = 1;
 
 function usePopoverLayerRegistry(
   ownerRef: React.RefObject<HTMLElement | null>,
@@ -209,23 +221,25 @@ export function usePopoverEscapeLayer(active: boolean, close: () => void) {
   const closeRef = useRef(close);
   const ownerDepth = useContext(PortalLayerDepthContext);
   const rootId = useContext(PortalLayerRootContext);
+  const treeId = useContext(PopoverEscapeTreeContext);
   useEffect(() => {
     closeRef.current = close;
   });
   useEffect(() => {
-    if (!active || rootId === null) return;
+    if (!active || rootId === null || treeId === null) return;
     const entry = {
       close: () => closeRef.current(),
       depth: ownerDepth + 1,
       order: nextEscapeLayerOrder++,
       rootId,
+      treeId,
     };
     submenuEscapeStack.push(entry);
     return () => {
       const i = submenuEscapeStack.indexOf(entry);
       if (i !== -1) submenuEscapeStack.splice(i, 1);
     };
-  }, [active, ownerDepth, rootId]);
+  }, [active, ownerDepth, rootId, treeId]);
 }
 
 /**
@@ -249,9 +263,15 @@ export function Popover({
   const parentLayers = useContext(PopoverLayersContext);
   const parentLayerDepth = useContext(PortalLayerDepthContext);
   const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
+  const inheritedEscapeTreeId = useContext(PopoverEscapeTreeContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const escapeRootId = usePortalLayerRootId();
   const isEscapeRoot = parentLayers === null;
+  const ownEscapeTreeIdRef = useRef(0);
+  const escapeHandlerIdRef = useRef(0);
+  if (ownEscapeTreeIdRef.current === 0) ownEscapeTreeIdRef.current = nextEscapeTreeId++;
+  if (escapeHandlerIdRef.current === 0) escapeHandlerIdRef.current = nextEscapeHandlerId++;
+  const escapeTreeId = inheritedEscapeTreeId ?? ownEscapeTreeIdRef.current;
   const [style, setStyle] = useState<CSSProperties>({});
   const [compact, setCompact] = useState(false);
   const { covered, layers } = usePopoverLayerRegistry(
@@ -262,8 +282,20 @@ export function Popover({
   useRegisterPopoverOwner(open, popoverRef, parentLayers, focusTrapPortalLayers);
   useEffect(() => {
     if (!open || !isEscapeRoot) return;
-    return acquirePortalLayerRoot(escapeRootId).release;
-  }, [open, isEscapeRoot, escapeRootId]);
+    const root = acquirePortalLayerRoot(escapeRootId);
+    const entry = {
+      id: escapeHandlerIdRef.current,
+      rootId: escapeRootId,
+      treeId: escapeTreeId,
+      order: nextEscapeHandlerOrder++,
+    };
+    popoverEscapeHandlers.push(entry);
+    return () => {
+      const index = popoverEscapeHandlers.indexOf(entry);
+      if (index !== -1) popoverEscapeHandlers.splice(index, 1);
+      root.release();
+    };
+  }, [open, isEscapeRoot, escapeRootId, escapeTreeId]);
   usePopoverEscapeLayer(
     Boolean(parentLayers && open),
     useCallback(() => onOpenChange(false), [onOpenChange]),
@@ -342,15 +374,27 @@ export function Popover({
       if (e.key === "Escape") {
         if (parentLayers) return;
         if (!isTopmostPortalLayerRoot(escapeRootId)) return;
+        const activeHandler = popoverEscapeHandlers
+          .filter((entry) => entry.rootId === escapeRootId)
+          .reduce<EscapeHandler | undefined>(
+            (current, candidate) =>
+              !current || candidate.order > current.order ? candidate : current,
+            undefined,
+          );
+        if (activeHandler?.id !== escapeHandlerIdRef.current) return;
         // Consume the Escape so it doesn't bubble to a parent dialog's keydown
         // handler (e.g. the Settings panel, which closes itself on Escape). The
         // listener is registered in the capture phase below so it runs before any
-        // such parent handler; stopPropagation then prevents that handler firing.
-        e.stopPropagation();
+        // such parent handler; immediate propagation also prevents sibling root
+        // listeners on window from handling the same event after synchronous close.
+        e.stopImmediatePropagation();
         // An open cascading submenu absorbs the press first (one level per
         // Escape); the popover itself closes only when none remain.
         const deepest = submenuEscapeStack
-          .filter((entry) => entry.rootId === escapeRootId)
+          .filter(
+            (entry) =>
+              entry.rootId === escapeRootId && entry.treeId === escapeTreeId,
+          )
           .reduce<EscapeLayer | undefined>(
           (current, candidate) =>
             !current ||
@@ -438,11 +482,13 @@ export function Popover({
         }}
       >
         <PopoverLayersContext.Provider value={layers}>
-          <PortalLayerRootContext.Provider value={escapeRootId}>
-            <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
-              <SubmenuGroup>{children}</SubmenuGroup>
-            </PortalLayerDepthContext.Provider>
-          </PortalLayerRootContext.Provider>
+          <PopoverEscapeTreeContext.Provider value={escapeTreeId}>
+            <PortalLayerRootContext.Provider value={escapeRootId}>
+              <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
+                <SubmenuGroup>{children}</SubmenuGroup>
+              </PortalLayerDepthContext.Provider>
+            </PortalLayerRootContext.Provider>
+          </PopoverEscapeTreeContext.Provider>
         </PopoverLayersContext.Provider>
       </div>
     </div>,

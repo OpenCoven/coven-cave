@@ -92,7 +92,7 @@ test("pre-measure pass carries minWidth so flip/clamp math sees the rendered wid
 test("Escape closes one submenu level per press before the root menu", () => {
   assert.match(
     src,
-    /const deepest = submenuEscapeStack[\s\S]{0,120}\.filter\(\(entry\) => entry\.rootId === escapeRootId\)[\s\S]{0,500}if \(deepest\) \{\s*deepest\.close\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
+    /const deepest = submenuEscapeStack[\s\S]{0,260}entry\.rootId === escapeRootId && entry\.treeId === escapeTreeId[\s\S]{0,500}if \(deepest\) \{\s*deepest\.close\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
     "root Escape handler selects the deepest registered layer first",
   );
   assert.match(src, /usePopoverEscapeLayer\(open, closeToRow\);/, "open flyouts join the Escape stack");

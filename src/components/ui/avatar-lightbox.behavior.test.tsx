@@ -287,6 +287,51 @@ describe("AvatarLightbox nested in Popover", () => {
     expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
   });
 
+  test("sibling Popovers inside one Modal do not share an Escape handler", () => {
+    const firstClose = vi.fn();
+    const secondClose = vi.fn();
+
+    function ModalContents() {
+      const firstAnchorRef = useRef(null);
+      const secondAnchorRef = useRef(null);
+      return (
+        <>
+          <button ref={firstAnchorRef}>first anchor</button>
+          <Popover
+            open
+            onOpenChange={firstClose}
+            anchorRef={firstAnchorRef}
+            ariaLabel="First modal menu"
+          >
+            first
+          </Popover>
+          <button ref={secondAnchorRef}>second anchor</button>
+          <Popover
+            open
+            onOpenChange={secondClose}
+            anchorRef={secondAnchorRef}
+            ariaLabel="Second modal menu"
+          >
+            second
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(
+        <Modal open onClose={() => {}} ariaLabel="Parent modal">
+          <ModalContents />
+        </Modal>,
+        { createNodeMock },
+      );
+    });
+    act(() => dispatchEscape());
+    expect(firstClose).not.toHaveBeenCalled();
+    expect(secondClose).toHaveBeenCalledOnce();
+    expect(secondClose).toHaveBeenCalledWith(false);
+  });
+
   test("ordinary parent re-renders do not churn layer registration", () => {
     const cleanup = vi.fn();
     const register = vi.fn(() => cleanup);

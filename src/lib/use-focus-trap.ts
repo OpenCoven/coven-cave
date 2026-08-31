@@ -61,10 +61,20 @@ type TrapEntry = {
   readonly rootId: number;
   readonly rootOrder: number;
   readonly releaseRoot: () => void;
+  readonly container: HTMLElement;
+  readonly portalLayers?: FocusTrapPortalLayers;
 };
 
 const trapStack: TrapEntry[] = [];
-const portalLayerRoots = new Map<number, { order: number; count: number }>();
+const portalLayerRoots = new Map<
+  number,
+  {
+    order: number;
+    count: number;
+    trapCount: number;
+    returnFocus: HTMLElement | null;
+  }
+>();
 let nextTrapId = 1;
 let nextTrapOrder = 1;
 let nextTrapRootOrder = 1;
@@ -84,7 +94,12 @@ export function acquirePortalLayerRoot(rootId: number): {
     order = current.order;
   } else {
     order = nextTrapRootOrder++;
-    portalLayerRoots.set(rootId, { order, count: 1 });
+    portalLayerRoots.set(rootId, {
+      order,
+      count: 1,
+      trapCount: 0,
+      returnFocus: null,
+    });
   }
   let released = false;
   return {
@@ -116,13 +131,35 @@ export function isTopmostPortalLayerRoot(rootId: number): boolean {
   return topmostId === rootId;
 }
 
-function registerTrap(id: number, depth: number, rootId: number): void {
+function topmostTrap(): TrapEntry | undefined {
+  return trapStack.reduce<TrapEntry | undefined>(
+    (current, candidate) =>
+      !current || compareTrapOrder(candidate, current) > 0 ? candidate : current,
+    undefined,
+  );
+}
+
+function registerTrap(
+  id: number,
+  depth: number,
+  rootId: number,
+  container: HTMLElement,
+  portalLayers: FocusTrapPortalLayers | undefined,
+  returnFocus: HTMLElement | null,
+): void {
   const stale = trapStack.findIndex((entry) => entry.id === id);
   if (stale !== -1) {
+    const staleRoot = portalLayerRoots.get(trapStack[stale].rootId);
+    if (staleRoot) staleRoot.trapCount = Math.max(0, staleRoot.trapCount - 1);
     trapStack[stale].releaseRoot();
     trapStack.splice(stale, 1);
   }
   const root = acquirePortalLayerRoot(rootId);
+  const rootState = portalLayerRoots.get(rootId);
+  if (rootState) {
+    if (rootState.trapCount === 0) rootState.returnFocus = returnFocus;
+    rootState.trapCount += 1;
+  }
   trapStack.push({
     id,
     depth,
@@ -130,6 +167,8 @@ function registerTrap(id: number, depth: number, rootId: number): void {
     rootId,
     rootOrder: root.order,
     releaseRoot: root.release,
+    container,
+    portalLayers,
   });
 }
 
@@ -137,23 +176,49 @@ function registerTrap(id: number, depth: number, rootId: number): void {
  *  was layered above it — the caller uses this to decide whether restoring
  *  its own saved focus is safe right now, or whether the trap still on top
  *  owns focus until IT deactivates and performs its own restoration. */
-function unregisterTrap(id: number): { hadTrapAbove: boolean } {
+function unregisterTrap(id: number): {
+  hadTrapAbove: boolean;
+  nextTopmost?: TrapEntry;
+  rootReturnFocus: HTMLElement | null;
+} {
   const index = trapStack.findIndex((entry) => entry.id === id);
-  if (index === -1) return { hadTrapAbove: false };
+  if (index === -1) return { hadTrapAbove: false, rootReturnFocus: null };
   const entry = trapStack[index];
   const hadTrapAbove = trapStack.some((candidate) => compareTrapOrder(candidate, entry) > 0);
   trapStack.splice(index, 1);
+  const rootState = portalLayerRoots.get(entry.rootId);
+  let rootReturnFocus: HTMLElement | null = null;
+  if (rootState) {
+    rootState.trapCount = Math.max(0, rootState.trapCount - 1);
+    if (rootState.trapCount === 0) {
+      rootReturnFocus = rootState.returnFocus;
+      rootState.returnFocus = null;
+    }
+  }
   entry.releaseRoot();
-  return { hadTrapAbove };
+  return { hadTrapAbove, nextTopmost: topmostTrap(), rootReturnFocus };
 }
 
 function isTopmostTrap(id: number): boolean {
-  const topmost = trapStack.reduce<TrapEntry | undefined>(
-    (current, candidate) =>
-      !current || compareTrapOrder(candidate, current) > 0 ? candidate : current,
-    undefined,
-  );
-  return topmost?.id === id;
+  return topmostTrap()?.id === id;
+}
+
+function trapContains(entry: TrapEntry, node: HTMLElement): boolean {
+  return entry.container.contains(node) || Boolean(entry.portalLayers?.contains(node));
+}
+
+function focusTrap(entry: TrapEntry): void {
+  const first =
+    entry.container.querySelector<HTMLElement>(FOCUSABLE) ??
+    entry.portalLayers
+      ?.elements()
+      .flatMap((layer) => Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)))
+      .find(
+        (el) =>
+          !el.hasAttribute("disabled") &&
+          (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
+      );
+  (first ?? entry.container).focus();
 }
 
 /** Test seam — drops every registered trap. Prevents a test that mounts a
@@ -249,7 +314,14 @@ export function useFocusTrap(
 
     returnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
     const trapId = idRef.current;
-    registerTrap(trapId, ownerLayerDepth + 1, trapRootId);
+    registerTrap(
+      trapId,
+      ownerLayerDepth + 1,
+      trapRootId,
+      container,
+      portalLayers,
+      returnFocusRef.current,
+    );
 
     if (focusFirst && isTopmostTrap(trapId)) {
       const first = container.querySelector<HTMLElement>(FOCUSABLE);
@@ -321,7 +393,7 @@ export function useFocusTrap(
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      const { hadTrapAbove } = unregisterTrap(trapId);
+      const { hadTrapAbove, nextTopmost, rootReturnFocus } = unregisterTrap(trapId);
       // Skip restoring focus if a still-active nested trap sits above where
       // we were: an ancestor closing out from under an open child must not
       // fight that child's own containment. That trap owns focus until IT
@@ -330,7 +402,13 @@ export function useFocusTrap(
       // outward, to whatever was focused before the outermost trap ever
       // activated.
       if (!hadTrapAbove && restoreFocusRef.current() !== false) {
-        returnFocusRef.current?.focus();
+        const returnTarget = returnFocusRef.current;
+        if (nextTopmost) {
+          if (returnTarget && trapContains(nextTopmost, returnTarget)) returnTarget.focus();
+          else focusTrap(nextTopmost);
+        } else {
+          (rootReturnFocus ?? returnTarget)?.focus();
+        }
       }
     };
   }, [
