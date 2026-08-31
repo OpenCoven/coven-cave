@@ -30,6 +30,7 @@ import {
 import {
   loadResearchRunCompletionReceipt,
   researchRunCompletionReceiptPath,
+  researchRunCompletionReceiptStoreCapability,
   saveResearchRunCompletionReceipt,
 } from "./research-run-receipt-store.ts";
 import { withProcessIntentLock } from "./process-intent-lock.ts";
@@ -254,7 +255,45 @@ test("receipt reads recover a stale hard-link publication after publisher crash"
   }
 });
 
-test("receipt publication refuses unsupported directory sync and retries durably", async () => {
+test("Windows receipt persistence is explicitly unavailable without a durable no-replace primitive", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const root = path.join(
+    TEST_ARTIFACTS_ROOT,
+    `receipt-windows-capability-${process.pid}-${Date.now()}`,
+  );
+  assert.deepEqual(researchRunCompletionReceiptStoreCapability("win32"), {
+    supported: false,
+    reason: "durable-no-replace-unavailable",
+  });
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  assert.ok(platformDescriptor);
+  Object.defineProperty(process, "platform", { ...platformDescriptor, value: "win32" });
+  try {
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(receipt(), root),
+      (error: { code?: string }) => {
+        assert.equal(error.code, "unsupported-platform");
+        return true;
+      },
+    );
+    await assert.rejects(
+      () => loadResearchRunCompletionReceipt(RUN.id, root),
+      (error: { code?: string }) => {
+        assert.equal(error.code, "unsupported-platform");
+        return true;
+      },
+    );
+  } finally {
+    Object.defineProperty(process, "platform", platformDescriptor);
+  }
+  await assert.rejects(() => lstat(root), { code: "ENOENT" });
+});
+
+test("non-Windows publication refuses unsupported directory sync and retries durably", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows refuses this capability before attempting directory sync");
+    return;
+  }
   await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
   const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-directory-sync-"));
   const locksDir = path.join(root, ".locks", "intents");

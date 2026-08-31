@@ -36,6 +36,7 @@ export class ResearchRunReceiptStoreError extends Error {
     | "missing"
     | "symlink"
     | "too-large"
+    | "unsupported-platform"
     | "unsafe-path";
 
   constructor(
@@ -47,6 +48,35 @@ export class ResearchRunReceiptStoreError extends Error {
     this.name = "ResearchRunReceiptStoreError";
     this.code = code;
   }
+}
+
+export type ResearchRunReceiptStoreCapability =
+  | { supported: true; durability: "file-and-directory-sync" }
+  | { supported: false; reason: "durable-no-replace-unavailable" };
+
+export function researchRunCompletionReceiptStoreCapability(
+  platform: NodeJS.Platform = process.platform,
+): ResearchRunReceiptStoreCapability {
+  if (platform === "win32") {
+    return {
+      supported: false,
+      reason: "durable-no-replace-unavailable",
+    };
+  }
+  return {
+    supported: true,
+    durability: "file-and-directory-sync",
+  };
+}
+
+function assertReceiptStoreSupported(platform: NodeJS.Platform): void {
+  const capability = researchRunCompletionReceiptStoreCapability(platform);
+  if (capability.supported) return;
+  throw new ResearchRunReceiptStoreError(
+    "unsupported-platform",
+    "Research run receipt persistence is unavailable on Windows: "
+      + "Node cannot durably publish a no-replace directory entry there.",
+  );
 }
 
 type PathIdentity = {
@@ -571,6 +601,7 @@ export async function saveResearchRunCompletionReceipt(
   receipt: ResearchRunCompletionReceiptV1,
   root?: string,
 ): Promise<void> {
+  assertReceiptStoreSupported(process.platform);
   const validated = validateResearchRunCompletionReceipt(receipt);
   if (!verifyResearchRunCompletionReceipt(validated)) {
     throw new TypeError("completion receipt integrity digest does not match its contents");
@@ -592,6 +623,7 @@ export async function loadResearchRunCompletionReceipt(
   runId: string,
   root?: string,
 ): Promise<ResearchRunCompletionReceiptV1 | null> {
+  assertReceiptStoreSupported(process.platform);
   if (!RUN_ID_RE.test(runId)) throw new TypeError("runId must be a canonical ResearchRun id");
   const layout = await openLayout(receiptRoot(root));
   const target = path.join(layout.root.path, `${runId}.json`);
