@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+const scriptsDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(scriptsDir, "..");
+const scriptPath = join(scriptsDir, "mobile-tailscale.sh");
 const script = readFileSync(
-  fileURLToPath(new URL("./mobile-tailscale.sh", import.meta.url)),
+  scriptPath,
   "utf8",
 );
 const packageJson = JSON.parse(
@@ -75,6 +88,70 @@ test("supported shell mutations use the canonical Serve ownership executable", (
   assert.match(recovery, /mobile-serve-ownership\.ts" claim\s+\\?\s*--backend "\$backend" --channel packaged/);
   assert.doesNotMatch(recovery, /"\$TAILSCALE_BIN" serve --bg/);
   assert.match(recovery, /"kind":"(?:owned|claimed)"/);
+});
+
+test("mobile tailscale stop preserves foreign Serve while stopping its tracked server", () => {
+  assert.match(
+    script,
+    /"kind":"not-owned"[\s\S]{0,240}?"\$serve_status" -ne 10[\s\S]{0,400}?preserving the foreign route[\s\S]{0,500}?stop_instance "\$STATE_DIR" "\$TMUX_SESSION"/,
+  );
+  assert.match(
+    script,
+    /"kind":"removed"[\s\S]{0,180}?"\$serve_status" -ne 0/,
+    "verified removal remains the normal successful stop path",
+  );
+});
+
+test("mobile tailscale stop terminates its tracked process after a not-owned reset", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-stop-"));
+  const stateRoot = join(fixture, "state");
+  const stateDir = join(stateRoot, "mobile-tailscale-3000");
+  const binDir = join(fixture, "bin");
+  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  const nodeShim = join(binDir, "node");
+  writeFileSync(
+    nodeShim,
+    '#!/usr/bin/env bash\nprintf \'{"kind":"not-owned","backendUrl":"http://127.0.0.1:3000"}\\n\'\nexit 10\n',
+  );
+  chmodSync(nodeShim, 0o755);
+
+  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: "ignore",
+  });
+  await new Promise((resolve, reject) => {
+    sleeper.once("spawn", resolve);
+    sleeper.once("error", reject);
+  });
+  writeFileSync(join(stateDir, "next.pid"), String(sleeper.pid));
+
+  try {
+    const result = spawnSync("bash", [scriptPath, "stop"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:/usr/bin:/bin`,
+        HOME: fixture,
+        PORT: "3000",
+        HOST: "127.0.0.1",
+        COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+        COVEN_CAVE_MOBILE_STATE_DIR: stateDir,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /preserving the foreign route/);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.throws(
+      () => process.kill(sleeper.pid, 0),
+      (error) => error?.code === "ESRCH",
+      "the tracked local server is stopped even though Serve remains foreign",
+    );
+  } finally {
+    if (sleeper.exitCode === null) sleeper.kill("SIGKILL");
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test("mobile tailscale app mode records ownership separately from sidecar tokens", () => {

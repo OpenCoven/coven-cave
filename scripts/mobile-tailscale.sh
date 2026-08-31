@@ -679,20 +679,33 @@ stop_instance() {
 }
 
 stop_command() {
-  local backend serve_result
+  local backend serve_result serve_status
   backend="$(backend_url)"
   serve_result=""
-  if ! serve_result="$(
+  if serve_result="$(
     node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" reset \
       --backend "$backend" --channel dev
   )"; then
-    echo "Tailscale Serve ownership refused reset; the tracked server remains running: ${serve_result:-no result}" >&2
-    exit 1
+    serve_status=0
+  else
+    serve_status=$?
   fi
   case "$serve_result" in
-    *'"kind":"removed"'*) ;;
+    *'"kind":"removed"'*)
+      if [ "$serve_status" -ne 0 ]; then
+        echo "Tailscale Serve ownership returned an inconsistent removal result; the tracked server remains running: ${serve_result}" >&2
+        exit 1
+      fi
+      ;;
+    *'"kind":"not-owned"'*)
+      if [ "$serve_status" -ne 10 ]; then
+        echo "Tailscale Serve ownership returned an inconsistent not-owned result; the tracked server remains running: ${serve_result}" >&2
+        exit 1
+      fi
+      echo "Tailscale Serve belongs to another backend; preserving the foreign route while stopping this tracked server." >&2
+      ;;
     *)
-      echo "Tailscale Serve ownership returned an unexpected reset result: ${serve_result}" >&2
+      echo "Tailscale Serve ownership could not safely classify reset; the tracked server remains running: ${serve_result:-no result}" >&2
       exit 1
       ;;
   esac
