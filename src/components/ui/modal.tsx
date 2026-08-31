@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, type ReactNode } from "react";
+import { useCallback, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -51,6 +51,13 @@ export function Modal({
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
+  const setDialogElement = useCallback(
+    (el: HTMLDivElement | null) => {
+      dialogRef.current = el;
+      onDialogElement?.(el);
+    },
+    [onDialogElement],
+  );
 
   // Keep the trap active regardless of dismissability — an undefined onEscape
   // makes Esc a no-op without releasing Tab cycling or focus return.
@@ -65,10 +72,7 @@ export function Modal({
       role="presentation"
     >
       <div
-        ref={(el) => {
-          dialogRef.current = el;
-          onDialogElement?.(el);
-        }}
+        ref={setDialogElement}
         className={`ui-modal${wide ? " ui-modal--wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

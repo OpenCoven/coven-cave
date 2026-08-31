@@ -57,7 +57,11 @@ assert.match(
 );
 assert.match(
   src,
-  /ref=\{\(el\) => \{\s*dialogRef\.current = el;\s*onDialogElement\?\.\(el\);\s*\}\}/,
-  "the dialog's ref callback keeps the internal focus-trap ref AND forwards the node to the caller",
+  /const setDialogElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*dialogRef\.current = el;\s*onDialogElement\?\.\(el\);\s*\},\s*\[onDialogElement\],\s*\);/,
+  "the dialog uses a memoized callback ref so ordinary re-renders do not unregister and re-register the popover layer",
 );
-
+assert.match(
+  src,
+  /ref=\{setDialogElement\}/,
+  "the stable callback ref keeps the internal focus-trap ref and forwards the node to the caller",
+);
