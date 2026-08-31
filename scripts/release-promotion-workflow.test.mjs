@@ -635,6 +635,26 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
     "a release gate gained an escape hatch — document it here deliberately, with the reason",
   );
 
+  const openClawOnlyDispatch = releaseRun({
+    event: "workflow_dispatch",
+    inputs: { allow_unconfigured_openclaw_registry: true },
+  });
+  const openClawOnlyWaived = gates
+    .filter(
+      (gate) =>
+        !(
+          evaluateCondition(gate.jobDefinition.if, openClawOnlyDispatch) &&
+          evaluateCondition(gate.step.if, openClawOnlyDispatch)
+        ),
+    )
+    .map((gate) => gate.label)
+    .sort();
+  assert.deepEqual(
+    openClawOnlyWaived,
+    ["build: Require signed OpenClaw compatibility registry"],
+    "the OpenClaw recovery hatch must keep the configured OpenCode and Grok gates live",
+  );
+
   // And the hatch that waives them is the registry flag alone: the X app flag
   // must not silently take the schema registries down with it.
   const xHatchOnly = releaseRun({
@@ -725,6 +745,7 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
   // input reads as fine in isolation.
   const disclosures = {
     COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "allow_unconfigured_registries",
+    COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED: "allow_unconfigured_openclaw_registry",
     COVEN_RELEASE_X_GUARD_SKIPPED: "allow_unconfigured_x_app",
   };
 

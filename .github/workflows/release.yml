@@ -89,6 +89,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_unconfigured_openclaw_registry:
+        description: "RECOVERY ONLY: skip only the unconfigured OpenClaw publisher gate while keeping OpenCode and Grok verification active. Tag pushes always stay fail-closed."
+        required: false
+        default: false
+        type: boolean
       allow_unconfigured_x_app:
         description: "RECOVERY ONLY: ship with X integration disabled when its public client ID is unavailable. Tag pushes always stay fail-closed."
         required: false
@@ -1232,7 +1237,7 @@ jobs:
       - name: Require signed OpenClaw compatibility registry
         # Skippable only via manual workflow_dispatch with an explicit flag;
         # tag-push releases remain fail-closed (docs/openclaw-compatibility-registry.md).
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_unconfigured_registries }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.allow_unconfigured_registries && !inputs.allow_unconfigured_openclaw_registry) }}
         shell: bash
         env:
           NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCLAW_SCHEMA_REGISTRY_URL }}
@@ -1268,6 +1273,21 @@ jobs:
             echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_registries: true\`, so"
             echo "The signed schema-registry gates for OpenCode, Grok, and OpenClaw verified"
             echo "**nothing**. The build used the built-in baseline parsers."
+            echo
+            echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
+            echo "If this run publishes a release, its notes carry the same statement."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record skipped OpenClaw compatibility guard
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.allow_unconfigured_registries && inputs.allow_unconfigured_openclaw_registry }}
+        shell: bash
+        run: |
+          {
+            echo "### ⚠️ OpenClaw compatibility registry guard SKIPPED"
+            echo
+            echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_openclaw_registry: true\`."
+            echo "The signed OpenClaw schema-registry gate did not run because its publisher is not configured."
+            echo "The signed OpenCode and Grok gates still ran. OpenClaw used its built-in baseline parser."
             echo
             echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
             echo "If this run publishes a release, its notes carry the same statement."
@@ -1760,8 +1780,8 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - name: Overlay audited X release provenance renderer
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+      - name: Overlay audited recovery provenance renderer
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.allow_unconfigured_x_app || inputs.allow_unconfigured_openclaw_registry) }}
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -1878,6 +1898,7 @@ jobs:
           # signed-registry gates (cave-yp21x). `inputs` is readable from every
           # job of a workflow_dispatch run, so this needs no job-output plumbing.
           COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+          COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && !inputs.allow_unconfigured_registries && inputs.allow_unconfigured_openclaw_registry }}
           COVEN_RELEASE_X_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         run: |
           set -euo pipefail
