@@ -166,8 +166,10 @@ async function createDirectoryTreeWithoutSymlinks(
   let current = parsed.root;
   for (const component of components) {
     current = path.join(current, component);
+    let created = false;
     try {
       await mkdir(current, { mode: DIRECTORY_MODE });
+      created = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
@@ -184,6 +186,7 @@ async function createDirectoryTreeWithoutSymlinks(
         `${label} ancestor is not a directory`,
       );
     }
+    if (created) await syncDirectory(path.dirname(current));
   }
 }
 

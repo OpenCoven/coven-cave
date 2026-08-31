@@ -350,6 +350,110 @@ test("non-Windows publication refuses unsupported directory sync and retries dur
   }
 });
 
+test("first save syncs each newly created receipt-root name through its direct parent", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows refuses this capability before creating receipt directories");
+    return;
+  }
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const parent = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-first-create-"));
+  const levelOne = path.join(parent, "one");
+  const levelTwo = path.join(levelOne, "two");
+  const root = path.join(levelTwo, "receipts");
+  const locks = path.join(root, ".locks");
+  const probePath = path.join(parent, ".sync-probe");
+  await writeFile(probePath, "", { mode: 0o600 });
+  const probeHandle = await open(probePath, constants.O_RDONLY);
+  const fileHandlePrototype = Object.getPrototypeOf(probeHandle) as {
+    sync: (this: FileHandle) => Promise<void>;
+  };
+  const originalSync = fileHandlePrototype.sync;
+  await probeHandle.close();
+  await rm(probePath);
+
+  const synced: Array<{ dev: number | bigint; ino: number | bigint }> = [];
+  try {
+    fileHandlePrototype.sync = async function(this: FileHandle): Promise<void> {
+      const metadata = await this.stat();
+      if (metadata.isDirectory()) {
+        synced.push({ dev: metadata.dev, ino: metadata.ino });
+      }
+      await originalSync.call(this);
+    };
+    await saveResearchRunCompletionReceipt(receipt(), root);
+  } finally {
+    fileHandlePrototype.sync = originalSync;
+  }
+
+  try {
+    const paths = [
+      ["parent", parent],
+      ["level-one", levelOne],
+      ["level-two", levelTwo],
+      ["root", root],
+      ["locks", locks],
+    ] as const;
+    const identities = new Map<string, string>(
+      await Promise.all(paths.map(async ([label, candidate]) => {
+        const metadata = await lstat(candidate);
+        return [`${String(metadata.dev)}:${String(metadata.ino)}`, label] as const;
+      })),
+    );
+    assert.deepEqual(
+      synced.map((identity) =>
+        identities.get(`${String(identity.dev)}:${String(identity.ino)}`)),
+      ["parent", "level-one", "level-two", "root", "locks", "root"],
+    );
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("first-save parent sync failure stops before creating deeper receipt directories", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows refuses this capability before creating receipt directories");
+    return;
+  }
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const parent = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-first-sync-failure-"));
+  const levelOne = path.join(parent, "one");
+  const levelTwo = path.join(levelOne, "two");
+  const root = path.join(levelTwo, "receipts");
+  const probePath = path.join(parent, ".sync-probe");
+  await writeFile(probePath, "", { mode: 0o600 });
+  const probeHandle = await open(probePath, constants.O_RDONLY);
+  const fileHandlePrototype = Object.getPrototypeOf(probeHandle) as {
+    sync: (this: FileHandle) => Promise<void>;
+  };
+  const originalSync = fileHandlePrototype.sync;
+  await probeHandle.close();
+  await rm(probePath);
+
+  try {
+    fileHandlePrototype.sync = async function(this: FileHandle): Promise<void> {
+      if ((await this.stat()).isDirectory()) {
+        const error = new Error("first parent sync failed") as NodeJS.ErrnoException;
+        error.code = "EIO";
+        throw error;
+      }
+      await originalSync.call(this);
+    };
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(receipt(), root),
+      (error: NodeJS.ErrnoException) => {
+        assert.equal(error.code, "EIO");
+        return true;
+      },
+    );
+    assert.equal((await lstat(levelOne)).isDirectory(), true);
+    await assert.rejects(() => lstat(levelTwo), { code: "ENOENT" });
+    await assert.rejects(() => lstat(root), { code: "ENOENT" });
+  } finally {
+    fileHandlePrototype.sync = originalSync;
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
 test("receipt store creates private directories and records", async () => {
   await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
   const root = path.join(TEST_ARTIFACTS_ROOT, `receipt-modes-${process.pid}-${Date.now()}`);
