@@ -84,24 +84,21 @@
 .home-dash__board {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  /* Height container for the no-scroll tiers below: the board never scrolls,
-     so on short panes it sheds sections instead of clipping them. Vertical
-     padding lives on __board-inner, NOT here — the tiers restyle it, and a
-     @container rule can only match descendants of the queried container,
-     never the container itself. Keep this element padding-free vertically so
-     the queried height equals the pane height. */
-  padding: 0 var(--space-8);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 var(--space-6);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
   container-type: size;
 }
 .home-dash__board-inner {
   width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: var(--space-6) 0;
+  max-width: min(calc(var(--space-10) * 24), 100%);
+  margin: 0 auto;
+  padding: var(--space-5) 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 .home-dash__board-head {
   display: flex;
@@ -147,54 +144,20 @@
   }
 }
 /* ── New-session hero ("Chat Session - Prototype.dc.html", cave-n3jg2) ──────
-   The handoff frames the whole hero as one card and lights it from two
-   corners, so the surface reads as a threshold rather than as the top of a
-   list. Both washes and all three specks are drawn with color-mix off
-   `--accent-presence` and the foreground, so the card survives every palette
-   and both modes without a second hue.
-
-   The specks are radial-gradient dots, not elements: three of them at ~2px,
-   which is the size that reads as "the dark has depth" rather than as dust. */
+   The composer is the threshold, so the heading stays quiet and structural
+   rather than becoming a second card above it. The gradient type is the one
+   expressive gesture on the page; everything around it uses the ordinary
+   elevation and spacing grammar. */
 .home-dash__board-head {
   position: relative;
-  padding: var(--space-8) var(--space-8) var(--space-6);
-  border: 1px solid color-mix(in oklch, var(--foreground) 5%, transparent);
-  border-radius: var(--radius-panel);
-  background:
-    radial-gradient(
-      560px 320px at 12% 0%,
-      color-mix(in oklch, var(--accent-presence) 8%, transparent),
-      transparent 68%
-    ),
-    radial-gradient(
-      420px 260px at 88% 30%,
-      color-mix(in oklch, var(--accent-presence-soft) 5%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      2px 2px at 23% 18%,
-      color-mix(in oklch, var(--accent-presence) 55%, transparent) 45%,
-      transparent 55%
-    ),
-    radial-gradient(
-      2px 2px at 67% 8%,
-      color-mix(in oklch, var(--accent-presence-soft) 50%, transparent) 45%,
-      transparent 55%
-    ),
-    radial-gradient(
-      2px 2px at 45% 30%,
-      color-mix(in oklch, var(--foreground) 30%, transparent) 45%,
-      transparent 55%
-    );
+  padding: var(--space-4) 0 var(--space-2);
 }
 
 .home-dash__headline {
   margin: 0;
   font-family: var(--font-eb-garamond), "EB Garamond", serif;
   font-weight: 500;
-  /* The display token is the floor, not the size: this is the one identity
-     moment on the surface and the mock lets it grow with the pane. */
-  font-size: clamp(var(--text-display), 5.6vw, 56px);
+  font-size: var(--text-display);
   line-height: 1.08;
   letter-spacing: -0.02em;
   text-wrap: balance;
@@ -352,53 +315,43 @@
   text-align: center;
 }
 
-/* ── No-scroll fit tiers ────────────────────────────────────────────────── */
-/* The board never scrolls (overflow: hidden), so short panes shed the
-   quietest content instead of clipping it. The board carries no vertical
-   padding, so the queried height equals the pane height. Rules target only
-   descendants of .home-dash__board (an element can never match its own
-   @container query), and stay last in the file so these equal-specificity
-   overrides win the cascade.
-
-   Since Chat.dc.html 2b turned each source into a band, shedding is per band
-   rather than per section. Shed order follows the design's own priority — the
-   mock encodes it as band width (chats widest, queue smallest) — so Reviews
-   goes first and the resumable Chats band is the last one standing. */
-@container (max-height: 760px) {
-  .cave-sf__band[data-kind="reviews"] {
-    display: none;
-  }
-}
-@container (max-height: 650px) {
-  .cave-sf__band[data-kind="queue"] {
-    display: none;
-  }
-}
-@container (max-height: 560px) {
-  .cave-sf__band[data-kind="chats"] {
-    display: none;
-  }
-}
-@container (max-height: 480px) {
+/* ── Compact-height fit tiers ───────────────────────────────────────────── */
+/* Common desktop heights fit without an inner scroll. Short split panes keep
+   every option reachable by tightening quiet copy before the board's safe
+   overflow takes over; nothing is hidden solely because the pane is short. */
+@container (max-height: 680px) {
   .home-dash__board-inner {
-    padding: var(--space-4) 0;
     gap: var(--space-3);
+    padding-block: var(--space-3);
   }
-  .home-dash__eyebrow,
-  .home-dash__meta {
+
+  .home-dash__board-head {
+    padding-top: var(--space-2);
+  }
+
+  .home-dash__lede {
     display: none;
   }
-  /* The strip keeps two tiles; the rest stay reachable by scrolling it. */
-  .cave-sf__tile:nth-child(n + 3) {
-    display: none;
+
+  .cave-sf__tile {
+    min-height: calc(var(--space-10) + var(--space-4));
   }
 }
-@container (max-height: 300px) {
-  .cave-sf__head {
+
+@container (max-height: 540px) {
+  .home-dash__meta,
+  .home-dash__composer-trail {
     display: none;
   }
-  .cave-sf__tile:nth-child(n + 2) {
-    display: none;
+
+  .home-dash__headline {
+    font-size: var(--text-xl);
+  }
+}
+
+@media (max-width: 640px) {
+  .home-dash__board {
+    padding-inline: var(--space-4);
   }
 }
 

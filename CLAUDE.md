@@ -262,7 +262,14 @@ expected_head=$(git rev-parse HEAD)
 actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)
 test "$actual_head" = "$expected_head"
 gh pr checks <#> --required
-gh pr merge <#> --squash --match-head-commit "$expected_head"
+squash_input=$(mktemp)
+squash_message=$(mktemp)
+trap 'rm -f "$squash_input" "$squash_message"' EXIT
+gh pr view <#> --json title,body,commits > "$squash_input"
+node scripts/pr-squash-message.mjs < "$squash_input" > "$squash_message"
+squash_subject=$(jq -er .subject "$squash_message")
+squash_body=$(jq -er .body "$squash_message")
+gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"
 ```
 
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the

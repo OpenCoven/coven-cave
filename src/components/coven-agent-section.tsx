@@ -188,7 +188,7 @@ export function CovenAgentSection({
       <div className="coven-section__head">
         <div className="coven-section__avatar" data-live={meta.live ? "true" : "false"}>
           {familiar ? (
-            <FamiliarAvatar familiar={familiar} size="lg" title={name} />
+            <FamiliarAvatar familiar={familiar} size="lg" title={name} expandable />
           ) : (
             <Icon name="ph:sparkle" width={16} height={16} aria-hidden />
           )}
