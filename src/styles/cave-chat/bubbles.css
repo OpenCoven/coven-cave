@@ -24,8 +24,8 @@
 .cave-bubble-actions {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
+  gap: 3px;
+  margin-top: 6px;
   opacity: 0;
   transition: opacity var(--duration-fast, 120ms) var(--ease-standard, ease);
 }
@@ -43,21 +43,81 @@
   right: auto;
   opacity: 1;
 }
-.cave-response-action {
+.cave-bubble-actions .cave-response-action {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-1);
-  min-height: var(--space-8);
-  padding-inline: var(--space-2);
-  border-radius: var(--radius-control);
+  min-height: 24px;
+  padding-inline: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  backdrop-filter: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
-.cave-response-action:hover,
-.cave-response-action:focus-visible {
+.cave-bubble-actions .cave-response-action:hover,
+.cave-bubble-actions .cave-response-action:focus-visible {
+  border-color: var(--border-hairline);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 .cave-response-more {
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
+}
+.cave-response-more:hover,
+.cave-response-more:focus-visible {
+  border-color: var(--border-hairline);
+}
+.cave-response-more.ui-icon-btn--active {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-popover.cave-response-menu {
+  border-color: color-mix(in oklch, var(--border-strong) 82%, transparent);
+  border-radius: var(--radius-control);
+  box-shadow:
+    0 10px 28px oklch(0 0 0 / 32%),
+    0 2px 7px oklch(0 0 0 / 16%);
+}
+.cave-response-menu .ui-popover-body {
+  padding: var(--space-1);
+}
+.cave-response-menu .ui-popover-item {
+  min-height: 28px;
+  gap: 7px;
+  padding: var(--space-1) 7px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  line-height: 1.25;
+}
+.cave-response-menu .ui-popover-item:hover,
+.cave-response-menu .ui-popover-item:focus-visible,
+.cave-response-menu .ui-popover-item[data-active="true"] {
+  color: var(--text-primary);
+}
+.cave-response-menu .ui-popover-item > svg:first-child {
+  flex: none;
+  color: var(--text-muted);
+}
+.cave-response-menu .ui-popover-separator {
+  margin: 3px var(--space-1);
 }
 
 /* Touch devices have no hover (CHAT-D6-04) — keep per-message actions
@@ -66,6 +126,21 @@
   .cave-bubble-actions,
   .cave-copy-btn-bubble {
     opacity: 1;
+  }
+
+  .cave-response-menu .ui-popover-item {
+    min-height: var(--touch-target);
+  }
+
+  .cave-bubble-actions .cave-copy-btn-bubble {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    border-radius: var(--radius-control);
+  }
+
+  .cave-response-more {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
 }
 
@@ -77,17 +152,6 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-
-  .cave-bubble-actions .cave-copy-btn-bubble {
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: var(--radius-control);
-  }
-
-  .cave-response-more {
-    min-width: 44px;
-    min-height: 44px;
   }
 
   .cave-bubble-assistant .cave-bubble-actions {

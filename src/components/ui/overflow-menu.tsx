@@ -18,6 +18,8 @@ export type OverflowMenuProps = {
   minWidth?: number;
   /** Extra class on the trigger button (e.g. "reveal-on-hover"). */
   className?: string;
+  /** Extra class on the portaled popover panel for consumer-scoped styling. */
+  popoverClassName?: string;
   disabled?: boolean;
   /** PopoverItem / PopoverSeparator / PopoverLabel children. */
   children: ReactNode;
@@ -38,6 +40,7 @@ export function OverflowMenu({
   placement = "bottom-end",
   minWidth = 180,
   className,
+  popoverClassName,
   disabled,
   children,
 }: OverflowMenuProps) {
@@ -155,6 +158,7 @@ export function OverflowMenu({
         anchorRef={triggerRef}
         placement={placement}
         minWidth={minWidth}
+        className={popoverClassName}
         ariaLabel={ariaLabel}
       >
         <div ref={menuRef} onClick={onBodyClick} onKeyDown={onBodyKeyDown}>
