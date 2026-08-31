@@ -71,4 +71,95 @@ assert.equal(
   assert.equal(claimed, true, "the helper accepts the IPv6 loopback backend supported by the shell");
 }
 
+{
+  const stdout: string[] = [];
+  const exit = await runMobileServeOwnershipCli(
+    ["url", "--backend", "http://127.0.0.1:3020"],
+    {
+      claim: async () => {
+        throw new Error("claim must not run");
+      },
+      reset: async () => {
+        throw new Error("reset must not run");
+      },
+      readStdin: async () => JSON.stringify({
+        TCP: { "443": { HTTPS: true } },
+        Web: {
+          "cave.tailnet.ts.net:443": {
+            Handlers: { "/": { Proxy: "http://127.0.0.1:3020" } },
+          },
+        },
+      }),
+      stdout: (value: string) => stdout.push(value),
+      stderr: () => undefined,
+    },
+  );
+  assert.equal(exit, 0);
+  assert.deepEqual(JSON.parse(stdout.join("")), {
+    kind: "url",
+    backendUrl: "http://127.0.0.1:3020",
+    url: "https://cave.tailnet.ts.net/",
+  });
+}
+
+{
+  const stdout: string[] = [];
+  const exit = await runMobileServeOwnershipCli(
+    ["url", "--backend", "http://127.0.0.1:3007"],
+    {
+      claim: async () => {
+        throw new Error("claim must not run");
+      },
+      reset: async () => {
+        throw new Error("reset must not run");
+      },
+      readStdin: async () => JSON.stringify({
+        TCP: { "3007": { HTTP: true } },
+        Web: {
+          "100.101.102.103:3007": {
+            Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
+          },
+        },
+      }),
+      stdout: (value: string) => stdout.push(value),
+      stderr: () => undefined,
+    },
+  );
+  assert.notEqual(exit, 0);
+  assert.deepEqual(JSON.parse(stdout.join("")), {
+    kind: "https-unavailable",
+    backendUrl: "http://127.0.0.1:3007",
+  });
+}
+
+{
+  const stdout: string[] = [];
+  const exit = await runMobileServeOwnershipCli(
+    ["url", "--backend", "http://127.0.0.1:3020"],
+    {
+      claim: async () => {
+        throw new Error("claim must not run");
+      },
+      reset: async () => {
+        throw new Error("reset must not run");
+      },
+      readStdin: async () => JSON.stringify({
+        Web: {
+          "cave.tailnet.ts.net:443": {
+            Handlers: { "/": { Proxy: "http://127.0.0.1:3020" } },
+          },
+        },
+      }),
+      stdout: (value: string) => stdout.push(value),
+      stderr: () => undefined,
+    },
+  );
+  assert.notEqual(exit, 0);
+  assert.equal(
+    JSON.parse(stdout.join("")).kind,
+    "https-unavailable",
+    "a Web host without its correlated TCP listener fails closed",
+  );
+}
+
 console.log("mobile-serve-ownership.test.ts OK");

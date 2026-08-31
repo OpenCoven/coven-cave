@@ -2,8 +2,11 @@
 import { pathToFileURL } from "node:url";
 import {
   claimTailscaleServeRoute,
+  findServeUrl,
+  parseTailscaleServeStatus,
   resetTailscaleServeRoute,
   runTailscaleCommand,
+  serveRouteOwnedByBackend,
   type TailscaleServeClaimResult,
   type TailscaleServeResetResult,
 } from "../src/lib/mobile-handoff.ts";
@@ -65,6 +68,7 @@ type MobileServeOwnershipCliDependencies = {
   ) => Promise<TailscaleServeResetResult>;
   stdout: (value: string) => void;
   stderr: (value: string) => void;
+  readStdin?: () => Promise<string>;
 };
 
 const defaultDependencies: MobileServeOwnershipCliDependencies = {
@@ -72,6 +76,11 @@ const defaultDependencies: MobileServeOwnershipCliDependencies = {
   reset: resetTailscaleServeRoute,
   stdout: (value) => process.stdout.write(value),
   stderr: (value) => process.stderr.write(value),
+  readStdin: async () => {
+    let input = "";
+    for await (const chunk of process.stdin) input += String(chunk);
+    return input;
+  },
 };
 
 export async function runMobileServeOwnershipCli(
@@ -83,12 +92,17 @@ export async function runMobileServeOwnershipCli(
   const backendUrl = argumentValue(args, "--backend");
   const channel = argumentValue(args, "--channel");
   if (
-    (command !== "claim" && command !== "reset")
+    (command !== "claim" && command !== "reset" && command !== "url")
     || !backendUrl
-    || (channel !== "dev" && channel !== "packaged")
+    || (
+      command !== "url"
+      && channel !== "dev"
+      && channel !== "packaged"
+    )
   ) {
     deps.stderr(
-      "usage: mobile-serve-ownership.ts {claim|reset} --backend <loopback-url> --channel {dev|packaged}\n",
+      "usage: mobile-serve-ownership.ts {claim|reset} --backend <loopback-url> --channel {dev|packaged}\n"
+      + "       mobile-serve-ownership.ts url --backend <loopback-url> < status.json\n",
     );
     return 2;
   }
@@ -107,6 +121,27 @@ export async function runMobileServeOwnershipCli(
   } catch {
     deps.stderr(`${JSON.stringify({ kind: "invalid-backend", backendUrl })}\n`);
     return 2;
+  }
+
+  if (command === "url") {
+    const rawStatus = await (deps.readStdin ?? defaultDependencies.readStdin!)();
+    const parsed = parseTailscaleServeStatus(rawStatus);
+    if ("error" in parsed) {
+      deps.stdout(`${JSON.stringify({
+        kind: "status-malformed",
+        backendUrl,
+        stderr: parsed.error,
+      })}\n`);
+      return EXIT_STATUS_FAILED;
+    }
+    const url = serveRouteOwnedByBackend(parsed.value, backendUrl)
+      ? findServeUrl(parsed.value, backendUrl)
+      : null;
+    const result = url
+      ? { kind: "url", backendUrl, url }
+      : { kind: "https-unavailable", backendUrl };
+    deps.stdout(`${JSON.stringify(result)}\n`);
+    return url ? 0 : EXIT_MUTATION_FAILED;
   }
 
   const env = {

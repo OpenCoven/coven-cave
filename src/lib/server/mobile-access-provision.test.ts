@@ -479,8 +479,8 @@ test("mobile-handoff route provisions, arms, cookies the session, and retires on
   assert.match(route, /ACCESS_TOKEN_COOKIE/, "cookie uses the canonical access-cookie name");
   assert.match(
     route,
-    /app-stop[\s\S]{0,400}retireMobileAccessSecret\(\)/,
-    "Mobile mode Off retires the self-provisioned secret",
+    /resetOwnedServeRoute\(\s*nativeAppBackendUrl\(\),\s*retireMobileAccessSecret,\s*\)/,
+    "Mobile mode Off passes retirement as the verified-removal callback instead of retiring on reset failure",
   );
 });
 

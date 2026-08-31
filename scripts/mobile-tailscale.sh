@@ -461,45 +461,6 @@ start_next_server() {
   fi
 }
 
-serve_url_from_status() {
-  node - "$1" "$2" <<'NODE'
-const [backendUrl, input] = process.argv.slice(2);
-
-{
-  let status;
-  try {
-    status = JSON.parse(input);
-  } catch {
-    console.error("invalid tailscale serve status JSON");
-    process.exit(1);
-  }
-
-  const web = status?.Web;
-  if (!web || typeof web !== "object") {
-    console.error("tailscale serve status has no Web section");
-    process.exit(1);
-  }
-
-  for (const [host, config] of Object.entries(web)) {
-    const handlers = config?.Handlers;
-    if (!handlers || typeof handlers !== "object") continue;
-
-    for (const [path, handler] of Object.entries(handlers)) {
-      if (handler?.Proxy !== backendUrl) continue;
-      const normalizedHost = host.endsWith(":443") ? host.slice(0, -4) : host;
-      const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-      const suffix = normalizedPath === "/" ? "/" : normalizedPath;
-      console.log(`https://${normalizedHost}${suffix}`);
-      process.exit(0);
-    }
-  }
-
-  console.error(`tailscale serve URL not found for ${backendUrl}`);
-  process.exit(1);
-}
-NODE
-}
-
 create_invite() {
   need node
   load_or_create_token
@@ -631,7 +592,17 @@ app_command() {
       ;;
   esac
   status_json="$(tailscale_capture serve status --json)"
-  APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json" 2>/dev/null || true)"
+  url_result=""
+  if url_result="$(
+    printf '%s' "$status_json" |
+      node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" url \
+        --backend "$TAILSCALE_BACKEND"
+  )"; then
+    APP_URL="$(
+      node -e 'const value=JSON.parse(process.argv[1]);process.stdout.write(value.url ?? "")' \
+        "$url_result"
+    )"
+  fi
   if [ -z "$APP_URL" ]; then
     echo "Could not determine an HTTPS Tailscale Serve URL for the native app." >&2
     echo "Confirm MagicDNS and HTTPS are enabled, run 'pnpm mobile:tailscale:stop', then retry." >&2

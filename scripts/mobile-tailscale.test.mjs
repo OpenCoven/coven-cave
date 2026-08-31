@@ -55,6 +55,11 @@ test("mobile tailscale app mode fails closed when HTTPS Serve is unavailable", (
   assert.match(script, /Could not determine an HTTPS Tailscale Serve URL/);
   assert.doesNotMatch(script, /tailscale_cmd serve --bg --http=/);
   assert.doesNotMatch(script, /APP_URL="http:\/\//);
+  assert.doesNotMatch(script, /serve_url_from_status\(\)/);
+  assert.match(
+    script,
+    /mobile-serve-ownership\.ts" url[\s\S]{0,120}?--backend "\$TAILSCALE_BACKEND"/,
+  );
 });
 
 test("supported shell mutations use the canonical Serve ownership executable", () => {
