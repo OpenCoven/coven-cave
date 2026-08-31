@@ -17,6 +17,7 @@ import {
 import {
   collectWorktreeLifecycleInventory,
   discountUnrepresentableExecutableBitChanges,
+  formatLifecycleInventoryFailure,
   type OrphanedWorktreeMetadataRecord,
   type WorktreeMetadataClaimError,
 } from "./worktree-lifecycle-inventory.ts";
@@ -54,6 +55,8 @@ type CommandResult = {
   status: number | null;
   stdout: string;
   stderr: string;
+  /** Set when the OS could not start the requested executable. */
+  executionError?: string;
 };
 
 type ManagedCreateOptions = {
@@ -187,6 +190,7 @@ function command(
     status: result.status,
     stdout: typeof result.stdout === "string" ? result.stdout : "",
     stderr,
+    ...(errorMessage ? { executionError: errorMessage } : {}),
   };
 }
 
@@ -535,6 +539,11 @@ function parseExactBead(
 function loadExactBead(root: string, beadId: string): ExactBead {
   const result = command("bd", ["show", beadId, "--json"], root);
   if (!result.ok) {
+    if (result.executionError) {
+      throw new CliError(
+        `Beads CLI could not be executed: ${result.stderr || result.executionError}`,
+      );
+    }
     throw new CliError(result.stderr || `bd show ${beadId} failed`);
   }
   return parseExactBead(result.stdout, beadId);
@@ -1898,7 +1907,7 @@ function execute(
     ),
   ];
   if (errors.length > 0) {
-    throw new CliError(`lifecycle inventory is incomplete: ${errors.join("; ")}`);
+    throw new CliError(formatLifecycleInventoryFailure(errors));
   }
   // A local admission preflight can identify a refusal cheaply, but it cannot
   // replace the complete inventory. Check the inventory first so an outage

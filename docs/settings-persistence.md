@@ -1,9 +1,12 @@
 # Desktop settings persistence
 
-CovenCave's packaged desktop shell starts its Next.js sidecar on an available
-loopback port. That port may change after any restart. Browser storage is keyed
-by origin, including the port, so `localStorage` and IndexedDB cannot be the
-authoritative store for desktop preferences.
+CovenCave's packaged desktop shell starts its Next.js sidecar on the fixed
+production port `3020`, unless a valid `COVEN_CAVE_PORT` override is supplied.
+Native startup claims that resolved loopback port before spawning the sidecar;
+it refuses a second owner instead of scanning for another port. Browser storage
+is keyed by origin, including the port, so `localStorage` and IndexedDB cannot
+be the authoritative store for desktop preferences, although the default
+packaged origin now remains stable across restarts.
 
 ## Canonical store
 
@@ -34,7 +37,8 @@ terminal client/auth failures are retained without an endless retry loop.
 The root layout reads the canonical file while rendering and embeds an escaped
 JSON bootstrap before the external theme-init script. The script applies theme,
 mode, custom variables, font, scale, reading, date/time, and corner choices
-before first paint. This retains flash-free startup even on a brand-new port.
+before first paint. This retains flash-free startup on the fixed sidecar origin
+or an explicitly configured override.
 
 `/api/theme` remains the phone-compatible view of the same canonical store.
 Theme selection changes have a monotonic selection revision. Desktop token
@@ -61,13 +65,14 @@ confirmed central 404 permits that import; transient failures remain retryable,
 and an explicit central clear leaves a metadata tombstone so preserved legacy
 bytes are not resurrected. Old browser values are left in place.
 
-The Web storage same-origin policy prevents code running on the new sidecar
-port from enumerating or reading storage buckets belonging to old random ports.
-Those otherwise valid buckets cannot be recovered automatically. Running a
-build once on an origin that still has the old data allows the best-effort
-migration; otherwise the old data remains untouched for manual/browser-level
-recovery. This limitation is why all covered settings now use the port-independent
-store.
+The Web storage same-origin policy prevents code running on a different sidecar
+port from enumerating or reading storage buckets belonging to the prior origin.
+Those otherwise valid buckets cannot be recovered automatically. A previous
+build with port-specific browser data may therefore leave several such buckets
+behind; running a build once on an origin that still has the old data allows the
+best-effort migration, otherwise the old data remains untouched for
+manual/browser-level recovery. This limitation is why all covered settings now
+use the port-independent store.
 
 ## Credits
 

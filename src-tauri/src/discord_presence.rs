@@ -7,6 +7,7 @@
 
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::{
+    sync::mpsc,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -15,6 +16,7 @@ const DISCORD_APPLICATION_ID: Option<&str> = option_env!("COVENCAVE_DISCORD_APPL
 const ASSET_KEY: &str = "covencave";
 const RETRY_DELAY: Duration = Duration::from_secs(15);
 const REFRESH_DELAY: Duration = Duration::from_secs(60);
+const DISCORD_IPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn unix_now() -> i64 {
     SystemTime::now()
@@ -64,6 +66,59 @@ fn publish_activity(client: &mut impl DiscordIpc, started_at: i64) -> Result<(),
     }
 }
 
+/// Run one IPC operation on a disposable thread so a blocking Unix socket or
+/// Windows named pipe cannot strand the presence worker. A timed-out
+/// operation's thread is intentionally detached; the caller must stop after a
+/// timeout rather than retrying and accumulating one blocked thread per retry.
+fn run_bounded_operation<T, F>(timeout: Duration, operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let operation_thread = thread::Builder::new()
+        .name("discord-rich-presence-operation".into())
+        .spawn(move || {
+            let _ = sender.send(operation());
+        })
+        .map_err(|error| format!("could not start Discord IPC operation: {error}"))?;
+
+    match receiver.recv_timeout(timeout) {
+        Ok(result) => {
+            let _ = operation_thread.join();
+            Ok(result)
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // Discord's IPC API does not expose the underlying socket, so the
+            // blocked read cannot be cancelled from this thread. Do not join
+            // it or start another operation after this timeout.
+            drop(operation_thread);
+            Err(format!(
+                "Discord IPC operation timed out after {}s",
+                timeout.as_secs_f32()
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = operation_thread.join();
+            Err("Discord IPC operation stopped unexpectedly".to_string())
+        }
+    }
+}
+
+fn run_bounded_client_operation<F>(
+    client: DiscordIpcClient,
+    operation: F,
+) -> Result<(DiscordIpcClient, Result<(), String>), String>
+where
+    F: FnOnce(&mut DiscordIpcClient) -> Result<(), String> + Send + 'static,
+{
+    run_bounded_operation(DISCORD_IPC_TIMEOUT, move || {
+        let mut client = client;
+        let result = operation(&mut client);
+        (client, result)
+    })
+}
+
 /// Starts one reconnecting IPC worker for the local Discord desktop client.
 ///
 /// The payload is intentionally generic: it never publishes local projects,
@@ -81,8 +136,17 @@ pub fn start() {
         .spawn(move || {
             let started_at = unix_now();
             loop {
-                let mut client = DiscordIpcClient::new(application_id);
-                if let Err(error) = client.connect() {
+                let (mut client, connection) = match run_bounded_client_operation(
+                    DiscordIpcClient::new(application_id),
+                    |client| client.connect().map_err(|error| error.to_string()),
+                ) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        log::warn!("[discord-presence] stopping blocked IPC worker: {error}");
+                        return;
+                    }
+                };
+                if let Err(error) = connection {
                     log::debug!("[discord-presence] Discord unavailable: {error}");
                     thread::sleep(RETRY_DELAY);
                     continue;
@@ -90,7 +154,20 @@ pub fn start() {
 
                 let mut first_publish = true;
                 loop {
-                    match publish_activity(&mut client, started_at) {
+                    let (next_client, result) =
+                        match run_bounded_client_operation(client, move |client| {
+                            publish_activity(client, started_at)
+                        }) {
+                            Ok(result) => result,
+                            Err(error) => {
+                                log::warn!(
+                                    "[discord-presence] stopping blocked IPC worker: {error}"
+                                );
+                                return;
+                            }
+                        };
+                    client = next_client;
+                    match result {
                         Ok(()) => {
                             if first_publish {
                                 log::info!("[discord-presence] CovenCave presence published");
@@ -105,7 +182,6 @@ pub fn start() {
                     thread::sleep(REFRESH_DELAY);
                 }
 
-                let _ = client.close();
                 thread::sleep(RETRY_DELAY);
             }
         })
@@ -116,10 +192,14 @@ pub fn start() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_activity, publish_activity, ASSET_KEY};
+    use super::{build_activity, publish_activity, run_bounded_operation, ASSET_KEY};
     use discord_rich_presence::{activity, error::Error, DiscordIpc};
     use serde_json::{json, Value};
-    use std::collections::VecDeque;
+    use std::{
+        collections::VecDeque,
+        thread,
+        time::{Duration, Instant},
+    };
 
     struct RecordingClient {
         activity_published: bool,
@@ -273,5 +353,21 @@ mod tests {
 
         assert_eq!(client.responses_read, 2);
         assert_eq!(client.sent_frames, [(4, ping_payload)]);
+    }
+
+    #[test]
+    fn bounded_ipc_operation_returns_when_the_operation_stalls() {
+        let started = Instant::now();
+        let result = run_bounded_operation(Duration::from_millis(25), || {
+            thread::sleep(Duration::from_millis(250));
+        });
+
+        let error = result.expect_err("a stalled IPC operation must time out");
+        assert!(error.contains("timed out"));
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "bounded IPC operation took {:?}",
+            started.elapsed()
+        );
     }
 }

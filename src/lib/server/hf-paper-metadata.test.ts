@@ -44,6 +44,26 @@ test("degrades to null on malformed JSON", async () => {
   assert.equal(result, null);
 });
 
+test("degrades to null when content-length declares a body over the cap", async () => {
+  const result = await fetchHfPaperMetadata("2401.12345", {
+    fetchImpl: async () =>
+      new Response(JSON.stringify(PAYLOAD), {
+        status: 200,
+        headers: { "content-length": String(2 * 1024 * 1024) },
+      }),
+  });
+  assert.equal(result, null);
+});
+
+test("degrades to null when the actual body stream exceeds the cap", async () => {
+  const hugeTitle = "x".repeat(2 * 1024 * 1024);
+  const result = await fetchHfPaperMetadata("2401.12345", {
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ ...PAYLOAD, title: hugeTitle }), { status: 200 }),
+  });
+  assert.equal(result, null);
+});
+
 test("refuses an id that is not an arXiv id, without issuing a request", async () => {
   let called = false;
   const result = await fetchHfPaperMetadata("../etc/passwd", {

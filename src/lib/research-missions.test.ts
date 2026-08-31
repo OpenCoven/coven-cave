@@ -193,9 +193,9 @@ test("create input carries a valid origin through and refuses a malformed one", 
   assert.equal(refused.ok === false && refused.error.includes("origin.surface"), true);
 });
 
-test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
-  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
-  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
+test("research prompt limits validate the shared intent and direction ceilings", () => {
+  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 20_000);
+  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 5_000);
   assert.equal(
     validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH) }).ok,
     true,
@@ -203,6 +203,18 @@ test("research prompt limits validate intent capacity and pin the shared directi
   assert.equal(
     validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH + 1) }).ok,
     false,
+  );
+  const atDirectionLimit = parseResearchMission({
+    ...validMission(),
+    direction: "d".repeat(RESEARCH_DIRECTION_MAX_LENGTH),
+  });
+  assert.equal(atDirectionLimit?.direction?.length, RESEARCH_DIRECTION_MAX_LENGTH);
+  assert.equal(
+    parseResearchMission({
+      ...validMission(),
+      direction: "d".repeat(RESEARCH_DIRECTION_MAX_LENGTH + 1),
+    }),
+    null,
   );
 });
 

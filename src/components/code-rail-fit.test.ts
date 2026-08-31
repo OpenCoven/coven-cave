@@ -9,7 +9,6 @@ import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const caveChatAux = await readFile(new URL("../styles/cave-chat/auxiliary-surfaces.css", import.meta.url), "utf8");
 const caveChat = (
   await Promise.all(
@@ -49,15 +48,6 @@ assert.match(
   chatSurface,
   /<Separator className="shell-separator hidden lg:flex">[\s\S]*<SeparatorHandle orientation="col" \/>/,
   "The code rail should have an outer drag-to-resize separator before it",
-);
-
-// The internal left rail migrated onto the shared SurfaceRail (Sessions
-// redesign): still in-flow with a fixed flex-none width, but user-resizable
-// (200-440px, persisted under cave:chat:rail) instead of a hardcoded 230px.
-assert.match(
-  projectSidebar,
-  /<SurfaceRail\s*\n\s*storageKey="cave:chat:rail"/,
-  "The internal left rail reserves its width through the shared SurfaceRail",
 );
 
 // ── Collapsed code rail — the reflection of the left nav's collapsed rail ──

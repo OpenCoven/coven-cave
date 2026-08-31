@@ -2,6 +2,7 @@ use super::reliability_metrics::write_private_atomic;
 use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Value};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -169,9 +170,50 @@ pub(super) fn reset_native_diagnostics_file(path: &Path) -> Result<(), String> {
     write_private_atomic(path, b"")
 }
 
+fn read_bounded_event_file(path: &Path) -> Vec<u8> {
+    let Ok(path_metadata) = fs::symlink_metadata(path) else {
+        return Vec::new();
+    };
+    // The path is meant to be our private regular file. Refuse special files so
+    // a replaced FIFO/device cannot turn event retention into an unbounded or
+    // blocking read.
+    if !path_metadata.file_type().is_file() {
+        return Vec::new();
+    }
+    let Ok(mut file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return Vec::new();
+    };
+    if !metadata.is_file() {
+        return Vec::new();
+    }
+
+    let keep = metadata.len().min(MAX_NATIVE_DIAGNOSTIC_BYTES as u64) as usize;
+    if metadata.len() > keep as u64 && file.seek(SeekFrom::End(-(keep as i64))).is_err() {
+        return Vec::new();
+    }
+
+    let mut bytes = Vec::with_capacity(keep);
+    let mut buffer = [0_u8; 8192];
+    while bytes.len() < keep {
+        let want = buffer.len().min(keep - bytes.len());
+        match file.read(&mut buffer[..want]) {
+            Ok(0) => break,
+            Ok(read) => bytes.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    bytes
+}
+
 fn append_bounded_event(path: &Path, event: &Value) -> Result<(), String> {
-    let _guard = DIAGNOSTIC_FILE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let mut bytes = fs::read(path).unwrap_or_default();
+    let _guard = DIAGNOSTIC_FILE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let mut bytes = read_bounded_event_file(path);
     bytes.extend_from_slice(event.to_string().as_bytes());
     bytes.push(b'\n');
     if bytes.len() > MAX_NATIVE_DIAGNOSTIC_BYTES {
@@ -249,6 +291,28 @@ mod tests {
         assert!(retained.len() <= MAX_NATIVE_DIAGNOSTIC_BYTES);
         assert_eq!(retained.first(), Some(&b'{'));
         assert_eq!(retained.last(), Some(&b'\n'));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_event_append_caps_a_preexisting_oversized_file_before_reading_it() {
+        let path = std::env::temp_dir().join(format!(
+            "coven-sidecar-diagnostics-oversized-{}-{}.jsonl",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
+        ));
+        let oversized = format!("{}\n", "x".repeat(MAX_NATIVE_DIAGNOSTIC_BYTES * 2));
+        fs::write(&path, oversized).expect("write oversized diagnostics fixture");
+
+        append_bounded_event(&path, &json!({ "eventId": "newest" }))
+            .expect("append bounded event after oversized input");
+
+        let retained = fs::read(&path).expect("read retained diagnostics");
+        assert!(retained.len() <= MAX_NATIVE_DIAGNOSTIC_BYTES);
+        assert!(
+            String::from_utf8_lossy(&retained).contains("\"eventId\":\"newest\""),
+            "the newest event must survive bounded tail retention"
+        );
         let _ = fs::remove_file(path);
     }
 

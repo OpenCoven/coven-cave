@@ -33,7 +33,6 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import {
   parseAgenticRecommendationsOutput,
   type AgenticRecommendation,
-  type RankedAgenticRecommendation,
 } from "@/lib/agentic-recommendations";
 import { linkCategoryMeta, type SavedLinkSummary } from "@/lib/link-organizer";
 import {
@@ -59,6 +58,7 @@ import {
   ResearchMissionComposer,
   type AttachedResearchLink,
 } from "./research-mission-composer";
+import { ResearchTopicDecisionCard } from "./research-topic-decision-card";
 import type { ResearchTabProps } from "./researcher-surface";
 import { useResearchLinks } from "./use-research-links";
 import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
@@ -525,32 +525,24 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode, 
                 />
               ) : (
                 <div className="research-topic-recommendations__cards">
-                  {recommendationItems.map((recommendation) => {
+                  {recommendationItems.map((recommendation, index) => {
                     const payload = researchTopicPayload(recommendation);
                     if (!payload) return null;
-                    const rankedRecommendation: RankedAgenticRecommendation = {
+                    const rankedRecommendation: ResearchTopicRecommendation = {
                       ...recommendation,
-                      ordinal: recommendationItems.indexOf(recommendation) + 1,
+                      ordinal: index + 1,
                     };
                     return (
-                      <article key={rankedRecommendation.id} className="research-topic-recommendations__card">
-                        <AgenticRecommendationCard recommendation={rankedRecommendation} title={payload.topic} />
-                        <div className="research-topic-recommendations__actions">
-                          <button
-                            type="button"
-                            className="research-topic-recommendations__action focus-ring"
-                            disabled={topicActionId === rankedRecommendation.id}
-                            onClick={() => void activateTopic({
+                      <ResearchTopicDecisionCard
+                        key={rankedRecommendation.id}
+                        recommendation={rankedRecommendation}
+                        actionLabel={topicActionLabel(payload)}
+                        busy={topicActionId === rankedRecommendation.id}
+                        onAction={() => void activateTopic({
                               ...recommendation,
                               ordinal: rankedRecommendation.ordinal,
                             })}
-                          >
-                            {topicActionId === rankedRecommendation.id
-                              ? `${topicActionLabel(payload)}…`
-                              : topicActionLabel(payload)}
-                          </button>
-                        </div>
-                      </article>
+                      />
                     );
                   })}
                 </div>

@@ -9,6 +9,7 @@ const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts",
 const markdownPreview = readFileSync(new URL("../lib/markdown-preview.ts", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
+const overflowMenu = readFileSync(new URL("./ui/overflow-menu.tsx", import.meta.url), "utf8");
 
 // StrictMode regression guard: a ref-based "same text" check poisons itself
 // when the first (dev double-invoke) effect run is cancelled — run 2 then
@@ -156,7 +157,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<CopyBubble text=\{content\} response \/>[\s\S]*?aria-label="Retry response"[\s\S]*?aria-expanded=\{!collapsed\}[\s\S]*?<OverflowMenu ariaLabel="More response actions"/,
+  /<CopyBubble text=\{content\} response \/>[\s\S]*?aria-label="Retry response"[\s\S]*?aria-expanded=\{!collapsed\}[\s\S]*?<OverflowMenu[\s\S]*?ariaLabel="More response actions"[\s\S]*?minWidth=\{156\}[\s\S]*?popoverClassName="cave-response-menu"/,
   "assistant response controls prioritize Copy, Retry, Collapse, and More",
 );
 assert.match(
@@ -388,8 +389,43 @@ assert.match(
 );
 assert.match(
   css,
+  /@media \(pointer: coarse\) \{[\s\S]*\.cave-bubble-actions \.cave-copy-btn-bubble \{[\s\S]*min-width: var\(--touch-target\);[\s\S]*min-height: var\(--touch-target\);[\s\S]*\.cave-response-more \{[\s\S]*min-width: var\(--touch-target\);[\s\S]*min-height: var\(--touch-target\);/,
+  "Every coarse-pointer viewport keeps full touch targets in the response toolbar",
+);
+assert.match(
+  css,
   /@media \(max-width: 767px\) and \(pointer: coarse\) \{[\s\S]*\.cave-bubble-actions\s*\{[\s\S]*position: static;[\s\S]*justify-content: flex-end;/,
   "Phone bubble actions should move into normal flow instead of overlaying message text",
+);
+assert.match(
+  css,
+  /\.cave-bubble-actions \.cave-response-action \{[\s\S]*min-height: 24px;[\s\S]*padding-inline: 6px;[\s\S]*border-radius: var\(--radius-sm\);[\s\S]*font-family: inherit;/,
+  "Desktop response actions use a compact, app-native control treatment",
+);
+assert.match(
+  css,
+  /\.ui-popover\.cave-response-menu \{[\s\S]*border-radius: var\(--radius-control\);[\s\S]*box-shadow:/,
+  "The response overflow uses a scoped, refined popover shell",
+);
+assert.match(
+  css,
+  /\.cave-response-menu \.ui-popover-item \{[\s\S]*min-height: 28px;[\s\S]*padding: var\(--space-1\) 7px;[\s\S]*font-size: var\(--text-xs\);/,
+  "The response overflow menu keeps desktop rows dense and readable",
+);
+assert.match(
+  css,
+  /@media \(pointer: coarse\) \{[\s\S]*\.cave-response-menu \.ui-popover-item \{[\s\S]*min-height: var\(--touch-target\);/,
+  "Compact response menu rows restore full touch targets on coarse pointers",
+);
+assert.match(
+  css,
+  /\.cave-response-menu \.ui-popover-item > svg:first-child \{[\s\S]*color: var\(--text-muted\);/,
+  "Only the leading row icon is muted — a trailing checked-item checkmark is also a direct <svg> child and must not be dimmed",
+);
+assert.match(
+  overflowMenu,
+  /popoverClassName\?: string;[\s\S]*className=\{popoverClassName\}/,
+  "OverflowMenu exposes a scoped class for the portaled menu surface",
 );
 
 // CHAT-D7-08 CSS half: the wrapper owns horizontal overflow; cells restore

@@ -19,13 +19,15 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, ExitStatus, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Url, Webview};
 
@@ -63,6 +65,14 @@ impl PtySessionKey {
 
 /// Cap on replayed output per session (~enough to repaint a busy screen).
 const SCROLLBACK_LIMIT_BYTES: usize = 256 * 1024;
+
+/// A diagnostic must never turn into a general-purpose PTY drain. The command
+/// is fixed and tiny, so this is generous for shell startup noise while still
+/// making a hostile or wedged PTY finite.
+const PTY_DIAGNOSE_MAX_OUTPUT_BYTES: usize = 64 * 1024;
+const PTY_DIAGNOSE_TIMEOUT: Duration = Duration::from_secs(5);
+const PTY_DIAGNOSE_KILL_GRACE: Duration = Duration::from_millis(500);
+const PTY_DIAGNOSE_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 static SESSIONS: Lazy<Mutex<HashMap<PtySessionKey, PtySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -595,6 +605,124 @@ pub async fn pty_diagnose(webview: Webview) -> Result<DiagnoseReport, String> {
     run_pty_start_worker(run_pty_diagnose).await
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum PtyDiagnosticRead {
+    Complete(Vec<u8>),
+    LimitExceeded,
+    TimedOut,
+    Failed(String),
+}
+
+fn read_pty_output_loop(
+    mut reader: impl Read,
+    limit: usize,
+    deadline: Instant,
+) -> PtyDiagnosticRead {
+    let mut output = Vec::with_capacity(limit.min(256));
+    let mut buffer = [0_u8; 8192];
+    loop {
+        if output.len() == limit {
+            return PtyDiagnosticRead::LimitExceeded;
+        }
+        if Instant::now() >= deadline {
+            return PtyDiagnosticRead::TimedOut;
+        }
+        let want = buffer.len().min(limit - output.len());
+        match reader.read(&mut buffer[..want]) {
+            Ok(0) => return PtyDiagnosticRead::Complete(output),
+            Ok(read) => output.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            // Some PTY implementations expose a non-blocking reader. Do not
+            // spin if there is currently no output; the outer deadline remains
+            // the authority for a reader that keeps making no progress.
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(
+                    PTY_DIAGNOSE_POLL_INTERVAL
+                        .min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+            Err(error) => return PtyDiagnosticRead::Failed(error.to_string()),
+        }
+    }
+}
+
+/// Read PTY output without allowing a platform reader to pin the async
+/// runtime's blocking pool. ConPTY can keep a read blocked while a descendant
+/// still owns the slave, so the read itself runs on a disposable helper thread;
+/// the command worker returns at the deadline and then terminates the process
+/// tree. A helper that is already blocked is deliberately detached rather than
+/// joined on the timeout path.
+fn read_pty_output_bounded(
+    reader: Box<dyn Read + Send>,
+    limit: usize,
+    deadline: Instant,
+) -> PtyDiagnosticRead {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let reader_thread = match thread::Builder::new()
+        .name("coven-pty-diagnostic-reader".to_string())
+        .spawn(move || {
+            let outcome = read_pty_output_loop(reader, limit, deadline);
+            let _ = sender.send(outcome);
+        }) {
+        Ok(handle) => handle,
+        Err(error) => return PtyDiagnosticRead::Failed(error.to_string()),
+    };
+
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    match receiver.recv_timeout(remaining) {
+        Ok(outcome) => {
+            let _ = reader_thread.join();
+            outcome
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // The reader may be in a platform call that cannot be interrupted
+            // by dropping its handle. Do not join it here: the caller's bound
+            // is more important than reclaiming an already-abandoned helper.
+            drop(reader_thread);
+            PtyDiagnosticRead::TimedOut
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = reader_thread.join();
+            PtyDiagnosticRead::Failed("diagnostic reader stopped unexpectedly".to_string())
+        }
+    }
+}
+
+fn wait_pty_child_bounded(
+    child: &mut dyn Child,
+    deadline: Instant,
+) -> Result<Option<ExitStatus>, String> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(Some(status)),
+            Ok(None) if Instant::now() >= deadline => return Ok(None),
+            Ok(None) => thread::sleep(
+                PTY_DIAGNOSE_POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
+            ),
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn terminate_pty_diagnostic_child(
+    child: &mut dyn Child,
+    process_job: &crate::windows_process_job::ProcessJob,
+) {
+    let _ = process_job.terminate();
+    let _ = child.kill();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn terminate_pty_diagnostic_child(child: &mut dyn Child) {
+    let _ = child.kill();
+}
+
+fn reap_pty_diagnostic_child(child: &mut dyn Child) {
+    let deadline = Instant::now() + PTY_DIAGNOSE_KILL_GRACE;
+    let _ = wait_pty_child_bounded(child, deadline);
+}
+
 fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
     info!("pty_diagnose: starting");
     let pty_system = native_pty_system();
@@ -657,19 +785,75 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
         }
     }
     let pid = child.process_id();
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("reader: {e}"))?;
+    let reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(error) => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!("reader: {error}"));
+        }
+    };
     drop(pair.master);
     drop(pair.slave);
 
-    let mut buf = Vec::with_capacity(256);
-    let _ = reader.read_to_end(&mut buf);
-    let exit = child
-        .wait()
-        .ok()
-        .and_then(|s| s.exit_code().try_into().ok());
+    let deadline = Instant::now() + PTY_DIAGNOSE_TIMEOUT;
+    let buf = match read_pty_output_bounded(reader, PTY_DIAGNOSE_MAX_OUTPUT_BYTES, deadline) {
+        PtyDiagnosticRead::Complete(output) => output,
+        PtyDiagnosticRead::LimitExceeded => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!(
+                "diagnostic PTY output exceeded {PTY_DIAGNOSE_MAX_OUTPUT_BYTES} bytes"
+            ));
+        }
+        PtyDiagnosticRead::TimedOut => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!(
+                "diagnostic PTY read timed out after {}s",
+                PTY_DIAGNOSE_TIMEOUT.as_secs()
+            ));
+        }
+        PtyDiagnosticRead::Failed(error) => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!("diagnostic PTY read failed: {error}"));
+        }
+    };
+    let exit = match wait_pty_child_bounded(child.as_mut(), deadline) {
+        Ok(Some(status)) => status.exit_code().try_into().ok(),
+        Ok(None) => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!(
+                "diagnostic PTY child did not exit within {}s",
+                PTY_DIAGNOSE_TIMEOUT.as_secs()
+            ));
+        }
+        Err(error) => {
+            #[cfg(target_os = "windows")]
+            terminate_pty_diagnostic_child(child.as_mut(), &process_job);
+            #[cfg(not(target_os = "windows"))]
+            terminate_pty_diagnostic_child(child.as_mut());
+            reap_pty_diagnostic_child(child.as_mut());
+            return Err(format!("diagnostic PTY wait failed: {error}"));
+        }
+    };
 
     let output = String::from_utf8_lossy(&buf).to_string();
     info!(
@@ -1038,6 +1222,52 @@ mod tests {
         assert!(err.contains("not a directory"), "unexpected error: {err}");
 
         let _ = std::fs::remove_file(file);
+    }
+
+    struct RepeatingReader;
+
+    impl Read for RepeatingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            buffer.fill(b'x');
+            Ok(buffer.len())
+        }
+    }
+
+    struct StallingReader;
+
+    impl Read for StallingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+            thread::sleep(Duration::from_millis(250));
+            Ok(0)
+        }
+    }
+
+    #[test]
+    fn pty_diagnostic_reader_stops_at_the_output_cap() {
+        let result = read_pty_output_bounded(
+            Box::new(RepeatingReader),
+            128,
+            Instant::now() + Duration::from_secs(1),
+        );
+
+        assert_eq!(result, PtyDiagnosticRead::LimitExceeded);
+    }
+
+    #[test]
+    fn pty_diagnostic_reader_does_not_wait_forever_for_a_stalled_pty() {
+        let started = Instant::now();
+        let result = read_pty_output_bounded(
+            Box::new(StallingReader),
+            128,
+            started + Duration::from_millis(25),
+        );
+
+        assert_eq!(result, PtyDiagnosticRead::TimedOut);
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "bounded PTY read took {:?}",
+            started.elapsed()
+        );
     }
 
     #[cfg(not(target_os = "windows"))]

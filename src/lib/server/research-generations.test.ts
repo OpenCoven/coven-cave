@@ -745,6 +745,47 @@ test("podcast closers restate the section's lead finding verbatim as the takeawa
   );
 });
 
+test("podcast closers find a short declarative lead after dense qualification", () => {
+  // cave-p1seb: real findings can open with a dense qualification whose first
+  // sentence cannot be spoken as a bookend, then state a concise conclusion in
+  // the same lead chunk. The conclusion is still extractive and restores the
+  // host's content-bearing share without inventing a summary.
+  const denseLead =
+    "The host must preserve the exact distinction between an intervention that changes the prompt surface and one that changes the learned weights, because the resulting evidence, rollback authority, and interpretation of a successful evaluation all diverge across those two paths even when the observed score appears to remain stable. The distinction matters for every safe decision.";
+  const body =
+    "Reviewers traced the residual drift to prompt-surface mutations rather than weight updates. " +
+    "The strongest observed failure mode was benchmark overfitting during the promotion step. " +
+    "Holdout tasks caught the regression before any mutation was promoted to production.";
+  const markdown = [
+    "# Findings",
+    "",
+    ...["Authority boundaries", "Evidence discipline", "Rollback criteria", "Evaluation scope"].flatMap(
+      (title) => ["## " + title, "", `- ${denseLead} ${body}`],
+    ),
+  ].join("\n");
+
+  for (const style of ["breakdown", "debate", "interview"] as const) {
+    const content = draftPodcastContent({
+      mission,
+      artifact: { key: "findings", title: "Findings — identity preservation" },
+      markdown,
+    }, "standard", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") return;
+    const hosts = content.script.filter((segment) => segment.speaker === "host");
+    const hostChars = hosts.reduce((sum, segment) => sum + segment.text.length, 0);
+    const totalChars = content.script.reduce((sum, segment) => sum + segment.text.length, 0);
+    assert.ok(
+      hostChars / totalChars >= 0.2,
+      `${style} host share stays at or above 20% after a dense lead (measured ${(hostChars / totalChars * 100).toFixed(1)}%)`,
+    );
+    assert.ok(
+      hosts.some((segment) => segment.text.includes("The distinction matters for every safe decision.")),
+      `${style} uses the first short declarative sentence as its takeaway`,
+    );
+  }
+});
+
 test("podcast closers never restate a list enumerator as the takeaway", () => {
   // cave-8ksv1: real artifacts open sections with numbered lists, and the
   // enumerator's own dot matched as a complete "sentence" — closers rendered
