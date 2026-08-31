@@ -11,6 +11,7 @@ import { buildPromptEnhancement } from "../../lib/prompt-enhancer.ts";
 
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
+const decisionCard = readFileSync(new URL("./research-topic-decision-card.tsx", import.meta.url), "utf8");
 const recommendationContext = readFileSync(
   new URL("../../lib/research-recommendation-context.ts", import.meta.url),
   "utf8",
@@ -18,6 +19,7 @@ const recommendationContext = readFileSync(
 // The prompt sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-prompt.css", import.meta.url), "utf8");
+const decisionCss = readFileSync(new URL("../../styles/research-topic-decision.css", import.meta.url), "utf8");
 
 // ── Intake validation (unchanged contract from the pre-redesign composer) ────
 
@@ -310,8 +312,8 @@ test("agentic topic recommendations keep client and server evidence freshness se
   assert.match(promptTab, /revisionRequestRef/);
 });
 
-test("suggested topics use shared grounded cards and retain explicit Research actions", () => {
-  assert.match(promptTab, /AgenticRecommendationCard/);
+test("suggested topics render as explicit research decision briefs", () => {
+  assert.match(promptTab, /ResearchTopicDecisionCard/);
   assert.match(promptTab, /Suggested next topics/);
   assert.match(promptTab, /Add to prompt/);
   assert.match(promptTab, /Start mission/);
@@ -324,6 +326,26 @@ test("suggested topics use shared grounded cards and retain explicit Research ac
   assert.match(promptTab, /Started mission ".+"\./);
   assert.match(promptTab, /Refined mission ".+"\./);
   assert.match(promptTab, /state=\{agenticCardState/);
+  assert.match(decisionCard, /Why this surfaced/);
+  assert.match(decisionCard, /Evidence trail/);
+  assert.match(decisionCard, /Verification and approval/);
+  assert.match(decisionCard, /View verification checks/);
+  assert.match(decisionCard, /researchRecommendationDisplayText/);
+  assert.match(decisionCard, /research-topic-decision__rank-rail/);
+  assert.match(decisionCard, /research-topic-decision__evidence-list/);
+  assert.match(decisionCard, /research-topic-decision__footer/);
+  assert.match(decisionCard, /<Button[\s\S]*?\{actionLabel\}[\s\S]*?<\/Button>/);
+  assert.match(
+    decisionCard,
+    /disabled=\{recommendation\.verification\.status === "blocked"\}/,
+    "blocked recommendations cannot activate an action",
+  );
+  assert.match(
+    decisionCard,
+    /busy \? `\$\{actionLabel\}…` : actionLabel/,
+    "the action keeps its verb while revalidation is in progress",
+  );
+  assert.doesNotMatch(promptTab, /research-topic-recommendations__actions/);
   // "Start mission" builds its request through the shared intent→run builder,
   // so assert the built request rather than the call site's spelling: the mode
   // is auto-routed from the topic and no inferred title is persisted.
@@ -415,7 +437,11 @@ test("prompt tab styles are token-driven and container-responsive", () => {
   // compact mode summary must ride the scoped research tokens.
   assert.match(css, /\.research-mode-picker__state \{[^}]*var\(--research-accent\)/);
   assert.match(css, /\.research-topic-recommendations \{/);
-  assert.match(css, /\.research-topic-recommendations__card \.agentic-recommendation-card__actions \{/);
+  assert.match(decisionCard, /@\/styles\/research-topic-decision\.css/);
+  assert.match(decisionCss, /\.research-topic-decision \{/);
+  assert.match(decisionCss, /\.research-topic-decision__rank-rail \{/);
+  assert.match(decisionCss, /\.research-topic-decision__evidence-list \{/);
+  assert.match(decisionCss, /\.research-topic-decision__footer \{/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{[\s\S]*\.research-topic-recommendations/);
 });
 
