@@ -5,6 +5,7 @@ import { afterEach, test } from "node:test";
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
 import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { signResearchMediaTicket } from "../research-media-ticket.ts";
+import * as apiSecurity from "./api-security.ts";
 import { readJsonBody, rejectNonLocalRequest, rejectResearchMediaRequest } from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
@@ -78,6 +79,42 @@ test("accepts valid loopback plus sidecar token requests", () => {
   );
 
   assert.equal(res, null);
+});
+
+test("research Run SSE accepts only the proxy-validated EventSource marker", async () => {
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
+  const rejectResearchRunStreamRequest = (
+    apiSecurity as Record<string, unknown>
+  ).rejectResearchRunStreamRequest;
+  assert.equal(typeof rejectResearchRunStreamRequest, "function");
+  const reject = rejectResearchRunStreamRequest as (req: Request) => Response | null;
+
+  const rawQuery = new Request(
+    "http://127.0.0.1:3000/api/research/runs/run_gateway/stream?covenCaveToken=sidecar-secret",
+    { headers: { host: "127.0.0.1:3000" } },
+  );
+  const denied = reject(rawQuery);
+  assert.ok(denied, "route auth must not trust the EventSource query credential directly");
+  assert.equal(denied.status, 403);
+
+  const promoted = new Request(
+    "http://127.0.0.1:3000/api/research/runs/run_gateway/stream?covenCaveToken=sidecar-secret",
+    {
+      headers: {
+        host: "127.0.0.1:3000",
+        "x-coven-cave-validated-sidecar-query": "1",
+      },
+    },
+  );
+  assert.equal(reject(promoted), null);
+
+  const mobileMarked = new Request(promoted, {
+    headers: {
+      ...Object.fromEntries(promoted.headers),
+      [MOBILE_ACCESS_HEADER]: "1",
+    },
+  });
+  assert.ok(reject(mobileMarked), "the internal marker must not widen mobile ingress");
 });
 
 test("accepts only a scoped media ticket when native playback cannot set the sidecar header", async () => {

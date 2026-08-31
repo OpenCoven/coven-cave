@@ -21,6 +21,13 @@ export type ResearchMissionStatus =
   | "cancelled"
   | "archived";
 
+export type ResearchMissionArchiveSource =
+  | "checkpoint"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
 /**
  * Where a run was invoked from. A research run is ONE object with several
  * projections (#4808): the Research Desk workspace and the chat surface both
@@ -251,6 +258,10 @@ export type ResearchMission = {
   harness?: string;
   model?: string;
   status: ResearchMissionStatus;
+  /** Current immutable canonical Research Run generation; legacy missions are generation 1. */
+  runGeneration?: number;
+  /** Durable mission-level outcome/status replaced by the Archive action. */
+  archivedFrom?: ResearchMissionArchiveSource;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
@@ -790,6 +801,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ))
     || !isRecord(value.bounds)
     || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
+    || (value.runGeneration !== undefined
+      && (!Number.isSafeInteger(value.runGeneration) || (value.runGeneration as number) < 1))
     || !validTimestamp(value.createdAt)
     || !validTimestamp(value.updatedAt)
     || !Array.isArray(value.iterations)
@@ -806,6 +819,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   const finishedAt = optionalTimestamp(value, "finishedAt");
   const automationId = optionalString(value, "automationId");
   const lastError = optionalString(value, "lastError");
+  const archivedFrom = optionalString(value, "archivedFrom");
   // The mission's runtime must survive a read/write round trip. This parser
   // rebuilds from an explicit field list, so a field it does not name is
   // silently dropped — which is what happened to `harness`: it was written at
@@ -824,6 +838,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || finishedAt === null
     || automationId === null
     || lastError === null
+    || archivedFrom === null
     || harness === null
     || model === null) {
     return null;
@@ -834,6 +849,12 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     return null;
   }
   if (model !== undefined && !validResearchPromptText(model, RESEARCH_MODEL_MAX_LENGTH)) {
+    return null;
+  }
+  if (
+    archivedFrom !== undefined
+    && !["checkpoint", "paused", "completed", "failed", "cancelled"].includes(archivedFrom)
+  ) {
     return null;
   }
   if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
@@ -874,6 +895,12 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(harness !== undefined ? { harness } : {}),
     ...(model !== undefined ? { model } : {}),
     status: value.status as ResearchMissionStatus,
+    ...(value.runGeneration !== undefined
+      ? { runGeneration: value.runGeneration as number }
+      : {}),
+    ...(archivedFrom !== undefined
+      ? { archivedFrom: archivedFrom as ResearchMissionArchiveSource }
+      : {}),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     ...(startedAt !== undefined ? { startedAt } : {}),

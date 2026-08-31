@@ -29,6 +29,7 @@ import {
   type ResearchArtifactRef,
   type ResearchMission,
   type ResearchMissionActionInput,
+  type ResearchMissionArchiveSource,
   type ResearchAutomationLink,
   type ResearchSourcePatch,
   type ResearchSourceRef,
@@ -54,6 +55,7 @@ import {
   saveResearchMission,
   type ResearchMissionSessionOwner,
 } from "./research-mission-store.ts";
+import { finalizeResearchRunGenerationWithinMissionLock } from "./research-run-gateway.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 import { materializeSavedLinkForMission } from "./research-link-materialization.ts";
 import {
@@ -109,6 +111,18 @@ const TERMINAL_RESEARCH_MISSION_STATUSES: ReadonlyArray<ResearchMission["status"
   "cancelled",
   "archived",
 ];
+const TERMINAL_RESEARCH_MUTATION_ACTIONS: ReadonlySet<ResearchMissionActionInput["action"]> =
+  new Set([
+    "continue",
+    "retry",
+    "finish",
+    "archive",
+    "attach-source",
+    "attach-saved-link",
+    "update-source",
+    "reject-artifact",
+    "publish-artifact",
+  ]);
 
 /**
  * How long a non-terminal mission may reference a missing, never-launched, or
@@ -149,6 +163,7 @@ export type ResearchMissionRunnerDeps = {
   removeWorkspace(id: string): Promise<void>;
   loadMission(id: string): Promise<ResearchMission | null>;
   saveMission(mission: ResearchMission): Promise<void>;
+  finalizeTerminalRun(mission: ResearchMission): Promise<void>;
   loadSessionOwner(missionId: string): Promise<ResearchMissionSessionOwner | null>;
   recordSessionOwner(owner: ResearchMissionSessionOwner): Promise<void>;
   clearSessionOwner(
@@ -1042,6 +1057,14 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     return { ...mission, projectRoot: resolved };
   };
 
+  const nextCanonicalRunGeneration = (mission: ResearchMission): number => {
+    const current = mission.runGeneration ?? 1;
+    if (current >= Number.MAX_SAFE_INTEGER) {
+      throw new Error("Research Run generation limit reached");
+    }
+    return current + 1;
+  };
+
   const startNextIteration = async (
     mission: ResearchMission,
     options: { allowCostUnavailable?: boolean } = {},
@@ -1062,6 +1085,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     }
     const number = nextResearchIterationNumber(mission);
     const timestamp = now.toISOString();
+    const startsNewCanonicalRun =
+      mission.status === "completed" || mission.status === "cancelled";
     const workingArtifact = mission.artifacts[0]?.state === "rejected" ? {
       ...mission.artifacts[0],
       key: `primary-i${number}`,
@@ -1087,6 +1112,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     let next: ResearchMission = {
       ...mission,
       status: "planning",
+      ...(startsNewCanonicalRun
+        ? { runGeneration: nextCanonicalRunGeneration(mission) }
+        : {}),
+      ...(startsNewCanonicalRun ? { archivedFrom: undefined } : {}),
       updatedAt: timestamp,
       finishedAt: undefined,
       lastError: undefined,
@@ -1140,6 +1169,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     let retried: ResearchMission = {
       ...mission,
       status: "planning",
+      runGeneration: nextCanonicalRunGeneration(mission),
+      archivedFrom: undefined,
       finishedAt: undefined,
       lastError: undefined,
       updatedAt: timestamp,
@@ -1220,6 +1251,14 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
 
       if (sessionOwner && input.action !== "cancel") {
         throw new Error(RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT);
+      }
+      if (
+        (mission.status === "completed"
+          || mission.status === "failed"
+          || mission.status === "cancelled")
+        && TERMINAL_RESEARCH_MUTATION_ACTIONS.has(input.action)
+      ) {
+        await deps.finalizeTerminalRun(mission);
       }
 
       if (savedLinkInput) {
@@ -1388,6 +1427,13 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return cancelled;
       }
       if (input.action === "finish") {
+        if (mission.status === "failed") {
+          mission = {
+            ...mission,
+            runGeneration: nextCanonicalRunGeneration(mission),
+            archivedFrom: undefined,
+          };
+        }
         mission = await pauseAutomation(mission, "Mission finished");
         const finishedMission = mission;
         // Read the primary defensively. A symlinked/oversized/escaping primary
@@ -1440,8 +1486,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         });
       }
       if (input.action === "archive") {
+        const archivedFrom = mission.status as ResearchMissionArchiveSource;
         mission = await pauseAutomation(mission, "Mission archived");
-        return saveUpdated({ ...mission, status: "archived" });
+        return saveUpdated({ ...mission, status: "archived", archivedFrom });
       }
       if (input.action === "resume") {
         if (
@@ -2256,6 +2303,7 @@ export function makeProductionResearchMissionRunner() {
     removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
     saveMission: saveResearchMission,
+    finalizeTerminalRun: finalizeResearchRunGenerationWithinMissionLock,
     loadSessionOwner: loadResearchMissionSessionOwner,
     recordSessionOwner: recordResearchMissionSessionOwner,
     clearSessionOwner: clearResearchMissionSessionOwner,
