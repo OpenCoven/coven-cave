@@ -13,7 +13,7 @@ import {
   researchMissionWorkspacePath,
 } from "./research-mission-store.ts";
 import {
-  appendResearchRunEvents,
+  appendResearchRunEventsWithinMissionLock,
   loadResearchRunEventLog,
   missionIdForResearchRunId,
   researchRunEventLogRoot,
@@ -21,6 +21,7 @@ import {
   type ResearchRunEventLog,
   type ResearchRunObservedProjection,
 } from "./research-run-gateway-store.ts";
+import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 
 const PHASES = ["scope", "challenge", "synthesize", "control"] as const;
 type ResearchRunPhase = (typeof PHASES)[number];
@@ -65,6 +66,18 @@ export type ResearchRunWatcherDeps = {
 const DEFAULT_WATCHER_DEPS: ResearchRunWatcherDeps = {
   existsSync,
   watch: (path, options, listener) => watch(path, options, listener),
+};
+
+export type ResearchRunSyncDeps = {
+  loadMission: typeof loadResearchMission;
+  loadEventLog: typeof loadResearchRunEventLog;
+  appendEventsWithinMissionLock: typeof appendResearchRunEventsWithinMissionLock;
+};
+
+const DEFAULT_SYNC_DEPS: ResearchRunSyncDeps = {
+  loadMission: loadResearchMission,
+  loadEventLog: loadResearchRunEventLog,
+  appendEventsWithinMissionLock: appendResearchRunEventsWithinMissionLock,
 };
 
 function canonicalTimestamp(value: string, fallback: string): string {
@@ -133,12 +146,6 @@ function canonicalStatusForMission(mission: ResearchMission): {
             retryable: false,
           },
         };
-      }
-      if (
-        mission.finishedAt
-        && mission.artifacts.some((artifact) => artifact.state === "published")
-      ) {
-        return { status: "completed" };
       }
       return { status: "cancelled" };
     }
@@ -350,44 +357,58 @@ function eventForObservedTransition(
   return { schema: "opencoven.run-event/v1", runId: run.id, sequence, type: "run.status", at, data };
 }
 
-async function syncObservedMission(
-  mission: ResearchMission,
-): Promise<ResearchRunEventLog> {
-  const runId = researchRunIdForMissionId(mission.id);
-  const existing = await loadResearchRunEventLog(runId);
-  const initialSequence = (existing?.events.at(-1)?.sequence ?? 0) + 1;
-  const projectedRun = researchMissionToCanonicalRun(mission, initialSequence);
-  const projection = observedProjection(mission, projectedRun);
+export async function syncObservedMission(
+  missionId: string,
+  deps: ResearchRunSyncDeps = DEFAULT_SYNC_DEPS,
+): Promise<{ mission: ResearchMission; log: ResearchRunEventLog } | null> {
+  return withResearchMissionActionLock(missionId, async () => {
+    const mission = await deps.loadMission(missionId);
+    if (!mission) return null;
+    const runId = researchRunIdForMissionId(mission.id);
+    const existing = await deps.loadEventLog(runId);
+    const initialSequence = (existing?.events.at(-1)?.sequence ?? 0) + 1;
+    const projectedRun = researchMissionToCanonicalRun(mission, initialSequence);
+    const projection = observedProjection(mission, projectedRun);
 
-  if (!existing) {
-    const created: RunEventV1 = {
-      schema: "opencoven.run-event/v1",
-      runId,
-      sequence: 1,
-      type: "run.created",
-      at: projectedRun.createdAt,
-      // No lifecycle status is asserted here: this is the gateway's durable
-      // bootstrap marker, not a fabricated executor event.
-      data: {},
-    };
-    const transitions = projectedRun.status === "queued"
-      ? [created]
-      : [created, eventForObservedTransition(mission, projectedRun, 2, projectedRun.updatedAt)];
-    return appendResearchRunEvents(runId, transitions, projection);
-  }
+    if (!existing) {
+      const created: RunEventV1 = {
+        schema: "opencoven.run-event/v1",
+        runId,
+        sequence: 1,
+        type: "run.created",
+        at: projectedRun.createdAt,
+        // No lifecycle status is asserted here: this is the gateway's durable
+        // bootstrap marker, not a fabricated executor event.
+        data: {},
+      };
+      const transitions = projectedRun.status === "queued"
+        ? [created]
+        : [created, eventForObservedTransition(mission, projectedRun, 2, projectedRun.updatedAt)];
+      const log = await deps.appendEventsWithinMissionLock(runId, transitions, projection);
+      return { mission, log };
+    }
 
-  if (!existing.projection) {
-    throw new ResearchRunGatewayError(
-      "integrity",
-      "research Run event log has no observed mission projection",
-      500,
+    if (!existing.projection) {
+      throw new ResearchRunGatewayError(
+        "integrity",
+        "research Run event log has no observed mission projection",
+        500,
+      );
+    }
+    if (canonicalJson(existing.projection) === canonicalJson(projection)) {
+      return { mission, log: existing };
+    }
+
+    const nextSequence = existing.events.at(-1)!.sequence + 1;
+    const transition = eventForObservedTransition(
+      mission,
+      projectedRun,
+      nextSequence,
+      projectedRun.updatedAt,
     );
-  }
-  if (canonicalJson(existing.projection) === canonicalJson(projection)) return existing;
-
-  const nextSequence = existing.events.at(-1)!.sequence + 1;
-  const transition = eventForObservedTransition(mission, projectedRun, nextSequence, projectedRun.updatedAt);
-  return appendResearchRunEvents(runId, [transition], projection);
+    const log = await deps.appendEventsWithinMissionLock(runId, [transition], projection);
+    return { mission, log };
+  });
 }
 
 function replayFromLog(
@@ -430,9 +451,9 @@ export async function loadResearchRunGateway(
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunGatewayError("invalid", "invalid research mission id", 409);
   }
-  const mission = await loadResearchMission(missionId);
-  if (!mission) return null;
-  const log = await syncObservedMission(mission);
+  const synced = await syncObservedMission(missionId);
+  if (!synced) return null;
+  const { mission, log } = synced;
   const lastEventSequence = log.events.at(-1)?.sequence ?? 0;
   return {
     run: researchMissionToCanonicalRun(mission, lastEventSequence + 1),
@@ -449,9 +470,9 @@ export async function replayResearchRunGateway(
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunGatewayError("invalid", "invalid research mission id", 409);
   }
-  const mission = await loadResearchMission(missionId);
-  if (!mission) return null;
-  const log = await syncObservedMission(mission);
+  const synced = await syncObservedMission(missionId);
+  if (!synced) return null;
+  const { mission, log } = synced;
   const replay = replayFromLog(log, afterSequence, limit);
   const lastEventSequence = log.events.at(-1)?.sequence ?? 0;
   return {

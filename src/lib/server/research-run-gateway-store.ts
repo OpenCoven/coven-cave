@@ -345,17 +345,11 @@ function validateProjection(projection: ResearchRunObservedProjection | undefine
   }
 }
 
-/**
- * Append server-observed events under the same per-mission action lock used by
- * mission mutations. Callers cannot choose a sequence: the durable ledger
- * accepts only the next contiguous sequence, and a replay of the exact event
- * is idempotent while a same-sequence mutation fails closed.
- */
-export async function appendResearchRunEvents(
+function validateAppendRequest(
   runId: string,
   events: readonly RunEventV1[],
-  projection?: ResearchRunObservedProjection,
-): Promise<ResearchRunEventLog> {
+  projection: ResearchRunObservedProjection | undefined,
+): string {
   const missionId = missionIdForResearchRunId(runId);
   validateProjection(projection);
   for (const event of events) {
@@ -368,57 +362,95 @@ export async function appendResearchRunEvents(
   if (events.length === 0 && projection === undefined) {
     throw new ResearchRunEventLogError("at least one event or projection is required");
   }
+  return missionId;
+}
 
-  return withResearchMissionActionLock(missionId, async () => {
-    const current = await readResearchRunEventLogUnlocked(runId);
-    const existingEvents = current?.events ?? [];
-    const nextEvents = [...existingEvents];
-    for (const event of events) {
-      const expected = nextEvents.length + 1;
-      if (event.sequence < expected) {
-        const existing = nextEvents[event.sequence - 1];
-        if (!existing || !sameEvent(existing, event)) {
-          throw new ResearchRunEventLogError(
-            `research Run event sequence ${event.sequence} conflicts with the durable ledger`,
-          );
-        }
-        continue;
-      }
-      if (event.sequence !== expected) {
+async function appendResearchRunEventsUnlocked(
+  runId: string,
+  events: readonly RunEventV1[],
+  projection?: ResearchRunObservedProjection,
+): Promise<ResearchRunEventLog> {
+  const current = await readResearchRunEventLogUnlocked(runId);
+  const existingEvents = current?.events ?? [];
+  const nextEvents = [...existingEvents];
+  for (const event of events) {
+    const expected = nextEvents.length + 1;
+    if (event.sequence < expected) {
+      const existing = nextEvents[event.sequence - 1];
+      if (!existing || !sameEvent(existing, event)) {
         throw new ResearchRunEventLogError(
-          `research Run event sequence must equal ${expected}`,
+          `research Run event sequence ${event.sequence} conflicts with the durable ledger`,
         );
       }
-      nextEvents.push(event);
+      continue;
     }
-    if (nextEvents.length === 0) {
-      throw new ResearchRunEventLogError("research Run event log cannot be empty");
+    if (event.sequence !== expected) {
+      throw new ResearchRunEventLogError(
+        `research Run event sequence must equal ${expected}`,
+      );
     }
-    if (nextEvents.length > MAX_EVENT_COUNT) {
-      throw new ResearchRunEventLogError("research Run event log has reached its event limit");
+    nextEvents.push(event);
+  }
+  if (nextEvents.length === 0) {
+    throw new ResearchRunEventLogError("research Run event log cannot be empty");
+  }
+  if (nextEvents.length > MAX_EVENT_COUNT) {
+    throw new ResearchRunEventLogError("research Run event log has reached its event limit");
+  }
+  const next: ResearchRunEventLog = {
+    version: EVENT_LOG_VERSION,
+    runId,
+    events: nextEvents,
+    ...(projection !== undefined
+      ? { projection }
+      : current?.projection !== undefined
+        ? { projection: current.projection }
+        : {}),
+  };
+  const changed = current === null
+    || nextEvents.length !== current.events.length
+    || canonicalProjection(next.projection) !== canonicalProjection(current.projection);
+  if (changed) {
+    const serialized = JSON.stringify(next, null, 2);
+    if (Buffer.byteLength(serialized, "utf8") > MAX_EVENT_LOG_BYTES) {
+      throw new ResearchRunEventLogError("research Run event log is too large");
     }
-    const next: ResearchRunEventLog = {
-      version: EVENT_LOG_VERSION,
-      runId,
-      events: nextEvents,
-      ...(projection !== undefined
-        ? { projection }
-        : current?.projection !== undefined
-          ? { projection: current.projection }
-          : {}),
-    };
-    const changed = current === null
-      || nextEvents.length !== current.events.length
-      || canonicalProjection(next.projection) !== canonicalProjection(current.projection);
-    if (changed) {
-      const serialized = JSON.stringify(next, null, 2);
-      if (Buffer.byteLength(serialized, "utf8") > MAX_EVENT_LOG_BYTES) {
-        throw new ResearchRunEventLogError("research Run event log is too large");
-      }
-      await writeFileAtomic(researchRunEventLogPath(runId), serialized);
-    }
-    return next;
-  });
+    await writeFileAtomic(researchRunEventLogPath(runId), serialized);
+  }
+  return next;
+}
+
+/**
+ * Append while the caller already owns this mission's action lock.
+ * Gateway synchronization uses this entrypoint so its authoritative mission
+ * reread and event-log update remain one transaction without re-entering the
+ * non-reentrant lock.
+ */
+export async function appendResearchRunEventsWithinMissionLock(
+  runId: string,
+  events: readonly RunEventV1[],
+  projection?: ResearchRunObservedProjection,
+): Promise<ResearchRunEventLog> {
+  validateAppendRequest(runId, events, projection);
+  return appendResearchRunEventsUnlocked(runId, events, projection);
+}
+
+/**
+ * Append server-observed events under the same per-mission action lock used by
+ * mission mutations. Callers cannot choose a sequence: the durable ledger
+ * accepts only the next contiguous sequence, and a replay of the exact event
+ * is idempotent while a same-sequence mutation fails closed.
+ */
+export async function appendResearchRunEvents(
+  runId: string,
+  events: readonly RunEventV1[],
+  projection?: ResearchRunObservedProjection,
+): Promise<ResearchRunEventLog> {
+  const missionId = validateAppendRequest(runId, events, projection);
+  return withResearchMissionActionLock(
+    missionId,
+    () => appendResearchRunEventsUnlocked(runId, events, projection),
+  );
 }
 
 export function replayResearchRunEvents(

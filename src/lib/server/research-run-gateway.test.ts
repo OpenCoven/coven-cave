@@ -10,6 +10,7 @@ import {
   createResearchMissionWorkspace,
   saveResearchMission,
 } from "./research-mission-store.ts";
+import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 import {
   loadResearchRunGateway,
   replayResearchRunGateway,
@@ -147,6 +148,44 @@ test("archiving a pause between completed iterations is cancelled, not completed
   assert.equal(paused.legacyMissionStatus, "archived");
 });
 
+test("legacy archive after Continue then cancellation never fabricates completion", async () => {
+  const legacy = {
+    ...mission("gateway-legacy-cancelled", "archived"),
+    finishedAt: "2026-08-30T12:20:00.000Z",
+    iterations: [
+      {
+        number: 1,
+        status: "completed" as const,
+        finishedAt: "2026-08-30T12:10:00.000Z",
+      },
+      {
+        number: 2,
+        status: "cancelled" as const,
+        finishedAt: "2026-08-30T12:20:00.000Z",
+      },
+    ],
+    artifacts: [{
+      key: "primary",
+      kind: "brief" as const,
+      title: "Published first iteration",
+      relativePath: "artifacts/primary.md",
+      iteration: 1,
+      state: "published" as const,
+      updatedAt: "2026-08-30T12:10:00.000Z",
+    }],
+  };
+
+  const projected = researchMissionToCanonicalRun(legacy, 1);
+  assert.equal(projected.status, "cancelled");
+
+  await createResearchMissionWorkspace(legacy);
+  const replay = await replayResearchRunGateway(legacy.id, 0, 20);
+  assert.ok(replay);
+  assert.equal(replay.run.status, "cancelled");
+  assert.equal(replay.events.some((event) => event.type === "run.completed"), false);
+  assert.equal(replay.events.at(-1)?.type, "run.cancelled");
+});
+
 test("archived missions without terminal evidence map to cancelled", () => {
   const nonterminal = researchMissionToCanonicalRun(
     mission("gateway-archived-planning", "archived"),
@@ -201,6 +240,78 @@ test("subscription is active during the authoritative initial read and closes on
     },
   ), /initial read failed/);
   assert.equal(stopped, 2);
+});
+
+test("gateway sync rereads the mission under the action lock before appending", async () => {
+  const syncObservedMission = (
+    researchRunGateway as Record<string, unknown>
+  ).syncObservedMission;
+  assert.equal(typeof syncObservedMission, "function");
+
+  const missionId = "gateway-concurrent-terminal";
+  let authoritativeMission = mission(missionId, "running");
+  let loadCalls = 0;
+  let log: {
+    version: 1;
+    runId: string;
+    events: Array<{ type: string; sequence: number }>;
+    projection?: { status: string; missionUpdatedAt: string };
+  } | null = null;
+  let releaseBlocker = () => {};
+  let markEntered = () => {};
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  const release = new Promise<void>((resolve) => { releaseBlocker = resolve; });
+  const blocker = withResearchMissionActionLock(missionId, async () => {
+    markEntered();
+    await release;
+  });
+  await entered;
+
+  const syncing = (syncObservedMission as (
+    id: string,
+    deps: {
+      loadMission: (id: string) => Promise<ResearchMission | null>;
+      loadEventLog: (runId: string) => Promise<typeof log>;
+      appendEventsWithinMissionLock: (
+        runId: string,
+        events: Array<{ type: string; sequence: number }>,
+        projection: { status: string; missionUpdatedAt: string },
+      ) => Promise<NonNullable<typeof log>>;
+    },
+  ) => Promise<{ mission: ResearchMission; log: NonNullable<typeof log> } | null>)(
+    missionId,
+    {
+      loadMission: async () => {
+        loadCalls += 1;
+        return structuredClone(authoritativeMission);
+      },
+      loadEventLog: async () => structuredClone(log),
+      appendEventsWithinMissionLock: async (runId, events, projection) => {
+        log = { version: 1, runId, events: structuredClone(events), projection };
+        return structuredClone(log);
+      },
+    },
+  );
+
+  await Promise.resolve();
+  assert.equal(loadCalls, 0, "the mission read must wait behind the action lock");
+  authoritativeMission = {
+    ...authoritativeMission,
+    status: "completed",
+    updatedAt: "2026-08-30T12:10:00.000Z",
+    finishedAt: "2026-08-30T12:10:00.000Z",
+  };
+  releaseBlocker();
+  await blocker;
+
+  const synced = await syncing;
+  assert.ok(synced);
+  assert.equal(synced.mission.status, "completed");
+  assert.equal(synced.log.projection?.status, "completed");
+  assert.deepEqual(
+    synced.log.events.map((event) => event.type),
+    ["run.created", "run.completed"],
+  );
 });
 
 test("watch setup exceptions fail the subscription and close watchers already opened", () => {
