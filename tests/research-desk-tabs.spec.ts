@@ -1467,11 +1467,16 @@ test.describe("research desk tabs", () => {
       const topics = intake.getByRole("region", { name: "Suggested next topics" });
       await expect(topics).toBeVisible();
       await expect(topics).toContainText("Compare vector index recall against latency");
-      await expect(topics).toContainText("mission: Vector DB pricing landscape");
-      await expect(topics).toContainText("saved-link: acme/vector-bench");
-      await expect(topics).toContainText("saved-link: X Article 1881");
-      await expect(topics).toContainText("vault: Vector retrieval notes");
-      await expect(topics.getByText("Why this recommendation?").first()).toBeVisible();
+      await expect(topics).toContainText("Mission");
+      await expect(topics).toContainText("Vector DB pricing landscape");
+      await expect(topics).toContainText("Saved link");
+      await expect(topics).toContainText("acme/vector-bench");
+      await expect(topics).toContainText("X Article 1881");
+      await expect(topics).toContainText("Vault");
+      await expect(topics).toContainText("Vector retrieval notes");
+      await expect(topics.getByText("Why this surfaced").first()).toBeVisible();
+      await expect(topics.getByText("Evidence trail").first()).toBeVisible();
+      await expect(topics.getByText("Review required").first()).toBeVisible();
       await expect.poll(() => handles.recommendationRequests).toBeGreaterThan(0);
       expect(handles.recommendationMethods.every((method) => method === "GET")).toBe(true);
 
@@ -1706,7 +1711,7 @@ test.describe("research desk tabs", () => {
       await expect.poll(() => handles.recommendationRevisionRequests).toBe(revisionRequests + 1);
       await refresh.focus();
       await page.keyboard.press("Tab");
-      await expect(topics.getByText("Why this recommendation?").first()).toBeFocused();
+      await expect(topics.getByText("View verification checks").first()).toBeFocused();
       await page.evaluate(() => {
         window.dispatchEvent(new Event("focus"));
         document.dispatchEvent(new Event("visibilitychange"));
