@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   AUTO_MISSION_TIMEOUT_MS,
   autoMissionStatusDraft,
+  autoMissionSessionIds,
+  cancelAutoMission,
   clearAutoMission,
   isAutoMissionArmed,
   isAutoModeDraft,
@@ -23,6 +25,10 @@ function fakeStorage() {
     getItem: (k: string) => map.get(k) ?? null,
     setItem: (k: string, v: string) => void map.set(k, v),
     removeItem: (k: string) => void map.delete(k),
+    get length() {
+      return map.size;
+    },
+    key: (index: number) => [...map.keys()][index] ?? null,
     _map: map,
   };
 }
@@ -40,6 +46,7 @@ test("round-trips a record through storage", () => {
   writeAutoMission("sess-1", base, s);
   assert.deepEqual(readAutoMission("sess-1", s), {
     ...base,
+    familiarId: null,
     completedAt: null,
     outcome: null,
     lastActivityAt: null,
@@ -68,6 +75,26 @@ test("clear removes the record", () => {
   writeAutoMission("sess-1", base, s);
   clearAutoMission("sess-1", s);
   assert.equal(readAutoMission("sess-1", s), null);
+});
+
+test("workspace enumeration finds every persisted session and skips the global briefing key", () => {
+  const s = fakeStorage();
+  s.setItem("cave:auto-mission:briefed", "1");
+  writeAutoMission("sess-a", base, s);
+  writeAutoMission("sess-b", { ...base, mission: "other work", startedAt: "2026-01-02T00:00:00.000Z" }, s);
+  s.setItem("cave:unrelated", "ignored");
+  assert.deepEqual(autoMissionSessionIds(s), ["sess-a", "sess-b"]);
+});
+
+test("cancellation is persisted and an old armed snapshot cannot re-arm it", () => {
+  const s = fakeStorage();
+  writeAutoMission("sess-1", base, s);
+  const ended = cancelAutoMission("sess-1", s, "2026-01-01T00:05:00.000Z");
+  assert.equal(ended?.outcome, "cancelled");
+  assert.equal(ended?.feedbackPending, true);
+  assert.equal(writeAutoMission("sess-1", base, s), false, "the stale mounted view loses the write race");
+  assert.equal(readAutoMission("sess-1", s)?.outcome, "cancelled");
+  assert.equal(cancelAutoMission("sess-1", s), null, "a settled mission cannot be cancelled twice");
 });
 
 // ── arming ───────────────────────────────────────────────────────────────────
@@ -106,6 +133,22 @@ test("a settled done turn pings once", () => {
     { id: "t2", role: "assistant", text: `all set. ${done}` },
   ]);
   assert.deepEqual(pings, [{ turnId: "t2", state: "done", note: "fixed 3 tests" }]);
+});
+
+test("a previous mission's terminal marker is outside the new mission boundary", () => {
+  const nextMission = {
+    ...base,
+    startedAt: "2026-01-01T01:00:00.000Z",
+  };
+  assert.deepEqual(
+    pendingAutoMissionPings(nextMission, [{
+      id: "old-done",
+      role: "assistant",
+      text: done,
+      createdAt: "2026-01-01T00:30:00.000Z",
+    }]),
+    [],
+  );
 });
 
 test("an already-notified turn never pings again — the reload guard", () => {

@@ -249,16 +249,15 @@ import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
+  AUTO_MISSION_CHANGED_EVENT,
   autoMissionStatusDraft,
+  cancelAutoMission,
   clearAutoMission,
-  isAutoMissionTimedOut,
   isAutoMissionArmed,
   isAutoModeDraft,
-  pendingAutoMissionPings,
   readAutoMission,
   reconcileAutoMissionOnSessionChange,
   toggleAutoModeDraft,
-  touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
@@ -2260,115 +2259,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setAutoMission(record);
   }, [sessionId]);
 
-  // Watch settled assistant turns for a `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). Only needs-approval/blocked/failed/done draw the
-  // human back in — see buildAutoModeDirective. needs-approval and blocked
-  // fire a response-needed inbox item and leave the mission armed (answering
-  // it resumes the work); failed and done end the mission and flag feedback as
-  // pending.
+  // Workspace supervision owns marker parsing, watchdogs, and inbox delivery.
+  // This mirror keeps a mounted ChatView in sync with those durable writes,
+  // including cancellation issued by `/auto stop` after another surface (or a
+  // second workspace observer) won the race.
   useEffect(() => {
-    const pings = pendingAutoMissionPings(autoMission, turns);
-    if (!pings.length || !autoMission) return;
-    const storage = typeof window === "undefined" ? null : window.localStorage;
-    let next: AutoMissionRecord = { ...autoMission, notified: [...autoMission.notified] };
-    let ended = false;
-    for (const ping of pings) {
-      next.notified.push(ping.turnId);
-      const attention = ping.state === "needs-approval" || ping.state === "blocked";
-      if (!attention) {
-        ended = true;
-        next = {
-          ...next,
-          completedAt: new Date().toISOString(),
-          outcome: ping.state === "failed" ? "failed" : "done",
-          feedbackPending: true,
-        };
+    const onMissionChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: unknown }>).detail;
+      if (detail?.sessionId !== sessionId) return;
+      let storage: Storage | null = null;
+      try {
+        storage = window.localStorage;
+      } catch {
+        return;
       }
-      void fetch("/api/inbox", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: attention ? "response-needed" : "agent",
-          title:
-            ping.state === "needs-approval"
-              ? "Auto mission needs your go-ahead"
-              : ping.state === "blocked"
-                ? "Auto mission needs you"
-                : ping.state === "failed"
-                  ? "Auto mission couldn't finish"
-                  : "Auto mission complete",
-          body: ping.note || autoMission.mission,
-          source: "agent",
-          familiarId: familiar.id,
-          sessionId,
-          auto: "auto-mission",
-          link: sessionId ? { kind: "session", ref: sessionId } : null,
-        }),
-      }).catch(() => undefined);
-    }
-    writeAutoMission(sessionId, next, storage);
-    setAutoMission(next);
-    if (ended) setAutoFeedbackOpen(true);
-  }, [autoMission, familiar.id, sessionId, turns]);
-
-  // Keep the mission's liveness stamp current. The watchdog below measures from
-  // this, not from mission start, so a long mission that is visibly progressing
-  // is never declared timed out.
-  useEffect(() => {
-    if (!autoMission || autoMission.completedAt) return;
-    setAutoMission((prev) => {
-      if (!prev || prev.completedAt) return prev;
-      const touched = touchAutoMission(prev, Date.now());
-      if (touched === prev) return prev;
-      writeAutoMission(sessionId, touched, typeof window === "undefined" ? null : window.localStorage);
-      return touched;
-    });
-    // Only the transcript growing counts as a sign of life — depending on
-    // autoMission here would re-stamp on our own write and never expire.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turns.length, sessionId]);
-
-  // The watchdog. Everything above depends on the familiar volunteering a
-  // terminal marker; nothing guarantees it ever does. It can run out of
-  // context, die mid-stream, or simply forget the protocol — and then the
-  // transcript holds nothing to ping on, the mission stays armed forever, and
-  // the human never hears back at all. That is the one outcome /auto cannot
-  // afford, so the client stops waiting on its own clock.
-  useEffect(() => {
-    if (!autoMission || autoMission.completedAt) return;
-    const tick = () => {
-      setAutoMission((prev) => {
-        if (!isAutoMissionTimedOut(prev, turns, Date.now())) return prev;
-        if (!prev) return prev;
-        const ended: AutoMissionRecord = {
-          ...prev,
-          completedAt: new Date().toISOString(),
-          outcome: "timed-out",
-          feedbackPending: true,
-        };
-        writeAutoMission(sessionId, ended, typeof window === "undefined" ? null : window.localStorage);
-        void fetch("/api/inbox", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            kind: "response-needed",
-            title: "Auto mission went quiet",
-            body: `No word back on "${prev.mission}". Check the thread — it may have stalled.`,
-            source: "agent",
-            familiarId: familiar.id,
-            sessionId,
-            auto: "auto-mission",
-            link: sessionId ? { kind: "session", ref: sessionId } : null,
-          }),
-        }).catch(() => undefined);
-        setAutoFeedbackOpen(true);
-        return ended;
-      });
+      const next = readAutoMission(sessionId, storage);
+      setAutoMission(next);
+      if (next?.completedAt && next.feedbackPending) setAutoFeedbackOpen(true);
     };
-    const timer = window.setInterval(tick, 60_000);
-    tick();
-    return () => window.clearInterval(timer);
-  }, [autoMission, familiar.id, sessionId, turns]);
+    window.addEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
+    return () => window.removeEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
+  }, [sessionId]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
@@ -4917,17 +4828,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // forever, and the human has no way to rate what did happen.
       if (sub === "stop" || sub === "end" || sub === "cancel") {
         setInput("");
-        if (!autoMission || autoMission.completedAt) {
+        const ended = sessionId
+          ? cancelAutoMission(sessionId, storage)
+          : autoMission && !autoMission.completedAt
+            ? {
+                ...autoMission,
+                completedAt: new Date().toISOString(),
+                outcome: "cancelled" as const,
+                feedbackPending: true,
+              }
+            : null;
+        if (!ended) {
           appendSystem("No auto mission is running in this chat.");
           return true;
         }
-        const ended: AutoMissionRecord = {
-          ...autoMission,
-          completedAt: new Date().toISOString(),
-          outcome: "cancelled",
-          feedbackPending: true,
-        };
-        writeAutoMission(sessionId, ended, storage);
         setAutoMission(ended);
         setAutoFeedbackOpen(true);
         appendSystem("Auto mission ended. Rate it so the next one goes better.");
@@ -4979,6 +4893,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       const record: AutoMissionRecord = {
         mission,
+        familiarId: familiar.id,
         startedAt: new Date().toISOString(),
         notified: [],
         completedAt: null,

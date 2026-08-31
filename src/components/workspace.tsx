@@ -177,6 +177,7 @@ import {
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
+import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
@@ -4637,6 +4638,7 @@ export function Workspace() {
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
     <FamiliarStudioProvider redirectToChat>
+      <AutoMissionSupervisor />
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
           store (cave-backdrop.ts). In chat, a single-familiar scope with its
