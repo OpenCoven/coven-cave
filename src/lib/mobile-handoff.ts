@@ -580,9 +580,9 @@ export function normalizeLoopbackBackendUrl(
   }
 }
 
-// Tailscale may store the proxy target with a trailing slash or as `localhost`
-// rather than the `http://127.0.0.1:<port>` we asked for. Normalize both sides
-// so the lookup doesn't fail on cosmetic differences.
+// Normalize cosmetic URL differences without collapsing distinct loopback
+// address families. IPv4, IPv6, and localhost can reach different processes
+// even when their ports match.
 function normalizedLoopbackProxyTarget(target: string): string | null {
   try {
     const url = new URL(target.trim());
@@ -590,14 +590,17 @@ function normalizedLoopbackProxyTarget(target: string): string | null {
     if (url.protocol !== "http:") return null;
     if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)) return null;
     if (url.username || url.password || url.search || url.hash) return null;
-    const host = hostname === "localhost" || hostname === "::1" || hostname === "[::1]"
-      ? "127.0.0.1"
-      : hostname;
-    const port = url.port ? `:${url.port}` : "";
-    const path = url.pathname.replace(/\/+$/, "");
-    return `http://${host}${port}${path}`;
+    return url.origin;
   } catch {
     return null;
+  }
+}
+
+function isLocalhostBackend(target: string): boolean {
+  try {
+    return new URL(target).hostname.toLowerCase() === "localhost";
+  } catch {
+    return false;
   }
 }
 
@@ -764,6 +767,12 @@ export async function assessServeOwnership(
         .map((backend) => backend.target),
     ),
   ];
+  if (
+    differentTargets.length > 0
+    && (isLocalhostBackend(desired) || differentTargets.some(isLocalhostBackend))
+  ) {
+    return { kind: "conflict", targets };
+  }
   if (options.takeOverHealthyLoopback) {
     return { kind: "takeover", targets };
   }

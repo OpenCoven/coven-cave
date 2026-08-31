@@ -135,10 +135,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.deepEqual(
     enumerateServeProxyBackends(competingStatus),
     [
-      { kind: "loopback", raw: "http://localhost:3020/", target: "http://127.0.0.1:3020" },
+      { kind: "loopback", raw: "http://localhost:3020/", target: "http://localhost:3020" },
       { kind: "loopback", raw: "http://127.0.0.1:3007", target: "http://127.0.0.1:3007" },
     ],
-    "all proxy handlers are enumerated and loopback aliases normalize to one durable identity",
+    "all proxy handlers preserve their loopback host identity",
   );
   assert.equal(
     serveRouteOwnedByBackend(competingStatus, "http://127.0.0.1:3020"),
@@ -147,9 +147,68 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   );
   assert.equal(
     serveRouteOwnedByBackend(status, "http://localhost:3000/"),
-    true,
-    "the desired backend owns the complete route when every proxy target matches",
+    false,
+    "localhost is not assumed to own an IPv4 route on the same port",
   );
+  const localhostStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://LOCALHOST:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(localhostStatus, "http://localhost:3000"),
+    true,
+    "localhost owns only an exactly selected localhost backend identity",
+  );
+
+  const ipv6Status = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://[::1]:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(status, "http://[::1]:3000"),
+    false,
+    "an IPv4 route is not owned by an IPv6 backend on the same port",
+  );
+  assert.equal(
+    serveRouteOwnedByBackend(ipv6Status, "http://[::1]:3000"),
+    true,
+    "an IPv6 route is owned by the same normalized IPv6 backend",
+  );
+  assert.equal(
+    (
+      await assessServeOwnership(
+        status,
+        "http://[::1]:3000",
+        async (target) => target === "http://127.0.0.1:3000",
+      )
+    ).kind,
+    "conflict",
+    "a healthy IPv4 route conflicts with an IPv6 backend on the same port",
+  );
+  let localhostProbeCount = 0;
+  assert.equal(
+    (
+      await assessServeOwnership(
+        localhostStatus,
+        "http://127.0.0.1:3000",
+        async () => {
+          localhostProbeCount += 1;
+          return false;
+        },
+      )
+    ).kind,
+    "conflict",
+    "an ambiguous localhost owner is preserved unless localhost was selected exactly",
+  );
+  assert.equal(localhostProbeCount, 0, "a different localhost identity is not probed");
 
   const tcpForwardStatus = {
     TCP: {
@@ -364,7 +423,14 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(packagedProbeCount, 0, "packaged precedence does not need to probe a dev owner");
 
   const staleAssessment = await assessServeOwnership(
-    competingStatus,
+    {
+      TCP: { "443": { HTTPS: true } },
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
+        },
+      },
+    },
     "http://127.0.0.1:3000",
     async () => false,
   );
@@ -603,6 +669,24 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "not-owned",
     "ownership conflict retains the credential",
   );
+  {
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://[::1]:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(status) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "reset refuses to clear an IPv4 route for an IPv6 backend on the same port",
+    );
+  }
   assert.equal(
     (await resetCase({
       results: [commandResult({ ok: false, status: 1, stderr: "status failed" })],
@@ -1027,7 +1111,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 }
 
 {
-  // Tailscale may report the proxy with a trailing slash or as `localhost`.
+  // Cosmetic spelling normalizes, but localhost is never assumed to be IPv4.
   const variants = {
     Web: {
       [`${serveHost}:443`]: {
@@ -1037,6 +1121,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   };
   assert.equal(
     findServeUrl(variants, "http://127.0.0.1:3000"),
+    null,
+  );
+  assert.equal(
+    findServeUrl(variants, "http://LOCALHOST:3000"),
     serveUrl,
   );
 }

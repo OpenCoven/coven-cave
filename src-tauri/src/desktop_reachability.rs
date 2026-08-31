@@ -170,8 +170,33 @@ enum TailscaleServeMode {
 
 #[cfg(desktop)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoopbackHost {
+    Ipv4,
+    Ipv6,
+    Localhost,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LoopbackBackend {
+    host: LoopbackHost,
+    port: u16,
+}
+
+#[cfg(desktop)]
+impl LoopbackBackend {
+    const fn ipv4(port: u16) -> Self {
+        Self {
+            host: LoopbackHost::Ipv4,
+            port,
+        }
+    }
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ServeProxyTarget {
-    Loopback(u16),
+    Loopback(LoopbackBackend),
     Protected,
 }
 
@@ -560,7 +585,7 @@ fn serve_mode_from_status(status: &serde_json::Value) -> Option<TailscaleServeMo
 }
 
 #[cfg(desktop)]
-fn parse_loopback_proxy_port(proxy: &str) -> Option<u16> {
+fn parse_loopback_proxy_backend(proxy: &str) -> Option<LoopbackBackend> {
     let target = proxy.trim();
     let rest = target.strip_prefix("http://")?;
     let authority = rest.split('/').next()?;
@@ -568,14 +593,22 @@ fn parse_loopback_proxy_port(proxy: &str) -> Option<u16> {
         return None;
     }
     let (host, port) = if let Some(rest) = authority.strip_prefix("[::1]:") {
-        ("::1", rest)
+        (LoopbackHost::Ipv6, rest)
     } else {
-        authority.rsplit_once(':')?
+        let (host, port) = authority.rsplit_once(':')?;
+        let host = if host == "127.0.0.1" {
+            LoopbackHost::Ipv4
+        } else if host.eq_ignore_ascii_case("localhost") {
+            LoopbackHost::Localhost
+        } else {
+            return None;
+        };
+        (host, port)
     };
-    if host != "127.0.0.1" && !host.eq_ignore_ascii_case("localhost") && host != "::1" {
-        return None;
-    }
-    port.parse().ok()
+    Some(LoopbackBackend {
+        host,
+        port: port.parse().ok()?,
+    })
 }
 
 #[cfg(desktop)]
@@ -638,7 +671,7 @@ fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
                 let target = handler
                     .get("Proxy")
                     .and_then(serde_json::Value::as_str)
-                    .and_then(parse_loopback_proxy_port)
+                    .and_then(parse_loopback_proxy_backend)
                     .map(ServeProxyTarget::Loopback)
                     .unwrap_or(ServeProxyTarget::Protected);
                 targets.push(target);
@@ -685,20 +718,20 @@ fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
 }
 
 #[cfg(desktop)]
-fn serve_route_owned_by_port(status: &serde_json::Value, port: u16) -> bool {
+fn serve_route_owned_by_backend(status: &serde_json::Value, backend: LoopbackBackend) -> bool {
     let targets = serve_proxy_targets(status);
     !targets.is_empty()
         && targets
             .iter()
-            .all(|target| *target == ServeProxyTarget::Loopback(port))
+            .all(|target| *target == ServeProxyTarget::Loopback(backend))
 }
 
 #[cfg(desktop)]
 fn decide_serve_repair(
     status: &serde_json::Value,
-    requested_port: u16,
+    requested: LoopbackBackend,
     packaged: bool,
-    mut responds: impl FnMut(u16) -> bool,
+    mut responds: impl FnMut(LoopbackBackend) -> bool,
 ) -> ServeRepairDecision {
     let Some(mode) = serve_mode_from_status(status) else {
         return ServeRepairDecision::Preserve;
@@ -709,15 +742,28 @@ fn decide_serve_repair(
     }
     if targets
         .iter()
-        .all(|target| *target == ServeProxyTarget::Loopback(requested_port))
+        .all(|target| *target == ServeProxyTarget::Loopback(requested))
     {
         return ServeRepairDecision::Noop;
     }
-    if packaged && requested_port == super::sidecar_ports::CAVE_PRODUCTION_PORT {
+    if requested.host == LoopbackHost::Localhost
+        || targets.iter().any(|target| {
+            matches!(
+                target,
+                ServeProxyTarget::Loopback(LoopbackBackend {
+                    host: LoopbackHost::Localhost,
+                    ..
+                })
+            )
+        })
+    {
+        return ServeRepairDecision::Preserve;
+    }
+    if packaged && requested.port == super::sidecar_ports::CAVE_PRODUCTION_PORT {
         return ServeRepairDecision::Repair(mode);
     }
     if targets.iter().any(|target| match target {
-        ServeProxyTarget::Loopback(port) if *port != requested_port => responds(*port),
+        ServeProxyTarget::Loopback(backend) if *backend != requested => responds(*backend),
         _ => false,
     }) {
         ServeRepairDecision::Preserve
@@ -727,8 +773,15 @@ fn decide_serve_repair(
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn loopback_backend_responds(port: u16) -> bool {
-    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+fn loopback_backend_responds(backend: LoopbackBackend) -> bool {
+    let address = match backend.host {
+        LoopbackHost::Ipv4 => std::net::SocketAddr::from(([127, 0, 0, 1], backend.port)),
+        LoopbackHost::Ipv6 => std::net::SocketAddr::new(
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+            backend.port,
+        ),
+        LoopbackHost::Localhost => return true,
+    };
     let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500))
     else {
         return false;
@@ -1002,6 +1055,7 @@ fn run_queued_tailscale_serve_repairs() {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn run_tailscale_serve_repair(port: u16) {
+    let requested_backend = LoopbackBackend::ipv4(port);
     let _lease = match acquire_tailscale_serve_lease() {
         Ok(Some(lease)) => lease,
         Ok(None) => {
@@ -1027,7 +1081,7 @@ fn run_tailscale_serve_repair(port: u16) {
             serde_json::from_slice(&output.stdout).ok().map(|status| {
                 decide_serve_repair(
                     &status,
-                    port,
+                    requested_backend,
                     !cfg!(debug_assertions),
                     loopback_backend_responds,
                 )
@@ -1073,7 +1127,7 @@ fn run_tailscale_serve_repair(port: u16) {
                 .ok()
                 .filter(|output| output.status.success())
                 .and_then(|output| serde_json::from_slice(&output.stdout).ok())
-                .is_some_and(|status| serve_route_owned_by_port(&status, port));
+                .is_some_and(|status| serve_route_owned_by_backend(&status, requested_backend));
             if verified && mutation_succeeded {
                 log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
             } else if verified {
@@ -2634,7 +2688,10 @@ mod tests {
             serve_mode_from_status(&http_status),
             Some(TailscaleServeMode::Http(3000))
         );
-        assert!(serve_route_owned_by_port(&http_status, 3000));
+        assert!(serve_route_owned_by_backend(
+            &http_status,
+            LoopbackBackend::ipv4(3000)
+        ));
         assert_eq!(
             http_serve_arguments(3007, 3000),
             [
@@ -2660,11 +2717,67 @@ mod tests {
     fn serve_repair_same_owner_is_a_noop() {
         let status = serde_json::json!({
             "TCP": { "443": { "HTTPS": true } },
-            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://localhost:3007/" } } } }
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007/" } } } }
         });
         assert_eq!(
-            decide_serve_repair(&status, 3007, false, |_| panic!("same owner is not probed")),
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| panic!(
+                "same owner is not probed"
+            )),
             ServeRepairDecision::Noop
+        );
+    }
+
+    #[test]
+    fn serve_ownership_does_not_collapse_ipv4_and_ipv6_by_port() {
+        let ipv6_status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://[::1]:3007" } } } }
+        });
+        assert!(
+            !serve_route_owned_by_backend(&ipv6_status, LoopbackBackend::ipv4(3007)),
+            "the IPv4 desktop backend must not own an IPv6 route on the same port"
+        );
+        let ipv6_backend = LoopbackBackend {
+            host: LoopbackHost::Ipv6,
+            port: 3007,
+        };
+        assert!(
+            serve_route_owned_by_backend(&ipv6_status, ipv6_backend),
+            "an IPv6 route is owned by the same IPv6 backend identity"
+        );
+        assert_eq!(
+            decide_serve_repair(
+                &ipv6_status,
+                LoopbackBackend::ipv4(3007),
+                false,
+                |backend| backend == ipv6_backend
+            ),
+            ServeRepairDecision::Preserve,
+            "repair preserves a healthy cross-family owner instead of treating it as the same backend"
+        );
+    }
+
+    #[test]
+    fn serve_repair_treats_localhost_as_an_exact_only_identity() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://localhost:3007" } } } }
+        });
+        let localhost = LoopbackBackend {
+            host: LoopbackHost::Localhost,
+            port: 3007,
+        };
+        assert_eq!(
+            decide_serve_repair(&status, localhost, false, |_| {
+                panic!("an exact localhost owner is not probed")
+            }),
+            ServeRepairDecision::Noop
+        );
+        assert_eq!(
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
+                panic!("an ambiguous localhost owner is preserved without probing")
+            }),
+            ServeRepairDecision::Preserve
         );
     }
 
@@ -2677,9 +2790,12 @@ mod tests {
             },
             "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
         });
-        assert!(!serve_route_owned_by_port(&status, 3007));
+        assert!(!serve_route_owned_by_backend(
+            &status,
+            LoopbackBackend::ipv4(3007)
+        ));
         assert_eq!(
-            decide_serve_repair(&status, 3007, false, |_| {
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
                 panic!("protected TCP forwarding must not be probed")
             }),
             ServeRepairDecision::Preserve
@@ -2732,9 +2848,12 @@ mod tests {
             }),
         ];
         for status in protected {
-            assert!(!serve_route_owned_by_port(&status, 3007));
+            assert!(!serve_route_owned_by_backend(
+                &status,
+                LoopbackBackend::ipv4(3007)
+            ));
             assert_eq!(
-                decide_serve_repair(&status, 3007, true, |_| {
+                decide_serve_repair(&status, LoopbackBackend::ipv4(3007), true, |_| {
                     panic!("protected machine-global settings must not be probed")
                 }),
                 ServeRepairDecision::Preserve
@@ -2749,7 +2868,12 @@ mod tests {
             "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
         });
         assert_eq!(
-            decide_serve_repair(&status, 3007, false, |port| port == 3008),
+            decide_serve_repair(
+                &status,
+                LoopbackBackend::ipv4(3007),
+                false,
+                |backend| backend == LoopbackBackend::ipv4(3008)
+            ),
             ServeRepairDecision::Preserve
         );
     }
@@ -2761,7 +2885,7 @@ mod tests {
             "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
         });
         assert_eq!(
-            decide_serve_repair(&status, 3007, false, |_| false),
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| false),
             ServeRepairDecision::Repair(TailscaleServeMode::Https)
         );
     }
@@ -2774,14 +2898,14 @@ mod tests {
         });
         let mut probes = 0;
         assert_eq!(
-            decide_serve_repair(&status, 3007, false, |_| {
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3007), false, |_| {
                 probes += 1;
                 false
             }),
             ServeRepairDecision::Preserve
         );
         assert_eq!(
-            decide_serve_repair(&status, 3020, true, |_| {
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3020), true, |_| {
                 probes += 1;
                 false
             }),
@@ -2818,7 +2942,7 @@ mod tests {
             "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
         });
         assert_eq!(
-            decide_serve_repair(&status, 3020, true, |_| true),
+            decide_serve_repair(&status, LoopbackBackend::ipv4(3020), true, |_| true),
             ServeRepairDecision::Repair(TailscaleServeMode::Https)
         );
     }
@@ -2830,7 +2954,12 @@ mod tests {
             "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
         });
         assert_eq!(
-            decide_serve_repair(&status, 3007, true, |port| port == 3008),
+            decide_serve_repair(
+                &status,
+                LoopbackBackend::ipv4(3007),
+                true,
+                |backend| backend == LoopbackBackend::ipv4(3008)
+            ),
             ServeRepairDecision::Preserve
         );
     }
