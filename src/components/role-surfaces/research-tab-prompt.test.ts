@@ -334,6 +334,9 @@ test("suggested topics render as explicit research decision briefs", () => {
   assert.match(decisionCard, /research-topic-decision__rank-rail/);
   assert.match(decisionCard, /research-topic-decision__evidence-list/);
   assert.match(decisionCard, /research-topic-decision__footer/);
+  assert.match(promptTab, /recommendationItems\.map\(\(recommendation, index\) =>/);
+  assert.doesNotMatch(promptTab, /recommendationItems\.indexOf\(recommendation\)/);
+  assert.match(decisionCard, /key=\{`\$\{index\}:\$\{reason\}`\}/);
   assert.match(decisionCard, /<Button[\s\S]*?\{actionLabel\}[\s\S]*?<\/Button>/);
   assert.match(
     decisionCard,

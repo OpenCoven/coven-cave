@@ -525,12 +525,12 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode, 
                 />
               ) : (
                 <div className="research-topic-recommendations__cards">
-                  {recommendationItems.map((recommendation) => {
+                  {recommendationItems.map((recommendation, index) => {
                     const payload = researchTopicPayload(recommendation);
                     if (!payload) return null;
                     const rankedRecommendation: ResearchTopicRecommendation = {
                       ...recommendation,
-                      ordinal: recommendationItems.indexOf(recommendation) + 1,
+                      ordinal: index + 1,
                     };
                     return (
                       <ResearchTopicDecisionCard

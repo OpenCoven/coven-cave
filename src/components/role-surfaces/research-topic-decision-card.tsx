@@ -95,7 +95,7 @@ export function ResearchTopicDecisionCard({
           {rankReasons.length > 0 ? (
             <ul className="research-topic-decision__signals">
               {rankReasons.map((reason, index) => (
-                <li key={reason}>
+                <li key={`${index}:${reason}`}>
                   <span>{rankReasons.length === 1 ? "Ranking signal" : `Signal ${index + 1}`}</span>
                   <strong>{reason}</strong>
                 </li>
