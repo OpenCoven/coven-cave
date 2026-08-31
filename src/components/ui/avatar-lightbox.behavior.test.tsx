@@ -1,5 +1,5 @@
 // @ts-nocheck -- react-test-renderer has no bundled types.
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -23,6 +23,7 @@ let body;
 let windowListeners;
 let documentListeners;
 let nodesByClass;
+let modalFocusable;
 
 function addListener(store, type, listener, options) {
   const listeners = store.get(type) ?? [];
@@ -49,6 +50,14 @@ function installDom() {
     contains: () => false,
     focus() {
       activeElement = body;
+      modalFocusable = {
+        nodeType: 1,
+        hasAttribute: () => false,
+        getClientRects: () => [{ width: 1, height: 1 }],
+        focus() {
+          activeElement = modalFocusable;
+        },
+      };
     },
   };
   activeElement = body;
@@ -84,6 +93,8 @@ function installDom() {
 }
 
 function makeNode(props) {
+  const classes = typeof props.className === "string" ? props.className.split(/\s+/) : [];
+  const isModal = classes.includes("ui-modal");
   const node = {
     nodeType: 1,
     scrollHeight: 240,
@@ -96,8 +107,8 @@ function makeNode(props) {
       width: 100,
       height: 32,
     }),
-    querySelector: () => null,
-    querySelectorAll: () => [],
+    querySelector: () => (isModal ? modalFocusable : null),
+    querySelectorAll: () => (isModal ? [modalFocusable] : []),
     getClientRects: () => [{ width: 1, height: 1 }],
     hasAttribute: () => false,
     contains(target) {
@@ -107,9 +118,7 @@ function makeNode(props) {
       activeElement = node;
     },
   };
-  if (typeof props.className === "string") {
-    for (const className of props.className.split(/\s+/)) nodesByClass.set(className, node);
-  }
+  for (const className of classes) nodesByClass.set(className, node);
   return node;
 }
 
@@ -147,6 +156,17 @@ function dispatchEscape() {
   const listeners = windowListeners.get("keydown") ?? [];
   for (const { listener } of listeners.filter((entry) => entry.capture)) listener(event);
   if (stopped) return;
+  for (const { listener } of listeners.filter((entry) => !entry.capture)) listener(event);
+}
+
+function dispatchTab() {
+  const event = {
+    key: "Tab",
+    shiftKey: false,
+    preventDefault() {},
+  };
+  const listeners = windowListeners.get("keydown") ?? [];
+  for (const { listener } of listeners.filter((entry) => entry.capture)) listener(event);
   for (const { listener } of listeners.filter((entry) => !entry.capture)) listener(event);
 }
 
@@ -258,5 +278,71 @@ describe("AvatarLightbox nested in Popover", () => {
     expect(popoverClose).not.toHaveBeenCalled();
     expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
     expect(activeElement).toBe(triggerNode);
+  });
+
+  test("a Popover opened inside the lightbox remains interactive and closes before the Modal", () => {
+    const ownerClose = vi.fn();
+
+    function NestedActions() {
+      const anchorRef = useRef(null);
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button ref={anchorRef} aria-label="Open nested actions" onClick={() => setOpen(true)}>
+            Actions
+          </button>
+          <Popover
+            open={open}
+            onOpenChange={setOpen}
+            anchorRef={anchorRef}
+            ariaLabel="Nested actions"
+          >
+            <button aria-label="Nested action">Run</button>
+          </Popover>
+        </>
+      );
+    }
+
+    function Scene() {
+      const anchorRef = useRef(null);
+      return (
+        <>
+          <button ref={anchorRef}>anchor</button>
+          <Popover open onOpenChange={ownerClose} anchorRef={anchorRef} ariaLabel="Avatar menu">
+            <AvatarLightbox
+              src="/avatar.png"
+              label="Wren"
+              footerActions={<NestedActions />}
+            >
+              <span>avatar</span>
+            </AvatarLightbox>
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => hostButton("Enlarge Wren avatar").props.onClick());
+    act(() => hostButton("Open nested actions").props.onClick());
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(3);
+
+    const nestedPanelNode = nodesByClass.get("ui-popover");
+    activeElement = nestedPanelNode;
+    act(() => dispatchDocument("mousedown", nestedPanelNode));
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(3);
+
+    act(() => dispatchTab());
+    expect(activeElement).toBe(nestedPanelNode);
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(2);
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
   });
 });

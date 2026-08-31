@@ -199,6 +199,26 @@ assert.match(
   /anchorRef\.current\?\.contains\(next\)/,
   "focus moving back to the anchor doesn't close the popover",
 );
+assert.match(
+  src,
+  /parentLayers\?\.register\(popoverRef\.current\)/,
+  "a nested Popover registers its portal with the owning Popover",
+);
+assert.match(
+  src,
+  /focusTrapPortalLayers\?\.register\(popoverRef\.current\)/,
+  "a Popover inside a Modal remains part of the Modal focus boundary",
+);
+assert.match(
+  src,
+  /if \(covered\) return;[\s\S]{0,200}const t = e\.target as Node/,
+  "a covered owner ignores outside-click dismissal while its child Modal is active",
+);
+assert.match(
+  src,
+  /data-covered=\{covered \|\| undefined\}[\s\S]{0,120}aria-hidden=\{covered \|\| undefined\}[\s\S]{0,120}inert=\{covered \|\| undefined\}/,
+  "a covered owner is removed from pointer, focus, and accessibility interaction",
+);
 
 // A `checked` row used to be a menuitemradio unconditionally, so every
 // standalone boolean toggle in a popover menu announced as one choice among

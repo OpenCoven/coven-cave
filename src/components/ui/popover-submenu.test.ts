@@ -28,7 +28,7 @@ test("trigger row and flyout expose their configured popup semantics", () => {
 });
 
 test("flyouts register as inside layers so root dismissal ignores them", () => {
-  assert.match(src, /const onDocClick = \(e: MouseEvent\) => \{\s*const t = e\.target as Node;\s*if \(layers\.contains\(t\)\) return;/, "outside-click consults the layer registry");
+  assert.match(src, /const onDocClick = \(e: MouseEvent\) => \{\s*(?:if \(covered\) return;\s*)?const t = e\.target as Node;\s*if \(layers\.contains\(t\)\) return;/, "outside-click consults the layer registry");
   assert.match(src, /if \(layers\.contains\(next\)\) return;/, "root focus-out consults the layer registry");
   assert.match(src, /return layers\.register\(el\);/, "open flyouts register with the root popover");
 });

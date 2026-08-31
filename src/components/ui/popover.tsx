@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/lib/icon";
+import { FocusTrapPortalLayersContext } from "@/lib/use-focus-trap";
 import { computeSubmenuPosition } from "@/lib/submenu-position";
 
 // ── Submenu plumbing ─────────────────────────────────────────────────────────
@@ -161,6 +162,8 @@ export function Popover({
   ariaLabel,
   children,
 }: PopoverProps) {
+  const parentLayers = useContext(PopoverLayersContext);
+  const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [style, setStyle] = useState<CSSProperties>({});
   const [compact, setCompact] = useState(false);
@@ -197,6 +200,20 @@ export function Popover({
       },
     }),
     [],
+  );
+  useLayoutEffect(() => {
+    if (!open || !popoverRef.current) return;
+    const unregisterParent = parentLayers?.register(popoverRef.current) ?? NOOP;
+    const unregisterFocusTrap =
+      focusTrapPortalLayers?.register(popoverRef.current) ?? NOOP;
+    return () => {
+      unregisterFocusTrap();
+      unregisterParent();
+    };
+  }, [open, parentLayers, focusTrapPortalLayers]);
+  usePopoverEscapeLayer(
+    Boolean(parentLayers && open),
+    useCallback(() => onOpenChange(false), [onOpenChange]),
   );
 
   const compute = useCallback(() => {
@@ -270,6 +287,7 @@ export function Popover({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (parentLayers) return;
         // Consume the Escape so it doesn't bubble to a parent dialog's keydown
         // handler (e.g. the Settings panel, which closes itself on Escape). The
         // listener is registered in the capture phase below so it runs before any
@@ -286,6 +304,7 @@ export function Popover({
       }
     };
     const onDocClick = (e: MouseEvent) => {
+      if (covered) return;
       const t = e.target as Node;
       if (layers.contains(t)) return;
       if (anchorRef.current?.contains(t)) return;
@@ -309,7 +328,7 @@ export function Popover({
       vv?.removeEventListener("resize", onReflow);
       vv?.removeEventListener("scroll", onReflow);
     };
-  }, [open, onOpenChange, anchorRef, compute, layers]);
+  }, [open, onOpenChange, anchorRef, compute, layers, parentLayers, covered]);
 
   // Return focus to the trigger when the popover closes, so keyboard users aren't
   // stranded (Escape, item-select, or outside-click on empty space all leave focus
@@ -340,8 +359,11 @@ export function Popover({
         aria-label={ariaLabel}
         data-compact={compact || undefined}
         data-covered={covered || undefined}
+        aria-hidden={covered || undefined}
+        inert={covered || undefined}
         tabIndex={-1}
         onBlur={(e) => {
+          if (covered) return;
           const next = e.relatedTarget as Node | null;
           // relatedTarget is null when focus leaves the document (window blur,
           // native pickers) — don't treat that as Tab-out.

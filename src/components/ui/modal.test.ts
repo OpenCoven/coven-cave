@@ -38,8 +38,13 @@ assert.match(src, /dismissOnEscape\?: boolean/, "Modal exposes a dismissOnEscape
 assert.match(src, /dismissOnEscape = true/, "dismissOnEscape defaults to true");
 assert.match(
   src,
-  /useFocusTrap\(open, dialogRef, \{ onEscape: dismissOnEscape \? onClose : undefined \}\)/,
+  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*\}\)/,
   "the trap stays active while busy; only the Esc dismissal callback is gated",
+);
+assert.match(
+  src,
+  /<FocusTrapPortalLayersContext\.Provider value=\{portalLayers\}>/,
+  "body-portaled descendants can join the Modal's focus boundary",
 );
 
 // Optional escape hatch (cave-fzr4p): Modal itself stays Popover-agnostic, but

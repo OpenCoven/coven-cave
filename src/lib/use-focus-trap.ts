@@ -21,7 +21,17 @@ type Options = {
   focusFirst?: boolean;
   /** Late-bound restoration gate for transitions directly into another layer. */
   restoreFocus?: () => boolean;
+  /** Body-portaled descendants that remain part of this trap's focus boundary. */
+  portalLayers?: FocusTrapPortalLayers;
 };
+
+export type FocusTrapPortalLayers = {
+  register: (el: HTMLElement) => () => void;
+  contains: (node: Node | null) => boolean;
+  elements: () => readonly HTMLElement[];
+};
+
+export const FocusTrapPortalLayersContext = createContext<FocusTrapPortalLayers | null>(null);
 
 /**
  * One entry per currently-ACTIVE trap, in activation order — the
@@ -116,7 +126,7 @@ export const FocusTrapOwnerHiddenContext = createContext(false);
 export function useFocusTrap(
   active: boolean,
   containerRef: RefObject<HTMLElement | null>,
-  { onEscape, focusFirst = true, restoreFocus = () => true }: Options = {},
+  { onEscape, focusFirst = true, restoreFocus = () => true, portalLayers }: Options = {},
 ) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const onEscapeRef = useRef(onEscape);
@@ -171,7 +181,12 @@ export function useFocusTrap(
       }
       if (e.key === "Tab" && container) {
         const focusables = Array.from(
-          container.querySelectorAll<HTMLElement>(FOCUSABLE),
+          new Set([
+            ...container.querySelectorAll<HTMLElement>(FOCUSABLE),
+            ...(portalLayers?.elements() ?? []).flatMap((layer) =>
+              Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)),
+            ),
+          ]),
         ).filter(
           (el) =>
             !el.hasAttribute("disabled") &&
@@ -190,7 +205,10 @@ export function useFocusTrap(
         // the page BEHIND the dialog and the "trap" never applies again.
         // (Live-reproduced: the home composer's mount autofocus stole focus
         // from the onboarding wizard and Tab toured the covered workspace.)
-        if (!activeEl || !container.contains(activeEl)) {
+        if (
+          !activeEl ||
+          (!container.contains(activeEl) && !portalLayers?.contains(activeEl))
+        ) {
           e.preventDefault();
           (e.shiftKey ? last : first).focus();
           return;
@@ -220,7 +238,7 @@ export function useFocusTrap(
         returnFocusRef.current?.focus();
       }
     };
-  }, [active, containerRef, focusFirst]); // intentionally no onEscape
+  }, [active, containerRef, focusFirst, portalLayers]); // intentionally no onEscape
 
   // If an ancestor "modal owner" becomes hidden while this trap is still
   // active, ask it to close through the SAME callback Escape already uses

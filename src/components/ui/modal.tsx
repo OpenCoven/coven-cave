@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useId, useRef, type ReactNode } from "react";
+import { useCallback, useId, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import {
+  FocusTrapPortalLayersContext,
+  useFocusTrap,
+} from "@/lib/use-focus-trap";
 
 type ModalProps = {
   open: boolean;
@@ -47,6 +50,7 @@ export function Modal({
   onLayerElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const portalLayerElementsRef = useRef<Set<HTMLElement>>(new Set());
   const headingId = useId();
   const setLayerElement = useCallback(
     (el: HTMLDivElement | null) => {
@@ -54,10 +58,30 @@ export function Modal({
     },
     [onLayerElement],
   );
+  const portalLayers = useMemo(
+    () => ({
+      register: (el: HTMLElement) => {
+        portalLayerElementsRef.current.add(el);
+        return () => {
+          portalLayerElementsRef.current.delete(el);
+        };
+      },
+      contains: (node: Node | null) => {
+        if (!node) return false;
+        for (const el of portalLayerElementsRef.current) if (el.contains(node)) return true;
+        return false;
+      },
+      elements: () => Array.from(portalLayerElementsRef.current),
+    }),
+    [],
+  );
 
   // Keep the trap active regardless of dismissability — an undefined onEscape
   // makes Esc a no-op without releasing Tab cycling or focus return.
-  useFocusTrap(open, dialogRef, { onEscape: dismissOnEscape ? onClose : undefined });
+  useFocusTrap(open, dialogRef, {
+    onEscape: dismissOnEscape ? onClose : undefined,
+    portalLayers,
+  });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -83,39 +107,41 @@ export function Modal({
         aria-describedby={ariaDescribedBy}
         tabIndex={-1}
       >
-        {breadcrumb ? (
-          <header className="ui-modal-header">
-            <div className="ui-modal-header-breadcrumb" id={headingId}>
-              {breadcrumb.map((segment, i) => (
-                <span key={i} className="contents">
-                  {i > 0 ? (
-                    <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
-                      ›
-                    </span>
-                  ) : null}
-                  {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
-                </span>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="ui-modal-close focus-ring"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <Icon name="ph:x" width={14} />
-            </button>
-          </header>
-        ) : null}
+        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
+          {breadcrumb ? (
+            <header className="ui-modal-header">
+              <div className="ui-modal-header-breadcrumb" id={headingId}>
+                {breadcrumb.map((segment, i) => (
+                  <span key={i} className="contents">
+                    {i > 0 ? (
+                      <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
+                        ›
+                      </span>
+                    ) : null}
+                    {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
+                  </span>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="ui-modal-close focus-ring"
+                onClick={onClose}
+                aria-label="Close"
+              >
+                <Icon name="ph:x" width={14} />
+              </button>
+            </header>
+          ) : null}
 
-        <div className="ui-modal-body">{children}</div>
+          <div className="ui-modal-body">{children}</div>
 
-        {footerPills || footerActions ? (
-          <footer className="ui-modal-footer">
-            <div className="ui-modal-footer-pills">{footerPills}</div>
-            <div className="ui-modal-footer-actions">{footerActions}</div>
-          </footer>
-        ) : null}
+          {footerPills || footerActions ? (
+            <footer className="ui-modal-footer">
+              <div className="ui-modal-footer-pills">{footerPills}</div>
+              <div className="ui-modal-footer-actions">{footerActions}</div>
+            </footer>
+          ) : null}
+        </FocusTrapPortalLayersContext.Provider>
       </div>
     </div>,
     document.body,
