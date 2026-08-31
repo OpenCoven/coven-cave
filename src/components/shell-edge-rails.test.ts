@@ -7,7 +7,6 @@ import { readFileSync, readdirSync } from "node:fs";
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const analyticsShell = readFileSync(new URL("./analytics-page-shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const titlebarMarker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
 const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
 // #3576 decomposed globals.css into @imported sheets under src/styles —
@@ -239,14 +238,6 @@ assert.match(
 assert.match(shell, /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)/, "the existing right-panel shortcut controls Chat");
 assert.doesNotMatch(shell, /RightPanelKind|companionTabs|agent\?: ReactNode|rightPanelPeek/, "generic companion architecture stays retired");
 assert.doesNotMatch(workspace, /rightPanel=|familiarPanel=|agent=/, "Workspace does not restore generic companion props");
-// The chat projects rail migrated onto the shared SurfaceRail (Sessions
-// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
-// so the bespoke edge-rail reopen chip is gone from this sidebar.
-assert.match(
-  projectSidebar,
-  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
-  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
-);
 
 assert.match(
   shell,

@@ -4,12 +4,11 @@ import { readFile } from "node:fs/promises";
 
 // Multi-pane chat: drag a conversation from the thread rail onto the chat and
 // snap it left / right / above / below. Pins the wiring across the three
-// surfaces — drag source (chat-project-sidebar), drop host (chat-split-host),
+// surfaces — drag source (workspace-sidebar), drop host (chat-split-host),
 // and layout owner (chat-router) — plus the styles that make it visible.
 
 const host = await readFile(new URL("./chat-split-host.tsx", import.meta.url), "utf8");
 const router = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const sidebar = await readFile(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ── Drop host ────────────────────────────────────────────────────────────────
@@ -119,27 +118,6 @@ assert.match(
 );
 assert.match(router, /onPromotePane=\{handlePromotePane\}/, "promote opens the pane as the primary chat");
 
-// ── Drag source (thread rail) ────────────────────────────────────────────────
-
-assert.match(sidebar, /function sessionDragProps\(/, "rows share one native-drag helper");
-assert.match(sidebar, /emitChatSessionDragStart\(\{ sessionId, title \}\)/, "row drag announces itself");
-assert.match(sidebar, /emitChatSessionDragEnd\(\)/, "row drag end clears the drop zone");
-// Every row flavor is draggable to the chat (search results, folder rows,
-// and the Recent-mode flat rows).
-assert.equal(
-  (sidebar.match(/\{\.\.\.sessionDragProps\(session\.id, title\)\}/g) ?? []).length,
-  3,
-  "search-result, folder, and recent rows are all drag sources",
-);
-// The dnd-kit reorder handle keeps sole ownership of its slot: a native drag
-// started from inside it is cancelled.
-assert.match(sidebar, /closest\?\.\("\[data-thread-drag-handle\]"\)/, "handle drags are exempted");
-assert.equal(
-  (sidebar.match(/data-thread-drag-handle=""/g) ?? []).length,
-  2,
-  "both reorder handles carry the exemption marker",
-);
-
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 assert.match(css, /\.chat-split__dropzone \{/, "drop overlay styles exist");
@@ -204,14 +182,6 @@ assert.match(router, /closest\?\.\('\[aria-modal="true"\]'\)/, "modals own the k
 assert.match(router, /chatSplitKeyboardZone\(split\)/, "keyboard split lands on the current axis");
 assert.match(router, /announce\(/, "split changes are announced to the live region");
 assert.match(router, /focusedPaneId=\{effectiveFocusedPane\}/, "the host renders the reconciled focus");
-
-// The thread rail rows: ⌥↵ opens in a split, plain ↵ still opens.
-assert.match(sidebar, /onOpenSessionInSplit\?: \(session: SessionRow\) => void;/, "sidebar accepts the split opener");
-assert.equal(
-  (sidebar.match(/if \(e\.altKey && onOpenInSplit\) \{/g) ?? []).length,
-  3,
-  "search-result, folder, and recent rows all handle ⌥↵",
-);
 
 // ── Live IA wiring (the contextual nav is the outer thread rail) ─────────────
 // Workspace mounts ChatSurface with hideThreadRail while WorkspaceSidebar owns
