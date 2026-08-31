@@ -333,13 +333,7 @@ export function serveRouteFailure({
 }
 
 type TailscaleServeStatus = {
-  TCP?: Record<
-    string,
-    {
-      HTTP?: unknown;
-      HTTPS?: unknown;
-    }
-  >;
+  TCP?: Record<string, Record<string, unknown>>;
   Web?: Record<
     string,
     {
@@ -351,6 +345,9 @@ type TailscaleServeStatus = {
       >;
     }
   >;
+  Services?: unknown;
+  AllowFunnel?: unknown;
+  Foreground?: unknown;
 };
 
 type ServeRouteInspection = {
@@ -455,40 +452,116 @@ function normalizeProxyTarget(target: string) {
   return normalizedLoopbackProxyTarget(target) ?? target.trim().replace(/\/+$/, "");
 }
 
+function serveStatusWebPort(host: string): string | null {
+  const match = host.trim().match(/:(\d+)$/);
+  if (!match) return null;
+  const port = Number(match[1]);
+  return Number.isInteger(port) && port >= 1 && port <= 65_535
+    ? String(port)
+    : null;
+}
+
+function isExpectedWebTcpListener(config: unknown): boolean {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+  const typed = config as Record<string, unknown>;
+  if (Object.keys(typed).some((key) => key !== "HTTP" && key !== "HTTPS")) return false;
+  if ("HTTP" in typed && typeof typed.HTTP !== "boolean") return false;
+  if ("HTTPS" in typed && typeof typed.HTTPS !== "boolean") return false;
+  return (typed.HTTP === true) !== (typed.HTTPS === true);
+}
+
+function appendProtectedNonEmptySetting(
+  backends: ServeProxyBackend[],
+  status: TailscaleServeStatus,
+  field: "Services" | "AllowFunnel" | "Foreground",
+) {
+  const value = status[field];
+  if (value === undefined) return;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    backends.push({ kind: "protected", raw: `<malformed ${field}>` });
+    return;
+  }
+  if (Object.keys(value).length > 0) {
+    backends.push({ kind: "protected", raw: `<protected ${field}>` });
+  }
+}
+
 export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[] {
   if (!status || typeof status !== "object" || Array.isArray(status)) {
     return [{ kind: "protected", raw: "<malformed status>" }];
   }
   const typedStatus = status as TailscaleServeStatus;
   const web = typedStatus.Web;
-  if (web === undefined) return [];
-  if (!web || typeof web !== "object" || Array.isArray(web)) {
-    return [{ kind: "protected", raw: "<malformed Web>" }];
+  const backends: ServeProxyBackend[] = [];
+  const webPorts = new Set<string>();
+  if (web !== undefined) {
+    if (!web || typeof web !== "object" || Array.isArray(web)) {
+      backends.push({ kind: "protected", raw: "<malformed Web>" });
+    } else {
+      for (const [host, config] of Object.entries(web)) {
+        const port = serveStatusWebPort(host);
+        if (!port) {
+          backends.push({ kind: "protected", raw: "<malformed Web host>" });
+        }
+        if (
+          !config
+          || typeof config !== "object"
+          || Array.isArray(config)
+          || !("Handlers" in config)
+        ) {
+          backends.push({ kind: "protected", raw: "<malformed Web config>" });
+          continue;
+        }
+        const handlers = config.Handlers;
+        if (
+          !handlers
+          || typeof handlers !== "object"
+          || Array.isArray(handlers)
+          || Object.keys(handlers).length === 0
+        ) {
+          backends.push({ kind: "protected", raw: "<malformed Handlers>" });
+          continue;
+        }
+        if (port) webPorts.add(port);
+        for (const handler of Object.values(handlers)) {
+          const raw = handler?.Proxy;
+          if (typeof raw !== "string" || !raw.trim()) {
+            backends.push({ kind: "protected", raw: "<malformed Proxy>" });
+            continue;
+          }
+          const target = normalizedLoopbackProxyTarget(raw);
+          backends.push(target
+            ? { kind: "loopback", raw, target }
+            : { kind: "protected", raw });
+        }
+      }
+    }
   }
 
-  const backends: ServeProxyBackend[] = [];
-  for (const config of Object.values(web)) {
-    if (!config || typeof config !== "object" || Array.isArray(config) || !("Handlers" in config)) {
-      backends.push({ kind: "protected", raw: "<malformed Web config>" });
-      continue;
-    }
-    const handlers = config.Handlers;
-    if (!handlers || typeof handlers !== "object" || Array.isArray(handlers)) {
-      backends.push({ kind: "protected", raw: "<malformed Handlers>" });
-      continue;
-    }
-    for (const handler of Object.values(handlers)) {
-      const raw = handler?.Proxy;
-      if (typeof raw !== "string" || !raw.trim()) {
-        backends.push({ kind: "protected", raw: "<malformed Proxy>" });
-        continue;
+  const matchedWebPorts = new Set<string>();
+  const tcp = typedStatus.TCP;
+  if (tcp !== undefined) {
+    if (!tcp || typeof tcp !== "object" || Array.isArray(tcp)) {
+      backends.push({ kind: "protected", raw: "<malformed TCP>" });
+    } else {
+      for (const [port, config] of Object.entries(tcp)) {
+        if (webPorts.has(port) && isExpectedWebTcpListener(config)) {
+          matchedWebPorts.add(port);
+        } else {
+          backends.push({ kind: "protected", raw: `<protected TCP ${port}>` });
+        }
       }
-      const target = normalizedLoopbackProxyTarget(raw);
-      backends.push(target
-        ? { kind: "loopback", raw, target }
-        : { kind: "protected", raw });
     }
   }
+  for (const port of webPorts) {
+    if (!matchedWebPorts.has(port)) {
+      backends.push({ kind: "protected", raw: `<missing TCP ${port}>` });
+    }
+  }
+
+  appendProtectedNonEmptySetting(backends, typedStatus, "Services");
+  appendProtectedNonEmptySetting(backends, typedStatus, "AllowFunnel");
+  appendProtectedNonEmptySetting(backends, typedStatus, "Foreground");
   return backends;
 }
 

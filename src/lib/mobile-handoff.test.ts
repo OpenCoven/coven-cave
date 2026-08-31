@@ -104,6 +104,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   );
 
   const competingStatus = {
+    TCP: { "443": { HTTPS: true } },
     Web: {
       [`${serveHost}:443`]: {
         Handlers: {
@@ -132,8 +133,114 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "the desired backend owns the complete route when every proxy target matches",
   );
 
+  const tcpForwardStatus = {
+    TCP: {
+      "443": { HTTPS: true },
+      "2222": { TCPForward: "127.0.0.1:22" },
+    },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(tcpForwardStatus, "http://127.0.0.1:3000"),
+    false,
+    "an unrelated TCP forward prevents global reset ownership",
+  );
+  let tcpForwardProbeCount = 0;
+  const tcpForwardAssessment = await assessServeOwnership(
+    tcpForwardStatus,
+    "http://127.0.0.1:3000",
+    async () => {
+      tcpForwardProbeCount += 1;
+      return false;
+    },
+  );
+  assert.equal(tcpForwardAssessment.kind, "conflict");
+  assert.equal(tcpForwardProbeCount, 0, "protected TCP settings are never probed or taken over");
+
+  const httpFallbackStatus = {
+    TCP: { "3020": { HTTP: true } },
+    Web: {
+      "100.101.102.103:3020": {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+      },
+    },
+  };
+  assert.equal(
+    serveRouteOwnedByBackend(httpFallbackStatus, "http://127.0.0.1:3000"),
+    true,
+    "Cave's generated HTTP listener metadata remains part of the owned route",
+  );
+
+  const protectedCompleteSettings = [
+    {
+      Web: status.Web,
+    },
+    {
+      ...status,
+      TCP: { "443": { HTTP: true, HTTPS: true } },
+    },
+    {
+      ...status,
+      TCP: { "443": { HTTPS: "true" } },
+    },
+    {
+      ...status,
+      TCP: {
+        "443": {
+          HTTPS: true,
+          TCPForward: "127.0.0.1:8443",
+          TerminateTLS: serveHost,
+          ProxyProtocol: 2,
+        },
+      },
+    },
+    {
+      TCP: {
+        "443": { HTTPS: true },
+        "8443": { HTTPS: true },
+      },
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+        },
+      },
+    },
+    {
+      ...status,
+      Services: {
+        "svc:database": {
+          TCP: { "5432": { TCPForward: "127.0.0.1:5432" } },
+        },
+      },
+    },
+    {
+      ...status,
+      AllowFunnel: { [`${serveHost}:443`]: true },
+    },
+    {
+      ...status,
+      Foreground: {
+        session: {
+          TCP: { "8080": { TCPForward: "127.0.0.1:8080" } },
+        },
+      },
+    },
+  ];
+  for (const protectedConfig of protectedCompleteSettings) {
+    assert.equal(
+      serveRouteOwnedByBackend(protectedConfig, "http://127.0.0.1:3000"),
+      false,
+      "non-Cave listeners, services, funnel, and foreground settings prevent global reset",
+    );
+  }
+
   let protectedProbeCount = 0;
   const protectedStatus = {
+    TCP: { "443": { HTTPS: true } },
     Web: {
       [`${serveHost}:443`]: {
         Handlers: {
@@ -217,6 +324,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     )
   )(
     {
+      TCP: { "443": { HTTPS: true } },
       Web: {
         [`${serveHost}:443`]: {
           Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
@@ -256,6 +364,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(
     serveRouteOwnedByBackend(
       {
+        TCP: { "443": { HTTPS: true } },
         Web: {
           [`${serveHost}:443`]: {
             Handlers: { "/": { Proxy: "http://127.0.0.1:3020" } },

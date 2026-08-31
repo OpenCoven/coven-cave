@@ -579,35 +579,106 @@ fn parse_loopback_proxy_port(proxy: &str) -> Option<u16> {
 }
 
 #[cfg(desktop)]
-fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
-    let Some(web) = status.get("Web") else {
-        return Vec::new();
+fn serve_status_web_port(host: &str) -> Option<u16> {
+    let (_, port) = host.trim().rsplit_once(':')?;
+    let port = port.parse::<u16>().ok()?;
+    (port > 0).then_some(port)
+}
+
+#[cfg(desktop)]
+fn is_expected_web_tcp_listener(config: &serde_json::Value) -> bool {
+    let Some(config) = config.as_object() else {
+        return false;
     };
-    let Some(web) = web.as_object() else {
+    if config.keys().any(|key| key != "HTTP" && key != "HTTPS") {
+        return false;
+    }
+    if config.get("HTTP").is_some_and(|value| !value.is_boolean())
+        || config.get("HTTPS").is_some_and(|value| !value.is_boolean())
+    {
+        return false;
+    }
+    let http = config.get("HTTP").and_then(serde_json::Value::as_bool) == Some(true);
+    let https = config.get("HTTPS").and_then(serde_json::Value::as_bool) == Some(true);
+    http != https
+}
+
+#[cfg(desktop)]
+fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
+    let Some(status) = status.as_object() else {
         return vec![ServeProxyTarget::Protected];
     };
     let mut targets = Vec::new();
-    for config in web.values() {
-        let Some(config) = config.as_object() else {
-            targets.push(ServeProxyTarget::Protected);
-            continue;
+    let mut web_ports = std::collections::BTreeSet::new();
+    if let Some(web) = status.get("Web") {
+        let Some(web) = web.as_object() else {
+            return vec![ServeProxyTarget::Protected];
         };
-        let Some(handlers) = config.get("Handlers") else {
+        for (host, config) in web {
+            let port = serve_status_web_port(host);
+            if port.is_none() {
+                targets.push(ServeProxyTarget::Protected);
+            }
+            let Some(config) = config.as_object() else {
+                targets.push(ServeProxyTarget::Protected);
+                continue;
+            };
+            let Some(handlers) = config
+                .get("Handlers")
+                .and_then(serde_json::Value::as_object)
+                .filter(|handlers| !handlers.is_empty())
+            else {
+                targets.push(ServeProxyTarget::Protected);
+                continue;
+            };
+            if let Some(port) = port {
+                web_ports.insert(port);
+            }
+            for handler in handlers.values() {
+                let target = handler
+                    .get("Proxy")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(parse_loopback_proxy_port)
+                    .map(ServeProxyTarget::Loopback)
+                    .unwrap_or(ServeProxyTarget::Protected);
+                targets.push(target);
+            }
+        }
+    }
+
+    let mut matched_web_ports = std::collections::BTreeSet::new();
+    if let Some(tcp) = status.get("TCP") {
+        if let Some(tcp) = tcp.as_object() {
+            for (port, config) in tcp {
+                let parsed_port = port
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|parsed| *parsed > 0 && parsed.to_string() == *port);
+                if parsed_port.is_some_and(|port| {
+                    web_ports.contains(&port) && is_expected_web_tcp_listener(config)
+                }) {
+                    matched_web_ports.insert(parsed_port.expect("checked above"));
+                } else {
+                    targets.push(ServeProxyTarget::Protected);
+                }
+            }
+        } else {
             targets.push(ServeProxyTarget::Protected);
-            continue;
-        };
-        let Some(handlers) = handlers.as_object() else {
+        }
+    }
+    for port in web_ports {
+        if !matched_web_ports.contains(&port) {
             targets.push(ServeProxyTarget::Protected);
-            continue;
-        };
-        for handler in handlers.values() {
-            let target = handler
-                .get("Proxy")
-                .and_then(serde_json::Value::as_str)
-                .and_then(parse_loopback_proxy_port)
-                .map(ServeProxyTarget::Loopback)
-                .unwrap_or(ServeProxyTarget::Protected);
-            targets.push(target);
+        }
+    }
+    for field in ["Services", "AllowFunnel", "Foreground"] {
+        if let Some(value) = status.get(field) {
+            if value
+                .as_object()
+                .is_none_or(|settings| !settings.is_empty())
+            {
+                targets.push(ServeProxyTarget::Protected);
+            }
         }
     }
     targets
@@ -2563,6 +2634,7 @@ mod tests {
             serve_mode_from_status(&http_status),
             Some(TailscaleServeMode::Http(3000))
         );
+        assert!(serve_route_owned_by_port(&http_status, 3000));
         assert_eq!(
             http_serve_arguments(3007, 3000),
             [
@@ -2594,6 +2666,80 @@ mod tests {
             decide_serve_repair(&status, 3007, false, |_| panic!("same owner is not probed")),
             ServeRepairDecision::Noop
         );
+    }
+
+    #[test]
+    fn serve_ownership_protects_unrelated_tcp_forwarding() {
+        let status = serde_json::json!({
+            "TCP": {
+                "443": { "HTTPS": true },
+                "2222": { "TCPForward": "127.0.0.1:22" }
+            },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        assert!(!serve_route_owned_by_port(&status, 3007));
+        assert_eq!(
+            decide_serve_repair(&status, 3007, false, |_| {
+                panic!("protected TCP forwarding must not be probed")
+            }),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_ownership_protects_other_machine_global_settings() {
+        let normal_web = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        let protected = [
+            serde_json::json!({
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTP": true, "HTTPS": true } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTPS": "true" } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": {
+                    "443": { "HTTPS": true },
+                    "8443": { "HTTPS": true }
+                },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": { "443": { "HTTPS": true, "ProxyProtocol": 2 } },
+                "Web": normal_web["Web"].clone()
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "Services": { "svc:database": { "TCP": { "5432": { "TCPForward": "127.0.0.1:5432" } } } }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "AllowFunnel": { "cave.tailnet.ts.net:443": true }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": normal_web["Web"].clone(),
+                "Foreground": { "session": { "TCP": { "8080": { "TCPForward": "127.0.0.1:8080" } } } }
+            }),
+        ];
+        for status in protected {
+            assert!(!serve_route_owned_by_port(&status, 3007));
+            assert_eq!(
+                decide_serve_repair(&status, 3007, true, |_| {
+                    panic!("protected machine-global settings must not be probed")
+                }),
+                ServeRepairDecision::Preserve
+            );
+        }
     }
 
     #[test]
