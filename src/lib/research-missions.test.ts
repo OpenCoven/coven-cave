@@ -84,6 +84,27 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   }), null);
 });
 
+test("mission parser preserves the status captured when a mission is archived", () => {
+  const archived = {
+    ...validMission(),
+    status: "archived",
+    archivedFrom: "paused",
+  } as const;
+  assert.deepEqual(parseResearchMission(archived), archived);
+  assert.equal(
+    parseResearchMission({ ...archived, archivedFrom: "archived" }),
+    null,
+  );
+});
+
+test("mission parser preserves canonical run generations and rejects invalid values", () => {
+  const secondRun = { ...validMission(), runGeneration: 2 };
+  assert.deepEqual(parseResearchMission(secondRun), secondRun);
+  for (const runGeneration of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "2"]) {
+    assert.equal(parseResearchMission({ ...validMission(), runGeneration }), null);
+  }
+});
+
 // cave-v3ajh. The X identity fields are refused exactly as strictly as
 // `status` is, and this had no coverage: deleting both validation branches
 // outright left every suite green.

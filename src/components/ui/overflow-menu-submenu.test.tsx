@@ -319,14 +319,26 @@ describe("OverflowMenu + PopoverSubmenu", () => {
     expect(findButton("First submenu item")).toBeTruthy();
 
     const rootEscape = [...windowListeners.get("keydown")][0];
-    act(() => rootEscape({ key: "Escape", stopPropagation() {} }));
+    act(() =>
+      rootEscape({
+        key: "Escape",
+        stopPropagation() {},
+        stopImmediatePropagation() {},
+      }),
+    );
     expect(findButton("First submenu item")).toBeUndefined();
     expect(findButton("Choose priority")).toBeTruthy();
 
     // With no focused descendant left, the root Popover still owns the next
     // Escape and returns focus to its overflow trigger when it closes.
     activeElement = body;
-    act(() => rootEscape({ key: "Escape", stopPropagation() {} }));
+    act(() =>
+      rootEscape({
+        key: "Escape",
+        stopPropagation() {},
+        stopImmediatePropagation() {},
+      }),
+    );
     expect(findOverflowTrigger().props["aria-expanded"]).toBe(false);
     expect(activeElement.getAttribute("aria-label")).toBe("More actions");
   });

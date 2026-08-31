@@ -1,9 +1,15 @@
 "use client";
 
-import { useId, useRef, type ReactNode } from "react";
+import { useCallback, useContext, useId, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import {
+  FocusTrapPortalLayersContext,
+  PortalLayerDepthContext,
+  PortalLayerRootContext,
+  useFocusTrap,
+  usePortalLayerRootId,
+} from "@/lib/use-focus-trap";
 
 type ModalProps = {
   open: boolean;
@@ -26,6 +32,10 @@ type ModalProps = {
   ariaLabel?: string;
   /** Description element inside the modal body. */
   ariaDescribedBy?: string;
+  /** Called with the complete backdrop layer once mounted, and null on
+   *  unmount. This lets a caller register the whole Modal — including backdrop
+   *  presses — with an owning portaled layer such as Popover. */
+  onLayerElement?: (el: HTMLDivElement | null) => void;
 };
 
 export function Modal({
@@ -40,18 +50,55 @@ export function Modal({
   dismissOnEscape = true,
   ariaLabel,
   ariaDescribedBy,
+  onLayerElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const portalLayerElementsRef = useRef<Map<HTMLElement, number>>(new Map());
+  const ownerLayerDepth = useContext(PortalLayerDepthContext);
+  const portalLayerRootId = usePortalLayerRootId();
   const headingId = useId();
+  const setLayerElement = useCallback(
+    (el: HTMLDivElement | null) => {
+      onLayerElement?.(el);
+    },
+    [onLayerElement],
+  );
+  const portalLayers = useMemo(
+    () => ({
+      register: (el: HTMLElement) => {
+        portalLayerElementsRef.current.set(
+          el,
+          (portalLayerElementsRef.current.get(el) ?? 0) + 1,
+        );
+        return () => {
+          const next = (portalLayerElementsRef.current.get(el) ?? 1) - 1;
+          if (next === 0) portalLayerElementsRef.current.delete(el);
+          else portalLayerElementsRef.current.set(el, next);
+        };
+      },
+      contains: (node: Node | null) => {
+        if (!node) return false;
+        for (const el of portalLayerElementsRef.current.keys()) if (el.contains(node)) return true;
+        return false;
+      },
+      elements: () => Array.from(portalLayerElementsRef.current.keys()),
+    }),
+    [],
+  );
 
   // Keep the trap active regardless of dismissability — an undefined onEscape
   // makes Esc a no-op without releasing Tab cycling or focus return.
-  useFocusTrap(open, dialogRef, { onEscape: dismissOnEscape ? onClose : undefined });
+  useFocusTrap(open, dialogRef, {
+    onEscape: dismissOnEscape ? onClose : undefined,
+    portalLayers,
+    portalRootId: portalLayerRootId,
+  });
 
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={setLayerElement}
       className="ui-modal-backdrop"
       onClick={dismissOnBackdrop ? onClose : undefined}
       role="presentation"
@@ -71,39 +118,45 @@ export function Modal({
         aria-describedby={ariaDescribedBy}
         tabIndex={-1}
       >
-        {breadcrumb ? (
-          <header className="ui-modal-header">
-            <div className="ui-modal-header-breadcrumb" id={headingId}>
-              {breadcrumb.map((segment, i) => (
-                <span key={i} className="contents">
-                  {i > 0 ? (
-                    <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
-                      ›
-                    </span>
-                  ) : null}
-                  {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
-                </span>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="ui-modal-close focus-ring"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              <Icon name="ph:x" width={14} />
-            </button>
-          </header>
-        ) : null}
+        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
+          <PortalLayerRootContext.Provider value={portalLayerRootId}>
+            <PortalLayerDepthContext.Provider value={ownerLayerDepth + 1}>
+              {breadcrumb ? (
+                <header className="ui-modal-header">
+                  <div className="ui-modal-header-breadcrumb" id={headingId}>
+                    {breadcrumb.map((segment, i) => (
+                      <span key={i} className="contents">
+                        {i > 0 ? (
+                          <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
+                            ›
+                          </span>
+                        ) : null}
+                        {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-modal-close focus-ring"
+                    onClick={onClose}
+                    aria-label="Close"
+                  >
+                    <Icon name="ph:x" width={14} />
+                  </button>
+                </header>
+              ) : null}
 
-        <div className="ui-modal-body">{children}</div>
+              <div className="ui-modal-body">{children}</div>
 
-        {footerPills || footerActions ? (
-          <footer className="ui-modal-footer">
-            <div className="ui-modal-footer-pills">{footerPills}</div>
-            <div className="ui-modal-footer-actions">{footerActions}</div>
-          </footer>
-        ) : null}
+              {footerPills || footerActions ? (
+                <footer className="ui-modal-footer">
+                  <div className="ui-modal-footer-pills">{footerPills}</div>
+                  <div className="ui-modal-footer-actions">{footerActions}</div>
+                </footer>
+              ) : null}
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
+        </FocusTrapPortalLayersContext.Provider>
       </div>
     </div>,
     document.body,

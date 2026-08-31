@@ -18,7 +18,7 @@ assert.match(
 assert.match(source, /document\.activeElement/, "captures document.activeElement on activate");
 assert.match(
   source,
-  /returnFocusRef\.current\?\.focus\(\)/,
+  /\(rootReturnFocus \?\? returnTarget\)\?\.focus\(\)/,
   "restores focus on deactivate",
 );
 
@@ -112,23 +112,38 @@ assert.match(
 // leave two entries for the same logical trap.
 assert.match(
   source,
-  /function registerTrap\(id: number\): void \{/,
+  /function registerTrap\(\s*id: number,\s*depth: number,\s*rootId: number,[\s\S]{0,180}\): void \{/,
   "registerTrap is keyed by the stable id",
 );
 assert.match(
   source,
-  /const stale = trapStack\.findIndex\(\(entry\) => entry\.id === id\);\s*\n\s*if \(stale !== -1\) trapStack\.splice\(stale, 1\);/,
+  /const stale = trapStack\.findIndex\(\(entry\) => entry\.id === id\);\s*\n\s*if \(stale !== -1\) \{[\s\S]{0,300}trapStack\.splice\(stale, 1\);/,
   "registerTrap removes any stale entry for the same id before pushing (StrictMode safety)",
 );
 assert.match(
   source,
-  /function unregisterTrap\(id: number\): \{ hadTrapAbove: boolean \} \{/,
+  /function unregisterTrap\(id: number\): \{[\s\S]{0,140}hadTrapAbove: boolean;/,
   "unregisterTrap is keyed by the stable id, not stack position",
 );
 assert.match(
   source,
   /function isTopmostTrap\(id: number\): boolean \{/,
-  "isTopmostTrap checks the id against the top of the stack",
+  "isTopmostTrap resolves the deepest active trap",
+);
+assert.match(
+  source,
+  /a\.rootOrder - b\.rootOrder \|\| a\.depth - b\.depth \|\| a\.order - b\.order/,
+  "newer independent roots win globally, then depth and activation order rank nested traps",
+);
+assert.match(
+  source,
+  /registerTrap\(\s*trapId,\s*ownerLayerDepth \+ 1,\s*trapRootId,[\s\S]{0,220}\);[\s\S]{0,120}if \(focusFirst && isTopmostTrap\(trapId\)\)/,
+  "the trap registers its depth before deciding whether it may take initial focus",
+);
+assert.match(
+  source,
+  /if \(e\.key === "Escape"\) \{\s*e\.stopImmediatePropagation\(\);\s*onEscapeRef\.current\?\.\(\);/,
+  "the top trap claims an Escape before synchronous cleanup can expose a lower trap",
 );
 
 // Only the topmost trap acts on a keydown — everything below it is a
@@ -144,13 +159,13 @@ assert.match(
 // trap's own eventual restoration instead of fighting its containment.
 assert.match(
   source,
-  /const \{ hadTrapAbove \} = unregisterTrap\(trapId\);/,
+  /const \{ hadTrapAbove, nextTopmost, rootReturnFocus \} = unregisterTrap\(trapId\);/,
   "cleanup captures whether a trap was layered above before restoring focus",
 );
 assert.match(
   source,
-  /if \(!hadTrapAbove && restoreFocusRef\.current\(\) !== false\) \{\s*\n\s*returnFocusRef\.current\?\.focus\(\);\s*\n\s*\}/,
-  "focus restoration on deactivate is skipped while a nested trap is still active above it",
+  /if \(!hadTrapAbove && restoreFocusRef\.current\(\) !== false\) \{[\s\S]{0,300}if \(nextTopmost\) \{[\s\S]{0,220}focusTrap\(nextTopmost\);[\s\S]{0,120}\(rootReturnFocus \?\? returnTarget\)\?\.focus\(\);/,
+  "focus restoration stays inside a remaining trap and returns to the root trigger last",
 );
 assert.match(
   source,

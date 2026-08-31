@@ -41,6 +41,7 @@ import { ResearchMissionList } from "./research-mission-list";
 import { ResearchTopicDiscovery } from "./research-topic-discovery";
 import type { ResearchTabProps } from "./researcher-surface";
 import { useResearchPane } from "./use-research-pane";
+import { useResearchRunGateway } from "./use-research-run-gateway";
 
 type DeskCommand = {
   cmd: string;
@@ -104,6 +105,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   // rails for reading, this keeps the queue while widening the run.
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const rail = useResearchPane(RAIL_PANE);
+  const canonicalRun = useResearchRunGateway(research.selected?.id ?? null, familiarId);
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
@@ -359,7 +361,11 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             />
           </>
         )}
-        <main className="research-desk__main">
+        <main
+          className="research-desk__main"
+          data-research-run-gateway-status={canonicalRun.status}
+          data-research-run-sequence={canonicalRun.eventState?.lastEventSequence ?? 0}
+        >
           {research.error ? (
             <div className="research-desk__error" role="alert">
               <span>{research.error}</span>
@@ -370,6 +376,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           ) : null}
           <ResearchMissionDetail
             mission={research.selected}
+            canonicalRun={canonicalRun.eventState}
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}

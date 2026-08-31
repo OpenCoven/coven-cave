@@ -369,6 +369,31 @@ test("Snapshot projection hydration validates and orders a complete historical p
   );
 });
 
+test("Snapshot hydration accepts an exact historical run generation for its mission", () => {
+  const mission = {
+    id: "mission-history",
+    runGeneration: 3,
+  } as ResearchMission;
+  const historicalRun: ResearchRunV1 = {
+    ...run,
+    id: "run_mission-history_g2",
+    nextEventSequence: 1,
+  };
+
+  const input = hydrateResearchRunProjectionInput(historicalRun, [], mission);
+
+  assert.equal(input.state.run.id, "run_mission-history_g2");
+  assert.equal(input.mission, mission);
+  assert.throws(
+    () => hydrateResearchRunProjectionInput(
+      { ...historicalRun, id: "run_other-mission_g2" },
+      [],
+      mission,
+    ),
+    /does not belong to snapshot/,
+  );
+});
+
 test("Historical and newly applied artifact registrations contribute to one projection count", () => {
   const snapshot = {
     ...run,
@@ -1079,6 +1104,7 @@ test("the legacy mission adapter enters the same reducer-backed selector contrac
     constraints: [],
     bounds: run.bounds,
     status: "completed",
+    runGeneration: 3,
     createdAt: "2026-08-30T09:00:00.000Z",
     updatedAt: RUN_UPDATED_AT,
     iterations: [{
@@ -1101,10 +1127,47 @@ test("the legacy mission adapter enters the same reducer-backed selector contrac
   const input = researchMissionToRunProjectionInput(mission);
   const projections = selectResearchRunProjections(input);
 
-  assert.equal(input.state.run.id, mission.id);
+  assert.equal(input.state.run.id, "run_mission-legacy_g3");
   assert.equal(input.state.run.status, "completed");
-  assert.equal(projections.runId, mission.id);
+  assert.equal(projections.runId, "run_mission-legacy_g3");
   assert.equal(projections.report.outline[0]?.title, "Findings");
   assert.equal(projections.report.artifacts[0]?.status, "published");
   assert.equal(projections.report.exportStatus, "exported");
+});
+
+test("the legacy mission adapter preserves archived terminal outcomes", () => {
+  const mission = {
+    version: 1,
+    id: "mission-archived",
+    familiarId: "sage",
+    title: "Archived research",
+    intent: "Preserve the terminal outcome",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "archived",
+    createdAt: "2026-08-30T09:00:00.000Z",
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [],
+    artifacts: [],
+    sources: [],
+  } as ResearchMission;
+  const cases = [
+    { archivedFrom: "completed", expected: "completed" },
+    { archivedFrom: "failed", expected: "failed" },
+    { archivedFrom: "cancelled", expected: "cancelled" },
+    { archivedFrom: "checkpoint", expected: "cancelled" },
+  ] as const;
+
+  for (const { archivedFrom, expected } of cases) {
+    const input = researchMissionToRunProjectionInput({
+      ...mission,
+      archivedFrom,
+    });
+
+    assert.equal(input.state.run.status, expected, archivedFrom);
+    assert.equal(Boolean(input.state.run.failure), expected === "failed", archivedFrom);
+  }
 });

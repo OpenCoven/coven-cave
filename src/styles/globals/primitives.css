@@ -16,7 +16,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Above app drawers and mobile navigation; below portaled popovers (400). */
+  /* Above app drawers and mobile navigation; below portaled popovers (400).
+     A Popover that launches a Modal hides its own panel while the Modal is
+     open, so later Popovers launched from inside the Modal still layer above. */
   z-index: 350;
   padding: var(--space-4);
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
@@ -1505,6 +1507,10 @@
   pointer-events: auto;
   animation: ui-popover-enter var(--duration-fast) var(--ease-decelerate);
   overflow: hidden;
+}
+.ui-popover[data-covered] {
+  visibility: hidden;
+  pointer-events: none;
 }
 @keyframes ui-popover-enter {
   from { opacity: 0; transform: translateY(-2px); }

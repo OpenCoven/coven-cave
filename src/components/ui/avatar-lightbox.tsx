@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Modal } from "./modal";
+import { usePopoverLayerRegistration } from "./popover";
 
 type AvatarLightboxProps = {
   /** The small inline avatar to render as the clickable trigger (an <img> or
@@ -43,7 +44,14 @@ export function AvatarLightbox({
   triggerClassName,
 }: AvatarLightboxProps) {
   const [enlarged, setEnlarged] = useState(false);
+  const [layerEl, setLayerEl] = useState<HTMLDivElement | null>(null);
   const noun = category.toLowerCase();
+  const closeLightbox = useCallback(() => setEnlarged(false), []);
+
+  // If this trigger renders inside a Popover, its complete Modal layer counts
+  // as inside, owns Escape, and covers that Popover until it closes. A no-op
+  // outside a Popover.
+  usePopoverLayerRegistration(layerEl, enlarged, closeLightbox, true);
 
   return (
     <>
@@ -59,9 +67,10 @@ export function AvatarLightbox({
       {enlarged ? (
         <Modal
           open
-          onClose={() => setEnlarged(false)}
+          onClose={closeLightbox}
           breadcrumb={[label, category]}
           footerActions={footerActions}
+          onLayerElement={setLayerEl}
         >
           <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
             <img src={src} alt={`${label} ${noun}`} className="h-full w-full object-cover" />

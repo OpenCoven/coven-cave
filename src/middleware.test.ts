@@ -77,7 +77,7 @@ assert.match(
 );
 assert.match(
   source,
-  /nextWithInternalAuthMarkers\(req, remoteIngress\)/,
+  /nextWithInternalAuthMarkers\(req, remoteIngress(?:, undefined, validatedSidecarQuery)?\)/,
   "proxy should forward the verified remote-ingress state into downstream request headers",
 );
 // A tailnet device is remote by construction, so it must carry the mobile
@@ -91,6 +91,26 @@ assert.match(
   source,
   /requestHeaders\.delete\(CLIENT_V1_ADMIN_HEADER\)/,
   "proxy must strip caller-supplied Client v1 admin markers",
+);
+assert.match(
+  source,
+  /requestHeaders\.delete\(VALIDATED_SIDECAR_QUERY_HEADER\)/,
+  "proxy must strip caller-supplied EventSource query-auth markers",
+);
+assert.match(
+  source,
+  /validatedSidecarQuery[\s\S]*?requestHeaders\.set\(VALIDATED_SIDECAR_QUERY_HEADER, "1"\)/,
+  "proxy must mint the internal marker only after validating the EventSource query",
+);
+assert.match(
+  source,
+  /req\.method === "GET"[\s\S]*?RESEARCH_RUN_STREAM_PATH_RE\.test\(req\.nextUrl\.pathname\)[\s\S]*?trustedLocalPeer[\s\S]*?sidecarTokenMatches\(req\.nextUrl\.searchParams\.get\(TOKEN_PARAM\)\)/,
+  "query-token promotion must stay scoped to trusted-loopback Research Run SSE requests",
+);
+assert.match(
+  source,
+  /return nextWithInternalAuthMarkers\(req, remoteIngress, undefined, validatedSidecarQuery\);\s*\}\s*export const config/,
+  "the ordinary authenticated sidecar pass-through must carry the validated EventSource marker",
 );
 assert.match(
   source,

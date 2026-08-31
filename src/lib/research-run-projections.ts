@@ -1,7 +1,6 @@
 import type {
   ResearchArtifactRef,
   ResearchMission,
-  ResearchMissionStatus,
   ResearchSourceRef,
 } from "./research-missions.ts";
 import {
@@ -330,6 +329,27 @@ function activePhaseFromEvents(events: readonly RunEventV1[]): ResearchRunPhaseV
   return activePhase;
 }
 
+function runIdBelongsToMission(runId: string, missionId: string): boolean {
+  const baseRunId = `run_${missionId}`;
+  if (runId === baseRunId) return true;
+  const generation = runId.startsWith(`${baseRunId}_g`)
+    ? runId.slice(baseRunId.length + 2)
+    : "";
+  if (!/^[1-9]\d*$/.test(generation)) return false;
+  const value = Number(generation);
+  return Number.isSafeInteger(value) && value >= 2;
+}
+
+function runIdForMission(mission: ResearchMission): string {
+  const generation = mission.runGeneration ?? 1;
+  if (!Number.isSafeInteger(generation) || generation < 1) {
+    throw new RangeError("Research mission run generation is invalid");
+  }
+  return generation === 1
+    ? `run_${mission.id}`
+    : `run_${mission.id}_g${generation}`;
+}
+
 export function hydrateResearchRunProjectionInput(
   run: ResearchRunV1,
   historicalValues: readonly unknown[],
@@ -359,7 +379,7 @@ export function hydrateResearchRunProjectionInput(
       `Research Run projection history is inconsistent with its snapshot: ${validatedHistory.error.message}`,
     );
   }
-  if (mission && run.id !== mission.id && run.id !== `run_${mission.id}`) {
+  if (mission && !runIdBelongsToMission(run.id, mission.id)) {
     throw new RangeError("Research mission does not belong to snapshot Research Run");
   }
   return {
@@ -1256,17 +1276,18 @@ export function selectResearchRunProjections(input: ResearchRunProjectionInput):
   };
 }
 
-const MISSION_STATUS: Record<ResearchMissionStatus, ResearchRunStatusV1> = {
-  queued: "queued",
-  planning: "scoping",
-  running: "gathering_public_sources",
-  checkpoint: "awaiting_checkpoint",
-  paused: "waiting_for_executor",
-  completed: "completed",
-  failed: "failed",
-  cancelled: "cancelled",
-  archived: "completed",
-};
+function runStatusForMission(mission: ResearchMission): ResearchRunStatusV1 {
+  if (mission.status === "queued") return "queued";
+  if (mission.status === "planning") return "scoping";
+  if (mission.status === "running") return "gathering_public_sources";
+  if (mission.status === "checkpoint" || mission.status === "paused") return "awaiting_checkpoint";
+  if (mission.status === "completed") return "completed";
+  if (mission.status === "failed") return "failed";
+  if (mission.status === "cancelled") return "cancelled";
+  if (mission.archivedFrom === "completed") return "completed";
+  if (mission.archivedFrom === "failed") return "failed";
+  return "cancelled";
+}
 
 /**
  * Compatibility bridge for the current mission endpoint. It intentionally
@@ -1274,9 +1295,10 @@ const MISSION_STATUS: Record<ResearchMissionStatus, ResearchRunStatusV1> = {
  * same selectors receive that state and the mission fallback disappears.
  */
 export function researchMissionToRunProjectionInput(mission: ResearchMission): ResearchRunProjectionInput {
-  const run = {
+  const status = runStatusForMission(mission);
+  const run: ResearchRunV1 = {
     schema: "opencoven.research-run/v1" as const,
-    id: mission.id,
+    id: runIdForMission(mission),
     acceptedTopic: { question: mission.intent, editedByUser: false },
     execution: {
       location: "local" as const,
@@ -1296,7 +1318,17 @@ export function researchMissionToRunProjectionInput(mission: ResearchMission): R
       allowMemoryPromotion: false as const,
     },
     bounds: mission.bounds,
-    status: MISSION_STATUS[mission.status],
+    status,
+    ...(status === "awaiting_checkpoint" ? { waitingReason: "checkpoint" as const } : {}),
+    ...(status === "failed"
+      ? {
+        failure: {
+          code: "research_mission_failed",
+          message: "The persisted research mission reported a failure.",
+          retryable: false,
+        },
+      }
+      : {}),
     createdAt: mission.createdAt,
     updatedAt: mission.updatedAt,
     nextEventSequence: 1,
