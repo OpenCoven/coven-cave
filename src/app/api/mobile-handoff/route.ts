@@ -43,7 +43,23 @@ type TailscaleResult = {
   stderr: string;
 };
 
-function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
+const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
+
+// The local Tailscale daemon/system-extension IPC occasionally stalls a
+// single CLI invocation for several seconds (observed on macOS with the
+// managed/sysext install) even while Tailscale itself is fully connected.
+// Any of the sequential probes below can be the one that stalls — not just
+// the first. A retried invocation almost always returns immediately, so one
+// bounded retry turns a spurious "Tailscale command timed out" (which used
+// to hard-block the whole pairing screen, including the QR code, even though
+// Tailscale was connected) into a brief, invisible delay. cave-j2056
+async function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
+  const first = await runTailscaleOnce(args, timeoutMs);
+  if (first.ok || first.stderr !== TAILSCALE_TIMED_OUT) return first;
+  return runTailscaleOnce(args, timeoutMs);
+}
+
+function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
   return new Promise((resolve) => {
     const bin = tailscaleBin();
     const child = spawn(bin, args, {
@@ -69,7 +85,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
           ok: false,
           status: null,
           stdout: stdout.text(),
-          stderr: "Tailscale command timed out",
+          stderr: TAILSCALE_TIMED_OUT,
         });
       });
     }, timeoutMs);
@@ -97,7 +113,7 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
           ok: false,
           status: null,
           stdout: stdout.text(),
-          stderr: "Tailscale command timed out",
+          stderr: TAILSCALE_TIMED_OUT,
         });
         return;
       }
