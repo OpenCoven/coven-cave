@@ -559,7 +559,7 @@ test("Terminal snapshots clear stale active plan stages for every terminal statu
   }
 });
 
-test("Plan projects the original and revised stages, including additions, supersession, and retry", () => {
+test("Plan projects additions and supersession without future retry back-propagation", () => {
   const plan = selectResearchRunPlan(fixtureInput());
 
   assert.equal(plan.original?.revision, 1);
@@ -567,7 +567,7 @@ test("Plan projects the original and revised stages, including additions, supers
   assert.equal(plan.hasRevision, true);
   assert.deepEqual(plan.addedStageIds, ["source-triangulation", "challenge"]);
   assert.deepEqual(plan.supersededStageIds, ["source-scan"]);
-  assert.deepEqual(plan.retryableStageIds, ["challenge"]);
+  assert.deepEqual(plan.retryableStageIds, []);
   assert.equal(plan.activeStageId, undefined);
   assert.deepEqual(
     plan.original?.stages.find((stage) => stage.id === "source-scan"),
@@ -581,7 +581,73 @@ test("Plan projects the original and revised stages, including additions, supers
       supersededBy: "source-triangulation",
     },
   );
-  assert.equal(plan.revised?.stages.find((stage) => stage.id === "challenge")?.attempt, 2);
+  assert.equal(plan.revised?.stages.find((stage) => stage.id === "challenge")?.attempt, 1);
+});
+
+test("Canonical plan revisions apply retries only through each revision event boundary", () => {
+  const history = [
+    event(1, "run.created", {
+      plan: {
+        revision: 1,
+        stages: [{
+          id: "synthesize",
+          label: "Synthesize findings",
+          status: "pending",
+          attempt: 1,
+          retryable: false,
+        }],
+      },
+    }),
+    event(2, "model-task.available", {
+      stageId: "synthesize",
+      attempt: 2,
+      retryable: true,
+    }),
+    event(3, "run.status", {
+      status: "synthesizing",
+      plan: {
+        revision: 2,
+        stages: [{
+          id: "synthesize",
+          label: "Synthesize findings",
+          status: "failed",
+          attempt: 1,
+          retryable: false,
+        }],
+      },
+    }),
+    event(4, "model-task.available", {
+      stageId: "synthesize",
+      attempt: 3,
+      retryable: false,
+    }),
+    event(5, "run.status", {
+      status: "synthesizing",
+      plan: {
+        revision: 3,
+        stages: [{
+          id: "synthesize",
+          label: "Synthesize findings",
+          status: "completed",
+          attempt: 1,
+          retryable: true,
+        }],
+      },
+    }),
+  ];
+
+  const plan = selectResearchRunPlan({
+    state: rehydrateResearchRun(run, history),
+  });
+  const stages = plan.revisions.map((revision) => revision.stages[0]);
+
+  assert.deepEqual(stages.map((stage) => stage?.attempt), [1, 2, 3]);
+  assert.deepEqual(stages.map((stage) => stage?.retryable), [false, true, false]);
+  assert.deepEqual(stages.map((stage) => stage?.status), ["pending", "failed", "completed"]);
+  assert.equal(plan.original?.stages[0]?.attempt, 1);
+  assert.equal(plan.original?.stages[0]?.status, "pending");
+  assert.equal(plan.revised?.stages[0]?.attempt, 3);
+  assert.equal(plan.revised?.stages[0]?.status, "completed");
 });
 
 test("Legacy mission plan revisions count retries only through each chronological iteration", () => {

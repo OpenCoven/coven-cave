@@ -434,6 +434,18 @@ function revisionsByNumber(revisions: readonly ResearchRunPlanRevision[]): Resea
   return [...byRevision.values()].sort((left, right) => left.revision - right.revision);
 }
 
+type SequencedPlanRevision = {
+  value: ResearchRunPlanRevision;
+  eventSequence: number;
+};
+
+type SequencedStageRetryUpdate = {
+  stageId: string;
+  attempt: number;
+  retryable: boolean;
+  eventSequence: number;
+};
+
 function planFromMission(mission: ResearchMission): ResearchRunPlanRevision[] {
   const revisions: ResearchRunPlanRevision[] = [];
   const attempts = new Map<string, number>();
@@ -461,24 +473,81 @@ function planFromMission(mission: ResearchMission): ResearchRunPlanRevision[] {
   return revisions;
 }
 
-function stageRetryUpdates(events: readonly RunEventV1[]): ReadonlyMap<string, { attempt: number; retryable: boolean }> {
-  const updates = new Map<string, { attempt: number; retryable: boolean }>();
+function sequencedPlanRevisions(events: readonly RunEventV1[]): SequencedPlanRevision[] {
+  const byRevision = new Map<number, SequencedPlanRevision>();
+  for (const event of events) {
+    for (const revision of planRevisionsFromEvent(event)) {
+      byRevision.set(revision.revision, {
+        value: revision,
+        eventSequence: event.sequence,
+      });
+    }
+  }
+  return [...byRevision.values()].sort((left, right) =>
+    left.eventSequence - right.eventSequence || left.value.revision - right.value.revision);
+}
+
+function sequencedStageRetryUpdates(events: readonly RunEventV1[]): SequencedStageRetryUpdate[] {
+  const updates: SequencedStageRetryUpdate[] = [];
   for (const event of events) {
     const data = eventData(event);
     const candidate = isRecord(data.stageRetry) ? data.stageRetry : data;
     const stageId = textValue(candidate.stageId ?? candidate.stage, 120);
     const attempt = positiveInteger(candidate.attempt);
     if (!stageId || !attempt) continue;
-    const current = updates.get(stageId);
-    if (!current || attempt >= current.attempt) {
-      updates.set(stageId, { attempt, retryable: candidate.retryable !== false });
-    }
+    updates.push({
+      stageId,
+      attempt,
+      retryable: candidate.retryable !== false,
+      eventSequence: event.sequence,
+    });
   }
   return updates;
 }
 
+function applyStageRetryUpdates(
+  revision: ResearchRunPlanRevision,
+  retries: ReadonlyMap<string, { attempt: number; retryable: boolean }>,
+): ResearchRunPlanRevision {
+  return {
+    ...revision,
+    stages: revision.stages.map((stage) => {
+      const retry = retries.get(stage.id);
+      return retry
+        ? { ...stage, attempt: Math.max(stage.attempt, retry.attempt), retryable: retry.retryable }
+        : stage;
+    }),
+  };
+}
+
+function chronologicalEventPlanRevisions(events: readonly RunEventV1[]): ResearchRunPlanRevision[] {
+  const revisions = sequencedPlanRevisions(events);
+  const updates = sequencedStageRetryUpdates(events);
+  const retries = new Map<string, { attempt: number; retryable: boolean }>();
+  let updateIndex = 0;
+  const enriched: ResearchRunPlanRevision[] = [];
+  for (const revision of revisions) {
+    while (
+      updateIndex < updates.length
+      && updates[updateIndex].eventSequence <= revision.eventSequence
+    ) {
+      const update = updates[updateIndex];
+      const current = retries.get(update.stageId);
+      if (!current || update.attempt >= current.attempt) {
+        retries.set(update.stageId, {
+          attempt: update.attempt,
+          retryable: update.retryable,
+        });
+      }
+      updateIndex++;
+    }
+    enriched.push(applyStageRetryUpdates(revision.value, retries));
+  }
+  return revisionsByNumber(enriched);
+}
+
 function selectPlanRevisions(input: ResearchRunProjectionInput): ResearchRunPlanRevision[] {
-  const eventRevisions = revisionsByNumber(projectionEvents(input).flatMap(planRevisionsFromEvent));
+  const eventRevisions = chronologicalEventPlanRevisions(projectionEvents(input));
   if (eventRevisions.length > 0) return eventRevisions;
   return revisionsByNumber(input.mission ? planFromMission(input.mission) : []);
 }
@@ -486,19 +555,7 @@ function selectPlanRevisions(input: ResearchRunProjectionInput): ResearchRunPlan
 export function selectResearchRunPlan(input: ResearchRunProjectionInput): ResearchRunPlanProjection {
   const revisions = selectPlanRevisions(input);
   const original = revisions[0] ?? null;
-  const rawRevised = revisions.at(-1) ?? null;
-  const retries = stageRetryUpdates(projectionEvents(input));
-  const revised = rawRevised
-    ? {
-      ...rawRevised,
-      stages: rawRevised.stages.map((stage) => {
-        const retry = retries.get(stage.id);
-        return retry
-          ? { ...stage, attempt: Math.max(stage.attempt, retry.attempt), retryable: retry.retryable }
-          : stage;
-      }),
-    }
-    : null;
+  const revised = revisions.at(-1) ?? null;
   const originalIds = new Set(original?.stages.map((stage) => stage.id) ?? []);
   const revisedIds = new Set(revised?.stages.map((stage) => stage.id) ?? []);
   const explicitSupersededBy = new Map<string, string>();
