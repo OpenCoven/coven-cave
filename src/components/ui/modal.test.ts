@@ -42,26 +42,31 @@ assert.match(
   "the trap stays active while busy; only the Esc dismissal callback is gated",
 );
 
-console.log("modal.test.ts: ok");
-
 // Optional escape hatch (cave-fzr4p): Modal itself stays Popover-agnostic, but
-// exposes its dialog DOM node via a callback ref so a caller like
+// exposes its complete backdrop layer via a callback ref so a caller like
 // AvatarLightbox can register it as an "inside" layer of an ancestor Popover.
-// Without this, opening a focus-trapped Modal from inside a Popover steals
-// focus, which the Popover reads as focus leaving its panel — self-dismissing
-// and unmounting both.
+// Registering only the inner dialog leaves backdrop presses outside that layer,
+// so the Popover dismisses before the Modal can close itself.
 assert.match(
   src,
-  /onDialogElement\?: \(el: HTMLDivElement \| null\) => void;/,
-  "Modal accepts an optional onDialogElement callback",
+  /onLayerElement\?: \(el: HTMLDivElement \| null\) => void;/,
+  "Modal accepts an optional onLayerElement callback",
 );
 assert.match(
   src,
-  /const setDialogElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*dialogRef\.current = el;\s*onDialogElement\?\.\(el\);\s*\},\s*\[onDialogElement\],\s*\);/,
-  "the dialog uses a memoized callback ref so ordinary re-renders do not unregister and re-register the popover layer",
+  /const setLayerElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*onLayerElement\?\.\(el\);\s*\},\s*\[onLayerElement\],\s*\);/,
+  "the complete modal layer uses a memoized callback ref",
 );
 assert.match(
   src,
-  /ref=\{setDialogElement\}/,
-  "the stable callback ref keeps the internal focus-trap ref and forwards the node to the caller",
+  /ref=\{setLayerElement\}[\s\S]{0,120}className=\{`ui-modal-backdrop/,
+  "the stable callback ref exposes the backdrop rather than only the inner dialog",
 );
+assert.match(src, /abovePopovers\?: boolean/, "Modal can opt into the nested-popover layer");
+assert.match(
+  src,
+  /ui-modal-backdrop--above-popovers/,
+  "the nested-popover layer receives a dedicated stacking class",
+);
+
+console.log("modal.test.ts: ok");

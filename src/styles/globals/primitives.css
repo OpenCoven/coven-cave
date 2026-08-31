@@ -21,6 +21,9 @@
   padding: var(--space-4);
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
 }
+.ui-modal-backdrop--above-popovers {
+  z-index: 450;
+}
 
 @keyframes browser-progress {
   0%   { transform: translateX(-100%); width: 60%; }

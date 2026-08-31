@@ -291,13 +291,9 @@ for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "..
   );
 }
 
-console.log("popover.test.ts: ok");
-
 // Layer registration is exported for consumers outside popover.tsx (e.g.
-// AvatarLightbox's Modal, cave-fzr4p) to mark their own portaled dialog as
-// "inside" a Popover — otherwise a focus-trapped Modal opened from inside a
-// Popover steals focus, the Popover reads that as focus leaving its panel,
-// and self-dismisses out from under the Modal.
+// AvatarLightbox's Modal, cave-fzr4p) to mark their own complete portaled layer
+// as "inside" a Popover and optionally become its deepest Escape owner.
 assert.match(
   src,
   /export const PopoverLayersContext = createContext/,
@@ -305,7 +301,7 @@ assert.match(
 );
 assert.match(
   src,
-  /export function usePopoverLayerRegistration\(el: HTMLElement \| null\)/,
+  /export function usePopoverLayerRegistration\(\s*el: HTMLElement \| null,\s*active = Boolean\(el\),\s*onEscape\?: \(\) => void,/,
   "exports a hook that registers an element as an inside layer",
 );
 assert.match(
@@ -313,4 +309,19 @@ assert.match(
   /usePopoverLayerRegistration[\s\S]{0,200}if \(!el \|\| !layers\) return;\s*return layers\.register\(el\);/,
   "the hook is a no-op with no ancestor Popover and unregisters on cleanup/element change",
 );
+assert.match(
+  src,
+  /usePopoverEscapeLayer\(Boolean\(layers && active && onEscape\), onEscape \?\? NOOP\)/,
+  "a registered modal can absorb Escape before the owning Popover closes",
+);
 
+const nestedModalZ = Number(
+  primitivesCss.match(/\.ui-modal-backdrop--above-popovers\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
+);
+assert.ok(Number.isFinite(nestedModalZ), "found the nested modal z-index");
+assert.ok(
+  nestedModalZ > portalZ,
+  `nested modal (z ${nestedModalZ}) must stack above its owning popover (z ${portalZ})`,
+);
+
+console.log("popover.test.ts: ok");

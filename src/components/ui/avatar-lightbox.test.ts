@@ -38,14 +38,11 @@ assert.match(
   "caller classes are conditionally appended to the trigger's reset classes",
 );
 
-console.log("avatar-lightbox.test.ts: ok");
-
 // Popover focus-trap conflict fix (cave-fzr4p): a Modal's focus trap steals
 // focus the instant it opens, which an ancestor Popover reads as focus
 // leaving its panel and self-dismisses — unmounting both. AvatarLightbox must
-// register its Modal's dialog element as an "inside" layer via the shared
-// PopoverLayersContext hook so that doesn't happen; a no-op when there is no
-// ancestor Popover.
+// register its complete Modal layer as "inside" and as the deepest Escape
+// owner. A no-op when there is no ancestor Popover.
 assert.match(
   src,
   /from "\.\/popover"/,
@@ -53,12 +50,14 @@ assert.match(
 );
 assert.match(
   src,
-  /usePopoverLayerRegistration\(dialogEl\)/,
-  "registers the Modal's dialog element as an inside layer of any ancestor Popover",
+  /usePopoverLayerRegistration\(layerEl, enlarged, closeLightbox\)/,
+  "registers the complete Modal as an inside and Escape layer of any ancestor Popover",
 );
 assert.match(
   src,
-  /onDialogElement=\{setDialogEl\}/,
-  "wires the Modal's dialog element callback through to the registration hook",
+  /onLayerElement=\{setLayerEl\}/,
+  "wires the Modal's backdrop callback through to the registration hook",
 );
+assert.match(src, /abovePopovers/, "stacks the nested Modal above its owning Popover");
 
+console.log("avatar-lightbox.test.ts: ok");

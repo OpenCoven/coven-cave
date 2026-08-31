@@ -32,6 +32,7 @@ export const PopoverLayersContext = createContext<{
   register: (el: HTMLElement) => () => void;
   contains: (node: Node | null) => boolean;
 } | null>(null);
+const NOOP = () => {};
 
 /**
  * Registers `el` as an "inside" layer of an ancestor Popover (if any) for as
@@ -40,12 +41,17 @@ export const PopoverLayersContext = createContext<{
  * unconditionally from a shared component that may or may not be nested in
  * one (e.g. AvatarLightbox's Modal).
  */
-export function usePopoverLayerRegistration(el: HTMLElement | null) {
+export function usePopoverLayerRegistration(
+  el: HTMLElement | null,
+  active = Boolean(el),
+  onEscape?: () => void,
+) {
   const layers = useContext(PopoverLayersContext);
   useLayoutEffect(() => {
     if (!el || !layers) return;
     return layers.register(el);
   }, [el, layers]);
+  usePopoverEscapeLayer(Boolean(layers && active && onEscape), onEscape ?? NOOP);
 }
 
 // One open flyout per menu level: siblings coordinate through their level's

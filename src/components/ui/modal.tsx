@@ -26,13 +26,12 @@ type ModalProps = {
   ariaLabel?: string;
   /** Description element inside the modal body. */
   ariaDescribedBy?: string;
-  /** Called with the dialog's DOM node once mounted, and null on unmount. For
-   *  a caller that needs to register the dialog with something outside this
-   *  component's own tree — e.g. AvatarLightbox marking it as an "inside"
-   *  layer of an ancestor Popover, so the Popover's outside-click/focus-out
-   *  dismissal doesn't fire the instant this focus-trapped dialog steals
-   *  focus (cave-fzr4p). Optional; Modal itself stays Popover-agnostic. */
-  onDialogElement?: (el: HTMLDivElement | null) => void;
+  /** Called with the complete backdrop layer once mounted, and null on
+   *  unmount. This lets a caller register the whole Modal — including backdrop
+   *  presses — with an owning portaled layer such as Popover. */
+  onLayerElement?: (el: HTMLDivElement | null) => void;
+  /** Stack above Popovers when this Modal was launched from inside one. */
+  abovePopovers?: boolean;
 };
 
 export function Modal({
@@ -47,16 +46,16 @@ export function Modal({
   dismissOnEscape = true,
   ariaLabel,
   ariaDescribedBy,
-  onDialogElement,
+  onLayerElement,
+  abovePopovers,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
-  const setDialogElement = useCallback(
+  const setLayerElement = useCallback(
     (el: HTMLDivElement | null) => {
-      dialogRef.current = el;
-      onDialogElement?.(el);
+      onLayerElement?.(el);
     },
-    [onDialogElement],
+    [onLayerElement],
   );
 
   // Keep the trap active regardless of dismissability — an undefined onEscape
@@ -67,12 +66,13 @@ export function Modal({
 
   return createPortal(
     <div
-      className="ui-modal-backdrop"
+      ref={setLayerElement}
+      className={`ui-modal-backdrop${abovePopovers ? " ui-modal-backdrop--above-popovers" : ""}`}
       onClick={dismissOnBackdrop ? onClose : undefined}
       role="presentation"
     >
       <div
-        ref={setDialogElement}
+        ref={dialogRef}
         className={`ui-modal${wide ? " ui-modal--wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

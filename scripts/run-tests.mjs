@@ -1146,6 +1146,7 @@ export const SUITES = {
     "src/components/use-openai-voice-preview.test.tsx",
     "src/components/theme-script.test.ts",
     "src/components/ui/error-state.test.ts",
+    "src/components/ui/avatar-lightbox.behavior.test.tsx",
     "src/components/ui/avatar-lightbox.test.ts",
     "src/components/ui/live-region.test.ts",
     "src/components/workspace-chat-handoff.test.ts",
@@ -2443,6 +2444,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",
+  "src/components/ui/avatar-lightbox.behavior.test.tsx",
   "src/components/ui/overflow-menu-submenu.test.tsx",
   "src/lib/home-composer-context.test.ts",
   "src/components/auto-status-card.test.tsx",
