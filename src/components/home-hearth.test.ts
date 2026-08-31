@@ -14,7 +14,12 @@ import { readFile } from "node:fs/promises";
 
 const composer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const fromTask = await readFile(new URL("./home/home-from-task.tsx", import.meta.url), "utf8");
-const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
+const css = (
+  await Promise.all([
+    "landing-composer.css",
+    "hearth-continuations.css",
+  ].map((sheet) => readFile(new URL(`../styles/home-composer/${sheet}`, import.meta.url), "utf8")))
+).join("\n");
 
 // ── (1) One hearth card, in order ────────────────────────────────────────
 assert.match(
@@ -43,6 +48,21 @@ assert.doesNotMatch(
 assert.doesNotMatch(css, /home-halo/, "the hearth-glow halo CSS is removed");
 // The subtitle derives from live state — no invented user-profile name.
 assert.doesNotMatch(composer, /casting today, /, "no invented user name in the heading");
+assert.match(
+  composer,
+  /home-composer-familiar-label">Familiar<\/span>[\s\S]{0,120}?<FamiliarQuickSwitch/,
+  "the compact familiar picker keeps a persistent visible field label",
+);
+assert.match(
+  css,
+  /\.home-composer-familiar-context \{[\s\S]{0,220}?gap: var\(--space-2\);[\s\S]{0,160}?padding: 0 0 var\(--space-2\)/,
+  "the familiar picker is an attached context row rather than a second full-width toolbar",
+);
+assert.match(
+  css,
+  /\.home-composer-familiar-context \.familiar-quickswitch \{[\s\S]{0,160}?flex: 0 1 calc\(var\(--space-10\) \* 8\)/,
+  "the familiar picker hugs a bounded readable width",
+);
 
 // ── Ultra-minimal pass: the stacked sections + Ask Salem are OFF home ───────
 // Note: HomeContinue was re-added in the reference parity pass (2026-07-22).
