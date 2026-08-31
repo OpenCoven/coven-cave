@@ -98,4 +98,39 @@ assert.match(
   "a timed-out Serve mutation aborts before post-status discovery",
 );
 
+// Every read/decide/mutate sequence shares one bounded machine-wide lease with
+// the Rust desktop repair loop. In particular, reset must reacquire and reread
+// status while holding the lease so a waiting dev process cannot erase a
+// packaged route that won ownership before it entered the critical section.
+assert.match(
+  route,
+  /acquireTailscaleServeLease/,
+  "the route imports the shared cross-process Serve lease",
+);
+assert.match(
+  route,
+  /async function withServeMutationLease[\s\S]+?const lease = await acquireTailscaleServeLease\(\);[\s\S]+?if \(!lease\)[\s\S]+?503[\s\S]+?try \{[\s\S]+?return await operation\(\);[\s\S]+?finally \{[\s\S]+?await lease\.release\(\);/,
+  "lease acquisition is bounded/fail-closed and release is guaranteed",
+);
+assert.equal(
+  route.match(/const res = await withServeMutationLease\(/g)?.length,
+  2,
+  "app-start and GET/start each arbitrate inside the shared lease",
+);
+assert.match(
+  route,
+  /async function resetOwnedServeRoute\(backend: string\) \{\s*\n\s*return withServeMutationLease\(backend, async \(\) =>/,
+  "app-stop and explicit reset reacquire and reread ownership inside the shared lease",
+);
+assert.match(
+  route,
+  /assessServeOwnership\([\s\S]{0,250}?takeOverHealthyLoopback:\s*packagedServeMayTakeOverHealthyLoopback\(backend\)/,
+  "TypeScript grants healthy-loopback takeover only from trusted packaged 3020 evidence",
+);
+assert.match(
+  route,
+  /const reset = await runTailscale\(\["serve", "reset"\]\);[\s\S]{0,500}?const verified = await readServeStatus\(backend\);/,
+  "reset rereads Serve status before reporting success",
+);
+
 console.log("mobile-handoff route.test.ts OK");

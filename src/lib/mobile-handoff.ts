@@ -1,11 +1,238 @@
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
+import {
+  link as linkFile,
+  mkdir,
+  readFile,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
+import { CAVE_PORTS } from "../../scripts/ports.mjs";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
+const TAILSCALE_SERVE_LEASE_VERSION = 1;
+const TAILSCALE_SERVE_LEASE_FILE = "tailscale-serve-ownership.lock";
+const TAILSCALE_SERVE_LEASE_TIMEOUT_MS = 1_500;
+const TAILSCALE_SERVE_LEASE_POLL_MS = 50;
+
+type TailscaleServeLeaseRecord = {
+  version: number;
+  pid: number;
+  token: string;
+};
+
+type TailscaleServeLeaseFileSystem = {
+  mkdir(path: string, options?: { recursive?: boolean; mode?: number }): Promise<unknown>;
+  writeFile(
+    path: string,
+    content: string,
+    options?: { flag?: string; mode?: number },
+  ): Promise<unknown>;
+  link(source: string, destination: string): Promise<unknown>;
+  readFile(path: string, encoding: "utf8"): Promise<string>;
+  stat(path: string): Promise<{ dev: number; ino: number }>;
+  unlink(path: string): Promise<unknown>;
+};
+
+export type TailscaleServeLease = {
+  release(): Promise<void>;
+};
+
+type AcquireTailscaleServeLeaseOptions = {
+  path?: string;
+  fs?: TailscaleServeLeaseFileSystem;
+  pid?: number;
+  token?: string;
+  isProcessAlive?: (pid: number) => boolean;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+  timeoutMs?: number;
+  pollMs?: number;
+};
+
+const tailscaleServeLeaseFs: TailscaleServeLeaseFileSystem = {
+  mkdir,
+  writeFile,
+  link: linkFile,
+  readFile: (file, encoding) => readFile(file, encoding),
+  stat,
+  unlink,
+};
+
+function nodeErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== "object" || !("code" in error)) return null;
+  return typeof error.code === "string" ? error.code : null;
+}
+
+function parseTailscaleServeLeaseRecord(raw: string): TailscaleServeLeaseRecord | null {
+  try {
+    const value = JSON.parse(raw) as Partial<TailscaleServeLeaseRecord>;
+    if (
+      value.version !== TAILSCALE_SERVE_LEASE_VERSION
+      || !Number.isSafeInteger(value.pid)
+      || (value.pid ?? 0) <= 0
+      || (value.pid ?? 0) > 2_147_483_647
+      || typeof value.token !== "string"
+      || !/^[A-Za-z0-9-]{1,128}$/.test(value.token)
+    ) {
+      return null;
+    }
+    return {
+      version: value.version,
+      pid: value.pid,
+      token: value.token,
+    } as TailscaleServeLeaseRecord;
+  } catch {
+    return null;
+  }
+}
+
+function tailscaleServeLeaseCandidatePath(
+  leasePath: string,
+  record: TailscaleServeLeaseRecord,
+): string {
+  return `${leasePath}.${record.pid}.${record.token}.owner`;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return nodeErrorCode(error) === "EPERM";
+  }
+}
+
+async function unlinkIfPresent(
+  fs: TailscaleServeLeaseFileSystem,
+  file: string,
+): Promise<void> {
+  try {
+    await fs.unlink(file);
+  } catch (error) {
+    if (nodeErrorCode(error) !== "ENOENT") throw error;
+  }
+}
+
+async function recoverStaleTailscaleServeLease(
+  fs: TailscaleServeLeaseFileSystem,
+  leasePath: string,
+  isProcessAlive: (pid: number) => boolean,
+): Promise<boolean> {
+  try {
+    const [firstRaw, firstStat] = await Promise.all([
+      fs.readFile(leasePath, "utf8"),
+      fs.stat(leasePath),
+    ]);
+    const firstRecord = parseTailscaleServeLeaseRecord(firstRaw);
+    if (!firstRecord || isProcessAlive(firstRecord.pid)) return false;
+
+    const [secondRaw, secondStat] = await Promise.all([
+      fs.readFile(leasePath, "utf8"),
+      fs.stat(leasePath),
+    ]);
+    const secondRecord = parseTailscaleServeLeaseRecord(secondRaw);
+    if (
+      !secondRecord
+      || secondRecord.pid !== firstRecord.pid
+      || secondRecord.token !== firstRecord.token
+      || secondStat.dev !== firstStat.dev
+      || secondStat.ino !== firstStat.ino
+    ) {
+      return false;
+    }
+    await fs.unlink(leasePath);
+    await unlinkIfPresent(fs, tailscaleServeLeaseCandidatePath(leasePath, firstRecord));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function tailscaleServeLeasePath(home = homedir()): string {
+  return path.join(home, ".coven", "cave", TAILSCALE_SERVE_LEASE_FILE);
+}
+
+// Rust uses the same record and path. Linking a fully-written unique owner
+// file makes acquisition atomic without a Node-native flock dependency; a
+// dead PID can be recovered after rechecking both the record and inode.
+export async function acquireTailscaleServeLease(
+  options: AcquireTailscaleServeLeaseOptions = {},
+): Promise<TailscaleServeLease | null> {
+  const leasePath = options.path ?? tailscaleServeLeasePath();
+  const fs = options.fs ?? tailscaleServeLeaseFs;
+  const pid = options.pid ?? process.pid;
+  const token = options.token ?? randomUUID();
+  const isProcessAlive = options.isProcessAlive ?? processIsAlive;
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? ((milliseconds) =>
+    new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const timeoutMs = options.timeoutMs ?? TAILSCALE_SERVE_LEASE_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? TAILSCALE_SERVE_LEASE_POLL_MS;
+  const record: TailscaleServeLeaseRecord = {
+    version: TAILSCALE_SERVE_LEASE_VERSION,
+    pid,
+    token,
+  };
+  const candidatePath = tailscaleServeLeaseCandidatePath(leasePath, record);
+  const deadline = now() + Math.max(0, timeoutMs);
+
+  try {
+    await fs.mkdir(path.dirname(leasePath), { recursive: true, mode: 0o700 });
+    await fs.writeFile(candidatePath, `${JSON.stringify(record)}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+  } catch {
+    await unlinkIfPresent(fs, candidatePath).catch(() => undefined);
+    return null;
+  }
+
+  while (true) {
+    try {
+      await fs.link(candidatePath, leasePath);
+      let released = false;
+      return {
+        async release() {
+          if (released) return;
+          released = true;
+          try {
+            const current = parseTailscaleServeLeaseRecord(
+              await fs.readFile(leasePath, "utf8"),
+            );
+            if (current?.pid === pid && current.token === token) {
+              await unlinkIfPresent(fs, leasePath);
+            }
+          } catch {
+            // A missing or replaced lock is already released from this owner's perspective.
+          }
+          await unlinkIfPresent(fs, candidatePath).catch(() => undefined);
+        },
+      };
+    } catch (error) {
+      if (nodeErrorCode(error) !== "EEXIST") {
+        await unlinkIfPresent(fs, candidatePath).catch(() => undefined);
+        return null;
+      }
+    }
+
+    if (await recoverStaleTailscaleServeLease(fs, leasePath, isProcessAlive)) {
+      continue;
+    }
+    if (now() >= deadline) {
+      await unlinkIfPresent(fs, candidatePath).catch(() => undefined);
+      return null;
+    }
+    await sleep(Math.max(1, Math.min(pollMs, deadline - now())));
+  }
+}
 
 export function serveRouteFailure({
   backendUrl,
@@ -138,13 +365,26 @@ function normalizedLoopbackProxyTarget(target: string): string | null {
   }
 }
 
+export function packagedServeMayTakeOverHealthyLoopback(
+  backendUrl: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const backend = normalizedLoopbackProxyTarget(backendUrl);
+  if (env.COVEN_CAVE_BUNDLE !== "1" || !backend) return false;
+  const productionPort = String(CAVE_PORTS.production);
+  return env.PORT?.trim() === productionPort && new URL(backend).port === productionPort;
+}
+
 function normalizeProxyTarget(target: string) {
   return normalizedLoopbackProxyTarget(target) ?? target.trim().replace(/\/+$/, "");
 }
 
 export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[] {
-  const typedStatus = status as TailscaleServeStatus | null;
-  const web = typedStatus?.Web;
+  if (!status || typeof status !== "object" || Array.isArray(status)) {
+    return [{ kind: "protected", raw: "<malformed status>" }];
+  }
+  const typedStatus = status as TailscaleServeStatus;
+  const web = typedStatus.Web;
   if (web === undefined) return [];
   if (!web || typeof web !== "object" || Array.isArray(web)) {
     return [{ kind: "protected", raw: "<malformed Web>" }];
@@ -185,6 +425,7 @@ export async function assessServeOwnership(
   status: unknown,
   backendUrl: string,
   probe: (target: string) => Promise<boolean>,
+  options: { takeOverHealthyLoopback?: boolean } = {},
 ): Promise<ServeOwnershipAssessment> {
   const desired = normalizedLoopbackProxyTarget(backendUrl);
   const backends = enumerateServeProxyBackends(status);
@@ -208,6 +449,9 @@ export async function assessServeOwnership(
         .map((backend) => backend.target),
     ),
   ];
+  if (options.takeOverHealthyLoopback) {
+    return { kind: "takeover", targets };
+  }
   for (const target of differentTargets) {
     try {
       if (await probe(target)) return { kind: "conflict", targets };

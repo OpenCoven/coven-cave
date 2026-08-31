@@ -19,13 +19,16 @@ import { signMobileAccessToken } from "@/lib/mobile-access-token";
 import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
 import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
 import {
+  acquireTailscaleServeLease,
   assessServeOwnership,
   buildPairingSteps,
   classifyTailscaleSelf,
   createMobileInvite,
+  enumerateServeProxyBackends,
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
+  packagedServeMayTakeOverHealthyLoopback,
   resolveIosInstallUrl,
   serveRouteOwnedByBackend,
   serveRouteFailure,
@@ -337,6 +340,9 @@ async function inspectServeOwnership(backend: string) {
     snapshot.status,
     backend,
     probeLoopbackBackend,
+    {
+      takeOverHealthyLoopback: packagedServeMayTakeOverHealthyLoopback(backend),
+    },
   );
   return { ok: true as const, ...ownership, status: snapshot.status };
 }
@@ -350,6 +356,25 @@ function serveOwnershipConflictResponse(
     ? `Tailscale Serve is owned by another backend (${targets.join(", ")}).`
     : "Tailscale Serve ownership is protected by an unknown route.";
   return mobileUnavailableResponse(detail, { backendUrl: backend, steps }, 503);
+}
+
+async function withServeMutationLease(
+  backend: string,
+  operation: () => Promise<NextResponse>,
+): Promise<NextResponse> {
+  const lease = await acquireTailscaleServeLease();
+  if (!lease) {
+    return mobileUnavailableResponse(
+      "Tailscale Serve ownership is busy; no route was changed.",
+      { backendUrl: backend },
+      503,
+    );
+  }
+  try {
+    return await operation();
+  } finally {
+    await lease.release();
+  }
 }
 
 async function mutateOwnedServeRoute(args: string[], backend: string) {
@@ -383,25 +408,41 @@ async function mutateOwnedServeRoute(args: string[], backend: string) {
 }
 
 async function resetOwnedServeRoute(backend: string) {
-  const ownership = await inspectServeOwnership(backend);
-  if (!ownership.ok) return ownership.response;
-  if (ownership.kind !== "owned") {
+  return withServeMutationLease(backend, async () => {
+    const ownership = await inspectServeOwnership(backend);
+    if (!ownership.ok) return ownership.response;
+    if (ownership.kind !== "owned") {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        notOwned: true,
+        backendUrl: backend,
+        currentTargets: ownership.targets,
+      });
+    }
+
+    const reset = await runTailscale(["serve", "reset"]);
+    if (reset.cleanupFailed) return tailscaleCleanupFailureResponse(reset, backend);
+    const verified = await readServeStatus(backend);
+    if (!verified.ok) return verified.response;
+    const currentTargets = enumerateServeProxyBackends(verified.status);
+    if (currentTargets.length > 0) {
+      return mobileUnavailableResponse(
+        "Tailscale Serve still has an active route after reset; ownership was not claimed.",
+        {
+          stderr: reset.stderr,
+          backendUrl: backend,
+        },
+        503,
+      );
+    }
     return NextResponse.json({
       ok: true,
-      skipped: true,
-      notOwned: true,
-      backendUrl: backend,
-      currentTargets: ownership.targets,
+      warning: reset.ok
+        ? undefined
+        : reset.stderr || "Tailscale Serve reported an error, but the route is reset.",
     });
-  }
-
-  const reset = await runTailscale(["serve", "reset"]);
-  if (reset.cleanupFailed) return tailscaleCleanupFailureResponse(reset, backend);
-  return NextResponse.json({
-    ok: reset.ok,
-    error: reset.ok ? undefined : "failed to reset tailscale serve",
-    stderr: reset.stderr,
-  }, { status: reset.ok ? 200 : 500 });
+  });
 }
 
 /**
@@ -491,7 +532,11 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await ensureNativeAppServeReady(chatId, access.secret);
+  const backend = nativeAppBackendUrl();
+  const res = await withServeMutationLease(
+    backend,
+    async () => ensureNativeAppServeReady(chatId, access.secret),
+  );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
@@ -701,7 +746,11 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await mobileHandoffReady(access.secret, chatId);
+  const backend = backendUrl();
+  const res = await withServeMutationLease(
+    backend,
+    async () => mobileHandoffReady(access.secret, chatId),
+  );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 

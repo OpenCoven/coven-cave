@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildInviteUrl,
@@ -46,9 +47,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       typeof module.enumerateServeProxyBackends,
       typeof module.assessServeOwnership,
       typeof module.serveRouteOwnedByBackend,
+      typeof module.packagedServeMayTakeOverHealthyLoopback,
     ],
-    ["function", "function", "function"],
-    "Serve ownership exposes pure inventory, assessment, and verification helpers",
+    ["function", "function", "function", "function"],
+    "Serve ownership exposes pure inventory, assessment, precedence, and verification helpers",
   );
 
   const enumerateServeProxyBackends = module.enumerateServeProxyBackends as (
@@ -63,6 +65,43 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     status: unknown,
     backend: string,
   ) => boolean;
+  const packagedServeMayTakeOverHealthyLoopback =
+    module.packagedServeMayTakeOverHealthyLoopback as (
+      backend: string,
+      env: Record<string, string | undefined>,
+    ) => boolean;
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3020" },
+    ),
+    true,
+    "only a real packaged process serving the fixed production port gets precedence",
+  );
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { PORT: "3020" },
+    ),
+    false,
+    "a development process cannot gain precedence by choosing port 3020",
+  );
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3000",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3000" },
+    ),
+    false,
+    "bundle evidence alone does not grant precedence to an overridden dev port",
+  );
+  assert.equal(
+    packagedServeMayTakeOverHealthyLoopback(
+      "http://127.0.0.1:3020",
+      { COVEN_CAVE_BUNDLE: "1", PORT: "3000" },
+    ),
+    false,
+    "a configured 3020 override is not precedence unless this process is actually bound there",
+  );
 
   const competingStatus = {
     Web: {
@@ -114,6 +153,33 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   );
   assert.equal(protectedAssessment.kind, "conflict");
   assert.equal(protectedProbeCount, 0, "protected targets are never network-probed");
+  const packagedProtectedAssessment = await (
+    assessServeOwnership as typeof assessServeOwnership & (
+      (
+        status: unknown,
+        backend: string,
+        probe: (target: string) => Promise<boolean>,
+        options: { takeOverHealthyLoopback: boolean },
+      ) => Promise<{ kind: string; targets: string[] }>
+    )
+  )(
+    protectedStatus,
+    "http://127.0.0.1:3020",
+    async () => {
+      assert.fail("packaged precedence must not probe or replace a protected route");
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    packagedProtectedAssessment.kind,
+    "conflict",
+    "packaged precedence never overrides malformed or non-loopback ownership",
+  );
+  assert.deepEqual(
+    enumerateServeProxyBackends(null),
+    [{ kind: "protected", raw: "<malformed status>" }],
+    "a non-object Serve status is protected rather than mistaken for an empty route",
+  );
 
   const healthyAssessment = await assessServeOwnership(
     competingStatus,
@@ -121,6 +187,38 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     async (target) => target.endsWith(":3020"),
   );
   assert.equal(healthyAssessment.kind, "conflict", "a responsive packaged backend keeps ownership");
+
+  let packagedProbeCount = 0;
+  const packagedAssessment = await (
+    assessServeOwnership as typeof assessServeOwnership & (
+      (
+        status: unknown,
+        backend: string,
+        probe: (target: string) => Promise<boolean>,
+        options: { takeOverHealthyLoopback: boolean },
+      ) => Promise<{ kind: string; targets: string[] }>
+    )
+  )(
+    {
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3007" } },
+        },
+      },
+    },
+    "http://127.0.0.1:3020",
+    async () => {
+      packagedProbeCount += 1;
+      return true;
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    packagedAssessment.kind,
+    "takeover",
+    "the trusted packaged 3020 channel has the same healthy-dev precedence as Rust",
+  );
+  assert.equal(packagedProbeCount, 0, "packaged precedence does not need to probe a dev owner");
 
   const staleAssessment = await assessServeOwnership(
     competingStatus,
@@ -152,6 +250,208 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     false,
     "post-mutation verification detects a race that repointed Serve",
   );
+}
+
+// ── Cross-process Serve mutation lease (cave-uq1ht review follow-up) ────────
+{
+  const module = (await import("./mobile-handoff.ts")) as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [
+      typeof module.tailscaleServeLeasePath,
+      typeof module.acquireTailscaleServeLease,
+    ],
+    ["function", "function"],
+    "Serve ownership exposes the shared lock path and bounded lease acquisition",
+  );
+
+  const tailscaleServeLeasePath = module.tailscaleServeLeasePath as (home: string) => string;
+  assert.equal(
+    tailscaleServeLeasePath("/Users/coven"),
+    "/Users/coven/.coven/cave/tailscale-serve-ownership.lock",
+    "Node and Rust share one deterministic machine-wide lock path",
+  );
+  const rustReachability = readFileSync(
+    new URL("../../src-tauri/src/desktop_reachability.rs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_LEASE_FILE: &str = "tailscale-serve-ownership\.lock";/,
+    "Rust uses the identical lease filename",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;/,
+    "Rust uses the identical lease record version",
+  );
+
+  type FakeEntry = { content: string; dev: number; ino: number };
+  class FakeLeaseFs {
+    readonly files = new Map<string, FakeEntry>();
+    private nextIno = 1;
+
+    async mkdir(): Promise<void> {}
+
+    async writeFile(file: string, content: string, options?: { flag?: string }): Promise<void> {
+      if (options?.flag === "wx" && this.files.has(file)) {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }
+      this.files.set(file, { content, dev: 1, ino: this.nextIno++ });
+    }
+
+    async link(source: string, destination: string): Promise<void> {
+      if (this.files.has(destination)) {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }
+      const sourceEntry = this.files.get(source);
+      assert.ok(sourceEntry, `missing hard-link source ${source}`);
+      this.files.set(destination, sourceEntry);
+    }
+
+    async readFile(file: string): Promise<string> {
+      const entry = this.files.get(file);
+      if (!entry) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return entry.content;
+    }
+
+    async stat(file: string): Promise<{ dev: number; ino: number }> {
+      const entry = this.files.get(file);
+      if (!entry) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return { dev: entry.dev, ino: entry.ino };
+    }
+
+    async unlink(file: string): Promise<void> {
+      if (!this.files.delete(file)) {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      }
+    }
+
+    replace(file: string, content: string): void {
+      this.files.set(file, { content, dev: 1, ino: this.nextIno++ });
+    }
+  }
+
+  type LeaseOptions = {
+    path: string;
+    fs: FakeLeaseFs;
+    pid: number;
+    token: string;
+    isProcessAlive: (pid: number) => boolean;
+    now: () => number;
+    sleep: (milliseconds: number) => Promise<void>;
+    timeoutMs: number;
+    pollMs: number;
+  };
+  const acquireTailscaleServeLease = module.acquireTailscaleServeLease as (
+    options: LeaseOptions,
+  ) => Promise<{ release(): Promise<void> } | null>;
+  const lockPath = tailscaleServeLeasePath("/Users/coven");
+  let now = 0;
+  const sleep = async (milliseconds: number) => {
+    now += milliseconds;
+  };
+  const fs = new FakeLeaseFs();
+  const first = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 101,
+    token: "first-owner",
+    isProcessAlive: (pid) => pid === 101,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(first, "the first reconciler acquires the machine-wide lease");
+  const contended = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 202,
+    token: "second-owner",
+    isProcessAlive: (pid) => pid === 101 || pid === 202,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.equal(contended, null, "contention is bounded and fails closed");
+
+  await first.release();
+  const afterRelease = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 202,
+    token: "second-owner",
+    isProcessAlive: (pid) => pid === 202,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(afterRelease, "the lease releases for the next reconciler");
+  await afterRelease.release();
+
+  const crashed = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 303,
+    token: "crashed-owner",
+    isProcessAlive: (pid) => pid === 303,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(crashed);
+  const recovered = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 404,
+    token: "recovered-owner",
+    isProcessAlive: (pid) => pid === 404,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(recovered, "a dead process owner is safely recovered");
+  await recovered.release();
+
+  const oldOwner = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs,
+    pid: 505,
+    token: "old-owner",
+    isProcessAlive: (pid) => pid === 505,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.ok(oldOwner);
+  fs.replace(lockPath, JSON.stringify({ version: 1, pid: 606, token: "replacement-owner" }));
+  await oldOwner.release();
+  assert.match(
+    await fs.readFile(lockPath),
+    /replacement-owner/,
+    "release never unlinks a replacement owner's lease",
+  );
+
+  const malformedFs = new FakeLeaseFs();
+  malformedFs.replace(lockPath, JSON.stringify({ version: 1, pid: 707, token: "../unsafe" }));
+  const malformed = await acquireTailscaleServeLease({
+    path: lockPath,
+    fs: malformedFs,
+    pid: 808,
+    token: "safe-owner",
+    isProcessAlive: () => false,
+    now: () => now,
+    sleep,
+    timeoutMs: 10,
+    pollMs: 5,
+  });
+  assert.equal(malformed, null, "malformed owner records fail closed instead of being unlinked");
+  assert.match(await malformedFs.readFile(lockPath), /unsafe/);
 }
 
 {

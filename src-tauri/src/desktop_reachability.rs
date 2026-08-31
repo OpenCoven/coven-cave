@@ -11,6 +11,8 @@ use std::io::Read;
 #[cfg(desktop)]
 use std::io::Write;
 #[cfg(all(desktop, target_os = "macos"))]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+#[cfg(all(desktop, target_os = "macos"))]
 use std::os::unix::io::AsRawFd;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -41,6 +43,14 @@ const SERVE_REPAIR_OUTPUT_BYTES: usize = 64 * 1024;
 const SERVE_REPAIR_OUTPUT_DRAIN: Duration = Duration::from_millis(250);
 #[cfg(all(desktop, target_os = "macos"))]
 const SERVE_REPAIR_KILL_GRACE: Duration = Duration::from_millis(500);
+#[cfg(desktop)]
+const TAILSCALE_SERVE_LEASE_FILE: &str = "tailscale-serve-ownership.lock";
+#[cfg(desktop)]
+const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_LEASE_TIMEOUT: Duration = Duration::from_millis(1500);
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_LEASE_POLL: Duration = Duration::from_millis(50);
 
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -50,6 +60,37 @@ static DAEMON_SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(desktop, target_os = "macos"))]
 static SERVE_REPAIR_STATE: OnceLock<Mutex<ServeRepairState>> = OnceLock::new();
+
+#[cfg(desktop)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct ServeMutationLeaseRecord {
+    version: u8,
+    pid: u32,
+    token: String,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+struct ServeMutationLease {
+    path: PathBuf,
+    candidate_path: PathBuf,
+    record: ServeMutationLeaseRecord,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+impl Drop for ServeMutationLease {
+    fn drop(&mut self) {
+        let current = std::fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<ServeMutationLeaseRecord>(&raw).ok());
+        if current
+            .as_ref()
+            .is_some_and(|current| serve_mutation_lease_matches(&self.record, current))
+        {
+            let _ = std::fs::remove_file(&self.path);
+        }
+        let _ = std::fs::remove_file(&self.candidate_path);
+    }
+}
 
 #[cfg(desktop)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -648,6 +689,174 @@ fn tailscale_binary() -> PathBuf {
     .unwrap_or_else(|| PathBuf::from("tailscale"))
 }
 
+#[cfg(desktop)]
+fn tailscale_serve_lease_path_for(home: &Path) -> PathBuf {
+    home.join(".coven")
+        .join("cave")
+        .join(TAILSCALE_SERVE_LEASE_FILE)
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_record_is_valid(record: &ServeMutationLeaseRecord) -> bool {
+    record.version == TAILSCALE_SERVE_LEASE_VERSION
+        && !record.token.is_empty()
+        && record.token.len() <= 128
+        && record
+            .token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        && record.pid > 0
+        && record.pid <= i32::MAX as u32
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_is_stale(
+    record: &ServeMutationLeaseRecord,
+    is_process_alive: impl FnOnce(u32) -> bool,
+) -> bool {
+    serve_mutation_lease_record_is_valid(record) && !is_process_alive(record.pid)
+}
+
+#[cfg(desktop)]
+fn serve_mutation_lease_matches(
+    expected: &ServeMutationLeaseRecord,
+    current: &ServeMutationLeaseRecord,
+) -> bool {
+    serve_mutation_lease_record_is_valid(current)
+        && current.pid == expected.pid
+        && current.token == expected.token
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn serve_mutation_lease_candidate_path(
+    lease_path: &Path,
+    record: &ServeMutationLeaseRecord,
+) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.{}.{}.owner",
+        lease_path.display(),
+        record.pid,
+        record.token
+    ))
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn process_is_alive(pid: u32) -> bool {
+    if unsafe { libc::kill(pid as libc::pid_t, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn recover_stale_tailscale_serve_lease(lease_path: &Path) -> bool {
+    let Ok(first_raw) = std::fs::read_to_string(lease_path) else {
+        return false;
+    };
+    let Ok(first_metadata) = std::fs::metadata(lease_path) else {
+        return false;
+    };
+    let Ok(first_record) = serde_json::from_str::<ServeMutationLeaseRecord>(&first_raw) else {
+        return false;
+    };
+    if !serve_mutation_lease_is_stale(&first_record, process_is_alive) {
+        return false;
+    }
+
+    let Ok(second_raw) = std::fs::read_to_string(lease_path) else {
+        return false;
+    };
+    let Ok(second_metadata) = std::fs::metadata(lease_path) else {
+        return false;
+    };
+    let Ok(second_record) = serde_json::from_str::<ServeMutationLeaseRecord>(&second_raw) else {
+        return false;
+    };
+    if !serve_mutation_lease_matches(&first_record, &second_record)
+        || first_metadata.dev() != second_metadata.dev()
+        || first_metadata.ino() != second_metadata.ino()
+    {
+        return false;
+    }
+
+    if std::fs::remove_file(lease_path).is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_file(serve_mutation_lease_candidate_path(
+        lease_path,
+        &first_record,
+    ));
+    true
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn acquire_tailscale_serve_lease() -> Result<Option<ServeMutationLease>, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is unavailable".to_string())?;
+    let path = tailscale_serve_lease_path_for(&home);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Serve lease path has no parent".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("could not create Serve lease directory: {error}"))?;
+
+    let record = ServeMutationLeaseRecord {
+        version: TAILSCALE_SERVE_LEASE_VERSION,
+        pid: std::process::id(),
+        token: format!("{:032x}", rand::random::<u128>()),
+    };
+    let candidate_path = serve_mutation_lease_candidate_path(&path, &record);
+    // Node uses this same hard-link protocol: write the complete unique owner
+    // record first, then atomically link it to the shared machine lock path.
+    let mut candidate = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&candidate_path)
+        .map_err(|error| format!("could not create Serve lease candidate: {error}"))?;
+    if let Err(error) = serde_json::to_writer(&mut candidate, &record) {
+        let _ = std::fs::remove_file(&candidate_path);
+        return Err(format!("could not write Serve lease candidate: {error}"));
+    }
+    if let Err(error) = candidate
+        .write_all(b"\n")
+        .and_then(|_| candidate.sync_all())
+    {
+        let _ = std::fs::remove_file(&candidate_path);
+        return Err(format!("could not sync Serve lease candidate: {error}"));
+    }
+
+    let deadline = Instant::now() + TAILSCALE_SERVE_LEASE_TIMEOUT;
+    loop {
+        match std::fs::hard_link(&candidate_path, &path) {
+            Ok(()) => {
+                return Ok(Some(ServeMutationLease {
+                    path,
+                    candidate_path,
+                    record,
+                }));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                let _ = std::fs::remove_file(&candidate_path);
+                return Err(format!("could not link Serve lease: {error}"));
+            }
+        }
+
+        if recover_stale_tailscale_serve_lease(&path) {
+            continue;
+        }
+        if Instant::now() >= deadline {
+            let _ = std::fs::remove_file(&candidate_path);
+            return Ok(None);
+        }
+        thread::sleep(
+            TAILSCALE_SERVE_LEASE_POLL.min(deadline.saturating_duration_since(Instant::now())),
+        );
+    }
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 pub(super) fn repair_tailscale_serve_for_port(port: u16) {
     // The desktop must never adopt an arbitrary user-managed Serve route just
@@ -698,6 +907,21 @@ fn run_queued_tailscale_serve_repairs() {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn run_tailscale_serve_repair(port: u16) {
+    let _lease = match acquire_tailscale_serve_lease() {
+        Ok(Some(lease)) => lease,
+        Ok(None) => {
+            log::warn!(
+                "[cave] Tailscale Serve ownership is busy; preserving the current route for port {port}"
+            );
+            return;
+        }
+        Err(error) => {
+            log::warn!(
+                "[cave] could not acquire Tailscale Serve ownership lease for port {port}: {error}"
+            );
+            return;
+        }
+    };
     let status_args = [
         "serve".to_string(),
         "status".to_string(),
@@ -748,25 +972,26 @@ fn run_tailscale_serve_repair(port: u16) {
         TailscaleServeMode::Http(http_port) => http_serve_arguments(port, http_port).to_vec(),
     };
     match run_tailscale_command(&args) {
-        Ok(output) if output.status.success() => {
+        Ok(output) => {
+            let mutation_succeeded = output.status.success();
             let verified = run_tailscale_command(&status_args)
                 .ok()
                 .filter(|output| output.status.success())
                 .and_then(|output| serde_json::from_slice(&output.stdout).ok())
                 .is_some_and(|status| serve_route_owned_by_port(&status, port));
-            if verified {
+            if verified && mutation_succeeded {
                 log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+            } else if verified {
+                log::warn!(
+                    "[cave] Tailscale Serve reported {}, but the verified route points at 127.0.0.1:{port}",
+                    output.status
+                );
             } else {
                 log::warn!(
-                    "[cave] Tailscale Serve repair for port {port} lost ownership verification"
+                    "[cave] Tailscale Serve repair for port {port} lost ownership verification after {}",
+                    output.status
                 );
             }
-        }
-        Ok(output) => {
-            log::warn!(
-                "[cave] could not repair Tailscale Serve for port {port}: exited with {}",
-                output.status
-            );
         }
         Err(error) => {
             log::warn!("[cave] could not repair Tailscale Serve for port {port}: {error}");
@@ -2385,6 +2610,13 @@ mod tests {
             }),
             ServeRepairDecision::Preserve
         );
+        assert_eq!(
+            decide_serve_repair(&status, 3020, true, |_| {
+                probes += 1;
+                false
+            }),
+            ServeRepairDecision::Preserve
+        );
         assert_eq!(probes, 0);
     }
 
@@ -2398,6 +2630,77 @@ mod tests {
             decide_serve_repair(&status, 3020, true, |_| true),
             ServeRepairDecision::Repair(TailscaleServeMode::Https)
         );
+    }
+
+    #[test]
+    fn serve_mutation_lease_uses_the_cross_language_machine_path() {
+        assert_eq!(
+            tailscale_serve_lease_path_for(Path::new("/Users/coven")),
+            PathBuf::from("/Users/coven/.coven/cave/tailscale-serve-ownership.lock")
+        );
+    }
+
+    #[test]
+    fn serve_mutation_lease_recovers_only_dead_well_formed_owners() {
+        let owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "owner-token".to_string(),
+        };
+        assert!(!serve_mutation_lease_is_stale(&owner, |_| true));
+        assert!(serve_mutation_lease_is_stale(&owner, |_| false));
+
+        let incompatible = ServeMutationLeaseRecord {
+            version: 2,
+            ..owner.clone()
+        };
+        assert!(!serve_mutation_lease_is_stale(&incompatible, |_| false));
+    }
+
+    #[test]
+    fn serve_mutation_lease_release_cannot_remove_a_replacement_owner() {
+        let owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "owner-token".to_string(),
+        };
+        let replacement = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4002,
+            token: "replacement-token".to_string(),
+        };
+        assert!(serve_mutation_lease_matches(&owner, &owner));
+        assert!(!serve_mutation_lease_matches(&owner, &replacement));
+    }
+
+    #[test]
+    fn serve_repair_acquires_the_lease_before_its_first_status_read() {
+        let source = include_str!("desktop_reachability.rs");
+        let start = source
+            .find("fn run_tailscale_serve_repair(port: u16)")
+            .expect("repair function");
+        let body = &source[start
+            ..source[start..]
+                .find(
+                    "\n#[cfg(all(desktop, target_os = \"macos\"))]\nstruct TailscaleCommandOutput",
+                )
+                .map(|offset| start + offset)
+                .expect("repair function end")];
+        let lease = body
+            .find("acquire_tailscale_serve_lease")
+            .expect("shared lease acquisition");
+        let status = body
+            .find("run_tailscale_command(&status_args)")
+            .expect("status read");
+        let mutation = body
+            .find("run_tailscale_command(&args)")
+            .expect("Serve mutation");
+        let verification = body
+            .rfind("run_tailscale_command(&status_args)")
+            .expect("post-mutation status read");
+        assert!(lease < status);
+        assert!(status < mutation);
+        assert!(mutation < verification);
     }
 
     #[test]
