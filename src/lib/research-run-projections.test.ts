@@ -200,6 +200,49 @@ const events: RunEventV1[] = [
   }),
 ];
 
+function finalManifestWithArtifact(
+  artifact: Partial<NonNullable<ResearchRunV1["artifactManifest"]>["artifacts"][number]> = {},
+): NonNullable<ResearchRunV1["artifactManifest"]> {
+  return {
+    schema: "opencoven.run-manifest/v1",
+    id: "manifest_projection_terminal",
+    runId: RUN_ID,
+    digest: "a".repeat(64),
+    revision: 1,
+    state: "final",
+    createdAt: run.createdAt,
+    finalizedAt: RUN_UPDATED_AT,
+    sources: [],
+    artifacts: [{
+      id: "artifact-terminal",
+      kind: "report",
+      title: "Final report",
+      mediaType: "text/markdown",
+      digest: "b".repeat(64),
+      bytes: 42,
+      placement: "device-local",
+      contentSync: "not-requested",
+      createdAt: RUN_UPDATED_AT,
+      ...artifact,
+    }],
+    modelExecutions: [],
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      completeness: "unreported",
+    },
+    retention: {
+      policy: "7-days",
+      effectivePolicy: "7-days",
+      status: "active",
+      contentExpiresAt: null,
+      updatedAt: RUN_UPDATED_AT,
+    },
+    deletion: { status: "not_scheduled" },
+  };
+}
+
 function fixtureInput() {
   return { state: rehydrateResearchRun(run, [events[2], events[0], events[5], events[1], events[4], events[3]]) };
 }
@@ -398,6 +441,68 @@ test("Snapshot manifest artifacts remain the baseline for newly applied registra
   assert.equal(evidence.counts.artifacts, 2);
 });
 
+test("Final manifests do not imply publication or export for terminal runs", () => {
+  for (const status of ["completed", "failed", "cancelled", "expired"] as const) {
+    const snapshot: ResearchRunV1 = {
+      ...run,
+      status,
+      updatedAt: RUN_UPDATED_AT,
+      artifactManifest: finalManifestWithArtifact(),
+      ...(status === "failed"
+        ? { failure: { code: "research_failed", message: "Research stopped", retryable: false } }
+        : {}),
+    };
+
+    const report = selectResearchRunReport({
+      state: createResearchRunEventState(snapshot),
+    });
+
+    assert.equal(report.artifacts[0]?.status, "ready", status);
+    assert.equal(report.exportStatus, "ready", status);
+    assert.equal(report.exportedAt, undefined, status);
+  }
+});
+
+test("Current manifest metadata enriches an event artifact without replacing publication state", () => {
+  const snapshot: ResearchRunV1 = {
+    ...run,
+    status: "completed",
+    updatedAt: RUN_UPDATED_AT,
+    nextEventSequence: 2,
+    artifactManifest: finalManifestWithArtifact({
+      id: "artifact-shared",
+      kind: "report",
+      title: "Final authoritative title",
+      contentSync: "synced",
+      createdAt: "2026-08-30T10:04:30.000Z",
+    }),
+  };
+  const input = hydrateResearchRunProjectionInput(snapshot, [
+    event(1, "artifact.registered", {
+      artifact: {
+        id: "artifact-shared",
+        kind: "draft",
+        title: "Working title",
+        status: "published",
+        contentSync: "pending",
+        createdAt: "2026-08-30T10:04:00.000Z",
+      },
+    }),
+  ]);
+
+  const report = selectResearchRunReport(input);
+
+  assert.deepEqual(report.artifacts, [{
+    id: "artifact-shared",
+    kind: "report",
+    title: "Final authoritative title",
+    status: "published",
+    contentSync: "synced",
+    at: "2026-08-30T10:04:30.000Z",
+  }]);
+  assert.equal(report.exportStatus, "exported");
+});
+
 test("Snapshot history preserves the active plan stage without mutating reducer phase state", () => {
   const snapshot = {
     ...run,
@@ -420,6 +525,40 @@ test("Snapshot history preserves the active plan stage without mutating reducer 
   assert.equal(plan.activeStageId, "challenge");
 });
 
+test("Terminal snapshots clear stale active plan stages for every terminal status", () => {
+  const terminalCases = [
+    { status: "completed", eventType: "run.completed" },
+    { status: "failed", eventType: "run.failed" },
+    { status: "cancelled", eventType: "run.cancelled" },
+    { status: "expired", eventType: "run.status" },
+  ] as const;
+
+  for (const { status, eventType } of terminalCases) {
+    const snapshot: ResearchRunV1 = {
+      ...run,
+      status,
+      updatedAt: RUN_UPDATED_AT,
+      nextEventSequence: 4,
+      artifactManifest: finalManifestWithArtifact(),
+      ...(status === "failed"
+        ? { failure: { code: "research_failed", message: "Research stopped", retryable: false } }
+        : {}),
+    };
+    const input = hydrateResearchRunProjectionInput(snapshot, [
+      event(1, "run.created", {
+        plan: {
+          revision: 1,
+          stages: [{ id: "challenge", label: "Challenge evidence", status: "active" }],
+        },
+      }),
+      event(2, "phase.started", { phase: "challenge" }),
+      event(3, eventType, { status }),
+    ]);
+
+    assert.equal(selectResearchRunPlan(input).activeStageId, undefined, status);
+  }
+});
+
 test("Plan projects the original and revised stages, including additions, supersession, and retry", () => {
   const plan = selectResearchRunPlan(fixtureInput());
 
@@ -429,7 +568,7 @@ test("Plan projects the original and revised stages, including additions, supers
   assert.deepEqual(plan.addedStageIds, ["source-triangulation", "challenge"]);
   assert.deepEqual(plan.supersededStageIds, ["source-scan"]);
   assert.deepEqual(plan.retryableStageIds, ["challenge"]);
-  assert.equal(plan.activeStageId, "source-triangulation");
+  assert.equal(plan.activeStageId, undefined);
   assert.deepEqual(
     plan.original?.stages.find((stage) => stage.id === "source-scan"),
     {
@@ -443,6 +582,57 @@ test("Plan projects the original and revised stages, including additions, supers
     },
   );
   assert.equal(plan.revised?.stages.find((stage) => stage.id === "challenge")?.attempt, 2);
+});
+
+test("Legacy mission plan revisions count retries only through each chronological iteration", () => {
+  const mission = {
+    version: 1,
+    id: "mission-retry-history",
+    familiarId: "sage",
+    title: "Retry chronology",
+    intent: "Track retry chronology",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "completed",
+    createdAt: run.createdAt,
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [
+      {
+        number: 1,
+        status: "failed",
+        startedAt: "2026-08-30T10:00:00.000Z",
+        steps: [{ id: "challenge", type: "challenge", status: "failed" }],
+      },
+      {
+        number: 2,
+        status: "failed",
+        startedAt: "2026-08-30T10:02:00.000Z",
+        steps: [{ id: "challenge", type: "challenge", status: "failed" }],
+      },
+      {
+        number: 3,
+        status: "completed",
+        startedAt: "2026-08-30T10:04:00.000Z",
+        steps: [{ id: "challenge", type: "challenge", status: "succeeded" }],
+      },
+    ],
+    artifacts: [],
+    sources: [],
+  } as ResearchMission;
+
+  const plan = selectResearchRunPlan(researchMissionToRunProjectionInput(mission));
+
+  assert.deepEqual(
+    plan.revisions.map((revision) => revision.stages[0]?.attempt),
+    [1, 2, 3],
+  );
+  assert.deepEqual(
+    plan.revisions.map((revision) => revision.stages[0]?.retryable),
+    [true, true, false],
+  );
 });
 
 test("Activity is chronological and only projects explicit user-safe fields", () => {

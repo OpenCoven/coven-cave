@@ -437,26 +437,25 @@ function revisionsByNumber(revisions: readonly ResearchRunPlanRevision[]): Resea
 function planFromMission(mission: ResearchMission): ResearchRunPlanRevision[] {
   const revisions: ResearchRunPlanRevision[] = [];
   const attempts = new Map<string, number>();
-  for (const iteration of mission.iterations) {
-    for (const step of iteration.steps ?? []) {
-      attempts.set(step.id, (attempts.get(step.id) ?? 0) + 1);
-    }
-  }
   for (const [index, iteration] of mission.iterations.entries()) {
     if (!iteration.steps?.length) continue;
     const revision = index + 1;
     revisions.push({
       revision,
       at: iteration.startedAt ?? iteration.finishedAt ?? mission.updatedAt,
-      stages: iteration.steps.slice(0, MAX_ITEMS).map((step) => ({
-        id: step.id,
-        label: humanize(step.type || step.id),
-        status: statusForStage(step.status),
-        attempt: attempts.get(step.id) ?? 1,
-        retryable: step.status === "failed",
-        revision,
-        ...(textValue(step.detail, MAX_DETAIL) ? { detail: textValue(step.detail, MAX_DETAIL) } : {}),
-      })),
+      stages: iteration.steps.slice(0, MAX_ITEMS).map((step) => {
+        const attempt = (attempts.get(step.id) ?? 0) + 1;
+        attempts.set(step.id, attempt);
+        return {
+          id: step.id,
+          label: humanize(step.type || step.id),
+          status: statusForStage(step.status),
+          attempt,
+          retryable: step.status === "failed",
+          revision,
+          ...(textValue(step.detail, MAX_DETAIL) ? { detail: textValue(step.detail, MAX_DETAIL) } : {}),
+        };
+      }),
     });
   }
   return revisions;
@@ -522,9 +521,17 @@ export function selectResearchRunPlan(input: ResearchRunProjectionInput): Resear
       }),
     }
     : null;
-  const activePhase = input.state.activePhase ?? activePhaseFromEvents(projectionEvents(input));
-  const activeStage = revised?.stages.find((stage) => stage.status === "active")
-    ?? (activePhase ? revised?.stages.find((stage) => stage.id === activePhase) : undefined);
+  const terminal = input.state.run.status === "completed"
+    || input.state.run.status === "failed"
+    || input.state.run.status === "cancelled"
+    || input.state.run.status === "expired";
+  const activePhase = terminal
+    ? undefined
+    : input.state.activePhase ?? activePhaseFromEvents(projectionEvents(input));
+  const activeStage = terminal
+    ? undefined
+    : revised?.stages.find((stage) => stage.status === "active")
+      ?? (activePhase ? revised?.stages.find((stage) => stage.id === activePhase) : undefined);
   return {
     original: markedOriginal,
     revised,
@@ -1145,9 +1152,13 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
   for (const artifact of input.state.run.artifactManifest?.artifacts ?? []) {
     const parsed = artifactFromValue({
       ...artifact,
-      status: input.state.run.artifactManifest?.state === "final" ? "published" : "ready",
+      status: "ready",
     });
-    if (parsed && !artifactsById.has(parsed.id)) artifactsById.set(parsed.id, parsed);
+    if (!parsed) continue;
+    const current = artifactsById.get(parsed.id);
+    artifactsById.set(parsed.id, current
+      ? { ...current, ...parsed, status: current.status }
+      : parsed);
   }
   for (const artifact of input.mission?.artifacts ?? []) {
     const parsed = artifactFromMission(artifact);
