@@ -7,6 +7,7 @@ import type {
   ResearchSessionOwnerKind,
 } from "./research-session-authority.ts";
 import {
+  nextResearchIterationNumber,
   researchArtifactKindForMode,
   RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
@@ -170,7 +171,11 @@ export function stopBeforeNextIteration(
   now: Date,
   options: { allowCostUnavailable?: boolean } = {},
 ): string | null {
-  if (mission.iterations.length >= mission.bounds.maxIterations) return "Iteration limit reached";
+  // Gate on the iteration number the runner would actually start next, not
+  // the array length: they agree for contiguous numbering, but a persisted
+  // mission with gapped iteration numbers would let a length-based gate pass
+  // when the computed next number is already past the limit.
+  if (nextResearchIterationNumber(mission) > mission.bounds.maxIterations) return "Iteration limit reached";
   const startedAt = mission.startedAt ? Date.parse(mission.startedAt) : Number.NaN;
   if (Number.isFinite(startedAt) && now.getTime() - startedAt >= mission.bounds.wallClockMinutes * 60_000) {
     return "Wall-clock limit reached";
