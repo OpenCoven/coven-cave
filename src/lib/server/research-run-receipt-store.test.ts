@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { constants } from "node:fs";
 import {
   chmod,
   link,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
+  readdir,
   rm,
   symlink,
   unlink,
   writeFile,
+  type FileHandle,
 } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -246,6 +250,63 @@ test("receipt reads recover a stale hard-link publication after publisher crash"
     await assert.rejects(() => lstat(temporary), { code: "ENOENT" });
     assert.equal((await lstat(target)).nlink, 1);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("receipt publication refuses unsupported directory sync and retries durably", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-directory-sync-"));
+  const locksDir = path.join(root, ".locks", "intents");
+  const probePath = path.join(root, ".sync-probe");
+  await mkdir(locksDir, { recursive: true, mode: 0o700 });
+  await writeFile(probePath, "", { mode: 0o600 });
+  const probeHandle = await open(probePath, constants.O_RDONLY);
+  const fileHandlePrototype = Object.getPrototypeOf(probeHandle) as {
+    sync: (this: FileHandle) => Promise<void>;
+  };
+  const originalSync = fileHandlePrototype.sync;
+  await probeHandle.close();
+  await rm(probePath);
+
+  try {
+    let unsupportedAttempts = 0;
+    fileHandlePrototype.sync = async function(this: FileHandle): Promise<void> {
+      if ((await this.stat()).isDirectory()) {
+        unsupportedAttempts += 1;
+        const error = new Error("directory sync unsupported") as NodeJS.ErrnoException;
+        error.code = "EINVAL";
+        throw error;
+      }
+      await originalSync.call(this);
+    };
+
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(receipt(), root),
+      (error: NodeJS.ErrnoException) => {
+        assert.equal(error.code, "EINVAL");
+        return true;
+      },
+    );
+    assert.equal(unsupportedAttempts, 1);
+    const target = researchRunCompletionReceiptPath(RUN.id, root);
+    assert.equal((await lstat(target)).nlink, 1);
+    assert.deepEqual(
+      (await readdir(root)).filter((name) => name.startsWith(".tmp-")),
+      [],
+      "a failed directory sync must not strand the publication hard link",
+    );
+
+    let retryDirectorySyncs = 0;
+    fileHandlePrototype.sync = async function(this: FileHandle): Promise<void> {
+      if ((await this.stat()).isDirectory()) retryDirectorySyncs += 1;
+      await originalSync.call(this);
+    };
+    await saveResearchRunCompletionReceipt(receipt(), root);
+    assert.equal(retryDirectorySyncs, 1, "an idempotent retry must establish durability");
+    assert.deepEqual(await loadResearchRunCompletionReceipt(RUN.id, root), receipt());
+  } finally {
+    fileHandlePrototype.sync = originalSync;
     await rm(root, { recursive: true, force: true });
   }
 });

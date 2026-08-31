@@ -309,6 +309,65 @@ test("probes a verified path once and a refused path once per negative TTL (cave
   assert.equal(verifiedProbes, 2, "resetting the cache must re-drive the probe");
 });
 
+test("fresh Windows assurance refuses a path after its accepted ACL is relaxed", async () => {
+  const path = uniquePath();
+  let probes = 0;
+  const options = windows({
+    windowsAclCache: "fresh",
+    probeWindowsAcl: async () => {
+      probes += 1;
+      return probes === 1
+        ? report()
+        : report({
+            aces: [
+              { sid: SELF_SID, type: "Allow" },
+              { sid: USERS_SID, type: "Allow" },
+            ],
+          });
+    },
+  });
+
+  await assertClientV1PathOwnership(path, { uid: 0 }, "receipt store root", options);
+  await assert.rejects(
+    assertClientV1PathOwnership(path, { uid: 0 }, "receipt store root", options),
+    new RegExp(`Allow:${USERS_SID}`),
+  );
+  assert.equal(probes, 2, "fresh assurance must not trust a pathname-only success");
+});
+
+test("fresh Windows assurance refuses a replacement at a previously accepted path", async () => {
+  const path = uniquePath();
+  const originalIdentity = { uid: 0, dev: 1, ino: 1 };
+  const replacementIdentity = { uid: 0, dev: 2, ino: 2 };
+  let probes = 0;
+  const options = windows({
+    windowsAclCache: "fresh",
+    probeWindowsAcl: async () => {
+      probes += 1;
+      return probes === 1
+        ? report()
+        : report({ owner: "S-1-5-21-11-22-33-1002" });
+    },
+  });
+
+  await assertClientV1PathOwnership(
+    path,
+    originalIdentity,
+    "receipt store file",
+    options,
+  );
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      path,
+      replacementIdentity,
+      "receipt store file",
+      options,
+    ),
+    /owned by S-1-5-21-11-22-33-1002/,
+  );
+  assert.equal(probes, 2, "fresh assurance must re-probe a replacement path");
+});
+
 test("refusals carry the distinct ownership error class, and a cache hit re-throws the same object (cave-e7xwk)", async () => {
   const refused = uniquePath();
   let firstError: unknown;

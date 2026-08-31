@@ -197,6 +197,14 @@ export interface ClientV1PathOwnershipOptions {
    * test that cannot advance the clock cannot assert expiry without sleeping.
    */
   now?: () => number;
+  /**
+   * Whether a Windows verification may reuse pathname-keyed ACL results.
+   *
+   * Security-sensitive stores use `fresh`: their roots and records can be
+   * replaced or have their DACL relaxed while the process remains alive, so a
+   * prior success for the same pathname is not current assurance.
+   */
+  windowsAclCache?: "default" | "fresh";
 }
 
 /**
@@ -443,9 +451,9 @@ export const CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS = 30_000;
  * hot path. Failures are cached separately, with a short negative TTL
  * (`refusedWindowsPaths`), so a path that fails is re-probed only after the
  * window lapses and an out-of-band repair needs no restart. Cached success is
- * per process, so unlike the POSIX branch this does not re-detect a DACL
- * loosened mid-run — the symlink and realpath guards at the same call sites
- * still do run every time.
+ * per process for ordinary callers. Security-sensitive stores select fresh
+ * assurance and bypass every pathname cache so a DACL loosened or a path
+ * replaced mid-run is probed again.
  */
 const verifiedWindowsPaths = new Map<string, ClientV1WindowsAclReport>();
 
@@ -544,10 +552,16 @@ export async function assertExclusivePathOwnership(
     );
   }
 
-  if (verifiedWindowsPaths.has(path) || waivedWindowsPaths.has(path)) return;
+  const useWindowsCache = options.windowsAclCache !== "fresh";
+  if (
+    useWindowsCache
+    && (verifiedWindowsPaths.has(path) || waivedWindowsPaths.has(path))
+  ) {
+    return;
+  }
 
   const now = options.now ?? Date.now;
-  const cachedRefusal = refusedWindowsPaths.get(path);
+  const cachedRefusal = useWindowsCache ? refusedWindowsPaths.get(path) : undefined;
   if (cachedRefusal !== undefined) {
     if (cachedRefusal.expiresAt > now()) throw cachedRefusal.error;
     // Expired: an out-of-band repair may have landed. Re-probe once.
@@ -568,10 +582,12 @@ export async function assertExclusivePathOwnership(
         unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
         { cause },
       );
-      refusedWindowsPaths.set(path, {
-        expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
-        error,
-      });
+      if (useWindowsCache) {
+        refusedWindowsPaths.set(path, {
+          expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
+          error,
+        });
+      }
       // Logged once per refusal, then suppressed while the negative cache
       // holds: the probe failure is what an operator needs to see, and a
       // request storm re-reading the same sentence is the noise cave-okfb2
@@ -579,7 +595,7 @@ export async function assertExclusivePathOwnership(
       warn(error.message);
       throw error;
     }
-    waivedWindowsPaths.set(path, waiver.reason);
+    if (useWindowsCache) waivedWindowsPaths.set(path, waiver.reason);
     warn(unverifiedOwnershipDisclosure(subject, path, cause as Error, waiver.reason));
     return;
   }
@@ -589,10 +605,12 @@ export async function assertExclusivePathOwnership(
     const error = new ClientV1PathOwnershipError(
       sharedOwnershipRefusal(subject, path, findings, waiver),
     );
-    refusedWindowsPaths.set(path, {
-      expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
-      error,
-    });
+    if (useWindowsCache) {
+      refusedWindowsPaths.set(path, {
+        expiresAt: now() + CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
+        error,
+      });
+    }
     warn(error.message);
     throw error;
   }
@@ -611,7 +629,7 @@ export async function assertExclusivePathOwnership(
     );
   }
 
-  verifiedWindowsPaths.set(path, report);
+  if (useWindowsCache) verifiedWindowsPaths.set(path, report);
 }
 
 /**

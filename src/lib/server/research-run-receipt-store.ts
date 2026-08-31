@@ -192,7 +192,9 @@ async function assertSafeOwnership(
   label: string,
 ): Promise<void> {
   try {
-    await assertExclusivePathOwnership(candidate, metadata, label);
+    await assertExclusivePathOwnership(candidate, metadata, label, {
+      windowsAclCache: "fresh",
+    });
   } catch (error) {
     throw new ResearchRunReceiptStoreError(
       "unsafe-path",
@@ -218,9 +220,6 @@ async function syncDirectory(directory: string): Promise<void> {
   try {
     handle = await open(directory, constants.O_RDONLY);
     await handle.sync();
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "";
-    if (!["EINVAL", "EISDIR", "ENOTSUP"].includes(code)) throw error;
   } finally {
     await handle?.close().catch(() => {});
   }
@@ -556,8 +555,8 @@ async function publishNoReplace(
     }
     await assertSafeOwnership(target, published, `Research run ${label}`);
     assertPrivateMode(published.mode, FILE_MODE, label);
-    await syncDirectory(layout.root.path);
   }
+  await syncDirectory(layout.root.path);
 }
 
 export function researchRunCompletionReceiptsRoot(override?: string): string {
