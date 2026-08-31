@@ -937,6 +937,54 @@ function parseArtifact(value: unknown, path: string): ProtocolParseResult<Artifa
   });
 }
 
+export function parseRunManifestSourcesV1(
+  value: unknown,
+  path = "$.sources",
+): ProtocolParseResult<RunManifestSourceV1[]> {
+  if (!Array.isArray(value)) {
+    return fail("invalid_type", path, "sources must be an array");
+  }
+  const sources: RunManifestSourceV1[] = [];
+  const sourceIds = new Set<string>();
+  for (const [index, sourceValue] of value.entries()) {
+    const sourcePath = indexPath(path, index);
+    const source = parseSource(sourceValue, sourcePath);
+    if (!source.ok) return source;
+    if (sourceIds.has(source.value.id)) {
+      return fail("semantic_conflict", childPath(sourcePath, "id"), "source ids must be unique");
+    }
+    sourceIds.add(source.value.id);
+    sources.push(source.value);
+  }
+  return pass(sources);
+}
+
+export function parseRunManifestArtifactsV1(
+  value: unknown,
+  path = "$.artifacts",
+): ProtocolParseResult<ArtifactRegistrationV1[]> {
+  if (!Array.isArray(value)) {
+    return fail("invalid_type", path, "artifacts must be an array");
+  }
+  const artifacts: ArtifactRegistrationV1[] = [];
+  const artifactIds = new Set<string>();
+  for (const [index, artifactValue] of value.entries()) {
+    const artifactPath = indexPath(path, index);
+    const artifact = parseArtifact(artifactValue, artifactPath);
+    if (!artifact.ok) return artifact;
+    if (artifactIds.has(artifact.value.id)) {
+      return fail(
+        "semantic_conflict",
+        childPath(artifactPath, "id"),
+        "artifact ids must be unique",
+      );
+    }
+    artifactIds.add(artifact.value.id);
+    artifacts.push(artifact.value);
+  }
+  return pass(artifacts);
+}
+
 function parseModelExecution(
   value: unknown,
   path: string,
@@ -1958,45 +2006,19 @@ function parseRunManifestValueV1(
 
   const sourcesField = parseRequiredField(object.value, "sources", "$");
   if (!sourcesField.ok) return sourcesField;
-  if (!Array.isArray(sourcesField.value)) {
-    return fail("invalid_type", "$.sources", "sources must be an array");
-  }
-  const sources: RunManifestSourceV1[] = [];
-  const sourceIds = new Set<string>();
-  let contextSourceCount = 0;
-  let contextSourceIndex = -1;
-  for (const [index, sourceValue] of sourcesField.value.entries()) {
-    const sourcePath = indexPath("$.sources", index);
-    const source = parseSource(sourceValue, sourcePath);
-    if (!source.ok) return source;
-    if (sourceIds.has(source.value.id)) {
-      return fail("semantic_conflict", childPath(sourcePath, "id"), "source ids must be unique");
-    }
-    sourceIds.add(source.value.id);
-    if (source.value.kind === "context-pack") {
-      contextSourceCount += 1;
-      contextSourceIndex = index;
-    }
-    sources.push(source.value);
-  }
+  const parsedSources = parseRunManifestSourcesV1(sourcesField.value);
+  if (!parsedSources.ok) return parsedSources;
+  const sources = parsedSources.value;
+  const contextSourceIndexes = sources.flatMap((source, index) =>
+    source.kind === "context-pack" ? [index] : []);
+  const contextSourceCount = contextSourceIndexes.length;
+  const contextSourceIndex = contextSourceIndexes.at(-1) ?? -1;
 
   const artifactsField = parseRequiredField(object.value, "artifacts", "$");
   if (!artifactsField.ok) return artifactsField;
-  if (!Array.isArray(artifactsField.value)) {
-    return fail("invalid_type", "$.artifacts", "artifacts must be an array");
-  }
-  const artifacts: ArtifactRegistrationV1[] = [];
-  const artifactIds = new Set<string>();
-  for (const [index, artifactValue] of artifactsField.value.entries()) {
-    const artifactPath = indexPath("$.artifacts", index);
-    const artifact = parseArtifact(artifactValue, artifactPath);
-    if (!artifact.ok) return artifact;
-    if (artifactIds.has(artifact.value.id)) {
-      return fail("semantic_conflict", childPath(artifactPath, "id"), "artifact ids must be unique");
-    }
-    artifactIds.add(artifact.value.id);
-    artifacts.push(artifact.value);
-  }
+  const parsedArtifacts = parseRunManifestArtifactsV1(artifactsField.value);
+  if (!parsedArtifacts.ok) return parsedArtifacts;
+  const artifacts = parsedArtifacts.value;
 
   const modelExecutionsField = parseRequiredField(object.value, "modelExecutions", "$");
   if (!modelExecutionsField.ok) return modelExecutionsField;
