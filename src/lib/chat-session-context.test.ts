@@ -1,65 +1,14 @@
 // @ts-nocheck
 // The chat session's context row (Chat.dc.html 2a ③) must state facts, never
-// invent them: a chip with no value doesn't render, and the cwd never repeats
-// what the project chip already said.
+// invent them: a stat with no value doesn't render.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  chatContextChips,
   chatContextDetails,
   chatContextStats,
   formatContextDuration,
-  shortContextModel,
 } from "./chat-session-context.ts";
-
-test("chips are dropped when the fact is unknown", () => {
-  assert.deepEqual(chatContextChips({}), []);
-  const ids = chatContextChips({
-    projectName: "Coven Cave",
-    projectRoot: "/Users/x/dev/coven-cave",
-    branch: "main",
-    model: "anthropic/claude-opus-5",
-    runtime: "local:/Users/x/dev/coven-cave/.worktrees/wip",
-  }).map((chip) => chip.id);
-  assert.deepEqual(ids, ["runtime", "branch", "project", "cwd"]);
-});
-
-test("the cwd chip stays silent when the project already says it", () => {
-  const chips = chatContextChips({
-    projectName: "Coven Cave",
-    projectRoot: "/Users/x/dev/coven-cave",
-    runtime: "local:/Users/x/dev/coven-cave",
-  });
-  assert.deepEqual(chips.map((chip) => chip.id), ["project"]);
-});
-
-test("a worktree cwd under the project still earns its own chip", () => {
-  const chips = chatContextChips({
-    projectName: "Coven Cave",
-    projectRoot: "/Users/x/dev/coven-cave",
-    runtime: "local:/Users/x/dev/coven-cave/.worktrees/wip",
-  });
-  assert.deepEqual(chips.map((chip) => chip.id), ["project", "cwd"]);
-});
-
-test("the model chip drops the vendor and claude- prefixes", () => {
-  assert.equal(shortContextModel("anthropic/claude-opus-5"), "opus-5");
-  assert.equal(shortContextModel("openai/gpt-5.5"), "gpt-5.5");
-  assert.equal(shortContextModel("gpt-5.5"), "gpt-5.5");
-});
-
-test("the left strip orders runtime, branch and project like the reference", () => {
-  const chips = chatContextChips({
-    harness: "copilot",
-    model: "anthropic/claude-fable-5",
-    branch: "main",
-    projectName: "coven-cave",
-    projectRoot: "/Users/x/dev/coven-cave",
-  });
-  assert.deepEqual(chips.map((chip) => chip.id), ["runtime", "branch", "project"]);
-  assert.equal(chips[0].value, "copilot / fable-5");
-});
 
 test("detail cards aggregate successful tools, elapsed time and context composition", () => {
   const details = chatContextDetails({

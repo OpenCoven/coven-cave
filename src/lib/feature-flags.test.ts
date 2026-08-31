@@ -4,6 +4,7 @@ import {
   caveResearchContextPacks,
   caveResearchHostedRuns,
   caveResearchLocalIngestion,
+  caveResearchRemoteContent,
   caveResearchResources,
   caveResearchSemantic,
   caveResearchTopicDiscovery,
@@ -17,6 +18,7 @@ const researchFlagNames = [
   "NEXT_PUBLIC_CAVE_RESEARCH_CONTEXT_PACKS",
   "NEXT_PUBLIC_CAVE_RESEARCH_TOPIC_DISCOVERY",
   "NEXT_PUBLIC_CAVE_RESEARCH_HOSTED_RUNS",
+  "NEXT_PUBLIC_CAVE_RESEARCH_REMOTE_CONTENT",
 ] as const;
 const originalResearchFlags = Object.fromEntries(
   researchFlagNames.map((name) => [name, process.env[name]]),
@@ -47,6 +49,7 @@ try {
   assert.equal(caveResearchContextPacks(), false, "Context Packs default off");
   assert.equal(caveResearchTopicDiscovery(), false, "Topic Discovery defaults off");
   assert.equal(caveResearchHostedRuns(), false, "hosted runs default off");
+  assert.equal(caveResearchRemoteContent(), false, "remote content defaults off");
 
   for (const enabled of ["1", "true", "yes", "on", " ON "]) {
     clearResearchFlags();
@@ -65,16 +68,19 @@ try {
   process.env.NEXT_PUBLIC_CAVE_RESEARCH_SEMANTIC = "1";
   process.env.NEXT_PUBLIC_CAVE_RESEARCH_CONTEXT_PACKS = "1";
   process.env.NEXT_PUBLIC_CAVE_RESEARCH_TOPIC_DISCOVERY = "1";
+  process.env.NEXT_PUBLIC_CAVE_RESEARCH_REMOTE_CONTENT = "1";
   assert.equal(caveResearchLocalIngestion(), false, "ingestion requires resources");
   assert.equal(caveResearchSemantic(), false, "semantic requires ingestion and resources");
   assert.equal(caveResearchContextPacks(), false, "Context Packs require resources");
   assert.equal(caveResearchTopicDiscovery(), false, "Topic Discovery requires Context Packs and resources");
+  assert.equal(caveResearchRemoteContent(), false, "remote content requires resources");
 
   process.env.NEXT_PUBLIC_CAVE_RESEARCH_RESOURCES = "1";
   assert.equal(caveResearchLocalIngestion(), true);
   assert.equal(caveResearchSemantic(), true);
   assert.equal(caveResearchContextPacks(), true);
   assert.equal(caveResearchTopicDiscovery(), true);
+  assert.equal(caveResearchRemoteContent(), true, "remote content follows the resource catalog");
 
   delete process.env.NEXT_PUBLIC_CAVE_RESEARCH_LOCAL_INGESTION;
   assert.equal(caveResearchSemantic(), false, "semantic stays off when ingestion is off");

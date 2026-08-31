@@ -15,6 +15,8 @@ import {
   buildResearchChatRunInput,
   formatResearchRunStarted,
 } from "@/lib/research-chat-command";
+import { researchRunBootstrapSnapshot } from "@/lib/research-run-surface";
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -105,6 +107,7 @@ import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import {
   chatFoldAriaLabel,
+  chatFoldFadedGroupIndexes,
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
@@ -120,6 +123,8 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
@@ -244,20 +249,24 @@ import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
+  AUTO_MISSION_CHANGED_EVENT,
   autoMissionStatusDraft,
+  cancelAutoMission,
   clearAutoMission,
-  isAutoMissionTimedOut,
   isAutoMissionArmed,
   isAutoModeDraft,
-  pendingAutoMissionPings,
   readAutoMission,
   reconcileAutoMissionOnSessionChange,
   toggleAutoModeDraft,
-  touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
 } from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  APPROVE_MISSION_MESSAGE,
+  DENY_MISSION_MESSAGE,
+  isAutoApprovalPending,
+} from "@/lib/auto-mission-approval";
 import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
@@ -307,6 +316,7 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -314,7 +324,8 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
+import { ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { purgeRetiredChatPreferences } from "@/lib/retired-chat-preferences";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
@@ -1630,6 +1641,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
+  /** Session action verbs, rendered after the conversation title. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1692,7 +1704,13 @@ function MetaLine({
       ? `Task: ${task.title}`
       : null;
   return (
-    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} role="status" aria-live="polite" data-lifecycle={state}>
+    // The live region is the META SPAN, not this row. It used to be the row
+    // itself, which meant every interactive control on the header — the
+    // actions cluster, and now the inline pickers — sat inside an aria-live
+    // region and got re-announced on each lifecycle tick. Narrowing it to the
+    // text that actually changes keeps the announcements and takes the
+    // controls out of them (cave-fh9so).
+    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
       {/* Chat-revamp 1b: the session's familiar leads the header as a small
           circular avatar, so the title row reads avatar · title · meta. */}
@@ -1708,14 +1726,14 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
-        {/* Chat-revamp 1b: the settled header carries a quiet, always-visible
-            identity line — "· <familiar> · <model> · <branch>" — while the
-            heavier provenance (cwd · duration · tokens · cost + meters) stays
-            in the reveal-on-hover cluster below, so nothing is deleted, just
-            demoted. Streaming/failed/offline states keep their live meta. */}
+      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
+        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+            — "<familiar> · <model> · <branch>" — while the heavier provenance
+            (cwd · duration · tokens · cost + meters) stays in the adjacent
+            reveal-on-hover cluster, so nothing is deleted, just demoted.
+            Streaming/failed/offline states keep their live meta. */}
         {state === "complete" ? (
-          <span className="cave-chat-meta-line__identity">
+          <span className="cave-chat-meta-line__identity reveal-on-hover">
             {familiar.display_name}
             {metaModel ? ` · ${shortModelLabel(metaModel)}` : ""}
             {gitBranch ? (
@@ -1758,6 +1776,12 @@ function MetaLine({
         {state === "streaming" ? " · esc to cancel" : null}
         {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
+      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
+          project/model/context chips inline here to collapse three stacked
+          header rows into one; one row of five controls is still a toolbar.
+          Choosing a project or a model belongs to the composer, which is where
+          you are when the choice matters and which still carries them. The
+          header is a title and the verbs that act on this conversation. */}
       {children}
     </div>
   );
@@ -2018,6 +2042,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Open daily note" from the completed Reflect: pre-arm the Familiars
+  // surface preferences (same registry the detail panel reads), then switch
+  // modes — the roster mounts already on the familiar's Daily Notes tab.
+  const [, setFamiliarsSelectedId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
+  const [, setFamiliarsViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  const [, setFamiliarsDetailTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  const openFamiliarDailyNote = useCallback((familiarId: string) => {
+    setThreadSignalReport(null);
+    setFamiliarsSelectedId(familiarId);
+    setFamiliarsViewMode("detail");
+    setFamiliarsDetailTab("daily-notes");
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
+  }, [setFamiliarsDetailTab, setFamiliarsSelectedId, setFamiliarsViewMode]);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
@@ -2222,111 +2259,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setAutoMission(record);
   }, [sessionId]);
 
-  // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
-  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
-  // leaves the mission armed (answering it resumes the work); failed and done
-  // end the mission and flag feedback as pending.
+  // Workspace supervision owns marker parsing, watchdogs, and inbox delivery.
+  // This mirror keeps a mounted ChatView in sync with those durable writes,
+  // including cancellation issued by `/auto stop` after another surface (or a
+  // second workspace observer) won the race.
   useEffect(() => {
-    const pings = pendingAutoMissionPings(autoMission, turns);
-    if (!pings.length || !autoMission) return;
-    const storage = typeof window === "undefined" ? null : window.localStorage;
-    let next: AutoMissionRecord = { ...autoMission, notified: [...autoMission.notified] };
-    let ended = false;
-    for (const ping of pings) {
-      next.notified.push(ping.turnId);
-      const blocked = ping.state === "blocked";
-      if (!blocked) {
-        ended = true;
-        next = {
-          ...next,
-          completedAt: new Date().toISOString(),
-          outcome: ping.state === "failed" ? "failed" : "done",
-          feedbackPending: true,
-        };
+    const onMissionChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: unknown }>).detail;
+      if (detail?.sessionId !== sessionId) return;
+      let storage: Storage | null = null;
+      try {
+        storage = window.localStorage;
+      } catch {
+        return;
       }
-      void fetch("/api/inbox", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: blocked ? "response-needed" : "agent",
-          title: blocked
-            ? "Auto mission needs you"
-            : ping.state === "failed"
-              ? "Auto mission couldn't finish"
-              : "Auto mission complete",
-          body: ping.note || autoMission.mission,
-          source: "agent",
-          familiarId: familiar.id,
-          sessionId,
-          auto: "auto-mission",
-          link: sessionId ? { kind: "session", ref: sessionId } : null,
-        }),
-      }).catch(() => undefined);
-    }
-    writeAutoMission(sessionId, next, storage);
-    setAutoMission(next);
-    if (ended) setAutoFeedbackOpen(true);
-  }, [autoMission, familiar.id, sessionId, turns]);
-
-  // Keep the mission's liveness stamp current. The watchdog below measures from
-  // this, not from mission start, so a long mission that is visibly progressing
-  // is never declared timed out.
-  useEffect(() => {
-    if (!autoMission || autoMission.completedAt) return;
-    setAutoMission((prev) => {
-      if (!prev || prev.completedAt) return prev;
-      const touched = touchAutoMission(prev, Date.now());
-      if (touched === prev) return prev;
-      writeAutoMission(sessionId, touched, typeof window === "undefined" ? null : window.localStorage);
-      return touched;
-    });
-    // Only the transcript growing counts as a sign of life — depending on
-    // autoMission here would re-stamp on our own write and never expire.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turns.length, sessionId]);
-
-  // The watchdog. Everything above depends on the familiar volunteering a
-  // terminal marker; nothing guarantees it ever does. It can run out of
-  // context, die mid-stream, or simply forget the protocol — and then the
-  // transcript holds nothing to ping on, the mission stays armed forever, and
-  // the human never hears back at all. That is the one outcome /auto cannot
-  // afford, so the client stops waiting on its own clock.
-  useEffect(() => {
-    if (!autoMission || autoMission.completedAt) return;
-    const tick = () => {
-      setAutoMission((prev) => {
-        if (!isAutoMissionTimedOut(prev, turns, Date.now())) return prev;
-        if (!prev) return prev;
-        const ended: AutoMissionRecord = {
-          ...prev,
-          completedAt: new Date().toISOString(),
-          outcome: "timed-out",
-          feedbackPending: true,
-        };
-        writeAutoMission(sessionId, ended, typeof window === "undefined" ? null : window.localStorage);
-        void fetch("/api/inbox", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            kind: "response-needed",
-            title: "Auto mission went quiet",
-            body: `No word back on "${prev.mission}". Check the thread — it may have stalled.`,
-            source: "agent",
-            familiarId: familiar.id,
-            sessionId,
-            auto: "auto-mission",
-            link: sessionId ? { kind: "session", ref: sessionId } : null,
-          }),
-        }).catch(() => undefined);
-        setAutoFeedbackOpen(true);
-        return ended;
-      });
+      const next = readAutoMission(sessionId, storage);
+      setAutoMission(next);
+      if (next?.completedAt && next.feedbackPending) setAutoFeedbackOpen(true);
     };
-    const timer = window.setInterval(tick, 60_000);
-    tick();
-    return () => window.clearInterval(timer);
-  }, [autoMission, familiar.id, sessionId, turns]);
+    window.addEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
+    return () => window.removeEventListener(AUTO_MISSION_CHANGED_EVENT, onMissionChange);
+  }, [sessionId]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
@@ -2551,13 +2504,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
-  // The session's live git branch for the context row. Rides the shared
-  // changes-summary gate (cave-v8hh) that the composer git chip and the header
-  // meta line already subscribe to, so this adds no extra requests.
-  const { branch: sessionGitBranch } = useChangesSummary(
-    session?.project_root ?? projectRoot ?? undefined,
-    Boolean(session?.project_root ?? projectRoot),
-  );
   // The project the most recent chat ran in — the default a brand-new chat
   // inherits (kept live: sessions can land seconds after boot).
   const recentProjectRoot = useMemo(
@@ -2741,7 +2687,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [activityMapVisible] = useActivityMapVisible();
+  // The retired activity-map toggle wrote `cave:chat:thread-instruments`, and an
+  // opt-out "0" can still be sitting in a browser from an older build. Nothing
+  // reads it any more — the rail is automatic (cave-5m5hv) — so clear it once
+  // per mount rather than leaving a machine carrying a switch for a feature it
+  // can no longer reach.
+  useEffect(() => {
+    purgeRetiredChatPreferences();
+  }, []);
   const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
@@ -4788,8 +4741,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const filled = `/skill ${s.id}`;
     const carried = skillCarryOverText(input);
     if (s.argumentHint && !carried && input.trim().toLowerCase() !== filled.toLowerCase()) {
-      setInput(`${filled} `);
-      inputRef.current?.focus();
+      const next = `${filled} `;
+      // A picker selection replaces the controlled value. Keep the hook's
+      // caret and the native textarea selection in the same commit before a
+      // paste can arrive (Windows WebView otherwise pastes at the old
+      // `/skill` caret and leaves the selected skill detached).
+      completeComposerText(next, next.length);
       return;
     }
     setInput("");
@@ -4871,17 +4828,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // forever, and the human has no way to rate what did happen.
       if (sub === "stop" || sub === "end" || sub === "cancel") {
         setInput("");
-        if (!autoMission || autoMission.completedAt) {
+        const ended = sessionId
+          ? cancelAutoMission(sessionId, storage)
+          : autoMission && !autoMission.completedAt
+            ? {
+                ...autoMission,
+                completedAt: new Date().toISOString(),
+                outcome: "cancelled" as const,
+                feedbackPending: true,
+              }
+            : null;
+        if (!ended) {
           appendSystem("No auto mission is running in this chat.");
           return true;
         }
-        const ended: AutoMissionRecord = {
-          ...autoMission,
-          completedAt: new Date().toISOString(),
-          outcome: "cancelled",
-          feedbackPending: true,
-        };
-        writeAutoMission(sessionId, ended, storage);
         setAutoMission(ended);
         setAutoFeedbackOpen(true);
         appendSystem("Auto mission ended. Rate it so the next one goes better.");
@@ -4933,6 +4893,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       const record: AutoMissionRecord = {
         mission,
+        familiarId: familiar.id,
         startedAt: new Date().toISOString(),
         notified: [],
         completedAt: null,
@@ -4972,7 +4933,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // A hinted skill submitted without arguments (and not already the exact
       // `/skill <id>` form — that means "run it anyway") autofills for editing.
       if (skill.argumentHint && !skillArgs && trimmed.toLowerCase() !== `/skill ${skill.id}`.toLowerCase()) {
-        setInput(`/skill ${skill.id} `);
+        const next = `/skill ${skill.id} `;
+        completeComposerText(next, next.length);
         return true;
       }
       setInput("");
@@ -5057,12 +5019,55 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       setInput("");
       void createResearchMission(built.input)
-        .then((result) => {
+        .then(async (result) => {
           if (!result.ok || !result.mission) {
             appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
             return;
           }
-          appendSystem(formatResearchRunStarted(result.mission));
+          // Persist the run id on the turns, not a frozen copy of the card's UI
+          // state (#4808): after a reload the inline projection rehydrates from
+          // the canonical ResearchMission via researchRunId.
+          const now = new Date().toISOString();
+          const targetSessionId = currentSessionRef.current;
+          const live = targetSessionId ? readLiveChatGeneration(targetSessionId) : null;
+          const parentId = (live?.activeLeafId ?? activeLeafId) || null;
+          const userTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId,
+            role: "user",
+            text: `/research ${args}`,
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          const assistantTurn: Turn = {
+            id: crypto.randomUUID(),
+            parentId: userTurn.id,
+            role: "assistant",
+            text: formatResearchRunStarted(result.mission),
+            createdAt: now,
+            researchRunId: result.mission.id,
+          };
+          updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
+          // The appended pair becomes the active path (same as the /image flow) so
+          // the confirmation and its run card render immediately.
+          setActiveLeafId(assistantTurn.id);
+          if (targetSessionId) {
+            invalidateConversation(targetSessionId);
+            try {
+              await fetch(`/api/chat/conversation/${encodeURIComponent(targetSessionId)}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  turns: [userTurn, assistantTurn],
+                  activeLeafId: assistantTurn.id,
+                  familiarId: familiar.id,
+                  harness: modelHarness,
+                }),
+              });
+            } catch {
+              // Optimistic — the transcript already shows the run card.
+            }
+          }
         })
         .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
@@ -6273,6 +6278,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Reassigned every render so TranscriptRows — which deliberately does NOT
   // re-render on composer keystrokes — always invokes closures that read the
   // CURRENT busy/turns/attachments state at call time. See TranscriptHandlers.
+  // Approve/deny for a `needs-approval` mission (cave-l9hsu): both send an
+  // inline answer through the ordinary send machinery — the same path a typed
+  // reply takes — so the familiar resumes in place. Approve is the go-ahead;
+  // deny keeps the mission armed and lets the familiar respond to the no.
+  const approveAutoMission = () => {
+    announce("Mission approved — resuming.", "polite");
+    void send(APPROVE_MISSION_MESSAGE);
+  };
+  const denyAutoMission = () => {
+    announce("Mission denied — resuming.", "polite");
+    void send(DENY_MISSION_MESSAGE);
+  };
   const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
   transcriptHandlersRef.current = {
     siblingsFor,
@@ -6284,6 +6301,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
+    approveAutoMission,
+    denyAutoMission,
   };
   transcriptHandlersRef.current.cancelSend = cancelSend;
 
@@ -7210,15 +7229,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
 
-  // Facts for the slim context row. Same derivations the header meta line
+  // Facts for the slim context row. Same derivation the header meta line
   // uses, hoisted here so the two rows can never disagree about which model
-  // answered or which directory the session runs in.
-  const contextRowProject = projectIdDraft ? chatProjectById(projectIdDraft, projects) : null;
+  // answered.
   const contextRowModel =
     responseMetadataModel(lastSettledAssistantTurn?.responseMetadata) ??
     visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
     visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined);
-  const contextRowBranch = sessionGitBranch;
 
   // ── Composer placement (Chat.dc.html 2b) ────────────────────────────────
   // One composer, two positions. On a brand-new chat the design puts the brief
@@ -7227,9 +7244,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
   // Context controls follow the same pattern: constructed once as
-  // chatContextControls and placed adaptively — footer cluster for new chats
-  // (inlineComposer) and session header for active chats (!inlineComposer)
-  // so picker state is never duplicated.
+  // chatContextControls and rendered in exactly ONE place — the composer's
+  // footer cluster, for new and active chats alike (cave-zfmqm). They were
+  // placed adaptively before, which is how the session header ended up
+  // carrying a picker toolbar.
   // Tool-only commands such as /image and /auto can produce transcript turns
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
@@ -7875,11 +7893,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — carries linked work and new-chat context.
-                  Context controls ride here only for new chats (inlineComposer);
-                  active chats show them in the session header instead. */}
+              {/* Footer band — carries linked work and the context controls.
+                  They used to ride here for new chats ONLY, with active chats
+                  showing them in the session header; the header is a title and
+                  the verbs that act on the conversation now (cave-zfmqm), so
+                  this is their one home. That is also where they belong: you
+                  pick a project or a model at the moment you are composing, not
+                  while reading back a transcript.
+
+                  Gating this on `inlineComposer` again would silently strand an
+                  active chat with no way to change either. */}
               <div className="cave-composer-footer-band">
-                {inlineComposer ? (
+                {!offlineReadOnly ? (
                   <div className="cave-composer-footer-band__cluster">
                     {chatContextControls}
                   </div>
@@ -8019,9 +8044,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )}
             {overflowAddProject.addError ? (
-              <p className="cave-project-picker__error" role="alert">
-                {overflowAddProject.addError}
-              </p>
+              <ProjectRootWorkspaceNotice
+                className="cave-project-picker__error"
+                code={overflowAddProject.addErrorCode}
+                error={overflowAddProject.addError}
+              />
             ) : null}
             {overflowAddProject.addProjectModal}
             <ProjectSetupModal
@@ -8036,9 +8063,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
-        {!inlineComposer && !offlineReadOnly ? (
-          <div className="cave-chat-header-context">{chatContextControls}</div>
-        ) : null}
+        {/* No mobile header strip either. It existed as the counterpart to the
+            inline desktop copy, because `.cave-chat-meta-line` is display:none
+            below the breakpoint — with both retired the composer carries the
+            controls on every width, so there is nothing left to double-mount. */}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -8062,29 +8090,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
-      {/* Chat.dc.html 2a ③: the slim mono context band under the title —
-          project · branch · model · cwd on the left, what the last run cost on
-          the right. Everything here is machine-decided, so it reads in mono
-          and never invents a fact: a chip with no value doesn't render. A
-          brand-new chat (no session yet) renders no band at all (2b): the
-          new-session dashboard already states the harness and model, so a lone
-          model chip here would say it twice. */}
+      {/* Chat.dc.html 2a ③: the slim mono context band under the title — what
+          the last run cost, on the right. The band used to also carry
+          project/branch/model/cwd chips (with a project selector), but the
+          header's identity line one row up already states familiar · model ·
+          branch, so those were dropped as redundant chrome (cave ultraminimalist
+          pass). A brand-new chat (no session yet) renders no band at all. */}
       {sessionId !== null || turns.length > 0 ? (
       <ChatSessionContextRow
-        projectName={contextRowProject?.name ?? null}
-        projectRoot={session?.project_root ?? projectRoot ?? null}
-        runtime={lastSettledAssistantTurn?.responseMetadata?.runtime ?? session?.runtime ?? null}
-        harness={familiar.harness}
-        branch={contextRowBranch}
         model={contextRowModel}
         turns={turns}
         usage={lastSettledAssistantTurn?.usage}
         costUsd={lastSettledAssistantTurn?.costUsd}
         durationMs={lastSettledAssistantTurn?.durationMs}
-        projects={projects}
-        projectId={projectIdDraft}
-        onProjectChange={setProjectIdDraft}
-        onAddProject={overflowAddProject.beginAddProject}
       />
       ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
@@ -8121,6 +8139,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
+        {/* Left turn spine (Chat.dc.html 2a, cave-j86la). One node per turn in
+            the transcript's left gutter, derived from the SAME activePath the
+            transcript renders. An absolutely-positioned overlay inside the
+            scroller, so it costs no layout and adds no horizontal axis; it
+            gates itself to panes wide enough to have a gutter and stays home
+            everywhere else. Retained deliberately through the minimap's removal
+            (cave-5m5hv) — it annotates the left side, which the right rail that
+            replaced the minimap never occupied. */}
+        {activePath.length > 0 ? (
+          <ChatThreadSpine
+            turns={activePath}
+            scrollRef={scrollRef}
+            familiarName={familiar.display_name}
+          />
+        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
@@ -8213,6 +8246,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             groupedTurns={groupedTurns}
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
+            autoMission={autoMission}
             historyExpanded={historyExpanded}
             foldOpen={foldOpen}
             onToggleFold={toggleFold}
@@ -8261,6 +8295,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <ThreadSignalCard
             report={threadSignalReport}
             onDismiss={() => setThreadSignalReport(null)}
+            onOpenDailyNote={openFamiliarDailyNote}
             onViewFull={() => {
               const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
               window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;
@@ -8311,17 +8346,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
               {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
                   timeline, tool mix and live step, derived from the SAME
-                  activePath the transcript renders. Shares the instruments
-                  toggle — it is the same class of furniture as the spine and
-                  minimap, and two settings for one idea is a choice nobody
-                  asked for.
+                  activePath the transcript renders.
+
+                  AUTOMATIC (cave-5m5hv). This is the transcript's right-side
+                  instrument now — it replaced the thread minimap — and it
+                  carries no visibility preference: no kebab item, no stored
+                  key, nothing a person can switch off. The only condition left
+                  here is "there is a transcript at all"; the rail's own gates
+                  (no tool calls yet → renders nothing, narrow row → CSS
+                  display:none) are about data and room, not about choice.
 
                   Mounted AFTER the transcript on purpose. It was briefly the
                   row's first child with CSS `order` doing the visual placement,
                   which put the rail ahead of the conversation for screen
                   readers — `order` moves boxes, never reading order. DOM order
                   is the accessible order, so the annotation follows the log. */}
-              {activePath.length > 0 && activityMapVisible ? (
+              {activePath.length > 0 ? (
                 <ChatActivityMap turns={activePath} conversationCreatedAt={session?.created_at} />
               ) : null}
       </div>
@@ -8698,6 +8738,8 @@ type TranscriptHandlers = {
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   cancelSend?: () => void;
   send: (override?: string) => Promise<void>;
+  approveAutoMission: () => void;
+  denyAutoMission: () => void;
 };
 
 /**
@@ -8734,10 +8776,12 @@ const TranscriptRows = memo(function TranscriptRows({
   onOpenUrl,
   onOpenPreview,
   handlersRef,
+  autoMission,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
+  autoMission: AutoMissionRecord | null;
   historyExpanded: boolean;
   /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
    *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
@@ -8774,6 +8818,14 @@ const TranscriptRows = memo(function TranscriptRows({
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
   const latestAssistantId =
     allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
+  // Prose-dimming hint ("Chat Session - Prototype.dc.html", cave-4akqc): below
+  // a CLOSED fold the first visible turns sit slightly dimmed, suggesting the
+  // transcript continues above. Purely visual - the DOM and accessibility
+  // tree are unchanged - so it must also be a hover/focus restore, and the
+  // reduced-transparency preference disables it entirely (see
+  // session-chrome.css). Computed over the rendered slice so the cap path
+  // never fades anything either: the hint belongs to the fold alone.
+  const fadedGroups = chatFoldFadedGroupIndexes(renderGroups, folded);
   const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
@@ -8814,6 +8866,7 @@ const TranscriptRows = memo(function TranscriptRows({
           turn={t}
           familiar={familiar}
           announceLifecycle={t.id === latestAssistantId}
+          foldFaded={fadedGroups.has(groupIndex)}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
           onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8830,6 +8883,7 @@ const TranscriptRows = memo(function TranscriptRows({
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
+          autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
         />
       );
       if (!gapLabel) return row;
@@ -8883,6 +8937,7 @@ const TranscriptRows = memo(function TranscriptRows({
               turn={t}
               familiar={familiar}
               announceLifecycle={t.id === latestAssistantId}
+              foldFaded={fadedGroups.has(groupIndex)}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
               onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8899,6 +8954,7 @@ const TranscriptRows = memo(function TranscriptRows({
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
+              autoApprovalPending={isAutoApprovalPending(autoMission, allTurns, t.id)}
             />
           );
         })}
@@ -8939,6 +8995,7 @@ function TurnRowImpl({
   announceLifecycle,
   showTimestamp = true,
   found = false,
+  foldFaded = false,
   onEdit,
   onRegenerate,
   onReply,
@@ -8953,6 +9010,7 @@ function TurnRowImpl({
   handlersRef,
   feedbackContext,
   branchNav,
+  autoApprovalPending = false,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
@@ -8965,6 +9023,10 @@ function TurnRowImpl({
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
    *  applies the temporary cave-turn-found highlight flash. */
   found?: boolean;
+  /** Prose-dimming hint (cave-4akqc): first visible turns below a closed fold
+   *  render slightly dimmed. Visual only; hover/focus and reduced-transparency
+   *  restore full contrast. */
+  foldFaded?: boolean;
   /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
@@ -8988,6 +9050,9 @@ function TurnRowImpl({
   feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
+  /** True when this turn's `needs-approval` marker is the live, unanswered one —
+   *  the AutoStatusCard then renders the approve/deny affordance. */
+  autoApprovalPending?: boolean;
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
@@ -9054,7 +9119,7 @@ function TurnRowImpl({
     return (
       <div
         data-turn-id={turn.id}
-        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}`}
+        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
       >
         <div className="cave-linear-turn-content cave-linear-turn-content--with-avatar">
           {turn.role === "user" ? (
@@ -9209,6 +9274,27 @@ function TurnRowImpl({
       ghFamiliar,
     );
     renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+
+    // A /research-started run leaves no <coven:research> marker in the turn
+    // text — the run id is persisted on the turn instead. Rehydrate the inline
+    // projection from the canonical mission API through the bootstrap snapshot
+    // so the card survives reload and stays a view of the same run the Research
+    // Desk works on (#4808).
+    const researchRunId = turn.researchRunId;
+    if (turn.role === "assistant" && researchRunId && currentProjection.researchRuns.length === 0) {
+      const researchBlock: MessageBubbleSegment = {
+        kind: "block",
+        key: `research-${researchRunId}`,
+        node: (
+          <div className="my-3">
+            <ResearchRunInlineCard snapshot={researchRunBootstrapSnapshot(researchRunId)} />
+          </div>
+        ),
+      };
+      renderSegments = renderSegments
+        ? [...renderSegments, researchBlock]
+        : [{ kind: "text", text: visible }, researchBlock];
+    }
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
@@ -9317,7 +9403,12 @@ function TurnRowImpl({
       ) : null}
       {autoStatusUpdate ? (
         <div className="mt-2">
-          <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
+          <AutoStatusCard
+            state={autoStatusUpdate.state}
+            note={autoStatusUpdate.note}
+            onApprove={autoApprovalPending ? () => handlersRef.current?.approveAutoMission() : undefined}
+            onDeny={autoApprovalPending ? () => handlersRef.current?.denyAutoMission() : undefined}
+          />
         </div>
       ) : null}
       {/* Edit cards stay visible rather than being buried in activity. */}
@@ -9370,7 +9461,7 @@ function TurnRowImpl({
   return (
     <div
       data-turn-id={turn.id}
-      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
+      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
     >
       <div className="cave-linear-turn-content text-[length:var(--text-md)] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
@@ -10138,6 +10229,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.announceLifecycle === next.announceLifecycle &&
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
+    prev.foldFaded === next.foldFaded &&
     prev.expanded === next.expanded &&
     prev.handlersRef === next.handlersRef &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
@@ -10149,6 +10241,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // every parent render and would defeat memoization.
     prev.branchNav?.index === next.branchNav?.index &&
     prev.branchNav?.total === next.branchNav?.total &&
+    prev.autoApprovalPending === next.autoApprovalPending &&
     // Feedback stamp: compare by value — the memoized context object gets a
     // fresh identity when the model/runtime actually changes.
     prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&

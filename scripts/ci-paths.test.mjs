@@ -16,14 +16,16 @@ test("documentation changes run the docs contract and nothing heavier", () => {
   assert.equal(classifyCiPaths(["README.md"]).docs, false);
 });
 
-test("workflow and script changes run frontend validation", () => {
+test("workflow and script changes run their validation lanes", () => {
   assert.deepEqual(classifyCiPaths([".github/workflows/ci.yml"]), {
     frontend: true,
-    rust: false,
+    rust: true,
     e2e: false,
     ios: true,
     docs: false,
   });
+  assert.equal(classifyCiPaths([".github/workflows/full-validation.yml"]).rust, true);
+  assert.equal(classifyCiPaths(["scripts/rust-doctest-ci.test.mjs"]).rust, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
 });
@@ -47,6 +49,27 @@ test("protocol changes run conformance in normal Linux pull-request CI", () => {
   assert.match(
     frontendValidation,
     /^          - name: protocol conformance\n            command: test:conformance$/m,
+  );
+});
+
+test("PR checks cannot silently skip suites after an earlier failure (cave-t8p1a)", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const prChecks = workflow.match(/^  pr-checks:\n[\s\S]*?(?=^  [a-z][a-z-]+:\n)/m)?.[0];
+  assert.ok(prChecks, "CI must retain the PR checks job");
+  for (const suite of ["app-suite", "api-suite", "mobile-suite"]) {
+    assert.match(
+      prChecks,
+      new RegExp(`^      - id: ${suite}\n        name: [^\n]+\n        if: success\\(\\) \\|\\| failure\\(\\)\n        run: `, "m"),
+      `${suite} must run unless the job was cancelled, so an earlier failure cannot skip it`,
+    );
+  }
+  assert.match(
+    prChecks,
+    /- Suites: app=\$APP_OUTCOME api=\$API_OUTCOME mobile=\$MOBILE_OUTCOME/,
+    "the summary must name each suite outcome so a skipped suite is distinguishable from a passed one",
   );
 });
 

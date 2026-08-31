@@ -84,6 +84,12 @@ export function WorkspaceContextSwitcher({
           allProjectsLabel="All projects"
           onSelectAllProjects={() => onProjectChange(null)}
           familiarId={activeFamiliarId}
+          // Names the familiar-scoped section in the picker. Null in an
+          // All-familiars scope (and when the id resolves to nobody), which is
+          // exactly when that section should not render.
+          familiarLabel={
+            allFamiliars.find((familiar) => familiar.id === activeFamiliarId)?.display_name ?? null
+          }
           createProjectOrThrow={createProjectOrThrow}
           ariaLabel="Switch project"
           disabled={projectLoading || Boolean(projectError)}

@@ -95,55 +95,17 @@
   display: none;
 }
 
-.cave-chat-context-row__chips,
 .cave-chat-context-row__stats {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-}
-
-.cave-chat-context-row__chips {
-  flex: none;
-}
-
-.cave-chat-context-row__stats {
   flex: none;
   margin-left: auto;
 }
 
-.cave-chat-context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 1 auto;
-  min-width: 0;
-  height: var(--space-6);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--foreground) 5%, transparent);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: inherit;
-  white-space: nowrap;
-}
-
-.cave-chat-context-chip--action {
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-standard),
-    background-color var(--duration-fast) var(--ease-standard);
-}
-
-.cave-chat-context-chip--action:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-}
-
-/* One tint per element, set by the model's `is-*` class and read by the glyph,
-   the dot, the value and the meter fill — so a new tint teaches one place. */
-.cave-chat-context-chip__glyph,
+/* One tint per element, set by the element’s `is-*` class and read by the dot,
+   the value and the meter fill — so a new tint teaches one place. */
 .cave-chat-context-stat,
 .cave-chat-context-breakdown :where(
   .cave-chat-context-breakdown__heading,
@@ -153,13 +115,11 @@
   --ctx-tint: var(--text-muted);
 }
 
-.cave-chat-context-chip__glyph.is-accent,
 .cave-chat-context-stat.is-accent,
 .cave-chat-context-breakdown .is-accent {
   --ctx-tint: var(--accent-presence);
 }
 
-.cave-chat-context-chip__glyph.is-success,
 .cave-chat-context-stat.is-success,
 .cave-chat-context-breakdown .is-success {
   --ctx-tint: var(--color-success);
@@ -173,24 +133,6 @@
 .cave-chat-context-stat.is-danger,
 .cave-chat-context-breakdown .is-danger {
   --ctx-tint: var(--color-danger);
-}
-
-.cave-chat-context-chip__glyph {
-  display: inline-flex;
-  flex: none;
-  color: var(--ctx-tint);
-}
-
-.cave-chat-context-chip__key {
-  flex: none;
-  color: color-mix(in oklch, var(--text-muted) 70%, transparent);
-}
-
-.cave-chat-context-chip__value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-primary);
 }
 
 /* Right cluster: what the last run cost, in the same mono register. The
@@ -536,6 +478,33 @@
   .cave-chat-fold__trigger::before,
   .cave-chat-fold__trigger::after,
   .cave-chat-fold__caret {
+    transition: none;
+  }
+}
+
+/* ── Prose-dimming hint (cave-4akqc) ────────────────────────────────────────
+   Below a CLOSED fold, the first visible turns sit slightly dimmed — the
+   "fade the first visible turns" hint from the frame. Purely visual: the
+   toggle already carries the count, and the hint is a second, quieter
+   signal that the transcript continues above. It restores to full contrast
+   on hover/focus (reading is never blocked) and is disabled entirely under
+   reduced-transparency, so the affordance never costs the reader legibility. */
+.cave-linear-turn--fold-faded {
+  opacity: 0.72;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.cave-linear-turn--fold-faded:hover,
+.cave-linear-turn--fold-faded:focus-within {
+  opacity: 1;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cave-linear-turn--fold-faded {
+    opacity: 1;
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-linear-turn--fold-faded {
     transition: none;
   }
 }

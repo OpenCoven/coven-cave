@@ -307,10 +307,18 @@ function runClaude(args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
+      // `claude` is an npm `.cmd` shim on Windows; Node cannot execute batch
+      // shims directly, so CreateProcess failed ENOENT and the catch below
+      // silently reported the runtime as unavailable. The argv is fixed by this
+      // module (never request-supplied), so Node's shell bridge is used only on
+      // Windows to resolve the shim safely — the same policy as the codex probe
+      // (cave-1vn4u). A missing install then surfaces as a non-zero exit, which
+      // the close handler already treats as a failed probe.
       child = spawn("claude", args, {
         env: claudeProbeEnvironment(covenSpawnEnv()) as NodeJS.ProcessEnv,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        shell: process.platform === "win32",
       });
     } catch {
       resolve(null);

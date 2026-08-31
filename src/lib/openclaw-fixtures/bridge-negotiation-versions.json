@@ -1,0 +1,29 @@
+{
+  "source": {
+    "note": "Synthetic conformance fixtures for the issue #4892 bridge negotiation slice. The concurrent-version record models a second simultaneously-supported OpenClaw gateway line; the unsupported-version record models a gateway ahead of every validated profile. Neither is an upstream OpenClaw release: they exercise Cave's negotiation contract only, and no live OpenClaw calls are made anywhere.",
+    "modeledOn": [
+      "src/lib/openclaw-fixtures/gateway-beta4.json",
+      "src/lib/openclaw-fixtures/gateway-beta5.json"
+    ]
+  },
+  "discoveries": {
+    "concurrentVersion": {
+      "serverVersion": "2026.8.0",
+      "protocol": 4,
+      "methods": ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+      "events": ["chat", "agent", "session.tool"],
+      "serverCapabilities": ["chat-send-routing-contract"],
+      "clientCapabilities": ["tool-events"],
+      "agentEventSchemaHash": "d62660fe0844874cf8c5bec892e6663d4f55e9b45c2603bcffda6d7ae9153f3b"
+    },
+    "unsupportedVersion": {
+      "serverVersion": "2026.9.0-beta.1",
+      "protocol": 5,
+      "methods": ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+      "events": ["chat", "agent", "session.tool"],
+      "serverCapabilities": ["chat-send-routing-contract"],
+      "clientCapabilities": ["tool-events"],
+      "agentEventSchemaHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa88a9"
+    }
+  }
+}

@@ -15,14 +15,23 @@
  * the whole decision path is testable under `node --test` with no DOM.
  */
 
-import { extractAutoStatusMarkers } from "./auto-status-blocks.ts";
+import { extractAutoStatusMarkers, type AutoMissionState } from "./auto-status-blocks.ts";
 
 /** Minimal Storage surface — window.localStorage or a test fake. */
-export type AutoMissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type AutoMissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
+  & Partial<Pick<Storage, "length" | "key">>;
+
+/** Prefix for the per-session records in localStorage. */
+export const AUTO_MISSION_STORAGE_PREFIX = "cave:auto-mission:";
+
+/** Same-document signal for the workspace watcher and an open ChatView. */
+export const AUTO_MISSION_CHANGED_EVENT = "cave:auto-mission-changed";
 
 export type AutoMissionRecord = {
   /** The mission text as the human typed it. */
   mission: string;
+  /** The familiar that started the mission, when known. */
+  familiarId?: string | null;
   startedAt: string;
   /**
    * Turn ids already announced to the human. Persisted so a reload — which
@@ -52,7 +61,31 @@ export type AutoMissionRecord = {
 };
 
 export function autoMissionKey(sessionId: string): string {
-  return `cave:auto-mission:${sessionId}`;
+  return `${AUTO_MISSION_STORAGE_PREFIX}${sessionId}`;
+}
+
+/** Extract a session id from a storage key, excluding the global briefing key. */
+export function autoMissionSessionIdFromKey(key: string | null | undefined): string | null {
+  if (!key || !key.startsWith(AUTO_MISSION_STORAGE_PREFIX)) return null;
+  const sessionId = key.slice(AUTO_MISSION_STORAGE_PREFIX.length);
+  return sessionId && sessionId !== "briefed" ? sessionId : null;
+}
+
+/** Enumerate every session record so supervision is independent of the open chat. */
+export function autoMissionSessionIds(storage: AutoMissionStorage | null | undefined): string[] {
+  if (!storage || typeof storage.length !== "number" || typeof storage.key !== "function") {
+    return [];
+  }
+  const ids = new Set<string>();
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const sessionId = autoMissionSessionIdFromKey(storage.key(index));
+      if (sessionId) ids.add(sessionId);
+    }
+  } catch {
+    return [];
+  }
+  return [...ids];
 }
 
 const OUTCOMES: ReadonlySet<string> = new Set(["done", "failed", "timed-out", "cancelled"]);
@@ -69,6 +102,7 @@ export function readAutoMission(
     if (typeof parsed.mission !== "string" || !parsed.mission) return null;
     return {
       mission: parsed.mission,
+      familiarId: typeof parsed.familiarId === "string" ? parsed.familiarId : null,
       startedAt: typeof parsed.startedAt === "string" ? parsed.startedAt : new Date(0).toISOString(),
       notified: Array.isArray(parsed.notified) ? parsed.notified.filter((t) => typeof t === "string") : [],
       completedAt: typeof parsed.completedAt === "string" ? parsed.completedAt : null,
@@ -81,34 +115,110 @@ export function readAutoMission(
   }
 }
 
+function notifyAutoMissionChanged(sessionId: string): void {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
+  try {
+    window.dispatchEvent(new CustomEvent(AUTO_MISSION_CHANGED_EVENT, {
+      detail: { sessionId },
+    }));
+  } catch {
+    /* CustomEvent is unavailable in a non-browser test/runtime shim. */
+  }
+}
+
+function sameMissionIdentity(a: AutoMissionRecord, b: AutoMissionRecord): boolean {
+  return a.mission === b.mission && a.startedAt === b.startedAt;
+}
+
+function missionStartMs(record: AutoMissionRecord): number {
+  const parsed = Date.parse(record.startedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function writeAutoMission(
   sessionId: string | null | undefined,
   record: AutoMissionRecord,
   storage: AutoMissionStorage | null | undefined,
-): void {
-  if (!sessionId || !storage) return;
+): boolean {
+  if (!sessionId || !storage) return false;
   try {
-    storage.setItem(autoMissionKey(sessionId), JSON.stringify(record));
+    const current = readAutoMission(sessionId, storage);
+    let next = record;
+    if (current) {
+      if (!sameMissionIdentity(current, record)) {
+        // A newer mission may intentionally replace an older settled record.
+        // An older snapshot may not replace an active/newer mission, which is
+        // the stale-mounted-ChatView cancellation guard.
+        if (missionStartMs(record) <= missionStartMs(current)) return false;
+      } else if (
+        current.completedAt
+        && (!record.completedAt || record.completedAt !== current.completedAt)
+      ) {
+        // Once this exact mission has settled, an armed or differently-settled
+        // copy is stale. Feedback updates with the same completion instant are
+        // still allowed below.
+        return false;
+      }
+
+      if (sameMissionIdentity(current, record)) {
+        next = {
+          ...current,
+          ...record,
+          // A settled record is immutable except for feedback bookkeeping.
+          // Preserve its terminal outcome even if an old mounted ChatView
+          // races a cancellation with its pre-cancel armed snapshot.
+          ...(current.completedAt && current.completedAt === record.completedAt
+            ? { completedAt: current.completedAt, outcome: current.outcome }
+            : {}),
+          notified: [...new Set([...current.notified, ...record.notified])],
+          lastActivityAt: Math.max(current.lastActivityAt ?? 0, record.lastActivityAt ?? 0) || null,
+        };
+      }
+    }
+    storage.setItem(autoMissionKey(sessionId), JSON.stringify(next));
+    notifyAutoMissionChanged(sessionId);
+    return true;
   } catch {
     /* swallow — storage may be unavailable (private mode, quota) */
+    return false;
   }
 }
 
 export function clearAutoMission(
   sessionId: string | null | undefined,
   storage: AutoMissionStorage | null | undefined,
-): void {
-  if (!sessionId || !storage) return;
+): boolean {
+  if (!sessionId || !storage) return false;
   try {
     storage.removeItem(autoMissionKey(sessionId));
+    notifyAutoMissionChanged(sessionId);
+    return true;
   } catch {
     /* swallow */
+    return false;
   }
 }
 
 /** A mission is armed — still watching for a terminal state — until it completes. */
 export function isAutoMissionArmed(record: AutoMissionRecord | null): boolean {
   return Boolean(record && !record.completedAt);
+}
+
+/** End the currently persisted mission without trusting a stale ChatView copy. */
+export function cancelAutoMission(
+  sessionId: string | null | undefined,
+  storage: AutoMissionStorage | null | undefined,
+  completedAt = new Date().toISOString(),
+): AutoMissionRecord | null {
+  const current = readAutoMission(sessionId, storage);
+  if (!current || !isAutoMissionArmed(current)) return null;
+  const ended: AutoMissionRecord = {
+    ...current,
+    completedAt,
+    outcome: "cancelled",
+    feedbackPending: true,
+  };
+  return writeAutoMission(sessionId, ended, storage) ? ended : null;
 }
 
 /**
@@ -182,17 +292,30 @@ export type AutoTurnLike = {
   id: string;
   role: string;
   text: string;
+  createdAt?: string;
   pending?: boolean;
 };
 
 export type AutoMissionPing = {
   turnId: string;
-  state: "blocked" | "failed" | "done";
+  state: "needs-approval" | "blocked" | "failed" | "done";
   note?: string;
 };
 
-/** States that end the mission. `blocked` does not: answering the familiar resumes it. */
-const TERMINAL: ReadonlySet<string> = new Set(["failed", "done"]);
+/** States that end the mission. `needs-approval` and `blocked` do not: answering the familiar resumes it. */
+const TERMINAL: ReadonlySet<AutoMissionPing["state"]> = new Set(["failed", "done"]);
+
+/** States that draw the human back in — all four ping; only `failed`/`done` end the mission. */
+const ATTENTION: ReadonlySet<AutoMissionPing["state"]> = new Set([
+  "needs-approval",
+  "blocked",
+  "failed",
+  "done",
+]);
+
+function isAttentionState(state: AutoMissionState): state is AutoMissionPing["state"] {
+  return ATTENTION.has(state as AutoMissionPing["state"]);
+}
 
 /**
  * Decide which terminal states still owe the human a ping, given the record
@@ -214,12 +337,23 @@ export function pendingAutoMissionPings(
   if (!isAutoMissionArmed(record) || !record) return [];
   const seen = new Set(record.notified);
   const out: AutoMissionPing[] = [];
+  const missionStartedAt = Date.parse(record.startedAt);
   for (const t of turns) {
     if (t.role !== "assistant" || t.pending || !t.text) continue;
+    // A new mission reuses the chat transcript. Do not interpret a terminal
+    // marker left by the previous mission as the new mission's completion.
+    // Legacy/test turns without createdAt remain eligible because there is no
+    // trustworthy boundary to apply to them.
+    if (
+      t.createdAt
+      && Number.isFinite(missionStartedAt)
+      && Number.isFinite(Date.parse(t.createdAt))
+      && Date.parse(t.createdAt) < missionStartedAt
+    ) continue;
     if (seen.has(t.id)) continue;
     const { update } = extractAutoStatusMarkers(t.text);
     if (!update) continue;
-    if (update.state !== "blocked" && update.state !== "failed" && update.state !== "done") continue;
+    if (!isAttentionState(update.state)) continue;
     out.push({ turnId: t.id, state: update.state, note: update.note });
     // `done`/`failed` end the mission — nothing after them can still ping.
     if (TERMINAL.has(update.state)) break;

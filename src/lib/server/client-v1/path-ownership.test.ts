@@ -7,6 +7,9 @@ import test, { type TestContext } from "node:test";
 
 import {
   assertClientV1PathOwnership,
+  assertExclusivePathOwnershipSync,
+  CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
+  ClientV1PathOwnershipError,
   parseClientV1WindowsAclReport,
   probeWindowsAcl,
   resetClientV1PathOwnershipCache,
@@ -78,6 +81,47 @@ test("compares uid where the platform has one", async () => {
       getuid: () => 1000,
     }),
     /Client v1 credential store root must be owned by the current user\./,
+  );
+});
+
+test("the sync guard answers POSIX ownership completely (cave-8pd39)", () => {
+  assert.doesNotThrow(() =>
+    assertExclusivePathOwnershipSync(uniquePath(), { uid: 1000, mode: 0o600 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 1001, mode: 0o600 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+    /sync subject must be owned by the current user\./,
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 1000, mode: 0o622 }, "sync subject", {
+      getuid: () => 1000,
+    }),
+    /must not be writable by group or others \(mode 622\)/,
+  );
+
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), {
+      uid: 1000,
+      mode: 0o600,
+      isSymbolicLink: true,
+    }, "sync subject", { getuid: () => 1000 }),
+    /must not be a symbolic link/,
+  );
+});
+
+test("the sync guard refuses a platform it cannot answer synchronously (cave-8pd39)", () => {
+  assert.throws(
+    () => assertExclusivePathOwnershipSync(uniquePath(), { uid: 0, mode: 0o666 }, "sync subject", {
+      platform: "win32",
+      getuid: null,
+    }),
+    /cannot be verified synchronously on win32/,
   );
 });
 
@@ -200,7 +244,7 @@ test("admits a repaired Windows path but says so, naming what it revoked", async
   assert.match(warnings[0]!, new RegExp(`revoked ${USERS_SID}\\.`));
 });
 
-test("probes a verified Windows path once and a refused one every time", async () => {
+test("probes a verified path once and a refused path once per negative TTL (cave-okfb2)", async () => {
   const verified = uniquePath();
   let verifiedProbes = 0;
   const options = windows({
@@ -213,11 +257,17 @@ test("probes a verified Windows path once and a refused one every time", async (
   await assertClientV1PathOwnership(verified, { uid: 0 }, "discovery root", options);
   assert.equal(verifiedProbes, 1, "a verified path must not re-spawn the probe per request");
 
-  // A refusal is never cached: repairing the DACL out of band has to take
-  // effect without restarting the server.
+  // A refusal is cached for the negative TTL: within the window the cache
+  // answers the same refusal without re-spawning the probe, and the
+  // operator-facing message is logged once, not once per request (cave-okfb2
+  // R6).
   const refused = uniquePath();
   let refusedProbes = 0;
+  const refusalWarnings: string[] = [];
+  let now = 1_000;
   const refusedOptions = windows({
+    now: () => now,
+    warn: (message) => refusalWarnings.push(message),
     probeWindowsAcl: async () => {
       refusedProbes += 1;
       return report({ protected: false });
@@ -226,13 +276,76 @@ test("probes a verified Windows path once and a refused one every time", async (
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await assert.rejects(
       assertClientV1PathOwnership(refused, { uid: 0 }, "discovery root", refusedOptions),
+      ClientV1PathOwnershipError,
     );
   }
-  assert.equal(refusedProbes, 2);
+  assert.equal(refusedProbes, 1, "a refused path must answer from the negative cache within the TTL");
+  assert.equal(refusalWarnings.length, 1, "the refusal is logged once per TTL window, not per request");
+
+  // After the TTL lapses the probe runs again — that is what lets an
+  // out-of-band `icacls /reset` take effect without a restart.
+  now += CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS;
+  await assert.rejects(
+    assertClientV1PathOwnership(refused, { uid: 0 }, "discovery root", refusedOptions),
+  );
+  assert.equal(refusedProbes, 2, "an expired refusal must re-drive the probe");
+  assert.equal(refusalWarnings.length, 2, "the next window logs the refusal again");
+
+  // A repair that lands after the TTL is picked up on the next probe.
+  now += CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS;
+  const repairedOptions = windows({
+    now: () => now,
+    warn: () => {},
+    probeWindowsAcl: async () => {
+      refusedProbes += 1;
+      return report();
+    },
+  });
+  await assertClientV1PathOwnership(refused, { uid: 0 }, "discovery root", repairedOptions);
+  assert.equal(refusedProbes, 3, "a repaired path must be admitted on the first post-TTL probe");
 
   resetClientV1PathOwnershipCache();
   await assertClientV1PathOwnership(verified, { uid: 0 }, "discovery root", options);
   assert.equal(verifiedProbes, 2, "resetting the cache must re-drive the probe");
+});
+
+test("refusals carry the distinct ownership error class, and a cache hit re-throws the same object (cave-e7xwk)", async () => {
+  const refused = uniquePath();
+  let firstError: unknown;
+  const options = windows({
+    now: () => 1_000,
+    probeWindowsAcl: async () => {
+      throw new Error("spawn powershell.exe ENOENT");
+    },
+  });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(
+      assertClientV1PathOwnership(refused, { uid: 0 }, "credential store root", options),
+      (error: unknown) => {
+        assert.ok(error instanceof ClientV1PathOwnershipError);
+        if (attempt === 0) firstError = error;
+        else assert.equal(error, firstError, "a cache hit must re-throw the exact refusal that populated it");
+        return true;
+      },
+    );
+  }
+
+  // A DACL that WAS read and found shared is the same distinct class: the
+  // auth boundary converts either flavor to the same envelope.
+  const shared = uniquePath();
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      shared,
+      { uid: 0 },
+      "credential store root",
+      windows({
+        now: () => 1_000,
+        probeWindowsAcl: async () =>
+          report({ aces: [{ sid: SELF_SID, type: "Allow" }, { sid: USERS_SID, type: "Allow" }] }),
+      }),
+    ),
+    ClientV1PathOwnershipError,
+  );
 });
 
 test("the real probe restricts and verifies a real path on Windows", async (t: TestContext) => {

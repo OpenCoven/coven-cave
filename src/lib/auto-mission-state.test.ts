@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   AUTO_MISSION_TIMEOUT_MS,
   autoMissionStatusDraft,
+  autoMissionSessionIds,
+  cancelAutoMission,
   clearAutoMission,
   isAutoMissionArmed,
   isAutoModeDraft,
@@ -23,6 +25,10 @@ function fakeStorage() {
     getItem: (k: string) => map.get(k) ?? null,
     setItem: (k: string, v: string) => void map.set(k, v),
     removeItem: (k: string) => void map.delete(k),
+    get length() {
+      return map.size;
+    },
+    key: (index: number) => [...map.keys()][index] ?? null,
     _map: map,
   };
 }
@@ -40,6 +46,7 @@ test("round-trips a record through storage", () => {
   writeAutoMission("sess-1", base, s);
   assert.deepEqual(readAutoMission("sess-1", s), {
     ...base,
+    familiarId: null,
     completedAt: null,
     outcome: null,
     lastActivityAt: null,
@@ -70,6 +77,26 @@ test("clear removes the record", () => {
   assert.equal(readAutoMission("sess-1", s), null);
 });
 
+test("workspace enumeration finds every persisted session and skips the global briefing key", () => {
+  const s = fakeStorage();
+  s.setItem("cave:auto-mission:briefed", "1");
+  writeAutoMission("sess-a", base, s);
+  writeAutoMission("sess-b", { ...base, mission: "other work", startedAt: "2026-01-02T00:00:00.000Z" }, s);
+  s.setItem("cave:unrelated", "ignored");
+  assert.deepEqual(autoMissionSessionIds(s), ["sess-a", "sess-b"]);
+});
+
+test("cancellation is persisted and an old armed snapshot cannot re-arm it", () => {
+  const s = fakeStorage();
+  writeAutoMission("sess-1", base, s);
+  const ended = cancelAutoMission("sess-1", s, "2026-01-01T00:05:00.000Z");
+  assert.equal(ended?.outcome, "cancelled");
+  assert.equal(ended?.feedbackPending, true);
+  assert.equal(writeAutoMission("sess-1", base, s), false, "the stale mounted view loses the write race");
+  assert.equal(readAutoMission("sess-1", s)?.outcome, "cancelled");
+  assert.equal(cancelAutoMission("sess-1", s), null, "a settled mission cannot be cancelled twice");
+});
+
 // ── arming ───────────────────────────────────────────────────────────────────
 
 test("armed until completed", () => {
@@ -97,6 +124,7 @@ test("active Auto status preparation never overwrites an existing draft", () => 
 
 const done = '<coven:auto-status state="done" note="fixed 3 tests" />';
 const blocked = '<coven:auto-status state="blocked" note="needs npm token" />';
+const needsApproval = '<coven:auto-status state="needs-approval" note="irreversible: force-push" />';
 const working = '<coven:auto-status state="working" />';
 
 test("a settled done turn pings once", () => {
@@ -105,6 +133,22 @@ test("a settled done turn pings once", () => {
     { id: "t2", role: "assistant", text: `all set. ${done}` },
   ]);
   assert.deepEqual(pings, [{ turnId: "t2", state: "done", note: "fixed 3 tests" }]);
+});
+
+test("a previous mission's terminal marker is outside the new mission boundary", () => {
+  const nextMission = {
+    ...base,
+    startedAt: "2026-01-01T01:00:00.000Z",
+  };
+  assert.deepEqual(
+    pendingAutoMissionPings(nextMission, [{
+      id: "old-done",
+      role: "assistant",
+      text: done,
+      createdAt: "2026-01-01T00:30:00.000Z",
+    }]),
+    [],
+  );
 });
 
 test("an already-notified turn never pings again — the reload guard", () => {
@@ -149,6 +193,27 @@ test("blocked then later done both ping, in transcript order", () => {
   ]);
   assert.deepEqual(pings, [
     { turnId: "t1", state: "blocked", note: "needs npm token" },
+    { turnId: "t3", state: "done", note: "fixed 3 tests" },
+  ]);
+});
+
+test("needs-approval pings once like blocked — it interrupts without ending the mission", () => {
+  const pings = pendingAutoMissionPings(base, [
+    { id: "t1", role: "assistant", text: needsApproval },
+  ]);
+  assert.deepEqual(pings, [
+    { turnId: "t1", state: "needs-approval", note: "irreversible: force-push" },
+  ]);
+});
+
+test("needs-approval is not terminal — a later done still pings in transcript order", () => {
+  const pings = pendingAutoMissionPings(base, [
+    { id: "t1", role: "assistant", text: needsApproval },
+    { id: "t2", role: "user", text: "yes, go ahead" },
+    { id: "t3", role: "assistant", text: done },
+  ]);
+  assert.deepEqual(pings, [
+    { turnId: "t1", state: "needs-approval", note: "irreversible: force-push" },
     { turnId: "t3", state: "done", note: "fixed 3 tests" },
   ]);
 });

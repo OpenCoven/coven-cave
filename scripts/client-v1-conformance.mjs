@@ -67,7 +67,14 @@ import { once } from "node:events";
 import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -602,7 +609,13 @@ export const RECORD_SHAPES = {
  * reaches the wire as written), and it refuses some header spellings outright.
  */
 export function requestOnce(origin, options) {
-  const { method = "GET", path: target, headers = {}, body } = options;
+  const {
+    method = "GET",
+    path: target,
+    headers = {},
+    body,
+    timeoutMs,
+  } = options;
   const url = new URL(origin);
   return new Promise((resolve, reject) => {
     const outgoing = { ...headers };
@@ -633,6 +646,11 @@ export function requestOnce(origin, options) {
       },
     );
     request.on("error", reject);
+    if (timeoutMs !== undefined) {
+      request.setTimeout(timeoutMs, () => {
+        request.destroy(new Error("request timed out"));
+      });
+    }
     if (body !== undefined) request.write(body);
     request.end();
   });
@@ -710,6 +728,10 @@ export async function freePort() {
   return port;
 }
 
+export async function createConformanceFixtureRoot(parent = tmpdir()) {
+  return realpath(await mkdtemp(path.join(parent, "cave-client-v1-conformance-")));
+}
+
 /**
  * A loopback stand-in for the Coven daemon's familiar roster.
  *
@@ -784,6 +806,7 @@ export async function startCave(input) {
   child.stderr.resume();
 
   const origin = `http://127.0.0.1:${port}`;
+  const discoveryPath = path.join(input.caveHomeDir, "client-v1-discovery.json");
   const deadline = Date.now() + 120_000;
   let exited = false;
   child.once("exit", () => {
@@ -796,8 +819,24 @@ export async function startCave(input) {
       break;
     }
     try {
-      const response = await requestOnce(origin, { path: `${CLIENT_V1_PREFIX}/health` });
-      if (response.status === 200) return { child, origin, port };
+      const response = await requestOnce(origin, {
+        path: `${CLIENT_V1_PREFIX}/health`,
+        timeoutMs: Math.min(1_000, Math.max(1, deadline - Date.now())),
+      });
+      let discovery = null;
+      try {
+        discovery = JSON.parse(await readFile(discoveryPath, "utf8"));
+      } catch {
+        // The listen callback may not have published the discovery record yet.
+      }
+      const readinessFailure = caveReadinessFailure({
+        healthStatus: response.status,
+        discovery,
+        expectedPid: child.pid,
+        origin,
+      });
+      if (readinessFailure === null) return { child, origin, port };
+      failure = readinessFailure;
     } catch {
       // Not listening yet.
     }
@@ -805,6 +844,25 @@ export async function startCave(input) {
   }
   await stopCave({ child }, port).catch(() => {});
   throw new Error(failure);
+}
+
+export function caveReadinessFailure({
+  healthStatus,
+  discovery,
+  expectedPid,
+  origin,
+}) {
+  if (healthStatus !== 200) return "Cave health is not ready.";
+  if (!discovery || typeof discovery !== "object" || Array.isArray(discovery)) {
+    return "Client v1 discovery record is not published.";
+  }
+  if (discovery.endpoint !== origin) {
+    return "Client v1 discovery endpoint does not match the listening Cave.";
+  }
+  if (discovery.pid !== expectedPid) {
+    return "Client v1 discovery pid does not match the launched Cave.";
+  }
+  return null;
 }
 
 /**
@@ -1231,13 +1289,45 @@ async function walk(client, target, bearer, collection, limit) {
 // ── legs ─────────────────────────────────────────────────────────────────────
 
 /**
- * Phase A: a Cave with no `COVEN_CAVE_AUTH_TOKEN`.
+ * Phase A: a non-bundled Cave with no `COVEN_CAVE_AUTH_TOKEN`.
  *
- * This is the state a plain `pnpm dev` is in, and the doc's stated consequence
- * is stronger than "the admin routes 503": a client can open a pairing request
- * and can *never* get it approved. That whole sequence is asserted here,
- * because the 503 alone reads like an inconvenience rather than a dead end.
+ * This is the state a plain `pnpm dev` is in. The listener and proxy prove a
+ * direct-loopback peer and stamp a per-boot secret marker, so the Settings UI
+ * can list and mutate the local approval stores without a packaged sidecar
+ * token. Caller-supplied markers remain stripped and cannot activate this path.
  */
+export function tokenlessAdminProbeExpectation(method, target) {
+  if (method === "GET" && target === "/admin/pairing-requests") {
+    return { status: 200, kind: "success", collection: "pairingRequests" };
+  }
+  if (method === "GET" && target === "/admin/credentials") {
+    return { status: 200, kind: "success", collection: "credentials" };
+  }
+  if (
+    method === "POST"
+    && /^\/admin\/pairing-requests\/[0-9a-f-]{36}\/decision$/u.test(target)
+  ) {
+    return {
+      status: 404,
+      kind: "error",
+      code: "not_found",
+      retryable: false,
+    };
+  }
+  if (
+    method === "DELETE"
+    && /^\/admin\/credentials\/[0-9a-f-]{36}$/u.test(target)
+  ) {
+    return {
+      status: 404,
+      kind: "error",
+      code: "not_found",
+      retryable: false,
+    };
+  }
+  throw new Error(`unsupported tokenless admin probe: ${method} ${target}`);
+}
+
 async function runUnconfiguredAdminLeg(client, recorder) {
   const probes = [
     ["GET", "/admin/pairing-requests", undefined],
@@ -1247,9 +1337,24 @@ async function runUnconfiguredAdminLeg(client, recorder) {
   ];
   for (const [method, target, body] of probes) {
     const response = await client.admin(method, target, "any-token-at-all", body === undefined ? {} : { body });
+    const expected = tokenlessAdminProbeExpectation(method, target);
     const failures = [];
-    if (response.status !== 503) failures.push(`${method} ${target} answered ${response.status}, expected 503`);
-    failures.push(...checkEnvelope(response.json, { kind: "error", code: "service_unavailable", retryable: false }));
+    if (response.status !== expected.status) {
+      failures.push(`${method} ${target} answered ${response.status}, expected ${expected.status}`);
+    }
+    if (expected.kind === "success") {
+      failures.push(...checkEnvelope(response.json, { kind: "success" }));
+      const collection = response.json?.data?.[expected.collection];
+      if (!Array.isArray(collection) || collection.length !== 0) {
+        failures.push(`${expected.collection} was not an empty array`);
+      }
+    } else {
+      failures.push(...checkEnvelope(response.json, {
+        kind: "error",
+        code: expected.code,
+        retryable: expected.retryable,
+      }));
+    }
     recorder.expect(`admin.unconfigured${target.replace(/\/[0-9a-f-]{36}/, "/:id")}.${method}`, failures);
   }
 
@@ -1272,7 +1377,7 @@ async function runUnconfiguredAdminLeg(client, recorder) {
     recorder.expect(
       "admin.unconfigured.exchange-stays-pending",
       failures,
-      "the documented dead end: no approval route, so the exchange can only ever answer pairing_pending",
+      "an undecided tokenless-development pairing remains pending",
     );
   } else {
     recorder.skip("admin.unconfigured.exchange-stays-pending", "no pairing request was opened to exchange");
@@ -1938,7 +2043,14 @@ async function runAuthFailureLeg(client, recorder, bearer, writeOnlyBearer) {
   const noBearer = await client.read("/conversations", null);
   const noBearerFailures = [];
   if (noBearer.status !== 401) noBearerFailures.push(`answered ${noBearer.status}, expected 401`);
-  noBearerFailures.push(...checkEnvelope(noBearer.json, { kind: "error", code: "unauthorized" }));
+  if (
+    JSON.stringify(noBearer.json)
+      !== JSON.stringify({ ok: false, error: "unauthorized" })
+  ) {
+    noBearerFailures.push(
+      `body was ${JSON.stringify(noBearer.text.slice(0, 160))}, expected the proxy refusal {"ok":false,"error":"unauthorized"}`,
+    );
+  }
   recorder.expect("reads.no-bearer", noBearerFailures);
 
   const garbage = await client.read("/conversations", "not-a-real-bearer");
@@ -1970,6 +2082,7 @@ async function runFamiliarsLeg(client, recorder, bearer) {
   if (response.status !== 200) failures.push(`answered ${response.status}, expected 200`);
   failures.push(...checkEnvelope(response.json, { kind: "success" }));
   const familiars = response.json?.data?.familiars ?? [];
+  const byRosterId = new Map(FIXTURE_ROSTER.map((entry) => [entry.id, entry]));
   const ids = familiars.map((entry) => entry.id);
   const expected = FIXTURE_ROSTER.map((entry) => entry.id).sort();
   if (ids.join(",") !== expected.join(",")) {
@@ -1977,6 +2090,21 @@ async function runFamiliarsLeg(client, recorder, bearer) {
   }
   for (const familiar of familiars) {
     failures.push(...checkRecordShape(familiar, RECORD_SHAPES.familiar, `familiar ${familiar.id}`));
+    // Values as well as keys: a projection serving `displayName: entry.role`
+    // keeps every key and was measured passing a whole run (cave-icyyg). Only
+    // the fields this fixture seeds are checked, so a sparser roster row is
+    // not judged against fields it never declared.
+    const seeded = byRosterId.get(familiar.id);
+    if (seeded) {
+      const expected = {
+        displayName: seeded.display_name,
+        role: seeded.role,
+        ...(seeded.description === undefined ? {} : { description: seeded.description }),
+        ...(seeded.pronouns === undefined ? {} : { pronouns: seeded.pronouns }),
+        ...(seeded.status === undefined ? {} : { status: seeded.status }),
+      };
+      failures.push(...checkRecordValues(familiar, expected, `familiar ${familiar.id}`));
+    }
   }
   const archivist = familiars.find((entry) => entry.id === "archivist");
   if (archivist?.lastSeenAt !== "not-an-instant") {
@@ -2075,12 +2203,24 @@ async function runProjectsLeg(client, recorder, bearer, caveHomeDir) {
     await writeProjects(caveHomeDir, projects.filter((project) => project.id !== deletedId));
     const resumed = await client.read(`/projects?limit=3&cursor=${encodeURIComponent(strandedToken)}`, bearer);
     const resumedIds = (resumed.json?.data?.projects ?? []).map((project) => project.id);
+    // Probe that the deletion actually landed: the resumed page above reads
+    // rows AFTER the deleted one, so it is identical whether or not the write
+    // took effect — the vacuity cave-fhjlu closed for conversations, and this
+    // leg's own half of it (cave-icyyg). cave-projects.ts has no stat cache,
+    // so the residual risk is a write that never reached the server at all.
+    const probe = await client.read("/projects?limit=100", bearer);
+    const probeIds = (probe.json?.data?.projects ?? []).map((project) => project.id);
     recorder.expect(
       "reads.cursor-survives-deletion",
-      resumed.status === 200 && resumedIds.join(",") === partial[1]?.ids.join(",")
+      resumed.status === 200
+        && resumedIds.join(",") === partial[1]?.ids.join(",")
+        && probe.status === 200
+        && !probeIds.includes(deletedId)
         ? []
-        : [`after deleting ${deletedId} (the row the cursor names) the walk served [${resumedIds}], expected [${partial[1]?.ids}]`],
-      "the token records a position in the ordering, not an index",
+        : [
+          `after deleting ${deletedId} (the row the cursor names) the walk served [${resumedIds}], expected [${partial[1]?.ids}], and the probe served [${probeIds}] where ${deletedId} must be absent`,
+        ],
+      "the token records a position in the ordering, not an index, and the deletion provably landed",
     );
     await writeProjects(caveHomeDir, projects);
   } else {
@@ -2847,10 +2987,17 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
         ? []
         : [`conversationId is ${JSON.stringify(mixedCase.json?.data?.messages?.[0]?.conversationId)}, expected the transcript's own "branched"`],
     );
-  } else {
+  } else if (mixedCase.status === 404) {
     recorder.skip(
       "reads.messages-canonical-conversation-id",
-      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered ${mixedCase.status}`,
+      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered 404`,
+    );
+  } else {
+    // A 5xx (or a 429) is never a filesystem property, and reporting it as one
+    // would let a broken server pass the whole run (cave-icyyg).
+    recorder.expect(
+      "reads.messages-canonical-conversation-id",
+      [`/conversations/BRANCHED/messages answered ${mixedCase.status}, expected 200 or 404`],
     );
   }
 }
@@ -2963,7 +3110,7 @@ async function main(argv) {
   }
   const manifest = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8"));
 
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "cave-client-v1-conformance-"));
+  const fixtureRoot = await createConformanceFixtureRoot();
   const covenHomeDir = path.join(fixtureRoot, "coven");
   const caveHomeDir = path.join(covenHomeDir, "cave");
   const adminToken = `conformance-${randomUUID()}`;
@@ -3091,7 +3238,7 @@ export const FINDINGS = [
   {
     id: "backslash-refusal-is-unreachable",
     where: "docs/api/client-v1.md — Reaching the API at all",
-    says: 'a request target inside /api/client/v1 containing "%" or "\\" is answered 400 {"ok":false,"error":"invalid client v1 path"}',
+    says: 'a malformed/noncanonical escaped target, backslash target, or escaped non-conversation target is answered 400 {"ok":false,"error":"invalid client v1 path"}',
     measured: 'the "%" half holds; a "\\" is normalised to "/" by Next and answered 308 to the normalised target before proxy.ts runs, and that target is then refused 401 by the ordinary gate',
     severity: "documentation",
     why: "no handler is reached and nothing is served, so the gate still holds; the doc describes an answer no client will observe",

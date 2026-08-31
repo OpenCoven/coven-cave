@@ -1,6 +1,6 @@
 # User Profile Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Server-side operator profile (name, pronouns, bio, timezone, links) plus a server-stored avatar image, editable in a new Settings → Profile section, consumed by chat surfaces and injected as operator context for familiars.
 

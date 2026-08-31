@@ -258,11 +258,13 @@ assert.match(
   /<SidebarMinimal[\s\S]*onNewChat=\{startWorkspaceChat\}/,
   "the Home rail uses the actor-gated launch",
 );
+// One sidebar now (cave-fh9so): the actor-gated launch is wired on
+// SidebarMinimal, which is the only rail workspace mounts.
 assert.match(
   workspaceSource,
-  /<WorkspaceSidebar[\s\S]*onNewChat=\{\(\) => startWorkspaceChat\(\)\}/,
-  "the Chat rail uses the actor-gated launch",
-);
+  /<SidebarMinimal[\s\S]*onNewChat=\{startWorkspaceChat\}/,
+  "the rail uses the actor-gated launch",
+)
 assert.match(
   workspaceSource,
   /e\.key\.toLowerCase\(\) === "n"[\s\S]{0,120}startWorkspaceChat\(\)/,
@@ -278,10 +280,18 @@ assert.match(
   /case "\/new":[\s\S]{0,80}startWorkspaceChat\(\)/,
   "the slash-command blank chat uses shell context",
 );
-assert.ok(
-  (workspaceSource.match(/onOpenQuickChat=\{startWorkspaceChat\}/g) ?? []).length === 2,
-  "both desktop and mobile quick-chat controls use shell context",
-);
+// One, not two, since cave-l9slw removed the desktop menu bar's New chat
+// trigger; the mobile top bar is the only chrome control left. The invariant is
+// unchanged and is what the count enforces: EVERY onOpenQuickChat handed to
+// chrome is startWorkspaceChat, so no control can route around the actor gate.
+{
+  const wired = (workspaceSource.match(/onOpenQuickChat=\{startWorkspaceChat\}/g) ?? []).length;
+  const total = (workspaceSource.match(/onOpenQuickChat=\{/g) ?? []).length;
+  assert.ok(
+    wired === 1 && total === wired,
+    `the surviving quick-chat control uses shell context and no other handler is wired (${wired} via startWorkspaceChat of ${total} total)`,
+  );
+}
 assert.doesNotMatch(
   workspaceSource,
   /startFamiliarChat\(activeId\)/,
@@ -312,10 +322,13 @@ assert.match(
   /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,180}if \(onRequestNewChat\) \{[\s\S]{0,100}onRequestNewChat\(\);[\s\S]{0,100}return;/,
   "ChatRouter gates list launches before mutating its local view",
 );
+// The project-grouped rail is retired (cave-fh9so), but the gate it carried
+// moved intact onto ChatList's own new-chat path: ask the shell rather than
+// deriving an actor from historical sessions.
 assert.match(
   chatRouterSource,
-  /<ChatProjectSidebar[\s\S]{0,900}onNewChat=\{\(projectRoot, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
-  "the project-group sidebar cannot derive a new actor from historical sessions",
+  /onNewChat=\{\(projectRoot, familiarId, runtimeHost\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);[\s\S]{0,80}return;/,
+  "the list's new-chat path cannot derive a new actor from historical sessions",
 );
 assert.match(
   chatRouterSource,

@@ -79,6 +79,8 @@ export type Turn = {
   modelOverrideScope?: "runtime-default";
   origin?: "chat" | "voice";
   voiceCallId?: string;
+  /** ResearchMission id this turn started or reports (chat /research, #4808). */
+  researchRunId?: string;
 };
 
 export type ConversationHistoryTurn = {
@@ -101,6 +103,7 @@ export type ConversationHistoryTurn = {
   createdAt?: string;
   origin?: "chat" | "voice";
   voiceCallId?: string;
+  researchRunId?: string;
 };
 
 export type ConversationHistoryPayload = {
@@ -139,6 +142,7 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       createdAt: turn.createdAt ?? new Date().toISOString(),
       origin: turn.origin,
       voiceCallId: turn.voiceCallId,
+      researchRunId: turn.researchRunId,
     }));
 }
 

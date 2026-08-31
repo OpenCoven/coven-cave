@@ -56,8 +56,51 @@ assert.doesNotMatch(
 );
 
 // ── The sidebar and mobile navigation share canonical registries/primitives ───
-assert.match(shell, /import \{ NavSectionTabs \}/, "standalone sidebar reuses the Home/Chat section switcher");
-assert.match(shell, /navItemsForSection\(section\)/, "standalone sidebar derives rows from the shared navigation registry");
+// The Home/Chat section switcher is retired (cave-fh9so): Chat is a
+// destination in one flat list rather than a mode the rail toggles between, so
+// there is no switcher left to share. What must still hold is that this
+// standalone shell derives its rows from the SAME registry the workspace uses
+// rather than hard-coding a second list.
+assert.doesNotMatch(shell, /NavSectionTabs/, "the retired section switcher is not resurrected here");
+assert.match(shell, /VISIBLE_WORKSPACE_NAV_ITEMS/, "standalone sidebar rows come from the shared navigation registry");
+
+// Settings, Dashboard and Analytics render THIS rail, not the workspace's, so
+// anything the workspace rail leads with and this one lacks reads as a
+// different sidebar rather than the same one on a different route. New chat
+// was exactly that gap (cave-10kr8).
+const railHeader = await source("components/sidebar-rail-header.tsx");
+assert.match(railHeader, /rail-header__new/, "the workspace rail leads with New chat");
+assert.match(shell, /rail-header__new/, "…and so does the standalone rail");
+assert.match(shell, /rail-header__new-label[^>]*>\s*New chat\s*</, "with the same label");
+// A client link, not a button or raw anchor: there is no workspace mounted on
+// these routes to hand a compose to, so it deep-links without reloading the
+// Next/Tauri document.
+assert.match(shell, /import Link from "next\/link";/, "the standalone control uses Next Link");
+assert.match(
+  shell,
+  /<Link\s+className="rail-header__new focus-ring"\s+href="\/\?mode=chat"\s+title="New chat">[\s\S]*?<span className="rail-header__new-label">New chat<\/span>[\s\S]*?<\/Link>/,
+  "the standalone control preserves its link destination, styling, title, and accessible label",
+);
+assert.doesNotMatch(shell, /<a\b[^>]*\bhref="\/\?mode=chat"/, "New chat is not a raw same-origin anchor");
+
+// Settings and Dashboard render through this shell, so its rail is the one the
+// user sees on those pages. It must be grouped the way the workspace rail is —
+// a flat list here made them the only two pages whose sidebar looked different.
+assert.match(shell, /import \{ SidebarSection \}/, "the standalone rail uses the shared section primitive");
+assert.match(
+  shell,
+  /<SidebarSection id="navigation" label="Navigation">/,
+  "…with the same Navigation group as the workspace rail",
+);
+assert.match(
+  shell,
+  /<SidebarSection\s+id="explore"\s+label="Explore"\s+hideWhenEmpty/,
+  "…and the same Explore group for the quiet destinations",
+);
+// The unlabelled step that used to separate the quiet rows is gone: the
+// heading carries that meaning, and both together read as a gap inside a
+// titled group.
+assert.doesNotMatch(shell, /sidebar-folder-row--quiet-lead/, "no unlabelled step survives beside the Explore heading");
 assert.match(shell, /className="sidebar-minimal"/, "standalone sidebar uses the canonical sidebar host");
 assert.match(shell, /className=\{`sidebar-folder-row focus-ring/, "standalone links use canonical destination-row styling");
 assert.match(shell, /<SidebarFooter[\s\S]*activeDestination=/, "standalone sidebar reuses the shared Dashboard/Settings footer");

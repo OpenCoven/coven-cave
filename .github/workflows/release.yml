@@ -862,7 +862,7 @@ jobs:
           install_profile "$IOS_APP_PROVISIONING_PROFILE_BASE64" app ai.opencoven.cave
           install_profile "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" widget ai.opencoven.cave.widgets
 
-      - name: Archive and export the iOS app
+      - name: Archive the iOS app (signed, TestFlight)
         if: ${{ steps.ios-metadata.outputs.resume-confirmed != 'true' }}
         working-directory: apps/ios/CovenCave
         shell: bash
@@ -873,8 +873,6 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
-          EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
-          EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
           # Sign manually against the App Store profiles the previous step
           # installed and validated. Automatic signing is not available here:
           # xcodebuild treats it as disabled unless it is told to update
@@ -938,6 +936,49 @@ jobs:
             }
             echo "$target signs with provisioning profile $expected"
           done
+          xcodebuild \
+            -project CovenCave.xcodeproj \
+            -scheme CovenCave \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            "${SIGNING_ARGS[@]}" \
+            archive
+
+      - name: Audit embedded-framework dSYM coverage
+        if: ${{ steps.ios-metadata.outputs.resume-confirmed != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
+          # The vendored WebRTC.framework (SPM binary package pinned in
+          # project.yml) ships without a dSYM upstream, so App Store Connect
+          # warns on every upload that WebRTC frames cannot be symbolicated
+          # (cave-ea6dw). This audit names the exact gap and copies any
+          # matching dSYM dropped into apps/ios/vendor/WebRTC.dSYMs into the
+          # archive BEFORE export — the moment a real dSYM for the pinned
+          # revision exists, releases automatically start carrying it. It is
+          # warn-only: the missing vendored symbol must not block an
+          # otherwise-good upload.
+          node scripts/ios-dsym-coverage.mjs \
+            --archive "$ARCHIVE_PATH" \
+            --vendor-dsyms apps/ios/vendor/WebRTC.dSYMs \
+            --json
+
+      - name: Export the iOS app to IPA
+        if: ${{ steps.ios-metadata.outputs.resume-confirmed != 'true' }}
+        working-directory: apps/ios/CovenCave
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
+          EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
+          # uploadSymbols: true is the config half of the cave-ea6dw fix: it
+          # makes the export carry the archive's dSYMs (including any the
+          # audit injected) so altool uploads them to App Store Connect.
           cat > "$EXPORT_OPTIONS_PATH" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -947,6 +988,8 @@ jobs:
             <string>export</string>
             <key>method</key>
             <string>app-store-connect</string>
+            <key>uploadSymbols</key>
+            <true/>
             <key>signingStyle</key>
             <string>manual</string>
             <key>teamID</key>
@@ -963,14 +1006,6 @@ jobs:
           </dict>
           </plist>
           PLIST
-          xcodebuild \
-            -project CovenCave.xcodeproj \
-            -scheme CovenCave \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$ARCHIVE_PATH" \
-            "${SIGNING_ARGS[@]}" \
-            archive
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportOptionsPlist "$EXPORT_OPTIONS_PATH" \
@@ -1171,9 +1206,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # PR CI runs this same bounded fault harness on Linux and Windows.
-      # Release CI supplies the macOS host proof without restoring the costly
-      # full PR matrix.
+      # Routine PR conformance runs this bounded fault harness on Ubuntu.
+      # Release-candidate and release platform validation supply the Windows
+      # and macOS host proof without restoring the costly three-OS PR matrix.
       - name: Test daemon connectivity fault recovery
         shell: bash
         run: |

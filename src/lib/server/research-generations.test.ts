@@ -20,6 +20,8 @@ process.env.COVEN_RESEARCH_MISSIONS_DIR = path.join(tmp, "research-missions");
 
 const {
   MAX_RESEARCH_GENERATIONS,
+  cadenceSafeSpokenTurns,
+  PODCAST_BREATH_UNIT_MAX_CHARS,
   createResearchGenerationFromMission,
   createResearchMediaGenerationFromMission,
   draftPodcastContent,
@@ -743,6 +745,47 @@ test("podcast closers restate the section's lead finding verbatim as the takeawa
   );
 });
 
+test("podcast closers find a short declarative lead after dense qualification", () => {
+  // cave-p1seb: real findings can open with a dense qualification whose first
+  // sentence cannot be spoken as a bookend, then state a concise conclusion in
+  // the same lead chunk. The conclusion is still extractive and restores the
+  // host's content-bearing share without inventing a summary.
+  const denseLead =
+    "The host must preserve the exact distinction between an intervention that changes the prompt surface and one that changes the learned weights, because the resulting evidence, rollback authority, and interpretation of a successful evaluation all diverge across those two paths even when the observed score appears to remain stable. The distinction matters for every safe decision.";
+  const body =
+    "Reviewers traced the residual drift to prompt-surface mutations rather than weight updates. " +
+    "The strongest observed failure mode was benchmark overfitting during the promotion step. " +
+    "Holdout tasks caught the regression before any mutation was promoted to production.";
+  const markdown = [
+    "# Findings",
+    "",
+    ...["Authority boundaries", "Evidence discipline", "Rollback criteria", "Evaluation scope"].flatMap(
+      (title) => ["## " + title, "", `- ${denseLead} ${body}`],
+    ),
+  ].join("\n");
+
+  for (const style of ["breakdown", "debate", "interview"] as const) {
+    const content = draftPodcastContent({
+      mission,
+      artifact: { key: "findings", title: "Findings — identity preservation" },
+      markdown,
+    }, "standard", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") return;
+    const hosts = content.script.filter((segment) => segment.speaker === "host");
+    const hostChars = hosts.reduce((sum, segment) => sum + segment.text.length, 0);
+    const totalChars = content.script.reduce((sum, segment) => sum + segment.text.length, 0);
+    assert.ok(
+      hostChars / totalChars >= 0.2,
+      `${style} host share stays at or above 20% after a dense lead (measured ${(hostChars / totalChars * 100).toFixed(1)}%)`,
+    );
+    assert.ok(
+      hosts.some((segment) => segment.text.includes("The distinction matters for every safe decision.")),
+      `${style} uses the first short declarative sentence as its takeaway`,
+    );
+  }
+});
+
 test("podcast closers never restate a list enumerator as the takeaway", () => {
   // cave-8ksv1: real artifacts open sections with numbered lists, and the
   // enumerator's own dot matched as a complete "sentence" — closers rendered
@@ -1014,6 +1057,171 @@ test("podcast drafter prefers sentence boundaries when splitting long units into
       `turn never ends mid-sentence (…${turn.text.slice(-40)})`,
     );
   }
+});
+
+// ── cadence-safe extraction (issue #4689, item 1) ────────────────────────────
+// The drafter used to collapse every section bullet into one run-on narration
+// unit (`details.map(speakable).join(" ")`) and only split it mechanically at
+// 1,000 characters. The issue's own measurement discipline set two hard
+// requirements, both pinned here: turns respect a maximum spoken-length
+// (breath-unit) target, and splitting/joining must never reword a claim.
+
+/** Whitespace is the only thing a split may smear — it never carries a claim. */
+const normalizeClaims = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+test("cadence-safe turns keep every source claim verbatim across the split", () => {
+  const details = [
+    "Gates bind proxies, not purposes; the purpose still needs a human.",
+    "Does goal-guarding generalize? Holdouts say not yet.",
+    "Benchmarks bind proxies (the DGM lesson) — and reviewers traced the residual drift to prompt-surface mutations, not weight updates.",
+    // A wall of prose with no punctuation at all: only word boundaries can
+    // bound a cut, and the words must still survive verbatim.
+    `A wall of prose with no punctuation at all ${"and repeated clauses ".repeat(80)}that still must survive verbatim.`,
+    // Comma-bounded clauses: the strongest boundary available in this detail.
+    "An over-long single sentence, with commas, that keeps going past the breath unit, and past it again, and still further, until only clause commas can bound the cut, which the splitter must prefer over any mid-word slice, because claims are load-bearing.",
+  ];
+  const turns = cadenceSafeSpokenTurns(details);
+  assert.equal(
+    normalizeClaims(turns.join(" ")),
+    normalizeClaims(details.join(" ")),
+    "the packed turns reassemble into exactly the source text",
+  );
+  // Deterministic: the drafter is a pure function — same details in, same
+  // turns out, twice.
+  assert.deepEqual(cadenceSafeSpokenTurns(details), turns);
+  for (const turn of turns) {
+    assert.ok(
+      turn.length <= PODCAST_BREATH_UNIT_MAX_CHARS || details.includes(turn),
+      `a turn over the breath unit must be one whole unsplit source detail (${turn.length} chars)`,
+    );
+  }
+});
+
+test("podcast drafter packs section bullets into breath-unit turns, not one run-on", () => {
+  const bulletAt = (index: number): string =>
+    `The gating mechanism held containment ${index} across every replication run this quarter.`;
+  // Six bullets ≈ 600 characters — the old `.join(" ")` collapse read all of
+  // them as one continuous narration unit and slid into pitch declination.
+  const bullets = [1, 2, 3, 4, 5, 6].map(bulletAt);
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: ["# Findings", "", "## Gating mechanisms", "", ...bullets.map((b) => `- ${b}`)].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const guestTurns = content.script.filter((segment) => segment.speaker === "guest");
+  assert.ok(
+    guestTurns.length >= 2,
+    `six bullets stop collapsing into one run-on unit (got ${guestTurns.length} turns)`,
+  );
+  const spoken = guestTurns.map((segment) => segment.text);
+  for (const turn of spoken) {
+    assert.ok(
+      turn.length <= PODCAST_BREATH_UNIT_MAX_CHARS,
+      `every packed turn respects the max spoken-length target (${turn.length} chars)`,
+    );
+  }
+  assert.equal(
+    normalizeClaims(spoken.join(" ")),
+    normalizeClaims(bullets.join(" ")),
+    "the claims survive verbatim, redistributed across turns",
+  );
+  for (const bullet of bullets) {
+    assert.equal(
+      spoken.filter((turn) => turn.includes(bullet)).length,
+      1,
+      "each claim lands whole in exactly one turn",
+    );
+  }
+});
+
+test("podcast drafter leaves well-formed prose whole — the cap is conditional", () => {
+  // Issue #4689's measured counter-example: force-splitting a well-written
+  // ~115-word turn (~700 characters) *caused* the pitch declination the cap
+  // exists to prevent. A single detail under the mechanical clamp must
+  // therefore render as one whole turn, never chopped toward the cap.
+  const paragraph = Array.from(
+    { length: 9 },
+    (_, i) => `The paragraph carries its complete claim ${i + 1} forward without assistance.`,
+  ).join(" ");
+  assert.ok(paragraph.length > PODCAST_BREATH_UNIT_MAX_CHARS, "fixture sits above the breath cap");
+  assert.ok(paragraph.length <= 1_000, "fixture sits under the conditional split trigger");
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: ["# Findings", "", "## Gating mechanisms", "", `- ${paragraph}`].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const guestTurns = content.script.filter((segment) => segment.speaker === "guest");
+  assert.equal(guestTurns.length, 1, "one well-formed detail renders as one whole turn");
+  assert.equal(guestTurns[0].text, paragraph, "the paragraph is delivered verbatim, unsplit");
+});
+
+test("an over-long single unit splits at sentence boundaries toward the breath-unit target", () => {
+  // One bullet ≈ 2,300 characters: over the conditional trigger, so it is
+  // cut — but at the sentence boundaries it already contains, and the pieces
+  // land at the breath-unit target, not at the old 1,000-char wall.
+  const sentences = Array.from(
+    { length: 40 },
+    (_, i) => `Claim number ${i + 1} holds under repeated evaluation pressure.`,
+  );
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: ["# Findings", "", "## Detailed findings", "", `- ${sentences.join(" ")}`].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const guestTurns = content.script.filter((segment) => segment.speaker === "guest");
+  assert.ok(guestTurns.length > 1, "the over-long unit splits into several turns");
+  for (const turn of guestTurns) {
+    assert.ok(
+      turn.text.length <= PODCAST_BREATH_UNIT_MAX_CHARS,
+      `split pieces respect the max spoken-length target (${turn.text.length} chars)`,
+    );
+    assert.match(turn.text, /^[A-Z0-9(“"']/, "a piece never opens mid-sentence");
+    assert.match(turn.text, /[.!?…]["'”’)\]]*$/, "a piece never closes mid-sentence");
+  }
+  assert.equal(
+    normalizeClaims(guestTurns.map((segment) => segment.text).join(" ")),
+    normalizeClaims(sentences.join(" ")),
+    "all forty claims survive the split verbatim",
+  );
+});
+
+test("recap segments read one breath unit at a time instead of one run-on section", () => {
+  const bullets = [1, 2, 3, 4, 5, 6].map(
+    (index) => `The gating mechanism held containment ${index} across every replication run this quarter.`,
+  );
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: ["# Findings", "", "## Gating mechanisms", "", ...bullets.map((b) => `- ${b}`)].join("\n"),
+  }, "standard", "recap");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  assert.ok(
+    content.script.length >= 2,
+    "a multi-bullet section reads as several recap segments, not one",
+  );
+  assert.match(
+    content.script[0].text,
+    /^Gating mechanisms\./,
+    "the spoken heading still leads the recap",
+  );
+  for (const segment of content.script) {
+    assert.ok(
+      segment.text.length <= PODCAST_BREATH_UNIT_MAX_CHARS || bullets.includes(segment.text),
+      `recap segments respect the breath-unit target (${segment.text.length} chars)`,
+    );
+  }
+  assert.equal(
+    normalizeClaims(content.script.map((segment) => segment.text).join(" ")),
+    normalizeClaims(["Gating mechanisms.", ...bullets].join(" ")),
+    "the heading and every claim survive verbatim across the recap segments",
+  );
 });
 
 test("podcast openings speak a cleaned mission title — no trailing '.…' garbage", () => {

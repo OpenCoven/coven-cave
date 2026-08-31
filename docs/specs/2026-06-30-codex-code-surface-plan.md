@@ -1,6 +1,6 @@
 # Codex Code Surface Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Recreate the Code page (`mode === "code"`) to comprehensively emulate the OpenAI Codex cloud experience — a project→thread nav sidebar with Pinned + user footer, a single active conversation with "Worked for Xs"/code blocks/inline file-edit cards, and a Codex composer with permission + model chips.
 

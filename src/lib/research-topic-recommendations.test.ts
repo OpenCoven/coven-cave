@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { SavedLink } from "./link-organizer.ts";
+import { researchRecommendationDisplayText } from "./research-recommendation-display.ts";
 import type { ResearchMission } from "./research-missions.ts";
 import {
   recommendResearchTopics,
@@ -96,6 +97,21 @@ function context(
     ...overrides,
   };
 }
+
+test("cleans presentation-only Markdown without removing meaningful punctuation", () => {
+  assert.equal(
+    researchRecommendationDisplayText("  ## **Designing agent systems**  "),
+    "Designing agent systems",
+  );
+  assert.equal(
+    researchRecommendationDisplayText("Compare **RAG** with __long context__ and `memory`"),
+    "Compare RAG with long context and memory",
+  );
+  assert.equal(
+    researchRecommendationDisplayText("C# throughput is 2 * 3"),
+    "C# throughput is 2 * 3",
+  );
+});
 
 test("proposes a new topic from collective Coven session history", () => {
   const result = recommendResearchTopics(context({

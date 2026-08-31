@@ -45,7 +45,18 @@ export function LiveRunCard({ view, onDismiss, onOpenCron }: Props) {
         {view.phase === "running" ? (
           <span className="live-run-card__pulse" />
         ) : (
-          <Icon name={view.phase === "failed" ? "ph:x-circle-fill" : "ph:check-circle-fill"} width={14} />
+          // Distinct shapes per settled phase: a cancelled run is neither a
+          // success (check) nor a failure (cross) — it shows the prohibit mark.
+          <Icon
+            name={
+              view.phase === "failed"
+                ? "ph:x-circle-fill"
+                : view.phase === "cancelled"
+                  ? "ph:prohibit"
+                  : "ph:check-circle-fill"
+            }
+            width={14}
+          />
         )}
       </span>
 

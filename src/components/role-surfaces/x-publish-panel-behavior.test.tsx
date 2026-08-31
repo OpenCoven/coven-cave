@@ -624,3 +624,73 @@ test("an expired publish exposes a fresh-review action inside the modal", async 
   await act(async () => button(renderer, "Review again").props.onClick());
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
 });
+
+// ── Stranded drafts (cave-ag9ep) ────────────────────────────────────────────
+// A draft is the record "Review this wording" itself mints, and the published
+// list cannot name it. These tests pin the surface that can: drafts are listed
+// with their wording, and one click retires a draft through the resolve the
+// uncertain records already use — outcome "abandoned" takes no network.
+
+test("a stranded draft is listed with its wording and a retire action", async () => {
+  handler = (url, init) =>
+    init?.method === "POST"
+      ? { body: { ok: true, publication: { ...DRAFT, status: "abandoned" } } }
+      : { body: { ok: true, publications: [DRAFT] } };
+  const renderer = await render();
+
+  expect(panelText(renderer)).toContain("ship it");
+  expect(button(renderer, "Retire")).toBeTruthy();
+  // A draft is not an attempt that may have posted, so it does NOT hold the
+  // composer — the room must stay usable while a draft waits to be retired.
+  expect(textarea(renderer).props.disabled).toBe(false);
+});
+
+test("retiring a draft resolves it to abandoned with no post id", async () => {
+  let stored: Array<Record<string, unknown>> = [DRAFT];
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: stored } };
+    stored = [{ ...DRAFT, status: "abandoned" }];
+    return { body: { ok: true, publication: stored[0] } };
+  };
+  const renderer = await render();
+
+  await act(async () => button(renderer, "Retire").props.onClick());
+  const resolve = requests.find((request) => request.body?.action === "resolve");
+  expect(resolve?.body).toMatchObject({
+    familiarId: "nyx",
+    publicationId: DRAFT.id,
+    outcome: "abandoned",
+  });
+  // A draft was never dispatched, so nothing is sent that would name a post.
+  expect(resolve?.body).not.toHaveProperty("postId");
+  // Retired: the draft leaves the list once the reload lands.
+  expect(button(renderer, "Retire")).toBeUndefined();
+  expect(panelText(renderer)).not.toContain("ship it");
+});
+
+test("a draft is never rendered among sent posts", async () => {
+  const published = {
+    ...DRAFT,
+    id: "99999999-9999-4999-8999-999999999999",
+    text: "actually posted",
+    status: "published",
+    postId: "1234567890123456789",
+    canonicalUrl: "https://x.com/nyx/status/1234567890123456789",
+    publishedAt: "2026-08-02T10:00:00.000Z",
+  };
+  handler = (url, init) =>
+    init?.method === "POST"
+      ? { body: { ok: true, publication: { ...DRAFT, status: "abandoned" } } }
+      : { body: { ok: true, publications: [DRAFT, published] } };
+  const renderer = await render();
+
+  // Both lists are present and each row carries its own wording; the draft
+  // must not be mistaken for a post that went out.
+  const lists = renderer.root.findAll((node) => node.type === "ul");
+  expect(lists).toHaveLength(2);
+  expect(panelText(renderer)).toContain("ship it");
+  expect(panelText(renderer)).toContain("actually posted");
+  expect(button(renderer, "Retire")).toBeTruthy();
+  // Only the sent row carries the post id.
+  expect(panelText(renderer)).toContain("1234567890123456789");
+});

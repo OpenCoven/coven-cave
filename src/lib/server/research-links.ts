@@ -122,13 +122,34 @@ function normalizeXArticleBlock(value: unknown, rawUrl: string): XArticleSnapsho
   };
 }
 
+/**
+ * This is the trust boundary for a user-editable file on disk, so it must
+ * bound every field it accepts, not just type-check it — an unbounded field
+ * here (e.g. a hostile or accidentally-huge upstream response, see
+ * `hf-paper-metadata.ts`) would otherwise land verbatim in the store and be
+ * rendered in the resource row (cave-gnvfa). Bounds are generous relative to
+ * a real arXiv paper; anything past them drops the whole block, same as any
+ * other malformed input here.
+ */
+const MAX_HF_PAPER_TITLE_CHARS = 1_000;
+const MAX_HF_PAPER_ABSTRACT_CHARS = 20_000;
+const MAX_HF_PAPER_PUBLISHED_AT_CHARS = 64;
+const MAX_HF_PAPER_AUTHORS = 500;
+const MAX_HF_PAPER_AUTHOR_NAME_CHARS = 200;
+
 function isHfPaperMetadata(value: unknown): value is HfPaperMetadata {
   return isRecord(value)
     && typeof value.title === "string"
+    && value.title.length <= MAX_HF_PAPER_TITLE_CHARS
     && Array.isArray(value.authors)
-    && value.authors.every((author) => typeof author === "string")
+    && value.authors.length <= MAX_HF_PAPER_AUTHORS
+    && value.authors.every(
+      (author) => typeof author === "string" && author.length <= MAX_HF_PAPER_AUTHOR_NAME_CHARS,
+    )
     && typeof value.abstract === "string"
-    && typeof value.publishedAt === "string";
+    && value.abstract.length <= MAX_HF_PAPER_ABSTRACT_CHARS
+    && typeof value.publishedAt === "string"
+    && value.publishedAt.length <= MAX_HF_PAPER_PUBLISHED_AT_CHARS;
 }
 
 function normalizeResearchLinkEnrichment(

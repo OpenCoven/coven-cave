@@ -93,6 +93,7 @@ function AddMappingForm({
   const [desc, setDesc]       = useState(initial?.description ?? "");
   const [required, setReq]    = useState(initial?.required ?? false);
   const [showInput, setShowInput] = useState(false);
+  const [inputVisibilityChanged, setInputVisibilityChanged] = useState(false);
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState<string | null>(null);
   const { announce } = useAnnouncer();
@@ -131,6 +132,11 @@ function AddMappingForm({
           : provider.referencePrefix!;
       });
     }
+  }
+
+  function toggleInputVisibility() {
+    setShowInput((current) => !current);
+    setInputVisibilityChanged(true);
   }
 
   async function pasteFromClipboard() {
@@ -244,6 +250,7 @@ function AddMappingForm({
           <div className="vault-paste-field">
             <textarea
               className={`vault-add-input vault-paste-input focus-ring${showInput ? "" : " vault-paste-input--masked"}`}
+              data-visibility-transition={inputVisibilityChanged ? (showInput ? "reveal" : "mask") : undefined}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={initial?.storage === "encrypted"
@@ -257,8 +264,9 @@ function AddMappingForm({
               <button
                 type="button"
                 className="vault-btn focus-ring vault-paste-button"
-                onClick={() => setShowInput((current) => !current)}
+                onClick={toggleInputVisibility}
                 aria-pressed={showInput}
+                aria-label={showInput ? "Hide secret text" : "Show secret text"}
               >
                 {showInput ? "Hide" : "Show"}
               </button>

@@ -59,7 +59,6 @@ import {
   type ResearchPodcastSpeaker,
   type ResearchPodcastStyle,
 } from "../research-generations.ts";
-import { LOCAL_TTS_MAX_CHARS } from "../voice/local-tts.ts";
 import type { ResearchArtifactRef, ResearchMission } from "../research-missions.ts";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
@@ -629,7 +628,6 @@ const MAX_SLIDE_BULLETS = 4;
 const MAX_THREAD_POSTS = 8;
 const MAX_INFOGRAPHIC_STATS = 12;
 const MAX_DIAGRAM_SECTIONS = 8;
-const MAX_MEDIA_DRAFT_CHARS = 1_000;
 
 /**
  * Word-boundary clamp to the social post budget. Mechanical truncation only —
@@ -792,29 +790,126 @@ export function draftInfographicContent(source: GenerationDraftSource): Research
 /** Sentence terminator (with optional closing quotes/brackets) before whitespace. */
 const SENTENCE_BREAK_RE = /[.!?…]["'”’)\]]*(?=\s)/g;
 
-function splitMediaDraftText(text: string): string[] {
-  const normalized = text.trim();
-  if (!normalized) return [];
-  const chunks: string[] = [];
-  let remaining = normalized;
-  while (remaining.length > MAX_MEDIA_DRAFT_CHARS) {
-    // Chunks become separate spoken turns, so prefer ending one at a sentence
-    // boundary; a continuation turn must never open mid-sentence.
-    const window = remaining.slice(0, MAX_MEDIA_DRAFT_CHARS);
-    let sentenceCut = -1;
-    for (const match of window.matchAll(SENTENCE_BREAK_RE)) {
-      sentenceCut = match.index + match[0].length;
+/**
+ * Conditional split trigger for a single narration detail, in characters.
+ * Deliberately far above one breath unit: issue #4689 measured that splitting
+ * a well-written 115-word turn (~700 characters) *caused* the pitch
+ * declination a blanket cap was meant to prevent, while splitting the run-on
+ * bullet joins extracted prose produced improved it. So a detail at or under
+ * this clamp is never force-split — only a detail over it, which no engine
+ * should read in one breath anyway, is cut toward the breath-unit target.
+ */
+const MAX_MEDIA_DRAFT_CHARS = 1_000;
+
+/**
+ * Maximum spoken length of one cadence-safe narration turn, in characters —
+ * a breath unit. Large enough to carry a complete thought, small enough that
+ * a turn never becomes the long single read that slides into continuous pitch
+ * declination (the flatness issue #4689 set out to fix). The published show's
+ * median spoken turn measures ~69 words (~400 characters), so packing stops
+ * here rather than at the old unbounded run-on join.
+ */
+export const PODCAST_BREATH_UNIT_MAX_CHARS = 400;
+
+/**
+ * Clause boundaries the source text already contains, in cutting-preference
+ * order: a sentence end closes a complete thought; `;` `:` `–` `—` separate
+ * coordinated clauses; a comma separates phrasal clauses. Splitting only ever
+ * cuts at one of these (or, when a degenerate clause carries none, at a
+ * space) — the words between two cuts are exactly the words the source had.
+ */
+const CLAUSE_BREAK_RES: readonly RegExp[] = [
+  SENTENCE_BREAK_RE,
+  /[;:–—](?=\s)/g,
+  /,(?=\s)/g,
+];
+
+/**
+ * Splits one over-long detail into pieces of at most `maxChars` characters,
+ * cutting at the strongest clause boundary available in each window. A
+ * boundary only qualifies when it leaves at least half the window behind —
+ * the same floor the previous mechanical clamp used — so a cut never sheds a
+ * tiny fragment. A clause with no boundary at all falls back to the last
+ * space, then to a mechanical cut; the words still survive verbatim.
+ */
+function splitAtClauseBoundaries(text: string, maxChars: number): string[] {
+  const floor = Math.floor(maxChars / 2);
+  const pieces: string[] = [];
+  let remaining = text.trim();
+  while (remaining.length > maxChars) {
+    // A window one character past the cap lets a boundary landing exactly at
+    // `maxChars` qualify (its lookahead needs to see the following space).
+    const window = remaining.slice(0, maxChars + 1);
+    let cut = -1;
+    for (const pattern of CLAUSE_BREAK_RES) {
+      let latest = -1;
+      for (const match of window.matchAll(pattern)) {
+        latest = match.index + match[0].length;
+      }
+      if (latest > floor) {
+        cut = latest;
+        break;
+      }
     }
-    const boundary =
-      sentenceCut > MAX_MEDIA_DRAFT_CHARS / 2
-        ? sentenceCut
-        : remaining.lastIndexOf(" ", MAX_MEDIA_DRAFT_CHARS);
-    const cut = boundary > MAX_MEDIA_DRAFT_CHARS / 2 ? boundary : MAX_MEDIA_DRAFT_CHARS;
-    chunks.push(remaining.slice(0, cut).trimEnd());
+    if (cut === -1) {
+      const space = remaining.lastIndexOf(" ", maxChars);
+      cut = space > floor ? space : maxChars;
+    }
+    pieces.push(remaining.slice(0, cut).trimEnd());
     remaining = remaining.slice(cut).trimStart();
   }
-  if (remaining) chunks.push(remaining);
-  return chunks.filter((chunk) => chunk.length <= LOCAL_TTS_MAX_CHARS);
+  if (remaining) pieces.push(remaining);
+  return pieces;
+}
+
+/**
+ * The conditional trigger from the issue review: a single detail at or under
+ * `MAX_MEDIA_DRAFT_CHARS` passes through whole — well-formed prose is never
+ * force-split, because issue #4689 measured that splitting it reads *worse*
+ * than rendering it whole. Only a detail over the clamp is cut toward the
+ * breath-unit target, at the clause boundaries it already contains.
+ */
+function cadenceSafeDetailPieces(detail: string): string[] {
+  return detail.length > MAX_MEDIA_DRAFT_CHARS
+    ? splitAtClauseBoundaries(detail, PODCAST_BREATH_UNIT_MAX_CHARS)
+    : [detail];
+}
+
+/**
+ * Packs source details into spoken turns of at most one breath unit:
+ * adjacent details join while the turn stays within
+ * `PODCAST_BREATH_UNIT_MAX_CHARS`, a detail too long for one turn is cut at
+ * its own clause boundaries, and nothing is reworded — every turn is the
+ * source's own sentences, joined with single spaces (whitespace never
+ * carries a claim). Deterministic, no LLM, and provider-agnostic: this
+ * shapes narration entirely before the TTS seam, so local Piper/Kokoro
+ * renders receive the same bounded segments an ElevenLabs render does.
+ *
+ * This is what stops the drafter collapsing every section bullet into one
+ * run-on unit: the source's bullet boundaries are the primary cadence
+ * boundary, and packing only merges adjacent complete sentences while the
+ * breath-unit cap allows. A turn over the cap is always exactly one
+ * unsplit source detail — the well-formed-prose case the cap must not touch.
+ */
+export function cadenceSafeSpokenTurns(details: readonly string[]): string[] {
+  const turns: string[] = [];
+  let current: string | null = null;
+  for (const detail of details) {
+    if (!detail) continue;
+    for (const piece of cadenceSafeDetailPieces(detail)) {
+      if (
+        current !== null &&
+        current.length + 1 + piece.length > PODCAST_BREATH_UNIT_MAX_CHARS
+      ) {
+        turns.push(current);
+        current = piece;
+      } else {
+        current = current === null ? piece : `${current} ${piece}`;
+      }
+    }
+  }
+  if (current !== null) turns.push(current);
+  return turns;
 }
 
 /** Fragment endings that already close a spoken clause — no "." appended. */
@@ -948,8 +1043,14 @@ function spokenTitle(missionTitle: string): string {
 type NarrationUnit = {
   /** Section heading, or null on the heading-less fallback path. */
   title: string | null;
-  /** Speakable detail text, punctuation-safe joined. */
-  text: string;
+  /**
+   * Speakable detail texts, one per source bullet or line. Kept distinct —
+   * never pre-joined into one run-on string — so the podcast paths can treat
+   * the source's own bullet boundaries as cadence boundaries and pack turns
+   * toward the breath-unit target instead of reading a whole section as one
+   * continuous unit (issue #4689).
+   */
+  details: string[];
 };
 
 function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUnit[] {
@@ -960,7 +1061,11 @@ function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUni
       // Sections whose body is only a table (or nothing) have no speakable
       // details; a bare spoken heading is worse than silence, so skip them.
       if (details.length === 0) return [];
-      return [{ title: section.title, text: details.map(speakable).join(" ") }];
+      // One detail per source bullet. The previous `details.map(speakable)
+      // .join(" ")` here is exactly the run-on collapse issue #4689 calls
+      // out: it erased the source's own clause structure before any turn
+      // shaping could see it.
+      return [{ title: section.title, details: details.map(speakable) }];
     });
   }
   // A heading-less artifact still has useful source lines. Ignore markdown
@@ -977,16 +1082,19 @@ function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUni
       rawLine.replace(/^\s*[-*+]\s+/, "").replace(/^\s*>\s?/, ""),
     );
     if (line && !/^#{1,6}\s/.test(line)) {
-      lines.push({ title: null, text: spokenText(line) });
+      lines.push({ title: null, details: [spokenText(line)] });
     }
   }
   return lines;
 }
 
 function mediaNarrationUnits(source: GenerationDraftSource): string[] {
-  return mediaNarrationSectionUnits(source).map((unit) =>
-    unit.title === null ? unit.text : `${speakable(unit.title)} ${unit.text}`,
-  );
+  // Video storyboards speak one narration string per scene, so they keep the
+  // joined shape; only the podcast paths pack cadence-safe turns (issue #4689).
+  return mediaNarrationSectionUnits(source).map((unit) => {
+    const text = unit.details.join(" ");
+    return unit.title === null ? text : `${speakable(unit.title)} ${text}`;
+  });
 }
 
 /** Drafts a reviewable, extractive host script before any audio is rendered. */
@@ -999,12 +1107,15 @@ export function draftPodcastContent(
   const units = mediaNarrationSectionUnits(source);
   if (style === "recap") {
     // Recap is the original single-narrator read-through: one voice, no
-    // dialogue turns, findings in source order.
-    const candidates = units
-      .map((unit) =>
-        unit.title !== null ? `${speakable(unit.title)} ${unit.text}` : unit.text,
-      )
-      .flatMap(splitMediaDraftText);
+    // dialogue turns, findings in source order. Cadence-safe turns keep each
+    // spoken segment to one breath unit instead of one run-on section read.
+    const candidates = units.flatMap((unit) =>
+      cadenceSafeSpokenTurns(
+        unit.title !== null
+          ? [speakable(unit.title), ...unit.details]
+          : unit.details,
+      ),
+    );
     const script: ResearchGenerationScriptSegment[] = [];
     let used = 0;
     for (const [index, text] of candidates.entries()) {
@@ -1230,8 +1341,8 @@ type DialogueTemplate = {
 
 const MAX_TAKEAWAY_CHARS = 160;
 
-/** First sentence of a chunk, when whole (terminator + trailing quotes). */
-const FIRST_SENTENCE_RE = /^[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/;
+/** Sentences in a chunk, when whole (terminator + trailing quotes). */
+const SENTENCE_RE = /[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/g;
 
 /**
  * A list enumerator or bullet marker opening a chunk (`1.`, `2)`, `a.`, `-`,
@@ -1246,20 +1357,25 @@ const LEAD_LIST_MARKER_RE = /^(?:[-*•]|(?:\d{1,3}|[a-z])[.)])\s+/i;
 const TAKEAWAY_SUBSTANCE_RE = /(?:\S+\s+){2}\S/;
 
 /**
- * The section's lead sentence, restated verbatim by content-bearing closers.
- * Declarative sentences only — a question restated as "the takeaway" is not a
- * synthesis — and only when short enough to work as a spoken bookend. Any
- * non-question terminator qualifies; only `?` disqualifies. A leading list
- * marker is not part of the sentence, and a match without real word content
- * (three words, one carrying letters) is structure, not a takeaway.
+ * The first short declarative sentence in the section's lead chunk, restated
+ * verbatim by content-bearing closers. Dense findings often lead with a long
+ * qualification before a concise conclusion; looking only at sentence one
+ * turns those sections back into acknowledgment-only closers and loses the
+ * host's content-bearing share. Questions remain excluded, and a leading list
+ * marker is not part of the sentence. A match without real word content (three
+ * words, one carrying letters) is structure, not a takeaway.
  */
 function sectionTakeaway(chunks: string[]): string | undefined {
   const lead = chunks[0]?.trimStart().replace(LEAD_LIST_MARKER_RE, "");
   if (!lead) return undefined;
-  const sentence = lead.match(FIRST_SENTENCE_RE)?.[0]?.trim();
-  if (!sentence || sentence.length > MAX_TAKEAWAY_CHARS) return undefined;
-  if (!TAKEAWAY_SUBSTANCE_RE.test(sentence) || !/\p{L}/u.test(sentence)) return undefined;
-  return /\?["'”’)\]]*$/.test(sentence) ? undefined : sentence;
+  for (const match of lead.matchAll(SENTENCE_RE)) {
+    const sentence = match[0].trim();
+    if (sentence.length > MAX_TAKEAWAY_CHARS) continue;
+    if (!TAKEAWAY_SUBSTANCE_RE.test(sentence) || !/\p{L}/u.test(sentence)) continue;
+    if (/\?["'”’)\]]*$/.test(sentence)) continue;
+    return sentence;
+  }
+  return undefined;
 }
 
 /**
@@ -1332,7 +1448,7 @@ function draftDialogueScript(
   let section = 0;
   let interjections = 0;
   outer: for (const unit of units) {
-    const chunks = splitMediaDraftText(unit.text);
+    const chunks = cadenceSafeSpokenTurns(unit.details);
     if (chunks.length === 0) continue;
     if (unit.title !== null) {
       // Document furniture becomes a listener question; real headings get the

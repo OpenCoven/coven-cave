@@ -262,13 +262,25 @@ expected_head=$(git rev-parse HEAD)
 actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)
 test "$actual_head" = "$expected_head"
 gh pr checks <#> --required
-gh pr merge <#> --squash --match-head-commit "$expected_head"
+squash_input=$(mktemp)
+squash_message=$(mktemp)
+trap 'rm -f "$squash_input" "$squash_message"' EXIT
+gh pr view <#> --json title,body,commits > "$squash_input"
+node scripts/pr-squash-message.mjs < "$squash_input" > "$squash_message"
+squash_subject=$(jq -er .subject "$squash_message")
+squash_body=$(jq -er .body "$squash_message")
+gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"
 ```
 
 Repeat the exact-head and required-check verification in the merge command's
 shell: shell variables from Phase 5 may not persist between tool calls.
 `--match-head-commit` then makes GitHub reject the merge if the PR head changes
 between that final check and the merge.
+
+`scripts/pr-squash-message.mjs` removes AI-generated attribution footers and AI
+co-author trailers from the PR body and commit messages before constructing the
+explicit squash message. It preserves each valid human numeric GitHub no-reply
+trailer once and fails closed on ambiguous non-GitHub co-author identities.
 
 Do not pass `--delete-branch`. That flag asks `gh` to delete both local and
 remote branches immediately after merging. Local retirement belongs to the

@@ -323,7 +323,14 @@ function RunDensityStrip({
           runs
         </span>
       </div>
-      <div className="flex flex-1 min-w-[560px] divide-x divide-[var(--border-hairline)]">
+      {/* Sized to the column count, following AllDayStrip: Week needs the wide
+          minimum to stay readable across seven days, but stretching it across
+          Day's single column would spread six bands over 560px. */}
+      <div
+        className={`flex flex-1 divide-x divide-[var(--border-hairline)] ${
+          columns.length > 1 ? "min-w-[560px]" : "min-w-[180px]"
+        }`}
+      >
         {columns.map((col, i) => {
           const bands = runDensityBands(col.runs, col.date);
           const count = runCountOn(col.runs, col.date);
@@ -331,10 +338,16 @@ function RunDensityStrip({
             ? dayProjectionIsPartial(projectionCompleteness, col.date)
             : false;
           const label = runCountLabel(count, "ritual runs", partial);
-          if (!label) return <div key={i} className="flex-1 min-w-[80px] p-1" />;
+          if (!label) return <div key={i} className="flex-1 min-w-[80px] max-w-[320px] p-1" />;
           const Cell = onOpenDay ? "button" : "div";
           return (
-            <div key={i} className="flex-1 min-w-[80px] p-1">
+            // Capped, not just min-width'd. A single-column strip is `flex-1`
+            // inside a full-width row, so in Day it stretched to 1366px and the
+            // six bands became long horizontal BARS — which reads as a timeline
+            // being filled rather than a histogram of when the load falls. The
+            // cap keeps Day's cell the same chart Week draws; Week's columns
+            // never approach it.
+            <div key={i} className="flex-1 min-w-[80px] max-w-[320px] p-1">
               <Cell
                 {...(onOpenDay
                   ? {
@@ -710,8 +723,15 @@ function TimeGrid({
                     {cluster.runs.length === 1 ? "Projected run" : `${cluster.runs.length} projected runs`},{" "}
                     {names}, {fmtTime(first.atIso)}
                   </span>
-                  <span aria-hidden className="cal-run-mark__tick" />
+                  {/* Label FIRST, beside the hour gutter (cave-25914). The
+                      dashed rule used to take the flexible width with the
+                      label pinned to the far end, so on a wide day the time
+                      and the name it belongs to sat most of the viewport
+                      apart, joined only by a hairline the eye had to track.
+                      The rule now trails the label as a continuation. */}
+                  <span aria-hidden className="cal-run-mark__dot" />
                   <span aria-hidden className="cal-run-mark__label">{clusterLabel(cluster)}</span>
+                  <span aria-hidden className="cal-run-mark__tick" />
                 </div>
               );
             })}
@@ -895,7 +915,6 @@ function DayView({
   onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
-  const now = useNow();
 
   const allDayItems = useMemo(
     () => items.filter((it) => {
@@ -939,19 +958,11 @@ function DayView({
     projectedRuns: dayRuns,
   }], [anchor, timedItems, dayRuns]);
 
-  const rel = now ? relDayWord(anchor, now) : null;
-
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-3 sm:px-6">
-        <h2 className="text-sm font-medium text-[var(--text-primary)]">
-          {rel ? (
-            <span className="text-[var(--accent-presence)]">{rel} · </span>
-          ) : null}
-          {fmtDateHeading(anchor)}
-        </h2>
-      </div>
+      {/* No heading here (cave-25914). It restated the very date string the
+          toolbar directly above already shows, and the relative word it added
+          now rides that toolbar label instead. */}
       {/* Task deadlines (read-only, from the board) */}
       {dayDeadlines.length > 0 && (
         <DeadlineStrip
@@ -967,6 +978,12 @@ function DayView({
           maxVisible={Infinity}
         />
       )}
+      {/* No density band in Day (cave-25914). The band spans the full row while
+          the chart inside it is capped at 320px, so in a single-column view it
+          spent a whole horizontal band — ahead of the first hour — on one small
+          chart with the rest empty. The day's run count moved to the toolbar,
+          beside the toggle that produces it. Week keeps its strip: there the
+          per-column comparison is the whole point. */}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} maxLanes={DAY_MAX_LANES} />
@@ -1812,7 +1829,21 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     return projectCronRuns(cronAutomations, start.getTime(), end.getTime() - 1);
   }, [showRuns, cronAutomations, anchor, effectiveView]);
 
+  // The toolbar owns the day's relative word and its runs summary, so it needs
+  // its own clock and per-day count. Both were previously read inside DayView,
+  // which is why the date and the runs band each had a second home.
+  const toolbarNow = useNow();
   const projectionNote = projectionSummary(projection);
+  const dayRunCount = useMemo(
+    () =>
+      effectiveView === "day"
+        ? projection.runs.filter((r) => {
+            const d = new Date(r.atIso);
+            return !Number.isNaN(d.getTime()) && isSameDay(d, anchor);
+          }).length
+        : 0,
+    [effectiveView, projection, anchor],
+  );
 
   // Pending count for the header pill (computed once, not twice inline).
   const pendingCount = useMemo(
@@ -1922,7 +1953,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   }
 
   function headingLabel(): string {
-    if (effectiveView === "day") return fmtDateHeading(anchor);
+    // Day carries its relative word HERE rather than in a second heading
+    // inside DayView. That heading rendered fmtDateHeading(anchor) — the same
+    // string this toolbar already shows — and earned its space only when
+    // relDayWord returned something, which is exactly when the duplication was
+    // least useful. One date statement per screen (cave-25914).
+    if (effectiveView === "day") {
+      const word = toolbarNow ? relDayWord(anchor, toolbarNow) : null;
+      return word ? `${word} · ${fmtDateHeading(anchor)}` : fmtDateHeading(anchor);
+    }
     if (effectiveView === "week") {
       const ws = startOfWeek(anchor);
       const we = addDays(ws, 6);
@@ -2026,18 +2065,37 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         />
 
         {/* Only offered when there is something to project. A dead toggle
-            teaches a reader to ignore part of the toolbar. */}
+            teaches a reader to ignore part of the toolbar.
+
+            Separated from the view switcher by its own group: this toggles a
+            data OVERLAY, while the tabs beside it switch views. Sitting flush
+            against them in matching pill chrome, it read as a fifth view —
+            and it was the one lowercase label in a Title Case row
+            (cave-25914). */}
         {PROJECTING_VIEWS.has(effectiveView) && cronAutomations.some((a) => a.status === "ACTIVE") ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-pressed={showRuns}
-            title="Project cron occurrences onto the calendar"
-            onClick={() => setShowRuns((v) => !v)}
-            className={`calendar-toolbar-button shrink-0 cal-runs-toggle${showRuns ? " is-on" : ""}`}
-          >
-            ritual runs
-          </Button>
+          <div className="cal-runs-group shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={showRuns}
+              title="Project cron occurrences onto the calendar"
+              onClick={() => setShowRuns((v) => !v)}
+              className={`calendar-toolbar-button shrink-0 cal-runs-toggle${showRuns ? " is-on" : ""}`}
+            >
+              Ritual runs
+            </Button>
+            {/* Day only, by design. Week draws a per-column density strip where
+                the comparison between days is the point; a single number in the
+                toolbar would say less than that chart, not more. In Day there
+                is only one column, so the band spent a full row on one capped
+                chart with the rest of the width empty — the count belongs
+                beside the control that produces it. */}
+            {effectiveView === "day" && showRuns && dayRunCount > 0 ? (
+              <span className="cal-runs-count" aria-live="polite">
+                {dayRunCount} run{dayRunCount === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
         ) : null}
 
         {onAddEntry ? (

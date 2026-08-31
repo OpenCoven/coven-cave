@@ -16,6 +16,7 @@ import { useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
+import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import {
   ComposerRuntimePopover,
   runtimeModelLabel,
@@ -222,9 +223,12 @@ export function ComposerContextPickers({
         {...branchPopoverExtras(context)}
       />
       {context.addFlow.addError ? (
-        <span className="cave-project-picker__error" role="alert">
-          {context.addFlow.addError}
-        </span>
+        <ProjectRootWorkspaceNotice
+          as="span"
+          className="cave-project-picker__error"
+          code={context.addFlow.addErrorCode}
+          error={context.addFlow.addError}
+        />
       ) : null}
       {context.canAddProject ? context.addFlow.addProjectModal : null}
     </>
@@ -393,9 +397,12 @@ export function ComposerContextChips(props: ComposerContextProps) {
         />
       ) : null}
       {context.addFlow.addError ? (
-        <span className="cave-project-picker__error" role="alert">
-          {context.addFlow.addError}
-        </span>
+        <ProjectRootWorkspaceNotice
+          as="span"
+          className="cave-project-picker__error"
+          code={context.addFlow.addErrorCode}
+          error={context.addFlow.addError}
+        />
       ) : null}
       {context.canAddProject ? context.addFlow.addProjectModal : null}
     </div>

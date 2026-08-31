@@ -9,8 +9,11 @@ import type {
   DaemonTarget,
 } from "../coven-daemon.ts";
 import {
+  classifyResearchDaemonTarget,
   INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
   isOwnerLocalResearchDaemonTarget,
+  LOCAL_RESEARCH_DAEMON_UNAVAILABLE_DIAGNOSTIC,
+  localResearchDaemonUnavailableDiagnostic,
   OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
   dispatchResearchDaemonRequest,
   researchSessionLaunchPolicy,
@@ -204,6 +207,42 @@ assert.deepEqual(
 assert.match(SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC, /Update Coven, restart the daemon/i);
 assert.match(INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC, /verify the Research artifact workspace/i);
 assert.match(OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC, /owner-local Coven daemon socket/i);
+assert.deepEqual(localResearchDaemonUnavailableDiagnostic(), {
+  code: "local-unavailable",
+  message: LOCAL_RESEARCH_DAEMON_UNAVAILABLE_DIAGNOSTIC,
+  retryable: true,
+});
+const missingWindowsDaemon = {
+  mode: "local" as const,
+  label: "Local daemon" as const,
+  socketPath: "C:/Users/Sonic/.coven/coven.sock",
+  socketResolution: {
+    socketPath: "C:/Users/Sonic/.coven/coven.sock",
+    source: "canonical-local" as const,
+    availability: "unavailable" as const,
+  },
+};
+assert.equal(
+  classifyResearchDaemonTarget(missingWindowsDaemon, "win32"),
+  "local-unavailable",
+  "a missing Windows daemon descriptor is a retryable local update window",
+);
+const remoteOverrideWithLocalFallback = {
+  mode: "local" as const,
+  label: "Local daemon" as const,
+  socketPath: "\\\\.\\pipe\\coven-daemon-local",
+  socketResolution: {
+    socketPath: "\\\\.\\pipe\\coven-daemon-local",
+    source: "daemon-status-file" as const,
+    availability: "available" as const,
+    refusedSources: ["coven-socket-env" as const],
+  },
+};
+assert.equal(
+  classifyResearchDaemonTarget(remoteOverrideWithLocalFallback, "win32"),
+  "nonlocal",
+  "a refused remote COVEN_SOCKET remains fail-closed after local fallback",
+);
 for (const [socketPath, platform, expected] of [
   ["\\\\.\\pipe\\coven-daemon-local", "win32", true],
   ["\\\\remote-host\\pipe\\coven-daemon", "win32", false],
@@ -223,7 +262,7 @@ for (const [socketPath, platform, expected] of [
 }
 assert.match(
   source,
-  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness(?:: binding\.harness)?,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
+  /shouldRequestResearchSessionLaunchPolicy\(\{[\s\S]*trustedLocalResearch: options\.trustedLocalResearch === true,[\s\S]*harness(?:: binding\.harness)?,[\s\S]*pinnedResearchDaemonTarget = localDaemonTarget\(\);[\s\S]*classifyResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*localResearchDaemonUnavailableDiagnostic\(\)[\s\S]*status: 503,[\s\S]*diagnostic[\s\S]*isOwnerLocalResearchDaemonTarget\(pinnedResearchDaemonTarget\)[\s\S]*OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC[\s\S]*callDaemonTarget<Record<string, unknown>>\(\s*pinnedResearchDaemonTarget,\s*daemonHealthRequest\(\),[\s\S]*supportsSessionLaunchPolicy\(health\.data\)[\s\S]*SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC/,
   "only trusted local Research probes one pinned local daemon target and old daemons fail closed",
 );
 assert.equal(

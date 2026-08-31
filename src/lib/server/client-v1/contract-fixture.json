@@ -91,6 +91,7 @@
       "invalid_request",
       "unauthorized",
       "scope_denied",
+      "ownership_refused",
       "not_found",
       "conflict",
       "rate_limited",
@@ -224,6 +225,18 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
+        "families": [
+          "health"
+        ],
+        "id": "status.admin.read",
+        "ingress": "admin",
+        "method": "GET",
+        "path": "/api/client/v1/admin/status",
+        "scope": null
+      },
+      {
         "binding": "hpke-bound-v1",
         "credential": "bearer",
         "families": [
@@ -319,9 +332,9 @@
   },
   "examples": {
     "cursor": {
-      "current": "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+      "current": "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
       "hasMore": true,
-      "next": "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ"
+      "next": "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ"
     },
     "discoveryRecord": {
       "endpoint": "http://127.0.0.1:3020",
@@ -378,6 +391,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -418,6 +432,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -457,6 +472,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -502,6 +518,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -536,6 +553,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -563,9 +581,9 @@
         "cursors"
       ],
       "cursor": {
-        "current": "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+        "current": "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
         "hasMore": true,
-        "next": "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ"
+        "next": "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ"
       },
       "data": {
         "status": "ok"
@@ -585,6 +603,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",

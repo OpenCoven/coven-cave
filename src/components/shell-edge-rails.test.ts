@@ -7,7 +7,6 @@ import { readFileSync, readdirSync } from "node:fs";
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const analyticsShell = readFileSync(new URL("./analytics-page-shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const titlebarMarker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
 const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
 // #3576 decomposed globals.css into @imported sheets under src/styles —
@@ -42,8 +41,13 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<span className="shell-window-titlebar__title">Coven<\/span>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<div className="shell-window-titlebar__rail">[\s\S]*?<span className="shell-window-titlebar__title">OpenCoven<\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
   "the functional controls share one titlebar row from left toggle through search/actions to the right toggle",
+);
+assert.equal(
+  shell.match(/<span className="shell-window-titlebar__title">OpenCoven<\/span>/g)?.length,
+  1,
+  "the expanded native siderail should expose one OpenCoven identity label",
 );
 // `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
 // bare region on DIRECT presses on the attributed element, so empty chrome
@@ -105,8 +109,17 @@ assert.match(
 );
 assert.match(
   shell,
-  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
+  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\);[\s\S]*?panel\.collapse\(\);/,
   "nav toggle collapses and expands the nav panel",
+);
+// The toggle must NOT write navOpen optimistically: the nav Panel's onResize
+// callback derives it from the measured width (the single writer), so an
+// optimistic setNavOpen next to the panel call races the resize frames and
+// leaves the toggle disagreeing with the settled panel (cave-az3ha).
+assert.doesNotMatch(
+  shell.match(/const toggleNavPanel = \(\) => \{[\s\S]{0,400}?\n  \};/)?.[0] ?? "",
+  /setNavOpen\(/,
+  "the nav toggle drives the Panel only - the Panel onResize callback is the single navOpen writer",
 );
 // The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
@@ -225,14 +238,6 @@ assert.match(
 assert.match(shell, /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)/, "the existing right-panel shortcut controls Chat");
 assert.doesNotMatch(shell, /RightPanelKind|companionTabs|agent\?: ReactNode|rightPanelPeek/, "generic companion architecture stays retired");
 assert.doesNotMatch(workspace, /rightPanel=|familiarPanel=|agent=/, "Workspace does not restore generic companion props");
-// The chat projects rail migrated onto the shared SurfaceRail (Sessions
-// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
-// so the bespoke edge-rail reopen chip is gone from this sidebar.
-assert.match(
-  projectSidebar,
-  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
-  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
-);
 
 assert.match(
   shell,
@@ -246,8 +251,13 @@ assert.match(
 );
 assert.match(
   shell,
-  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?setNavOpen\(true\);[\s\S]*?panel\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
-  "left panel shortcut toggles the resolved panel and synchronizes its visible state",
+  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?panel\.collapse\(\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
+  "left panel shortcut toggles the resolved panel and defers navOpen to the measured-width callback",
+);
+assert.doesNotMatch(
+  shell.match(/const toggleDesktopNav = \(\) => \{[\s\S]{0,240}?\n    \};/)?.[0] ?? "",
+  /setNavOpen\(/,
+  "the shortcut toggle also defers navOpen to the Panel onResize callback",
 );
 assert.doesNotMatch(
   shell,
@@ -261,6 +271,17 @@ assert.doesNotMatch(css, /\.right-chat__header\s*\{/, "the redundant horizontal 
 assert.match(css, /\.mobile-right-chat-drawer\s*\{[^}]*right:\s*0;[^}]*width:\s*min\(100vw,\s*480px\);/, "the modal enters from the right with a tablet cap");
 assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*width:\s*100vw;/, "narrow phones use the available width");
 assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.mobile-right-chat-drawer[\s\S]*?animation:\s*none/, "drawer motion respects the global reduced-motion contract");
+
+// Full-bleed close strip (cave-4snk9): at ≤480px the drawer is width:100vw
+// and covers the backdrop at every pixel, so the backdrop is hidden for this
+// slot (a control no input modality can reach) and the drawer's own top
+// strip — absolute above the drawer's content, a child of the trapped
+// dialog — owns dismissal. The strip shows exactly when the drawer is
+// full-bleed; the exposed backdrop keeps owning dismissal everywhere else.
+assert.match(css, /\.mobile-right-chat-drawer__close\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*5;/, "the full-bleed close strip is an absolute bar above the drawer's own content");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer__close\s*\{[^}]*display:\s*block;/, "the close strip shows exactly when the right Chat drawer is full-bleed");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-drawer-backdrop\[data-drawer-slot="right-chat"\]\s*\{[^}]*display:\s*none;/, "the backdrop is hidden while the right Chat drawer is full-bleed — a control no input modality could reach (cave-4snk9)");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*padding-top:\s*calc\(var\(--sai-top\) \+ var\(--touch-target\)\);/, "the full-bleed drawer pushes its content below the close strip so nothing interactive is covered");
 
 // The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
@@ -293,17 +314,25 @@ assert.doesNotMatch(
   // connected rail segment while workspace controls begin at its live edge.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,360}?padding-left: max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);/,
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*padding-left: max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);/,
     "the connected rail header reserves the traffic-light inset",
   );
+  // Scoped to the rule body rather than a character budget from the selector:
+  // a budget silently turns any added comment into a test failure, which is how
+  // this assertion broke when the traffic-light top nudge was documented.
+  const nativeTitlebarRule = css.match(
+    /^:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[^}]*\}/m,
+  )?.[0];
+  assert.ok(nativeTitlebarRule, "the native titlebar has its own rule");
   assert.match(
-    css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,420}?border-bottom:\s*0;/,
+    nativeTitlebarRule,
+    /border-bottom:\s*0;/,
     "the native titlebar does not draw a horizontal seam through the connected rail",
   );
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,260}?border-bottom:\s*0;/,
+    // Rule-scoped for the same reason as the titlebar assertion above.
+    /^:root\[data-tauri-titlebar\] \.shell-top \{[^}]*border-bottom:\s*0;/m,
     "the workspace toolbar continues the titlebar surface without a second rule",
   );
   assert.match(
@@ -318,7 +347,7 @@ assert.doesNotMatch(
   );
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?padding-left: var\(--space-3\);/,
+    /^:root\[data-tauri-titlebar\] \.shell-top \{[^}]*padding-left: var\(--space-3\);/m,
     "the functional toolbar starts at the normal app inset below native chrome",
   );
   // Full-window route bands reserve the same inset…
@@ -340,7 +369,7 @@ assert.doesNotMatch(
   // and no-backdrop-filter fallbacks.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    /^:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/m,
     "the native identity strip carries subtle glass",
   );
   const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
@@ -394,12 +423,32 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,260}?flex: 0 0 var\(--shell-nav-chrome-width\);/,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*justify-content:\s*center;[^}]*padding-left:\s*max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);[^}]*padding-right:\s*var\(--space-3\);[^}]*overflow:\s*hidden;/,
+  "the siderail identity is centered inside the traffic-light-safe portion of the expanded rail",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-window-titlebar__title \{\s*visibility:\s*hidden;/,
+  "the identity label stays hidden with the collapsed desktop rail",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-window-fullscreen\] \.shell-window-titlebar__rail \{\s*padding-left:\s*var\(--space-3\);/,
+  "fullscreen centers the identity without reserving space for absent traffic lights",
+);
+assert.match(
+  css,
+  /@media \(max-width: 1023px\) \{[\s\S]*?:root\[data-tauri-titlebar\] \.shell-window-titlebar__title \{\s*display:\s*none;/,
+  "the siderail identity stays out of the mobile drawer titlebar",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*flex: 0 0 var\(--shell-nav-chrome-width\);/,
   "the native titlebar's left segment tracks the resizable navigation width",
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?left: var\(--shell-nav-chrome-width\);/,
+  /:root\[data-tauri-titlebar\] \.shell-top \{[^}]*left: var\(--shell-nav-chrome-width\);/,
   "workspace toolbar chrome begins at the connected rail edge",
 );
 assert.match(

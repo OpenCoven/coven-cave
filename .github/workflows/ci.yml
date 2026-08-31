@@ -30,14 +30,20 @@ on:
 # dispatch. The required check can never report while that runs.
 #
 # So a dispatch never cancels: with cancel-in-progress false it QUEUES behind
-# the in-flight run for that head and starts only once the group frees. A push
-# still supersedes its predecessor, which is the behaviour this setting is for.
+# the in-flight run for that head and starts only once the group frees. Every
+# main push shares ci-main and cancels its predecessor, while pull requests and
+# their recovery dispatches continue to share their PR-scoped group.
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.event_name == 'push' && 'main' || format('pr-{0}', github.event.pull_request.number || inputs.expected_pr_number || github.run_id) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
+  # Recovery dispatches resolve the PR's current base ref at selector start.
+  pull-requests: read
+  # The Frontend build gate reads the run's job list to refuse carried-forward
+  # upstream evidence (cave-38aud).
+  actions: read
 
 jobs:
   # This context is introduced alongside Frontend build during the protection
@@ -68,6 +74,21 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           persist-credentials: false
 
+      # This job IS the required check; a green from it that ran a stale tree
+      # is the hazard this guard exists for (cave-d9xfq #4934).
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -79,14 +100,31 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm check:tests-wired
-      - run: pnpm test:app
-      - run: pnpm test:api
-      - run: pnpm test:mobile
+      # Each suite must report its own result even when an earlier step failed:
+      # a test:app failure used to silently skip test:api and test:mobile, so a
+      # skipped suite and a passed one looked identical (cave-t8p1a).
+      # success() || failure() runs the suites unless the job was cancelled or
+      # the environment never came up, and each failure still fails the job.
+      - id: app-suite
+        name: Frontend app tests
+        if: success() || failure()
+        run: pnpm test:app
+      - id: api-suite
+        name: Frontend API tests
+        if: success() || failure()
+        run: pnpm test:api
+      - id: mobile-suite
+        name: Mobile tests
+        if: success() || failure()
+        run: pnpm test:mobile
 
       - name: Summarize PR check duration
         if: always()
         env:
           START_EPOCH: ${{ steps.clock.outputs.epoch }}
+          APP_OUTCOME: ${{ steps.app-suite.outcome }}
+          API_OUTCOME: ${{ steps.api-suite.outcome }}
+          MOBILE_OUTCOME: ${{ steps.mobile-suite.outcome }}
         run: |
           end_epoch=$(date +%s)
           duration=$((end_epoch - START_EPOCH))
@@ -95,6 +133,7 @@ jobs:
             echo
             echo "- Duration: ${duration}s"
             echo "- Commit: $GITHUB_SHA"
+            echo "- Suites: app=$APP_OUTCOME api=$API_OUTCOME mobile=$MOBILE_OUTCOME"
           } >> "$GITHUB_STEP_SUMMARY"
 
   paths:
@@ -108,16 +147,43 @@ jobs:
       e2e: ${{ steps.paths.outputs.e2e }}
       ios: ${{ steps.paths.outputs.ios }}
       docs: ${{ steps.paths.outputs.docs }}
+      run_base_ref: ${{ steps.base_snapshot.outputs.run_base_ref }}
+      run_base_sha: ${{ steps.base_snapshot.outputs.run_base_sha }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
+      - id: base_snapshot
+        name: Capture run base snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.expected_pr_number }}
+        run: node scripts/capture-ci-base-snapshot.mjs >> "$GITHUB_OUTPUT"
+
+      # The path selector's verdict decides which jobs run at all; a stale
+      # tree here could silently skip a lane the PR actually touches
+      # (cave-d9xfq).
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to select paths from a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - id: paths
         name: Select path-aware validation
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'push' && github.event.before || steps.base_snapshot.outputs.run_base_sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
         run: node scripts/ci-paths.mjs --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
@@ -138,6 +204,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -303,6 +387,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -325,6 +427,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -368,6 +488,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -379,7 +517,35 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Validate end-to-end behavior
-        run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+        env:
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+
+          telemetry_pid=""
+          if [ "$PLAYWRIGHT_SHARD" = "3" ]; then
+            telemetry() {
+              while true; do
+                echo "::group::E2E shard 3 telemetry $(date --iso-8601=seconds)"
+                free -h || true
+                df -h / || true
+                if [ -r /sys/fs/cgroup/memory.events ]; then
+                  cat /sys/fs/cgroup/memory.events || true
+                fi
+                ps -eo pid,ppid,stat,etimes,rss,pcpu,pmem,comm --sort=-rss | head -n 21 || true
+                echo "::endgroup::"
+                sleep 30
+              done
+            }
+            telemetry &
+            telemetry_pid=$!
+            trap 'kill "$telemetry_pid" 2>/dev/null || true; wait "$telemetry_pid" 2>/dev/null || true' EXIT
+          fi
+
+          pnpm exec playwright test \
+            --shard="$PLAYWRIGHT_SHARD/8" \
+            --workers=1 \
+            --reporter="github,line"
 
   frontend-e2e-agentic:
     name: Frontend E2E (agentic)
@@ -394,6 +560,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -460,12 +644,59 @@ jobs:
         with:
           persist-credentials: false
 
+      # Guards the checked-out tree against the stale-merge hazard
+      # (cave-d9xfq): the checkout's CONTENT must match refs/pull/<n>/merge
+      # fetched fresh at job time, or the run's verdict is about the wrong
+      # tree. Two jobs in one run once took different trees (#4922), so every
+      # job that checks out the PR tree runs this.
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard (scripts/check-merge-tree-freshness.mjs is absent); refusing to run tests on a tree that cannot be the current merge (cave-d9xfq)."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Refuse carried-forward upstream evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+          RUN_BASE_REF: ${{ needs.paths.outputs.run_base_ref }}
+          RUN_BASE_SHA: ${{ needs.paths.outputs.run_base_sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # The jobs API reports the PR head SHA, not github.sha's synthetic
+          # merge SHA. A carried-forward job is also relabelled with the new
+          # run_attempt but retains its old started_at, so both domains matter.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > /tmp/cave-build-evidence-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" > /tmp/cave-build-evidence-jobs.json
+          ATTEMPT_STARTED_AT="$(jq -er '.run_started_at | select(type == "string" and length > 0)' /tmp/cave-build-evidence-run.json)"
+
+          # Select validation froze this pair before any validation lane ran.
+          # Resolve the branch tip again now; missing selector outputs fail
+          # closed in check-build-evidence's argument validation.
+          LIVE_BASE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RUN_BASE_REF" --jq .object.sha)"
+
+          node scripts/check-build-evidence.mjs \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --attempt-started-at "$ATTEMPT_STARTED_AT" \
+            --run-base-ref "$RUN_BASE_REF" \
+            --run-base-sha "$RUN_BASE_SHA" \
+            --live-base-sha "$LIVE_BASE_SHA" \
+            < /tmp/cave-build-evidence-jobs.json 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Runs without pnpm install: the test imports only node builtins, so a
       # documentation-only PR — which skips the frontend step entirely — still
@@ -507,7 +738,7 @@ jobs:
           touch resources/server/.cargo-check-placeholder
           touch resources/node/.cargo-check-placeholder
           cargo check --locked
-          cargo test --locked --lib
+          cargo test --locked
 
       - name: Report skipped suites
         if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true' || needs.paths.outputs.docs != 'true'

@@ -15,21 +15,30 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 
 import {
+  parseResourceEmbeddingTaskV1,
+  parseResourceIngestJobV1,
   parseResourceManifestV1,
   parseResourceSnapshotV1,
+  parseResourceTombstoneV1,
+  type ResourceEmbeddingTaskV1,
+  type ResourceIngestJobV1,
   type ResourceManifestV1,
   type ResourceSnapshotV1,
+  type ResourceTombstoneV1,
 } from "../research-resource-contracts.ts";
 import { canonicalJson, sha256Digest } from "../research-protocol/digest.ts";
 import { caveHome } from "../coven-paths.ts";
 import { assertExclusivePathOwnership } from "./client-v1/path-ownership.ts";
-import { acquireProcessIntentLock } from "./process-intent-lock.ts";
+import { withProcessIntentLock } from "./process-intent-lock.ts";
 
 export const MAX_RESEARCH_RESOURCE_BLOB_BYTES = 512 * 1024 * 1024;
+export const MAX_RESEARCH_RESOURCE_MANIFESTS = 100_000;
 const MAX_SNAPSHOT_RECORD_BYTES = 1024 * 1024;
 const MAX_SNAPSHOT_RECORDS = 100_000;
 const MAX_MANIFEST_RECORD_BYTES = 1024 * 1024;
-const MAX_MANIFEST_RECORDS = 100_000;
+const MAX_MANIFEST_RECORDS = MAX_RESEARCH_RESOURCE_MANIFESTS;
+const MAX_OPERATIONAL_RECORD_BYTES = 1024 * 1024;
+const MAX_OPERATIONAL_RECORDS = 100_000;
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 const SAFE_STORE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -84,9 +93,124 @@ export type ManifestCatalogTransaction = {
   ): Promise<{ deleted: true; manifest: ResourceManifestV1 }>;
 };
 
+export type ResourceIngestFailureV1 = {
+  version: 1;
+  jobId: string;
+  resourceId: string;
+  resourceRevision: number;
+  deletionRevision: number;
+  stage: ResourceIngestJobV1["stage"];
+  code: string;
+  retryable: boolean;
+  occurredAt: string;
+};
+
+export const RESOURCE_DELETION_PHASES = [
+  "fenced",
+  "manifest_deleting",
+  "jobs_cancelled",
+  "tombstoned",
+  "derivatives_removed",
+  "snapshots_removed",
+  "manifest_removed",
+  "projection_verified",
+] as const;
+
+export type ResourceDeletionPhaseV1 = (typeof RESOURCE_DELETION_PHASES)[number];
+
+export type ResourceDeletionFenceV1 = {
+  version: 1;
+  resourceId: string;
+  deletionRevision: number;
+  updatedAt: string;
+};
+
+export type ResourceDeletionJournalV1 = {
+  version: 1;
+  resourceId: string;
+  deletionRevision: number;
+  expectedManifestRevision: number;
+  phase: ResourceDeletionPhaseV1;
+  deletedAt: string;
+  snapshotIds: string[];
+  updatedAt: string;
+};
+
+/** A6's Cave-private additive identity field. A1 parsers preserve it without
+ * widening the portable or public task contract. */
+export type ResourceEmbeddingTaskRecordV1 = ResourceEmbeddingTaskV1 & {
+  modelRevision: string;
+};
+
+export type ResourceOperationalTransaction = ManifestCatalogTransaction & {
+  listSnapshots(resourceId?: string): ResourceSnapshotV1[];
+  readSnapshot(snapshotId: string): Promise<VerifiedResourceSnapshot>;
+  publishSnapshot(input: PublishResourceSnapshotInput): Promise<{ created: boolean; snapshot: ResourceSnapshotV1 }>;
+  deleteSnapshot(snapshotId: string): Promise<{ deleted: boolean; removedBlobDigests: string[] }>;
+  listJobs(): ResourceIngestJobV1[];
+  readJob(jobId: string): ResourceIngestJobV1 | null;
+  createJob(job: ResourceIngestJobV1): Promise<{ created: boolean; job: ResourceIngestJobV1 }>;
+  replaceJob(expected: ResourceIngestJobV1, job: ResourceIngestJobV1): Promise<ResourceIngestJobV1>;
+  listEmbeddingTasks(): ResourceEmbeddingTaskRecordV1[];
+  readEmbeddingTask(resourceId: string): ResourceEmbeddingTaskRecordV1 | null;
+  createEmbeddingTask(task: ResourceEmbeddingTaskRecordV1): Promise<{
+    created: boolean;
+    task: ResourceEmbeddingTaskRecordV1;
+  }>;
+  replaceEmbeddingTask(
+    expected: ResourceEmbeddingTaskRecordV1,
+    task: ResourceEmbeddingTaskRecordV1,
+  ): Promise<ResourceEmbeddingTaskRecordV1>;
+  removeEmbeddingTask(resourceId: string, expected?: ResourceEmbeddingTaskRecordV1): Promise<boolean>;
+  listFailures(): ResourceIngestFailureV1[];
+  readFailure(jobId: string): ResourceIngestFailureV1 | null;
+  writeFailure(failure: ResourceIngestFailureV1): Promise<ResourceIngestFailureV1>;
+  deleteFailure(jobId: string): Promise<boolean>;
+  listDeletionFences(): ResourceDeletionFenceV1[];
+  readDeletionFence(resourceId: string): ResourceDeletionFenceV1 | null;
+  repairDeletionFenceFromTombstone(resourceId: string): Promise<boolean>;
+  resetRestoreOperationalState(): Promise<{ jobs: number; failures: number; deletions: number }>;
+  repairTombstonedDeletionJournal(expectedManifest: ResourceManifestV1): Promise<boolean>;
+  beginDeletion(input: {
+    expectedManifest: ResourceManifestV1;
+    deletedAt: string;
+    snapshotIds: string[];
+  }): Promise<ResourceDeletionJournalV1>;
+  listDeletionJournals(): ResourceDeletionJournalV1[];
+  readDeletionJournal(resourceId: string): ResourceDeletionJournalV1 | null;
+  advanceDeletionJournal(
+    expected: ResourceDeletionJournalV1,
+    journal: ResourceDeletionJournalV1,
+  ): Promise<ResourceDeletionJournalV1>;
+  removeDeletionJournal(expected: ResourceDeletionJournalV1): Promise<void>;
+  listTombstones(): ResourceTombstoneV1[];
+  readTombstone(resourceId: string): ResourceTombstoneV1 | null;
+  publishTombstone(tombstone: ResourceTombstoneV1): Promise<{ created: boolean; tombstone: ResourceTombstoneV1 }>;
+  assertPublicationFence(input: {
+    expectedJob: ResourceIngestJobV1;
+    leaseToken: string;
+    resourceId: string;
+    resourceRevision: number;
+    deletionRevision: number;
+    now: string;
+  }): void;
+  commitReadyManifest(input: {
+    expectedJob: ResourceIngestJobV1;
+    leaseToken: string;
+    now: string;
+    id: string;
+    expectedRevision: number;
+    manifest: ResourceManifestV1;
+  }): Promise<ResourceManifestV1>;
+  deleteDeletingManifest(expectedManifest: ResourceManifestV1): Promise<ResourceManifestV1>;
+};
+
 export type ResearchResourceStore = {
   withManifestCatalogTransaction<T>(
     operation: (transaction: ManifestCatalogTransaction) => Promise<T>,
+  ): Promise<T>;
+  withOperationalTransaction<T>(
+    operation: (transaction: ResourceOperationalTransaction) => Promise<T>,
   ): Promise<T>;
   createManifest(
     manifest: ResourceManifestV1,
@@ -112,6 +236,7 @@ export class ResearchResourceStoreError extends Error {
     | "invalid-id"
     | "invalid-manifest"
     | "invalid-snapshot"
+    | "invalid-operational-record"
     | "digest-mismatch"
     | "immutable-conflict"
     | "revision-conflict"
@@ -166,6 +291,12 @@ type StoreLayout = {
   sha256: PathIdentity;
   locks: PathIdentity;
   intents: PathIdentity;
+  jobs: PathIdentity;
+  embeddingTasks: PathIdentity;
+  failures: PathIdentity;
+  fences: PathIdentity;
+  deletions: PathIdentity;
+  tombstones: PathIdentity;
 };
 
 function pathIdentity(
@@ -593,6 +724,12 @@ async function assertStableLayout(layout: StoreLayout): Promise<void> {
   await assertStableDirectory(layout.sha256, "sha256 blobs");
   await assertStableDirectory(layout.locks, "locks");
   await assertStableDirectory(layout.intents, "lock intents");
+  await assertStableDirectory(layout.jobs, "jobs");
+  await assertStableDirectory(layout.embeddingTasks, "embedding tasks");
+  await assertStableDirectory(layout.failures, "failures");
+  await assertStableDirectory(layout.fences, "fences");
+  await assertStableDirectory(layout.deletions, "deletions");
+  await assertStableDirectory(layout.tombstones, "tombstones");
   if ((await realpath(layout.root.path)) !== layout.rootRealPath) {
     throw new ResearchResourceStoreError("symlink", "store root identity changed");
   }
@@ -608,7 +745,30 @@ async function ensureLayout(root: string): Promise<StoreLayout> {
   const sha256 = await ensureRealDirectory(path.join(root, "blobs", "sha256"), rootRealPath, "sha256 blobs");
   const locks = await ensureRealDirectory(path.join(root, "locks"), rootRealPath, "locks");
   const intents = await ensureRealDirectory(path.join(root, "locks", "intents"), rootRealPath, "lock intents");
-  return { root: rootIdentity, rootRealPath, manifests, snapshots, blobs, sha256, locks, intents };
+  const jobs = await ensureRealDirectory(path.join(root, "jobs"), rootRealPath, "jobs");
+  const embeddingTasks = await ensureRealDirectory(
+    path.join(root, "embedding-tasks"), rootRealPath, "embedding tasks",
+  );
+  const failures = await ensureRealDirectory(path.join(root, "failures"), rootRealPath, "failures");
+  const fences = await ensureRealDirectory(path.join(root, "fences"), rootRealPath, "fences");
+  const deletions = await ensureRealDirectory(path.join(root, "deletions"), rootRealPath, "deletions");
+  const tombstones = await ensureRealDirectory(path.join(root, "tombstones"), rootRealPath, "tombstones");
+  return {
+    root: rootIdentity,
+    rootRealPath,
+    manifests,
+    snapshots,
+    blobs,
+    sha256,
+    locks,
+    intents,
+    jobs,
+    embeddingTasks,
+    failures,
+    fences,
+    deletions,
+    tombstones,
+  };
 }
 
 async function ensureShard(layout: StoreLayout, digest: string): Promise<PathIdentity> {
@@ -877,17 +1037,6 @@ async function scanSnapshots(layout: StoreLayout): Promise<Map<string, ResourceS
   return records;
 }
 
-function referenceCounts(records: Map<string, ResourceSnapshotV1>): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const snapshot of records.values()) {
-    const digests = new Set(
-      [snapshot.normalizedBlobDigest, snapshot.rawBlobDigest].filter(Boolean) as string[],
-    );
-    for (const digest of digests) counts.set(digest, (counts.get(digest) ?? 0) + 1);
-  }
-  return counts;
-}
-
 async function verifyCurrentSnapshot(
   layout: StoreLayout,
   manifest: ResourceManifestV1,
@@ -1050,6 +1199,19 @@ async function updateManifestLocked(
   input: { id: string; expectedRevision: number; manifest: ResourceManifestV1 },
 ): Promise<ResourceManifestV1> {
   const prepared = await validateManifestUpdate(layout, records, input);
+  return publishPreparedManifestUpdate(layout, records, identities, prepared);
+}
+
+async function publishPreparedManifestUpdate(
+  layout: StoreLayout,
+  records: Map<string, ResourceManifestV1>,
+  identities: Map<string, PathIdentity>,
+  prepared: {
+    existing: ResourceManifestV1;
+    manifest: ResourceManifestV1;
+    recordBytes: Uint8Array;
+  },
+): Promise<ResourceManifestV1> {
   const { existing, manifest } = prepared;
   const expectedIdentity = identities.get(manifest.id);
   if (!expectedIdentity) {
@@ -1293,6 +1455,693 @@ async function preflightCompatibilityMutation(
   }
 }
 
+type OperationalCollection<T> = {
+  records: Map<string, T>;
+  identities: Map<string, PathIdentity>;
+};
+
+function operationalBytes(value: unknown, label: string): Uint8Array {
+  const bytes = new TextEncoder().encode(`${canonicalJson(value)}\n`);
+  if (bytes.byteLength > MAX_OPERATIONAL_RECORD_BYTES) {
+    throw new ResearchResourceStoreError("too-large", `${label} exceeds 1 MiB`);
+  }
+  return bytes;
+}
+
+function assertUtcTimestamp(value: unknown, label: string): asserts value is string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value) ||
+    !Number.isFinite(Date.parse(value))
+  ) {
+    throw new ResearchResourceStoreError("invalid-operational-record", `${label} must be a UTC timestamp`);
+  }
+}
+
+function parseJob(value: unknown): ResourceIngestJobV1 {
+  const parsed = parseResourceIngestJobV1(value);
+  if (!parsed.ok) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      `${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  assertStoreId(parsed.value.id, "job");
+  assertResourceId(parsed.value.resourceId);
+  if (parsed.value.attempt > 5) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "job attempt exceeds five");
+  }
+  return parsed.value;
+}
+
+function parseEmbeddingTask(value: unknown): ResourceEmbeddingTaskRecordV1 {
+  const parsed = parseResourceEmbeddingTaskV1(value);
+  if (!parsed.ok) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      `${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  assertResourceId(parsed.value.resourceId);
+  assertSnapshotId(parsed.value.snapshotId);
+  if (typeof parsed.value.modelRevision !== "string" || !/^[a-f0-9]{64}$/.test(parsed.value.modelRevision)) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      "embedding task modelRevision must be a lowercase SHA-256 digest",
+    );
+  }
+  return parsed.value as ResourceEmbeddingTaskRecordV1;
+}
+
+function parseFailure(value: unknown): ResourceIngestFailureV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "failure must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = new Set([
+    "version", "jobId", "resourceId", "resourceRevision", "deletionRevision", "stage",
+    "code", "retryable", "occurredAt",
+  ]);
+  if (Object.keys(record).some((key) => !allowed.has(key))) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "failure contains unexpected fields");
+  }
+  if (
+    record.version !== 1 || typeof record.retryable !== "boolean" ||
+    !Number.isSafeInteger(record.resourceRevision) || (record.resourceRevision as number) < 1 ||
+    !Number.isSafeInteger(record.deletionRevision) || (record.deletionRevision as number) < 0 ||
+    typeof record.stage !== "string" ||
+    !["fetch", "snapshot", "extract", "publish_lexical"].includes(record.stage)
+  ) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "failure version or retryable is invalid");
+  }
+  if (typeof record.jobId !== "string" || typeof record.resourceId !== "string") {
+    throw new ResearchResourceStoreError("invalid-operational-record", "failure identifiers are invalid");
+  }
+  assertStoreId(record.jobId, "job");
+  assertResourceId(record.resourceId);
+  if (typeof record.code !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(record.code)) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "failure code is outside the bounded vocabulary shape");
+  }
+  assertUtcTimestamp(record.occurredAt, "failure occurredAt");
+  return record as ResourceIngestFailureV1;
+}
+
+function parseFence(value: unknown): ResourceDeletionFenceV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion fence must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = new Set(["version", "resourceId", "deletionRevision", "updatedAt"]);
+  if (Object.keys(record).some((key) => !allowed.has(key))) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion fence contains unexpected fields");
+  }
+  if (
+    record.version !== 1 ||
+    typeof record.resourceId !== "string" ||
+    !Number.isSafeInteger(record.deletionRevision) ||
+    (record.deletionRevision as number) < 1
+  ) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion fence is invalid");
+  }
+  assertResourceId(record.resourceId);
+  assertUtcTimestamp(record.updatedAt, "deletion fence updatedAt");
+  return record as ResourceDeletionFenceV1;
+}
+
+function parseJournal(value: unknown): ResourceDeletionJournalV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion journal must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = new Set([
+    "version", "resourceId", "deletionRevision", "expectedManifestRevision",
+    "phase", "deletedAt", "snapshotIds", "updatedAt",
+  ]);
+  if (Object.keys(record).some((key) => !allowed.has(key))) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion journal contains unexpected fields");
+  }
+  if (
+    record.version !== 1 || typeof record.resourceId !== "string" ||
+    !Number.isSafeInteger(record.deletionRevision) || (record.deletionRevision as number) < 1 ||
+    !Number.isSafeInteger(record.expectedManifestRevision) || (record.expectedManifestRevision as number) < 1 ||
+    typeof record.phase !== "string" ||
+    !RESOURCE_DELETION_PHASES.includes(record.phase as ResourceDeletionPhaseV1) ||
+    !Array.isArray(record.snapshotIds) || record.snapshotIds.length > MAX_OPERATIONAL_RECORDS
+  ) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "deletion journal is invalid");
+  }
+  assertResourceId(record.resourceId);
+  const snapshotIds = record.snapshotIds;
+  for (const id of snapshotIds) {
+    if (typeof id !== "string") throw new ResearchResourceStoreError("invalid-operational-record", "snapshot id is invalid");
+    assertSnapshotId(id);
+  }
+  if (new Set(snapshotIds).size !== snapshotIds.length ||
+      snapshotIds.some((id, index) => index > 0 && snapshotIds[index - 1]! >= id)) {
+    throw new ResearchResourceStoreError("invalid-operational-record", "journal snapshot ids must be unique and sorted");
+  }
+  assertUtcTimestamp(record.deletedAt, "deletion journal deletedAt");
+  assertUtcTimestamp(record.updatedAt, "deletion journal updatedAt");
+  return record as unknown as ResourceDeletionJournalV1;
+}
+
+function parseTombstone(value: unknown): ResourceTombstoneV1 {
+  const parsed = parseResourceTombstoneV1(value);
+  if (!parsed.ok) {
+    throw new ResearchResourceStoreError(
+      "invalid-operational-record",
+      `${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  assertResourceId(parsed.value.resourceId);
+  return parsed.value;
+}
+
+async function scanOperationalRecords<T>(input: {
+  layout: StoreLayout;
+  directory: PathIdentity;
+  label: string;
+  parse: (value: unknown) => T;
+  idOf: (value: T) => string;
+}): Promise<OperationalCollection<T>> {
+  await assertStableLayout(input.layout);
+  const names: string[] = [];
+  for await (const entry of await opendir(input.directory.path)) {
+    if (names.length >= MAX_OPERATIONAL_RECORDS) {
+      throw new ResearchResourceStoreError("too-large", `${input.label} exceeds the record scan limit`);
+    }
+    names.push(entry.name);
+  }
+  const records = new Map<string, T>();
+  const identities = new Map<string, PathIdentity>();
+  for (const name of names.sort()) {
+    if (/^\.tmp-[0-9]+-[a-f0-9]{24}$/.test(name)) continue;
+    if (!name.endsWith(".json")) {
+      throw new ResearchResourceStoreError("corrupt", `unexpected ${input.label} entry ${name}`);
+    }
+    const id = name.slice(0, -5);
+    if (!SAFE_STORE_ID.test(id) || WINDOWS_DEVICE_IDS.test(id)) {
+      throw new ResearchResourceStoreError("corrupt", `unsafe ${input.label} entry ${name}`);
+    }
+    const record = await readSafeFileWithIdentity({
+      target: path.join(input.directory.path, name),
+      rootRealPath: input.layout.rootRealPath,
+      label: `${input.label} ${id}`,
+      maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
+    });
+    const parsed = input.parse(parseJson(record.bytes, `${input.label} ${id}`));
+    if (input.idOf(parsed) !== id) {
+      throw new ResearchResourceStoreError("corrupt", `${input.label} filename and id do not match`);
+    }
+    if (!Buffer.from(record.bytes).equals(Buffer.from(operationalBytes(parsed, `${input.label} ${id}`)))) {
+      throw new ResearchResourceStoreError("corrupt", `${input.label} ${id} is not canonical JSON`);
+    }
+    records.set(id, parsed);
+    identities.set(id, record.identity);
+  }
+  await assertStableDirectory(input.directory, input.label);
+  return { records, identities };
+}
+
+async function createOperationalRecord<T>(input: {
+  layout: StoreLayout;
+  directory: PathIdentity;
+  collection: OperationalCollection<T>;
+  id: string;
+  value: T;
+  label: string;
+}): Promise<"created" | "existing"> {
+  const bytes = operationalBytes(input.value, `${input.label} ${input.id}`);
+  const existing = input.collection.records.get(input.id);
+  if (existing !== undefined) {
+    if (canonicalJson(existing) !== canonicalJson(input.value)) {
+      throw new ResearchResourceStoreError("immutable-conflict", `${input.label} ${input.id} already exists`);
+    }
+    return "existing";
+  }
+  const result = await publishNoReplace({
+    layout: input.layout,
+    directory: input.directory,
+    target: path.join(input.directory.path, `${input.id}.json`),
+    bytes,
+    label: `${input.label} ${input.id}`,
+    maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
+    existingMismatchCode: "immutable-conflict",
+  });
+  const published = await readSafeFileWithIdentity({
+    target: path.join(input.directory.path, `${input.id}.json`),
+    rootRealPath: input.layout.rootRealPath,
+    label: `${input.label} ${input.id}`,
+    maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
+  });
+  input.collection.records.set(input.id, structuredClone(input.value));
+  input.collection.identities.set(input.id, published.identity);
+  return result;
+}
+
+async function replaceOperationalRecord<T>(input: {
+  layout: StoreLayout;
+  directory: PathIdentity;
+  collection: OperationalCollection<T>;
+  id: string;
+  expected: T;
+  value: T;
+  label: string;
+}): Promise<void> {
+  const current = input.collection.records.get(input.id);
+  const identity = input.collection.identities.get(input.id);
+  if (current === undefined || !identity || canonicalJson(current) !== canonicalJson(input.expected)) {
+    throw new ResearchResourceStoreError("revision-conflict", `${input.label} ${input.id} changed`);
+  }
+  const published = await publishReplace({
+    layout: input.layout,
+    directory: input.directory,
+    target: path.join(input.directory.path, `${input.id}.json`),
+    bytes: operationalBytes(input.value, `${input.label} ${input.id}`),
+    expectedBytes: operationalBytes(input.expected, `${input.label} ${input.id}`),
+    label: `${input.label} ${input.id}`,
+    maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
+    expectedIdentity: identity,
+  });
+  input.collection.records.set(input.id, structuredClone(input.value));
+  input.collection.identities.set(input.id, published);
+}
+
+async function removeOperationalRecord<T>(input: {
+  layout: StoreLayout;
+  directory: PathIdentity;
+  collection: OperationalCollection<T>;
+  id: string;
+  expected?: T;
+  label: string;
+}): Promise<boolean> {
+  const current = input.collection.records.get(input.id);
+  if (current === undefined) return false;
+  const identity = input.collection.identities.get(input.id);
+  if (!identity || (input.expected !== undefined && canonicalJson(current) !== canonicalJson(input.expected))) {
+    throw new ResearchResourceStoreError("revision-conflict", `${input.label} ${input.id} changed`);
+  }
+  const disk = await readSafeFileWithIdentity({
+    target: path.join(input.directory.path, `${input.id}.json`),
+    rootRealPath: input.layout.rootRealPath,
+    label: `${input.label} ${input.id}`,
+    maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
+  });
+  if (!sameIdentity(identity, disk.identity) ||
+      !Buffer.from(disk.bytes).equals(Buffer.from(operationalBytes(current, `${input.label} ${input.id}`)))) {
+    throw new ResearchResourceStoreError("revision-conflict", `${input.label} ${input.id} changed before deletion`);
+  }
+  await unlink(path.join(input.directory.path, `${input.id}.json`));
+  await syncDirectory(input.directory.path);
+  input.collection.records.delete(input.id);
+  input.collection.identities.delete(input.id);
+  return true;
+}
+
+const NONTERMINAL_JOB_STATUSES = new Set<ResourceIngestJobV1["status"]>([
+  "queued", "claimed", "paused_quota", "retry_wait",
+]);
+
+function assertEmbeddingTaskTransition(
+  expected: ResourceEmbeddingTaskRecordV1,
+  next: ResourceEmbeddingTaskRecordV1,
+): void {
+  if (
+    expected.resourceId !== next.resourceId
+    || expected.snapshotId !== next.snapshotId
+    || expected.lexicalRevision !== next.lexicalRevision
+    || expected.providerId !== next.providerId
+    || expected.modelId !== next.modelId
+    || expected.dimensions !== next.dimensions
+    || expected.modelRevision !== next.modelRevision
+  ) {
+    throw new ResearchResourceStoreError(
+      "immutable-conflict",
+      "embedding task identity cannot change",
+    );
+  }
+  if (Date.parse(next.updatedAt) <= Date.parse(expected.updatedAt)) {
+    throw new ResearchResourceStoreError("revision-conflict", "embedding task updatedAt must advance");
+  }
+  const allowed: Record<ResourceEmbeddingTaskRecordV1["status"], Set<ResourceEmbeddingTaskRecordV1["status"]>> = {
+    queued: new Set(["building", "unavailable"]),
+    building: new Set(["queued", "ready", "failed", "unavailable"]),
+    ready: new Set(),
+    failed: new Set(),
+    unavailable: new Set(["queued"]),
+  };
+  if (!allowed[expected.status].has(next.status)) {
+    throw new ResearchResourceStoreError("revision-conflict", "embedding task status transition is invalid");
+  }
+}
+
+function assertJobTransition(expected: ResourceIngestJobV1, next: ResourceIngestJobV1): void {
+  if (
+    expected.id !== next.id || expected.resourceId !== next.resourceId ||
+    expected.resourceRevision !== next.resourceRevision ||
+    expected.deletionRevision !== next.deletionRevision || expected.createdAt !== next.createdAt
+  ) {
+    throw new ResearchResourceStoreError("immutable-conflict", "job identity and captured revisions cannot change");
+  }
+  if (Date.parse(next.updatedAt) <= Date.parse(expected.updatedAt)) {
+    throw new ResearchResourceStoreError("revision-conflict", "job updatedAt must advance");
+  }
+  if (!NONTERMINAL_JOB_STATUSES.has(expected.status)) {
+    throw new ResearchResourceStoreError("revision-conflict", "terminal jobs cannot transition");
+  }
+  const allowed: Record<"queued" | "claimed" | "paused_quota" | "retry_wait", Set<ResourceIngestJobV1["status"]>> = {
+    queued: new Set(["claimed", "cancelled"]),
+    claimed: new Set(["claimed", "queued", "paused_quota", "retry_wait", "completed", "failed", "cancelled"]),
+    paused_quota: new Set(["claimed", "cancelled"]),
+    retry_wait: new Set(["claimed", "cancelled"]),
+  };
+  if (!allowed[expected.status as keyof typeof allowed].has(next.status)) {
+    throw new ResearchResourceStoreError("revision-conflict", "job status transition is invalid");
+  }
+  if (next.attempt < expected.attempt || next.attempt > expected.attempt + 1) {
+    throw new ResearchResourceStoreError("revision-conflict", "job attempt transition is invalid");
+  }
+  const stageIndex = RESOURCE_DELETION_PHASES.length + ["fetch", "snapshot", "extract", "publish_lexical"].indexOf(next.stage);
+  const expectedStageIndex = RESOURCE_DELETION_PHASES.length + ["fetch", "snapshot", "extract", "publish_lexical"].indexOf(expected.stage);
+  if (stageIndex < expectedStageIndex || stageIndex > expectedStageIndex + 1) {
+    throw new ResearchResourceStoreError("revision-conflict", "job stage transition is invalid");
+  }
+  if (next.stage !== expected.stage && !(expected.status === "claimed" && next.status === "claimed")) {
+    throw new ResearchResourceStoreError("revision-conflict", "only a claimed job may advance its stage");
+  }
+  if (next.status === "retry_wait" && next.attempt !== expected.attempt + 1) {
+    throw new ResearchResourceStoreError("revision-conflict", "retry_wait must consume exactly one attempt");
+  }
+  if (next.status === "paused_quota" && next.attempt !== expected.attempt) {
+    throw new ResearchResourceStoreError("revision-conflict", "paused_quota cannot consume an attempt");
+  }
+  if (next.status !== "retry_wait" && next.attempt !== expected.attempt && next.status !== "failed") {
+    throw new ResearchResourceStoreError("revision-conflict", "only retry failure may consume an attempt");
+  }
+  if (next.status === "failed" && next.attempt !== expected.attempt + 1) {
+    throw new ResearchResourceStoreError("revision-conflict", "a terminal failure must consume exactly one attempt");
+  }
+  if (next.status === "completed" && next.stage !== "publish_lexical") {
+    throw new ResearchResourceStoreError("revision-conflict", "only lexical publication may complete a job");
+  }
+  if (next.status === "claimed") {
+    if (Date.parse(next.availableAt) > Date.parse(next.updatedAt) ||
+        Date.parse(next.lease!.expiresAt) <= Date.parse(next.updatedAt)) {
+      throw new ResearchResourceStoreError("revision-conflict", "claimed job must be due with a future lease");
+    }
+  }
+  if (expected.status === "claimed" && next.status === "queued" &&
+      Date.parse(expected.lease!.expiresAt) > Date.parse(next.updatedAt)) {
+    throw new ResearchResourceStoreError("revision-conflict", "an unexpired lease cannot be requeued");
+  }
+  if (expected.status === "claimed" && next.status === "claimed" &&
+      expected.lease!.token !== next.lease!.token && Date.parse(expected.lease!.expiresAt) > Date.parse(next.updatedAt)) {
+    throw new ResearchResourceStoreError("revision-conflict", "an unexpired claimed lease cannot be superseded");
+  }
+}
+
+function validateSnapshotInput(input: PublishResourceSnapshotInput): {
+  snapshot: ResourceSnapshotV1;
+  normalizedBlob: Uint8Array;
+  rawBlob?: Uint8Array;
+  recordBytes: Uint8Array;
+} {
+  const normalizedBlob = new Uint8Array(input.normalizedBlob);
+  const rawBlob = input.rawBlob === undefined ? undefined : new Uint8Array(input.rawBlob);
+  assertBlobSize(normalizedBlob, "normalized blob");
+  if (rawBlob !== undefined) assertBlobSize(rawBlob, "raw blob");
+  const snapshot = parseSnapshot(input.snapshot);
+  if (normalizedBlob.byteLength !== snapshot.normalizedBytes ||
+      sha256Digest(normalizedBlob) !== snapshot.normalizedBlobDigest) {
+    throw new ResearchResourceStoreError("digest-mismatch", "normalized bytes do not match the snapshot");
+  }
+  if ((snapshot.rawBlobDigest === undefined) !== (rawBlob === undefined)) {
+    throw new ResearchResourceStoreError("invalid-snapshot", "raw blob must be present exactly when rawBlobDigest is present");
+  }
+  if (snapshot.rawBlobDigest && rawBlob && sha256Digest(rawBlob) !== snapshot.rawBlobDigest) {
+    throw new ResearchResourceStoreError("digest-mismatch", "raw bytes do not match the snapshot digest");
+  }
+  const recordBytes = new TextEncoder().encode(`${canonicalJson(snapshot)}\n`);
+  if (recordBytes.byteLength > MAX_SNAPSHOT_RECORD_BYTES) {
+    throw new ResearchResourceStoreError("too-large", "snapshot record exceeds 1 MiB");
+  }
+  return { snapshot, normalizedBlob, ...(rawBlob ? { rawBlob } : {}), recordBytes };
+}
+
+async function publishSnapshotLocked(
+  layout: StoreLayout,
+  snapshots: Map<string, ResourceSnapshotV1>,
+  input: PublishResourceSnapshotInput,
+): Promise<{ created: boolean; snapshot: ResourceSnapshotV1 }> {
+  const prepared = validateSnapshotInput(input);
+  const existing = snapshots.get(prepared.snapshot.id);
+  if (existing && canonicalJson(existing) !== canonicalJson(prepared.snapshot)) {
+    throw new ResearchResourceStoreError("immutable-conflict", `snapshot ${prepared.snapshot.id} already exists with different content`);
+  }
+  await publishBlob(layout, prepared.snapshot.normalizedBlobDigest, prepared.normalizedBlob);
+  if (prepared.snapshot.rawBlobDigest && prepared.rawBlob) {
+    await publishBlob(layout, prepared.snapshot.rawBlobDigest, prepared.rawBlob);
+  }
+  const result = await publishNoReplace({
+    layout,
+    directory: layout.snapshots,
+    target: snapshotFile(layout, prepared.snapshot.id),
+    bytes: prepared.recordBytes,
+    label: `snapshot ${prepared.snapshot.id}`,
+    maxBytes: MAX_SNAPSHOT_RECORD_BYTES,
+    existingMismatchCode: "immutable-conflict",
+  });
+  snapshots.set(prepared.snapshot.id, structuredClone(prepared.snapshot));
+  return { created: result === "created", snapshot: structuredClone(prepared.snapshot) };
+}
+
+async function collectUnreferencedBlobs(
+  layout: StoreLayout,
+  snapshots: Map<string, ResourceSnapshotV1>,
+): Promise<string[]> {
+  const referenced = new Set<string>();
+  for (const snapshot of snapshots.values()) {
+    referenced.add(snapshot.normalizedBlobDigest);
+    if (snapshot.rawBlobDigest) referenced.add(snapshot.rawBlobDigest);
+  }
+  const shardNames: string[] = [];
+  for await (const entry of await opendir(layout.sha256.path)) {
+    shardNames.push(entry.name);
+    if (shardNames.length > 256) {
+      throw new ResearchResourceStoreError("too-large", "blob store exceeds the shard scan limit");
+    }
+  }
+  const candidates: Array<{ digest: string; shard: PathIdentity; identity: PathIdentity }> = [];
+  let scanned = 0;
+  for (const shardName of shardNames.sort()) {
+    if (!/^[a-f0-9]{2}$/.test(shardName)) {
+      throw new ResearchResourceStoreError("corrupt", `unexpected blob shard ${shardName}`);
+    }
+    const shard = await ensureRealDirectory(
+      path.join(layout.sha256.path, shardName),
+      layout.rootRealPath,
+      `blob shard ${shardName}`,
+    );
+    const names: string[] = [];
+    for await (const entry of await opendir(shard.path)) {
+      if (++scanned > MAX_OPERATIONAL_RECORDS) {
+        throw new ResearchResourceStoreError("too-large", "blob store exceeds the record scan limit");
+      }
+      names.push(entry.name);
+    }
+    for (const digest of names.sort()) {
+      if (/^\.tmp-[0-9]+-[a-f0-9]{24}$/.test(digest)) continue;
+      if (!/^[a-f0-9]{64}$/.test(digest) || !digest.startsWith(shardName)) {
+        throw new ResearchResourceStoreError("corrupt", `unexpected blob entry ${digest}`);
+      }
+      const record = await readSafeFileWithIdentity({
+        target: path.join(shard.path, digest),
+        rootRealPath: layout.rootRealPath,
+        label: `blob ${digest}`,
+        maxBytes: MAX_RESEARCH_RESOURCE_BLOB_BYTES,
+      });
+      if (sha256Digest(record.bytes) !== digest) {
+        throw new ResearchResourceStoreError("digest-mismatch", `blob ${digest} is corrupt`);
+      }
+      if (!referenced.has(digest)) candidates.push({ digest, shard, identity: record.identity });
+    }
+  }
+  const removed: string[] = [];
+  for (const candidate of candidates) {
+    await assertStableDirectory(candidate.shard, `blob shard ${candidate.digest.slice(0, 2)}`);
+    const target = path.join(candidate.shard.path, candidate.digest);
+    const current = await pathMetadata(target, `blob ${candidate.digest} is missing`);
+    if (current.isSymbolicLink() || !current.isFile() || current.nlink !== 1 ||
+        !sameIdentity(candidate.identity, current)) {
+      throw new ResearchResourceStoreError("revision-conflict", `blob ${candidate.digest} changed before collection`);
+    }
+    await unlink(target);
+    await syncDirectory(candidate.shard.path);
+    removed.push(candidate.digest);
+  }
+  return removed;
+}
+
+async function deleteSnapshotLocked(
+  layout: StoreLayout,
+  manifests: Map<string, ResourceManifestV1>,
+  snapshots: Map<string, ResourceSnapshotV1>,
+  snapshotId: string,
+): Promise<{ deleted: boolean; removedBlobDigests: string[] }> {
+  assertSnapshotId(snapshotId);
+  if ([...manifests.values()].some((manifest) => manifest.currentSnapshotId === snapshotId)) {
+    throw new ResearchResourceStoreError("snapshot-conflict", `snapshot ${snapshotId} is current for a resource manifest`);
+  }
+  const target = snapshots.get(snapshotId);
+  if (!target) {
+    return { deleted: false, removedBlobDigests: await collectUnreferencedBlobs(layout, snapshots) };
+  }
+  const current = await readSnapshotRecord(layout, snapshotId, false);
+  if (!current || canonicalJson(current) !== canonicalJson(target)) {
+    throw new ResearchResourceStoreError("corrupt", `snapshot ${snapshotId} changed during deletion accounting`);
+  }
+  // Validate the complete blob namespace before removing authoritative
+  // snapshot metadata. A failed path/identity check therefore leaves the
+  // snapshot readable, while a later crash after unlink is replayable GC.
+  await collectUnreferencedBlobs(layout, snapshots);
+  await assertStableDirectory(layout.snapshots, "snapshots");
+  await unlink(snapshotFile(layout, snapshotId));
+  await syncDirectory(layout.snapshots.path);
+  snapshots.delete(snapshotId);
+  const removedBlobDigests = await collectUnreferencedBlobs(layout, snapshots);
+  return { deleted: true, removedBlobDigests };
+}
+
+async function readSnapshotLocked(
+  layout: StoreLayout,
+  snapshotId: string,
+): Promise<VerifiedResourceSnapshot> {
+  assertSnapshotId(snapshotId);
+  const snapshot = await readSnapshotRecord(layout, snapshotId, false);
+  if (!snapshot) throw new ResearchResourceStoreError("missing", `snapshot ${snapshotId} is missing`);
+  const normalizedBlob = await readBlob(layout, snapshot.normalizedBlobDigest);
+  if (normalizedBlob.byteLength !== snapshot.normalizedBytes) {
+    throw new ResearchResourceStoreError("digest-mismatch", `snapshot ${snapshotId} normalized byte length is corrupt`);
+  }
+  const rawBlob = snapshot.rawBlobDigest ? await readBlob(layout, snapshot.rawBlobDigest) : undefined;
+  return { snapshot, normalizedBlob, ...(rawBlob === undefined ? {} : { rawBlob }) };
+}
+
+export async function withResearchResourceMaintenanceLock<T>(
+  rootInput: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!path.isAbsolute(rootInput)) {
+    throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
+  }
+  const root = path.resolve(rootInput);
+  const layout = await ensureLayout(root);
+  return withProcessIntentLock({
+    intentsDirectory: layout.intents.path,
+    label: "Research Resource store",
+  }, async () => {
+    await assertStableLayout(layout);
+    return operation();
+  });
+}
+
+async function purgeRestoreDisposableDirectory(
+  layout: StoreLayout,
+  directory: PathIdentity,
+  label: string,
+): Promise<number> {
+  await assertStableLayout(layout);
+  await assertStableDirectory(directory, label);
+  const names: string[] = [];
+  for await (const entry of await opendir(directory.path)) {
+    if (names.length >= MAX_OPERATIONAL_RECORDS) {
+      throw new ResearchResourceStoreError("too-large", `${label} exceeds the restore purge limit`);
+    }
+    names.push(entry.name);
+  }
+
+  let removed = 0;
+  for (const name of names.sort()) {
+    await assertStableLayout(layout);
+    await assertStableDirectory(directory, label);
+    const target = path.join(directory.path, name);
+    const before = await pathMetadata(target, `${label} restore residue is missing`);
+    if (before.isSymbolicLink()) {
+      throw new ResearchResourceStoreError("symlink", `${label} restore residue is a symlink`);
+    }
+    if (!before.isFile()) {
+      throw new ResearchResourceStoreError("unsafe-path", `${label} restore residue is not a regular file`);
+    }
+    if (before.nlink !== 1) {
+      throw new ResearchResourceStoreError("unsafe-path", `${label} restore residue must have exactly one link`);
+    }
+    await assertSafeOwnership(target, before, `Research Resource ${label} restore residue`);
+    let handle: FileHandle;
+    try {
+      handle = await open(target, readFlags());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue is a symlink`);
+      }
+      throw error;
+    }
+    try {
+      const opened = await handle.stat();
+      const after = await pathMetadata(target, `${label} restore residue is missing`);
+      if (
+        !opened.isFile()
+        || opened.nlink !== 1
+        || after.isSymbolicLink()
+        || !after.isFile()
+        || after.nlink !== 1
+        || !sameIdentity(before, opened)
+        || !sameIdentity(opened, after)
+      ) {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue identity changed`);
+      }
+      const resolved = await realpath(target);
+      if (!isContained(layout.rootRealPath, resolved)) {
+        throw new ResearchResourceStoreError("symlink", `${label} restore residue escapes the store root`);
+      }
+    } finally {
+      await handle.close();
+    }
+    await assertStableDirectory(directory, label);
+    const current = await pathMetadata(target, `${label} restore residue is missing`);
+    if (current.isSymbolicLink() || !current.isFile() || current.nlink !== 1 || !sameIdentity(before, current)) {
+      throw new ResearchResourceStoreError("symlink", `${label} restore residue changed before deletion`);
+    }
+    await unlink(target);
+    await syncDirectory(directory.path);
+    removed += 1;
+  }
+  await assertStableLayout(layout);
+  return removed;
+}
+
+/**
+ * Restore owns jobs, failures, and deletion journals as disposable state. This
+ * purge deliberately does not parse their bytes, but still refuses links,
+ * foreign ownership, directory swaps, and escapes before unlinking anything.
+ */
+export async function purgeResearchResourceRestoreDisposableState(
+  rootInput: string,
+): Promise<{ jobs: number; failures: number; deletions: number }> {
+  if (!path.isAbsolute(rootInput)) {
+    throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
+  }
+  const root = path.resolve(rootInput);
+  return withResearchResourceMaintenanceLock(root, async () => {
+    const layout = await ensureLayout(root);
+    await assertStableLayout(layout);
+    return {
+      jobs: await purgeRestoreDisposableDirectory(layout, layout.jobs, "jobs"),
+      failures: await purgeRestoreDisposableDirectory(layout, layout.failures, "failures"),
+      deletions: await purgeRestoreDisposableDirectory(layout, layout.deletions, "deletions"),
+    };
+  });
+}
+
 export function createResearchResourceStore(
   options: { root?: string } = {},
 ): ResearchResourceStore {
@@ -1305,23 +2154,20 @@ export function createResearchResourceStore(
 
   const withMutationLock = async <T>(operation: (layout: StoreLayout) => Promise<T>): Promise<T> => {
     const layout = await ensureLayout(root);
-    const release = await acquireProcessIntentLock({
+    return withProcessIntentLock({
       intentsDirectory: layout.intents.path,
       label: "Research Resource store",
-    });
-    try {
+    }, async () => {
       await assertStableLayout(layout);
       return await operation(layout);
-    } finally {
-      await release();
-    }
+    });
   };
 
-  const withManifestCatalogTransaction = async <T>(
-    operation: (transaction: ManifestCatalogTransaction) => Promise<T>,
-  ): Promise<T> => withMutationLock(async (layout) => {
-    const { records, identities } = await scanManifests(layout);
-    const transaction: ManifestCatalogTransaction = {
+  const createCatalogTransaction = (
+    layout: StoreLayout,
+    records: Map<string, ResourceManifestV1>,
+    identities: Map<string, PathIdentity>,
+  ): ManifestCatalogTransaction => ({
       listManifests: () => sortedDetachedManifests(records),
       preflightCompatibilityMutation: (operations) =>
         preflightCompatibilityMutation(layout, records, operations),
@@ -1331,12 +2177,596 @@ export function createResearchResourceStore(
         replaceCompatibilityManifestLocked(layout, records, identities, input),
       deleteCompatibilityManifest: (expectedManifest) =>
         deleteCompatibilityManifestLocked(layout, records, identities, expectedManifest),
+    });
+
+  const withManifestCatalogTransaction = async <T>(
+    operation: (transaction: ManifestCatalogTransaction) => Promise<T>,
+  ): Promise<T> => withMutationLock(async (layout) => {
+    const { records, identities } = await scanManifests(layout);
+    return operation(createCatalogTransaction(layout, records, identities));
+  });
+
+  const withOperationalTransaction = async <T>(
+    operation: (transaction: ResourceOperationalTransaction) => Promise<T>,
+  ): Promise<T> => withMutationLock(async (layout) => {
+    const manifests = await scanManifests(layout);
+    const snapshots = await scanSnapshots(layout);
+    const jobs = await scanOperationalRecords({
+      layout, directory: layout.jobs, label: "job", parse: parseJob, idOf: (job) => job.id,
+    });
+    const embeddingTasks = await scanOperationalRecords({
+      layout,
+      directory: layout.embeddingTasks,
+      label: "embedding task",
+      parse: parseEmbeddingTask,
+      idOf: (task) => task.resourceId,
+    });
+    const failures = await scanOperationalRecords({
+      layout, directory: layout.failures, label: "failure", parse: parseFailure,
+      idOf: (failure) => failure.jobId,
+    });
+    const fences = await scanOperationalRecords({
+      layout, directory: layout.fences, label: "deletion fence", parse: parseFence,
+      idOf: (fence) => fence.resourceId,
+    });
+    const deletions = await scanOperationalRecords({
+      layout, directory: layout.deletions, label: "deletion journal", parse: parseJournal,
+      idOf: (journal) => journal.resourceId,
+    });
+    const tombstones = await scanOperationalRecords({
+      layout, directory: layout.tombstones, label: "tombstone", parse: parseTombstone,
+      idOf: (tombstone) => tombstone.resourceId,
+    });
+    // The journal is durably published before its fence while the process lock
+    // is held. If the process dies between those two writes, the next locked
+    // transaction repairs the monotonic fence before exposing any API.
+    for (const journal of deletions.records.values()) {
+      const fence = fences.records.get(journal.resourceId);
+      if (fence?.deletionRevision === journal.deletionRevision) continue;
+      if ((fence?.deletionRevision ?? 0) !== journal.deletionRevision - 1) {
+        throw new ResearchResourceStoreError("corrupt", "deletion journal and fence revisions diverge");
+      }
+      const repaired: ResourceDeletionFenceV1 = {
+        version: 1,
+        resourceId: journal.resourceId,
+        deletionRevision: journal.deletionRevision,
+        updatedAt: journal.deletedAt,
+      };
+      if (fence) {
+        await replaceOperationalRecord({
+          layout, directory: layout.fences, collection: fences, id: journal.resourceId,
+          expected: fence, value: repaired, label: "deletion fence",
+        });
+      } else {
+        await createOperationalRecord({
+          layout, directory: layout.fences, collection: fences, id: journal.resourceId,
+          value: repaired, label: "deletion fence",
+        });
+      }
+    }
+    const catalog = createCatalogTransaction(layout, manifests.records, manifests.identities);
+    const sorted = <V>(records: Map<string, V>): V[] =>
+      [...records.entries()].sort(([left], [right]) => left.localeCompare(right))
+        .map(([, value]) => structuredClone(value));
+    const currentDeletionRevision = (resourceId: string): number =>
+      fences.records.get(resourceId)?.deletionRevision ?? 0;
+    const assertCurrentJob = (job: ResourceIngestJobV1): ResourceIngestJobV1 => {
+      const current = jobs.records.get(job.id);
+      if (!current || canonicalJson(current) !== canonicalJson(job)) {
+        throw new ResearchResourceStoreError("revision-conflict", `job ${job.id} changed`);
+      }
+      return current;
+    };
+    const assertCurrentResource = (job: ResourceIngestJobV1): ResourceManifestV1 => {
+      const manifest = manifests.records.get(job.resourceId);
+      if (!manifest || manifest.revision !== job.resourceRevision || manifest.ingest.state === "deleting") {
+        throw new ResearchResourceStoreError("revision-conflict", "job manifest revision is stale");
+      }
+      if (currentDeletionRevision(job.resourceId) !== job.deletionRevision) {
+        throw new ResearchResourceStoreError("revision-conflict", "job deletion fence is stale");
+      }
+      return manifest;
+    };
+    const assertCurrentEmbeddingAuthority = (task: ResourceEmbeddingTaskRecordV1): void => {
+      const manifest = manifests.records.get(task.resourceId);
+      const snapshot = snapshots.get(task.snapshotId);
+      if (
+        !manifest
+        || manifest.ingest.state !== "ready"
+        || manifest.currentSnapshotId !== task.snapshotId
+        || manifest.revision !== task.lexicalRevision
+        || !snapshot
+        || snapshot.resourceId !== task.resourceId
+        || snapshot.resourceRevision !== task.lexicalRevision
+        || deletions.records.has(task.resourceId)
+        || (tombstones.records.get(task.resourceId)?.deletionRevision ?? 0)
+          > currentDeletionRevision(task.resourceId)
+      ) {
+        throw new ResearchResourceStoreError(
+          "revision-conflict",
+          "embedding task snapshot or resource revision is stale",
+        );
+      }
+    };
+    const assertPublicationFenceLocked = (input: {
+      expectedJob: ResourceIngestJobV1;
+      leaseToken: string;
+      resourceId: string;
+      resourceRevision: number;
+      deletionRevision: number;
+      now: string;
+    }): ResourceIngestJobV1 => {
+      assertResourceId(input.resourceId);
+      assertUtcTimestamp(input.now, "publication fence now");
+      if (input.expectedJob.resourceId !== input.resourceId ||
+          input.expectedJob.resourceRevision !== input.resourceRevision ||
+          input.expectedJob.deletionRevision !== input.deletionRevision) {
+        throw new ResearchResourceStoreError("revision-conflict", "publication expectation does not match the job");
+      }
+      const job = assertCurrentJob(parseJob(input.expectedJob));
+      if (job.status !== "claimed" || job.lease?.token !== input.leaseToken) {
+        throw new ResearchResourceStoreError("revision-conflict", "publication lease is stale");
+      }
+      if (Date.parse(job.lease.expiresAt) <= Date.parse(input.now)) {
+        throw new ResearchResourceStoreError("revision-conflict", "publication lease expired");
+      }
+      assertCurrentResource(job);
+      return job;
+    };
+    const transaction: ResourceOperationalTransaction = {
+      ...catalog,
+      listSnapshots(resourceId) {
+        if (resourceId !== undefined) assertResourceId(resourceId);
+        return [...snapshots.values()]
+          .filter((snapshot) => resourceId === undefined || snapshot.resourceId === resourceId)
+          .sort((left, right) => left.id.localeCompare(right.id))
+          .map((snapshot) => structuredClone(snapshot));
+      },
+      readSnapshot: (snapshotId) => readSnapshotLocked(layout, snapshotId),
+      publishSnapshot: (input) => publishSnapshotLocked(layout, snapshots, input),
+      deleteSnapshot: (snapshotId) =>
+        deleteSnapshotLocked(layout, manifests.records, snapshots, snapshotId),
+      listJobs: () => sorted(jobs.records),
+      readJob(jobId) {
+        assertStoreId(jobId, "job");
+        const job = jobs.records.get(jobId);
+        return job ? structuredClone(job) : null;
+      },
+      async createJob(inputJob) {
+        const job = parseJob(inputJob);
+        if (job.status !== "queued" || job.attempt !== 0 || job.lease !== undefined) {
+          throw new ResearchResourceStoreError("invalid-operational-record", "new jobs must be unleased queued jobs at attempt zero");
+        }
+        assertCurrentResource(job);
+        const duplicate = [...jobs.records.values()].find((candidate) =>
+          NONTERMINAL_JOB_STATUSES.has(candidate.status) &&
+          candidate.resourceId === job.resourceId &&
+          candidate.resourceRevision === job.resourceRevision &&
+          candidate.deletionRevision === job.deletionRevision);
+        if (duplicate && duplicate.id !== job.id) {
+          throw new ResearchResourceStoreError("immutable-conflict", "a nonterminal job already owns this resource revision");
+        }
+        const result = await createOperationalRecord({
+          layout, directory: layout.jobs, collection: jobs, id: job.id, value: job, label: "job",
+        });
+        return { created: result === "created", job: structuredClone(job) };
+      },
+      async replaceJob(inputExpected, inputJob) {
+        const expected = parseJob(inputExpected);
+        const job = parseJob(inputJob);
+        assertCurrentJob(expected);
+        assertJobTransition(expected, job);
+        if (job.status !== "cancelled" && job.status !== "completed" && job.status !== "failed") {
+          assertCurrentResource(job);
+        } else if (job.status === "completed") {
+          const manifest = manifests.records.get(job.resourceId);
+          const currentSnapshot = manifest?.currentSnapshotId
+            ? snapshots.get(manifest.currentSnapshotId)
+            : undefined;
+          if (!manifest || manifest.revision !== job.resourceRevision + 1 ||
+              manifest.ingest.state !== "ready" || !currentSnapshot ||
+              currentSnapshot.resourceId !== job.resourceId ||
+              currentSnapshot.resourceRevision !== manifest.revision ||
+              currentDeletionRevision(job.resourceId) !== job.deletionRevision) {
+            throw new ResearchResourceStoreError("revision-conflict", "completed job does not match the ready publication");
+          }
+        } else if (job.status === "failed") {
+          const manifest = manifests.records.get(job.resourceId);
+          const failure = failures.records.get(job.id);
+          if (!manifest || manifest.revision !== job.resourceRevision + 1 ||
+              manifest.ingest.state !== "failed" || manifest.ingest.retryable !== false ||
+              !failure || failure.code !== manifest.ingest.lastFailureCode || failure.retryable ||
+              failure.resourceRevision !== job.resourceRevision ||
+              failure.deletionRevision !== job.deletionRevision ||
+              currentDeletionRevision(job.resourceId) !== job.deletionRevision) {
+            throw new ResearchResourceStoreError("revision-conflict", "failed job does not match its durable failure publication");
+          }
+        }
+        await replaceOperationalRecord({
+          layout, directory: layout.jobs, collection: jobs, id: job.id,
+          expected, value: job, label: "job",
+        });
+        return structuredClone(job);
+      },
+      listEmbeddingTasks: () => sorted(embeddingTasks.records),
+      readEmbeddingTask(resourceId) {
+        assertResourceId(resourceId);
+        const task = embeddingTasks.records.get(resourceId);
+        return task ? structuredClone(task) : null;
+      },
+      async createEmbeddingTask(inputTask) {
+        const task = parseEmbeddingTask(inputTask);
+        if (task.status !== "queued") {
+          throw new ResearchResourceStoreError(
+            "invalid-operational-record",
+            "new embedding tasks must be queued",
+          );
+        }
+        assertCurrentEmbeddingAuthority(task);
+        const result = await createOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: task.resourceId,
+          value: task,
+          label: "embedding task",
+        });
+        return { created: result === "created", task: structuredClone(task) };
+      },
+      async replaceEmbeddingTask(inputExpected, inputTask) {
+        const expected = parseEmbeddingTask(inputExpected);
+        const task = parseEmbeddingTask(inputTask);
+        const current = embeddingTasks.records.get(expected.resourceId);
+        if (!current || canonicalJson(current) !== canonicalJson(expected)) {
+          throw new ResearchResourceStoreError("revision-conflict", "embedding task changed");
+        }
+        assertEmbeddingTaskTransition(expected, task);
+        if (task.status !== "failed" && task.status !== "unavailable") {
+          assertCurrentEmbeddingAuthority(task);
+        }
+        await replaceOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: task.resourceId,
+          expected,
+          value: task,
+          label: "embedding task",
+        });
+        return structuredClone(task);
+      },
+      removeEmbeddingTask(resourceId, expected) {
+        assertResourceId(resourceId);
+        return removeOperationalRecord({
+          layout,
+          directory: layout.embeddingTasks,
+          collection: embeddingTasks,
+          id: resourceId,
+          ...(expected === undefined ? {} : { expected: parseEmbeddingTask(expected) }),
+          label: "embedding task",
+        });
+      },
+      listFailures: () => sorted(failures.records),
+      readFailure(jobId) {
+        assertStoreId(jobId, "job");
+        const failure = failures.records.get(jobId);
+        return failure ? structuredClone(failure) : null;
+      },
+      async writeFailure(inputFailure) {
+        const failure = parseFailure(inputFailure);
+        const job = jobs.records.get(failure.jobId);
+        if (!job || job.resourceId !== failure.resourceId ||
+            job.resourceRevision !== failure.resourceRevision ||
+            job.deletionRevision !== failure.deletionRevision || job.stage !== failure.stage) {
+          throw new ResearchResourceStoreError("revision-conflict", "failure does not identify its exact job stage");
+        }
+        const existing = failures.records.get(failure.jobId);
+        if (existing) {
+          await replaceOperationalRecord({
+            layout, directory: layout.failures, collection: failures, id: failure.jobId,
+            expected: existing, value: failure, label: "failure",
+          });
+        } else {
+          await createOperationalRecord({
+            layout, directory: layout.failures, collection: failures, id: failure.jobId,
+            value: failure, label: "failure",
+          });
+        }
+        return structuredClone(failure);
+      },
+      deleteFailure: (jobId) => {
+        assertStoreId(jobId, "job");
+        return removeOperationalRecord({
+          layout, directory: layout.failures, collection: failures, id: jobId, label: "failure",
+        });
+      },
+      listDeletionFences: () => sorted(fences.records),
+      readDeletionFence(resourceId) {
+        assertResourceId(resourceId);
+        const fence = fences.records.get(resourceId);
+        return fence ? structuredClone(fence) : null;
+      },
+      async repairDeletionFenceFromTombstone(resourceId) {
+        assertResourceId(resourceId);
+        const tombstone = tombstones.records.get(resourceId);
+        if (!tombstone) return false;
+        const existing = fences.records.get(resourceId);
+        if (existing && existing.deletionRevision >= tombstone.deletionRevision) return false;
+        const priorTime = existing ? Date.parse(existing.updatedAt) : Number.NEGATIVE_INFINITY;
+        const tombstoneTime = Date.parse(tombstone.deletedAt);
+        const repaired: ResourceDeletionFenceV1 = parseFence({
+          version: 1,
+          resourceId,
+          deletionRevision: tombstone.deletionRevision,
+          updatedAt: new Date(Math.max(tombstoneTime, priorTime + 1)).toISOString(),
+        });
+        if (existing) {
+          await replaceOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: resourceId,
+            expected: existing, value: repaired, label: "deletion fence",
+          });
+        } else {
+          await createOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: resourceId,
+            value: repaired, label: "deletion fence",
+          });
+        }
+        return true;
+      },
+      async resetRestoreOperationalState() {
+        const removed = { jobs: 0, failures: 0, deletions: 0 };
+        for (const [id, value] of [...jobs.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.jobs, collection: jobs, id,
+            expected: value, label: "job",
+          })) removed.jobs += 1;
+        }
+        for (const [id, value] of [...failures.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.failures, collection: failures, id,
+            expected: value, label: "failure",
+          })) removed.failures += 1;
+        }
+        for (const [id, value] of [...deletions.records.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+          if (await removeOperationalRecord({
+            layout, directory: layout.deletions, collection: deletions, id,
+            expected: value, label: "deletion journal",
+          })) removed.deletions += 1;
+        }
+        return removed;
+      },
+      async repairTombstonedDeletionJournal(inputManifest) {
+        const manifest = parseManifest(inputManifest);
+        if (manifest.ingest.state !== "deleting" || manifest.currentSnapshotId !== undefined) {
+          throw new ResearchResourceStoreError(
+            "revision-conflict",
+            "tombstoned deletion repair requires a deleting manifest without a current snapshot",
+          );
+        }
+        const current = manifests.records.get(manifest.id);
+        if (!current || canonicalJson(current) !== canonicalJson(manifest)) {
+          throw new ResearchResourceStoreError("revision-conflict", "deleting manifest changed before repair");
+        }
+        if (deletions.records.has(manifest.id)) return false;
+        const tombstone = tombstones.records.get(manifest.id);
+        const fence = fences.records.get(manifest.id);
+        if (!tombstone || !fence || fence.deletionRevision !== tombstone.deletionRevision) {
+          throw new ResearchResourceStoreError("revision-conflict", "tombstoned deletion authority is incomplete");
+        }
+        const journal: ResourceDeletionJournalV1 = parseJournal({
+          version: 1,
+          resourceId: manifest.id,
+          deletionRevision: tombstone.deletionRevision,
+          expectedManifestRevision: Math.max(1, manifest.revision - 1),
+          phase: "tombstoned",
+          deletedAt: tombstone.deletedAt,
+          snapshotIds: [...snapshots.values()]
+            .filter((snapshot) => snapshot.resourceId === manifest.id)
+            .map((snapshot) => snapshot.id).sort(),
+          updatedAt: tombstone.deletedAt,
+        });
+        await createOperationalRecord({
+          layout, directory: layout.deletions, collection: deletions, id: manifest.id,
+          value: journal, label: "deletion journal",
+        });
+        return true;
+      },
+      async beginDeletion(input) {
+        const expected = parseManifest(input.expectedManifest);
+        assertUtcTimestamp(input.deletedAt, "deletion deletedAt");
+        const current = manifests.records.get(expected.id);
+        if (!current || canonicalJson(current) !== canonicalJson(expected)) {
+          throw new ResearchResourceStoreError("revision-conflict", "manifest changed before deletion fencing");
+        }
+        if (deletions.records.has(expected.id)) {
+          throw new ResearchResourceStoreError("revision-conflict", "a deletion journal already exists");
+        }
+        const actualSnapshotIds = [...snapshots.values()]
+          .filter((snapshot) => snapshot.resourceId === expected.id)
+          .map((snapshot) => snapshot.id).sort();
+        const snapshotIds = [...input.snapshotIds];
+        for (const id of snapshotIds) assertSnapshotId(id);
+        if (canonicalJson(snapshotIds) !== canonicalJson(actualSnapshotIds)) {
+          throw new ResearchResourceStoreError("snapshot-conflict", "deletion must capture every resource snapshot in sorted order");
+        }
+        const existingFence = fences.records.get(expected.id);
+        const nextFence: ResourceDeletionFenceV1 = {
+          version: 1,
+          resourceId: expected.id,
+          deletionRevision: (existingFence?.deletionRevision ?? 0) + 1,
+          updatedAt: input.deletedAt,
+        };
+        if (existingFence && Date.parse(nextFence.updatedAt) <= Date.parse(existingFence.updatedAt)) {
+          throw new ResearchResourceStoreError("revision-conflict", "deletion fence updatedAt must advance");
+        }
+        const journal: ResourceDeletionJournalV1 = {
+          version: 1,
+          resourceId: expected.id,
+          deletionRevision: nextFence.deletionRevision,
+          expectedManifestRevision: expected.revision,
+          phase: "fenced",
+          deletedAt: input.deletedAt,
+          snapshotIds,
+          updatedAt: input.deletedAt,
+        };
+        parseJournal(journal);
+        await createOperationalRecord({
+          layout, directory: layout.deletions, collection: deletions, id: expected.id,
+          value: journal, label: "deletion journal",
+        });
+        if (existingFence) {
+          await replaceOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: expected.id,
+            expected: existingFence, value: nextFence, label: "deletion fence",
+          });
+        } else {
+          await createOperationalRecord({
+            layout, directory: layout.fences, collection: fences, id: expected.id,
+            value: nextFence, label: "deletion fence",
+          });
+        }
+        return structuredClone(journal);
+      },
+      listDeletionJournals: () => sorted(deletions.records),
+      readDeletionJournal(resourceId) {
+        assertResourceId(resourceId);
+        const journal = deletions.records.get(resourceId);
+        return journal ? structuredClone(journal) : null;
+      },
+      async advanceDeletionJournal(inputExpected, inputJournal) {
+        const expected = parseJournal(inputExpected);
+        const journal = parseJournal(inputJournal);
+        const expectedPhase = RESOURCE_DELETION_PHASES.indexOf(expected.phase);
+        if (
+          expected.resourceId !== journal.resourceId ||
+          expected.deletionRevision !== journal.deletionRevision ||
+          expected.expectedManifestRevision !== journal.expectedManifestRevision ||
+          expected.deletedAt !== journal.deletedAt ||
+          canonicalJson(expected.snapshotIds) !== canonicalJson(journal.snapshotIds) ||
+          RESOURCE_DELETION_PHASES.indexOf(journal.phase) !== expectedPhase + 1 ||
+          Date.parse(journal.updatedAt) <= Date.parse(expected.updatedAt)
+        ) {
+          throw new ResearchResourceStoreError("revision-conflict", "deletion journal must advance exactly one phase");
+        }
+        const fence = fences.records.get(journal.resourceId);
+        if (!fence || fence.deletionRevision !== journal.deletionRevision) {
+          throw new ResearchResourceStoreError("revision-conflict", "deletion journal fence is stale");
+        }
+        await replaceOperationalRecord({
+          layout, directory: layout.deletions, collection: deletions, id: journal.resourceId,
+          expected, value: journal, label: "deletion journal",
+        });
+        return structuredClone(journal);
+      },
+      async removeDeletionJournal(inputExpected) {
+        const expected = parseJournal(inputExpected);
+        if (expected.phase !== "projection_verified") {
+          throw new ResearchResourceStoreError("revision-conflict", "only a projection-verified journal may be removed");
+        }
+        await removeOperationalRecord({
+          layout, directory: layout.deletions, collection: deletions, id: expected.resourceId,
+          expected, label: "deletion journal",
+        });
+      },
+      listTombstones: () => sorted(tombstones.records),
+      readTombstone(resourceId) {
+        assertResourceId(resourceId);
+        const tombstone = tombstones.records.get(resourceId);
+        return tombstone ? structuredClone(tombstone) : null;
+      },
+      async publishTombstone(inputTombstone) {
+        const tombstone = parseTombstone(inputTombstone);
+        const fence = fences.records.get(tombstone.resourceId);
+        const journal = deletions.records.get(tombstone.resourceId);
+        if (!fence || fence.deletionRevision !== tombstone.deletionRevision ||
+            !journal || journal.deletionRevision !== tombstone.deletionRevision) {
+          throw new ResearchResourceStoreError("revision-conflict", "tombstone deletion fence is stale");
+        }
+        const existing = tombstones.records.get(tombstone.resourceId);
+        if (existing && canonicalJson(existing) !== canonicalJson(tombstone)) {
+          if (tombstone.deletionRevision <= existing.deletionRevision ||
+              Date.parse(tombstone.deletedAt) <= Date.parse(existing.deletedAt)) {
+            throw new ResearchResourceStoreError("revision-conflict", "tombstone revisions only advance");
+          }
+          await replaceOperationalRecord({
+            layout, directory: layout.tombstones, collection: tombstones,
+            id: tombstone.resourceId, expected: existing, value: tombstone, label: "tombstone",
+          });
+          return { created: false, tombstone: structuredClone(tombstone) };
+        }
+        const result = await createOperationalRecord({
+          layout, directory: layout.tombstones, collection: tombstones,
+          id: tombstone.resourceId, value: tombstone, label: "tombstone",
+        });
+        return { created: result === "created", tombstone: structuredClone(tombstone) };
+      },
+      assertPublicationFence(input) {
+        assertPublicationFenceLocked(input);
+      },
+      async commitReadyManifest(input) {
+        const expectedJob = parseJob(input.expectedJob);
+        if (expectedJob.stage !== "publish_lexical" || input.id !== expectedJob.resourceId ||
+            input.expectedRevision !== expectedJob.resourceRevision) {
+          throw new ResearchResourceStoreError("revision-conflict", "ready commit does not match the lexical job stage");
+        }
+        const prepared = await validateManifestUpdate(layout, manifests.records, {
+          id: input.id,
+          expectedRevision: input.expectedRevision,
+          manifest: input.manifest,
+        });
+        if (prepared.manifest.ingest.state !== "ready" ||
+            !prepared.manifest.currentSnapshotId) {
+          throw new ResearchResourceStoreError("invalid-manifest", "ready commit requires a current snapshot");
+        }
+        assertPublicationFenceLocked({
+          expectedJob,
+          leaseToken: input.leaseToken,
+          resourceId: expectedJob.resourceId,
+          resourceRevision: expectedJob.resourceRevision,
+          deletionRevision: expectedJob.deletionRevision,
+          now: input.now,
+        });
+        return publishPreparedManifestUpdate(
+          layout,
+          manifests.records,
+          manifests.identities,
+          prepared,
+        );
+      },
+      async deleteDeletingManifest(inputExpected) {
+        const expected = parseManifest(inputExpected);
+        const current = manifests.records.get(expected.id);
+        const identity = manifests.identities.get(expected.id);
+        if (!current || !identity || canonicalJson(current) !== canonicalJson(expected)) {
+          throw new ResearchResourceStoreError("revision-conflict", "deleting manifest changed");
+        }
+        if (current.ingest.state !== "deleting" || current.currentSnapshotId) {
+          throw new ResearchResourceStoreError("immutable-conflict", "exact manifest deletion requires deleting state without a current snapshot");
+        }
+        if ([...snapshots.values()].some((snapshot) => snapshot.resourceId === current.id)) {
+          throw new ResearchResourceStoreError("snapshot-conflict", "resource snapshots remain");
+        }
+        const disk = await readSafeFileWithIdentity({
+          target: manifestFile(layout, current.id), rootRealPath: layout.rootRealPath,
+          label: `manifest ${current.id}`, maxBytes: MAX_MANIFEST_RECORD_BYTES,
+        });
+        if (!sameIdentity(identity, disk.identity) ||
+            !Buffer.from(disk.bytes).equals(Buffer.from(manifestBytes(current)))) {
+          throw new ResearchResourceStoreError("revision-conflict", "deleting manifest changed before removal");
+        }
+        await unlink(manifestFile(layout, current.id));
+        await syncDirectory(layout.manifests.path);
+        manifests.records.delete(current.id);
+        manifests.identities.delete(current.id);
+        return structuredClone(current);
+      },
     };
     return operation(transaction);
   });
 
   return {
     withManifestCatalogTransaction,
+    withOperationalTransaction,
 
     async createManifest(inputManifest) {
       const manifest = parseManifest(inputManifest);
@@ -1469,46 +2899,8 @@ export function createResearchResourceStore(
       assertSnapshotId(snapshotId);
       return withMutationLock(async (layout) => {
         const { records: manifests } = await scanManifests(layout);
-        if ([...manifests.values()].some((manifest) => manifest.currentSnapshotId === snapshotId)) {
-          throw new ResearchResourceStoreError(
-            "snapshot-conflict",
-            `snapshot ${snapshotId} is current for a resource manifest`,
-          );
-        }
-        const records = await scanSnapshots(layout);
-        const target = records.get(snapshotId);
-        if (!target) return { deleted: false, removedBlobDigests: [] };
-        const counts = referenceCounts(records);
-        const current = await readSnapshotRecord(layout, snapshotId, false);
-        if (!current || canonicalJson(current) !== canonicalJson(target)) {
-          throw new ResearchResourceStoreError(
-            "corrupt",
-            `snapshot ${snapshotId} changed during deletion accounting`,
-          );
-        }
-        const candidates = new Set(
-          [target.normalizedBlobDigest, target.rawBlobDigest].filter(Boolean) as string[],
-        );
-        const deletionCandidates: Array<{ digest: string; shard: PathIdentity }> = [];
-        for (const digest of [...candidates].sort()) {
-          if ((counts.get(digest) ?? 0) !== 1) continue;
-          const shard = await existingShard(layout, digest);
-          await readBlob(layout, digest);
-          deletionCandidates.push({ digest, shard });
-        }
-        await assertStableDirectory(layout.snapshots, "snapshots");
-        await unlink(snapshotFile(layout, snapshotId));
-        await syncDirectory(layout.snapshots.path);
-
-        const removedBlobDigests: string[] = [];
-        for (const { digest, shard } of deletionCandidates) {
-          await assertStableDirectory(shard, `blob shard ${digest.slice(0, 2)}`);
-          const targetPath = path.join(shard.path, digest);
-          await unlink(targetPath);
-          await syncDirectory(path.dirname(targetPath));
-          removedBlobDigests.push(digest);
-        }
-        return { deleted: true, removedBlobDigests };
+        const snapshots = await scanSnapshots(layout);
+        return deleteSnapshotLocked(layout, manifests, snapshots, snapshotId);
       });
     },
   };

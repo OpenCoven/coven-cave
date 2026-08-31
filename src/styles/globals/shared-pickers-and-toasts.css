@@ -78,6 +78,19 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+/* Project rows lead with an expandable avatar - its own zoom button, a sibling
+   of the menuitem (never nested inside it). The wrapper owns the row padding
+   the item used to carry, so the tile lines up exactly where the `leading`
+   slot sat and the menuitem shrinks to text + check. */
+.cave-project-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+}
+.cave-project-picker__row .ui-popover-item {
+  padding: 0;
+}
 .cave-project-picker__option-name {
   overflow: hidden;
   text-overflow: ellipsis;

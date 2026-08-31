@@ -9,6 +9,7 @@ import {
   LOCAL_PROJECT_CREATION_MESSAGE,
   LOCAL_REQUEST_REQUIRED_CODE,
 } from "@/lib/project-errors";
+import { PROJECT_ROOT_WORKSPACE_HELP } from "@/lib/project-root-guidance";
 import {
   isPinned,
   readPins,
@@ -508,6 +509,9 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
               Pick where this project&apos;s chats will live.
             </span>
+            <span className="directory-picker-workspace-help max-w-[520px] text-[length:var(--text-xs)] leading-4 text-[var(--text-muted)]">
+              {PROJECT_ROOT_WORKSPACE_HELP}
+            </span>
           </div>
           <Button
             ref={closeButtonRef}
@@ -627,7 +631,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                   event.preventDefault();
                   submitPathDraft();
                 }}
-                className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 transition-colors focus-within:border-[var(--ring-focus)]"
+                className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 transition-colors focus-within:border-[var(--ring-focus)]"
               >
                 <label
                   htmlFor="directory-picker-path"
@@ -679,7 +683,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             </div>
 
             <div className="flex items-center gap-2 px-5 pb-2">
-              <label className="flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
+              <label className="flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
                 <Icon name="ph:magnifying-glass" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                 <input
                   className="h-full w-full min-w-0 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)]"

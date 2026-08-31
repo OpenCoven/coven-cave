@@ -4,7 +4,7 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
@@ -16,14 +16,25 @@ import {
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending, hasFamiliarSettingsPending } from "@/lib/chat-tab-events";
 import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
+import { ChatThreadsSheet } from "@/components/chat-threads-sheet";
+import { SidebarChatsSection } from "@/components/workspace-sidebar";
+import {
+  CHAT_RAIL_TOGGLE_EVENT,
+  emitChatRailVisibility,
+  readChatRailOpen,
+  requestChatRailToggle,
+  writeChatRailOpen,
+} from "@/lib/chat-rail-toggle";
+import "@/styles/chat-inner-rail.css";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
@@ -142,9 +153,77 @@ export function ChatSurface({
   initialScope = "conversation",
   scopeHistoryId = "chat:scope",
 }: Props) {
-  // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
-  // already owns chats beside the surface.
-  const compactRail = hideThreadRail;
+  // The rail highlights the open thread. ChatRouter reports it upward already;
+  // mirror it locally so the rail can render the active row without ChatSurface
+  // reaching into the router for state it is handed anyway.
+  const [railActiveSessionId, setRailActiveSessionId] = useState<string | null>(null);
+
+  // Rail collapse. Open is the SSR/first-paint default and the stored
+  // preference is applied after mount, so server and client markup match —
+  // reading storage during render would mismatch for anyone who collapsed it.
+  const [railOpen, setRailOpen] = useState(true);
+  // Hydration gate. Without it the persist effect below fires on the first
+  // render with the `true` default and overwrites a stored `false` before the
+  // read ever happens.
+  //
+  // ⚠️ It has to be STATE, not a ref. A ref is set during the hydrate effect,
+  // and the persist effect runs LATER IN THE SAME COMMIT — where `railOpen` is
+  // still the `true` default, because the queued state update has not been
+  // applied yet. So the gate reads "hydrated" and immediately writes `true`
+  // over the stored `false`. Under StrictMode's mount → unmount → mount that
+  // clobber is not merely corrected a render later: the second mount re-reads
+  // storage and finds the `true` the first mount just wrote, so the rail comes
+  // back OPEN and the collapse is lost. Caught by the reload leg of
+  // chat-sidebar-nav.spec.ts.
+  //
+  // As state, both updates land in one commit and the persist effect first
+  // runs on a render where `hydrated` is true AND `railOpen` already holds the
+  // stored value — so its first write is a no-op instead of a clobber.
+  const [railHydrated, setRailHydrated] = useState(false);
+  useEffect(() => {
+    setRailOpen(readChatRailOpen());
+    setRailHydrated(true);
+  }, []);
+  // Persist from an EFFECT, not from inside the setState updater. React
+  // double-invokes updaters in StrictMode, so a localStorage write in there is
+  // an impure side effect that runs twice and can persist the wrong value —
+  // measured: collapse, expand, reload came back collapsed.
+  useEffect(() => {
+    if (!railHydrated) return;
+    writeChatRailOpen(railOpen);
+  }, [railHydrated, railOpen]);
+  useEffect(() => {
+    const onToggle = () => setRailOpen((prev) => !prev);
+    window.addEventListener(CHAT_RAIL_TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(CHAT_RAIL_TOGGLE_EVENT, onToggle);
+  }, []);
+  // The mobile route to the same list. Deliberately NOT `railOpen`: the rail is
+  // a persisted layout preference and this is a transient overlay, so sharing
+  // one flag would make dismissing the sheet on a phone collapse the desktop
+  // rail on next launch.
+  const [threadsSheetOpen, setThreadsSheetOpen] = useState(false);
+  const handleActiveSessionChange = useCallback(
+    (sessionId: string | null) => {
+      setRailActiveSessionId(sessionId);
+      onActiveSessionChange?.(sessionId);
+    },
+    [onActiveSessionChange],
+  );
+
+  // The rail deletes one thread and awaits it; ChatSurface's contract upward is
+  // the bulk `onSessionsDeleted(ids)` notification. Bridge the two here against
+  // the same endpoint the workspace uses rather than widening the rail's props.
+  const deleteThreadFromRail = useCallback(
+    async (session: SessionRow) => {
+      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "delete failed");
+      onSessionsDeleted([session.id]);
+    },
+    [onSessionsDeleted],
+  );
   // The scope strip is a navigation level, not view state: Back from Canvas
   // should land on Projects, not leave Chat entirely. `select` records an
   // entry (the tab strip itself); `show` lands without one, which is what
@@ -159,6 +238,19 @@ export function ChatSurface({
     id: scopeHistoryId,
     initial: initialScope,
   });
+
+  // The rail only exists on the conversation tab; Projects/Canvas/Familiar are
+  // full-width surfaces of their own.
+  const railAvailable = !hideThreadRail && scope === "conversation";
+  // Tell the title-bar button what to render. `available` is what keeps the
+  // toggle off surfaces that have no rail, so it must be re-emitted whenever
+  // the tab changes — not only when open flips.
+  useEffect(() => {
+    emitChatRailVisibility({ available: railAvailable, open: railOpen });
+  }, [railAvailable, railOpen]);
+  // A surface that unmounts (navigating to Home, Tasks, …) must retract the
+  // toggle, or it would linger in the title bar controlling nothing.
+  useEffect(() => () => emitChatRailVisibility({ available: false, open: false }), []);
   const setScope = showScope;
   // The Workspace traverses its chat-session stack before any registered level.
   // That ordering is right on the Sessions tab, where the session is what the
@@ -296,6 +388,14 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
   }, []);
 
+  // Studio actions navigate through the same Chat document, but retain their
+  // Familiar Settings target in localStorage so it survives the reload. The
+  // target must select the Familiar scope before its nested consumer can open
+  // Settings; otherwise the first Chat mount stays on generic Sessions.
+  useEffect(() => {
+    if (hasFamiliarSettingsPending()) setScope("familiar");
+  }, [setScope]);
+
   useEffect(() => {
     if (!pendingChatAction) return;
     if (consumedPendingActionNonce.current === pendingChatAction.nonce) return;
@@ -395,11 +495,87 @@ export function ChatSurface({
 
   return (
     <section ref={surfaceRef} className="chat-surface relative flex h-full min-w-0 bg-[var(--bg-base)]">
+      {/* Inner threads rail (cave-fh9so).
+          Mounted HERE, at the surface, rather than inside ChatList — ChatList
+          only renders for `view.kind === "list"`, so a rail placed there is
+          invisible the moment you open a conversation, which is exactly when
+          you want to switch threads. At this level it persists beside both the
+          list and an open chat, the way the Coding Desk's rail persists beside
+          the source.
+
+          It mounts the same rich list the app sidebar used, so nesting costs
+          almost nothing: Pinned, Awaiting you, recency buckets, PR badges,
+          attention and pin/archive/delete all come along. Search, "Show
+          archived" and the Organize menu did not — they were a toolbar on a
+          header that is now a single title row, and the list is already
+          grouped by attention and recency. */}
+      {/* Collapsed: a slim spine that keeps the toggle reachable. The control
+          lives INSIDE the rail now, so collapsing it away entirely would leave
+          no way to bring it back — the same reason the Coding Desk's review
+          rail keeps a spine when closed. */}
+      {railAvailable && !railOpen ? (
+        <button
+          type="button"
+          className="chat-inner-rail__spine focus-ring"
+          aria-label="Expand chat list"
+          aria-expanded={false}
+          title="Expand chat list"
+          onClick={() => requestChatRailToggle()}
+        >
+          <Icon name="ph:sidebar-simple" width={15} className="chat-inner-rail__spine-icon" aria-hidden />
+          <span className="chat-inner-rail__spine-label" aria-hidden>Sessions</span>
+        </button>
+      ) : null}
+      {railAvailable && railOpen ? (
+        <aside className="chat-inner-rail" aria-label="Chat threads">
+          <SidebarChatsSection
+            sessions={sessions}
+            activeFamiliarId={activeFamiliarId}
+            activeSessionId={railActiveSessionId}
+            onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
+            onOpenSessionInSplit={(session: SessionRow) => routerRef.current?.openSessionInSplit(session.id)}
+            onDeleteSession={deleteThreadFromRail}
+            onSessionsChanged={onSessionsChanged}
+            onOpenUrl={onOpenUrl}
+          />
+        </aside>
+      ) : null}
       {/* Main content */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. */}
+            Chat keeps Projects discoverable as a first-class tab. The shared
+            familiar selector row (cave-3pnnq) sits directly above the section
+            tabs so a familiar is established before a scope is chosen. */}
+        <div className="chat-familiar-context">
+          <FamiliarQuickSwitch
+            familiars={resolvedFamiliars}
+            activeFamiliarId={activeFamiliarId}
+            sessions={sessions}
+            onSelectFamiliar={(id) => {
+              if (id) onSetActiveFamiliar(id);
+            }}
+            labeled
+            singleRequired
+          />
+        </div>
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+          {/* Mobile route to the thread list. Rendered on every viewport and
+              hidden by CSS above 1024px, where the docked rail and its spine
+              take over — one breakpoint, declared in the same stylesheet as
+              the rail it stands in for, rather than a second JS media query
+              that could drift from it. */}
+          {railAvailable && (
+            <button
+              type="button"
+              className="mobile-threads-toggle focus-ring"
+              aria-label="Show chat list"
+              aria-haspopup="dialog"
+              aria-expanded={threadsSheetOpen}
+              onClick={() => setThreadsSheetOpen(true)}
+            >
+              <Icon name="ph:sidebar-simple" width={16} aria-hidden />
+            </button>
+          )}
           <Tabs<FamiliarsScope>
             bordered={false}
             ariaLabel="Chat sections"
@@ -522,7 +698,6 @@ export function ChatSurface({
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
                   onRequestNewChat={onRequestNewChat}
-                  hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
@@ -532,8 +707,7 @@ export function ChatSurface({
                   onOpenTask={onOpenTask}
                   onOpenUrl={onOpenUrl}
                   onOpenPreview={onOpenPreview}
-                  onActiveSessionChange={onActiveSessionChange}
-                  onOpenProjectsTab={() => setScope("projects")}
+                  onActiveSessionChange={handleActiveSessionChange}
                   syncUrlHash
                   enableSplitPanes
                 />
@@ -597,6 +771,19 @@ export function ChatSurface({
         controller={railController}
         familiar={snapshot.familiar}
         sessionId={snapshot.sessionId ?? null}
+      />
+      {/* Left-edge twin of the sheet above: the thread list, for viewports the
+          docked rail does not fit on. */}
+      <ChatThreadsSheet
+        open={threadsSheetOpen}
+        onClose={() => setThreadsSheetOpen(false)}
+        sessions={sessions}
+        activeFamiliarId={activeFamiliarId}
+        activeSessionId={railActiveSessionId}
+        onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
+        onDeleteSession={deleteThreadFromRail}
+        onSessionsChanged={onSessionsChanged}
+        onOpenUrl={onOpenUrl}
       />
     </section>
   );

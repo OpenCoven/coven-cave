@@ -1,12 +1,12 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import * as registryFs from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 
 import { AgentEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
 import { Value } from "typebox/value";
 
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { covenHomePath } from "./coven-home.ts";
 
 const MAX_OPENCLAW_TOOL_PROFILES = 32;
 const MAX_OPENCLAW_PROFILE_LIST = 16;
@@ -757,7 +757,7 @@ function meetsOpenClawCheckpoint(
 }
 
 function defaultOpenClawCacheDir(): string {
-  const covenRoot = process.env.COVEN_HOME || path.join(homedir(), ".coven");
+  const covenRoot = covenHomePath();
   return process.env.COVEN_CAVE_HOME || path.join(covenRoot, "cave");
 }
 
@@ -1693,6 +1693,18 @@ async function loadOpenClawSchemaBundle(
 
 function openClawProfileRevision(profile: OpenClawToolProfile): string {
   return createHash("sha256").update(stableJson(profile)).digest("hex");
+}
+
+/**
+ * True when exactly this revision of the profile is quarantined. Mirrors the
+ * quarantine check inside `loadOpenClawCompatibility` so a caller that selects
+ * its profile through another validated set (the issue #4892 per-conversation
+ * bridge negotiation) enforces the same fail-closed quarantine.
+ */
+export function isOpenClawProfileQuarantined(profile: OpenClawToolProfile): boolean {
+  const valid = validateOpenClawToolProfiles([profile])?.[0];
+  if (!valid) return false;
+  return quarantinedOpenClawProfileRevisions.get(valid.id) === openClawProfileRevision(valid);
 }
 
 export function quarantineOpenClawProfile(profile: OpenClawToolProfile): void {

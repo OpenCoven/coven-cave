@@ -31,6 +31,11 @@ writeFileSync(FAKE, `
 const { writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 writeFileSync(join(process.cwd(), "argv.json"), JSON.stringify(process.argv.slice(2)));
+const stdinChunks = [];
+process.stdin.on("data", (chunk) => stdinChunks.push(chunk));
+process.stdin.on("end", () => {
+  writeFileSync(join(process.cwd(), "stdin.txt"), Buffer.concat(stdinChunks).toString("utf8"));
+});
 console.log(JSON.stringify({ type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "@@research-control\\n" } }));
 console.log(JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call-1", success: true, result: { content: "/workspace" } } }));
 console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "done.\\n@@research-control\\n{\\"decision\\":\\"complete\\",\\"reason\\":\\"ok\\",\\"confidence\\":1}", toolRequests: [{ toolCallId: "call-1", name: "shell", arguments: { command: "pwd" } }] } }));
@@ -133,6 +138,7 @@ const {
   windowsQuotedArgUtf16Length,
 } = await import("./flow-copilot-session.ts");
 const { buildCopilotStreamArgs, copilotIdentityPreamble, copilotStreamSpec } = await import("../copilot-stream.ts");
+const { CovenProcessSupervisorUnavailableError } = await import("./coven-process-supervisor.ts");
 const { compileFlowPrompt } = await import("../flow/flow-compile.ts");
 const { buildResearchMissionFlow } = await import("../research-mission-flow.ts");
 const {
@@ -204,6 +210,20 @@ function flowLaunchArgs(prompt) {
   });
 }
 
+/** The cave-cwjof stdin transport: argv carries flags only, never the prompt. */
+function flowLaunchStdinArgs() {
+  return buildCopilotStreamArgs({
+    spec: SPEC,
+    prompt: "delivered-through-stdin",
+    resumeSessionId: null,
+    newSessionId: "11111111-1111-4111-8111-111111111111",
+    model: null,
+    permissionMode: "unattended",
+    addDirs: [],
+    promptTransport: "stdin",
+  });
+}
+
 async function waitUntil(predicate, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -227,7 +247,7 @@ test("Windows command-line accounting matches libuv quoting and UTF-16 units", (
   );
 });
 
-test("the 30,000-unit Windows ceiling is inclusive and rejects before spawn", async () => {
+test("the 30,000-unit Windows ceiling is inclusive and the direct path lifts the prompt onto stdin", async () => {
   const command = "copilot.exe";
   const exactPrompt = "x".repeat(WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS - command.length - 2);
   assert.equal(windowsCommandLineUtf16Length(command, [exactPrompt]), WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS);
@@ -247,18 +267,33 @@ test("the 30,000-unit Windows ceiling is inclusive and rejects before spawn", as
   });
   assert.equal(copilotPromptTransportFailure(new Error("unrelated spawn failure")), null);
 
+  // The same oversized prompt no longer rides argv on the direct path: the
+  // stdin transport carries it (cave-cwjof), so it must LAUNCH on Windows
+  // instead of failing closed at the command-line guard.
   const runRoot = mkdtempSync(join(TMP, "oversized-run-"));
-  await assert.rejects(
-    startCopilotFlowRun({
-      spec: SPEC,
-      prompt: "x".repeat(40_000),
-      projectRoot: runRoot,
-      familiarId: null,
-      spawnCommand: FAKE_LAUNCH,
-    }, { platform: "win32" }),
-    /Copilot currently accepts this flow prompt only through argv/i,
+  const oversizedPrompt = "x".repeat(40_000);
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt: oversizedPrompt,
+    projectRoot: runRoot,
+    familiarId: null,
+    spawnCommand: FAKE_LAUNCH,
+  }, {
+    platform: "win32",
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+  });
+  started.confirmBookkeeping();
+  await started.done;
+  const argv = JSON.parse(readFileSync(join(runRoot, "argv.json"), "utf8"));
+  assert.ok(!argv.includes("-p"), "the stdin transport keeps the prompt flag off argv");
+  assert.equal(argv.includes(oversizedPrompt), false, "the prompt itself never rides argv");
+  assert.equal(
+    readFileSync(join(runRoot, "stdin.txt"), "utf8"),
+    oversizedPrompt,
+    "the complete oversized prompt is delivered through stdin",
   );
-  assert.equal(existsSync(join(runRoot, "argv.json")), false, "oversized input is rejected before any child starts");
 });
 
 test("the direct start seam maps a thrown transport refusal and rethrows unrelated errors", async () => {
@@ -326,11 +361,41 @@ test("every final argv token rejects NUL safely before spawn on every platform",
       spawnCommand: FAKE_LAUNCH,
     }, {
       platform: "linux",
+      // The supervised transport keeps the prompt on argv, so the token
+      // validation must refuse it before any process starts.
+      supervisorCommand: TEST_SUPERVISOR,
       spawnImpl: () => { spawns += 1; throw new Error("must not spawn"); },
     }),
     CopilotArgvTransportError,
   );
   assert.equal(spawns, 0);
+});
+
+test("the stdin transport rejects a NUL-bearing prompt payload before spawn", async () => {
+  const secret = "never-echo-this-secret";
+  let spawns = 0;
+  let error;
+  try {
+    await startCopilotFlowRun({
+      spec: SPEC,
+      prompt: `unsafe\0${secret}`,
+      projectRoot: TMP,
+      familiarId: null,
+      spawnCommand: FAKE_LAUNCH,
+    }, {
+      platform: "win32",
+      resolveSupervisorCommand: async () => {
+        throw new CovenProcessSupervisorUnavailableError();
+      },
+      spawnImpl: () => { spawns += 1; throw new Error("must not spawn"); },
+    });
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof CopilotArgvTransportError);
+  assert.match(error.message, /stdin prompt/);
+  assert.doesNotMatch(error.message, new RegExp(secret), "transport diagnostics never echo prompt content");
+  assert.equal(spawns, 0, "a NUL-bearing stdin prompt is refused before any child starts");
 });
 
 test("the provider request ceiling is a typed lossless 413 before spawn", async () => {
@@ -349,6 +414,9 @@ test("the provider request ceiling is a typed lossless 413 before spawn", async 
       spawnCommand: { command: "/usr/bin/node", fixedArgs: ["/tmp/fake-copilot.js"] },
     }, {
       platform: "linux",
+      // The supervised transport carries the prompt inside the request frame,
+      // so the provider ceiling still bounds the complete launch payload.
+      supervisorCommand: TEST_SUPERVISOR,
       spawnImpl: () => {
         spawns += 1;
         throw new Error("must not spawn");
@@ -441,19 +509,20 @@ test("the current maximum Research input is measured and pathological quoting fa
   assert.equal(plainPrompt.split(plainDeliverable).length - 1, 1);
   assert.equal(plainPrompt.split(plainAudience).length - 1, 1);
   const plainArgs = flowLaunchArgs(plainPrompt);
-  // cave-r3vmj raised RESEARCH_INTENT_MAX_LENGTH to 25k so real briefs can carry
-  // pasted context. Copilot is argv-only today, so a maximum-length intent no
-  // longer fits the bounded Windows command line even with plain quoting — the
-  // guard fails closed with the actionable message rather than truncating a
-  // prompt. Every other platform, and any runtime with stdin prompt support, is
-  // unaffected. Moving Copilot to stdin is what would lift this ceiling.
+  // cave-e8z sets RESEARCH_INTENT_MAX_LENGTH to 20k so real briefs can carry
+  // pasted context. The supervised transport still carries the prompt on argv,
+  // so a maximum-length intent exceeds the bounded Windows command line even
+  // with plain quoting — the guard fails closed with the actionable message
+  // rather than truncating a prompt. The direct stdin transport (cave-cwjof)
+  // keeps the same prompt off the command line entirely, and every non-Windows
+  // platform is unaffected.
   assert.ok(
     windowsCommandLineUtf16Length("copilot.exe", plainArgs) > WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS,
     "a maximum-length intent exceeds the bounded argv transport",
   );
   assert.throws(
     () => assertCopilotCommandLineFitsWindows("copilot.exe", plainArgs, "win32"),
-    /Shorten the Research mission intent or use a runtime with stdin prompt support/,
+    /Shorten the Research mission intent, or launch without Coven's native process supervisor/,
   );
   assert.doesNotThrow(
     () => assertCopilotCommandLineFitsWindows("copilot.exe", plainArgs, "darwin"),
@@ -493,7 +562,22 @@ test("the current maximum Research input is measured and pathological quoting fa
   );
   assert.throws(
     () => assertCopilotCommandLineFitsWindows("copilot.exe", quotedArgs, "win32"),
-    /Shorten the Research mission intent or use a runtime with stdin prompt support/,
+    /Shorten the Research mission intent, or launch without Coven's native process supervisor/,
+  );
+
+  // The stdin transport keeps the prompt entirely off the command line: the
+  // same launch argv is Windows-safe at ANY intent length because it carries
+  // flags and paths only (cave-cwjof). The guard above now covers only the
+  // supervised transport, where the prompt still rides argv.
+  const stdinArgs = flowLaunchStdinArgs();
+  assert.ok(!stdinArgs.includes("-p"), "the stdin transport drops the prompt flag");
+  assert.ok(
+    !stdinArgs.some((arg) => arg.includes(plainDeliverable) || arg.includes(plainAudience)),
+    "the stdin transport leaks no prompt content into argv",
+  );
+  assert.ok(
+    windowsCommandLineUtf16Length("copilot.exe", stdinArgs) < WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS,
+    "the prompt-free stdin argv fits the Windows command line for any prompt size",
   );
 });
 
@@ -551,6 +635,51 @@ test("the supervisor carries one complete prompt argv and persists stdout as the
       durationMs: undefined,
     },
   );
+});
+
+test("the direct fallback pipes the complete prompt through stdin with argv prompt-free", async () => {
+  admitStarts();
+  const prompt = "Mission: cave-test\nIteration 1 of 3.\nGather sources and print markers.";
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt,
+    projectRoot: TMP,
+    familiarId: "sage",
+    familiarName: "Sage",
+    familiarRole: "Researcher",
+    permissionMode: "unattended",
+    spawnCommand: FAKE_LAUNCH,
+  }, {
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+  });
+  started.confirmBookkeeping();
+  await started.done;
+
+  const argv = JSON.parse(readFileSync(join(TMP, "argv.json"), "utf8"));
+  assert.ok(!argv.includes("-p"), "the stdin transport drops the prompt flag from argv");
+  assert.ok(
+    !argv.some((arg) => arg.includes("Mission: cave-test")),
+    "prompt content never rides argv",
+  );
+  assert.ok(argv.includes("--session-id"), "fresh session id is pre-assigned");
+  assert.ok(argv.includes("--allow-all-tools"), "unattended runs pre-approve tools");
+  assert.ok(!argv.includes("--allow-all"), "path verification stays on");
+
+  const expectedStdin = `${copilotIdentityPreamble("sage", "Sage", "Researcher")}\n\n${prompt}`;
+  assert.equal(
+    readFileSync(join(TMP, "stdin.txt"), "utf8"),
+    expectedStdin,
+    "stdin carries the complete identity-prefixed prompt",
+  );
+
+  const conv = readConversation(started.sessionId);
+  assert.deepEqual(conv.turns.map((turn) => turn.role), ["user", "assistant"]);
+  assert.equal(conv.turns[0].text, expectedStdin);
+  assert.match(conv.turns[1].text, /@@research-control/);
+  assert.match(conv.turns[1].text, /native process supervisor is unavailable/i);
+  assert.match(conv.turns[1].text, /may keep running/i);
 });
 
 test("the exact supervisor launch is hidden, shell-free, piped, and not detached", async () => {
@@ -1210,7 +1339,6 @@ test("app shutdown seals admission, proves trees before persistence, and retains
 // tests describes its steady state. They pin what happens on an older CLI:
 // the fallback restores the pre-#4524 transport when, and only when, the
 // supervisor is genuinely absent, and says how to get supervision back.
-const { CovenProcessSupervisorUnavailableError } = await import("./coven-process-supervisor.ts");
 
 // The shutdown tests above seal admission through a process-global flag that
 // nothing resets. It is set while those tests RUN, so clearing it at module

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -132,6 +132,46 @@ async function fixture(
     await rm(parent, { recursive: true, force: true });
   }
 }
+
+async function writeRestoreMarker(
+  resourceRoot: string,
+  phase: "preparing" | "authority-ready",
+): Promise<string> {
+  const marker = path.join(resourceRoot, "index", ".restore-in-progress");
+  await mkdir(path.dirname(marker), { recursive: true, mode: 0o700 });
+  await writeFile(marker, `${JSON.stringify({ version: 1, phase })}\n`, { mode: 0o600 });
+  return marker;
+}
+
+test("an immediate saved-links read completes authority-ready recovery before compatibility proceeds", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    await writeResearchLinksVerified({ version: 1, links: [] }, { path: legacyPath });
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.listManifests();
+    const marker = await writeRestoreMarker(resourceRoot, "authority-ready");
+
+    assert.deepEqual(await listCompatibleResearchLinks(options), []);
+    await assert.rejects(() => lstat(marker), /ENOENT/);
+  });
+});
+
+test("an immediate saved-links mutation remains fail-closed for a preparing restore", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    await writeResearchLinksVerified({ version: 1, links: [] }, { path: legacyPath });
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.listManifests();
+    const marker = await writeRestoreMarker(resourceRoot, "preparing");
+
+    await assert.rejects(
+      () => mutateCompatibleResearchLinks(
+        (links) => ({ links, result: null }),
+        options,
+      ),
+      /resubmit the backup archive/,
+    );
+    assert.equal((await lstat(marker)).isFile(), true);
+  });
+});
 
 test("first upgrade imports every strict row, preserves X bodies, and verifies a complete projection", async () => {
   await fixture(async ({ legacyPath, resourceRoot, options }) => {
@@ -659,5 +699,103 @@ test("semantically equal noncanonical legacy bytes are rewritten to the exact ve
     ) as { projectedDigest: string; catalogRevision: number };
     assert.equal(metadata.projectedDigest, researchLinksDigest(await readFile(legacyPath)));
     assert.equal(metadata.catalogRevision, 1);
+  });
+});
+
+test("a retained A5 tombstone prevents a downgraded legacy projection from resurrecting a deleted resource", async () => {
+  await fixture(async ({ legacyPath, resourceRoot, options }) => {
+    const stale = link("deleted-in-a5");
+    await writeResearchLinksVerified({ version: 1, links: [stale] }, { path: legacyPath });
+    await listCompatibleResearchLinks(options);
+
+    const store = createResearchResourceStore({ root: resourceRoot });
+    await store.withOperationalTransaction(async (transaction) => {
+      const current = transaction.listManifests().find(
+        (manifest) => manifest.id === deterministicResourceId(stale.id),
+      );
+      assert.ok(current);
+      const journal = await transaction.beginDeletion({
+        expectedManifest: current,
+        deletedAt: NOW,
+        snapshotIds: [],
+      });
+      const deleting: ResourceManifestV1 = {
+        ...current,
+        revision: current.revision + 1,
+        ingest: { desired: false, state: "deleting" },
+        updatedAt: NOW,
+      };
+      await transaction.updateManifest({
+        id: current.id,
+        expectedRevision: current.revision,
+        manifest: deleting,
+      });
+      await transaction.publishTombstone({
+        version: 1,
+        resourceId: current.id,
+        deletionRevision: journal.deletionRevision,
+        deletedAt: journal.deletedAt,
+      });
+      await transaction.deleteDeletingManifest(deleting);
+    });
+
+    // Simulate an older binary restoring its stale pre-delete projection.
+    await writeResearchLinksVerified({ version: 1, links: [stale] }, { path: legacyPath });
+    assert.deepEqual(await listCompatibleResearchLinks(options), []);
+    assert.deepEqual(
+      (JSON.parse(await readFile(legacyPath, "utf8")) as { links: SavedLink[] }).links,
+      [],
+    );
+
+    await assert.rejects(
+      () => mutateCompatibleResearchLinks(
+        () => ({ links: [stale], result: null }),
+        options,
+      ),
+      /cannot recreate a tombstoned resource revision/,
+    );
+  });
+});
+
+// cave-fh9so — the whole-shelf outage. `listCompatibleResearchLinks` validates
+// every manifest it is about to write while migrating the legacy store, so a
+// single row the manifest parser rejected threw out of the READ and the
+// Resources desk rendered "Couldn't load saved links." with nothing behind it.
+// Measured live: 500 healthy links unreachable because ONE paper repeated an
+// author at index 220.
+//
+// The unit fix is in research-resource-contracts (authors is an ordered credit
+// list, not a set). This is the test that would have caught it, because the
+// defect only shows once a real row travels the migration path — the contract
+// test alone cannot fail the read.
+test("a repeated author does not fail the read for every other saved link (cave-fh9so)", async () => {
+  await fixture(async ({ legacyPath, options }) => {
+    const authors = Array.from({ length: 240 }, (_, index) => `Author ${index}`);
+    authors[220] = authors[7];
+    const initial = [
+      link("healthy-a"),
+      link("dupe-authors", {
+        category: "paper",
+        paper: {
+          arxivId: "2608.54321",
+          authors,
+          abstract: "A collaboration listing one member twice.",
+          publishedAt: "2026-08-20T00:00:00.000Z",
+        },
+      }),
+      link("healthy-b"),
+    ];
+    await writeResearchLinksVerified({ version: 1, links: initial }, { path: legacyPath });
+
+    const listed = await listCompatibleResearchLinks(options);
+    // Every row, not just the survivors: the point is that the bad record
+    // neither throws nor is silently dropped.
+    assert.deepEqual(
+      listed.map((item) => item.id).sort(),
+      ["dupe-authors", "healthy-a", "healthy-b"],
+    );
+    const paper = listed.find((item) => item.id === "dupe-authors");
+    assert.equal(paper?.paper?.authors.length, 240);
+    assert.equal(paper?.paper?.authors[220], authors[7]);
   });
 });

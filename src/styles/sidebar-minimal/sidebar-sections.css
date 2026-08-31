@@ -1,0 +1,91 @@
+/* Titled sidebar sections (Navigation / Rooms).
+ *
+ * Replaces the Home|Chat section-tab styles that lived here. The tabs were
+ * retired in cave-fh9so: they duplicated the sidebar's own Home row and swapped
+ * the whole sidebar component, so half the destinations were unreachable at any
+ * moment.
+ *
+ * These headings are deliberately NOT interactive. They were collapsible for a
+ * while, and a chevron on each one read as clutter — controls stacked above a
+ * list of genuinely clickable rows, guarding two groups too short to need
+ * folding. The heading's job is to say where one group ends and the next
+ * begins, so it is styled as a quiet label with generous space above it and
+ * the rows tucked close beneath: the GAP does the separating, not a rule or a
+ * control. */
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The space above a heading is what groups the rows under it — larger than the
+   row gap, so a section reads as one block rather than an evenly-spaced list. */
+.sidebar-section + .sidebar-section {
+  margin-top: var(--space-5);
+}
+
+.sidebar-section__head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-inline: var(--space-3);
+  padding-block-end: var(--space-1);
+}
+
+.sidebar-section__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.sidebar-section__count {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.sidebar-section__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-section__panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* In the collapsed 56px rail the headings would wrap to nothing useful; the
+   rows themselves already collapse to icons, so hide the chrome and let the
+   spacing alone separate the groups. */
+.shell-nav--rail .sidebar-section__head-row {
+  display: none;
+}
+
+.shell-nav--rail .sidebar-section + .sidebar-section {
+  margin-top: var(--space-3);
+}
+
+/* New chat on the standalone rail (cave-10kr8).
+ *
+ * Settings, Dashboard and Analytics render their own rail rather than the
+ * workspace's, and it had no New chat — the one difference that made it read
+ * as a different sidebar instead of the same one on a different route. The
+ * control reuses .rail-header__new so the two are the same button; this only
+ * supplies the padding SidebarRailHeader would otherwise have given it. */
+.sidebar-minimal__new {
+  padding: var(--space-2) var(--rail-pad) 0;
+}

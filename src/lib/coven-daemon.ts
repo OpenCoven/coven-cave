@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
@@ -21,24 +21,52 @@ import {
   recordDaemonDiagnosticEvent,
   type DaemonDiagnosticContext,
 } from "./server/daemon-diagnostics.ts";
+import { covenHomePath } from "./coven-home.ts";
 import { isRemoteWindowsPath } from "./windows-local-path.ts";
 
 // Re-exported so the socket resolver's own callers and tests keep importing the
 // boundary from the module that applies it.
 export { isRemoteWindowsPath } from "./windows-local-path.ts";
+export { covenHomePath } from "./coven-home.ts";
 
-type SocketPathResolverOptions = {
+export type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
   env?: Record<string, string | undefined>;
   homeDir?: string;
   readFileSync?: ReadTextFile;
+  /** Size check before the read; null means missing/unreadable. Test seam. */
+  statSync?: (filePath: string) => { size: number } | null;
 };
 
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 
+/**
+ * daemon.json is a plain file any process running as this user can rewrite,
+ * so its size is the writer's choice. Bound the read before the parse: a
+ * hostile 100 MB file must cost one stat, not 100 MB of IO per request
+ * (cave-dy9). The real file is a few hundred bytes.
+ */
+const DAEMON_STATUS_FILE_MAX_BYTES = 4 * 1024;
+
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
+export type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";
+
+export type DaemonSocketResolution = {
+  socketPath: string;
+  source: "coven-socket-env" | "daemon-status-file" | "canonical-local";
+  availability: "available" | "unavailable";
+  /** Configured sources that were refused before this safe result was built. */
+  refusedSources?: readonly RefusedSocketSource[];
+};
+
 export type DaemonTarget =
-  | { mode: "local"; label: "Local daemon"; socketPath: string }
+  | {
+      mode: "local";
+      label: "Local daemon";
+      socketPath: string;
+      /** Call-time resolver evidence; absent on persisted/test-created targets. */
+      socketResolution?: DaemonSocketResolution;
+    }
   | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
   | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
 
@@ -61,8 +89,6 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
 
   return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
 }
-
-type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";
 
 /**
  * Values already reported, so one refusal is one event.
@@ -243,22 +269,20 @@ function recordRefusedRemoteTarget(source: RefusedSocketSource): void {
  * So this is a deliberate stopping point, not an oversight. Read the paragraph
  * above before "fixing" it.
  */
-function covenHomePath(
-  env: Record<string, string | undefined>,
-  homeDir: string,
-  platform: NodeJS.Platform,
-): string {
-  const configured = env.COVEN_HOME;
-  if (configured) {
-    if (!(platform === "win32" && isRemoteWindowsPath(configured))) return configured;
-    reportRefusedRemoteTarget("coven-home-env", configured);
-  }
-  return path.join(homeDir, ".coven");
-}
-
-function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string | null {
+function daemonStatusSocket(
+  covenHome: string,
+  readFile: ReadTextFile,
+  statFile: (filePath: string) => { size: number } | null,
+): string | null {
   try {
-    const raw = readFile(path.join(covenHome, "daemon.json"), "utf8");
+    const filePath = path.join(covenHome, "daemon.json");
+    const metadata = statFile(filePath);
+    if (!metadata || metadata.size > DAEMON_STATUS_FILE_MAX_BYTES) return null;
+    const raw = readFile(filePath, "utf8");
+    // The bound is the parse's own: a file under the cap could still inflate
+    // between stat and read on a hostile machine, so never parse an
+    // unbounded buffer (cave-dy9).
+    if (raw.length > DAEMON_STATUS_FILE_MAX_BYTES) return null;
     const parsed = JSON.parse(raw) as { socket?: unknown };
     return typeof parsed.socket === "string" && parsed.socket.trim() ? parsed.socket : null;
   } catch {
@@ -307,25 +331,71 @@ function localWindowsDaemonSocket(
   return { kind: "accepted", socket: normalized };
 }
 
-export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
+export function resolveDaemonSocket(options: SocketPathResolverOptions = {}): DaemonSocketResolution {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? homedir();
   const readFile: ReadTextFile =
     options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
+  const statFile =
+    options.statSync ??
+    ((filePath: string) => {
+      try {
+        return statSync(filePath);
+      } catch {
+        return null;
+      }
+    });
 
-  const covenHome = covenHomePath(env, homeDir, platform);
+  const refusedSources: RefusedSocketSource[] = [];
+  const rememberRefusal = (source: RefusedSocketSource) => {
+    if (!refusedSources.includes(source)) refusedSources.push(source);
+  };
+  const withRefusedSources = (
+    resolution: Omit<DaemonSocketResolution, "refusedSources">,
+  ): DaemonSocketResolution => refusedSources.length > 0
+    ? { ...resolution, refusedSources: [...refusedSources] }
+    : resolution;
+
+  const covenHome = covenHomePath(
+    env,
+    homeDir,
+    platform,
+    (configured) => {
+      rememberRefusal("coven-home-env");
+      reportRefusedRemoteTarget("coven-home-env", configured);
+    },
+  );
 
   if (env.COVEN_SOCKET) {
-    if (platform !== "win32") return env.COVEN_SOCKET;
+    if (platform !== "win32") {
+      return withRefusedSources({
+        socketPath: env.COVEN_SOCKET,
+        source: "coven-socket-env",
+        availability: "available",
+      });
+    }
     const configured = localWindowsDaemonSocket(env.COVEN_SOCKET, "coven-socket-env");
     // An accepted COVEN_SOCKET is still the whole answer: it outranks
     // `daemon.json`, and that precedence is what the override is for.
-    if (configured.kind === "accepted") return configured.socket;
+    if (configured.kind === "accepted") {
+      return withRefusedSources({
+        socketPath: configured.socket,
+        source: "coven-socket-env",
+        availability: "available",
+      });
+    }
     // A value that names nothing is not a redirection and not a request to go
     // look elsewhere either; it stays on the old "COVEN_SOCKET was set, so
     // daemon.json is not consulted" path.
-    if (configured.kind === "unnamed") return path.join(covenHome, "coven.sock");
+    if (configured.kind === "unnamed") {
+      return withRefusedSources({
+        socketPath: path.join(covenHome, "coven.sock"),
+        source: "canonical-local",
+        availability: "unavailable",
+      });
+    }
+    rememberRefusal("coven-socket-env");
     // A *refused* one falls through to `daemon.json`, exactly as if
     // COVEN_SOCKET had been unset.
     //
@@ -346,14 +416,35 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   }
 
   if (platform === "win32") {
-    const statusSocket = daemonStatusSocket(covenHome, readFile);
+    const statusSocket = daemonStatusSocket(covenHome, readFile, statFile);
     const published = statusSocket
       ? localWindowsDaemonSocket(statusSocket, "daemon-status-file")
       : null;
-    if (published?.kind === "accepted") return published.socket;
+    if (published?.kind === "accepted") {
+      return withRefusedSources({
+        socketPath: published.socket,
+        source: "daemon-status-file",
+        availability: "available",
+      });
+    }
+    if (published?.kind === "refused") rememberRefusal("daemon-status-file");
+
+    return withRefusedSources({
+      socketPath: path.join(covenHome, "coven.sock"),
+      source: "canonical-local",
+      availability: "unavailable",
+    });
   }
 
-  return path.join(covenHome, "coven.sock");
+  return withRefusedSources({
+    socketPath: path.join(covenHome, "coven.sock"),
+    source: "canonical-local",
+    availability: "available",
+  });
+}
+
+export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
+  return resolveDaemonSocket(options).socketPath;
 }
 
 /**
@@ -361,7 +452,7 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
  * COVEN_SOCKET env change is honored without an app restart.
  */
 export function socketPath(): string {
-  return resolveDaemonSocketPath();
+  return resolveDaemonSocket().socketPath;
 }
 
 function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
@@ -400,7 +491,13 @@ export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): Da
 }
 
 export function localDaemonTarget(): Extract<DaemonTarget, { mode: "local" }> {
-  return { mode: "local", label: "Local daemon", socketPath: socketPath() };
+  const socketResolution = resolveDaemonSocket();
+  return {
+    mode: "local",
+    label: "Local daemon",
+    socketPath: socketResolution.socketPath,
+    socketResolution,
+  };
 }
 
 async function loadDaemonTarget(): Promise<DaemonTarget> {

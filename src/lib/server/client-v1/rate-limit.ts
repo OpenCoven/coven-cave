@@ -1,6 +1,6 @@
 export const CLIENT_V1_RATE_LIMIT_WINDOW_MS = 60_000;
 export const CLIENT_V1_PAIRING_CREATE_LIMIT = 10;
-export const CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT = 10;
+export const CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT = 10;
 export const CLIENT_V1_AUTHENTICATED_LIMIT = 120;
 export const CLIENT_V1_INVALID_BEARER_LIMIT = 120;
 export const CLIENT_V1_RATE_LIMIT_MAX_ENTRIES_PER_CATEGORY = 1_024;
@@ -27,12 +27,12 @@ export interface ClientV1RateLimiter {
    * pending — costs nothing, so legitimate polling is never rate limited.
    *
    * One bucket covers *every* route that compares a pairing secret, which
-   * today is the exchange POST and the pairing-request GET. The name records
-   * where the budget was introduced, not who may spend it: a second bucket per
-   * comparison site would meter each route while bounding neither, since the
-   * cheapest attack is simply to exhaust one oracle and then use the other.
+   * today is the exchange POST and the pairing-request GET (cave-ngro8 renamed
+   * it after the poll route began sharing it). A second bucket per comparison
+   * site would meter each route while bounding neither, since the cheapest
+   * attack is simply to exhaust one oracle and then use the other.
    */
-  consumePairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
+  consumePairingComparisonFailure(pairingRequestId: string): ClientV1RateLimitResult;
   /**
    * Read the failure budget for one pairing request without charging it.
    *
@@ -41,7 +41,7 @@ export interface ClientV1RateLimiter {
    * an entry, so probing unknown ids cannot evict the entries that are
    * bounding a real brute-force attempt.
    */
-  peekPairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
+  peekPairingComparisonFailure(pairingRequestId: string): ClientV1RateLimitResult;
 }
 
 export interface ClientV1RateLimiterOptions {
@@ -53,7 +53,7 @@ type RateLimitCategory =
   | "authenticated"
   | "invalid-bearer"
   | "pairing-create"
-  | "pairing-exchange-failure";
+  | "pairing-comparison-failure";
 
 type RateLimitEntry = {
   count: number;
@@ -65,7 +65,7 @@ const LIMITS: Record<RateLimitCategory, number> = {
   authenticated: CLIENT_V1_AUTHENTICATED_LIMIT,
   "invalid-bearer": CLIENT_V1_INVALID_BEARER_LIMIT,
   "pairing-create": CLIENT_V1_PAIRING_CREATE_LIMIT,
-  "pairing-exchange-failure": CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+  "pairing-comparison-failure": CLIENT_V1_PAIRING_COMPARISON_FAILURE_LIMIT,
 };
 
 function requireNow(now: number): number {
@@ -96,7 +96,7 @@ export function createClientV1RateLimiter(
     authenticated: new Map(),
     "invalid-bearer": new Map(),
     "pairing-create": new Map(),
-    "pairing-exchange-failure": new Map(),
+    "pairing-comparison-failure": new Map(),
   };
 
   function peek(
@@ -216,11 +216,11 @@ export function createClientV1RateLimiter(
     consumePairingCreate(sourceIdentity) {
       return consume("pairing-create", sourceIdentity);
     },
-    consumePairingExchangeFailure(pairingRequestId) {
-      return consume("pairing-exchange-failure", pairingRequestId);
+    consumePairingComparisonFailure(pairingRequestId) {
+      return consume("pairing-comparison-failure", pairingRequestId);
     },
-    peekPairingExchangeFailure(pairingRequestId) {
-      return peek("pairing-exchange-failure", pairingRequestId);
+    peekPairingComparisonFailure(pairingRequestId) {
+      return peek("pairing-comparison-failure", pairingRequestId);
     },
   };
 }

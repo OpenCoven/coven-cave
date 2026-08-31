@@ -66,7 +66,18 @@ function persistedMobileAccessSecretFile() {
 }
 if (process.env.COVEN_CAVE_BUNDLE !== "1" && process.env.COVEN_CAVE_E2E !== "1" && !process.env.COVEN_CAVE_ACCESS_TOKEN?.trim()) {
   try {
-    const persisted = readFileSync(persistedMobileAccessSecretFile(), "utf8").trim();
+    const file = persistedMobileAccessSecretFile();
+    const stats = lstatSync(file);
+    if (stats.isSymbolicLink()) throw new Error("the persisted mobile access secret must not be a symbolic link");
+    if (typeof process.getuid === "function") {
+      if (stats.uid !== process.getuid()) throw new Error("the persisted mobile access secret must be owned by the current user");
+      if ((stats.mode & 18) !== 0) throw new Error("the persisted mobile access secret must not be writable by group or others");
+    } else {
+      console.warn(
+        "[cave] boot re-arm reads the persisted mobile access secret without an ownership check on " + process.platform + "; the pairing route re-verifies it with the async guard (cave-8pd39)."
+      );
+    }
+    const persisted = readFileSync(file, "utf8").trim();
     if (persisted) process.env.COVEN_CAVE_ACCESS_TOKEN = persisted;
   } catch {
   }
@@ -1252,6 +1263,7 @@ server.listen(port, hostname, () => {
   } catch (error) {
     reportClientV1DiscoveryUnavailable(error);
   }
+  logStartupHeapCeiling();
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
 let httpShutdownStarted = false;
@@ -1298,6 +1310,9 @@ function heapDiagnosticsDir() {
   return join(caveHome, "diagnostics");
 }
 const mb = (bytes) => `${Math.round(bytes / (1024 * 1024))}MB`;
+function logStartupHeapCeiling() {
+  console.log(`[heap-ceiling] heapLimit=${mb(getHeapStatistics().heap_size_limit)}`);
+}
 function pruneHeapSnapshots(dir) {
   const snapshots = readdirSync(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
   while (snapshots.length > HEAP_SNAPSHOT_KEEP) {

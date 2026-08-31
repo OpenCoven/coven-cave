@@ -200,6 +200,10 @@ export type ResearchSourceRef = {
   availability?: ResearchSourceAvailability;
 };
 
+export type ResearchSourceLedgerSnapshot =
+  | { state: "available"; sources: ResearchSourceRef[] }
+  | { state: "empty" | "failed"; sources: [] };
+
 export type ResearchSourceDraft = Partial<ResearchSourceRef> & {
   id: string;
   title: string;
@@ -216,7 +220,10 @@ export type ResearchAutomationLink = {
   checkpointFingerprint: string;
   checkpointToken?: string;
   lastRunId?: string;
-  lastRunStatus?: "queued" | "running" | "succeeded" | "failed";
+  // One vocabulary with the daemon's RoutineRun statuses (automation-runs.ts):
+  // `cancelled` is a terminal outcome a linked automation's last run can
+  // carry, and a parser that rejected it would reject a real persisted state.
+  lastRunStatus?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   lastRunAt?: string;
   stopReason?: string;
 };
@@ -710,6 +717,19 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
   };
 }
 
+/** Parse the canonical sources.json payload without requiring a mission
+ * wrapper. This is shared by mission hydration and file-serving routes so both
+ * surfaces apply exactly the same source-row validation. */
+export function parseResearchSources(
+  value: unknown,
+): ResearchSourceRef[] | null {
+  if (!Array.isArray(value)) return null;
+  const sources = value.map(parseResearchSource);
+  return sources.some((source) => source === null)
+    ? null
+    : sources as ResearchSourceRef[];
+}
+
 function parseResearchAutomation(value: unknown): ResearchAutomationLink | null {
   if (!isRecord(value)
     || typeof value.id !== "string"
@@ -729,7 +749,7 @@ function parseResearchAutomation(value: unknown): ResearchAutomationLink | null 
     return null;
   }
   if (value.lastRunStatus !== undefined
-    && !["queued", "running", "succeeded", "failed"].includes(String(value.lastRunStatus))) {
+    && !["queued", "running", "succeeded", "failed", "cancelled"].includes(String(value.lastRunStatus))) {
     return null;
   }
   return {
@@ -823,10 +843,10 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   }
   const iterations = value.iterations.map(parseResearchIteration);
   const artifacts = value.artifacts.map(parseResearchArtifact);
-  const sources = value.sources.map(parseResearchSource);
+  const sources = parseResearchSources(value.sources);
   if (iterations.some((iteration) => iteration === null)
     || artifacts.some((artifact) => artifact === null)
-    || sources.some((source) => source === null)) {
+    || sources === null) {
     return null;
   }
   const automation = value.automation === undefined
@@ -862,7 +882,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(automationId !== undefined ? { automationId } : {}),
     iterations: iterations as ResearchIteration[],
     artifacts: artifacts as ResearchArtifactRef[],
-    sources: sources as ResearchSourceRef[],
+    sources,
     ...(lastError !== undefined ? { lastError } : {}),
   };
 }
@@ -871,17 +891,17 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
  *  that would still spend a real familiar session. Enforced by the create
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
-/** Upper bound on a mission brief. Raised 10k → 25k (cave-e8z): real briefs
+/** Upper bound on a mission brief. Raised 10k → 20k (cave-e8z): real briefs
  *  carry pasted context — prior findings, source lists, constraints — and hit
  *  the old cap, which surfaced only as a server rejection after the writing was
  *  done. The composer now shows the count as you type, so the ceiling is
  *  visible rather than discovered. */
-export const RESEARCH_INTENT_MAX_LENGTH = 25_000;
+export const RESEARCH_INTENT_MAX_LENGTH = 20_000;
 export const RESEARCH_TITLE_MAX_LENGTH = 160;
 export const RESEARCH_DELIVERABLE_MAX_LENGTH = 160;
 export const RESEARCH_AUDIENCE_MAX_LENGTH = 500;
 export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
-export const RESEARCH_DIRECTION_MAX_LENGTH = 10_000;
+export const RESEARCH_DIRECTION_MAX_LENGTH = 5_000;
 export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
 export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
 export const RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT = 500;

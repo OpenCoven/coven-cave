@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ import {
 } from "./research-resource-catalog.ts";
 import { createResearchResourceStore } from "./research-resource-store.ts";
 import { canonicalJson } from "../research-protocol/digest.ts";
+import { writeResearchLinksVerified } from "./research-links-legacy-store.ts";
 
 function manifest(id: string, patch: Partial<ResourceManifestV1> = {}): ResourceManifestV1 {
   return {
@@ -79,6 +80,51 @@ test("creates, reads, lists, and idempotently replays private canonical manifest
     if (process.platform !== "win32") {
       assert.equal((await lstat(path.join(root, "manifests"))).mode & 0o777, 0o700);
       assert.equal((await lstat(path.join(root, "manifests", `${first.id}.json`))).mode & 0o777, 0o600);
+    }
+  });
+});
+
+test("first Resource catalog use completes an authority-ready interrupted restore", async () => {
+  await fixture(async (root) => {
+    const originalCovenHome = process.env.COVEN_HOME;
+    try {
+      process.env.COVEN_HOME = path.dirname(root);
+      const store = createResearchResourceStore({ root });
+      const legacyId = "legacy-startup-recovered";
+      const resourceId = `saved-link-${createHash("sha256").update(legacyId).digest("hex").slice(0, 32)}`;
+      await writeResearchLinksVerified({
+        version: 1,
+        links: [{
+          id: legacyId,
+          url: "https://example.com/startup_recovered",
+          title: "Startup recovered",
+          category: "article",
+          addedAt: "2026-08-27T12:00:00.000Z",
+          source: "desk",
+        }],
+      });
+      await store.createManifest(manifest(resourceId, {
+        canonicalIdentity: "https://example.com/startup_recovered",
+        sourceUri: "https://example.com/startup_recovered",
+        legacySavedLink: {
+          id: legacyId,
+          url: "https://example.com/startup_recovered",
+          addedAt: "2026-08-27T12:00:00.000Z",
+          source: "desk",
+        },
+      }));
+      const marker = path.join(root, "index", ".restore-in-progress");
+      await mkdir(path.dirname(marker), { recursive: true, mode: 0o700 });
+      await writeFile(marker, `${JSON.stringify({ version: 1, phase: "authority-ready" })}\n`, {
+        mode: 0o600,
+      });
+
+      const catalog = createResearchResourceCatalog({ root });
+      assert.deepEqual((await catalog.listManifests()).map((item) => item.id), [resourceId]);
+      await assert.rejects(() => lstat(marker), /ENOENT/);
+    } finally {
+      if (originalCovenHome === undefined) delete process.env.COVEN_HOME;
+      else process.env.COVEN_HOME = originalCovenHome;
     }
   });
 });

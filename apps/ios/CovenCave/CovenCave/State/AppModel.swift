@@ -202,12 +202,16 @@ protocol ProjectContextLoadingClient: Sendable {
     func projects() async throws -> [ProjectInfo]
     func projectGrants() async throws -> ProjectGrantsResponse
     func familiars() async throws -> [Familiar]
-    func sessions() async throws -> [SessionRow]
+    /// includeArchived: true fetches rows with archived_at set, so the
+    /// read-side can fold server archive state back onto local threads
+    /// (cave-sve2a); an active-only list would hide exactly the rows the
+    /// fold needs to see.
+    func sessions(includeArchived: Bool) async throws -> [SessionRow]
     func tasks() async throws -> [BoardCard]
 }
 
 extension ProjectContextLoadingClient {
-    func sessions() async throws -> [SessionRow] { [] }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [] }
 }
 
@@ -274,12 +278,24 @@ extension CaveClient: TaskProjectUpdatingClient {}
 extension CaveClient: ReminderManagingClient {}
 
 /// A transient confirmation banner shown over the chat after a command runs.
-struct ToastMessage: Identifiable, Equatable {
+struct ToastMessage: Identifiable {
     enum Style { case success, info, warning, error }
     let id = UUID()
     var text: String
     var systemImage: String
     var style: Style = .info
+    /// Optional primary action (e.g. "Retry") rendered as a button inside the
+    /// toast, so a failed mutation offers a way forward instead of only
+    /// reverting (cave-ioswipe.1).
+    var actionTitle: String?
+    var action: (@MainActor () -> Void)?
+}
+
+extension ToastMessage: Equatable {
+    /// A toast's identity is its id, not its payload: the action closure is not
+    /// comparable, and the toast overlay only needs to know when the current
+    /// message has been replaced by a different one.
+    static func == (lhs: ToastMessage, rhs: ToastMessage) -> Bool { lhs.id == rhs.id }
 }
 
 @Observable
@@ -521,17 +537,42 @@ final class AppModel {
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
 
-    /// Show a confirmation toast (replaces any in-flight one).
-    func showToast(_ text: String, systemImage: String = "checkmark.circle.fill",
-                   style: ToastMessage.Style = .success) {
-        toast = ToastMessage(text: text, systemImage: systemImage, style: style)
+    /// Show a confirmation toast (replaces any in-flight one). A toast can
+    /// carry one optional action — e.g. "Retry" after a failed mutation
+    /// (cave-ioswipe.1) — rendered as a button inside the banner.
+    func showToast(
+        _ text: String,
+        systemImage: String = "checkmark.circle.fill",
+        style: ToastMessage.Style = .success,
+        actionTitle: String? = nil,
+        action: (@MainActor () -> Void)? = nil
+    ) {
+        toast = ToastMessage(
+            text: text,
+            systemImage: systemImage,
+            style: style,
+            actionTitle: actionTitle,
+            action: action
+        )
     }
 
     /// An optimistic edit failed and was reverted: surface a single error toast
     /// + error haptic so the change doesn't silently snap back. Callers still set
     /// their `*Error` string for any inline display.
-    private func reportRevert(_ what: String) {
-        showToast("Couldn’t \(what) — reverted", systemImage: "exclamationmark.triangle.fill", style: .error)
+    ///
+    /// When a `retry` closure is supplied the toast offers a "Retry" button that
+    /// re-runs the failed mutation instead of only reverting (cave-ioswipe.1).
+    /// The transport layer has already retried transient blips inside
+    /// CaveClient, so reaching this point means the write really did not land —
+    /// an explicit retry gives the user a way forward.
+    private func reportRevert(_ what: String, retry: (@MainActor () -> Void)? = nil) {
+        showToast(
+            "Couldn’t \(what) — reverted",
+            systemImage: "exclamationmark.triangle.fill",
+            style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
+        )
         Haptics.error()
     }
 
@@ -539,22 +580,36 @@ final class AppModel {
     /// failed, because the old wholesale "reverted" message was actively
     /// misleading here: most of the batch DID take effect server-side, and only
     /// the named few came back.
-    private func reportPartial(_ failed: Int, of total: Int, verb: String) {
+    private func reportPartial(
+        _ failed: Int,
+        of total: Int,
+        verb: String,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
         showToast(
             "Couldn’t \(verb) \(failed) of \(total) — those were restored",
             systemImage: "exclamationmark.triangle.fill",
             style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
         )
         Haptics.error()
     }
 
-    private func reportDeletePartial(restoredThreads: Int, failedSessions: Int, totalSessions: Int) {
+    private func reportDeletePartial(
+        restoredThreads: Int,
+        failedSessions: Int,
+        totalSessions: Int,
+        retry: (@MainActor () -> Void)? = nil
+    ) {
         let chats = "\(restoredThreads) chat\(restoredThreads == 1 ? "" : "s")"
         let sessions = "\(failedSessions) of \(totalSessions) server session\(totalSessions == 1 ? "" : "s")"
         showToast(
             "Restored \(chats) — couldn’t delete \(sessions)",
             systemImage: "exclamationmark.triangle.fill",
             style: .error,
+            actionTitle: retry == nil ? nil : "Retry",
+            action: retry
         )
         Haptics.error()
     }
@@ -1038,7 +1093,9 @@ final class AppModel {
             generation: generation,
             scope: scope
         ) {
-            try await client.sessions()
+            // Archived rows are fetched too: the read-side fold needs them to
+            // reconcile a thread archived on another client (cave-sve2a).
+            try await client.sessions(includeArchived: true)
         }
         let output = await handle.task.value
         finishCoordinatedLoad(handle, state: &sessionsLoadState)
@@ -3248,7 +3305,14 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
-            reportRevert("update the task")
+            // A single transient blip never reaches this catch: CaveClient
+            // retried it idempotently first. Once we ARE here the write really
+            // did not land, so offer a Retry that re-runs the same status write
+            // (cave-ioswipe.1) instead of only reverting.
+            reportRevert("update the task") { [weak self] in
+                guard let card = self?.tasks.first(where: { $0.id == cardId }) else { return }
+                _ = self?.requestTaskStatus(card, status)
+            }
         }
     }
 
@@ -3578,7 +3642,15 @@ final class AppModel {
             // no-ops, silently dropping the task the delete failed to remove.
             reinsertTask(removed, at: index)
             tasksError = error.localizedDescription
-            reportRevert("delete the task")
+            // CaveClient already retried the transient failure idempotently, so
+            // reaching here means the delete did not land: offer a Retry that
+            // re-runs it (cave-ioswipe.1) instead of only reverting. The retry
+            // closure is synchronous, so the async delete runs in its own task
+            // (same pattern as the thread-delete fan-out).
+            reportRevert("delete the task") { [weak self] in
+                guard let self else { return }
+                _ = Task { await self.deleteTask(removed) }
+            }
         }
     }
 
@@ -3865,7 +3937,10 @@ final class AppModel {
             sessionsLoadToken = loadedSessions.token
             switch loadedSessions.result {
             case .success(let nextSessions):
-                resolvedSessions = nextSessions
+                // Selection logic predates archived-inclusive fetches and counts
+                // any unassigned session as an unassigned artifact; archived
+                // rows must not tip a project-context decision.
+                resolvedSessions = nextSessions.filter { $0.archivedAt == nil }
                 fetchedSessions = nextSessions
             case .failure(let error):
                 sessionsError = handleSurfaceError(error)
@@ -5869,16 +5944,63 @@ final class AppModel {
         _ sessions: [SessionRow],
         refreshProjectContextSelection: Bool = true
     ) {
-        serverSessions = sessions
+        // Archived rows are fetched so the fold can see them, but every
+        // existing consumer of serverSessions expects the active-only view —
+        // keep that contract and reconcile flags from the full fetched list
+        // (cave-sve2a).
+        serverSessions = sessions.filter { $0.archivedAt == nil }
         sessionsError = nil
         sessionsLoaded = true
         lastSessionsLoadedAt = Date()
+        let flagsReconciled = reconcileServerFlagsOntoThreads(from: sessions)
         let changed = backfillThreadProjectRoots(from: sessions)
         if refreshProjectContextSelection
-            && (changed || projectContext == nil || projectContext == .unassigned) {
+            && (flagsReconciled || changed || projectContext == nil || projectContext == .unassigned) {
             refreshProjectContextSelectionFromCurrentData()
         }
         _ = resolvePendingProjectNavigationIntent()
+    }
+
+    /// Fold server-observed archived/pinned state back onto local threads so
+    /// a change made on another client shows up here (cave-sve2a).
+    ///
+    /// A thread owns N sessions. It is archived when ALL its sessions are
+    /// archived (any live session keeps it visible) and pinned when ANY is
+    /// pinned. Threads that own no session, or whose owned sessions have no
+    /// row in this fetch, have no server opinion and are left alone — a naive
+    /// fold over an active-only list would, for example, "unarchive" a thread
+    /// whose sessions were simply absent. A thread with a flag PATCH still in
+    /// flight keeps its optimistic local value (local-intent-wins); the next
+    /// load after the PATCH settles folds server truth.
+    @discardableResult
+    private func reconcileServerFlagsOntoThreads(from sessions: [SessionRow]) -> Bool {
+        let sessionsByID = Dictionary(
+            uniqueKeysWithValues: sessions.map { ($0.id, $0) }
+        )
+        var changed = false
+        for thread in threads {
+            // Local intent wins while a PATCH is in flight: the fold must not
+            // clobber an optimistic flag the fan-out has not yet settled.
+            guard threadFlagWrites[thread.id] == nil else { continue }
+            let ownedIDs = serverSessionIds(thread)
+            guard !ownedIDs.isEmpty else { continue }
+            let rows = ownedIDs.compactMap { sessionsByID[$0] }
+            guard !rows.isEmpty else { continue }
+            let serverArchived = rows.allSatisfy { $0.archivedAt != nil }
+            if thread.archived != serverArchived {
+                thread.archived = serverArchived
+                changed = true
+            }
+            let serverPinned = rows.contains { $0.pinned == true }
+            if thread.pinned != serverPinned {
+                thread.pinned = serverPinned
+                changed = true
+            }
+        }
+        if changed {
+            persistThreads()
+        }
+        return changed
     }
 
     private func shouldRefreshAuthoritativeSessionRow(_ sessionID: String) -> Bool {
@@ -6488,10 +6610,26 @@ final class AppModel {
         return project
     }
 
+    /// Materializing a task chat and publishing its project-aware navigation
+    /// have different completion boundaries. An authoritative session can be
+    /// safely materialized before the current connection's project catalog has
+    /// finished hydrating; in that case the pending navigation is not a failed
+    /// open, and callers still need the one canonical thread that was created
+    /// or reused. A terminal navigation failure remains a failed open.
+    private func taskChatOpenResult(for thread: ChatThread) -> ChatThread? {
+        if requestOpen(thread) { return thread }
+        guard pendingProjectNavigationIntent?.threadId == thread.id,
+              lastProjectNavigationFailure == nil else {
+            return nil
+        }
+        return thread
+    }
+
     /// Open (or create) the chat linked to a card and navigate to it. For an
     /// unlinked card it starts a fresh thread with `familiarId` (the card's
-    /// assignee, or a caller-supplied pick) and links it. Returns nil only if no
-    /// familiar could be resolved.
+    /// assignee, or a caller-supplied pick) and links it. A thread whose
+    /// project-aware navigation is still hydrating is returned immediately;
+    /// only an unresolved session or terminal navigation failure returns nil.
     @discardableResult
     func openChat(for card: BoardCard, familiarId: String? = nil) async -> ChatThread? {
         let requestedFamiliarID = normalizedFamiliarID(familiarId ?? card.familiarId)
@@ -6524,16 +6662,14 @@ final class AppModel {
                 } else {
                     setLocalTaskThreadLink(materialized.id, for: card.id)
                 }
-                guard requestOpen(materialized) else { return nil }
-                return materialized
+                return taskChatOpenResult(for: materialized)
             case .confirmedMissing:
                 if let toastText = resolution.toastText,
                    let systemImage = resolution.systemImage {
                     showToast(toastText, systemImage: systemImage, style: .warning)
                 }
                 if let recovery = taskRecoveryThread(for: card, sessionID: sessionID) {
-                    guard requestOpen(recovery) else { return nil }
-                    return recovery
+                    return taskChatOpenResult(for: recovery)
                 }
                 return nil
             case .transientLoadFailure:
@@ -6549,8 +6685,7 @@ final class AppModel {
             fallbackFamiliarID: requestedFamiliarID
         ) {
             setLocalTaskThreadLink(explicit.id, for: card.id)
-            guard requestOpen(explicit) else { return nil }
-            return explicit
+            return taskChatOpenResult(for: explicit)
         }
 
         if let existing = linkedThread(for: card) {
@@ -6575,8 +6710,7 @@ final class AppModel {
             }
             if canOpenExisting {
                 setLocalTaskThreadLink(existing.id, for: card.id)   // backfill from a sessionId match
-                guard requestOpen(existing) else { return nil }
-                return existing
+                return taskChatOpenResult(for: existing)
             }
         }
         guard let requestedFamiliarID else { return nil }
@@ -6593,8 +6727,7 @@ final class AppModel {
         threads.insert(thread, at: 0)
         setLocalTaskThreadLink(thread.id, for: card.id)
         persistThreads()
-        guard requestOpen(thread) else { return nil }
-        return thread
+        return taskChatOpenResult(for: thread)
     }
 
     /// Link an existing task to a thread (from the chat side). Best-effort PATCH
@@ -6967,10 +7100,15 @@ final class AppModel {
                 restoring: restoreIDs
             )
             self.persistThreads()
+            // The transport retried each DELETE idempotently before giving up,
+            // so a restored thread means the delete really did not land: offer
+            // a Retry that re-runs the whole deletion (cave-ioswipe.1) instead
+            // of leaving the restore as the only word.
             self.reportDeletePartial(
                 restoredThreads: restoreIDs.count,
                 failedSessions: failedSessions,
-                totalSessions: totalSessions
+                totalSessions: totalSessions,
+                retry: { [weak self] in self?.deleteThreads(restoreIDs) }
             )
         }
     }
@@ -7023,6 +7161,7 @@ final class AppModel {
         fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, archived: archived)
         } rollback: { $0.archived = !archived }
+        retry: { [weak self] in self?.setThreadArchived(thread, archived) }
     }
 
     /// Pin or unpin a thread; pinned threads sort to the top of their list.
@@ -7034,6 +7173,7 @@ final class AppModel {
         fanOutThreadFlag(target, verb: pinned ? "pin" : "unpin") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, pinned: pinned)
         } rollback: { $0.pinned = !pinned }
+        retry: { [weak self] in self?.setThreadPinned(thread, pinned) }
     }
 
     /// Session ids a thread owns on the server. A thread that has never been
@@ -7060,6 +7200,7 @@ final class AppModel {
         verb: String,
         _ call: @escaping @Sendable (CaveClient, String) async throws -> Void,
         rollback: @escaping (ChatThread) -> Void,
+        retry: (@MainActor () -> Void)? = nil,
     ) {
         guard let client else { return }
         let ids = serverSessionIds(thread)
@@ -7080,7 +7221,11 @@ final class AppModel {
             if failed > 0 {
                 rollback(thread)
                 self.persistThreads()
-                self.reportPartial(failed, of: ids.count, verb: verb)
+                // The transport already retried transient blips inside
+                // CaveClient, so a failure here is real: surface a Retry that
+                // re-applies the same flag (cave-ioswipe.1) rather than leaving
+                // the rollback as the only word.
+                self.reportPartial(failed, of: ids.count, verb: verb, retry: retry)
             }
             self.threadFlagWrites[threadId] = nil
         }

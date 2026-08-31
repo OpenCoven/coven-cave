@@ -9,15 +9,22 @@ import {
 import { PROTOCOL_VERSION } from "@openclaw/gateway-protocol/version";
 import { Value } from "typebox/value";
 import {
+  isOpenClawProfileQuarantined,
   loadOpenClawCompatibility,
   openClawDiscoveryFromHello,
   parseOpenClawToolEvent,
   quarantineOpenClawProfile,
+  selectOpenClawToolProfile,
+  BUILTIN_OPENCLAW_TOOL_PROFILES,
   type OpenClawCompatibilityDiagnostic,
   type OpenClawCompatibilitySource,
   type OpenClawGatewayDiscovery,
   type OpenClawToolProfile,
 } from "./openclaw-compatibility.ts";
+import {
+  openClawBridgeNegotiationDiagnostic,
+  type OpenClawBridgeNegotiation,
+} from "./openclaw-bridge.ts";
 import {
   createOpenClawDeviceCredentialStore,
   openClawPublicKeyRawBase64UrlFromPem,
@@ -62,7 +69,18 @@ export type OpenClawGatewayEvent =
     };
 
 export type OpenClawGatewayDispatch =
-  | { kind: "unavailable"; reason: string }
+  | {
+      kind: "unavailable";
+      reason: string;
+      /** The discovered gateway record, when the Gateway answered before the failure. */
+      discovery?: OpenClawGatewayDiscovery;
+      /**
+       * Slice 2 (issue #4892): the per-conversation bridge negotiation
+       * degraded this turn to plain chat. Carries its visible, value-free
+       * diagnostic; the reason above is the same sentence.
+       */
+      negotiationDiagnostic?: string;
+    }
   | { kind: "indeterminate"; reason: string }
   | {
       kind: "accepted";
@@ -409,6 +427,20 @@ export async function dispatchOpenClawGatewayTurn(args: {
   credentialStore?: OpenClawDeviceCredentialStore;
   /** Injectable compatibility registry source for deterministic negotiation tests. */
   compatibilitySource?: OpenClawCompatibilitySource;
+  /**
+   * Slice 2 (issue #4892): per-conversation bridge negotiation. When present,
+   * the discovered gateway record is negotiated for this conversation before
+   * the turn dispatches; a degraded outcome keeps the turn on plain chat and
+   * the dispatch reports the negotiation's visible, value-free diagnostic.
+   * When absent, the built-in compatibility registry decides, as before.
+   */
+  negotiateSession?: (discovery: OpenClawGatewayDiscovery) => OpenClawBridgeNegotiation;
+  /**
+   * The validated compatibility profile set the negotiated turn may parse
+   * tool events with — the adopted registry bundle's combined set, or the
+   * built-in profile. Ignored without `negotiateSession`.
+   */
+  negotiationProfiles?: unknown;
 }): Promise<OpenClawGatewayDispatch> {
   const env = args.env ?? process.env;
   if (!gatewayDispatchEnabled(env)) return { kind: "unavailable", reason: "Gateway dispatch is disabled" };
@@ -450,7 +482,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
 
   let discoveryConnection: AuthenticatedGatewayConnection | undefined;
   let discovery: OpenClawGatewayDiscovery;
-  let compatibility: Awaited<ReturnType<typeof loadOpenClawCompatibility>>;
+  let selectedToolProfile: OpenClawToolProfile;
   try {
     discoveryConnection = await connectAuthenticatedOpenClawGateway({
       url,
@@ -459,7 +491,50 @@ export async function dispatchOpenClawGatewayTurn(args: {
       deviceIdentity,
     });
     discovery = openClawDiscoveryFromHello(discoveryConnection.hello);
-    compatibility = await loadOpenClawCompatibility(discovery, args.compatibilitySource);
+    if (args.negotiateSession) {
+      // Slice 2 (issue #4892): the per-conversation negotiation decides
+      // whether this turn may use structured tool activity. A degraded
+      // outcome never dispatches a Gateway turn — the caller retains its
+      // plain-chat path — and never touches tool-event parsing.
+      const negotiated = args.negotiateSession(discovery);
+      const diagnostic = openClawBridgeNegotiationDiagnostic(negotiated);
+      if (negotiated.outcome !== "structured" || diagnostic !== null) {
+        return {
+          kind: "unavailable",
+          reason: diagnostic ?? "OpenClaw bridge negotiation retained plain chat",
+          discovery,
+          ...(diagnostic ? { negotiationDiagnostic: diagnostic } : {}),
+        };
+      }
+      const negotiatedProfile = selectOpenClawToolProfile(
+        args.negotiationProfiles ?? BUILTIN_OPENCLAW_TOOL_PROFILES,
+        discovery,
+      );
+      if (!negotiatedProfile) {
+        return {
+          kind: "unavailable",
+          reason: "OpenClaw tool compatibility: no-compatible-profile",
+          discovery,
+        };
+      }
+      if (isOpenClawProfileQuarantined(negotiatedProfile)) {
+        return {
+          kind: "unavailable",
+          reason: "OpenClaw tool compatibility: profile-quarantined",
+          discovery,
+        };
+      }
+      selectedToolProfile = negotiatedProfile;
+    } else {
+      const compatibility = await loadOpenClawCompatibility(discovery, args.compatibilitySource);
+      if (compatibility.mode !== "structured") {
+        return {
+          kind: "unavailable",
+          reason: `OpenClaw tool compatibility: ${compatibility.diagnostic}`,
+        };
+      }
+      selectedToolProfile = compatibility.profile;
+    }
   } catch (error) {
     return {
       kind: "unavailable",
@@ -468,13 +543,6 @@ export async function dispatchOpenClawGatewayTurn(args: {
   } finally {
     discoveryConnection?.stop();
   }
-  if (compatibility.mode !== "structured") {
-    return {
-      kind: "unavailable",
-      reason: `OpenClaw tool compatibility: ${compatibility.diagnostic}`,
-    };
-  }
-  const selectedToolProfile = compatibility.profile;
 
   let client!: GatewayClientPort;
   // Each authenticated hello represents a new transport generation. A

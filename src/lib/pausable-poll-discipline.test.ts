@@ -67,7 +67,10 @@ for (const file of walk(SRC)) {
   const firstLines = source.slice(0, 200);
   if (!firstLines.includes('"use client"')) continue;
 
-  const rel = path.relative(SRC, file);
+  // RAW_INTERVAL_ALLOWLIST keys are forward-slash paths; path.relative
+  // yields platform separators, so a Windows checkout would report every
+  // allowlisted file as an offender (cave-oc7dh). Normalize before lookup.
+  const rel = path.relative(SRC, file).split(path.sep).join("/");
   let index = 0;
   let unguardedHere = 0;
   while ((index = source.indexOf("setInterval(", index)) !== -1) {

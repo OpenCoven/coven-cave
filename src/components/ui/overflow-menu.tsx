@@ -18,6 +18,8 @@ export type OverflowMenuProps = {
   minWidth?: number;
   /** Extra class on the trigger button (e.g. "reveal-on-hover"). */
   className?: string;
+  /** Extra class on the portaled popover panel for consumer-scoped styling. */
+  popoverClassName?: string;
   disabled?: boolean;
   /** PopoverItem / PopoverSeparator / PopoverLabel children. */
   children: ReactNode;
@@ -38,6 +40,7 @@ export function OverflowMenu({
   placement = "bottom-end",
   minWidth = 180,
   className,
+  popoverClassName,
   disabled,
   children,
 }: OverflowMenuProps) {
@@ -110,6 +113,10 @@ export function OverflowMenu({
     const item = (e.target as Element).closest?.(
       '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]',
     );
+    // A submenu trigger is itself a menuitem, but its click opens a child
+    // flyout. Let PopoverSubmenu own that transition; closing the root here
+    // would unmount the flyout before it can render.
+    if (item?.getAttribute("aria-haspopup") === "menu") return;
     if (
       item &&
       !(item as HTMLButtonElement).disabled &&
@@ -130,6 +137,7 @@ export function OverflowMenu({
         size={size}
         className={["focus-ring", className ?? ""].filter(Boolean).join(" ")}
         aria-label={ariaLabel}
+        title={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         // `active` drives the pressed visual; aria-expanded is the correct
@@ -150,6 +158,7 @@ export function OverflowMenu({
         anchorRef={triggerRef}
         placement={placement}
         minWidth={minWidth}
+        className={popoverClassName}
         ariaLabel={ariaLabel}
       >
         <div ref={menuRef} onClick={onBodyClick} onKeyDown={onBodyKeyDown}>

@@ -38,7 +38,8 @@ The familiar reports phase with a self-closing marker, the same shape as
 | --- | --- | --- | --- |
 | `clarifying` | still needs answers before it can start | no | no |
 | `working` | proceeding silently | no | no |
-| `blocked` | needs a human — permissions, credentials, a call that isn't the familiar's to make | **yes** | no — answering resumes it |
+| `needs-approval` | needs your go-ahead on something irreversible; resumes the moment you answer | **yes** | no — answering resumes it |
+| `blocked` | cannot proceed at all — permissions, credentials, something outside the familiar that has to change | **yes** | no — but no answer unblocks it |
 | `failed` | hit something unrecoverable | **yes** | yes |
 | `done` | mission finished; `note` is the one-line summary | **yes** | yes |
 
@@ -118,6 +119,7 @@ Terminal states post to `/api/inbox`:
 
 | Situation | Kind | Title |
 | --- | --- | --- |
+| `needs-approval` | `response-needed` | Auto mission needs your go-ahead |
 | `blocked` | `response-needed` | Auto mission needs you |
 | `failed` | `agent` | Auto mission couldn't finish |
 | `done` | `agent` | Auto mission complete |
@@ -214,6 +216,11 @@ skips the form and takes the whole signal with them.
   row takes its liveness from the server instead of from the record.
 - A mission row has no cancel; see the section above for why, and `/auto stop`
   inside the chat for the sanctioned end.
-- `blocked` still covers both "waiting for your go-ahead" and "cannot proceed
-  at all". Splitting out `needs-approval` would let the UI ask for a yes rather
-  than merely reporting a wall.
+- A mission can arrive at a partial result (it got 60% of the way there) or at
+  a low-confidence branch point, and today neither is surfaced distinctly: the
+  familiar either reports `done` or keeps the remaining gap in a `note`. Neither
+  `partial-success` nor `low-confidence` is modelled yet.
+- `blocked` now covers only "cannot proceed at all", and `needs-approval` is
+  its own state: the status card renders an approve/deny affordance for it, and
+  approving (or denying) resumes the mission inline through the ordinary send
+  path.

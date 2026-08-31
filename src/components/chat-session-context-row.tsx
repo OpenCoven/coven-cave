@@ -4,40 +4,20 @@
 // The slim machine-readable band under the session title (Chat.dc.html 2a ③).
 //
 // Everything human — the title, the lifecycle verbs — stays in the header above
-// in Inter/Garamond. Everything a machine decided lives here in mono: which
-// project and branch the session runs against, which model answers, which
-// working directory it runs in, and on the right, what the last run cost.
-//
-// Chips are honest: a fact with no value renders no chip (see chatContextChips).
-// Only the project chip is interactive — it opens the same shared project
-// picker the kebab uses, anchored to itself.
+// in Inter/Garamond. This row used to also carry project/branch/model/cwd
+// chips (with a project picker), but those duplicated the header's identity
+// line one row up, so the band is now stats-only: what the last run cost, on
+// the right.
 
-import { useRef, useState, type RefObject } from "react";
+import { useRef, useState } from "react";
 
-import { ProjectPickerPopover } from "@/components/project-picker";
-import { Icon } from "@/lib/icon";
 import {
-  chatContextChips,
   chatContextStats,
-  type ChatContextChip,
   type ChatContextStat,
   type ChatContextTurn,
 } from "@/lib/chat-session-context";
-import type { CaveProject } from "@/lib/cave-projects";
 import type { TurnUsage } from "@/lib/usage-format";
 import { Popover, PopoverBody } from "@/components/ui/popover";
-
-function ChipBody({ chip }: { chip: ChatContextChip }) {
-  return (
-    <>
-      <span className={`cave-chat-context-chip__glyph is-${chip.tint}`} aria-hidden>
-        <Icon name={chip.icon} width={10} aria-hidden />
-      </span>
-      <span className="cave-chat-context-chip__key">{chip.label}</span>
-      <span className="cave-chat-context-chip__value">{chip.value}</span>
-    </>
-  );
-}
 
 function StatBody({ stat }: { stat: ChatContextStat }) {
   // One tint class on the root; the dot, value and meter fill read it as a
@@ -136,116 +116,31 @@ function StatCell({ stat }: { stat: ChatContextStat }) {
   );
 }
 
-function ContextChip({
-  chip,
-  pickerAvailable,
-  pickerOpen,
-  projectRef,
-  onToggleProject,
-}: {
-  chip: ChatContextChip;
-  pickerAvailable: boolean;
-  pickerOpen: boolean;
-  projectRef: RefObject<HTMLButtonElement | null>;
-  onToggleProject: () => void;
-}) {
-  if (chip.id === "project" && pickerAvailable) {
-    return (
-      <button
-        ref={projectRef}
-        type="button"
-        className="cave-chat-context-chip cave-chat-context-chip--action focus-ring"
-        title={`${chip.title} — click to change`}
-        aria-haspopup="dialog"
-        aria-expanded={pickerOpen}
-        onClick={onToggleProject}
-      >
-        <ChipBody chip={chip} />
-        <Icon name="ph:caret-down" width={8} aria-hidden />
-      </button>
-    );
-  }
-
-  return (
-    <span className="cave-chat-context-chip" title={chip.title}>
-      <ChipBody chip={chip} />
-    </span>
-  );
-}
-
 export function ChatSessionContextRow({
-  projectName,
-  projectRoot,
-  runtime,
-  harness,
-  branch,
-  model,
   turns,
   usage,
   costUsd,
   durationMs,
-  projects = [],
-  projectId = null,
-  onProjectChange,
-  onAddProject,
+  model,
 }: {
-  projectName?: string | null;
-  projectRoot?: string | null;
-  runtime?: string | null;
-  harness?: string | null;
-  branch?: string | null;
-  model?: string | null;
   turns?: ChatContextTurn[];
   usage?: TurnUsage;
   costUsd?: number;
   durationMs?: number;
-  /** Enables the project chip's picker; without these it renders as a fact. */
-  projects?: CaveProject[];
-  projectId?: string | null;
-  onProjectChange?: (value: string) => void;
-  onAddProject?: () => void;
+  model?: string | null;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const projectRef = useRef<HTMLButtonElement | null>(null);
-  const chips = chatContextChips({ projectName, projectRoot, runtime, harness, branch, model });
   const stats = chatContextStats({ turns, usage, costUsd, durationMs, model });
-  // An empty row is chrome for nothing — a brand-new session with no project,
-  // no branch and no run yet renders nothing at all.
-  if (!chips.length && !stats.length) return null;
-  const pickerAvailable = Boolean(onProjectChange) && (projects.length > 0 || Boolean(onAddProject));
+  // An empty row is chrome for nothing — a brand-new session with no run yet
+  // renders nothing at all.
+  if (!stats.length) return null;
 
   return (
     <div className="cave-chat-context-row" role="group" aria-label="Session context">
-      <div className="cave-chat-context-row__chips">
-        {chips.map((chip) => (
-          <ContextChip
-            key={chip.id}
-            chip={chip}
-            pickerAvailable={pickerAvailable}
-            pickerOpen={pickerOpen}
-            projectRef={projectRef}
-            onToggleProject={() => setPickerOpen((value) => !value)}
-          />
-        ))}
-      </div>
       <div className="cave-chat-context-row__stats">
         {stats.map((stat) => (
           <StatCell key={stat.id} stat={stat} />
         ))}
       </div>
-      {pickerAvailable ? (
-        <ProjectPickerPopover
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          anchorRef={projectRef}
-          projects={projects}
-          value={projectId}
-          onChange={(value) => onProjectChange?.(value)}
-          onAddProject={onAddProject}
-          placement="bottom-start"
-          ariaLabel="Project for this chat"
-        />
-      ) : null}
     </div>
   );
 }

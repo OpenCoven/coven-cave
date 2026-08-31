@@ -13,6 +13,7 @@ const {
   extractDaemonError,
   normalizeWindowsDaemonSocket,
   isRemoteWindowsPath,
+  resolveDaemonSocket,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
@@ -106,6 +107,7 @@ const {
     platform: "win32",
     env: {},
     homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
     readFileSync: (filePath) => {
       assert.match(String(filePath), /daemon\.json$/);
       return JSON.stringify({
@@ -116,6 +118,58 @@ const {
     },
   });
   assert.equal(socket, "\\\\.\\pipe\\coven-daemon-abc123.sock");
+}
+
+// A local CLI update removes daemon.json between daemon generations. The
+// resolver must expose that gap as unavailable, then notice the next canonical
+// local named pipe without caching the missing descriptor.
+{
+  const published = String.raw`\\.\pipe\coven-daemon-restarted.sock`;
+  let descriptorPresent = true;
+  const resolve = () => resolveDaemonSocket({
+    platform: "win32",
+    env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    statSync: () => descriptorPresent ? { size: 128 } : null,
+    readFileSync: () => JSON.stringify({ socket: published }),
+  });
+
+  assert.deepEqual(resolve(), {
+    socketPath: published,
+    source: "daemon-status-file",
+    availability: "available",
+  });
+  descriptorPresent = false;
+  assert.deepEqual(resolve(), {
+    socketPath: "C:/Users/Sonic/.coven/coven.sock",
+    source: "canonical-local",
+    availability: "unavailable",
+  });
+  descriptorPresent = true;
+  assert.deepEqual(resolve(), {
+    socketPath: published,
+    source: "daemon-status-file",
+    availability: "available",
+  });
+}
+
+// An oversized daemon.json is never read or parsed: its size is the writer's
+// choice, so a hostile file must cost one stat, not N bytes of IO per request
+// (cave-dy9). Resolution falls through to the canonical default.
+{
+  let reads = 0;
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: {},
+    homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 100 * 1024 * 1024 }),
+    readFileSync: () => {
+      reads += 1;
+      return "{}";
+    },
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+  assert.equal(reads, 0, "an oversized daemon.json is never read");
 }
 
 // COVEN_SOCKET remains authoritative on Windows, with named pipe shorthand normalized
@@ -170,6 +224,7 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: remote, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: (filePath) => {
         readPaths.push(filePath.replaceAll("\\", "/"));
         return "{}";
@@ -207,6 +262,7 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: forged, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: published }),
     });
     assert.equal(
@@ -215,6 +271,25 @@ const {
       `${forged} should be refused without taking the local daemon down with it`,
     );
   }
+}
+
+// Resolution keeps an explicit remote override attached to the safe local
+// fallback, so a later local pipe cannot make Research treat that override as
+// an owner-local authority.
+{
+  const resolution = resolveDaemonSocket({
+    platform: "win32",
+    env: {
+      COVEN_SOCKET: String.raw`\\evil-host\pipe\coven`,
+      COVEN_HOME: "C:/Users/Sonic/.coven",
+    },
+    homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
+    readFileSync: () => JSON.stringify({ socket: String.raw`\\.\pipe\coven-daemon-local.sock` }),
+  });
+  assert.deepEqual(resolution.refusedSources, ["coven-socket-env"]);
+  assert.equal(resolution.source, "daemon-status-file");
+  assert.equal(resolution.availability, "available");
 }
 
 // The half of the precedence contract that did NOT change: an *accepted*
@@ -261,7 +336,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: traversal, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
     assert.match(
       socket.replaceAll("\\", "/"),
@@ -297,6 +374,7 @@ const {
     platform: "win32",
     env: { COVEN_SOCKET: relative, COVEN_HOME: "C:/Users/Sonic/.coven" },
     homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
     readFileSync: () => "{}",
   });
   assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
@@ -373,6 +451,7 @@ const {
       platform: "win32",
       env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: forged }),
     });
     assert.match(
@@ -448,6 +527,7 @@ const {
       platform: "win32",
       env,
       homeDir: "C:/Users/Sonic",
+      statSync: () => ({ size: 128 }),
       readFileSync: () => JSON.stringify({ socket: String.raw`\\report-file-host\pipe\coven` }),
     });
 
@@ -547,7 +627,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
 
   const shared = `key-limit-${"a".repeat(4096)}`;
@@ -651,7 +733,9 @@ const {
       platform: "win32",
       env: { COVEN_SOCKET: String.raw`\\throwing-recorder-host\pipe\coven` },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => "{}",
+      statSync: () => ({ size: 128 }),
+      statSync: () => ({ size: 128 }),
+    readFileSync: () => "{}",
     });
     assert.match(
       socket.replaceAll("\\", "/"),

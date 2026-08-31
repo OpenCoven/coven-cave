@@ -183,12 +183,12 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
         <section className="flex flex-col gap-2">
           <h3 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">1. Choose where the pack should seed</h3>
           <div className="grid gap-2 @min-[620px]:grid-cols-2">
-            <label className="focus-within:ring-2 focus-within:ring-[var(--focus-ring)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
+            <label className="focus-within:ring-2 focus-within:ring-[var(--ring-focus)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
               <input className="focus-ring mr-2" type="radio" name="knowledge-pack-target" checked={target === "vault"} onChange={() => setTarget("vault")} />
               <span className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Knowledge vault</span>
               <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">Collections appear in the Grimoire; entries start disabled for prompt injection — agents look them up on demand.</p>
             </label>
-            <label className="focus-within:ring-2 focus-within:ring-[var(--focus-ring)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
+            <label className="focus-within:ring-2 focus-within:ring-[var(--ring-focus)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-3">
               <input className="focus-ring mr-2" type="radio" name="knowledge-pack-target" checked={target === "project"} onChange={() => setTarget("project")} />
               <span className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Project folder</span>
               <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">Seed folders into a project tree, like <code>ok seed</code>.</p>

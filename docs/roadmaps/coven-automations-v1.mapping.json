@@ -1,0 +1,191 @@
+{
+  "schemaVersion": "opencoven.automation-program-map/v1",
+  "programId": "coven-automations-v1",
+  "generatedAt": "2026-08-30T14:08:00Z",
+  "status": "awaiting-live-beads-seed",
+  "program": {
+    "github": "OpenCoven/coven#854",
+    "beadId": null,
+    "canonicalBeadsParent": "cave-hlv",
+    "roadmap": "docs/roadmaps/coven-automations-v1.md",
+    "trackerControl": "OpenCoven/coven#859",
+    "seedTask": "OpenCoven/coven-cave#5220",
+    "roadmapPullRequest": "OpenCoven/coven-cave#5219"
+  },
+  "canonicalBeads": {
+    "repository": "OpenCoven/coven-cave",
+    "backend": "embedded-dolt",
+    "database": "cave",
+    "syncCommand": "pnpm beads:sync",
+    "createCommand": "pnpm beads:create",
+    "liveReadCommands": [
+      "bd prime",
+      "bd ready --json",
+      "bd show <id> --json"
+    ],
+    "reviewExport": ".beads/issues.jsonl",
+    "reviewExportIsCanonical": false
+  },
+  "invariants": [
+    "Each public GitHub outcome maps to exactly one live Bead.",
+    "Each new Bead has exactly one surface:shared ownership label.",
+    "Beads owns implementation execution state; GitHub owns public outcome, review, and CI state.",
+    "Coven owns production automation definitions, occurrences, runs, attempts, leases, approvals, artifacts, events, and receipts.",
+    "No Bead ID is populated here until confirmed from live Dolt state.",
+    "Dependency direction must be proven with bd dep list and bd ready --json.",
+    "P2 expansion cannot block the v1 critical path.",
+    "Broad unattended external side effects remain gated until coven#857 and coven#858 pass."
+  ],
+  "outcomes": [
+    {
+      "key": "program-control",
+      "priority": "P0",
+      "github": "OpenCoven/coven#859",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": [],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "foundation",
+      "priority": "P0",
+      "github": "OpenCoven/coven#816",
+      "beadId": null,
+      "state": "implemented-evidence-pending",
+      "dependsOn": [],
+      "blocks": ["protocol", "scheduler-reliability", "familiar-embodiment"]
+    },
+    {
+      "key": "protocol",
+      "priority": "P0",
+      "github": "OpenCoven/coven#855",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["foundation"],
+      "blocks": ["scheduler-reliability", "trust-integration", "conformance"]
+    },
+    {
+      "key": "scheduler-reliability",
+      "priority": "P0",
+      "github": "OpenCoven/coven#856",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["foundation", "protocol"],
+      "blocks": ["conformance"]
+    },
+    {
+      "key": "familiar-embodiment",
+      "priority": "P0",
+      "github": "OpenCoven/familiar-contract#17",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["foundation"],
+      "blocks": ["automation-authority", "trust-integration"]
+    },
+    {
+      "key": "automation-authority",
+      "priority": "P0",
+      "github": "OpenCoven/coven-threads#29",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["familiar-embodiment"],
+      "blocks": ["trust-integration"]
+    },
+    {
+      "key": "trust-integration",
+      "priority": "P0",
+      "github": "OpenCoven/coven#857",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["protocol", "familiar-embodiment", "automation-authority"],
+      "blocks": ["conformance"]
+    },
+    {
+      "key": "conformance",
+      "priority": "P0",
+      "github": "OpenCoven/coven#858",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["protocol", "scheduler-reliability", "trust-integration"],
+      "blocks": ["sdk", "cave-oversight", "psyche-adapter", "documentation", "organization-canaries", "release-go-no-go"]
+    },
+    {
+      "key": "sdk",
+      "priority": "P1",
+      "github": "OpenCoven/sdk#80",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["conformance"],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "cave-oversight",
+      "priority": "P1",
+      "github": "OpenCoven/coven-cave#5217",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["conformance"],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "psyche-adapter",
+      "priority": "P1",
+      "github": "OpenCoven/psyche#18",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["conformance"],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "documentation",
+      "priority": "P1",
+      "github": "OpenCoven/coven-docs#76",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["conformance"],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "organization-canaries",
+      "priority": "P1",
+      "github": "OpenCoven/.github#2",
+      "beadId": null,
+      "state": "open",
+      "dependsOn": ["program-control", "conformance"],
+      "blocks": ["release-go-no-go"]
+    },
+    {
+      "key": "release-go-no-go",
+      "priority": "P0",
+      "github": "OpenCoven/coven#854",
+      "beadId": null,
+      "state": "blocked",
+      "dependsOn": [
+        "program-control",
+        "foundation",
+        "protocol",
+        "scheduler-reliability",
+        "familiar-embodiment",
+        "automation-authority",
+        "trust-integration",
+        "conformance",
+        "sdk",
+        "cave-oversight",
+        "psyche-adapter",
+        "documentation",
+        "organization-canaries"
+      ],
+      "blocks": []
+    }
+  ],
+  "releaseGates": {
+    "A": "durable-local-scheduler",
+    "B": "identity-and-authority",
+    "C": "public-contract-and-interoperability",
+    "D": "operations-and-exact-release-evidence"
+  },
+  "nextAction": {
+    "github": "OpenCoven/coven-cave#5220",
+    "description": "Use the supported local bd/Dolt workflow to create or reuse the program and child Beads, verify dependencies and readiness, sync through pnpm beads:sync, then replace null beadId values with exact live IDs through review."
+  }
+}

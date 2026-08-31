@@ -54,7 +54,7 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
     // full exchange budget still in reserve once the poll oracle had given up
     // the secret. Read the budget before comparing, or a limit charged after
     // the fact would bound nothing.
-    const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
+    const limit = runtime.rateLimiter.peekPairingComparisonFailure(id);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 
     const result = runtime.pairingStore.lookup(id, secret);
@@ -62,7 +62,7 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
       // Only a wrong secret is charged. This route is polled while the client
       // waits on an administrator decision, so charging the correct secret
       // would rate limit the legitimate holder for waiting.
-      runtime.rateLimiter.consumePairingExchangeFailure(id);
+      runtime.rateLimiter.consumePairingComparisonFailure(id);
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
     }
     if (result.kind === "not_found") {

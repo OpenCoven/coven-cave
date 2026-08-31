@@ -87,6 +87,32 @@ export const SEARCH_ENTITY_TYPES = [
 
 export type SearchEntityType = (typeof SEARCH_ENTITY_TYPES)[number];
 
+/**
+ * User-facing entity type aliases. `chat` is the spec's name for the
+ * session/chat family, but providers emit `session` as the canonical
+ * entityType — so a `type:chat` query must match session documents. The map
+ * lives here (the registry), not in the parser or the UI, so a future alias is
+ * a data addition.
+ */
+export const SEARCH_ENTITY_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["chat", "session"],
+]);
+
+/**
+ * Expand user-facing type values to every canonical entity type they name.
+ * `type:chat` yields ["chat", "session"]; an unknown value passes through
+ * unchanged (the coordinator's hard constraints still drop non-matching rows).
+ */
+export function canonicalEntityTypes(values: readonly string[]): string[] {
+  const expanded = new Set<string>();
+  for (const value of values) {
+    expanded.add(value);
+    const canonical = SEARCH_ENTITY_ALIASES.get(value);
+    if (canonical) expanded.add(canonical);
+  }
+  return [...expanded];
+}
+
 /** Statuses the MVP providers can express. Data, not parser branches. */
 export const SEARCH_STATUS_VALUES = [
   "open",

@@ -98,6 +98,7 @@ export const CLIENT_V1_OPERATIONS = freezeReadonlyArray([
   "pairing.admin.decide",
   "credentials.admin.list",
   "credentials.admin.revoke",
+  "status.admin.read",
   "familiars.list",
   "projects.list",
   "conversations.list",
@@ -109,6 +110,7 @@ export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([
   "invalid_request",
   "unauthorized",
   "scope_denied",
+  "ownership_refused",
   "not_found",
   "conflict",
   "rate_limited",
@@ -768,7 +770,7 @@ function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue
   });
 }
 
-function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
+export function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
   if (isClientV1JsonArray(value)) {
     return value.map((entry) => cloneClientV1JsonValue(entry)) as unknown as T;
   }
@@ -839,8 +841,9 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
   const cursor: ClientV1Cursor = {
     // Keep contract.ts data-only for the proxy import graph. contract.test.ts
     // verifies these reviewed literals against the runtime cursor encoder.
-    current: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
-    next: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
+    // v2 since cave-apo6v: the /conversations sort half became createdAt.
+    current: "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+    next: "eyJ2IjoyLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
     hasMore: true,
   };
 

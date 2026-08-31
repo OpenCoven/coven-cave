@@ -208,6 +208,29 @@ describe("buildThreadReflectPrompt", () => {
     assert.match(prompt, /visual refinement[\s\S]*changed artifact path[\s\S]*fresh render/i);
   });
 
+  it("requires same-thread evidence before reporting a persistent blocker", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-remediate-stale-blocker",
+      transcript: [
+        "user: Resolve this persistent blocker surfaced by an older self-report.",
+        "assistant: The blocker belongs to a separate release task; this remediation updated the signal policy.",
+      ].join("\n"),
+    });
+
+    assert.match(
+      prompt,
+      /persistentBlockers[\s\S]*requires evidence in the THREAD ABOVE[\s\S]*current objective/i,
+    );
+    assert.match(
+      prompt,
+      /remediation prompt[\s\S]*durable memory[\s\S]*is not evidence that it blocked this thread/i,
+    );
+    assert.match(
+      prompt,
+      /diagnose or remediate[\s\S]*do not[\s\S]*re-file[\s\S]*unless it also prevented the[\s\S]*remediation thread/i,
+    );
+  });
+
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
     const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",

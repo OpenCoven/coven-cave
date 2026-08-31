@@ -413,8 +413,8 @@ test("Windows native close remains authoritative when the WebView is unresponsiv
 
   assert.match(
     launcher,
-    /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == PRIMARY_MAIN_WINDOW_LABEL[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
-    "the Windows title-bar close must exit natively without waiting for a wedged JS close listener",
+    /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == PRIMARY_MAIN_WINDOW_LABEL[\s\S]*live_main_window_count\(\) <= 1[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
+    "the Windows title-bar close must exit natively without waiting for a wedged JS close listener, but only when the primary is the last live main window",
   );
   assert.match(
     launcher,
@@ -571,7 +571,7 @@ test("Rust mobile access-token coverage follows extracted lifecycle tests", asyn
 
   assert.match(
     cargoCheckJob,
-    /cargo test --locked --lib/,
+    /cargo test --locked(?:\r?\n|$)/,
     "candidate Rust validation must run the full library suite, including persisted mobile-token lifecycle coverage",
   );
 });
@@ -882,8 +882,8 @@ test("macOS tray exposes quick chat as a separate floating window", async () => 
   );
   assert.match(
     launcher,
-    /if window\.label\(\) == PRIMARY_MAIN_WINDOW_LABEL[\s\S]*try_state::<SidecarState>/,
-    "closing the quick chat window must not stop the desktop sidecar",
+    /if main_webview_windows\(window\.app_handle\(\)\)\.is_empty\(\)[\s\S]*try_state::<SidecarState>/,
+    "the desktop sidecar must be stopped only once no live main window remains (quick chat is not a main window)",
   );
 });
 

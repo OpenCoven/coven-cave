@@ -1,18 +1,20 @@
-import { mkdir, readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { caveHome } from "./coven-paths.ts";
-import { writeJsonAtomic } from "./server/atomic-write.ts";
-import path from "node:path";
-
 /**
- * Local run-history store for Codex automations — records app-triggered
- * "run now" executions (the daemon's scheduled runs are separate). Newest-first,
- * capped, JSON on disk. Path: `~/.coven/cave/automation-runs.json`, overridable
- * via `COVEN_AUTOMATION_RUNS_PATH` (tests).
+ * Compatibility run-history types for the Automations surface.
+ *
+ * The authoritative run ledger now lives in the Coven daemon
+ * (coven#816: automation_runs, surfaced through
+ * /api/codex-automations/[id]/runs). These types remain so the UI and its
+ * state helpers keep one vocabulary while they migrate; the local JSON
+ * store that used to back them is retired (coven-cave#4990).
  */
 export const AUTOMATION_RUNS_CAP = 200;
 
-export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed";
+// `cancelled` is part of the daemon's RoutineRun vocabulary
+// (coven.automations.runs), and the runs route passes statuses through
+// untouched — so it belongs here: a cancelled run must render as what it is,
+// never as "unknown status" (coven-cave#5217: authoritative state mapping for
+// every run state).
+export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type AutomationRunRecord = {
   id: string;
   automationId: string;
@@ -25,84 +27,3 @@ export type AutomationRunRecord = {
   logPath?: string;
 };
 
-type RunsFile = { version: 1; runs: AutomationRunRecord[] };
-
-function runsPath(): string {
-  const override = process.env.COVEN_AUTOMATION_RUNS_PATH?.trim();
-  if (override) return override;
-  return path.join(/* turbopackIgnore: true */ caveHome(), "automation-runs.json");
-}
-
-async function loadRunsFile(): Promise<RunsFile> {
-  try {
-    const text = await readFile(/* turbopackIgnore: true */ runsPath(), "utf8");
-    const parsed = JSON.parse(text) as RunsFile;
-    if (parsed && Array.isArray(parsed.runs)) return { version: 1, runs: parsed.runs };
-  } catch {
-    // missing/corrupt → empty
-  }
-  return { version: 1, runs: [] };
-}
-
-let runsWriteChain: Promise<unknown> = Promise.resolve();
-function withRunsLock<T>(fn: () => Promise<T>): Promise<T> {
-  const next = runsWriteChain.then(fn, fn);
-  runsWriteChain = next.catch(() => undefined);
-  return next;
-}
-
-async function persist(file: RunsFile): Promise<void> {
-  // Run history is runtime user state, never a build input.
-  await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
-  await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
-}
-
-export async function recordRun(input: Omit<AutomationRunRecord, "id">): Promise<AutomationRunRecord> {
-  const record: AutomationRunRecord = { ...input, id: randomUUID() };
-  await withRunsLock(async () => {
-    const file = await loadRunsFile();
-    file.runs.unshift(record);
-    if (file.runs.length > AUTOMATION_RUNS_CAP) file.runs.length = AUTOMATION_RUNS_CAP;
-    await persist(file);
-  });
-  return record;
-}
-
-export async function updateRun(
-  id: string,
-  patch: Partial<Omit<AutomationRunRecord, "id">>,
-): Promise<AutomationRunRecord | null> {
-  return withRunsLock(async () => {
-    const file = await loadRunsFile();
-    const run = file.runs.find((r) => r.id === id);
-    if (!run) return null;
-    Object.assign(run, patch);
-    await persist(file);
-    return run;
-  });
-}
-
-/** Drop all run records for an automation — called when it is deleted so a
- * later automation that reuses the same id/slug doesn't inherit its history. */
-export async function purgeRuns(automationId: string): Promise<void> {
-  await withRunsLock(async () => {
-    const file = await loadRunsFile();
-    const runs = file.runs.filter((r) => r.automationId !== automationId);
-    if (runs.length !== file.runs.length) await persist({ ...file, runs });
-  });
-}
-
-export async function listRuns(automationId?: string): Promise<AutomationRunRecord[]> {
-  const file = await loadRunsFile();
-  return automationId ? file.runs.filter((r) => r.automationId === automationId) : file.runs;
-}
-
-export async function latestRun(automationId: string): Promise<AutomationRunRecord | null> {
-  const file = await loadRunsFile();
-  return file.runs.find((r) => r.automationId === automationId) ?? null;
-}
-
-export async function hasRunningRun(automationId: string): Promise<boolean> {
-  const file = await loadRunsFile();
-  return file.runs.some((r) => r.automationId === automationId && r.status === "running");
-}

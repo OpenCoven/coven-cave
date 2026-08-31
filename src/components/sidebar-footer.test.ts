@@ -13,7 +13,9 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 
 // The shared component owns the whole footer.
 assert.match(footer, /export function SidebarFooter\(\{[\s\S]*onOpenSettings,[\s\S]*activeDestination/, "SidebarFooter accepts the active standalone destination");
-assert.match(footer, /href="\/dashboard"/, "footer links to the Dashboard route");
+assert.match(footer, /import Link from "next\/link"/, "footer uses Next client navigation");
+assert.match(footer, /<Link[\s\S]*?href="\/dashboard"/, "footer links to the Dashboard route through Next");
+assert.doesNotMatch(footer, /<a[\s\S]*?href="\/dashboard"/, "footer does not hard-navigate to Dashboard");
 assert.match(footer, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "footer Settings button calls onOpenSettings");
 assert.match(footer, /aria-current=\{activeDestination === "dashboard" \? "page" : undefined\}/, "footer exposes the active Dashboard route");
 assert.match(footer, /aria-current=\{activeDestination === "settings" \? "page" : undefined\}/, "footer exposes the active Settings route");
@@ -25,10 +27,10 @@ assert.match(
 assert.match(footer, /className="sidebar-version"[\s\S]*?v\{APP_VERSION\}/, "footer shows the app version line");
 // The version line is the shortest path to what it's about: Settings → About
 // carries the version, updates and project links, and the settings shell
-// honours the `#about` section hash. It's a real link to the standalone route
-// (same idiom as the Dashboard link above), not an onOpenSettings caller —
-// which also keeps middle-click / open-in-new-window working.
-assert.match(footer, /href="\/settings#about"/, "the version line deep-links to Settings → About");
+// honours the `#about` section hash. It uses the same client-side link idiom as
+// Dashboard, not an onOpenSettings caller — and still keeps middle-click /
+// open-in-new-window working because Next Link renders an anchor.
+assert.match(footer, /<Link[\s\S]*?href="\/settings#about"/, "the version line deep-links to Settings → About through Next");
 assert.match(
   footer,
   /className="sidebar-version"[\s\S]{0,240}?aria-label=\{`CovenCave v\$\{APP_VERSION\} — open About in Settings`\}/,
@@ -54,14 +56,28 @@ assert.match(
 // Each alternate nav host renders it, so the active footer cannot drift…
 assert.match(minimal, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "SidebarMinimal imports the shared footer");
 assert.match(minimal, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "SidebarMinimal renders the shared footer");
-assert.match(chatNav, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "the chat nav imports the shared footer");
-assert.match(chatNav, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "the chat nav (WorkspaceSidebar) renders the shared footer so Chat keeps it");
+// One sidebar renders the footer now; the embedded chat list must NOT mount a
+// second copy (cave-fh9so).
+assert.doesNotMatch(
+  chatNav,
+  /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/,
+  "the embedded chat list does not mount a second footer",
+)
+assert.doesNotMatch(chatNav, /<SidebarFooter/, "the embedded chat list renders no footer of its own");
 // …and neither hand-rolls its own copy anymore.
 assert.doesNotMatch(minimal, /className="sidebar-foot"[\s\S]{0,40}href="\/dashboard"/, "SidebarMinimal no longer inlines the footer markup");
 
 // WorkspaceSidebar takes onOpenSettings, and workspace threads it through to the
 // chat nav so the Settings button is wired on Chat too.
-assert.match(chatNav, /onOpenSettings: \(\) => void;/, "WorkspaceSidebar declares an onOpenSettings prop");
-assert.match(workspace, /<WorkspaceSidebar[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/, "workspace wires onOpenSettings into the chat nav");
+assert.doesNotMatch(
+  chatNav,
+  /onOpenSettings: \(\) => void;/,
+  "the embedded chat list declares no settings prop — the sidebar footer owns it",
+)
+assert.match(
+  workspace,
+  /<SidebarMinimal[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/,
+  "workspace wires onOpenSettings into the one sidebar",
+)
 
 console.log("sidebar-footer.test.ts: ok");

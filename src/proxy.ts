@@ -28,7 +28,10 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
+  presentsClientV1Bearer,
+  presentsClientV1BoundAuthority,
   isClientV1AdminPath,
   isClientV1Path,
   isRefusedClientV1Path,
@@ -339,14 +342,10 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  // A Client v1 request-target carrying a percent-escape or a backslash is
-  // refused before anything is classified (cave-f1xki, #4854). It cannot be a
-  // real client — every segment of this surface is a fixed literal or a UUID —
-  // and leaving it to the classifier is exactly how it slipped the gate: the
-  // classifier answered null, so the direct-loopback branch and the
-  // 411/413/64 KiB body rules below, which both hang off a non-null answer,
-  // never ran. See isRefusedClientV1Path for why this refuses rather than
-  // normalizes.
+  // Reject noncanonical conversation path spellings and every escaped
+  // pairing/admin target before classification (cave-f1xki, #4854).
+  // Canonically encoded conversation IDs are the narrow exception; the helper
+  // validates them before the authenticated matcher can apply the gates below.
   if (isRefusedClientV1Path(req.nextUrl.pathname)) {
     return jsonError(400, "invalid client v1 path");
   }
@@ -525,6 +524,23 @@ export async function proxy(req: NextRequest) {
   if (clientV1Ingress) {
     if (!trustedLocalPeer || remoteIngress) {
       return jsonError(403, "forbidden peer: client v1 requires direct loopback");
+    }
+    // Resource ingress returns below without ever reaching the sidecar-token
+    // block, so a route reached this way is guarded by its own requireScope
+    // call and nothing else. Demanding a well-formed presented bearer here
+    // makes the paired credential a condition of arrival rather than a
+    // courtesy each handler pays separately, which is what the first author to
+    // forget one would otherwise cost (cave-q5mwb, revived from cave-d1sjz).
+    // Presentation, not verification: a 12-byte fake "Bearer AAAA" satisfies
+    // this check and still lands on the route's own 401, so requireScope stays
+    // mandatory. Public ingress is exempt by definition: pairing is how a
+    // client obtains the credential.
+    if (
+      clientV1Ingress !== CLIENT_V1_PUBLIC_INGRESS
+      && !presentsClientV1Bearer(req.headers.get("authorization"))
+      && !presentsClientV1BoundAuthority(req.headers)
+    ) {
+      return jsonError(401, "unauthorized");
     }
     return nextWithInternalAuthMarkers(req, false);
   }

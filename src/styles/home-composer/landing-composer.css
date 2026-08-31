@@ -163,6 +163,59 @@
   container-type: inline-size;
 }
 
+/* ── Familiar context row (cave-3pnnq) ─────────────────────────────────────
+ *   The shared familiar selector sits directly above the composer, but it
+ *   hugs its content instead of becoming a second full-width toolbar. The
+ *   small persistent label carries the field meaning; the trigger can stay
+ *   compact even before a familiar has been chosen. */
+.home-composer-familiar-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 0 var(--space-2);
+}
+
+.home-composer-familiar-label {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-composer-familiar-context .familiar-quickswitch {
+  flex: 0 1 calc(var(--space-10) * 8);
+  min-width: 0;
+}
+
+.home-composer-familiar-context .familiar-switcher__trigger--labeled {
+  width: 100%;
+  max-width: 100%;
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+}
+
+.home-composer-familiar-context .familiar-switcher__trigger--labeled:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+@container (max-width: 420px) {
+  .home-composer-familiar-context {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .home-composer-familiar-context .familiar-quickswitch {
+    flex-basis: auto;
+    width: 100%;
+  }
+}
+
 /* The hearth-glow halo behind the composer is retired with the washes above:
    its breathing radial oval was the largest "blurry background color" source
    on the page. The card's own chrome carries the focus treatment. */

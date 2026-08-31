@@ -55,8 +55,13 @@ assert.match(
 );
 assert.match(
   destinationPolicy,
-  /home:\s*Object\.freeze\([\s\S]*navSectionForMode\(definition\.id\) === "home"[\s\S]*code:\s*Object\.freeze\([\s\S]*navSectionForMode\(definition\.id\) === "code"/,
-  "the section split derives from the canonical page registry rather than a second list",
+  /const SIDEBAR_DESTINATIONS[\s\S]*WORKSPACE_NAVIGATION_PAGE_DEFINITIONS\.map\(attachDestinationMetadata\)/,
+  "the sidebar list derives from the canonical page registry rather than a second list",
+);
+assert.doesNotMatch(
+  destinationPolicy,
+  /navSectionForMode/,
+  "the retired Home/Chat section split leaves no partitioning behind (cave-fh9so)",
 );
 assert.match(
   destinationPolicy,
@@ -74,8 +79,8 @@ assert.doesNotMatch(sidebar, /export type FolderMode/, "the obsolete component-l
 
 assert.match(
   standalone,
-  /import \{[\s\S]*?navItemsForSection,[\s\S]*?\} from "@\/lib\/nav-section"/,
-  "standalone pages consume the lightweight section registry without importing SidebarMinimal",
+  /import \{ VISIBLE_WORKSPACE_NAV_ITEMS \} from "@\/lib\/workspace-navigation"/,
+  "standalone pages consume the shared nav registry without importing SidebarMinimal",
 );
 assert.doesNotMatch(
   standalone,

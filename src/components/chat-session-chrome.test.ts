@@ -18,6 +18,7 @@ const contextRow = readFileSync(new URL("./chat-session-context-row.tsx", import
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
+const sidebarMinimal = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 // Facade sheets resolve to their effective content: run-tests.mjs loads
 // scripts/css-source-contract-hook.cjs, which patches readFileSync so
 // cave-chat.css yields everything it @imports. Run these files through the
@@ -48,11 +49,6 @@ test("2a ③ — the context row renders under the header, from the same facts a
     /const contextRowModel =\s*\n\s*responseMetadataModel\(lastSettledAssistantTurn\?\.responseMetadata\) \?\?/,
     "the row's model comes from the settled turn's response metadata first",
   );
-  assert.match(
-    chatView,
-    /const \{ branch: sessionGitBranch \} = useChangesSummary\(/,
-    "the branch rides the shared changes-summary gate rather than its own fetch",
-  );
   // 2b: a brand-new chat renders NO context band — the new-session dashboard
   // already states the harness and model, so a lone model chip would repeat it.
   assert.match(
@@ -62,36 +58,31 @@ test("2a ③ — the context row renders under the header, from the same facts a
   );
 });
 
-test("2a ③ — the row is presentation over a pure model and never renders empty chrome", () => {
+test("2a ③ — the row is presentation over a pure model and never renders empty chrome; project/branch/model chips were dropped as redundant with the header identity line", () => {
   assert.match(
     contextRow,
-    /import \{\s*\n\s*chatContextChips,\s*\n\s*chatContextStats,/,
-    "chips and stats derive from the pure chat-session-context model",
+    /import \{\s*\n\s*chatContextStats,/,
+    "stats derive from the pure chat-session-context model",
+  );
+  assert.doesNotMatch(
+    contextRow,
+    /chatContextChips/,
+    "the row no longer renders project/branch/model/cwd chips — the header identity line already states them",
+  );
+  assert.doesNotMatch(
+    contextRow,
+    /ProjectPickerPopover/,
+    "the project selector was dropped from this row along with the other chips",
   );
   assert.match(
     contextRow,
-    /if \(!chips\.length && !stats\.length\) return null;/,
+    /if \(!stats\.length\) return null;/,
     "a session with no facts yet renders no band at all",
-  );
-  assert.match(
-    contextRow,
-    /if \(chip\.id === "project" && pickerAvailable\)/,
-    "only the project chip is interactive — the rest are facts, not controls",
-  );
-  assert.match(
-    contextRow,
-    /<ProjectPickerPopover/,
-    "the project chip opens the shared project picker rather than a private menu",
   );
   assert.match(
     contextRow,
     /<div className="cave-chat-context-row" role="group" aria-label="Session context">/,
     "the context row exposes its accessible name through a semantic group",
-  );
-  assert.match(
-    chatView,
-    /harness=\{familiar\.harness\}[\s\S]*turns=\{turns\}/,
-    "the strip receives the familiar runtime and the transcript it summarizes",
   );
   assert.match(
     contextRow,
@@ -251,7 +242,9 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     /\.cnav__tick\.cnav__dot--running \{[\s\S]*?animation: none;/,
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
-  assert.match(sidebar, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  // The hint moved with the New-chat button: the chat sidebar's rail header is
+  // gone and SidebarMinimal's is the one that is always mounted (cave-fh9so).
+  assert.match(sidebarMinimal, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {

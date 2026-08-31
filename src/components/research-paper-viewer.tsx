@@ -331,7 +331,7 @@ export default function ResearchPaperViewer({
             variant="ghost"
             leadingIcon="ph:minus"
             aria-label="Zoom out"
-            disabled={zoomIndex <= 0}
+            disabled={!ready || zoomIndex <= 0}
             onClick={() => setZoomIndex((current) => Math.max(0, current - 1))}
           />
           <span className="research-paper-view__readout">
@@ -342,7 +342,7 @@ export default function ResearchPaperViewer({
             variant="ghost"
             leadingIcon="ph:plus"
             aria-label="Zoom in"
-            disabled={zoomIndex >= ZOOM_STEPS.length - 1}
+            disabled={!ready || zoomIndex >= ZOOM_STEPS.length - 1}
             onClick={() =>
               setZoomIndex((current) => Math.min(ZOOM_STEPS.length - 1, current + 1))
             }

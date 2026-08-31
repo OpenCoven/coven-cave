@@ -193,16 +193,29 @@ assert.match(
   /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
   "chatContextControls wraps the single ComposerContextChips construction",
 );
+// cave-zfmqm: the footer band is the ONE home for the context controls, for
+// new and active chats alike. The old `inlineComposer` gate paired with a copy
+// in the session header; that copy is gone, so the gate would now strand an
+// active chat with no picker at all.
 assert.match(
   source,
-  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
-  "the context controls ride the footer band only for new-chat (inlineComposer)",
-);
-assert.match(
+  /cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the footer band cluster carries chatContextControls for every composable chat",
+)
+// The session header carries NO context controls (cave-zfmqm) — neither the
+// inline title-row copy nor the `.cave-chat-header-context` strip beneath it.
+// Both are asserted absent so a half-removal, or a quiet reintroduction of the
+// picker toolbar onto the title row, fails here.
+assert.doesNotMatch(
   source,
-  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "the context controls ride the header for writable active chats",
+  /contextControls=/,
+  "the session header takes no context controls",
 );
+assert.doesNotMatch(
+  source,
+  /cave-chat-header-context">/,
+  "and no below-title context strip survives",
+)
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
 // Model selection moved out of the composer UI into the /model slash command.

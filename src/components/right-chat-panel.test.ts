@@ -8,7 +8,7 @@ const shellCss = await readFile(new URL("../styles/globals/shell-navigation.css"
 assert.match(source, /<aside[^>]+aria-label="Chat panel"/, "desktop content is a named complementary landmark");
 assert.match(
   source,
-  /compact[\s\S]*hideRail[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
+  /compact[\s\S]*syncUrlHash=\{false\}[\s\S]*enableSplitPanes=\{false\}/,
   "the auxiliary router remains compact, hash-neutral, and single-pane",
 );
 assert.match(
@@ -540,6 +540,18 @@ assert.match(
   drawerSource,
   /\{open \? \(\s*\n\s*<button\s*\n\s*type="button"\s*\n\s*className="mobile-drawer-backdrop"/,
   "the backdrop renders only while any drawer is open, as a real <button>",
+);
+
+// Full-bleed close strip (cave-4snk9): on phones (≤480px) the drawer is
+// width:100vw and covers the backdrop at every pixel, so CSS hides the
+// backdrop for this slot and THIS button — the drawer's own first child,
+// inside the focus trap — is the close control pointer AND keyboard users
+// can reach. CSS (shell-responsive.css) shows it only at ≤480px; this pin
+// fixes its source shape and that it precedes the panel content.
+assert.match(
+  drawerSource,
+  /className="focus-ring mobile-right-chat-drawer__close"[\s\S]{0,120}aria-label="Close drawer"[\s\S]{0,60}onClick=\{onClose\}\s*\/>\s*\{rightChat\}/,
+  "the full-bleed close strip is the drawer's first child (inside the trap) and calls the same onClose the backdrop uses",
 );
 
 // Escape ownership: the legacy standalone listener must step aside for the

@@ -37,11 +37,14 @@ assert.match(
   /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace owns the four-second session refresh interval",
 );
-assert.match(
+// The rollup is no longer mounted anywhere: the full thread list is docked in
+// the chat surface, and a sidebar rollup as well meant three lists at once
+// (cave-fh9so). The component and its own unit tests remain.
+assert.doesNotMatch(
   sidebar,
-  /<RecentActivityRollup[\s\S]{0,180}sessions=\{sessions\}[\s\S]{0,120}selectedFamiliarIds=\{selectedFamiliarIds\}/,
-  "the mounted sidebar passes Workspace-owned sessions into Recent Activity",
-);
+  /<RecentActivityRollup/,
+  "the sidebar mounts no session rollup",
+)
 assert.match(source, /sessions: SessionRow\[\]/, "Recent Activity requires the shared sessions prop");
 assert.match(
   source,

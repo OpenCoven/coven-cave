@@ -113,8 +113,8 @@ test("candidate validation requires signed tag provenance and calls every deferr
   );
   assert.match(
     full.jobs.rust.steps.map((step) => step.run ?? "").join("\n"),
-    /cargo check --locked[\s\S]*cargo test --locked --lib/,
-    "Rust validation includes the persisted mobile-token library coverage",
+    /cargo check --locked[\s\S]*(?:^|\n)cargo test --locked(?:\n|$)/m,
+    "Rust validation includes the library and rustdoc test coverage",
   );
   const e2eRuns = full.jobs.e2e.steps.map((step) => step.run ?? "").join("\n");
   assert.match(
@@ -849,6 +849,11 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
 
 test("checksums publishes SHA256SUMS only for a wholly successful build", async () => {
   const release = await workflow("release.yml");
+  assert.deepEqual(
+    [...needs(release.jobs.checksums)].sort(),
+    ["build", "source-version"],
+    "checksums must wait for the complete build matrix and stamped source",
+  );
   const condition = release.jobs.checksums.if;
 
   assert.equal(
@@ -970,7 +975,9 @@ test("release-ios-build carries its platform selection once, at job level", asyn
     guarded.map((step) => step.name),
     [
       "Install iOS signing assets",
-      "Archive and export the iOS app",
+      "Archive the iOS app (signed, TestFlight)",
+      "Audit embedded-framework dSYM coverage",
+      "Export the iOS app to IPA",
       "Validate, upload, and confirm TestFlight processing",
       "Clean up iOS signing material",
     ],
@@ -999,7 +1006,7 @@ test("release-ios-build carries its platform selection once, at job level", asyn
     );
   }
   assert.equal(
-    evaluateCondition(guarded[3].if, resuming),
+    evaluateCondition(guarded[guarded.length - 1].if, resuming),
     true,
     "signing material must be cleaned up even after a failed archive",
   );

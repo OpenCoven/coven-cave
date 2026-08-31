@@ -51,6 +51,7 @@ import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/co
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
@@ -86,6 +87,11 @@ type Props = {
   project: CaveProject | null;
   taskOrigin?: HomeTaskOrigin | null;
   actingFamiliarId: string | null;
+  /** The shell's active familiar — drives the shared selector row's highlight.
+   *  Distinct from `actingFamiliarId`, which is the resolved aggregate actor. */
+  activeFamiliarId: string | null;
+  /** Writes the shell's active familiar (single-select) from the selector row. */
+  onSetActiveFamiliar: (id: string | null) => void;
   onRequestActingFamiliar: (
     actionLabel: string,
     authorityId: string,
@@ -138,6 +144,8 @@ export function HomeComposer({
   project,
   taskOrigin = null,
   actingFamiliarId,
+  activeFamiliarId,
+  onSetActiveFamiliar,
   onRequestActingFamiliar,
   onValidateActingFamiliar,
   sessions,
@@ -857,6 +865,26 @@ export function HomeComposer({
       {/* Composer card — wrapped so the slash menu can render above the
           card without being clipped by the card's `overflow: hidden`. */}
       <div className="home-composer-card-wrap">
+
+        {/* Shared familiar selector (cave-3pnnq): a compact context
+            row directly above the reference composer — and therefore above the
+            Chat/Task destination tabs inside it. The visible label keeps the
+            compact control legible without turning it back into a full-width
+            toolbar. singleRequired keeps Home a one-familiar launch surface;
+            the sidebar switcher is unchanged. */}
+        <div className="home-composer-familiar-context">
+          <span className="home-composer-familiar-label">Familiar</span>
+          <FamiliarQuickSwitch
+            familiars={familiars}
+            activeFamiliarId={activeFamiliarId}
+            sessions={sessions}
+            onSelectFamiliar={(id) => {
+              if (id) onSetActiveFamiliar(id);
+            }}
+            labeled
+            singleRequired
+          />
+        </div>
 
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}

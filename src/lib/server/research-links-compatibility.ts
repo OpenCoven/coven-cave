@@ -66,6 +66,8 @@ export type ResearchLinksCompatibilityOptions = {
   legacyPath?: string;
   resourceRoot?: string;
   now?: () => Date;
+  /** @internal Recovery already owns the maintenance lease and must not recurse. */
+  recoveryAlreadyHeld?: boolean;
   /** Test-only durable-boundary fault injection; production callers omit it. */
   testFailpoint?: (point: ResearchLinksCompatibilityFailpoint) => void | Promise<void>;
 };
@@ -629,8 +631,21 @@ async function runCompatibility<T>(
   mutate?: (links: SavedLink[]) => Promise<ResearchLinksMutationResult<T>> | ResearchLinksMutationResult<T>,
 ): Promise<{ links: SavedLink[]; result?: T }> {
   const root = resourceRoot(options);
+  if (!options.recoveryAlreadyHeld) {
+    const { recoverInterruptedResearchResourceRestore } = await import(
+      "./research-resource-recovery.ts"
+    );
+    await recoverInterruptedResearchResourceRestore({
+      root,
+      reconcileProjection: () => listCompatibleResearchLinks({
+        ...options,
+        resourceRoot: root,
+        recoveryAlreadyHeld: true,
+      }),
+    });
+  }
   const store = createResearchResourceStore({ root });
-  return store.withManifestCatalogTransaction(async (transaction) => {
+  return store.withOperationalTransaction(async (transaction) => {
     const paths = await ensureMigrationDirectory(root);
     const rawProjection = await readJsonOptional(paths.projection);
     const metadata = rawProjection === null ? null : parseProjection(rawProjection);
@@ -649,7 +664,15 @@ async function runCompatibility<T>(
       throw new ResearchLinksCompatibilityError("saved-link migration journal revision is stale");
     }
     const legacyRead = await readResearchLinksStrictWithDigest({ path: legacyPath(options) });
-    const legacy = legacyRead.file;
+    const tombstonedResourceIds = new Set(
+      transaction.listTombstones().map((tombstone) => tombstone.resourceId),
+    );
+    const legacy = {
+      ...legacyRead.file,
+      links: legacyRead.file.links.filter(
+        (link) => !tombstonedResourceIds.has(resourceId(link.id)),
+      ),
+    };
     const currentCatalog = catalogLinks(transaction.listManifests());
 
     let desired: SavedLink[];
@@ -713,6 +736,11 @@ async function runCompatibility<T>(
       desired = sortLinks(parseResearchLinksBytes(
         Buffer.from(JSON.stringify({ version: 1, links: changed.links }), "utf8"),
       ).links);
+      if (desired.some((link) => tombstonedResourceIds.has(resourceId(link.id)))) {
+        throw new ResearchLinksCompatibilityError(
+          "saved-link mutation cannot recreate a tombstoned resource revision",
+        );
+      }
       result = changed.result;
     }
 

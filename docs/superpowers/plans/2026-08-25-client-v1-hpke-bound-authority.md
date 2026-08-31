@@ -1,6 +1,6 @@
 # Client v1 HPKE-Bound Authority Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Add a compatibility-safe, SDK-consumable RFC 9180 `hpke-bound-v1` producer mechanism that atomically binds pairing-secret and bearer-bearing Client v1 requests and responses to one per-runtime Cave authority.
 
@@ -431,13 +431,24 @@ export const CLIENT_V1_HPKE_OPERATION_CREDENTIAL = Object.freeze({
 
 Build the route from the actual request URL, never from caller-supplied JSON:
 
-1. Use `URL.pathname` after the existing proxy refusal of `%` and `\`.
-2. Decode query names and values through `URLSearchParams`.
-3. Re-encode each name/value with RFC 3986 percent encoding: UTF-8, uppercase hex, spaces as `%20`, and `!'()*` percent-escaped.
-4. Sort pairs by encoded name, then encoded value, using ASCII byte order.
-5. Join pairs with `&` and name/value with `=`.
-6. Return `pathname` when no query exists, otherwise `pathname + "?" + query`.
-7. Reject a canonical route longer than 2048 UTF-8 bytes.
+> **2026-08-27 follow-up to #5044:** the original blanket `%` refusal below was
+> not compatible with canonical conversation IDs built with
+> `encodeURIComponent`. The normative implementation now lives in
+> `canonical-path.ts`; this section supersedes the original code sketch.
+
+1. Use the serialized `URL.pathname`.
+2. Require a leading slash and reject empty non-root segments.
+3. Split on literal `/` before decoding. Decode each segment exactly once as
+   UTF-8, reject malformed input, `.`, `..`, decoded `\`, and decoded `%HH`,
+   then re-encode with the exact `encodeURIComponent` literal set and uppercase
+   hex. The re-encoded segment must equal the original byte for byte. Preserve
+   the original validated pathname, including `%2F` within one segment.
+4. Decode query names and values through `URLSearchParams`.
+5. Re-encode each name/value with RFC 3986 percent encoding: UTF-8, uppercase hex, spaces as `%20`, and `!'()*` percent-escaped.
+6. Sort pairs by encoded name, then encoded value, using ASCII byte order.
+7. Join pairs with `&` and name/value with `=`.
+8. Return `pathname` when no query exists, otherwise `pathname + "?" + query`.
+9. Reject a canonical route longer than 2048 UTF-8 bytes.
 
 ```ts
 function rfc3986Component(value: string): string {
@@ -450,9 +461,7 @@ const asciiCompare = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
 export function canonicalClientV1Route(url: URL): string {
-  if (url.pathname.includes("%") || url.pathname.includes("\\")) {
-    throw new Error("Client v1 authority path is not canonical.");
-  }
+  const pathname = canonicalClientV1Pathname(url.pathname);
   const pairs = [...url.searchParams.entries()]
     .map(([name, value]) => [
       rfc3986Component(name),
@@ -464,7 +473,7 @@ export function canonicalClientV1Route(url: URL): string {
         : asciiCompare(leftName, rightName),
     );
   const query = pairs.map(([name, value]) => `${name}=${value}`).join("&");
-  const route = query ? `${url.pathname}?${query}` : url.pathname;
+  const route = query ? `${pathname}?${query}` : pathname;
   if (new TextEncoder().encode(route).byteLength > 2048) {
     throw new Error("Client v1 authority route is too long.");
   }

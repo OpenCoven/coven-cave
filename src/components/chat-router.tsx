@@ -6,7 +6,6 @@ import "@/styles/cave-composer.css";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
-import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-view";
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
@@ -45,21 +44,14 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
-  migrateOrganizationExpansionKeys,
-  normalizeSelection,
-  projectSelectionKeys,
   readPersisted,
-  PROJECT_SIDEBAR_EXPANSION_VERSION,
   PROJECT_SIDEBAR_KEYS,
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
-import { organizationExpansionKey } from "@/lib/project-organizations";
 import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
-import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { SessionRemovalReason } from "@/lib/chat-session-removal";
@@ -105,14 +97,10 @@ type Props = {
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
    *  it for the hash. Workspace owns mount-time restore + popstate handling. */
   syncUrlHash?: boolean;
-  /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Hides the
-   *  project sidebar in both list and chat views to reclaim the limited width. */
+  /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Drops
+   *  the list toolbar in both list and chat views to reclaim the limited
+   *  width. */
   compact?: boolean;
-  /** Hides only the project rail (the outer WorkspaceSidebar owns chats);
-   *  the list keeps its full-width toolbar, unlike compact. */
-  hideRail?: boolean;
-  /** Jump from the in-chat project rail to the dedicated Projects tab. */
-  onOpenProjectsTab?: () => void;
   /** Reports the session the router's chat view is showing (null on the list
    *  or a not-yet-minted new chat). Lets the Workspace mirror the active
    *  session as state instead of reading the imperative handle during render,
@@ -192,8 +180,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenPreview,
     syncUrlHash,
     compact = false,
-    hideRail = false,
-    onOpenProjectsTab,
     onActiveSessionChange,
     enableSplitPanes = false,
     composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY,
@@ -286,17 +272,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [view, pendingVoice]);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
-  const openProjectsTab = useCallback(() => {
-    if (onOpenProjectsTab) {
-      onOpenProjectsTab();
-      return;
-    }
-    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-  }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
-  const sidebarOrganizationMigrationPendingRef = useRef(false);
-  const sidebarDefaultExpandedRef = useRef(false);
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const isMobile = useIsMobile();
@@ -326,7 +302,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
   const {
     projects,
-    loadedSuccessfully: projectsLoadedSuccessfully,
   } = useProjects();
   const projectOverrides = useProjectOverrides();
 
@@ -344,142 +319,28 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ),
     [sidebarSessions, projects, projectOverrides, projectIndex],
   );
-  const migrationGroups = useMemo(
-    () => {
-      if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return [];
-      return deriveChatProjectGroups(
-        applyProjectOverrides(filterVisibleChatSessions(sessions, null), projectOverrides),
-        projects,
-        projectIndex,
-        { sessionsNewestFirst: true },
-      );
-    },
-    [sidebarHydrated, sessions, projects, projectOverrides, projectIndex],
-  );
-  const effectiveSelection = useMemo(
-    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
-    [isMobile, selection, sidebarGroups],
-  );
-  const toggleSidebarExpanded = useCallback((key: string) => {
-    sidebarDefaultExpandedRef.current = false;
-    setExpandedKeys((prev) =>
-      prev.includes(key) ? prev.filter((entry) => entry !== key) : [...prev, key],
-    );
-  }, []);
   const syncSidebarProjectRoot = useCallback((
     nextProjectRoot: string | null,
     nextRuntimeHost: string | null,
   ) => {
-    const nextSelection = selectionForProjectRoot(
+    setSelection(selectionForProjectRoot(
       nextProjectRoot,
       nextRuntimeHost,
       sidebarGroups,
-    );
-    setSelection(nextSelection);
-    const group = sidebarGroups.find(
-      (entry) =>
-        selectionKey(entry.projectId, entry.projectRoot, entry.runtimeHost) === nextSelection,
-    );
-    if (nextSelection !== "all" && group) {
-      const organizationKey = organizationExpansionKey(group.organization.key);
-      setExpandedKeys((prev) => {
-        const next = [...prev];
-        if (!next.includes(organizationKey)) next.push(organizationKey);
-        if (!next.includes(nextSelection)) next.push(nextSelection);
-        return next.length === prev.length ? prev : next;
-      });
-    }
+    ));
   }, [sidebarGroups]);
 
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
-    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    const storedExpansionVersion = readPersisted<unknown>(
-      PROJECT_SIDEBAR_KEYS.expandedVersion,
-      null,
-    );
-    sidebarDefaultExpandedRef.current = !Array.isArray(storedExpanded);
-    if (Array.isArray(storedExpanded)) {
-      setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
-      sidebarOrganizationMigrationPendingRef.current =
-        storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;
-    } else {
-      setExpandedKeys(projectSelectionKeys(sidebarGroups));
-      sidebarOrganizationMigrationPendingRef.current = false;
-    }
-    if (!sidebarOrganizationMigrationPendingRef.current) {
-      try {
-        window.localStorage.setItem(
-          PROJECT_SIDEBAR_KEYS.expandedVersion,
-          JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
-        );
-      } catch {
-        // persistence is best-effort
-      }
-    }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, [sessionsLoaded, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
-    setExpandedKeys(projectSelectionKeys(sidebarGroups));
-  }, [sidebarHydrated, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated || sidebarOrganizationMigrationPendingRef.current) return;
-    try {
-      window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
-    } catch {
-      // persistence is best-effort
-    }
-  }, [sidebarHydrated, expandedKeys]);
+  }, [sessionsLoaded]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
-  useEffect(() => {
-    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
-    if (sessionsLoaded === false || sessionsError) return;
-    if (!projectsLoadedSuccessfully) return;
-    const migratedExpandedKeys = migrateOrganizationExpansionKeys(
-      expandedKeys,
-      migrationGroups,
-      projects,
-    );
-    setExpandedKeys(migratedExpandedKeys);
-    try {
-      window.localStorage.setItem(
-        PROJECT_SIDEBAR_KEYS.expanded,
-        JSON.stringify(migratedExpandedKeys),
-      );
-      window.localStorage.setItem(
-        PROJECT_SIDEBAR_KEYS.expandedVersion,
-        JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
-      );
-    } catch {
-      // persistence is best-effort
-    }
-    sidebarOrganizationMigrationPendingRef.current = false;
-  }, [
-    sidebarHydrated,
-    sessionsLoaded,
-    sessionsError,
-    projectsLoadedSuccessfully,
-    expandedKeys,
-    migrationGroups,
-    projects,
-  ]);
-  // First chat in a fresh project folder (or this surface's just-started
-  // chat) must not hide inside a collapsed group (cave-mllp).
-  useAutoExpandNewGroups({
-    hydrated: sidebarHydrated,
-    scopeKey: familiar?.id ?? "all",
-    sessions,
-    groups: sidebarGroups,
-    activeSessionId: view.kind === "chat" ? view.sessionId : null,
-    setExpandedKeys,
-  });
 
   // ── URL hash sync (CHAT-D9-01) ────────────────────────────────────────────
   // Follows the existing in-app hash idiom (`#card-<id>`):
@@ -898,14 +759,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         selection={selection}
-        expandedKeys={expandedKeys}
         onSelectionChange={setSelection}
-        onToggleExpanded={toggleSidebarExpanded}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
         compact={compact}
-        hideRail={hideRail}
         onSessionsChanged={onSessionsChanged}
         onSessionsDeleted={onSessionsDeleted}
         onOpenUrl={onOpenUrl}
@@ -1122,39 +980,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && !hideRail && (
-      <ChatProjectSidebar
-        groups={sidebarGroups}
-        selection={effectiveSelection}
-        expandedKeys={expandedKeys}
-        activeSessionId={view.kind === "chat" ? view.sessionId : null}
-        onSelect={setSelection}
-        onToggleExpanded={toggleSidebarExpanded}
-        onOpenSession={(s) => {
-          const next = selectFamiliarForChat(s.familiarId);
-          setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
-        }}
-        onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
-        onNewChat={(projectRoot, runtimeHost) => {
-          if (onRequestNewChat) {
-            onRequestNewChat();
-            return;
-          }
-          const nextFamiliarId = familiar?.id ?? null;
-          if (!nextFamiliarId) return;
-          const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
-          advanceComposeInstance();
-          setView({
-            kind: "chat",
-            sessionId: null,
-            projectRoot: projectRoot ?? undefined,
-            ...(runtimeHost ? { initialControls: { runtimeHost } } : {}),
-            familiarId: next?.id ?? nextFamiliarId ?? null,
-          });
-        }}
-        onOpenProjectsTab={openProjectsTab}
-      />
-      )}
+      {/* The project-grouped rail that used to sit here is gone (cave-fh9so).
+          The chat surface now docks ONE threads rail beside the conversation
+          (chat-surface.tsx); keeping this one meant the chat page rendered
+          three chat lists at once — the sidebar rollup, the surface rail, and
+          this. ChatProjectSidebar itself was retired, along with its
+          dedicated specs, in cave-4er6q. */}
       <div className="relative min-h-0 min-w-0 flex-1">
         <ChatSplitHost
           panes={splitPaneTiles}

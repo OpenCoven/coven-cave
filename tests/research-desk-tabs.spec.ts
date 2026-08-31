@@ -651,14 +651,18 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
       },
     });
   });
-  await page.route("**/api/chat/send", (route) => {
+  // Server-minted provenance (cave-cst0g): hidden generations ride the
+  // dedicated generation surface, which names the origin in its path.
+  await page.route(/\/api\/chat\/generate\/[a-z]+$/, (route) => {
+    const url = new URL(route.request().url());
+    const origin = url.pathname.split("/").pop() ?? "";
     const body = route.request().postDataJSON() as Record<string, unknown>;
-    if (body.origin === "enhance") {
+    if (origin === "enhance") {
       handles.directionDraftBodies.push(body);
       return fulfillDirectionDraft(route);
     }
-    if (body.origin === "journal") return fulfillJournalSend(route);
-    throw new Error(`unexpected Research Desk chat send origin: ${String(body.origin)}`);
+    if (origin === "journal") return fulfillJournalSend(route);
+    throw new Error(`unexpected Research Desk generation origin: ${origin}`);
   });
   await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
     route.fulfill({
@@ -1158,6 +1162,26 @@ test.describe("research desk tabs", () => {
       }))
       .toBe(true);
     await expect(overlay.locator(".research-res-overlay__sub")).toHaveText("github.com");
+
+    // The rollout flag is not Context Pack consent. Resources has no
+    // authoritative explicit pack selection, so the browser modal must stay
+    // locked and must not place the remote URL in an iframe even when this
+    // spec is run locally with both NEXT_PUBLIC_CAVE_RESEARCH_* flags enabled.
+    const remoteRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url() === "https://github.com/acme/vector-bench") {
+        remoteRequests.push(request.url());
+      }
+    });
+    const previewTrigger = overlay.getByRole("button", { name: "Preview in browser" });
+    await previewTrigger.click();
+    const browserDialog = page.getByRole("dialog", { name: /Resource browser.*acme\/vector-bench/ });
+    await expect(browserDialog).toContainText("Remote content is off");
+    await expect(browserDialog.locator("iframe")).toHaveCount(0);
+    expect(remoteRequests).toEqual([]);
+    await browserDialog.getByRole("button", { name: "Close" }).click();
+    await expect(previewTrigger).toBeFocused();
+
     await overlay.getByRole("button", { name: "Close resource details" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // Focus returns to the card title that opened it.
@@ -1443,11 +1467,16 @@ test.describe("research desk tabs", () => {
       const topics = intake.getByRole("region", { name: "Suggested next topics" });
       await expect(topics).toBeVisible();
       await expect(topics).toContainText("Compare vector index recall against latency");
-      await expect(topics).toContainText("mission: Vector DB pricing landscape");
-      await expect(topics).toContainText("saved-link: acme/vector-bench");
-      await expect(topics).toContainText("saved-link: X Article 1881");
-      await expect(topics).toContainText("vault: Vector retrieval notes");
-      await expect(topics.getByText("Why this recommendation?").first()).toBeVisible();
+      await expect(topics).toContainText("Mission");
+      await expect(topics).toContainText("Vector DB pricing landscape");
+      await expect(topics).toContainText("Saved link");
+      await expect(topics).toContainText("acme/vector-bench");
+      await expect(topics).toContainText("X Article 1881");
+      await expect(topics).toContainText("Vault");
+      await expect(topics).toContainText("Vector retrieval notes");
+      await expect(topics.getByText("Why this surfaced").first()).toBeVisible();
+      await expect(topics.getByText("Evidence trail").first()).toBeVisible();
+      await expect(topics.getByText("Review required").first()).toBeVisible();
       await expect.poll(() => handles.recommendationRequests).toBeGreaterThan(0);
       expect(handles.recommendationMethods.every((method) => method === "GET")).toBe(true);
 
@@ -1682,7 +1711,7 @@ test.describe("research desk tabs", () => {
       await expect.poll(() => handles.recommendationRevisionRequests).toBe(revisionRequests + 1);
       await refresh.focus();
       await page.keyboard.press("Tab");
-      await expect(topics.getByText("Why this recommendation?").first()).toBeFocused();
+      await expect(topics.getByText("View verification checks").first()).toBeFocused();
       await page.evaluate(() => {
         window.dispatchEvent(new Event("focus"));
         document.dispatchEvent(new Event("visibilitychange"));

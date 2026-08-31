@@ -80,10 +80,42 @@ fi
 # which is the correct direction to fail.
 git -C "$REPO_ROOT" config merge.beads-jsonl.name \
   "union .beads/interactions.jsonl by record id (cave-1poit)"
+# cave-f13bp: a bare "node" resolves fine in an interactive shell but NOT
+# under GitHub Desktop, which invokes git with a minimal PATH that excludes
+# nvm/homebrew/asdf install locations. That left a GUI-driven merge stash
+# conflicted with "node: command not found" instead of running the driver.
+# Resolve node's absolute path once, here, at install time — a git config
+# value is per-clone anyway, so baking in this machine's resolution costs
+# nothing and survives whatever PATH invokes git later. Fail loudly now
+# rather than writing a config we already know will fail silently later.
+#
+# `command -v` can report a shell function or alias name instead of a real
+# executable (neither is meaningful once baked into a git config run by a
+# different process), and can report a path that is relative if PATH itself
+# contains a relative entry. Require an executable regular file, and
+# normalize to an absolute path rather than trusting the string as-is.
+node_bin=$(command -v node || true)
+if [ -n "$node_bin" ] && [ ! -f "$node_bin" ]; then
+  node_bin=""
+fi
+if [ -n "$node_bin" ]; then
+  case "$node_bin" in
+    /*) : ;;
+    *) node_bin=$(cd "$(dirname "$node_bin")" && pwd)/$(basename "$node_bin") ;;
+  esac
+fi
+if [ -z "$node_bin" ] || [ ! -x "$node_bin" ]; then
+  echo "ERROR: node not found (as an executable file) on PATH; cannot" >&2
+  echo "  install a GUI-safe merge.beads-jsonl.driver (cave-f13bp)." >&2
+  echo "  Install Node, then re-run this script." >&2
+  exit 1
+fi
+
 # %O/%A/%B are quoted as defence in depth. Measured behaviour is that git
 # substitutes relative, space-free temp names, so this is not load-bearing —
 # see the note in scripts/beads-jsonl-merge-driver.mjs before "fixing" it.
+# node_bin is quoted for real: an absolute install path CAN contain spaces.
 git -C "$REPO_ROOT" config merge.beads-jsonl.driver \
-  'node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"'
+  "\"$node_bin\" scripts/beads-jsonl-merge-driver.mjs \"%O\" \"%A\" \"%B\""
 
-echo "OK merge.beads-jsonl -> scripts/beads-jsonl-merge-driver.mjs"
+echo "OK merge.beads-jsonl -> scripts/beads-jsonl-merge-driver.mjs ($node_bin)"

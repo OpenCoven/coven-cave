@@ -23,6 +23,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
   rmSync,
 } from "node:fs";
@@ -31,6 +32,7 @@ import path from "node:path";
 import { CAVE_PORTS, CAVE_PORT_ENV, parsePort } from "../../../scripts/ports.mjs";
 import {
   assertExclusivePathOwnership,
+  assertExclusivePathOwnershipSync,
   type ClientV1PathOwnershipOptions,
 } from "./client-v1/path-ownership.ts";
 
@@ -80,7 +82,18 @@ export function loadPersistedMobileAccessSecret(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   try {
-    const secret = readFileSync(mobileAccessSecretFile(env), "utf8").trim();
+    const file = mobileAccessSecretFile(env);
+    // This reader is sync and cannot run the Windows DACL probe, so it uses
+    // the sync guard: POSIX verifies owner/mode/symlink, and a platform that
+    // cannot answer synchronously refuses — the secret is treated as
+    // unreadable rather than trusted silently (cave-8pd39).
+    const stats = lstatSync(file);
+    assertExclusivePathOwnershipSync(
+      file,
+      { uid: stats.uid, mode: stats.mode, isSymbolicLink: stats.isSymbolicLink() },
+      "The persisted mobile access secret",
+    );
+    const secret = readFileSync(file, "utf8").trim();
     return secret.length > 0 ? secret : null;
   } catch {
     return null;
@@ -108,6 +121,13 @@ export interface MobileAccessProvisionOptions {
  * file holds the pairing secret in plaintext, so the same defect is worse
  * here. The POSIX modes above stay (they are real on POSIX); this adds the
  * DACL the platform actually enforces, using the guard #4852 already built.
+ *
+ * Since cave-8p0hn it also refuses a symlink and inspects the real path — the
+ * same two moves the sibling credential store makes. A reparse point here
+ * would be FOLLOWED by mkdirSync(recursive) and writeFileSync into a directory
+ * whose DACL was never the one verified, and the ownership answer is only
+ * about the path the guard actually inspected: on macOS mkdtempSync(tmpdir())
+ * hands back /var/… that resolves to /private/var/….
  */
 async function restrictToCurrentUser(
   target: string,
@@ -115,7 +135,24 @@ async function restrictToCurrentUser(
   env: Record<string, string | undefined>,
   options: MobileAccessProvisionOptions,
 ): Promise<void> {
-  await assertExclusivePathOwnership(target, lstatSync(target), subject, {
+  // lstat the path as handed BEFORE realpath resolves it: a symlink here must
+  // be refused, not followed, and realpath would resolve the link away so the
+  // guard would then describe a path the secret does not actually live at.
+  const handed = lstatSync(target);
+  if (handed.isSymbolicLink()) {
+    throw new Error(`${subject} must not be a symlink: ${target}.`);
+  }
+  // The ownership answer is only about the path the guard inspected, so it
+  // must inspect the target reads and writes actually land on — and keep the
+  // symlink refusal for the race that swaps one in between the two calls
+  // (same realpath-then-lstat move as credential-store.ts
+  // `initializeCredentialStoreLocation`).
+  const physical = realpathSync(target);
+  const metadata = lstatSync(physical);
+  if (metadata.isSymbolicLink()) {
+    throw new Error(`${subject} must not be a symlink: ${target}.`);
+  }
+  await assertExclusivePathOwnership(physical, metadata, subject, {
     // The waiver is read from the same environment this module was handed, so
     // a test can drive it and a caller cannot accidentally consult a different
     // one than the rest of the module.

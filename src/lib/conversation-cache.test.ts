@@ -221,7 +221,6 @@ test("hovering another row re-arms the singleton timer onto the new session", as
 // intent prefetch, and chat-view paints/loads/invalidates through this module.
 
 const chatList = await readFile(new URL("../components/chat-list.tsx", import.meta.url), "utf8");
-const chatRail = await readFile(new URL("../components/chat-project-sidebar.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 
@@ -233,12 +232,6 @@ test("chat-list rows prefetch on hover, pointer down, and keyboard focus", () =>
   assert.match(chatList, /onSessionsDeleted\(\[sessionId\]\)/);
 });
 
-test("thread-rail rows prefetch on hover, pointer down, and keyboard focus", () => {
-  assert.match(chatRail, /onMouseEnter=\{\(\) => hoverPrefetchConversation\(session\.id\)\}/);
-  assert.match(chatRail, /onMouseLeave=\{cancelHoverPrefetch\}/);
-  assert.match(chatRail, /onPointerDown=\{\(\) => \{[\s\S]{0,120}?prefetchConversation\(session\.id\)/);
-  assert.match(chatRail, /onFocus=\{\(event\) => \{[\s\S]{0,160}?event\.target !== event\.currentTarget[\s\S]{0,160}?prefetchConversation\(session\.id\)/);
-});
 
 test("chat-view paints cached payloads and shares revalidation with prefetch", () => {
   // Cached paint goes through the same apply path as a fresh fetch…

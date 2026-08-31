@@ -20,7 +20,7 @@ private struct StubProjectContextClient: ProjectContextLoadingClient, @unchecked
         try familiarsResult.get()
     }
 
-    func sessions() async throws -> [SessionRow] {
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] {
         try sessionsResult.get()
     }
 
@@ -197,7 +197,7 @@ private final class ControlledCoreClient: AppModelCoreResourceClient, TaskSessio
         return try familiarsResult.get()
     }
 
-    func sessions() async throws -> [SessionRow] {
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] {
         await callLog.recordSessions()
         await sessionStarted?.open()
         await historyStarted?.open()
@@ -335,7 +335,7 @@ private final class SequencedHistoryCoreClient: AppModelCoreResourceClient, @unc
     func projectGrants() async throws -> ProjectGrantsResponse { grantsValue }
     func familiars() async throws -> [Familiar] { familiarsValue }
 
-    func sessions() async throws -> [SessionRow] {
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] {
         await callLog.recordSessions()
         return try await sessionsPlan.next(label: "sessions")
     }
@@ -417,7 +417,7 @@ private final class RetryingProjectContextCoreClient: AppModelCoreResourceClient
     func projects() async throws -> [ProjectInfo] { projectsValue }
     func projectGrants() async throws -> ProjectGrantsResponse { try await grantsPlan.next() }
     func familiars() async throws -> [Familiar] { familiarsValue }
-    func sessions() async throws -> [SessionRow] { sessionsValue }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { sessionsValue }
     func tasks() async throws -> [BoardCard] { tasksValue }
     func fetchTheme() async throws -> ThemeSnapshot { themeValue }
     func operatorProfile() async throws -> OperatorProfile { profileValue }
@@ -469,7 +469,7 @@ private actor InterleavingTaskMutationClient: AppModelCoreResourceClient, TaskFi
     func projects() async throws -> [ProjectInfo] { projectsValue }
     func projectGrants() async throws -> ProjectGrantsResponse { grantsValue }
     func familiars() async throws -> [Familiar] { familiarsValue }
-    func sessions() async throws -> [SessionRow] { [] }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [baseCard] }
     func fetchTheme() async throws -> ThemeSnapshot { themeValue }
     func operatorProfile() async throws -> OperatorProfile { profileValue }
@@ -614,7 +614,7 @@ private actor SequencedTaskMutationClient: AppModelCoreResourceClient, TaskField
     func projects() async throws -> [ProjectInfo] { projectsValue }
     func projectGrants() async throws -> ProjectGrantsResponse { grantsValue }
     func familiars() async throws -> [Familiar] { familiarsValue }
-    func sessions() async throws -> [SessionRow] { [] }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [baseCard] }
     func fetchTheme() async throws -> ThemeSnapshot { themeValue }
     func operatorProfile() async throws -> OperatorProfile { profileValue }
@@ -4432,6 +4432,11 @@ final class AppModelProjectContextTests: XCTestCase {
         let first = try XCTUnwrap(firstResult)
         let second = try XCTUnwrap(secondResult)
 
+        // Session resolution can finish before the current-generation project
+        // catalog publishes navigation. The authoritative open must still
+        // return its canonical thread; wait only for the deferred UI handoff.
+        await waitFor { app.threadToOpen === first }
+
         XCTAssertTrue(first === second)
         XCTAssertEqual(app.threads.count, 1)
         XCTAssertEqual(first.familiarIds, ["sage"])
@@ -4440,7 +4445,10 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.cardThreadLinks[task.id], first.id)
         XCTAssertTrue(app.threadToOpen === first)
         XCTAssertEqual(app.selectedTab, .chats)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.toast)
+        let calls = await controlledClient.callLog.snapshot()
+        XCTAssertEqual(calls.sessions, 1)
     }
 
     @MainActor

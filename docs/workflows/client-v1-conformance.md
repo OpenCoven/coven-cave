@@ -94,9 +94,10 @@ tombstone surviving a store reload, and the revoked bearer being refused **by
 all five canonical reads** — `read-guard.ts` keeps the credential decision
 written out in each route module rather than delegated, so there are five copies
 of it and a single-route probe clears one; and
-every admin route answering `503` when `COVEN_CAVE_AUTH_TOKEN` is unset —
-together with the consequence that matters, which is that a pairing opened on a
-tokenless Cave can only ever answer `pairing_pending`.
+the tokenless non-bundled development path proving direct-loopback admin
+authorization over the real proxy: empty approval and credential lists, 404 for
+unknown decision/revocation ids, pairing creation, and an undecided exchange
+remaining `pairing_pending`.
 
 **Canonical reads (#4838)** — all five routes; empty first page, exact-multiple
 page, continuation, partial final page, and `hasMore` in both directions;
@@ -223,8 +224,9 @@ records the gap. Two stand today, both documentation-level — the gates
 themselves hold:
 
 1. **The backslash half of the escaped-target refusal is unreachable.**
-   `docs/api/client-v1.md` says a target inside `/api/client/v1` containing `%`
-   *or* `\` is answered `400 invalid client v1 path`. The `%` half holds. A `\`
+   `docs/api/client-v1.md` says malformed/noncanonical escapes, escaped
+   non-conversation targets, and backslash targets are answered
+   `400 invalid client v1 path`. The observable `%` cases hold. A `\`
    is normalised to `/` by Next in the request target and answered `308` to the
    normalised target before `proxy.ts` runs; that target is not a client-v1
    route and is refused `401`. Nothing is served and no handler is reached, so

@@ -262,7 +262,14 @@ expected_head=$(git rev-parse HEAD)
 actual_head=$(gh pr view <#> --json headRefOid --jq .headRefOid)
 test "$actual_head" = "$expected_head"
 gh pr checks <#> --required
-gh pr merge <#> --squash --match-head-commit "$expected_head"
+squash_input=$(mktemp)
+squash_message=$(mktemp)
+trap 'rm -f "$squash_input" "$squash_message"' EXIT
+gh pr view <#> --json title,body,commits > "$squash_input"
+node scripts/pr-squash-message.mjs < "$squash_input" > "$squash_message"
+squash_subject=$(jq -er .subject "$squash_message")
+squash_body=$(jq -er .body "$squash_message")
+gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"
 ```
 
 `gh pr merge` on a blocked PR suggests `--admin`. Don't. It bypasses the
@@ -638,6 +645,76 @@ first would have been lossy. Also note `git log @{u}..HEAD` is worthless as an
 "is it pushed" check on these branches: the upstream ref is gone, so the command
 errors and a naive `| wc -l` reports a reassuring `0`.
 
+### A worktree parked outside your granted roots is de-registered, not removed
+
+Some agent sessions run inside a filesystem boundary that grants only named
+roots. `git worktree remove` **deletes the target directory**, so it is refused
+outright when the worktree lives somewhere the session cannot write. The usual
+offender is a raw `git worktree add` run from another agent's state folder,
+which parks a checkout at a path like
+`~/.copilot/session-state/<id>/files/<name>` — outside this repository and
+outside every granted root.
+
+**A chat approval does not widen a filesystem boundary.** So the approval a
+session obtains for the removal changes nothing, the removal is never performed,
+and the same blocker is re-reported by every thread that meets it. Verified
+2026-08-28 (`cave-iqz90`): `.copilot/session-state/33c071ed-…/files/cave-2a0ff923`
+survived at least one approved-but-unexecuted removal for exactly this reason.
+
+**The registration is not in the worktree.** It lives at `.git/worktrees/<name>/`
+inside this repository, which *is* in the primary root. Deleting that admin
+directory is precisely what `git worktree prune` does internally, so it
+de-registers the unit without touching the external path — the budget stops
+counting it and the patrol stops reporting it.
+
+Three preconditions, all fail-closed, because you cannot read the tree you are
+about to disown:
+
+1. **Prove the head is retained.** Salvage is unavailable to you, so
+   uncommitted work there is invisible and would be orphaned silently.
+
+   ```bash
+   head=$(cat .git/worktrees/<name>/HEAD)
+   git branch -r --contains "$head" | head
+   git merge-base --is-ancestor "$head" origin/main && echo "ancestor of main"
+   git tag --contains "$head" | grep -E 'archive/|retention/'
+   ```
+
+   None of those hold ⇒ **stop and report it**; leave the entry in place.
+2. **Prove the owning session is dead.** The session id is normally a path
+   segment of the worktree, so match it against live processes — a running
+   owner makes the unit live work, whatever its path:
+
+   ```bash
+   ps -eo pid,command | grep -o -- '--session-id [0-9a-f-]*' | sort -u
+   ```
+3. **Confirm no bead owns it.** A unit with `metadata.coven.worktree` naming
+   that path goes through the normal lifecycle route instead.
+
+Then, from the primary checkout:
+
+```bash
+mkdir -p ~/.coven/cave/worktree-admin-backups
+cp -R .git/worktrees/<name> ~/.coven/cave/worktree-admin-backups/<name>
+rm -rf .git/worktrees/<name>
+git worktree prune -v
+git worktree list        # the entry is gone
+```
+
+Keep that backup inside a granted root — `/tmp` is usually outside the boundary
+and the copy is refused there. To undo, copy the admin directory back and run
+`git worktree repair <external-path>`.
+
+⚠️ **Say what you actually did.** The orphaned directory remains on disk; you
+de-registered it, you did not delete it. That is the outcome the repository
+needs, but reporting it as a removal is a claim nobody can check. Deleting the
+directory itself requires an actor whose boundary covers that path.
+
+⚠️ **This is not a licence to hand-remove managed units.** It applies only to a
+worktree whose *directory* is unreachable from your boundary. Anything under
+`.worktrees/` is reachable and goes through the patrol or the archive-tag route
+above.
+
 ### Reading worktree state fast — `pnpm wt:status`
 
 `scripts/worktree-status.mjs` is the network-free companion to the patrol. The
@@ -697,7 +774,8 @@ bash scripts/dev-app.sh
 Run it in the foreground from your repo checkout or worktree and leave that
 terminal attached. Stop it with `Ctrl-C`. The wrapper:
 
-- picks the first free loopback port in `3000..3010`, or honors `PORT=3001`
+- resolves one dedicated loopback port from `COVEN_CAVE_PORT`, then `PORT`, then
+  the fixed dev default `3000`; it does not scan for a free port
 - starts the Next custom dev server on that port when needed
 - writes a temporary Tauri config so `devUrl` points at the actual port
 - runs `pnpm exec tauri dev` against the desktop shell
@@ -705,22 +783,25 @@ terminal attached. Stop it with `Ctrl-C`. The wrapper:
 Expected early output looks like:
 
 ```text
-[dev:app] port 3001 is free
-[dev:app] starting dev server on 3001
-Running BeforeDevCommand (`PORT=3001 pnpm dev`)
-> Ready on http://127.0.0.1:3001
+[dev:app] dedicated dev port 3000
+[dev:app] starting dev server on 3000
+Running BeforeDevCommand (`PORT=3000 pnpm dev`)
+> Ready on http://127.0.0.1:3000
 Running DevCommand (`cargo run --no-default-features --color always --`)
 ```
 
 First launch may spend several minutes downloading and compiling Rust crates
 before the window appears. Treat Cargo `Compiling ...` lines as progress, not a
-hang. If port `3000` is occupied, for example by Docker, the wrapper should move
-to `3001`; if all ports in the range are occupied, free one or run with an
-explicit port:
+hang. If the resolved port is already serving CovenCave, the wrapper should
+attach to it. If another or gated process owns it, the wrapper refuses by
+identity; a silent holder is left for the wrapper's own bind to report. Free
+the process or choose another explicit port:
 
 ```bash
-PORT=3007 bash scripts/dev-app.sh
+COVEN_CAVE_PORT=3007 bash scripts/dev-app.sh
 ```
+
+`PORT=3007` remains a fallback when `COVEN_CAVE_PORT` is unset.
 
 `pnpm dev:app` calls the same wrapper. Prefer the direct `bash` form in agent
 handoffs because its logs make the startup sequence and selected port obvious.
@@ -1056,6 +1137,59 @@ The `surface-research-*.css` family and `marketplace-view.tsx` are the existing
 precedents. Note the facade order is also pinned by
 `src/app/css-module-order.test.ts`, so adding an import there is a two-file
 change with a test to update — another sign it is the wrong move for surface CSS.
+
+## `bd --metadata` takes an OBJECT — never a pre-serialized string
+
+**Rule:** when you write lifecycle metadata by hand, pass `--metadata` a JSON
+object whose `coven` value is itself an **object**. Never serialize `coven`
+first and nest the string.
+
+```bash
+# RIGHT — coven is an object inside the payload
+bd update <id> --metadata '{"coven":{"worktree":{"branch":"…","path":"…"}}}'
+
+# WRONG — coven is a STRING containing JSON. bd accepts this silently.
+bd update <id> --metadata '{"coven":"{\"worktree\":{…}}"}'
+```
+
+**Why this is worth a section.** `bd` does not validate the shape. Verified on a
+throwaway bead: handed an object it stores an object; handed a pre-serialized
+string it stores that string **verbatim**. So the mistake is invisible at write
+time and only surfaces later, somewhere else.
+
+What it cost on 2026-08-27: two beads — `cave-bnay4` and `cave-16uo9`, both
+already **closed and archived** — carried a string-valued `coven`, and
+`pnpm beads:worktrees:create` then refused for **every bead in the checkout**,
+across three live sessions:
+
+```text
+worktree-lifecycle-create: lifecycle inventory is incomplete:
+Bead cave-bnay4 coven metadata: coven must be an object
+```
+
+An unreadable `coven` produces no records, and a *record* is what carries the
+branch and path that errors are scoped by — so with nothing to name, the error
+is repository-wide. The only way out was hand-editing another owner's lifecycle
+record, which is the one repair [the worktree rules forbid](#worktree-convention).
+
+`cave-7bfpz` now decodes a double-encoded value, so a recurrence degrades to a
+per-unit problem rather than a checkout-wide outage. That is containment, not a
+fix: the record is still wrong, and every one still needs repairing by hand.
+
+**No script does this.** `worktree-lifecycle-create.ts` and
+`worktree-lifecycle-metadata-repair.ts` both emit `JSON.stringify({ coven: <object> })`,
+retirement writes no metadata at all, and the copy of these scripts under
+`sdk/.worktrees/` is byte-identical. Both corrupted records carried
+`mergeCommit`, `pr` and `reason` — fields **no script here writes** — so they
+were hand-authored during session close. That is why this rule is addressed to
+you rather than fixed in code.
+
+**Check before you write**, not after:
+
+```bash
+bd show <id> --json | python3 -c "import sys,json;d=json.load(sys.stdin);d=d[0] if isinstance(d,list) else d;c=(d.get('metadata') or {}).get('coven');print(type(c).__name__)"
+# expect: dict   (str means you double-encoded it)
+```
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker

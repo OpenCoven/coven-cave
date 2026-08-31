@@ -4,8 +4,14 @@
  * Present so a future change to the payload can be refused outright instead of
  * being misread: an unversioned token that gains a field decodes as a valid
  * token with a missing one, and the page it resumes is silently wrong.
+ *
+ * Bumped to 2 when cave-fhjlu changed the /conversations page key from
+ * updatedAt to createdAt: the token SHAPE stayed the same, but the MEANING of
+ * the sort half changed, and a cursor minted by an older Cave resumed a page
+ * the client did not ask for (cave-apo6v). A semantic change to the ordering
+ * is a version change too, not only a payload-shape change.
  */
-export const CLIENT_V1_CURSOR_VERSION = 1;
+export const CLIENT_V1_CURSOR_VERSION = 2;
 
 /**
  * The position a cursor resumes from.

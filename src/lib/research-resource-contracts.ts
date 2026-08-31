@@ -161,6 +161,7 @@ export type ResourceIngestJobV1 = {
   availableAt: string;
   lease?: {
     owner: string;
+    token: string;
     expiresAt: string;
   } & UnknownFields;
   createdAt: string;
@@ -378,7 +379,7 @@ function parseStringArray(
   value: unknown,
   path: string,
   label: string,
-  { nonEmpty = false }: { nonEmpty?: boolean } = {},
+  { nonEmpty = false, unique = true }: { nonEmpty?: boolean; unique?: boolean } = {},
 ): ProtocolParseResult<string[]> {
   if (!Array.isArray(value)) return fail("invalid_type", path, `${label} must be an array`);
   if (nonEmpty && value.length === 0) return fail("invalid_value", path, `${label} must not be empty`);
@@ -387,8 +388,10 @@ function parseStringArray(
   for (const [index, item] of value.entries()) {
     const parsed = identifier(item, indexPath(path, index), `${label} item`);
     if (!parsed.ok) return parsed;
-    if (seen.has(parsed.value)) return fail("invalid_value", indexPath(path, index), `${label} must not contain duplicates`);
-    seen.add(parsed.value);
+    if (unique) {
+      if (seen.has(parsed.value)) return fail("invalid_value", indexPath(path, index), `${label} must not contain duplicates`);
+      seen.add(parsed.value);
+    }
     result.push(parsed.value);
   }
   return pass(result);
@@ -447,7 +450,13 @@ function parsePaper(
   const arxivField = required(raw, "arxivId", path); if (!arxivField.ok) return arxivField;
   const arxivId = identifier(arxivField.value, childPath(path, "arxivId"), "arXiv id"); if (!arxivId.ok) return arxivId;
   const authorsField = required(raw, "authors", path); if (!authorsField.ok) return authorsField;
-  const authors = parseStringArray(authorsField.value, childPath(path, "authors"), "authors"); if (!authors.ok) return authors;
+  // Authors is an ordered credit list, NOT a set. Two entries can carry the
+  // same normalized string — collaborations repeat a name across affiliations,
+  // and arXiv/HF metadata simply contains repeats. Rejecting them made ONE bad
+  // record fail the whole read: the Resources desk showed "Couldn't load saved
+  // links." with an empty shelf, because listCompatibleResearchLinks validates
+  // every manifest on the read path (`$.paper.authors[220]`, cave-fh9so).
+  const authors = parseStringArray(authorsField.value, childPath(path, "authors"), "authors", { unique: false }); if (!authors.ok) return authors;
   const abstract = optional(raw, "abstract", path, (item, itemPath) => stringValue(item, itemPath, "abstract")); if (!abstract.ok) return abstract;
   const publishedAt = optional(raw, "publishedAt", path, (item, itemPath) => utc(item, itemPath, "publishedAt")); if (!publishedAt.ok) return publishedAt;
   return pass({ ...raw, arxivId: arxivId.value, authors: authors.value, ...(abstract.value === undefined ? {} : { abstract: abstract.value }), ...(publishedAt.value === undefined ? {} : { publishedAt: publishedAt.value }) });
@@ -630,13 +639,16 @@ export function parseResourceIngestJobV1(value: unknown): ProtocolParseResult<Re
   const attempt = integer(attemptField.value, "$.attempt", "attempt"); if (!attempt.ok) return attempt;
   const availableAtField = required(raw, "availableAt", "$"); if (!availableAtField.ok) return availableAtField;
   const availableAt = utc(availableAtField.value, "$.availableAt", "availableAt"); if (!availableAt.ok) return availableAt;
-  const lease = optional(raw, "lease", "$", (item, itemPath) => {
+  const lease = optional<Exclude<ResourceIngestJobV1["lease"], undefined>>(raw, "lease", "$", (item, itemPath) => {
     const leaseObject = object(item, itemPath); if (!leaseObject.ok) return leaseObject;
     const ownerField = required(leaseObject.value, "owner", itemPath); if (!ownerField.ok) return ownerField;
     const owner = identifier(ownerField.value, childPath(itemPath, "owner"), "lease owner"); if (!owner.ok) return owner;
+    const tokenField = required(leaseObject.value, "token", itemPath); if (!tokenField.ok) return tokenField;
+    const token = stringValue(tokenField.value, childPath(itemPath, "token"), "lease token", { nonEmpty: true }); if (!token.ok) return token;
+    if (!/^[a-f0-9]{32}$/.test(token.value)) return fail("invalid_value", childPath(itemPath, "token"), "lease token must be 128-bit lowercase hexadecimal");
     const expiresField = required(leaseObject.value, "expiresAt", itemPath); if (!expiresField.ok) return expiresField;
     const expiresAt = utc(expiresField.value, childPath(itemPath, "expiresAt"), "lease expiresAt"); if (!expiresAt.ok) return expiresAt;
-    return pass({ ...leaseObject.value, owner: owner.value, expiresAt: expiresAt.value });
+    return pass({ ...leaseObject.value, owner: owner.value, token: token.value, expiresAt: expiresAt.value });
   }); if (!lease.ok) return lease;
   if ((status.value === "claimed") !== (lease.value !== undefined)) {
     return fail("semantic_conflict", "$.lease", "lease must be present exactly when status is claimed");
