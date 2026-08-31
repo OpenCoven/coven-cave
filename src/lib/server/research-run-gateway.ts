@@ -428,6 +428,7 @@ function snapshotRun(
       terminalStatus !== "completed"
       && terminalStatus !== "failed"
       && terminalStatus !== "cancelled"
+      && terminalStatus !== "expired"
     )
   ) {
     throw new ResearchRunGatewayError(
@@ -438,15 +439,127 @@ function snapshotRun(
   }
   const finalizedMission: ResearchMission = {
     ...mission,
-    status: terminalStatus,
+    status: terminalStatus === "expired" ? "cancelled" : terminalStatus,
     runGeneration: researchRunGenerationForRunId(log.runId),
     updatedAt: terminalEvent.at,
     finishedAt: terminalEvent.at,
   };
-  return {
+  const candidate = {
     ...researchMissionToCanonicalRun(finalizedMission, nextEventSequence),
+    status: terminalStatus,
     artifactManifest: log.finalManifest,
   };
+  const parsed = parseResearchRunV1(candidate);
+  if (!parsed.ok) {
+    throw new ResearchRunGatewayError(
+      "integrity",
+      `finalized Research Run reconstruction failed validation: ${parsed.error.message}`,
+      500,
+    );
+  }
+  return parsed.value;
+}
+
+async function syncMissionSnapshotWithinLock(
+  mission: ResearchMission,
+  deps: ResearchRunSyncDeps,
+): Promise<ResearchRunEventLog> {
+  const runId = researchRunIdForMission(mission);
+  const existing = await deps.loadEventLog(runId);
+  const initialSequence = (existing?.events.at(-1)?.sequence ?? 0) + 1;
+  const projectedRun = researchMissionToCanonicalRun(mission, initialSequence);
+  const projection = observedProjection(mission, projectedRun);
+
+  if (!existing) {
+    const created: RunEventV1 = {
+      schema: "opencoven.run-event/v1",
+      runId,
+      sequence: 1,
+      type: "run.created",
+      at: projectedRun.createdAt,
+      // No lifecycle status is asserted here: this is the gateway's durable
+      // bootstrap marker, not a fabricated executor event.
+      data: {},
+    };
+    const transitions = projectedRun.status === "queued"
+      ? [created]
+      : [created, eventForObservedTransition(mission, projectedRun, 2, projectedRun.updatedAt)];
+    const terminalEvent = transitions.find(
+      (event) => terminalStatusForEvent(event) !== null,
+    );
+    const finalManifest = terminalEvent
+      ? finalizedManifestForMission(mission, terminalEvent.sequence + 1, terminalEvent.at)
+      : undefined;
+    return deps.appendEventsWithinMissionLock(
+      runId,
+      transitions,
+      projection,
+      finalManifest,
+    );
+  }
+
+  if (!existing.projection) {
+    throw new ResearchRunGatewayError(
+      "integrity",
+      "research Run event log has no observed mission projection",
+      500,
+    );
+  }
+  const existingTerminalEvent = terminalEventInLog(existing);
+  if (existingTerminalEvent && !existing.finalManifest) {
+    const finalManifest = finalizedManifestForMission(
+      mission,
+      existingTerminalEvent.sequence + 1,
+      existingTerminalEvent.at,
+    );
+    return deps.appendEventsWithinMissionLock(
+      runId,
+      [],
+      projection,
+      finalManifest,
+    );
+  }
+  if (canonicalJson(existing.projection) === canonicalJson(projection)) {
+    return existing;
+  }
+  if (
+    existing.projection.status === projection.status
+    && TERMINAL_RUN_STATUSES.has(projection.status)
+  ) {
+    return deps.appendEventsWithinMissionLock(runId, [], projection);
+  }
+
+  const nextSequence = existing.events.at(-1)!.sequence + 1;
+  const transition = eventForObservedTransition(
+    mission,
+    projectedRun,
+    nextSequence,
+    projectedRun.updatedAt,
+  );
+  const finalManifest = terminalStatusForEvent(transition)
+    ? finalizedManifestForMission(mission, transition.sequence + 1, transition.at)
+    : undefined;
+  return deps.appendEventsWithinMissionLock(
+    runId,
+    [transition],
+    projection,
+    finalManifest,
+  );
+}
+
+export async function finalizeResearchRunGenerationWithinMissionLock(
+  mission: ResearchMission,
+  deps: ResearchRunSyncDeps = DEFAULT_SYNC_DEPS,
+): Promise<void> {
+  const status = canonicalStatusForMission(mission).status;
+  if (!TERMINAL_RUN_STATUSES.has(status) || status === "expired") {
+    throw new ResearchRunGatewayError(
+      "invalid",
+      "only a terminal persisted mission generation can be finalized",
+      409,
+    );
+  }
+  await syncMissionSnapshotWithinLock(mission, deps);
 }
 
 export async function syncObservedMission(
@@ -469,90 +582,10 @@ export async function syncObservedMission(
       const historical = await deps.loadEventLog(requestedRunId);
       return historical?.finalManifest ? { mission, log: historical } : null;
     }
-    const existing = await deps.loadEventLog(runId);
-    const initialSequence = (existing?.events.at(-1)?.sequence ?? 0) + 1;
-    const projectedRun = researchMissionToCanonicalRun(mission, initialSequence);
-    const projection = observedProjection(mission, projectedRun);
-
-    if (!existing) {
-      const created: RunEventV1 = {
-        schema: "opencoven.run-event/v1",
-        runId,
-        sequence: 1,
-        type: "run.created",
-        at: projectedRun.createdAt,
-        // No lifecycle status is asserted here: this is the gateway's durable
-        // bootstrap marker, not a fabricated executor event.
-        data: {},
-      };
-      const transitions = projectedRun.status === "queued"
-        ? [created]
-        : [created, eventForObservedTransition(mission, projectedRun, 2, projectedRun.updatedAt)];
-      const terminalEvent = transitions.find(
-        (event) => terminalStatusForEvent(event) !== null,
-      );
-      const finalManifest = terminalEvent
-        ? finalizedManifestForMission(mission, terminalEvent.sequence + 1, terminalEvent.at)
-        : undefined;
-      const log = await deps.appendEventsWithinMissionLock(
-        runId,
-        transitions,
-        projection,
-        finalManifest,
-      );
-      return { mission, log };
-    }
-
-    if (!existing.projection) {
-      throw new ResearchRunGatewayError(
-        "integrity",
-        "research Run event log has no observed mission projection",
-        500,
-      );
-    }
-    const existingTerminalEvent = terminalEventInLog(existing);
-    if (existingTerminalEvent && !existing.finalManifest) {
-      const finalManifest = finalizedManifestForMission(
-        mission,
-        existingTerminalEvent.sequence + 1,
-        existingTerminalEvent.at,
-      );
-      const log = await deps.appendEventsWithinMissionLock(
-        runId,
-        [],
-        projection,
-        finalManifest,
-      );
-      return { mission, log };
-    }
-    if (canonicalJson(existing.projection) === canonicalJson(projection)) {
-      return { mission, log: existing };
-    }
-    if (
-      existing.projection.status === projection.status
-      && TERMINAL_RUN_STATUSES.has(projection.status)
-    ) {
-      const log = await deps.appendEventsWithinMissionLock(runId, [], projection);
-      return { mission, log };
-    }
-
-    const nextSequence = existing.events.at(-1)!.sequence + 1;
-    const transition = eventForObservedTransition(
+    return {
       mission,
-      projectedRun,
-      nextSequence,
-      projectedRun.updatedAt,
-    );
-    const finalManifest = terminalStatusForEvent(transition)
-      ? finalizedManifestForMission(mission, transition.sequence + 1, transition.at)
-      : undefined;
-    const log = await deps.appendEventsWithinMissionLock(
-      runId,
-      [transition],
-      projection,
-      finalManifest,
-    );
-    return { mission, log };
+      log: await syncMissionSnapshotWithinLock(mission, deps),
+    };
   });
 }
 

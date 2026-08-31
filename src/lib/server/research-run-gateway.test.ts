@@ -11,7 +11,10 @@ import {
   saveResearchMission,
 } from "./research-mission-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
-import { loadResearchRunEventLog } from "./research-run-gateway-store.ts";
+import {
+  appendResearchRunEvents,
+  loadResearchRunEventLog,
+} from "./research-run-gateway-store.ts";
 import {
   loadResearchRunGateway,
   replayResearchRunGateway,
@@ -315,6 +318,89 @@ test("gateway sync rereads the mission under the action lock before appending", 
   );
 });
 
+test("terminal generations finalize before first gateway read and survive restart", async () => {
+  const finalizeTerminalGeneration = (
+    researchRunGateway as Record<string, unknown>
+  ).finalizeResearchRunGenerationWithinMissionLock;
+  assert.equal(typeof finalizeTerminalGeneration, "function");
+  const finalize = finalizeTerminalGeneration as (
+    mission: ResearchMission,
+  ) => Promise<void>;
+
+  for (const terminalStatus of ["completed", "cancelled", "failed"] as const) {
+    const missionId = `gateway-boundary-${terminalStatus}`;
+    const terminalMission: ResearchMission = {
+      ...mission(missionId, terminalStatus),
+      updatedAt: "2026-08-30T12:05:00.000Z",
+      finishedAt: "2026-08-30T12:05:00.000Z",
+      ...(terminalStatus === "failed" ? { lastError: "Provider failed" } : {}),
+      iterations: [{
+        number: 1,
+        status: terminalStatus,
+        finishedAt: "2026-08-30T12:05:00.000Z",
+      }],
+    };
+    await createResearchMissionWorkspace(terminalMission);
+    await withResearchMissionActionLock(
+      missionId,
+      () => finalize(terminalMission),
+    );
+    await saveResearchMission({
+      ...terminalMission,
+      runGeneration: 2,
+      status: "running",
+      updatedAt: "2026-08-30T12:06:00.000Z",
+      finishedAt: undefined,
+      iterations: [
+        ...terminalMission.iterations,
+        {
+          number: 2,
+          status: "running",
+          startedAt: "2026-08-30T12:06:00.000Z",
+        },
+      ],
+    });
+    globalThis.__caveResearchMissionActionLocks = undefined;
+
+    const historical = await loadResearchRunGateway(
+      missionId,
+      `run_${missionId}`,
+    );
+    assert.ok(historical);
+    assert.equal(historical.run.status, terminalStatus);
+    assert.equal(
+      historical.run.artifactManifest?.finalizedAt,
+      "2026-08-30T12:05:00.000Z",
+    );
+  }
+
+  const archiveId = "gateway-boundary-archive";
+  const completed = {
+    ...mission(archiveId, "completed"),
+    updatedAt: "2026-08-30T13:00:00.000Z",
+    finishedAt: "2026-08-30T13:00:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "completed" as const,
+      finishedAt: "2026-08-30T13:00:00.000Z",
+    }],
+  };
+  await createResearchMissionWorkspace(completed);
+  await withResearchMissionActionLock(archiveId, () => finalize(completed));
+  await saveResearchMission({
+    ...completed,
+    status: "archived",
+    archivedFrom: "completed",
+    updatedAt: "2026-08-30T14:00:00.000Z",
+  });
+  globalThis.__caveResearchMissionActionLocks = undefined;
+  const archived = await loadResearchRunGateway(archiveId);
+  assert.equal(
+    archived?.run.artifactManifest?.finalizedAt,
+    "2026-08-30T13:00:00.000Z",
+  );
+});
+
 test("Continue after completed or cancelled starts a replay-safe canonical run generation", async () => {
   for (const terminalStatus of ["completed", "cancelled"] as const) {
     const missionId = `gateway-continue-${terminalStatus}`;
@@ -598,6 +684,70 @@ test("watching current and exact run selectors binds the right generation ledger
   assert.equal(exactChanges, 1);
   exactSubscription.stop();
   assert.equal(exactWatchers.every((watcher) => watcher.closed), true);
+});
+
+test("exact historical expired runs reconstruct and replay after later generations", async () => {
+  const missionId = "gateway-expired-history";
+  const expiredAt = "2026-08-30T15:00:00.000Z";
+  const expiredMission: ResearchMission = {
+    ...mission(missionId, "cancelled"),
+    updatedAt: expiredAt,
+    finishedAt: expiredAt,
+    iterations: [{
+      number: 1,
+      status: "cancelled",
+      finishedAt: expiredAt,
+    }],
+  };
+  const finalManifest = researchMissionToCanonicalRun(
+    expiredMission,
+    3,
+  ).artifactManifest;
+  assert.ok(finalManifest);
+  await createResearchMissionWorkspace({
+    ...mission(missionId, "running"),
+    runGeneration: 2,
+    updatedAt: "2026-08-30T15:01:00.000Z",
+    iterations: [{
+      number: 2,
+      status: "running",
+      startedAt: "2026-08-30T15:01:00.000Z",
+    }],
+  });
+  const runId = `run_${missionId}`;
+  await appendResearchRunEvents(runId, [
+    {
+      schema: "opencoven.run-event/v1",
+      runId,
+      sequence: 1,
+      type: "run.created",
+      at: expiredMission.createdAt,
+      data: {},
+    },
+    {
+      schema: "opencoven.run-event/v1",
+      runId,
+      sequence: 2,
+      type: "run.status",
+      at: expiredAt,
+      data: { status: "expired" },
+    },
+  ], {
+    status: "expired",
+    missionUpdatedAt: expiredAt,
+    iterationCount: 1,
+    sourceCount: 0,
+    artifactCount: 0,
+  }, finalManifest);
+
+  globalThis.__caveResearchMissionActionLocks = undefined;
+  const snapshot = await loadResearchRunGateway(missionId, runId);
+  assert.equal(snapshot?.run.id, runId);
+  assert.equal(snapshot?.run.status, "expired");
+  assert.deepEqual(snapshot?.run.artifactManifest, finalManifest);
+  const replay = await replayResearchRunGateway(missionId, 0, 20, runId);
+  assert.equal(replay?.run.status, "expired");
+  assert.equal(replay?.events.at(-1)?.data.status, "expired");
 });
 
 test("invalid mission ids cannot be projected", () => {

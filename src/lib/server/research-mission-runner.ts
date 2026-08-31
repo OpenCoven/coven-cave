@@ -55,6 +55,7 @@ import {
   saveResearchMission,
   type ResearchMissionSessionOwner,
 } from "./research-mission-store.ts";
+import { finalizeResearchRunGenerationWithinMissionLock } from "./research-run-gateway.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 import { materializeSavedLinkForMission } from "./research-link-materialization.ts";
 import {
@@ -110,6 +111,18 @@ const TERMINAL_RESEARCH_MISSION_STATUSES: ReadonlyArray<ResearchMission["status"
   "cancelled",
   "archived",
 ];
+const TERMINAL_RESEARCH_MUTATION_ACTIONS: ReadonlySet<ResearchMissionActionInput["action"]> =
+  new Set([
+    "continue",
+    "retry",
+    "finish",
+    "archive",
+    "attach-source",
+    "attach-saved-link",
+    "update-source",
+    "reject-artifact",
+    "publish-artifact",
+  ]);
 
 /**
  * How long a non-terminal mission may reference a missing, never-launched, or
@@ -150,6 +163,7 @@ export type ResearchMissionRunnerDeps = {
   removeWorkspace(id: string): Promise<void>;
   loadMission(id: string): Promise<ResearchMission | null>;
   saveMission(mission: ResearchMission): Promise<void>;
+  finalizeTerminalRun(mission: ResearchMission): Promise<void>;
   loadSessionOwner(missionId: string): Promise<ResearchMissionSessionOwner | null>;
   recordSessionOwner(owner: ResearchMissionSessionOwner): Promise<void>;
   clearSessionOwner(
@@ -1238,6 +1252,14 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       if (sessionOwner && input.action !== "cancel") {
         throw new Error(RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT);
       }
+      if (
+        (mission.status === "completed"
+          || mission.status === "failed"
+          || mission.status === "cancelled")
+        && TERMINAL_RESEARCH_MUTATION_ACTIONS.has(input.action)
+      ) {
+        await deps.finalizeTerminalRun(mission);
+      }
 
       if (savedLinkInput) {
         const materialized = await deps.materializeSavedLink(mission, savedLinkId);
@@ -2281,6 +2303,7 @@ export function makeProductionResearchMissionRunner() {
     removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
     saveMission: saveResearchMission,
+    finalizeTerminalRun: finalizeResearchRunGenerationWithinMissionLock,
     loadSessionOwner: loadResearchMissionSessionOwner,
     recordSessionOwner: recordResearchMissionSessionOwner,
     clearSessionOwner: clearResearchMissionSessionOwner,

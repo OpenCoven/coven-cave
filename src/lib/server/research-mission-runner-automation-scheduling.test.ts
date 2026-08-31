@@ -27,6 +27,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
+    finalizeTerminalRun: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
     recordSessionOwner: async (owner) => { sessionOwner = structuredClone(owner); },
     clearSessionOwner: async () => { sessionOwner = null; },

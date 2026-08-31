@@ -218,6 +218,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
+    finalizeTerminalRun: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
     recordSessionOwner: async (owner) => { sessionOwner = structuredClone(owner); },
     clearSessionOwner: async () => { sessionOwner = null; },
@@ -385,6 +386,113 @@ test("Retry and Finish cannot reopen an observed failed canonical run", async ()
     assert.equal(restarted.runGeneration, 2);
     assert.equal(stored.runGeneration, 2);
   }
+});
+
+test("terminal Continue, Retry, Finish, and Archive finalize before saving later state", async () => {
+  const cases = [
+    { status: "completed" as const, action: "continue" as const },
+    { status: "cancelled" as const, action: "continue" as const },
+    { status: "failed" as const, action: "retry" as const },
+    { status: "failed" as const, action: "finish" as const },
+    { status: "completed" as const, action: "archive" as const },
+  ];
+  for (const { status, action } of cases) {
+    const calls: string[] = [];
+    let stored = checkpointMission({
+      status,
+      finishedAt: NOW.toISOString(),
+      ...(status === "failed" ? { lastError: "Provider failed" } : {}),
+      iterations: [{
+        number: 1,
+        status,
+        finishedAt: NOW.toISOString(),
+      }],
+    });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      finalizeTerminalRun: async (mission) => {
+        calls.push(`finalize:${mission.status}:${mission.finishedAt}`);
+      },
+      saveMission: async (mission) => {
+        calls.push(`save:${mission.status}:${mission.runGeneration ?? 1}`);
+        stored = structuredClone(mission);
+      },
+      readMissionFile: async () => "# Final research",
+    }));
+
+    await runner.act(stored.id, { action });
+    assert.equal(
+      calls[0],
+      `finalize:${status}:${NOW.toISOString()}`,
+      `${status}/${action} must finalize the outgoing generation before any save`,
+    );
+  }
+});
+
+test("failed terminal finalization prevents mission generation advancement", async () => {
+  let saves = 0;
+  const stored = checkpointMission({
+    status: "completed",
+    finishedAt: NOW.toISOString(),
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    finalizeTerminalRun: async () => {
+      throw new Error("terminal ledger unavailable");
+    },
+    saveMission: async () => { saves += 1; },
+  }));
+
+  await assert.rejects(
+    runner.act(stored.id, { action: "continue" }),
+    /terminal ledger unavailable/,
+  );
+  assert.equal(saves, 0);
+});
+
+test("terminal artifact administration finalizes before changing mission updatedAt", async () => {
+  const calls: string[] = [];
+  let stored = checkpointMission({
+    status: "completed",
+    finishedAt: NOW.toISOString(),
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: NOW.toISOString(),
+    }],
+    artifacts: [{
+      key: "primary",
+      kind: "findings",
+      title: "Final findings",
+      relativePath: "artifacts/primary.md",
+      iteration: 1,
+      state: "working",
+      updatedAt: NOW.toISOString(),
+    }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    finalizeTerminalRun: async (mission) => {
+      calls.push(`finalize:${mission.updatedAt}`);
+    },
+    saveMission: async (mission) => {
+      calls.push(`save:${mission.updatedAt}`);
+      stored = structuredClone(mission);
+    },
+    readMissionFile: async () => "# Final findings",
+  }));
+
+  await runner.act(stored.id, {
+    action: "publish-artifact",
+    artifactKey: "primary",
+  });
+  assert.equal(calls[0], `finalize:${NOW.toISOString()}`);
+  assert.match(calls[1] ?? "", /^save:/);
 });
 
 test("create/start persists before launch and records the real session", async () => {
