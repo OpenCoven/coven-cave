@@ -21,6 +21,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { CitationSources } from "@/components/ui/citation";
@@ -61,6 +62,7 @@ type Props = {
   runProjectionSource?: "canonical" | "legacy" | null;
   runGatewayStatus?: "idle" | "loading" | "connected" | "reconnecting" | "error";
   runGatewayError?: string | null;
+  onRetryRunGateway?(): void;
   showEvidence: boolean;
   /** Collapse the evidence rail to its spine. Absent = not collapsible here
    *  (focus mode already hides the rail outright). */
@@ -138,6 +140,7 @@ export function ResearchMissionDetail({
   runProjectionSource,
   runGatewayStatus = "idle",
   runGatewayError,
+  onRetryRunGateway,
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
@@ -328,12 +331,10 @@ export function ResearchMissionDetail({
   // Archived missions are read-only: automation controls gate on this the
   // same way "Create schedule" already does.
   const isArchived = mission.status === "archived";
+  const projectionFailed = runGatewayStatus === "error" || Boolean(runGatewayError);
   const projectionNotice = (() => {
     if (runProjectionSource === "canonical" && runGatewayStatus === "reconnecting") {
       return "Reconnecting to live updates. Showing the last complete canonical history.";
-    }
-    if (runProjectionSource === "canonical" && runGatewayStatus === "error") {
-      return "Live updates are unavailable. Showing the last complete canonical history.";
     }
     if (runProjectionSource !== "legacy") return null;
     if (runGatewayStatus === "loading") {
@@ -342,11 +343,12 @@ export function ResearchMissionDetail({
     if (runGatewayStatus === "reconnecting") {
       return "Reconnecting to canonical run history. Showing persisted mission data.";
     }
-    if (runGatewayStatus === "error" || runGatewayError) {
-      return "Couldn't load canonical run history. Showing persisted mission data.";
-    }
     return null;
   })();
+  const retryCanonicalHistory = () => {
+    announce("Retrying canonical run history.");
+    onRetryRunGateway?.();
+  };
   const projectedPlan = runProjections?.plan;
   const projectedActivity = runProjections?.activity.entries ?? [];
   const projectedEvidence = runProjections?.evidence;
@@ -651,12 +653,27 @@ export function ResearchMissionDetail({
             ) : null}
           </header>
 
-          {projectionNotice ? (
+          {projectionFailed ? (
+            <ErrorState
+              compact
+              headline="Couldn't load canonical run history"
+              subtitle={runProjectionSource === "canonical"
+                ? "Showing the last complete canonical history."
+                : "Showing persisted mission data."}
+              actions={onRetryRunGateway ? (
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={retryCanonicalHistory}
+                >
+                  Retry
+                </Button>
+              ) : undefined}
+            />
+          ) : projectionNotice ? (
             <p
-              className={runGatewayStatus === "error"
-                ? "research-mission-error"
-                : "research-desk-block__empty"}
-              role={runGatewayStatus === "error" ? "alert" : "status"}
+              className="research-desk-block__empty"
+              role="status"
             >
               {projectionNotice}
             </p>

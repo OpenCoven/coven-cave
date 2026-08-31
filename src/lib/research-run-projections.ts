@@ -30,6 +30,8 @@ export type ResearchRunProjectionInput = {
   eventHistory?: readonly RunEventV1[];
   /** Legacy Desk data until the run gateway replaces the mission endpoint. */
   mission?: ResearchMission | null;
+  /** Mission data may fill descriptive gaps, but cannot assert canonical publication state. */
+  missionDetailOnly?: boolean;
 };
 
 export type ResearchRunPlanStageStatus =
@@ -386,6 +388,26 @@ export function hydrateResearchRunProjectionInput(
     state: createResearchRunEventState(run),
     eventHistory,
     ...(mission !== undefined ? { mission } : {}),
+  };
+}
+
+/**
+ * Combines a complete canonical replay with current persisted mission detail.
+ * Events and the snapshot remain authoritative for chronology, lifecycle,
+ * generation, manifest metadata, publication, and export. The mission may
+ * supply only producer-omitted plan, source, artifact, and report detail, and
+ * only when it represents this exact run generation.
+ */
+export function hydrateHybridResearchRunProjectionInput(
+  run: ResearchRunV1,
+  historicalValues: readonly unknown[],
+  mission?: ResearchMission | null,
+): ResearchRunProjectionInput {
+  const hydrated = hydrateResearchRunProjectionInput(run, historicalValues, mission);
+  return {
+    ...hydrated,
+    mission: mission && run.id === runIdForMission(mission) ? mission : null,
+    missionDetailOnly: true,
   };
 }
 
@@ -1144,12 +1166,15 @@ function artifactFromValue(
   };
 }
 
-function artifactFromMission(artifact: ResearchArtifactRef): ResearchRunReportArtifact {
+function artifactFromMission(
+  artifact: ResearchArtifactRef,
+  detailOnly = false,
+): ResearchRunReportArtifact {
   return {
     id: artifact.key,
     title: artifact.title,
     kind: artifact.kind,
-    status: artifact.state === "published" ? "published" : artifact.state,
+    status: detailOnly && artifact.state === "published" ? "ready" : artifact.state,
     at: artifact.updatedAt,
   };
 }
@@ -1238,15 +1263,22 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
       : parsed);
   }
   for (const artifact of input.mission?.artifacts ?? []) {
-    const parsed = artifactFromMission(artifact);
+    const parsed = artifactFromMission(artifact, input.missionDetailOnly);
     if (!artifactsById.has(parsed.id)) artifactsById.set(parsed.id, parsed);
   }
   const latestIteration = input.mission?.iterations.at(-1);
   if (outlineById.size === 0 && latestIteration?.summary) {
+    const canonicalStatus = input.state.run.status;
     outlineById.set("findings", {
       id: "findings",
       title: "Findings",
-      status: input.mission?.status === "completed" ? "complete" : "active",
+      status: input.missionDetailOnly
+        ? canonicalStatus === "completed"
+          ? "complete"
+          : canonicalStatus === "failed" || canonicalStatus === "cancelled" || canonicalStatus === "expired"
+            ? "blocked"
+            : "active"
+        : input.mission?.status === "completed" ? "complete" : "active",
       depth: 0,
       detail: textValue(latestIteration.summary, MAX_DETAIL),
     });

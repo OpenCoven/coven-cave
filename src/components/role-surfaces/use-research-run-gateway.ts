@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   getResearchRunGateway,
@@ -17,7 +17,7 @@ import {
 import type { ResearchMission } from "@/lib/research-missions";
 import type { ResearchRunV1 } from "@/lib/research-protocol/research-run";
 import {
-  hydrateResearchRunProjectionInput,
+  hydrateHybridResearchRunProjectionInput,
   researchMissionToRunProjectionInput,
   selectResearchRunProjections,
   type ResearchRunProjections,
@@ -32,6 +32,7 @@ export type ResearchRunGatewayViewState = {
   projections: ResearchRunProjections | null;
   projectionSource: "canonical" | "legacy" | null;
   projectionError: string | null;
+  retry(): void;
 };
 
 type ResearchRunGatewayTransportState = Pick<
@@ -64,14 +65,26 @@ export function useResearchRunGateway(
   legacyMission?: ResearchMission | null,
 ): ResearchRunGatewayViewState {
   const [state, setState] = useState<ResearchRunGatewayTransportState>(IDLE);
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const generation = useRef(0);
+  const retryPending = useRef(false);
+  const retry = useCallback(() => {
+    if (!missionOrRunId || retryPending.current) return;
+    retryPending.current = true;
+    setState((previous) => previous.selector === missionOrRunId
+      ? { ...previous, status: "loading", error: null }
+      : previous);
+    setRetryGeneration((current) => current + 1);
+  }, [missionOrRunId]);
 
   useEffect(() => {
     const currentGeneration = ++generation.current;
     if (!missionOrRunId) {
+      retryPending.current = false;
       setState(IDLE);
       return;
     }
+    retryPending.current = true;
     const controller = new AbortController();
     let source: EventSource | null = null;
     let stopped = false;
@@ -129,15 +142,18 @@ export function useResearchRunGateway(
     };
 
     const connect = async () => {
-      setState({
-        selector: missionOrRunId,
-        run: null,
-        eventState: null,
-        status: "loading",
-        error: null,
-      });
+      setState((previous) => previous.selector === missionOrRunId
+        ? { ...previous, status: "loading", error: null }
+        : {
+          selector: missionOrRunId,
+          run: null,
+          eventState: null,
+          status: "loading",
+          error: null,
+        });
       const snapshot = await getResearchRunGateway(missionOrRunId, familiarId, controller.signal);
       if (!current()) return;
+      retryPending.current = false;
       if (!snapshot.ok) {
         setState({
           selector: missionOrRunId,
@@ -184,6 +200,7 @@ export function useResearchRunGateway(
 
     void connect().catch((error) => {
       if (current() && (error as Error).name !== "AbortError") {
+        retryPending.current = false;
         setState({
           selector: missionOrRunId,
           run: null,
@@ -198,7 +215,7 @@ export function useResearchRunGateway(
       controller.abort();
       source?.close();
     };
-  }, [familiarId, missionOrRunId]);
+  }, [familiarId, missionOrRunId, retryGeneration]);
 
   const currentState = state.selector === missionOrRunId
     ? state
@@ -213,16 +230,13 @@ export function useResearchRunGateway(
   const projection = useMemo(() => {
     if (historyComplete && currentState.eventState) {
       try {
-        const hydrated = hydrateResearchRunProjectionInput(
+        const hydrated = hydrateHybridResearchRunProjectionInput(
           currentState.eventState.run,
           currentState.eventState.appliedEvents,
           legacyMission,
         );
         return {
-          projections: selectResearchRunProjections({
-            ...hydrated,
-            mission: null,
-          }),
+          projections: selectResearchRunProjections(hydrated),
           projectionSource: "canonical" as const,
           projectionError: null,
         };
@@ -265,6 +279,7 @@ export function useResearchRunGateway(
     status: currentState.status,
     error: currentState.error,
     historyComplete,
+    retry,
     ...projection,
   };
 }

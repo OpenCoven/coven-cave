@@ -5,6 +5,7 @@ import type {
   RunEventV1,
 } from "./research-protocol/research-run.ts";
 import {
+  hydrateHybridResearchRunProjectionInput,
   hydrateResearchRunProjectionInput,
   researchMissionToRunProjectionInput,
   selectResearchRunActivity,
@@ -243,6 +244,15 @@ function finalManifestWithArtifact(
   };
 }
 
+function finalManifest(
+  artifacts: NonNullable<ResearchRunV1["artifactManifest"]>["artifacts"] = [],
+): NonNullable<ResearchRunV1["artifactManifest"]> {
+  return {
+    ...finalManifestWithArtifact(),
+    artifacts,
+  };
+}
+
 function fixtureInput() {
   return { state: rehydrateResearchRun(run, [events[2], events[0], events[5], events[1], events[4], events[3]]) };
 }
@@ -367,6 +377,205 @@ test("Snapshot projection hydration validates and orders a complete historical p
     ),
     /does not belong to snapshot/,
   );
+});
+
+test("Hybrid hydration fills producer-omitted detail without weakening canonical authority", () => {
+  const mission = {
+    version: 1,
+    id: "projection_01",
+    familiarId: "sage",
+    title: "Persisted mission detail",
+    intent: "Retain the detailed mission projection",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "completed",
+    runGeneration: 1,
+    createdAt: run.createdAt,
+    updatedAt: "2026-08-30T11:00:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "completed",
+      startedAt: "2026-08-30T10:00:30.000Z",
+      finishedAt: "2026-08-30T11:00:00.000Z",
+      summary: "Persisted report detail",
+      steps: [{
+        id: "scope",
+        type: "scope",
+        status: "running",
+        detail: "Persisted plan detail",
+      }],
+    }],
+    sources: [{
+      id: "source-persisted",
+      title: "Persisted source detail",
+      sourceType: "web",
+      status: "used",
+      claim: "Persisted evidence claim",
+    }],
+    artifacts: [{
+      key: "artifact-persisted",
+      kind: "report",
+      title: "Persisted artifact detail",
+      relativePath: "artifacts/report.md",
+      iteration: 1,
+      state: "published",
+      knowledgeId: "knowledge-persisted",
+      updatedAt: "2026-08-30T11:00:00.000Z",
+    }],
+  } as ResearchMission;
+  const gatewayEvents = [
+    event(1, "run.created", {}),
+    event(2, "run.completed", {
+      status: "completed",
+      sources: 1,
+      artifacts: 1,
+      iterations: 1,
+    }),
+  ];
+  const snapshot: ResearchRunV1 = {
+    ...run,
+    status: "completed",
+    updatedAt: gatewayEvents[1].at,
+    nextEventSequence: 3,
+    artifactManifest: finalManifest(),
+  };
+
+  const input = hydrateHybridResearchRunProjectionInput(
+    snapshot,
+    gatewayEvents,
+    mission,
+  );
+  const projections = selectResearchRunProjections(input);
+
+  assert.equal(input.state.run.id, RUN_ID);
+  assert.equal(input.state.run.status, "completed");
+  assert.equal(input.state.run.updatedAt, gatewayEvents[1].at);
+  assert.deepEqual(
+    projections.activity.entries.map((entry) => [entry.sequence, entry.at, entry.label]),
+    [
+      [1, gatewayEvents[0].at, "Run Created"],
+      [2, gatewayEvents[1].at, "Run completed"],
+    ],
+  );
+  assert.equal(projections.plan.revised?.stages[0]?.detail, "Persisted plan detail");
+  assert.equal(projections.plan.activeStageId, undefined);
+  assert.equal(projections.evidence.sources[0]?.title, "Persisted source detail");
+  assert.equal(projections.evidence.claims[0]?.text, "Persisted evidence claim");
+  assert.equal(projections.evidence.counts.sources, 1);
+  assert.equal(projections.report.outline[0]?.detail, "Persisted report detail");
+  assert.equal(projections.report.artifacts[0]?.title, "Persisted artifact detail");
+  assert.equal(projections.report.artifacts[0]?.status, "ready");
+  assert.equal(projections.report.exportStatus, "ready");
+});
+
+test("Hybrid detail cannot override canonical publication or immutable manifest metadata", () => {
+  const mission = {
+    version: 1,
+    id: "projection_01",
+    familiarId: "sage",
+    title: "Persisted mission detail",
+    intent: "Canonical metadata stays authoritative",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "completed",
+    createdAt: run.createdAt,
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [],
+    sources: [],
+    artifacts: [{
+      key: "artifact-report",
+      kind: "brief",
+      title: "Stale persisted title",
+      relativePath: "artifacts/report.md",
+      iteration: 1,
+      state: "published",
+      updatedAt: "2026-08-30T10:01:00.000Z",
+    }],
+  } as ResearchMission;
+  const gatewayEvents = [
+    event(1, "run.created", {}),
+    event(2, "artifact.registered", {
+      artifact: {
+        id: "artifact-report",
+        title: "Event title",
+        kind: "brief",
+        status: "published",
+      },
+      report: {
+        exportStatus: "exported",
+      },
+    }),
+    event(3, "run.completed", {
+      status: "completed",
+      sources: 0,
+      artifacts: 1,
+      iterations: 1,
+    }),
+  ];
+  const manifestArtifact = {
+    id: "artifact-report",
+    kind: "report",
+    title: "Authoritative manifest title",
+    mediaType: "text/markdown",
+    digest: "c".repeat(64),
+    bytes: 84,
+    placement: "device-local" as const,
+    contentSync: "not-requested" as const,
+    createdAt: RUN_UPDATED_AT,
+  };
+  const snapshot: ResearchRunV1 = {
+    ...run,
+    status: "completed",
+    updatedAt: gatewayEvents[2].at,
+    nextEventSequence: 4,
+    artifactManifest: finalManifest([manifestArtifact]),
+  };
+
+  const projections = selectResearchRunProjections(
+    hydrateHybridResearchRunProjectionInput(snapshot, gatewayEvents, mission),
+  );
+
+  assert.deepEqual(projections.report.artifacts, [{
+    id: "artifact-report",
+    title: "Authoritative manifest title",
+    kind: "report",
+    status: "published",
+    contentSync: "not-requested",
+    at: RUN_UPDATED_AT,
+  }]);
+  assert.equal(projections.report.exportStatus, "exported");
+});
+
+test("Hybrid hydration omits current mission detail for an older exact generation", () => {
+  const currentMission = {
+    id: "projection_01",
+    runGeneration: 2,
+  } as ResearchMission;
+  const historicalRun: ResearchRunV1 = {
+    ...run,
+    status: "completed",
+    nextEventSequence: 3,
+    artifactManifest: finalManifest(),
+  };
+  const gatewayEvents = [
+    event(1, "run.created", {}),
+    event(2, "run.completed", { status: "completed" }),
+  ];
+
+  const input = hydrateHybridResearchRunProjectionInput(
+    historicalRun,
+    gatewayEvents,
+    currentMission,
+  );
+
+  assert.equal(input.mission, null);
+  assert.equal(selectResearchRunProjections(input).plan.revisions.length, 0);
 });
 
 test("Snapshot hydration accepts an exact historical run generation for its mission", () => {
