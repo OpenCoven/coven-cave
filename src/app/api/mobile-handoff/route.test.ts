@@ -83,11 +83,19 @@ assert.match(
   "the timeout result records whether process-tree cleanup failed",
 );
 assert.equal(
-  route.match(
-    /if \((?:serve|status)\.cleanupFailed\) return tailscaleCleanupFailureResponse\((?:serve|status), backend\);/g,
-  )?.length,
-  4,
-  "both Serve probe ladders abort after an unconfirmed cleanup before another command starts",
+  route.match(/if \(self\.cleanupFailed\) return tailscaleCleanupFailureResponse\(self, backend\);/g)?.length,
+  2,
+  "both Serve probe ladders abort when self-status cleanup is unconfirmed",
+);
+assert.match(
+  route,
+  /if \(result\.cleanupFailed\) \{\s*\n\s*return \{ ok: false, response: tailscaleCleanupFailureResponse\(result, backend\) \};/,
+  "the shared ownership-status read aborts before any probe or mutation after cleanup failure",
+);
+assert.match(
+  route,
+  /if \(mutation\.cleanupFailed\) \{\s*\n\s*return \{\s*\n\s*ok: false as const,\s*\n\s*response: tailscaleCleanupFailureResponse\(mutation, backend\),/,
+  "a timed-out Serve mutation aborts before post-status discovery",
 );
 
 console.log("mobile-handoff route.test.ts OK");

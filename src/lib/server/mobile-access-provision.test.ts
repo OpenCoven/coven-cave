@@ -433,6 +433,37 @@ test("retire disarms and removes the persisted secret", async () => {
   assert.equal(rearmPersistedMobileAccessSecret(env), null, "next boot stays tokenless");
 });
 
+test("retiring one dev port preserves competing and packaged credentials", async () => {
+  const shared = devEnv();
+  const stateRoot = shared.COVEN_CAVE_MOBILE_STATE_ROOT;
+  const dev3007 = devEnv({ COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot, PORT: "3007" });
+  const dev3008 = devEnv({ COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot, PORT: "3008" });
+  const packaged3020 = devEnv({
+    COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+    COVEN_CAVE_BUNDLE: "1",
+    COVEN_CAVE_ACCESS_TOKEN: "packaged-credential",
+    PORT: "3020",
+  });
+  const secret3007 = await provisionMobileAccessSecret(dev3007);
+  const secret3008 = await provisionMobileAccessSecret(dev3008);
+  assert.ok(secret3007);
+  assert.ok(secret3008);
+  armMobileAccessSecret(secret3007, dev3007);
+  armMobileAccessSecret(secret3008, dev3008);
+
+  retireMobileAccessSecret(dev3007);
+  retireMobileAccessSecret(packaged3020);
+
+  assert.equal(existsSync(mobileAccessSecretFile(dev3007)), false);
+  assert.equal(loadPersistedMobileAccessSecret(dev3008), secret3008);
+  assert.equal(dev3008.COVEN_CAVE_ACCESS_TOKEN, secret3008);
+  assert.equal(
+    packaged3020.COVEN_CAVE_ACCESS_TOKEN,
+    "packaged-credential",
+    "app-stop never retires the packaged sidecar credential",
+  );
+});
+
 // ── Wiring pins ──────────────────────────────────────────────────────────────
 // Behavioral seams live above; these pin the route and server wiring so the
 // self-provisioning path can't silently detach (repo convention).

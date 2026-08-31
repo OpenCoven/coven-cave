@@ -14,7 +14,6 @@ import {
   resolveIosInstallUrl,
   resolveTailscaleBin,
   serveRouteFailure,
-  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleIpHost,
 } from "./mobile-handoff.ts";
@@ -39,26 +38,119 @@ const status = {
 };
 const signingKey = ["handoff", "mobile", "key"].join("-");
 
+// ── Machine-global Tailscale Serve ownership (cave-uq1ht) ───────────────────
 {
+  const module = (await import("./mobile-handoff.ts")) as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    [
+      typeof module.enumerateServeProxyBackends,
+      typeof module.assessServeOwnership,
+      typeof module.serveRouteOwnedByBackend,
+    ],
+    ["function", "function", "function"],
+    "Serve ownership exposes pure inventory, assessment, and verification helpers",
+  );
+
+  const enumerateServeProxyBackends = module.enumerateServeProxyBackends as (
+    status: unknown,
+  ) => Array<{ kind: string; target?: string; raw: string }>;
+  const assessServeOwnership = module.assessServeOwnership as (
+    status: unknown,
+    backend: string,
+    probe: (target: string) => Promise<boolean>,
+  ) => Promise<{ kind: string; targets: string[] }>;
+  const serveRouteOwnedByBackend = module.serveRouteOwnedByBackend as (
+    status: unknown,
+    backend: string,
+  ) => boolean;
+
+  const competingStatus = {
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/": { Proxy: "http://localhost:3020/" },
+          "/legacy": { Proxy: "http://127.0.0.1:3007" },
+        },
+      },
+    },
+  };
+  assert.deepEqual(
+    enumerateServeProxyBackends(competingStatus),
+    [
+      { kind: "loopback", raw: "http://localhost:3020/", target: "http://127.0.0.1:3020" },
+      { kind: "loopback", raw: "http://127.0.0.1:3007", target: "http://127.0.0.1:3007" },
+    ],
+    "all proxy handlers are enumerated and loopback aliases normalize to one durable identity",
+  );
   assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: false }),
+    serveRouteOwnedByBackend(competingStatus, "http://127.0.0.1:3020"),
     false,
-    "a failed Serve mutation with no status proof stays fail-closed",
+    "one desired handler does not own a mixed route",
   );
   assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: false, statusOk: true }),
+    serveRouteOwnedByBackend(status, "http://localhost:3000/"),
+    true,
+    "the desired backend owns the complete route when every proxy target matches",
+  );
+
+  let protectedProbeCount = 0;
+  const protectedStatus = {
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/external": { Proxy: "https://example.com/backend" },
+          "/malformed": { Proxy: "not a URL" },
+        },
+      },
+    },
+  };
+  const protectedAssessment = await assessServeOwnership(
+    protectedStatus,
+    "http://127.0.0.1:3000",
+    async () => {
+      protectedProbeCount += 1;
+      return false;
+    },
+  );
+  assert.equal(protectedAssessment.kind, "conflict");
+  assert.equal(protectedProbeCount, 0, "protected targets are never network-probed");
+
+  const healthyAssessment = await assessServeOwnership(
+    competingStatus,
+    "http://127.0.0.1:3000",
+    async (target) => target.endsWith(":3020"),
+  );
+  assert.equal(healthyAssessment.kind, "conflict", "a responsive packaged backend keeps ownership");
+
+  const staleAssessment = await assessServeOwnership(
+    competingStatus,
+    "http://127.0.0.1:3000",
+    async () => false,
+  );
+  assert.equal(staleAssessment.kind, "takeover", "unreachable competing dev routes may be reclaimed");
+
+  const emptyAssessment = await assessServeOwnership(
+    {},
+    "http://127.0.0.1:3000",
+    async () => {
+      assert.fail("an empty route has nothing to probe");
+    },
+  );
+  assert.equal(emptyAssessment.kind, "takeover");
+
+  assert.equal(
+    serveRouteOwnedByBackend(
+      {
+        Web: {
+          [`${serveHost}:443`]: {
+            Handlers: { "/": { Proxy: "http://127.0.0.1:3020" } },
+          },
+        },
+      },
+      "http://127.0.0.1:3000",
+    ),
     false,
-    "a readable status does not by itself authorize MagicDNS fallback after mutation failure",
-  );
-  assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: false }),
-    true,
-    "an acknowledged Serve mutation may use MagicDNS when status is unavailable",
-  );
-  assert.equal(
-    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
-    true,
-    "status-schema drift must not veto an acknowledged Serve mutation",
+    "post-mutation verification detects a race that repointed Serve",
   );
 }
 
@@ -453,6 +545,46 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(route, /qrTarget = withChatFragment\(invite\.url, chatId\)/, "token-gated app-start swaps the QR target to the signed invite");
   assert.match(route, /expiresAtIso: invite\.expiresAtIso/, "token-gated app-start exposes the invite expiry");
   assert.match(route, /ok: false, unavailable: true/, "known optional prerequisites use a clean application-level unavailable response");
+  assert.match(
+    route,
+    /async function inspectServeOwnership\(backend: string\)/,
+    "every mutation path shares one fail-closed Serve ownership inspection",
+  );
+  assert.equal(
+    route.match(/await inspectServeOwnership\(backend\)/g)?.length,
+    3,
+    "app-start, GET/start, and reset inspect ownership before mutating Serve",
+  );
+  assert.match(
+    route,
+    /let serveStatus = ownership\.status;[\s\S]*?if \(ownership\.kind !== "owned"\)/,
+    "an already-owned route reuses status without churning serve --bg",
+  );
+  assert.match(
+    route,
+    /serveRouteOwnedByBackend\(verified\.status, backend\)/,
+    "claim success requires a post-mutation status snapshot that still points only at this backend",
+  );
+  assert.match(
+    route,
+    /async function resetOwnedServeRoute\(backend: string\)/,
+    "app-stop and explicit reset share an ownership-aware reset",
+  );
+  assert.equal(
+    route.match(/(?:return|await) resetOwnedServeRoute\(/g)?.length,
+    2,
+    "both destructive actions refuse to reset a route owned by another instance",
+  );
+  assert.doesNotMatch(
+    route,
+    /if \(action === "(?:reset|app-stop)"\) \{\s*const reset = await runTailscale\(\["serve", "reset"\]\)/,
+    "no destructive action reaches serve reset without ownership proof",
+  );
+  assert.match(
+    route,
+    /return mobileUnavailableResponse\(detail, \{ backendUrl: backend, steps \}, 503\)/,
+    "healthy ownership conflicts return the reconciler's unavailable breaker response",
+  );
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");

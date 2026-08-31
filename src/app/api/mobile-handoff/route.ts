@@ -19,6 +19,7 @@ import { signMobileAccessToken } from "@/lib/mobile-access-token";
 import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
 import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
 import {
+  assessServeOwnership,
   buildPairingSteps,
   classifyTailscaleSelf,
   createMobileInvite,
@@ -26,8 +27,8 @@ import {
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   resolveIosInstallUrl,
+  serveRouteOwnedByBackend,
   serveRouteFailure,
-  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -249,8 +250,12 @@ function nativeTokenlessMode() {
 function mobileUnavailableResponse(
   error: string,
   details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
+  status = 200,
 ) {
-  return NextResponse.json({ ok: false, unavailable: true, error, ...details });
+  return NextResponse.json(
+    { ok: false, unavailable: true, error, ...details },
+    { status },
+  );
 }
 
 function tailscaleCleanupFailureResponse(result: TailscaleResult, backend: string) {
@@ -271,6 +276,132 @@ function mobileAccessUnavailableResponse() {
   return mobileUnavailableResponse(error, {
     steps: buildPairingSteps({ access: { ok: false, detail: error } }),
   });
+}
+
+type ServeStatusSnapshot =
+  | { ok: true; status: unknown }
+  | { ok: false; response: NextResponse };
+
+async function readServeStatus(backend: string): Promise<ServeStatusSnapshot> {
+  const result = await runTailscale(["serve", "status", "--json"]);
+  if (result.cleanupFailed) {
+    return { ok: false, response: tailscaleCleanupFailureResponse(result, backend) };
+  }
+  if (!result.ok) {
+    return {
+      ok: false,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve ownership could not be inspected; no route was changed.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  const parsed = parseServeStatus(result.stdout);
+  if ("error" in parsed) {
+    return {
+      ok: false,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve returned an unreadable status; no route was changed.",
+        { stderr: parsed.error, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  return { ok: true, status: parsed.value };
+}
+
+async function probeLoopbackBackend(target: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1200);
+  try {
+    await fetch(new URL("/api/familiars", target), {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    // Any HTTP response proves that a different instance is alive. In
+    // particular, 401/403 are healthy credential boundaries, not stale routes.
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function inspectServeOwnership(backend: string) {
+  const snapshot = await readServeStatus(backend);
+  if (!snapshot.ok) return snapshot;
+  const ownership = await assessServeOwnership(
+    snapshot.status,
+    backend,
+    probeLoopbackBackend,
+  );
+  return { ok: true as const, ...ownership, status: snapshot.status };
+}
+
+function serveOwnershipConflictResponse(
+  backend: string,
+  targets: string[],
+  steps?: PairingStep[],
+) {
+  const detail = targets.length > 0
+    ? `Tailscale Serve is owned by another backend (${targets.join(", ")}).`
+    : "Tailscale Serve ownership is protected by an unknown route.";
+  return mobileUnavailableResponse(detail, { backendUrl: backend, steps }, 503);
+}
+
+async function mutateOwnedServeRoute(args: string[], backend: string) {
+  const mutation = await runTailscale(args);
+  if (mutation.cleanupFailed) {
+    return {
+      ok: false as const,
+      response: tailscaleCleanupFailureResponse(mutation, backend),
+    };
+  }
+
+  const verified = await readServeStatus(backend);
+  if (!verified.ok) return verified;
+  if (!serveRouteOwnedByBackend(verified.status, backend)) {
+    return {
+      ok: false as const,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve changed ownership while the route was being updated; no invite was created.",
+        { stderr: mutation.stderr, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  return {
+    ok: true as const,
+    status: verified.status,
+    warning: mutation.ok
+      ? null
+      : mutation.stderr || "Tailscale Serve reported an error, but the requested route is active.",
+  };
+}
+
+async function resetOwnedServeRoute(backend: string) {
+  const ownership = await inspectServeOwnership(backend);
+  if (!ownership.ok) return ownership.response;
+  if (ownership.kind !== "owned") {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      notOwned: true,
+      backendUrl: backend,
+      currentTargets: ownership.targets,
+    });
+  }
+
+  const reset = await runTailscale(["serve", "reset"]);
+  if (reset.cleanupFailed) return tailscaleCleanupFailureResponse(reset, backend);
+  return NextResponse.json({
+    ok: reset.ok,
+    error: reset.ok ? undefined : "failed to reset tailscale serve",
+    stderr: reset.stderr,
+  }, { status: reset.ok ? 200 : 500 });
 }
 
 /**
@@ -381,6 +512,7 @@ async function ensureNativeAppServeReady(
   }
 
   const self = await runTailscale(["status", "--self", "--json"]);
+  if (self.cleanupFailed) return tailscaleCleanupFailureResponse(self, backend);
   // BackendState separates "install Tailscale" / "start it" / "sign in" —
   // the old exit-code-only check lumped a signed-out machine in with a
   // missing CLI and let a Stopped one fail later with a route error.
@@ -404,58 +536,64 @@ async function ensureNativeAppServeReady(
 
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
-  const serve = await runTailscale(["serve", "--bg", backend]);
-  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
-  const serveWarning = serve.ok
-    ? null
-    : serve.stderr || "Tailscale Serve could not be (re)started.";
-
-  let serveStatus: unknown = {};
-  const status = await runTailscale(["serve", "status", "--json"]);
-  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
-  if (status.ok) {
-    const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveStatus = parsed.value;
+  const ownership = await inspectServeOwnership(backend);
+  if (!ownership.ok) return ownership.response;
+  if (ownership.kind === "conflict") {
+    const detail = `Tailscale Serve is owned by another backend (${ownership.targets.join(", ")}).`;
+    return serveOwnershipConflictResponse(
+      backend,
+      ownership.targets,
+      buildPairingSteps({
+        access: { ok: true },
+        backend: { ok: true },
+        tailscale,
+        route: { ok: false, detail },
+      }),
+    );
   }
+
+  let serveStatus = ownership.status;
+  let serveWarning: string | null = null;
+  if (ownership.kind !== "owned") {
+    const claim = await mutateOwnedServeRoute(["serve", "--bg", backend], backend);
+    if (!claim.ok) return claim.response;
+    serveStatus = claim.status;
+    serveWarning = claim.warning;
+  }
+
   const tailnetDiscovery = tailnetDiscoveryProof({
     selfStatus,
     serveStatus,
     backendUrl: backend,
-    // A successful status command with no matching handler proves there is no
-    // live route. MagicDNS alone only identifies the node; it does not publish
-    // the loopback backend.
-    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
-      serveOk: serve.ok,
-      statusOk: status.ok,
-    }),
+    allowMagicDnsFallback: false,
   });
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
-    const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
-    if (httpServe.ok) {
+    if (ownership.kind === "owned") {
       discovery = nativeAppDiscoveryProof({
         selfStatus,
         serveStatus,
         backendUrl: backend,
-        // The explicit HTTP Serve fallback is addressed by Tailscale IP. Do
-        // not replace it with an unproven MagicDNS HTTPS URL.
         allowMagicDnsFallback: false,
       });
-      if (discovery.ok && discovery.source === "tailscale-ip-http") {
-        fallbackWarning = serveWarning
-          ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
-          : "Using the Tailscale IP fallback for the native app.";
-      }
     } else {
-      const httpServeError = httpServe.stderr || "Tailscale HTTP Serve could not be started.";
-      fallbackWarning = serveWarning
-        ? `${serveWarning} HTTP fallback failed: ${httpServeError}`
-        : httpServeError;
-      discovery = {
-        ok: false,
-        reason: fallbackWarning,
-      };
+      const httpClaim = await mutateOwnedServeRoute(
+        ["serve", "--bg", `--http=${backendPort(backend)}`, backend],
+        backend,
+      );
+      if (!httpClaim.ok) return httpClaim.response;
+      serveStatus = httpClaim.status;
+      discovery = nativeAppDiscoveryProof({
+        selfStatus,
+        serveStatus,
+        backendUrl: backend,
+        allowMagicDnsFallback: false,
+      });
+      fallbackWarning = httpClaim.warning ?? "Using the Tailscale IP fallback for the native app.";
+    }
+    if (discovery.ok && discovery.source === "tailscale-ip-http" && !fallbackWarning) {
+      fallbackWarning = "Using the Tailscale IP fallback for the native app.";
     }
   }
 
@@ -463,7 +601,6 @@ async function ensureNativeAppServeReady(
     const routeFailure = serveRouteFailure({
       backendUrl: backend,
       serveError: fallbackWarning ?? serveWarning,
-      statusError: status.stderr,
       routeReason: discovery.reason,
     });
     const routeDetail = routeFailure.error;
@@ -572,9 +709,11 @@ async function mobileHandoffReady(
   accessSecret: string,
   chatId?: string | null,
 ) {
+  const backend = backendUrl();
   // `--json` doubles as the connectivity check (exit 0 == connected) and the
   // source for the MagicDNS fallback host below.
   const self = await runTailscale(["status", "--self", "--json"]);
+  if (self.cleanupFailed) return tailscaleCleanupFailureResponse(self, backend);
   if (!self.ok) {
     return mobileUnavailableResponse("tailscale is not connected", { stderr: self.stderr });
   }
@@ -584,42 +723,32 @@ async function mobileHandoffReady(
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
 
-  const backend = backendUrl();
+  const ownership = await inspectServeOwnership(backend);
+  if (!ownership.ok) return ownership.response;
+  if (ownership.kind === "conflict") {
+    return serveOwnershipConflictResponse(backend, ownership.targets);
+  }
 
-  // Best-effort (re)start of Tailscale Serve. Don't hard-fail when this errors
-  // — on macOS the CLI can return "GUI failed to start (CLIError 3)" even
-  // though the serve config (and tunnel) is already live in the daemon. Capture
-  // the error as a non-fatal warning and try to produce a working link anyway.
-  const serve = await runTailscale(["serve", "--bg", backend]);
-  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
-  const serveWarning = serve.ok
-    ? null
-    : serve.stderr || "Tailscale Serve could not be (re)started.";
-
-  // Prefer the real serve config when it's readable.
-  let serveStatus: unknown = {};
-  const status = await runTailscale(["serve", "status", "--json"]);
-  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
-  if (status.ok) {
-    const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveStatus = parsed.value;
+  let serveStatus = ownership.status;
+  let serveWarning: string | null = null;
+  if (ownership.kind !== "owned") {
+    const claim = await mutateOwnedServeRoute(["serve", "--bg", backend], backend);
+    if (!claim.ok) return claim.response;
+    serveStatus = claim.status;
+    serveWarning = claim.warning;
   }
 
   const discovery = tailnetDiscoveryProof({
     selfStatus,
     serveStatus,
     backendUrl: backend,
-    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
-      serveOk: serve.ok,
-      statusOk: status.ok,
-    }),
+    allowMagicDnsFallback: false,
   });
 
   if (!discovery.ok) {
     const routeFailure = serveRouteFailure({
       backendUrl: backend,
       serveError: serveWarning,
-      statusError: status.stderr,
       routeReason: discovery.reason,
     });
     // Nothing usable — surface the most actionable error we have.
@@ -691,12 +820,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "reset") {
-    const reset = await runTailscale(["serve", "reset"]);
-    return NextResponse.json({
-      ok: reset.ok,
-      error: reset.ok ? undefined : "failed to reset tailscale serve",
-      stderr: reset.stderr,
-    }, { status: reset.ok ? 200 : 500 });
+    return resetOwnedServeRoute(backendUrl());
   }
 
   // Cheap paired-signal read for the handoff modal's "phone seen" poll: no
@@ -725,16 +849,12 @@ export async function POST(req: Request) {
   }
 
   if (action === "app-stop") {
-    const reset = await runTailscale(["serve", "reset"]);
+    const response = await resetOwnedServeRoute(nativeAppBackendUrl());
     // Mobile mode Off retires the self-provisioned pairing secret (cave-os73):
     // disarm the in-process gate and drop the persisted file so the next dev
     // boot stays tokenless. No-op in the packaged bundle.
     retireMobileAccessSecret();
-    return NextResponse.json({
-      ok: reset.ok,
-      error: reset.ok ? undefined : "failed to stop mobile mode",
-      stderr: reset.stderr,
-    }, { status: reset.ok ? 200 : 500 });
+    return response;
   }
 
   return mobileHandoff(req, chatId);

@@ -125,6 +125,21 @@ enum TailscaleServeMode {
     Http(u16),
 }
 
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ServeProxyTarget {
+    Loopback(u16),
+    Protected,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ServeRepairDecision {
+    Noop,
+    Preserve,
+    Repair(TailscaleServeMode),
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 #[derive(Default)]
 struct ServeRepairState {
@@ -501,6 +516,116 @@ fn serve_mode_from_status(status: &serde_json::Value) -> Option<TailscaleServeMo
     })
 }
 
+#[cfg(desktop)]
+fn parse_loopback_proxy_port(proxy: &str) -> Option<u16> {
+    let target = proxy.trim();
+    let rest = target.strip_prefix("http://")?;
+    let authority = rest.split('/').next()?;
+    if authority.contains(['@', '?', '#']) {
+        return None;
+    }
+    let (host, port) = if let Some(rest) = authority.strip_prefix("[::1]:") {
+        ("::1", rest)
+    } else {
+        authority.rsplit_once(':')?
+    };
+    if host != "127.0.0.1" && !host.eq_ignore_ascii_case("localhost") && host != "::1" {
+        return None;
+    }
+    port.parse().ok()
+}
+
+#[cfg(desktop)]
+fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
+    let Some(web) = status.get("Web") else {
+        return Vec::new();
+    };
+    let Some(web) = web.as_object() else {
+        return vec![ServeProxyTarget::Protected];
+    };
+    let mut targets = Vec::new();
+    for config in web.values() {
+        let Some(handlers) = config.get("Handlers") else {
+            continue;
+        };
+        let Some(handlers) = handlers.as_object() else {
+            targets.push(ServeProxyTarget::Protected);
+            continue;
+        };
+        for handler in handlers.values() {
+            let target = handler
+                .get("Proxy")
+                .and_then(serde_json::Value::as_str)
+                .and_then(parse_loopback_proxy_port)
+                .map(ServeProxyTarget::Loopback)
+                .unwrap_or(ServeProxyTarget::Protected);
+            targets.push(target);
+        }
+    }
+    targets
+}
+
+#[cfg(desktop)]
+fn serve_route_owned_by_port(status: &serde_json::Value, port: u16) -> bool {
+    let targets = serve_proxy_targets(status);
+    !targets.is_empty()
+        && targets
+            .iter()
+            .all(|target| *target == ServeProxyTarget::Loopback(port))
+}
+
+#[cfg(desktop)]
+fn decide_serve_repair(
+    status: &serde_json::Value,
+    requested_port: u16,
+    packaged: bool,
+    mut responds: impl FnMut(u16) -> bool,
+) -> ServeRepairDecision {
+    let Some(mode) = serve_mode_from_status(status) else {
+        return ServeRepairDecision::Preserve;
+    };
+    let targets = serve_proxy_targets(status);
+    if targets.is_empty() || targets.contains(&ServeProxyTarget::Protected) {
+        return ServeRepairDecision::Preserve;
+    }
+    if targets
+        .iter()
+        .all(|target| *target == ServeProxyTarget::Loopback(requested_port))
+    {
+        return ServeRepairDecision::Noop;
+    }
+    if packaged {
+        return ServeRepairDecision::Repair(mode);
+    }
+    if targets.iter().any(|target| match target {
+        ServeProxyTarget::Loopback(port) if *port != requested_port => responds(*port),
+        _ => false,
+    }) {
+        ServeRepairDecision::Preserve
+    } else {
+        ServeRepairDecision::Repair(mode)
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn loopback_backend_responds(port: u16) -> bool {
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = std::net::TcpStream::connect_timeout(&address, Duration::from_millis(500))
+    else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    if stream
+        .write_all(b"GET /api/familiars HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut first_byte = [0_u8; 1];
+    stream.read(&mut first_byte).is_ok_and(|read| read > 0)
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 fn tailscale_binary() -> PathBuf {
     if let Some(explicit) = std::env::var_os("TAILSCALE_BIN") {
@@ -578,10 +703,17 @@ fn run_tailscale_serve_repair(port: u16) {
         "status".to_string(),
         "--json".to_string(),
     ];
-    let mode = match run_tailscale_command(&status_args) {
-        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
-            .ok()
-            .and_then(|status| serve_mode_from_status(&status)),
+    let decision = match run_tailscale_command(&status_args) {
+        Ok(output) if output.status.success() => {
+            serde_json::from_slice(&output.stdout).ok().map(|status| {
+                decide_serve_repair(
+                    &status,
+                    port,
+                    !cfg!(debug_assertions),
+                    loopback_backend_responds,
+                )
+            })
+        }
         Ok(output) => {
             log::warn!(
                 "[cave] could not inspect Tailscale Serve before repairing port {port}: exited with {}",
@@ -596,10 +728,20 @@ fn run_tailscale_serve_repair(port: u16) {
             None
         }
     };
-    let Some(mode) = mode else {
+    let Some(decision) = decision else {
         // There is no paired Serve route to repair. Avoid creating an HTTPS
         // listener that could overwrite an unavailable or managed fallback.
         return;
+    };
+    let mode = match decision {
+        ServeRepairDecision::Noop => return,
+        ServeRepairDecision::Preserve => {
+            log::info!(
+                "[cave] preserving Tailscale Serve owned by another backend instead of repairing port {port}"
+            );
+            return;
+        }
+        ServeRepairDecision::Repair(mode) => mode,
     };
     let args = match mode {
         TailscaleServeMode::Https => serve_arguments(port).to_vec(),
@@ -607,7 +749,18 @@ fn run_tailscale_serve_repair(port: u16) {
     };
     match run_tailscale_command(&args) {
         Ok(output) if output.status.success() => {
-            log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+            let verified = run_tailscale_command(&status_args)
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| serde_json::from_slice(&output.stdout).ok())
+                .is_some_and(|status| serve_route_owned_by_port(&status, port));
+            if verified {
+                log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+            } else {
+                log::warn!(
+                    "[cave] Tailscale Serve repair for port {port} lost ownership verification"
+                );
+            }
         }
         Ok(output) => {
             log::warn!(
@@ -2180,6 +2333,71 @@ mod tests {
             Some(TailscaleServeMode::Https)
         );
         assert_eq!(serve_mode_from_status(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn serve_repair_same_owner_is_a_noop() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://localhost:3007/" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, 3007, false, |_| panic!("same owner is not probed")),
+            ServeRepairDecision::Noop
+        );
+    }
+
+    #[test]
+    fn serve_repair_preserves_a_competing_healthy_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, 3007, false, |port| port == 3008),
+            ServeRepairDecision::Preserve
+        );
+    }
+
+    #[test]
+    fn serve_repair_takes_over_an_unreachable_stale_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, 3007, false, |_| false),
+            ServeRepairDecision::Repair(TailscaleServeMode::Https)
+        );
+    }
+
+    #[test]
+    fn serve_repair_protects_non_loopback_targets_without_probing_them() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "https://example.com/backend" } } } }
+        });
+        let mut probes = 0;
+        assert_eq!(
+            decide_serve_repair(&status, 3007, false, |_| {
+                probes += 1;
+                false
+            }),
+            ServeRepairDecision::Preserve
+        );
+        assert_eq!(probes, 0);
+    }
+
+    #[test]
+    fn packaged_serve_repair_has_precedence_over_a_healthy_dev_backend() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3007" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, 3020, true, |_| true),
+            ServeRepairDecision::Repair(TailscaleServeMode::Https)
+        );
     }
 
     #[test]

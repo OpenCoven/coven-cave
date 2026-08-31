@@ -7,22 +7,6 @@ import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
-export function shouldAllowMagicDnsFallback({
-  serveOk,
-  statusOk,
-}: {
-  serveOk: boolean;
-  statusOk: boolean;
-}) {
-  // An acknowledged `serve --bg <backend>` mutation is authoritative evidence
-  // that Tailscale accepted the requested route. A follow-up status read is
-  // corroboration only: its schema/parser may drift independently and must not
-  // veto a successful mutation. When mutation fails, callers still require a
-  // matching parsed route before they may claim the backend is published.
-  void statusOk;
-  return serveOk;
-}
-
 export function serveRouteFailure({
   backendUrl,
   serveError,
@@ -69,6 +53,22 @@ type TailscaleServeStatus = {
 type ServeRouteInspection = {
   httpsUrl: string | null;
   hasNonHttpsRoute: boolean;
+};
+
+export type ServeProxyBackend =
+  | {
+      kind: "loopback";
+      raw: string;
+      target: string;
+    }
+  | {
+      kind: "protected";
+      raw: string;
+    };
+
+export type ServeOwnershipAssessment = {
+  kind: "owned" | "takeover" | "conflict";
+  targets: string[];
 };
 
 function normalizeServeHost(host: string) {
@@ -120,11 +120,102 @@ function serveRouteProtocol(status: TailscaleServeStatus, host: string) {
 // Tailscale may store the proxy target with a trailing slash or as `localhost`
 // rather than the `http://127.0.0.1:<port>` we asked for. Normalize both sides
 // so the lookup doesn't fail on cosmetic differences.
+function normalizedLoopbackProxyTarget(target: string): string | null {
+  try {
+    const url = new URL(target.trim());
+    const hostname = url.hostname.toLowerCase();
+    if (url.protocol !== "http:") return null;
+    if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)) return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    const host = hostname === "localhost" || hostname === "::1" || hostname === "[::1]"
+      ? "127.0.0.1"
+      : hostname;
+    const port = url.port ? `:${url.port}` : "";
+    const path = url.pathname.replace(/\/+$/, "");
+    return `http://${host}${port}${path}`;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeProxyTarget(target: string) {
-  return target
-    .trim()
-    .replace(/\/+$/, "")
-    .replace("://localhost", "://127.0.0.1");
+  return normalizedLoopbackProxyTarget(target) ?? target.trim().replace(/\/+$/, "");
+}
+
+export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[] {
+  const typedStatus = status as TailscaleServeStatus | null;
+  const web = typedStatus?.Web;
+  if (web === undefined) return [];
+  if (!web || typeof web !== "object" || Array.isArray(web)) {
+    return [{ kind: "protected", raw: "<malformed Web>" }];
+  }
+
+  const backends: ServeProxyBackend[] = [];
+  for (const config of Object.values(web)) {
+    const handlers = config?.Handlers;
+    if (handlers === undefined) continue;
+    if (!handlers || typeof handlers !== "object" || Array.isArray(handlers)) {
+      backends.push({ kind: "protected", raw: "<malformed Handlers>" });
+      continue;
+    }
+    for (const handler of Object.values(handlers)) {
+      const raw = handler?.Proxy;
+      if (typeof raw !== "string" || !raw.trim()) {
+        backends.push({ kind: "protected", raw: "<malformed Proxy>" });
+        continue;
+      }
+      const target = normalizedLoopbackProxyTarget(raw);
+      backends.push(target
+        ? { kind: "loopback", raw, target }
+        : { kind: "protected", raw });
+    }
+  }
+  return backends;
+}
+
+export function serveRouteOwnedByBackend(status: unknown, backendUrl: string): boolean {
+  const desired = normalizedLoopbackProxyTarget(backendUrl);
+  if (!desired) return false;
+  const backends = enumerateServeProxyBackends(status);
+  return backends.length > 0
+    && backends.every((backend) => backend.kind === "loopback" && backend.target === desired);
+}
+
+export async function assessServeOwnership(
+  status: unknown,
+  backendUrl: string,
+  probe: (target: string) => Promise<boolean>,
+): Promise<ServeOwnershipAssessment> {
+  const desired = normalizedLoopbackProxyTarget(backendUrl);
+  const backends = enumerateServeProxyBackends(status);
+  const targets = backends.map((backend) =>
+    backend.kind === "loopback" ? backend.target : backend.raw);
+  if (!desired || backends.some((backend) => backend.kind === "protected")) {
+    return { kind: "conflict", targets };
+  }
+  const loopbackBackends = backends.filter(
+    (backend): backend is Extract<ServeProxyBackend, { kind: "loopback" }> =>
+      backend.kind === "loopback",
+  );
+  if (loopbackBackends.length > 0 && loopbackBackends.every((backend) => backend.target === desired)) {
+    return { kind: "owned", targets };
+  }
+
+  const differentTargets = [
+    ...new Set(
+      loopbackBackends
+        .filter((backend) => backend.target !== desired)
+        .map((backend) => backend.target),
+    ),
+  ];
+  for (const target of differentTargets) {
+    try {
+      if (await probe(target)) return { kind: "conflict", targets };
+    } catch {
+      // A failed bounded probe is the stale-owner signal.
+    }
+  }
+  return { kind: "takeover", targets };
 }
 
 type ResolveTailscaleBinOptions = {
