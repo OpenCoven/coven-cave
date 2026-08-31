@@ -56,10 +56,69 @@
   resize: vertical;
   font-family: var(--font-mono, monospace);
   line-height: var(--leading-normal);
+  caret-color: currentColor;
 }
 
 .vault-paste-input--masked {
   -webkit-text-security: disc;
+}
+
+.vault-paste-input[data-visibility-transition="reveal"] {
+  animation: vault-paste-reveal var(--duration-slow) var(--ease-standard);
+}
+
+.vault-paste-input[data-visibility-transition="mask"] {
+  animation: vault-paste-mask var(--duration-slow) var(--ease-standard);
+}
+
+@keyframes vault-paste-reveal {
+  0% {
+    color: var(--text-primary);
+    -webkit-text-security: disc;
+  }
+
+  45% {
+    color: transparent;
+    -webkit-text-security: disc;
+  }
+
+  55% {
+    color: transparent;
+    -webkit-text-security: none;
+  }
+
+  100% {
+    color: var(--text-primary);
+    -webkit-text-security: none;
+  }
+}
+
+@keyframes vault-paste-mask {
+  0% {
+    color: var(--text-primary);
+    -webkit-text-security: none;
+  }
+
+  45% {
+    color: transparent;
+    -webkit-text-security: none;
+  }
+
+  55% {
+    color: transparent;
+    -webkit-text-security: disc;
+  }
+
+  100% {
+    color: var(--text-primary);
+    -webkit-text-security: disc;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-paste-input[data-visibility-transition] {
+    animation: none;
+  }
 }
 
 .vault-paste-actions {

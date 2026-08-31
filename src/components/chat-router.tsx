@@ -984,9 +984,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           The chat surface now docks ONE threads rail beside the conversation
           (chat-surface.tsx); keeping this one meant the chat page rendered
           three chat lists at once — the sidebar rollup, the surface rail, and
-          this. ChatProjectSidebar itself is now referenced by nothing —
-          retiring the component and its dedicated specs is cave-4er6q, kept
-          out of this change so the removal is reviewable on its own. */}
+          this. ChatProjectSidebar itself was retired, along with its
+          dedicated specs, in cave-4er6q. */}
       <div className="relative min-h-0 min-w-0 flex-1">
         <ChatSplitHost
           panes={splitPaneTiles}

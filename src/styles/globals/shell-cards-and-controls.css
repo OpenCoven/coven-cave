@@ -636,7 +636,7 @@ details[open] > .cave-edit-card__summary::before {
   border: 1px solid var(--border-hairline);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  color: var(--fg-primary);
+  color: var(--text-primary);
   /* Layered elevation: an inner top highlight + two soft drop shadows read as a
      crisp floating panel rather than one flat blur. */
   box-shadow:

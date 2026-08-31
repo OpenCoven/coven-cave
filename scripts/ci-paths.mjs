@@ -5,7 +5,11 @@ import { pathToFileURL } from "node:url";
 
 const FRONTEND_PATH =
   /^(?:src\/|public\/|schemas\/research\/|server\.(?:mjs|ts)$|scripts\/|tests\/|package\.json$|pnpm-lock\.yaml$|next\.config|playwright\.config|tsconfig|eslint\.config|postcss\.config|\.github\/workflows\/)/;
-const RUST_PATH = /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain)/;
+// Rust validation includes the doctest job and its contract test. Workflow
+// changes must exercise that job too; otherwise a broken command can merge
+// while only the frontend path-aware lanes run.
+const RUST_PATH =
+  /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain|scripts\/rust-doctest-ci\.test\.mjs|\.github\/workflows\/(?:ci|full-validation)\.yml$)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
 const E2E_PATH =
   /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$)/;

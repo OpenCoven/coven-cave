@@ -43,7 +43,7 @@
   background: color-mix(in oklch, var(--bg-panel) 60%, transparent);
   cursor: text;
   text-align: left;
-  transition: border-color var(--motion-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-rest-pill:hover {
@@ -83,7 +83,7 @@
   font-size: var(--text-2xs);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: border-color var(--motion-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-reaction:hover {
@@ -263,7 +263,7 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-seg__item--on {
@@ -329,7 +329,7 @@
   font-size: var(--text-xs);
   line-height: 1;
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-tool:hover {
@@ -556,7 +556,7 @@
   display: inline-flex;
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform var(--motion-fast) var(--ease-standard);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-sec__caret--open {
@@ -657,7 +657,7 @@
   font-size: var(--text-2xs);
   color: var(--text-primary);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-mini:hover {
@@ -705,7 +705,7 @@
   flex-shrink: 0;
   border-radius: var(--radius-pill);
   background: var(--bg-hover);
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-switch__track--on {
@@ -719,8 +719,8 @@
   height: 11px;
   border-radius: var(--radius-pill);
   background: var(--text-secondary);
-  transition: left var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard);
+  transition: left var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-switch__track--on .ghc-switch__knob {
@@ -871,7 +871,7 @@
   border-radius: 3px;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-chip__x:hover {
@@ -890,7 +890,7 @@
   font-size: var(--text-2xs);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color var(--motion-fast) var(--ease-standard);
+  transition: color var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-add:hover {
@@ -951,7 +951,7 @@
   font-weight: 500;
   color: var(--accent-presence-soft);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .ghc-draft-cta:hover {
@@ -1087,7 +1087,7 @@
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 /* Accent for the reversible verbs once there is a body to send. */

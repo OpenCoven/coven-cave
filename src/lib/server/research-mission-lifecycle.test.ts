@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseResearchMission } from "../research-missions.ts";
-import { applyStartResult, createMissionRecord } from "./research-mission-lifecycle.ts";
+import {
+  applyStartResult,
+  createMissionRecord,
+  stopBeforeNextIteration,
+} from "./research-mission-lifecycle.ts";
 
 const INPUT = {
   familiarId: "sage",
@@ -94,4 +98,42 @@ test("applyStartResult keeps private process-owner provenance out of mission sta
   }, new Date("2026-07-24T00:01:00.000Z"));
   assert.equal("sessionAuthority" in (retained.iterations[0] ?? {}), false);
   assert.equal("sessionOwnerKind" in (retained.iterations[0] ?? {}), false);
+});
+
+test("stopBeforeNextIteration gates on the computed next iteration number, not array length", () => {
+  const mission = createMissionRecord(
+    { ...INPUT, bounds: { ...INPUT.bounds, maxIterations: 3 } },
+    "mission-1",
+    new Date("2026-07-24T00:00:00.000Z"),
+  );
+
+  // Contiguous numbering: length and the computed number agree.
+  const contiguous = {
+    ...mission,
+    iterations: [
+      { number: 1, status: "completed" as const },
+      { number: 2, status: "completed" as const },
+      { number: 3, status: "completed" as const },
+    ],
+  };
+  assert.equal(
+    stopBeforeNextIteration(contiguous, new Date("2026-07-24T00:10:00.000Z")),
+    "Iteration limit reached",
+  );
+
+  // Gapped numbering (e.g. iterations 1 and 3, maxIterations 3): the array
+  // has only 2 entries, so a length-based gate would wrongly allow starting
+  // iteration 4, one past the limit. Gating on the computed next number
+  // (3 + 1 = 4 > 3) correctly refuses it.
+  const gapped = {
+    ...mission,
+    iterations: [
+      { number: 1, status: "completed" as const },
+      { number: 3, status: "completed" as const },
+    ],
+  };
+  assert.equal(
+    stopBeforeNextIteration(gapped, new Date("2026-07-24T00:10:00.000Z")),
+    "Iteration limit reached",
+  );
 });

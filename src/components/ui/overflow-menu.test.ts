@@ -68,6 +68,11 @@ assert.match(
   /closest\?\.\(\s*'\[role="menuitem"\], \[role="menuitemradio"\], \[role="menuitemcheckbox"\]',?\s*\)/,
   "auto-closes on menuitem activation",
 );
+assert.match(
+  src,
+  /item\?\.getAttribute\("aria-haspopup"\) === "menu"\) return/,
+  "submenu triggers stay open long enough for their flyout to mount",
+);
 assert.match(src, /!\(item as HTMLButtonElement\)\.disabled/, "disabled items don't close the menu");
 assert.ok(
   /item\.getAttribute\("aria-disabled"\) !== "true"/.test(src) &&

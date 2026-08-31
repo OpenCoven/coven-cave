@@ -50,13 +50,16 @@ import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-sec
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { daemonHealthRequest } from "@/lib/server/daemon-health-request";
 import {
+  classifyResearchDaemonTarget,
   INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
   isOwnerLocalResearchDaemonTarget,
+  localResearchDaemonUnavailableDiagnostic,
   OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
   researchSessionLaunchPolicy,
   SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC,
   shouldRequestResearchSessionLaunchPolicy,
   supportsSessionLaunchPolicy,
+  type ResearchSessionLaunchDiagnostic,
   dispatchResearchDaemonRequest,
   validatedResearchLaunchAddDirs,
 } from "@/lib/server/research-launch-policy";
@@ -83,6 +86,7 @@ export type StartFlowSessionResult = {
   queued?: boolean;
   queueItem?: CaveTravelQueueItem;
   unavailable?: boolean;
+  diagnostic?: ResearchSessionLaunchDiagnostic;
   cleanupUnconfirmed?: boolean;
   /** Exact in-process owner cleanup; functions are intentionally not persisted. */
   cleanupSession?: () => Promise<void>;
@@ -491,7 +495,21 @@ export async function startFlowSession(
     // config for every request; a concurrent local -> hub config change must
     // never move the later policy-bearing POST across that trust boundary.
     pinnedResearchDaemonTarget = localDaemonTarget();
-    if (!isOwnerLocalResearchDaemonTarget(pinnedResearchDaemonTarget)) {
+    const targetClassification = classifyResearchDaemonTarget(pinnedResearchDaemonTarget);
+    if (targetClassification === "local-unavailable") {
+      const diagnostic = localResearchDaemonUnavailableDiagnostic();
+      return {
+        ok: false,
+        status: 503,
+        unavailable: true,
+        error: diagnostic.message,
+        diagnostic,
+      };
+    }
+    if (
+      targetClassification === "nonlocal"
+      || !isOwnerLocalResearchDaemonTarget(pinnedResearchDaemonTarget)
+    ) {
       return {
         ok: false,
         status: 409,

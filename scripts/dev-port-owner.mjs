@@ -32,6 +32,13 @@ import { isDirectRun as isDirectRunOf } from "./direct-run.mjs";
  *
  * Usage: node scripts/dev-port-owner.mjs --port 3000 [--timeout-ms 1500]
  * Prints one of: free | ours | gated | stranger
+ *
+ * The packaged shell has the related Rust classifier at
+ * src-tauri/src/sidecar_startup.rs::classify_port_occupant. Its `Cave` verdict
+ * corresponds to this probe's `ours`; native startup also takes a per-port
+ * claim before spawning. The probes intentionally differ for a silent TCP
+ * connection, so keep their shared port and identity contract aligned without
+ * assuming identical handling.
  */
 
 const DEFAULT_TIMEOUT_MS = 1_500;

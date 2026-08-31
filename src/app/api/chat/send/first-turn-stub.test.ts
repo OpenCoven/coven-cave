@@ -111,7 +111,11 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,[\s\S]*?openClawGatewayCredentialStore: dependencies\.openClawGatewayCredentialStore,\s*\}\)/,
+  // The OpenClaw call site may carry additional route-input dependencies
+  // (the issue #4892 negotiation seams) after the credential store; the
+  // first-exchange ownership decision and the shared credential wiring stay
+  // pinned.
+  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,[\s\S]*?openClawGatewayCredentialStore: dependencies\.openClawGatewayCredentialStore,[\s\S]*?\}\)/,
   "OpenClaw consumes the same route-wide first-exchange ownership decision as generic harnesses",
 );
 assert.equal(

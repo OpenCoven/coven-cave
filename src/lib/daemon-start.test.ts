@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
+import { localDaemonTarget } from "./coven-daemon.ts";
 import {
   directDaemonLaunchCommand,
   parseDaemonLifecycleInspection,
@@ -20,9 +21,7 @@ import {
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
 const readinessSource = await readFile(new URL("./daemon-readiness.ts", import.meta.url), "utf8");
-const covenDaemon = await readFile(new URL("./coven-daemon.ts", import.meta.url), "utf8");
 
-assert.match(covenDaemon, /export function localDaemonTarget\(\)[\s\S]*mode: "local"[\s\S]*socketPath: socketPath\(\)/);
 assert.match(daemonStart, /waitForDaemonReadiness/);
 assert.match(daemonStart, /runnerExitGraceMs: startTimeoutMs/, "the daemonizing CLI launcher gets the complete health deadline");
 assert.match(daemonStart, /path: "\/api\/v1\/health"/);
@@ -41,6 +40,36 @@ assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and r
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
 assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
+
+test("local daemon targets keep their socket path and resolution provenance aligned", () => {
+  const previousSocket = process.env.COVEN_SOCKET;
+  const previousHome = process.env.COVEN_HOME;
+  const expectedSocket = process.platform === "win32"
+    ? String.raw`\\.\pipe\coven-daemon-target-test.sock`
+    : "/tmp/coven-daemon-target-test.sock";
+  const expectedHome = process.platform === "win32"
+    ? String.raw`C:\Users\Cave\.coven`
+    : "/tmp/coven-daemon-target-test-home";
+
+  process.env.COVEN_SOCKET = expectedSocket;
+  process.env.COVEN_HOME = expectedHome;
+  try {
+    const target = localDaemonTarget();
+    assert.equal(target.mode, "local");
+    assert.equal(target.label, "Local daemon");
+    assert.deepEqual(target.socketResolution, {
+      socketPath: expectedSocket,
+      source: "coven-socket-env",
+      availability: "available",
+    });
+    assert.equal(target.socketPath, target.socketResolution.socketPath);
+  } finally {
+    if (previousSocket === undefined) delete process.env.COVEN_SOCKET;
+    else process.env.COVEN_SOCKET = previousSocket;
+    if (previousHome === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = previousHome;
+  }
+});
 
 for (const [payload, expected] of [
   [{ status: "running", ok: true }, { status: "running" }],

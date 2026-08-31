@@ -4,6 +4,48 @@ Issue: [OpenCoven/coven-cave#4820](https://github.com/OpenCoven/coven-cave/issue
 
 **Verified: 2026-08-30.** Read-only verification. This document records verified program status only; it closes nothing and changes no bead.
 
+## Refresh — 2026-08-30 (second sweep, re-verified against upstream main)
+
+**Refreshed: 2026-08-30 ~15:00 UTC (second read-only sweep).** This record was first written against `origin/main` at `dacbe6173` on the morning of 2026-08-30 and merged to `CompleteDotTech/coven-cave` `main` via PR [CompleteDotTech/coven-cave#6](https://github.com/CompleteDotTech/coven-cave/pull/6) (merge commit `2d73f06e`, 2026-08-30T10:44:41Z). It has since reached `OpenCoven/coven-cave` `main` through the fork-to-upstream sync PR [#5211](https://github.com/OpenCoven/coven-cave/pull/5211) (commit `f4331e094`), which also landed the companion record [`2026-08-30-chat-v1-phase-7-acceptance-status.md`](2026-08-30-chat-v1-phase-7-acceptance-status.md) — a deeper `cave-udcn7`/[#4781](https://github.com/OpenCoven/coven-cave/issues/4781) verification with live tooling runs. This refresh re-verifies the record against current upstream main. Facts only; closes nothing.
+
+**Re-verification base:** `OpenCoven/coven-cave` `origin/main` at `bdbf971593` ("Bake absolute node path into the beads-jsonl merge driver", PR #5212, committed 2026-08-30T12:30:42Z), tree inspected locally 2026-08-30 ~15:00 UTC; tracker reads via the GitHub REST API in the same hour.
+
+### What changed since the original verification (`dacbe6173` → `bdbf971593`)
+
+- Exactly two commits: the [#5211](https://github.com/OpenCoven/coven-cave/pull/5211) fork sync (which carries the records themselves) and #5212 (`bdbf97159`; beads-jsonl merge driver, plus CI-ops scripts `scripts/cancel-stuck-action-runs.mjs` and `scripts/install-git-hooks.*`). **Neither touches a Phase 7 acceptance surface.**
+- `.beads/issues.jsonl` on `main` is still the stale four-row July pilot export (4 lines, `cave-hlv*` rows only). Beads remains unreadable from this environment, so the tracker-mirror method stands.
+
+### Tracker re-verification (REST, 2026-08-30 ~15:00 UTC) — unchanged
+
+| Check | Result |
+|---|---|
+| [#4820](https://github.com/OpenCoven/coven-cave/issues/4820) (epic mirror, `cave-j65ie`) | **open**, 0 comments, `updated_at` still 2026-08-21T20:50:41Z |
+| [#4781](https://github.com/OpenCoven/coven-cave/issues/4781) (`cave-udcn7`) | **open**, 2 comments, `updated_at` still 2026-08-22T04:14:03Z |
+| [#4776](https://github.com/OpenCoven/coven-cave/issues/4776), [#4777](https://github.com/OpenCoven/coven-cave/issues/4777), [#4778](https://github.com/OpenCoven/coven-cave/issues/4778) | still closed 2026-08-21T07:24:2x–3xZ as accidental repository-issue conversions; no new evidence |
+| [#4833](https://github.com/OpenCoven/coven-cave/issues/4833) (Phase 1 gate) and [#4839](https://github.com/OpenCoven/coven-cave/issues/4839) (Phase 2 gate) | both **open**; `updated_at` unchanged (2026-08-22 and 2026-08-23 respectively) |
+| Mirror cards for `cave-mbekl` / `cave-563z7` / `cave-as76u` | still none — issue search 2026-08-30 ~15:00 UTC returns only body references inside #4776–#4781 |
+| New issues created since 2026-08-30T10:00Z | #5217, #5220 (Coven Automations program) — not Phase 7 beads |
+| PRs merged since 2026-08-30T10:00Z | #5211 and #5212 only — neither advances a Phase 7 bead |
+
+### State changes this refresh records
+
+1. **The `cave-7yo` collision branch is gone.** `phase1a/cave-pairing-authority` — carried below as "unchanged at `287497dd3` with no PR" — now returns 404 on both `OpenCoven/coven-cave` and `CompleteDotTech/coven-cave` (checked 2026-08-30 ~15:00 UTC). No PR ever landed from it; tip `287497dd3` ("fix(client-v1): require explicit admin authorization", 2026-08-21) is still resolvable as a dangling commit but is **not an ancestor of `main`** — never landed. The 10-file collision with merged #4785 on `src/app/api/client/v1/health/route.ts` is therefore resolved by branch deletion/abandonment, not by landing that work. Whether Bead `cave-7yo` itself is closed is unverifiable here (Beads authoritative, unreadable).
+2. **The `route.ts` surface evolved via #5179, not `287497dd3`.** `src/app/api/client/v1/health/route.ts` last changed through #4785 (`96627be5a`, 2026-08-21) and #5179 (`e74078a14`, 2026-08-29, "test(client-v1): add packaged compatibility controls" — explicit admin authorization plus `src/lib/server/client-v1/conformance-compatibility.ts`, 1,011 insertions). #5179 predates the original verification base but was not in its artifact inventory; it is Cave-side compatibility tooling, listed here for completeness. No Phase 7 bead id is attached to it anywhere in the tracker text this sweep can find.
+3. **The record is now on upstream `main`** (see the refresh header) — this document's location is canonical upstream, no longer fork-only.
+
+### Owner-repository probes re-run (2026-08-30 ~15:00 UTC) — all unchanged
+
+- `OpenCoven/chat`: **0 releases, 0 tags**; workflows are still only `ci.yml` + `ci-image.yml`; `docs/releasing.md`, `docs/rollback.md`, `docs/release-acceptance.md`, `docs/production-rollout.md`, `scripts/verify-package.mjs`, and `scripts/release-context.mjs` remain absent from `main`.
+- `OpenCoven/sdk`: `release.yml` still present; `authority-canary.yml`, `compatibility/manifest.json`, `docs/pairing.md`, and `docs/migration.md` remain absent; tags are `archive/*` and process tags only — **no version/release tags**; `@opencoven/dev-cli`, `@opencoven/sdk`, and `@opencoven/core` still return 404 from registry.npmjs.org (checked 2026-08-30 ~15:00 UTC).
+- `OpenCoven/coven`: `crates/coven-client` is still `coven-client` 0.1.0 (the plan's publish-time name is `opencoven-coven-client`); `docs/reference/coven-client-crate.md`, `scripts/verify-coven-client-package.mjs`, and `.github/workflows/release-crates.yml` remain absent; crates.io returns 404 for both `opencoven-coven-client` and `opencoven-cave-client` (checked 2026-08-30 ~15:00 UTC). The repo does carry real version tags (latest `v0.4.1`) — the gap is crate publication/packaging, not release tagging.
+
+### Verdict after refresh — UNCHANGED
+
+- **Criterion 1 — "All Phase 7 implementation and verification beads are closed": still NOT satisfied.** #4820 and #4781 are open; #4776/#4777/#4778 remain accidental closures; `cave-mbekl`/`cave-563z7`/`cave-as76u` still have no tracker cards; `cave-0wg` is still the only verifiably closed Phase 7 execution bead.
+- **Criterion 2 — "The Phase 7 gate records passing commands and artifacts": still NOT satisfied.** No Phase 7 gate record document exists on `origin/main` at `bdbf971593` (`docs/workflows/` contains none; `docs/release-acceptance-results/` still contains only `.gitkeep`); the gate's only mirror [#4777](https://github.com/OpenCoven/coven-cave/issues/4777) still records no commands and no artifacts.
+
+Everything else in this document — the per-bead table, dependency chain, and coverage note — was re-checked in the same hour and stands as written.
+
 ## Method and limits
 
 Sources read on 2026-08-30:

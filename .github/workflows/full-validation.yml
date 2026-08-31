@@ -95,7 +95,7 @@ jobs:
           touch resources/server/.cargo-check-placeholder
           touch resources/node/.cargo-check-placeholder
           cargo check --locked
-          cargo test --locked --lib
+          cargo test --locked
 
   e2e:
     name: Validate candidate E2E (${{ matrix.shard }}/8)

@@ -1372,7 +1372,13 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             </span>
           ) : null}
           {hasMoreActions ? (
-            <OverflowMenu ariaLabel="More response actions" size="xs" className="cave-response-more">
+            <OverflowMenu
+              ariaLabel="More response actions"
+              size="xs"
+              minWidth={156}
+              className="cave-response-more"
+              popoverClassName="cave-response-menu"
+            >
               {onReply ? (
                 <PopoverItem icon="ph:arrow-bend-up-left" onSelect={onReply}>
                   Reply

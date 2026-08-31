@@ -13,6 +13,7 @@ const {
   extractDaemonError,
   normalizeWindowsDaemonSocket,
   isRemoteWindowsPath,
+  resolveDaemonSocket,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
@@ -117,6 +118,39 @@ const {
     },
   });
   assert.equal(socket, "\\\\.\\pipe\\coven-daemon-abc123.sock");
+}
+
+// A local CLI update removes daemon.json between daemon generations. The
+// resolver must expose that gap as unavailable, then notice the next canonical
+// local named pipe without caching the missing descriptor.
+{
+  const published = String.raw`\\.\pipe\coven-daemon-restarted.sock`;
+  let descriptorPresent = true;
+  const resolve = () => resolveDaemonSocket({
+    platform: "win32",
+    env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    statSync: () => descriptorPresent ? { size: 128 } : null,
+    readFileSync: () => JSON.stringify({ socket: published }),
+  });
+
+  assert.deepEqual(resolve(), {
+    socketPath: published,
+    source: "daemon-status-file",
+    availability: "available",
+  });
+  descriptorPresent = false;
+  assert.deepEqual(resolve(), {
+    socketPath: "C:/Users/Sonic/.coven/coven.sock",
+    source: "canonical-local",
+    availability: "unavailable",
+  });
+  descriptorPresent = true;
+  assert.deepEqual(resolve(), {
+    socketPath: published,
+    source: "daemon-status-file",
+    availability: "available",
+  });
 }
 
 // An oversized daemon.json is never read or parsed: its size is the writer's
@@ -237,6 +271,25 @@ const {
       `${forged} should be refused without taking the local daemon down with it`,
     );
   }
+}
+
+// Resolution keeps an explicit remote override attached to the safe local
+// fallback, so a later local pipe cannot make Research treat that override as
+// an owner-local authority.
+{
+  const resolution = resolveDaemonSocket({
+    platform: "win32",
+    env: {
+      COVEN_SOCKET: String.raw`\\evil-host\pipe\coven`,
+      COVEN_HOME: "C:/Users/Sonic/.coven",
+    },
+    homeDir: "C:/Users/Sonic",
+    statSync: () => ({ size: 128 }),
+    readFileSync: () => JSON.stringify({ socket: String.raw`\\.\pipe\coven-daemon-local.sock` }),
+  });
+  assert.deepEqual(resolution.refusedSources, ["coven-socket-env"]);
+  assert.equal(resolution.source, "daemon-status-file");
+  assert.equal(resolution.availability, "available");
 }
 
 // The half of the precedence contract that did NOT change: an *accepted*

@@ -63,7 +63,7 @@ export default function AppError({
               cursor: "pointer",
               fontSize: 13,
               fontWeight: 500,
-              color: "var(--accent-fg, #fff)",
+              color: "var(--accent-presence-foreground, #fff)",
               background: "var(--accent-presence, #7c6cf0)",
             }}
           >

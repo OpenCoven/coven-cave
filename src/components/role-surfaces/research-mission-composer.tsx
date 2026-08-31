@@ -233,6 +233,9 @@ export function ResearchMissionComposer({
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
+  const setBoundedIntent = useCallback((value: string) => {
+    setIntent(value.slice(0, RESEARCH_INTENT_MAX_LENGTH));
+  }, []);
   const [mode, setModeState] = useState<"auto" | ResearchMissionMode>(initialMode ?? "auto");
   const [bounds, setBounds] = useState<ResearchBounds>(
     defaultResearchPlan(initialMode ?? "brief").bounds,
@@ -321,10 +324,10 @@ export function ResearchMissionComposer({
       return;
     }
     appliedRecommendedDraftRevision.current = recommendedDraft.revision;
-    setIntent(recommendedDraft.value);
+    setBoundedIntent(recommendedDraft.value);
     setMenuDismissed(false);
     setMenuCursor(0);
-  }, [recommendedDraft]);
+  }, [recommendedDraft, setBoundedIntent]);
 
   // Every setMode caller is an explicit pick — mode cards, slash commands,
   // Reset to Auto, cross-tab preselect — so a deliberate switch clears the
@@ -348,7 +351,7 @@ export function ResearchMissionComposer({
   useEffect(() => {
     if (!initialDraft || appliedInitialDraftId.current === initialDraft.proposalId) return;
     appliedInitialDraftId.current = initialDraft.proposalId;
-    setIntent(initialDraft.question);
+    setBoundedIntent(initialDraft.question);
     setMode(initialDraft.mode);
     boundsDirtyRef.current = true;
     const draftPlan = defaultResearchPlan(initialDraft.mode).bounds;
@@ -357,13 +360,18 @@ export function ResearchMissionComposer({
       sourceTarget: initialDraft.sourceTarget,
       wallClockMinutes: initialDraft.wallClockMinutes,
     });
-  }, [initialDraft, setMode]);
+  }, [initialDraft, setBoundedIntent, setMode]);
 
   const inferred = useMemo(() => inferResearchMissionMode(intent), [intent]);
   const effectiveMode = mode === "auto" ? inferred.mode : mode;
   const plan = useMemo(() => defaultResearchPlan(effectiveMode), [effectiveMode]);
   const trimmedIntent = intent.trim();
   const intentTooShort = trimmedIntent.length > 0 && trimmedIntent.length < RESEARCH_INTENT_MIN_LENGTH;
+  const intentDescriptionId = error
+    ? "research-mission-error"
+    : intentTooShort
+      ? "research-intent-minimum"
+      : "research-plan-review";
   // Grow the box with the brief instead of scrolling three fixed rows. The CSS
   // caps it at ~12 lines, so `auto` then scrollHeight settles at the smaller of
   // content height and that ceiling; past it the element scrolls as before.
@@ -514,7 +522,7 @@ export function ResearchMissionComposer({
 
   const runCommand = (command: SlashCommand) => {
     const stripped = stripSlashToken(intent);
-    setIntent(stripped);
+    setBoundedIntent(stripped);
     setMenuCursor(0);
     if (command.run === "mode" && command.mode) {
       setMode(command.mode);
@@ -574,7 +582,7 @@ export function ResearchMissionComposer({
         announce(result.error);
         return;
       }
-      setIntent("");
+      setBoundedIntent("");
       announce(`Started ${result.mission.title}.`);
     } catch {
       setError("Research could not start. Check the runtime and try again.");
@@ -598,7 +606,7 @@ export function ResearchMissionComposer({
             maxLength={RESEARCH_INTENT_MAX_LENGTH}
             value={intent}
             onChange={(event) => {
-              setIntent(event.target.value);
+              setBoundedIntent(event.target.value);
               setMenuDismissed(false);
               setMenuCursor(0);
             }}
@@ -610,11 +618,8 @@ export function ResearchMissionComposer({
             aria-expanded={menuOpen}
             aria-controls="research-cmd-menu"
             aria-activedescendant={menuOpen ? `research-cmd-${menuItems[menuIndex].cmd.slice(1)}` : undefined}
-            aria-describedby={error
-              ? "research-mission-error"
-              : intentTooShort
-                ? "research-intent-minimum"
-                : "research-plan-review"}
+            aria-describedby={`${intentDescriptionId} research-intent-count`}
+            aria-errormessage={error ? "research-mission-error" : undefined}
           />
           {menuOpen ? (
             <div className="research-cmd-menu" id="research-cmd-menu" role="listbox" aria-label="Prompt commands">
@@ -651,6 +656,7 @@ export function ResearchMissionComposer({
             className={`research-intent-count${
               intent.length >= RESEARCH_INTENT_MAX_LENGTH * 0.9 ? " research-intent-count--near" : ""
             }`}
+            id="research-intent-count"
           >
             {intent.length.toLocaleString()} / {RESEARCH_INTENT_MAX_LENGTH.toLocaleString()}
           </span>
@@ -688,7 +694,7 @@ export function ResearchMissionComposer({
                 // tooltip and the pill carries a headline. Rendering the seed
                 // raw put "## Report topic **…" markdown on the chip.
                 title={chip.title}
-                onClick={() => setIntent(chip.brief)}
+                onClick={() => setBoundedIntent(chip.brief)}
               >
                 {summarizeRecommendationTitle(chip.title)}
               </button>
@@ -754,7 +760,7 @@ export function ResearchMissionComposer({
                   type="button"
                   className="research-recs__card focus-ring"
                   onClick={() => {
-                    setIntent(assembleBrief(rec.brief));
+                    setBoundedIntent(assembleBrief(rec.brief));
                     setBriefShown(true);
                     setRecsOpen(false);
                     setBriefNote(`Loaded from ${rec.why}.`);
@@ -923,7 +929,7 @@ export function ResearchMissionComposer({
         draft={intent}
         onClose={() => setBuilderOpen(false)}
         onApply={(prompt, filled) => {
-          setIntent(prompt);
+          setBoundedIntent(prompt);
           setBuilderOpen(false);
           setBriefShown(true);
           setBriefNote(null);

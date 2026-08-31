@@ -419,13 +419,14 @@ export function ReviewVerdictDock({
               }
               aria-describedby="rd-review-help rd-review-count"
               aria-invalid={noteError ? true : undefined}
+              aria-errormessage={noteError ? "rd-review-error" : undefined}
             />
             <span id="rd-review-count" className="rd-character-count">
               {note.length.toLocaleString()} /{" "}
               {GITHUB_REVIEW_BODY_MAX_LENGTH.toLocaleString()}
             </span>
             {noteError ? (
-              <span className="rd-error" role="alert">
+              <span id="rd-review-error" className="rd-error" role="alert">
                 {noteError}
               </span>
             ) : null}

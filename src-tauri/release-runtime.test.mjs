@@ -571,7 +571,7 @@ test("Rust mobile access-token coverage follows extracted lifecycle tests", asyn
 
   assert.match(
     cargoCheckJob,
-    /cargo test --locked --lib/,
+    /cargo test --locked(?:\r?\n|$)/,
     "candidate Rust validation must run the full library suite, including persisted mobile-token lifecycle coverage",
   );
 });

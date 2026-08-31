@@ -29,7 +29,7 @@ import { isRemoteWindowsPath } from "./windows-local-path.ts";
 export { isRemoteWindowsPath } from "./windows-local-path.ts";
 export { covenHomePath } from "./coven-home.ts";
 
-type SocketPathResolverOptions = {
+export type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
   env?: Record<string, string | undefined>;
   homeDir?: string;
@@ -49,8 +49,24 @@ type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 const DAEMON_STATUS_FILE_MAX_BYTES = 4 * 1024;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
+export type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";
+
+export type DaemonSocketResolution = {
+  socketPath: string;
+  source: "coven-socket-env" | "daemon-status-file" | "canonical-local";
+  availability: "available" | "unavailable";
+  /** Configured sources that were refused before this safe result was built. */
+  refusedSources?: readonly RefusedSocketSource[];
+};
+
 export type DaemonTarget =
-  | { mode: "local"; label: "Local daemon"; socketPath: string }
+  | {
+      mode: "local";
+      label: "Local daemon";
+      socketPath: string;
+      /** Call-time resolver evidence; absent on persisted/test-created targets. */
+      socketResolution?: DaemonSocketResolution;
+    }
   | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
   | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
 
@@ -73,8 +89,6 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
 
   return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
 }
-
-type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";
 
 /**
  * Values already reported, so one refusal is one event.
@@ -317,7 +331,7 @@ function localWindowsDaemonSocket(
   return { kind: "accepted", socket: normalized };
 }
 
-export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
+export function resolveDaemonSocket(options: SocketPathResolverOptions = {}): DaemonSocketResolution {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? homedir();
@@ -333,23 +347,55 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
       }
     });
 
+  const refusedSources: RefusedSocketSource[] = [];
+  const rememberRefusal = (source: RefusedSocketSource) => {
+    if (!refusedSources.includes(source)) refusedSources.push(source);
+  };
+  const withRefusedSources = (
+    resolution: Omit<DaemonSocketResolution, "refusedSources">,
+  ): DaemonSocketResolution => refusedSources.length > 0
+    ? { ...resolution, refusedSources: [...refusedSources] }
+    : resolution;
+
   const covenHome = covenHomePath(
     env,
     homeDir,
     platform,
-    (configured) => reportRefusedRemoteTarget("coven-home-env", configured),
+    (configured) => {
+      rememberRefusal("coven-home-env");
+      reportRefusedRemoteTarget("coven-home-env", configured);
+    },
   );
 
   if (env.COVEN_SOCKET) {
-    if (platform !== "win32") return env.COVEN_SOCKET;
+    if (platform !== "win32") {
+      return withRefusedSources({
+        socketPath: env.COVEN_SOCKET,
+        source: "coven-socket-env",
+        availability: "available",
+      });
+    }
     const configured = localWindowsDaemonSocket(env.COVEN_SOCKET, "coven-socket-env");
     // An accepted COVEN_SOCKET is still the whole answer: it outranks
     // `daemon.json`, and that precedence is what the override is for.
-    if (configured.kind === "accepted") return configured.socket;
+    if (configured.kind === "accepted") {
+      return withRefusedSources({
+        socketPath: configured.socket,
+        source: "coven-socket-env",
+        availability: "available",
+      });
+    }
     // A value that names nothing is not a redirection and not a request to go
     // look elsewhere either; it stays on the old "COVEN_SOCKET was set, so
     // daemon.json is not consulted" path.
-    if (configured.kind === "unnamed") return path.join(covenHome, "coven.sock");
+    if (configured.kind === "unnamed") {
+      return withRefusedSources({
+        socketPath: path.join(covenHome, "coven.sock"),
+        source: "canonical-local",
+        availability: "unavailable",
+      });
+    }
+    rememberRefusal("coven-socket-env");
     // A *refused* one falls through to `daemon.json`, exactly as if
     // COVEN_SOCKET had been unset.
     //
@@ -374,10 +420,31 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
     const published = statusSocket
       ? localWindowsDaemonSocket(statusSocket, "daemon-status-file")
       : null;
-    if (published?.kind === "accepted") return published.socket;
+    if (published?.kind === "accepted") {
+      return withRefusedSources({
+        socketPath: published.socket,
+        source: "daemon-status-file",
+        availability: "available",
+      });
+    }
+    if (published?.kind === "refused") rememberRefusal("daemon-status-file");
+
+    return withRefusedSources({
+      socketPath: path.join(covenHome, "coven.sock"),
+      source: "canonical-local",
+      availability: "unavailable",
+    });
   }
 
-  return path.join(covenHome, "coven.sock");
+  return withRefusedSources({
+    socketPath: path.join(covenHome, "coven.sock"),
+    source: "canonical-local",
+    availability: "available",
+  });
+}
+
+export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
+  return resolveDaemonSocket(options).socketPath;
 }
 
 /**
@@ -385,7 +452,7 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
  * COVEN_SOCKET env change is honored without an app restart.
  */
 export function socketPath(): string {
-  return resolveDaemonSocketPath();
+  return resolveDaemonSocket().socketPath;
 }
 
 function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
@@ -424,7 +491,13 @@ export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): Da
 }
 
 export function localDaemonTarget(): Extract<DaemonTarget, { mode: "local" }> {
-  return { mode: "local", label: "Local daemon", socketPath: socketPath() };
+  const socketResolution = resolveDaemonSocket();
+  return {
+    mode: "local",
+    label: "Local daemon",
+    socketPath: socketResolution.socketPath,
+    socketResolution,
+  };
 }
 
 async function loadDaemonTarget(): Promise<DaemonTarget> {
