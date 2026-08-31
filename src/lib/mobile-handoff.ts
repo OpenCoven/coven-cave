@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import {
   link as linkFile,
@@ -16,6 +16,11 @@ import { CAVE_PORTS } from "../../scripts/ports.mjs";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { appTokenTtlMs } from "./mobile-token-refresh.ts";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "./process-execution.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 const TAILSCALE_SERVE_LEASE_VERSION = 1;
@@ -371,6 +376,149 @@ export type ServeOwnershipAssessment = {
   targets: string[];
 };
 
+export type TailscaleServeCommandResult = {
+  ok: boolean;
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  cleanupFailed: boolean;
+};
+
+const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
+const TAILSCALE_TERMINATION_FAILED =
+  "Tailscale command timed out and its process tree could not be stopped";
+
+export async function runTailscaleCommand(
+  args: string[],
+  timeoutMs = 8000,
+): Promise<TailscaleServeCommandResult> {
+  const first = await runTailscaleCommandOnce(args, timeoutMs);
+  if (first.ok || first.cleanupFailed || first.stderr !== TAILSCALE_TIMED_OUT) return first;
+  return runTailscaleCommandOnce(args, timeoutMs);
+}
+
+function runTailscaleCommandOnce(
+  args: string[],
+  timeoutMs = 8000,
+): Promise<TailscaleServeCommandResult> {
+  return new Promise((resolve) => {
+    const bin = tailscaleBin();
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: tailscaleSpawnEnv(),
+      detached: process.platform !== "win32",
+    });
+    const stdout = new BoundedProcessOutput(64 * 1024);
+    const stderr = new BoundedProcessOutput(64 * 1024);
+    let settled = false;
+    let timedOut = false;
+    const finish = (result: TailscaleServeCommandResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(async () => {
+      timedOut = true;
+      const terminated = await terminateProcessTree(child);
+      finish({
+        ok: false,
+        status: null,
+        stdout: stdout.text(),
+        stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
+        cleanupFailed: !terminated,
+      });
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout.append(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr.append(chunk);
+    });
+    child.on("error", (error) => {
+      if (timedOut) return;
+      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
+      finish({
+        ok: false,
+        status: null,
+        stdout: stdout.text(),
+        stderr: missing
+          ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
+          : safeProcessErrorMessage(error, "Tailscale CLI"),
+        cleanupFailed: false,
+      });
+    });
+    child.on("close", (status) => {
+      if (timedOut) return;
+      finish({
+        ok: status === 0,
+        status,
+        stdout: stdout.text(),
+        stderr: stderr.text(),
+        cleanupFailed: false,
+      });
+    });
+  });
+}
+
+type TailscaleServeOperationOptions = {
+  backendUrl: string;
+  runTailscale: (args: string[]) => Promise<TailscaleServeCommandResult>;
+  probeBackend: (target: string) => Promise<boolean>;
+  acquireLease?: () => Promise<TailscaleServeLease | null>;
+  env?: Record<string, string | undefined>;
+  afterVerifiedRemoval?: () => void | Promise<void>;
+};
+
+type TailscaleServeOperationFailure =
+  | { kind: "busy" }
+  | { kind: "cleanup-failed"; stderr: string }
+  | { kind: "status-failed"; stderr: string }
+  | { kind: "status-malformed"; stderr: string };
+
+export type TailscaleServeClaimResult =
+  | TailscaleServeOperationFailure
+  | { kind: "conflict"; targets: string[] }
+  | { kind: "owned"; status: unknown }
+  | { kind: "claimed"; status: unknown; warning?: string }
+  | { kind: "verification-failed"; status: unknown; stderr: string };
+
+export type TailscaleServeResetResult =
+  | TailscaleServeOperationFailure
+  | { kind: "not-owned"; targets: string[] }
+  | { kind: "reset-failed"; stderr: string; status: unknown }
+  | { kind: "verification-failed"; status: unknown }
+  | { kind: "removed"; alreadyAbsent: boolean };
+
+export function serveResetAllowsCredentialRetirement(
+  result: Pick<TailscaleServeResetResult, "kind">,
+): boolean {
+  return result.kind === "removed";
+}
+
+export function parseTailscaleServeStatus(
+  raw: string,
+): { value: unknown } | { error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: {} };
+  try {
+    return { value: JSON.parse(trimmed) };
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        return { value: JSON.parse(trimmed.slice(start, end + 1)) };
+      } catch {
+        // Fall through to the bounded diagnostic.
+      }
+    }
+    return { error: trimmed.slice(0, 500) };
+  }
+}
+
 function normalizeServeHost(host: string) {
   const trimmed = host.trim();
   const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
@@ -612,6 +760,131 @@ export async function assessServeOwnership(
     }
   }
   return { kind: "takeover", targets };
+}
+
+async function readTailscaleServeStatus(
+  runTailscale: TailscaleServeOperationOptions["runTailscale"],
+): Promise<
+  | { kind: "status"; status: unknown }
+  | Extract<
+      TailscaleServeOperationFailure,
+      { kind: "cleanup-failed" | "status-failed" | "status-malformed" }
+    >
+> {
+  const result = await runTailscale(["serve", "status", "--json"]);
+  if (result.cleanupFailed) {
+    return { kind: "cleanup-failed", stderr: result.stderr };
+  }
+  if (!result.ok) {
+    return { kind: "status-failed", stderr: result.stderr };
+  }
+  const parsed = parseTailscaleServeStatus(result.stdout);
+  if ("error" in parsed) {
+    return { kind: "status-malformed", stderr: parsed.error };
+  }
+  return { kind: "status", status: parsed.value };
+}
+
+export async function claimTailscaleServeRoute({
+  backendUrl,
+  runTailscale,
+  probeBackend,
+  acquireLease = acquireTailscaleServeLease,
+  env = process.env,
+}: TailscaleServeOperationOptions): Promise<TailscaleServeClaimResult> {
+  const lease = await acquireLease();
+  if (!lease) return { kind: "busy" };
+  try {
+    const current = await readTailscaleServeStatus(runTailscale);
+    if (current.kind !== "status") return current;
+    const ownership = await assessServeOwnership(
+      current.status,
+      backendUrl,
+      probeBackend,
+      {
+        takeOverHealthyLoopback: packagedServeMayTakeOverHealthyLoopback(
+          backendUrl,
+          env,
+        ),
+      },
+    );
+    if (ownership.kind === "conflict") {
+      return { kind: "conflict", targets: ownership.targets };
+    }
+    if (ownership.kind === "owned") {
+      return { kind: "owned", status: current.status };
+    }
+
+    const mutation = await runTailscale(["serve", "--bg", backendUrl]);
+    if (mutation.cleanupFailed) {
+      return { kind: "cleanup-failed", stderr: mutation.stderr };
+    }
+    const verified = await readTailscaleServeStatus(runTailscale);
+    if (verified.kind !== "status") return verified;
+    if (!serveRouteOwnedByBackend(verified.status, backendUrl)) {
+      return {
+        kind: "verification-failed",
+        status: verified.status,
+        stderr: mutation.stderr,
+      };
+    }
+    return {
+      kind: "claimed",
+      status: verified.status,
+      warning: mutation.ok
+        ? undefined
+        : mutation.stderr || "Tailscale Serve reported an error after publishing the route.",
+    };
+  } finally {
+    await lease.release();
+  }
+}
+
+export async function resetTailscaleServeRoute({
+  backendUrl,
+  runTailscale,
+  acquireLease = acquireTailscaleServeLease,
+  afterVerifiedRemoval,
+}: TailscaleServeOperationOptions): Promise<TailscaleServeResetResult> {
+  const lease = await acquireLease();
+  if (!lease) return { kind: "busy" };
+  try {
+    const current = await readTailscaleServeStatus(runTailscale);
+    if (current.kind !== "status") return current;
+    const currentTargets = enumerateServeProxyBackends(current.status);
+    if (currentTargets.length === 0) {
+      await afterVerifiedRemoval?.();
+      return { kind: "removed", alreadyAbsent: true };
+    }
+    if (!serveRouteOwnedByBackend(current.status, backendUrl)) {
+      return {
+        kind: "not-owned",
+        targets: currentTargets.map((target) =>
+          target.kind === "loopback" ? target.target : target.raw),
+      };
+    }
+
+    const reset = await runTailscale(["serve", "reset"]);
+    if (reset.cleanupFailed) {
+      return { kind: "cleanup-failed", stderr: reset.stderr };
+    }
+    const verified = await readTailscaleServeStatus(runTailscale);
+    if (verified.kind !== "status") return verified;
+    if (!reset.ok) {
+      return {
+        kind: "reset-failed",
+        stderr: reset.stderr,
+        status: verified.status,
+      };
+    }
+    if (enumerateServeProxyBackends(verified.status).length > 0) {
+      return { kind: "verification-failed", status: verified.status };
+    }
+    await afterVerifiedRemoval?.();
+    return { kind: "removed", alreadyAbsent: false };
+  } finally {
+    await lease.release();
+  }
 }
 
 type ResolveTailscaleBinOptions = {

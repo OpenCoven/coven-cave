@@ -48,9 +48,12 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       typeof module.assessServeOwnership,
       typeof module.serveRouteOwnedByBackend,
       typeof module.packagedServeMayTakeOverHealthyLoopback,
+      typeof module.claimTailscaleServeRoute,
+      typeof module.resetTailscaleServeRoute,
+      typeof module.serveResetAllowsCredentialRetirement,
     ],
-    ["function", "function", "function", "function"],
-    "Serve ownership exposes pure inventory, assessment, precedence, and verification helpers",
+    ["function", "function", "function", "function", "function", "function", "function"],
+    "Serve ownership exposes one canonical claim/reset protocol",
   );
 
   const enumerateServeProxyBackends = module.enumerateServeProxyBackends as (
@@ -69,6 +72,16 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     module.packagedServeMayTakeOverHealthyLoopback as (
       backend: string,
       env: Record<string, string | undefined>,
+    ) => boolean;
+  const claimTailscaleServeRoute = module.claimTailscaleServeRoute as (
+    options: Record<string, unknown>,
+  ) => Promise<{ kind: string; status?: unknown }>;
+  const resetTailscaleServeRoute = module.resetTailscaleServeRoute as (
+    options: Record<string, unknown>,
+  ) => Promise<{ kind: string }>;
+  const serveResetAllowsCredentialRetirement =
+    module.serveResetAllowsCredentialRetirement as (
+      result: { kind: string },
     ) => boolean;
   assert.equal(
     packagedServeMayTakeOverHealthyLoopback(
@@ -376,6 +389,287 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     false,
     "post-mutation verification detects a race that repointed Serve",
   );
+
+  const commandResult = (
+    overrides: Partial<{
+      ok: boolean;
+      status: number | null;
+      stdout: string;
+      stderr: string;
+      cleanupFailed: boolean;
+    }> = {},
+  ) => ({
+    ok: true,
+    status: 0,
+    stdout: "",
+    stderr: "",
+    cleanupFailed: false,
+    ...overrides,
+  });
+  const lease = { release: async () => undefined };
+  const packagedEnv = { COVEN_CAVE_BUNDLE: "1", PORT: "3020" };
+  const packagedBackend = "http://127.0.0.1:3020";
+  const devBackend = "http://127.0.0.1:3007";
+  const packagedOwnedStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: packagedBackend } },
+      },
+    },
+  };
+  const healthyDevStatus = {
+    TCP: { "443": { HTTPS: true } },
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: devBackend } },
+      },
+    },
+  };
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (commands.length === 2) return commandResult();
+        return commandResult({ stdout: JSON.stringify(packagedOwnedStatus) });
+      },
+    });
+    assert.equal(result.kind, "claimed");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "--bg", packagedBackend],
+        ["serve", "status", "--json"],
+      ],
+      "packaged recovery takes over a healthy dev route only under the canonical lease and postcheck",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({
+          stdout: JSON.stringify({
+            ...status,
+            TCP: {
+              ...status.TCP,
+              "2222": { TCPForward: "127.0.0.1:22" },
+            },
+          }),
+        });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "packaged recovery never overwrites protected mixed Serve state",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      env: { PORT: "3000" },
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "a healthy competing dev route is inspected but never mutated",
+    );
+  }
+  {
+    let calls = 0;
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        calls += 1;
+        if (calls === 1) return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        if (calls === 2) return commandResult();
+        return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+      },
+    });
+    assert.equal(result.kind, "verification-failed", "a post-mutation race loss fails closed");
+  }
+
+  const resetCase = async ({
+    acquireLease = async () => lease,
+    results,
+  }: {
+    acquireLease?: () => Promise<typeof lease | null>;
+    results: ReturnType<typeof commandResult>[];
+  }) => {
+    let call = 0;
+    let retirements = 0;
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return results[call++] ?? commandResult();
+      },
+      afterVerifiedRemoval: async () => {
+        retirements += 1;
+      },
+    });
+    assert.equal(
+      retirements,
+      result.kind === "removed" ? 1 : 0,
+      `${result.kind} must have the matching credential-retirement effect`,
+    );
+    return { result, commands };
+  };
+  assert.equal(
+    (await resetCase({ acquireLease: async () => null, results: [] })).result.kind,
+    "busy",
+    "lock contention retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [commandResult({ stdout: JSON.stringify(healthyDevStatus) })],
+    })).result.kind,
+    "not-owned",
+    "ownership conflict retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [commandResult({ ok: false, status: 1, stderr: "status failed" })],
+    })).result.kind,
+    "status-failed",
+    "status CLI failure retains the credential",
+  );
+  {
+    const cleanupFailure = await resetCase({
+      results: [
+        commandResult({
+          ok: false,
+          status: null,
+          stderr: "cleanup failed",
+          cleanupFailed: true,
+        }),
+      ],
+    });
+    assert.equal(cleanupFailure.result.kind, "cleanup-failed");
+    assert.equal(cleanupFailure.commands.length, 1, "cleanup failure aborts every later command");
+  }
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ ok: false, status: 1, stderr: "reset failed" }),
+        commandResult({ stdout: "{}" }),
+      ],
+    })).result.kind,
+    "reset-failed",
+    "a reset CLI failure retains the credential even if the route appears absent",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ stdout: JSON.stringify(status) }),
+      ],
+    })).result.kind,
+    "verification-failed",
+    "remaining Serve configuration retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ ok: false, status: 1, stderr: "postcheck failed" }),
+      ],
+    })).result.kind,
+    "status-failed",
+    "post-reset status failure retains the credential",
+  );
+  assert.equal(
+    (await resetCase({
+      results: [
+        commandResult({ stdout: JSON.stringify(status) }),
+        commandResult(),
+        commandResult({ stdout: "{}" }),
+      ],
+    })).result.kind,
+    "removed",
+    "only a successful reset with verified complete removal retires the credential",
+  );
+  for (const kind of [
+    "busy",
+    "not-owned",
+    "status-failed",
+    "status-malformed",
+    "cleanup-failed",
+    "reset-failed",
+    "verification-failed",
+  ]) {
+    assert.equal(
+      serveResetAllowsCredentialRetirement({ kind }),
+      false,
+      `${kind} must preserve the access credential`,
+    );
+  }
+  assert.equal(
+    serveResetAllowsCredentialRetirement({ kind: "removed" }),
+    true,
+    "verified complete route removal permits access credential retirement",
+  );
+  {
+    const events: string[] = [];
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => ({
+        release: async () => {
+          events.push("release");
+        },
+      }),
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        call += 1;
+        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 2) return commandResult();
+        return commandResult({ stdout: "{}" });
+      },
+      afterVerifiedRemoval: async () => {
+        events.push("retire");
+      },
+    });
+    assert.equal(result.kind, "removed");
+    assert.deepEqual(
+      events,
+      ["retire", "release"],
+      "credential retirement happens before the machine lease is released",
+    );
+  }
 }
 
 // ── Cross-process Serve mutation lease (cave-uq1ht review follow-up) ────────
@@ -1033,6 +1327,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
   const route = read("../app/api/mobile-handoff/route.ts");
+  const ownership = read("./mobile-handoff.ts");
   assert.match(route, /withChatFragment\(discovery\.serveUrl, chatId\)/, "app-start QR target carries the chat fragment");
   assert.match(route, /ensureNativeAppServe\(req, chatId\)/, "POST threads chatId into app-start");
   assert.match(route, /lastSeenAt: await readMobileLastSeen\(\)/, "handoff responses expose the paired-device beat");
@@ -1049,8 +1344,13 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   );
   assert.equal(
     route.match(/await inspectServeOwnership\(backend\)/g)?.length,
-    3,
-    "app-start, GET/start, and reset inspect ownership before mutating Serve",
+    2,
+    "app-start and GET/start inspect ownership before mutating Serve",
+  );
+  assert.match(
+    ownership,
+    /export async function resetTailscaleServeRoute[\s\S]+?const current = await readTailscaleServeStatus\(runTailscale\);[\s\S]+?serveRouteOwnedByBackend\(current\.status, backendUrl\)/,
+    "reset uses the canonical complete ownership inspection under its lease",
   );
   assert.match(
     route,
@@ -1064,7 +1364,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   );
   assert.match(
     route,
-    /async function resetOwnedServeRoute\(backend: string\)/,
+    /async function resetOwnedServeRoute\([\s\S]{0,100}?backend: string,/,
     "app-stop and explicit reset share an ownership-aware reset",
   );
   assert.equal(

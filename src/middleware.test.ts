@@ -321,7 +321,11 @@ assert.match(
   "sidecar auth warning should stay quiet when the current server does not require a token",
 );
 assert.doesNotMatch(sidecarMonitorSource, /Boolean\(window\.__TAURI_INTERNALS__\)/, "mobile Tauri should not be treated as a sidecar host");
-assert.match(mobileScriptSource, /tailscale_cmd serve --bg "\$TAILSCALE_BACKEND"/, "mobile script should publish the exact loopback backend it started");
+assert.match(
+  mobileScriptSource,
+  /mobile-serve-ownership\.ts" claim[\s\S]{0,100}?--backend "\$TAILSCALE_BACKEND" --channel dev/,
+  "mobile script should publish its exact loopback backend through the shared ownership protocol",
+);
 assert.match(mobileScriptSource, /"authorization": `Bearer \$\{createMobileAccessToken\(accessToken\)\}`/, "mobile script should authenticate its local invite API request with a derived token");
 assert.match(nextConfigSource, /allowedDevOrigins:\s*\[[\s\S]*"\*\*\.ts\.net"/, "Next dev should allow Tailscale Serve origins for mobile browser access");
 assert.match(nextConfigSource, /devIndicators:\s*false/, "Next dev tools launcher should not intercept mobile bottom-tab taps");

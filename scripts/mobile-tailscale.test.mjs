@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,13 @@ const script = readFileSync(
 );
 const packageJson = JSON.parse(
   readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+);
+const recovery = readFileSync(
+  fileURLToPath(new URL("./mobile-recovery.sh", import.meta.url)),
+  "utf8",
+);
+const serveOwnershipHelper = fileURLToPath(
+  new URL("./mobile-serve-ownership.ts", import.meta.url),
 );
 
 test("mobile tailscale runner exposes operator commands", () => {
@@ -48,6 +55,21 @@ test("mobile tailscale app mode fails closed when HTTPS Serve is unavailable", (
   assert.match(script, /Could not determine an HTTPS Tailscale Serve URL/);
   assert.doesNotMatch(script, /tailscale_cmd serve --bg --http=/);
   assert.doesNotMatch(script, /APP_URL="http:\/\//);
+});
+
+test("supported shell mutations use the canonical Serve ownership executable", () => {
+  assert.equal(
+    existsSync(serveOwnershipHelper),
+    true,
+    "the shared structured Serve ownership executable exists",
+  );
+  assert.match(script, /mobile-serve-ownership\.ts" claim\s+\\?\s*--backend "\$TAILSCALE_BACKEND" --channel dev/);
+  assert.match(script, /mobile-serve-ownership\.ts" reset\s+\\?\s*--backend "\$backend" --channel dev/);
+  assert.doesNotMatch(script, /tailscale_cmd serve --bg/);
+  assert.doesNotMatch(script, /tailscale_cmd serve reset/);
+  assert.match(recovery, /mobile-serve-ownership\.ts" claim\s+\\?\s*--backend "\$backend" --channel packaged/);
+  assert.doesNotMatch(recovery, /"\$TAILSCALE_BIN" serve --bg/);
+  assert.match(recovery, /"kind":"(?:owned|claimed)"/);
 });
 
 test("mobile tailscale app mode records ownership separately from sidecar tokens", () => {

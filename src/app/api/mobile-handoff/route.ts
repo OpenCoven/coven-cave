@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
-import { spawn } from "node:child_process";
 import QRCode from "qrcode";
-import {
-  BoundedProcessOutput,
-  safeProcessErrorMessage,
-  terminateProcessTree,
-} from "@/lib/process-execution";
 import { lstatSync } from "node:fs";
 import { assertExclusivePathOwnership } from "@/lib/server/client-v1/path-ownership";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
@@ -24,133 +18,23 @@ import {
   buildPairingSteps,
   classifyTailscaleSelf,
   createMobileInvite,
-  enumerateServeProxyBackends,
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   packagedServeMayTakeOverHealthyLoopback,
+  parseTailscaleServeStatus as parseServeStatus,
+  resetTailscaleServeRoute,
   resolveIosInstallUrl,
+  runTailscaleCommand as runTailscale,
   serveRouteOwnedByBackend,
   serveRouteFailure,
   tailnetDiscoveryProof,
-  tailscaleBin,
-  tailscaleSpawnEnv,
   type PairingStep,
+  type TailscaleServeCommandResult,
+  type TailscaleServeResetResult,
 } from "@/lib/mobile-handoff";
 
 export const dynamic = "force-dynamic";
-
-type TailscaleResult = {
-  ok: boolean;
-  status: number | null;
-  stdout: string;
-  stderr: string;
-  cleanupFailed: boolean;
-};
-
-const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
-const TAILSCALE_TERMINATION_FAILED =
-  "Tailscale command timed out and its process tree could not be stopped";
-
-// The local Tailscale daemon/system-extension IPC occasionally stalls a
-// single CLI invocation for several seconds (observed on macOS with the
-// managed/sysext install) even while Tailscale itself is fully connected.
-// Any of the sequential probes below can be the one that stalls — not just
-// the first. A retried invocation almost always returns immediately, so one
-// bounded retry turns a spurious "Tailscale command timed out" (which used
-// to hard-block the whole pairing screen, including the QR code, even though
-// Tailscale was connected) into a brief, invisible delay. cave-j2056
-async function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
-  const first = await runTailscaleOnce(args, timeoutMs);
-  if (first.ok || first.cleanupFailed || first.stderr !== TAILSCALE_TIMED_OUT) return first;
-  return runTailscaleOnce(args, timeoutMs);
-}
-
-function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
-  return new Promise((resolve) => {
-    const bin = tailscaleBin();
-    const child = spawn(bin, args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: tailscaleSpawnEnv(),
-      detached: process.platform !== "win32",
-    });
-    const stdout = new BoundedProcessOutput(64 * 1024);
-    const stderr = new BoundedProcessOutput(64 * 1024);
-    let settled = false;
-    let timedOut = false;
-    const finish = (result: TailscaleResult) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    const timer = setTimeout(async () => {
-      timedOut = true;
-      const terminated = await terminateProcessTree(child);
-      finish({
-        ok: false,
-        status: null,
-        stdout: stdout.text(),
-        stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
-        cleanupFailed: !terminated,
-      });
-    }, timeoutMs);
-
-    child.stdout.on("data", (chunk) => {
-      stdout.append(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr.append(chunk);
-    });
-    child.on("error", (error) => {
-      if (timedOut) return;
-      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-      finish({
-        ok: false,
-        status: null,
-        stdout: stdout.text(),
-        stderr: missing
-          ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
-          : safeProcessErrorMessage(error, "Tailscale CLI"),
-        cleanupFailed: false,
-      });
-    });
-    child.on("close", (status) => {
-      if (timedOut) return;
-      finish({
-        ok: status === 0,
-        status,
-        stdout: stdout.text(),
-        stderr: stderr.text(),
-        cleanupFailed: false,
-      });
-    });
-  });
-}
-
-// `tailscale serve status --json` is normally a clean JSON document, but some
-// builds prepend health/warning lines (or emit nothing when there is no serve
-// config). Parse tolerantly: empty output means "no serve config" ({}), and we
-// fall back to extracting the outermost JSON object before giving up.
-function parseServeStatus(raw: string): { value: unknown } | { error: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { value: {} };
-  try {
-    return { value: JSON.parse(trimmed) };
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      try {
-        return { value: JSON.parse(trimmed.slice(start, end + 1)) };
-      } catch {
-        // fall through
-      }
-    }
-    return { error: trimmed.slice(0, 500) };
-  }
-}
 
 function trustedBackendPort() {
   return (process.env.PORT || "3000").trim();
@@ -261,7 +145,10 @@ function mobileUnavailableResponse(
   );
 }
 
-function tailscaleCleanupFailureResponse(result: TailscaleResult, backend: string) {
+function tailscaleCleanupFailureResponse(
+  result: TailscaleServeCommandResult,
+  backend: string,
+) {
   return mobileUnavailableResponse(
     "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
     { stderr: result.stderr, backendUrl: backend },
@@ -407,42 +294,70 @@ async function mutateOwnedServeRoute(args: string[], backend: string) {
   };
 }
 
-async function resetOwnedServeRoute(backend: string) {
-  return withServeMutationLease(backend, async () => {
-    const ownership = await inspectServeOwnership(backend);
-    if (!ownership.ok) return ownership.response;
-    if (ownership.kind !== "owned") {
-      return NextResponse.json({
+async function resetOwnedServeRoute(
+  backend: string,
+  afterVerifiedRemoval?: () => void,
+) {
+  const result = await resetTailscaleServeRoute({
+    backendUrl: backend,
+    runTailscale,
+    probeBackend: probeLoopbackBackend,
+    afterVerifiedRemoval,
+  });
+  let response: NextResponse;
+  switch (result.kind) {
+    case "removed":
+      response = NextResponse.json({ ok: true, alreadyAbsent: result.alreadyAbsent });
+      break;
+    case "not-owned":
+      response = NextResponse.json({
         ok: true,
         skipped: true,
         notOwned: true,
         backendUrl: backend,
-        currentTargets: ownership.targets,
+        currentTargets: result.targets,
       });
-    }
-
-    const reset = await runTailscale(["serve", "reset"]);
-    if (reset.cleanupFailed) return tailscaleCleanupFailureResponse(reset, backend);
-    const verified = await readServeStatus(backend);
-    if (!verified.ok) return verified.response;
-    const currentTargets = enumerateServeProxyBackends(verified.status);
-    if (currentTargets.length > 0) {
-      return mobileUnavailableResponse(
-        "Tailscale Serve still has an active route after reset; ownership was not claimed.",
-        {
-          stderr: reset.stderr,
-          backendUrl: backend,
-        },
+      break;
+    case "busy":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve ownership is busy; no route was changed.",
+        { backendUrl: backend },
         503,
       );
-    }
-    return NextResponse.json({
-      ok: true,
-      warning: reset.ok
-        ? undefined
-        : reset.stderr || "Tailscale Serve reported an error, but the route is reset.",
-    });
-  });
+      break;
+    case "cleanup-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "status-failed":
+    case "status-malformed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve ownership could not be verified; the access credential was retained.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "reset-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve reset failed; the access credential was retained.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "verification-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve still has active configuration after reset; the access credential was retained.",
+        { backendUrl: backend },
+        503,
+      );
+      break;
+  }
+  return { ...result, response } satisfies TailscaleServeResetResult & {
+    response: NextResponse;
+  };
 }
 
 /**
@@ -869,7 +784,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "reset") {
-    return resetOwnedServeRoute(backendUrl());
+    return (await resetOwnedServeRoute(backendUrl())).response;
   }
 
   // Cheap paired-signal read for the handoff modal's "phone seen" poll: no
@@ -898,12 +813,15 @@ export async function POST(req: Request) {
   }
 
   if (action === "app-stop") {
-    const response = await resetOwnedServeRoute(nativeAppBackendUrl());
+    const reset = await resetOwnedServeRoute(
+      nativeAppBackendUrl(),
+      retireMobileAccessSecret,
+    );
     // Mobile mode Off retires the self-provisioned pairing secret (cave-os73):
     // disarm the in-process gate and drop the persisted file so the next dev
-    // boot stays tokenless. No-op in the packaged bundle.
-    retireMobileAccessSecret();
-    return response;
+    // boot stays tokenless, but only after Serve removal is verified. A live
+    // or unknown route must remain protected by the existing credential.
+    return reset.response;
   }
 
   return mobileHandoff(req, chatId);

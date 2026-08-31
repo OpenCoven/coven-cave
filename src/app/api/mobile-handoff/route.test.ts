@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+const mobileHandoff = readFileSync(
+  new URL("../../../lib/mobile-handoff.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   route,
@@ -33,52 +37,52 @@ assert.match(
 // "tailscale is not connected" and the QR code never renders, even though
 // Tailscale is genuinely connected.
 assert.match(
-  route,
+  mobileHandoff,
   /const TAILSCALE_TIMED_OUT = "Tailscale command timed out";/,
   "the timeout stderr string is a shared constant, not duplicated inline",
 );
 assert.match(
-  route,
-  /async function runTailscale\(args: string\[\], timeoutMs = 8000\): Promise<TailscaleResult> \{\s*\n\s*const first = await runTailscaleOnce\(args, timeoutMs\);\s*\n\s*if \(first\.ok \|\| first\.cleanupFailed \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;\s*\n\s*return runTailscaleOnce\(args, timeoutMs\);\s*\n\}/,
+  mobileHandoff,
+  /export async function runTailscaleCommand\([\s\S]{0,100}?args: string\[\],[\s\S]{0,100}?timeoutMs = 8000,[\s\S]{0,100}?\): Promise<TailscaleServeCommandResult> \{\s*const first = await runTailscaleCommandOnce\(args, timeoutMs\);\s*if \(first\.ok \|\| first\.cleanupFailed \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;\s*return runTailscaleCommandOnce\(args, timeoutMs\);\s*\}/,
   "a timed-out probe is retried exactly once before the caller sees a failure",
 );
 assert.match(
-  route,
-  /function runTailscaleOnce\(args: string\[\], timeoutMs = 8000\): Promise<TailscaleResult> \{/,
+  mobileHandoff,
+  /function runTailscaleCommandOnce\([\s\S]{0,100}?args: string\[\],[\s\S]{0,100}?timeoutMs = 8000,[\s\S]{0,100}?\): Promise<TailscaleServeCommandResult> \{/,
   "the single-attempt spawn logic is a separate function the retry wrapper calls twice at most",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /const TAILSCALE_TERMINATION_FAILED =\s*\n\s*"Tailscale command timed out and its process tree could not be stopped";/,
   "failed timeout cleanup has a distinct non-retryable result",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /const terminated = await terminateProcessTree\(child\);\s*\n\s*finish\(\{\s*\n\s*ok: false,\s*\n\s*status: null,\s*\n\s*stdout: stdout\.text\(\),\s*\n\s*stderr: terminated \? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,/,
   "the timeout result waits for process-tree termination and reports cleanup failure",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /child\.on\("close", \(status\) => \{\s*\n\s*if \(timedOut\) return;/,
   "a timed-out child's close event cannot resolve before process-tree cleanup completes",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /child\.on\("error", \(error\) => \{\s*\n\s*if \(timedOut\) return;/,
   "a timed-out child's error event cannot resolve before process-tree cleanup completes",
 );
 assert.match(
-  route,
-  /type TailscaleResult = \{[\s\S]{0,180}?cleanupFailed: boolean;/,
+  mobileHandoff,
+  /export type TailscaleServeCommandResult = \{[\s\S]{0,180}?cleanupFailed: boolean;/,
   "callers receive a typed signal when timeout cleanup is unconfirmed",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /if \(first\.ok \|\| first\.cleanupFailed \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;/,
   "cleanup failure is terminal and cannot trigger the same-command retry",
 );
 assert.match(
-  route,
+  mobileHandoff,
   /cleanupFailed: !terminated,/,
   "the timeout result records whether process-tree cleanup failed",
 );
@@ -91,6 +95,11 @@ assert.match(
   route,
   /if \(result\.cleanupFailed\) \{\s*\n\s*return \{ ok: false, response: tailscaleCleanupFailureResponse\(result, backend\) \};/,
   "the shared ownership-status read aborts before any probe or mutation after cleanup failure",
+);
+assert.match(
+  route,
+  /runTailscaleCommand as runTailscale/,
+  "the API route and shell helper share one timeout/cleanup-safe Tailscale runner",
 );
 assert.match(
   route,
@@ -118,8 +127,8 @@ assert.equal(
   "app-start and GET/start each arbitrate inside the shared lease",
 );
 assert.match(
-  route,
-  /async function resetOwnedServeRoute\(backend: string\) \{\s*\n\s*return withServeMutationLease\(backend, async \(\) =>/,
+  mobileHandoff,
+  /export async function resetTailscaleServeRoute\([\s\S]+?const lease = await acquireLease\(\);[\s\S]+?if \(!lease\) return \{ kind: "busy" \};[\s\S]+?finally \{[\s\S]+?await lease\.release\(\);/,
   "app-stop and explicit reset reacquire and reread ownership inside the shared lease",
 );
 assert.match(
@@ -128,9 +137,24 @@ assert.match(
   "TypeScript grants healthy-loopback takeover only from trusted packaged 3020 evidence",
 );
 assert.match(
-  route,
-  /const reset = await runTailscale\(\["serve", "reset"\]\);[\s\S]{0,500}?const verified = await readServeStatus\(backend\);/,
+  mobileHandoff,
+  /const reset = await runTailscale\(\["serve", "reset"\]\);[\s\S]{0,500}?const verified = await readTailscaleServeStatus\(runTailscale\);/,
   "reset rereads Serve status before reporting success",
+);
+assert.match(
+  route,
+  /resetTailscaleServeRoute/,
+  "app-stop and explicit reset use the canonical typed Serve reset protocol",
+);
+assert.match(
+  route,
+  /if \(action === "reset"\) \{\s*return \(await resetOwnedServeRoute\(backendUrl\(\)\)\)\.response;\s*\}/,
+  "explicit reset unwraps the typed reset result without changing credential state",
+);
+assert.match(
+  route,
+  /const reset = await resetOwnedServeRoute\(\s*nativeAppBackendUrl\(\),\s*retireMobileAccessSecret,\s*\);[\s\S]{0,500}?return reset\.response;/,
+  "app-stop delegates credential retirement to the locked verified-removal callback",
 );
 
 console.log("mobile-handoff route.test.ts OK");

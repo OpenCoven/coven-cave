@@ -615,10 +615,23 @@ app_command() {
 
   TAILSCALE_BACKEND="$(backend_url)"
   APP_URL=""
-  if tailscale_cmd serve --bg "$TAILSCALE_BACKEND" >/dev/null 2>&1; then
-    status_json="$(tailscale_capture serve status --json)"
-    APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json" 2>/dev/null || true)"
+  serve_result=""
+  if ! serve_result="$(
+    node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" claim \
+      --backend "$TAILSCALE_BACKEND" --channel dev
+  )"; then
+    echo "Tailscale Serve ownership refused the native app route: ${serve_result:-no result}" >&2
+    exit 1
   fi
+  case "$serve_result" in
+    *'"kind":"owned"'*|*'"kind":"claimed"'*) ;;
+    *)
+      echo "Tailscale Serve ownership returned an unexpected result: ${serve_result}" >&2
+      exit 1
+      ;;
+  esac
+  status_json="$(tailscale_capture serve status --json)"
+  APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json" 2>/dev/null || true)"
   if [ -z "$APP_URL" ]; then
     echo "Could not determine an HTTPS Tailscale Serve URL for the native app." >&2
     echo "Confirm MagicDNS and HTTPS are enabled, run 'pnpm mobile:tailscale:stop', then retry." >&2
@@ -695,6 +708,24 @@ stop_instance() {
 }
 
 stop_command() {
+  local backend serve_result
+  backend="$(backend_url)"
+  serve_result=""
+  if ! serve_result="$(
+    node --experimental-strip-types "$PWD/scripts/mobile-serve-ownership.ts" reset \
+      --backend "$backend" --channel dev
+  )"; then
+    echo "Tailscale Serve ownership refused reset; the tracked server remains running: ${serve_result:-no result}" >&2
+    exit 1
+  fi
+  case "$serve_result" in
+    *'"kind":"removed"'*) ;;
+    *)
+      echo "Tailscale Serve ownership returned an unexpected reset result: ${serve_result}" >&2
+      exit 1
+      ;;
+  esac
+
   stop_instance "$STATE_DIR" "$TMUX_SESSION"
 
   # Sweep sibling per-port instances so a server started on a fallback port
@@ -708,9 +739,6 @@ stop_command() {
     stop_instance "$dir" "coven-cave-mobile-${port}"
   done
 
-  if command -v "$TAILSCALE_BIN" >/dev/null 2>&1; then
-    tailscale_cmd serve reset >/dev/null 2>&1 || true
-  fi
   echo "CovenCave mobile Tailscale state stopped."
 }
 
@@ -719,7 +747,7 @@ case "$COMMAND" in
   invite) resolve_active_port; invite_command ;;
   app) resolve_active_port; maybe_fallback_port; app_command ;;
   status) resolve_active_port; status_command ;;
-  stop) stop_command ;;
+  stop) resolve_active_port; stop_command ;;
   *)
     echo "Usage: pnpm mobile:tailscale[:invite|:app|:status|:stop]" >&2
     echo "       bash scripts/mobile-tailscale.sh {start|invite|app|status|stop}" >&2
