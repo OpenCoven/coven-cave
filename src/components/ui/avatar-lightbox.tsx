@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Modal } from "./modal";
+import { usePopoverLayerRegistration } from "./popover";
 
 type AvatarLightboxProps = {
   /** The small inline avatar to render as the clickable trigger (an <img> or
@@ -43,7 +44,15 @@ export function AvatarLightbox({
   triggerClassName,
 }: AvatarLightboxProps) {
   const [enlarged, setEnlarged] = useState(false);
+  const [dialogEl, setDialogEl] = useState<HTMLDivElement | null>(null);
   const noun = category.toLowerCase();
+
+  // If this trigger renders inside a Popover, mark the enlarged Modal as an
+  // "inside" layer for as long as it's open — otherwise the Modal's focus
+  // trap steals focus the instant it opens, which the Popover reads as focus
+  // leaving its panel and self-dismisses, unmounting both (cave-fzr4p). A
+  // no-op when there is no ancestor Popover.
+  usePopoverLayerRegistration(dialogEl);
 
   return (
     <>
@@ -62,6 +71,7 @@ export function AvatarLightbox({
           onClose={() => setEnlarged(false)}
           breadcrumb={[label, category]}
           footerActions={footerActions}
+          onDialogElement={setDialogEl}
         >
           <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
             <img src={src} alt={`${label} ${noun}`} className="h-full w-full object-cover" />

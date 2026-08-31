@@ -155,18 +155,24 @@ assert.match(
 // drawer's backdrop paints over the open menu and the click that "selects an
 // option" lands on the backdrop and closes the drawer instead (the Tasks
 // inspector's Status/Priority/Familiar/Project dropdowns were unusable).
-const globalsCss = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
-const boardCss = readFileSync(new URL("../../styles/board.css", import.meta.url), "utf8");
+const primitivesCss = readFileSync(
+  new URL("../../styles/globals/primitives.css", import.meta.url),
+  "utf8",
+);
+const boardCss = readFileSync(
+  new URL("../../styles/board/kanban-inspector.css", import.meta.url),
+  "utf8",
+);
 const portalZ = Number(
-  globalsCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
+  primitivesCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
 );
 const drawerZ = Math.max(
   ...[...boardCss.matchAll(/\.board-drawer(?:-backdrop)?\s*\{[^}]*?z-index:\s*(\d+)/g)].map(
     (m) => Number(m[1]),
   ),
 );
-assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in globals.css");
-assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in board.css");
+assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in primitives.css");
+assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in styles/board/kanban-inspector.css");
 assert.ok(
   portalZ > drawerZ,
   `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
@@ -286,3 +292,25 @@ for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "..
 }
 
 console.log("popover.test.ts: ok");
+
+// Layer registration is exported for consumers outside popover.tsx (e.g.
+// AvatarLightbox's Modal, cave-fzr4p) to mark their own portaled dialog as
+// "inside" a Popover — otherwise a focus-trapped Modal opened from inside a
+// Popover steals focus, the Popover reads that as focus leaving its panel,
+// and self-dismisses out from under the Modal.
+assert.match(
+  src,
+  /export const PopoverLayersContext = createContext/,
+  "PopoverLayersContext is exported for use outside this module",
+);
+assert.match(
+  src,
+  /export function usePopoverLayerRegistration\(el: HTMLElement \| null\)/,
+  "exports a hook that registers an element as an inside layer",
+);
+assert.match(
+  src,
+  /usePopoverLayerRegistration[\s\S]{0,200}if \(!el \|\| !layers\) return;\s*return layers\.register\(el\);/,
+  "the hook is a no-op with no ancestor Popover and unregisters on cleanup/element change",
+);
+

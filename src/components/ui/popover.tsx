@@ -22,10 +22,31 @@ import { computeSubmenuPosition } from "@/lib/submenu-position";
 // panel's backdrop-filter creates a containing block and overflow:hidden would
 // clip any in-panel fixed layer. The root Popover treats registered flyout
 // elements as "inside" for its outside-click and focus-out dismissal checks.
-const PopoverLayersContext = createContext<{
+//
+// Exported so a focus-trapped Modal opened from inside a Popover (e.g.
+// AvatarLightbox) can register its own portal as an inside layer too — without
+// that, the Modal stealing focus reads to the Popover as focus leaving its
+// panel and self-dismisses, unmounting both (see usePopoverLayerRegistration
+// below, and cave-fzr4p).
+export const PopoverLayersContext = createContext<{
   register: (el: HTMLElement) => () => void;
   contains: (node: Node | null) => boolean;
 } | null>(null);
+
+/**
+ * Registers `el` as an "inside" layer of an ancestor Popover (if any) for as
+ * long as it is non-null, so the Popover's outside-click/focus-out dismissal
+ * ignores it. A no-op when there is no ancestor Popover — safe to call
+ * unconditionally from a shared component that may or may not be nested in
+ * one (e.g. AvatarLightbox's Modal).
+ */
+export function usePopoverLayerRegistration(el: HTMLElement | null) {
+  const layers = useContext(PopoverLayersContext);
+  useLayoutEffect(() => {
+    if (!el || !layers) return;
+    return layers.register(el);
+  }, [el, layers]);
+}
 
 // One open flyout per menu level: siblings coordinate through their level's
 // group; each open flyout provides a fresh group for its own children.

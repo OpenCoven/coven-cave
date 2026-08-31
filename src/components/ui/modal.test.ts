@@ -43,3 +43,25 @@ assert.match(
 );
 
 console.log("modal.test.ts: ok");
+
+// Optional escape hatch (cave-fzr4p): Modal itself stays Popover-agnostic, but
+// exposes its dialog DOM node via a callback ref so a caller like
+// AvatarLightbox can register it as an "inside" layer of an ancestor Popover.
+// Without this, opening a focus-trapped Modal from inside a Popover steals
+// focus, which the Popover reads as focus leaving its panel — self-dismissing
+// and unmounting both.
+assert.match(
+  src,
+  /onDialogElement\?: \(el: HTMLDivElement \| null\) => void;/,
+  "Modal accepts an optional onDialogElement callback",
+);
+assert.match(
+  src,
+  /const setDialogElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*dialogRef\.current = el;\s*onDialogElement\?\.\(el\);\s*\},\s*\[onDialogElement\],\s*\);/,
+  "the dialog uses a memoized callback ref so ordinary re-renders do not unregister and re-register the popover layer",
+);
+assert.match(
+  src,
+  /ref=\{setDialogElement\}/,
+  "the stable callback ref keeps the internal focus-trap ref and forwards the node to the caller",
+);
