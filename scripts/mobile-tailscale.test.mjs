@@ -11,7 +11,10 @@ import {
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { recordProcessOwner } from "./mobile-process-ownership.ts";
+import {
+  launchOwnedProcess,
+  readProcessOwner,
+} from "./mobile-process-ownership.ts";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const identityBinary = join(scriptsDir, `.mobile-process-identity-shell-test-${process.pid}`);
@@ -89,7 +92,6 @@ test("mobile tailscale app mode serves the native client with an access token", 
   assert.match(script, /app\) resolve_active_port; maybe_fallback_port; app_command ;;/);
   assert.match(script, /load_or_create_token/);
   assert.match(script, /COVEN_CAVE_ACCESS_TOKEN="\$ACCESS_TOKEN"/);
-  assert.match(script, /unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST/);
   assert.match(script, /-u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST/);
   assert.match(script, /coven_access_token/);
   assert.match(script, /HOSTNAME="\$HOST"/);
@@ -152,15 +154,18 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
     "http://127.0.0.1:3000": "not-owned",
   });
 
-  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    stdio: "ignore",
-  });
-  await new Promise((resolve, reject) => {
-    sleeper.once("spawn", resolve);
-    sleeper.once("error", reject);
-  });
   const ownerPath = join(stateDir, "next.owner.json");
-  await recordProcessOwner(ownerPath, sleeper.pid, "http://127.0.0.1:3000");
+  const launched = await launchOwnedProcess({
+    ownerPath,
+    backendUrl: "http://127.0.0.1:3000",
+    cwd: fixture,
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    logPath: join(stateDir, "next.log"),
+    env: process.env,
+  });
+  assert.equal(launched.kind, "launched");
+  const sleeperPid = readProcessOwner(ownerPath).pid;
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -181,12 +186,14 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
     assert.match(result.stderr, /preserving the tracked backend process/);
     assert.doesNotThrow(
-      () => process.kill(sleeper.pid, 0),
+      () => process.kill(sleeperPid, 0),
       "a foreign Serve reassignment must preserve the tracked backend process",
     );
     assert.equal(existsSync(ownerPath), true);
   } finally {
-    if (sleeper.exitCode === null) sleeper.kill("SIGKILL");
+    try {
+      process.kill(-sleeperPid, "SIGKILL");
+    } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -200,20 +207,20 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     "http://127.0.0.1:3000": "removed",
   });
 
-  const foreign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    stdio: "ignore",
-  });
-  await new Promise((resolve, reject) => {
-    foreign.once("spawn", resolve);
-    foreign.once("error", reject);
-  });
   const ownerPath = join(stateDir, "next.owner.json");
-  writeFileSync(ownerPath, JSON.stringify({
-    version: 1,
-    pid: foreign.pid,
-    processToken: "foreign-token",
+  const launched = await launchOwnedProcess({
+    ownerPath,
     backendUrl: "http://127.0.0.1:3000",
-  }));
+    cwd: fixture,
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    logPath: join(stateDir, "next.log"),
+    env: process.env,
+  });
+  assert.equal(launched.kind, "launched");
+  const foreignOwner = readProcessOwner(ownerPath);
+  const foreignPid = foreignOwner.pid;
+  writeFileSync(ownerPath, JSON.stringify({ ...foreignOwner, processToken: "foreign-token" }));
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -233,12 +240,14 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     });
     assert.notEqual(result.status, 0, "unverified process cleanup must fail closed");
     assert.doesNotThrow(
-      () => process.kill(foreign.pid, 0),
+      () => process.kill(foreignPid, 0),
       "a stale state file must not authorize signaling a reused foreign PID",
     );
     assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
-    if (foreign.exitCode === null) foreign.kill("SIGKILL");
+    try {
+      process.kill(-foreignPid, "SIGKILL");
+    } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -254,44 +263,35 @@ test("default stop evaluates each tracked backend identity independently", async
     "http://[::1]:3007": "not-owned",
     "http://127.0.0.1:3008": "removed",
   });
-  const ipv6 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-  const ipv4 = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-  await Promise.all([
-    new Promise((resolve, reject) => {
-      ipv6.once("spawn", resolve);
-      ipv6.once("error", reject);
-    }),
-    new Promise((resolve, reject) => {
-      ipv4.once("spawn", resolve);
-      ipv4.once("error", reject);
-    }),
-  ]);
   const ipv6Owner = join(ipv6Dir, "next.owner.json");
   const ipv4Owner = join(ipv4Dir, "next.owner.json");
-  const recordIpv6 = spawnSync(
-    "bash",
-    ["-c", 'source "$1"; record_process_owner "$2"', "mobile-tailscale-test", scriptPath, String(ipv6.pid)],
-    {
-      cwd: repoRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        HOME: fixture,
-        HOST: "::1",
-        PORT: "3007",
-        COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
-        COVEN_CAVE_MOBILE_STATE_DIR: ipv6Dir,
-        COVEN_CAVE_PROCESS_OWNERSHIP_HELPER: join(scriptsDir, "mobile-process-ownership.ts"),
-      },
-    },
-  );
-  assert.equal(recordIpv6.status, 0, recordIpv6.stderr);
+  const ipv6Launch = await launchOwnedProcess({
+    ownerPath: ipv6Owner,
+    backendUrl: "http://[::1]:3007",
+    cwd: fixture,
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    logPath: join(ipv6Dir, "next.log"),
+    env: process.env,
+  });
+  const ipv4Launch = await launchOwnedProcess({
+    ownerPath: ipv4Owner,
+    backendUrl: "http://127.0.0.1:3008",
+    cwd: fixture,
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    logPath: join(ipv4Dir, "next.log"),
+    env: process.env,
+  });
+  assert.equal(ipv6Launch.kind, "launched");
+  assert.equal(ipv4Launch.kind, "launched");
+  const ipv6Pid = readProcessOwner(ipv6Owner).pid;
+  const ipv4Pid = readProcessOwner(ipv4Owner).pid;
   assert.equal(
     JSON.parse(readFileSync(ipv6Owner, "utf8")).backendUrl,
     "http://[::1]:3007",
     "the IPv6 start path persists its exact normalized backend identity",
   );
-  await recordProcessOwner(ipv4Owner, ipv4.pid, "http://127.0.0.1:3008");
   writeFileSync(join(ipv4Dir, "access-token"), "dev-secret");
   writeFileSync(join(ipv4Dir, "sidecar-auth-token"), "packaged-secret");
   try {
@@ -316,11 +316,11 @@ test("default stop evaluates each tracked backend identity independently", async
       calls.map((args) => args[args.indexOf("--backend") + 1]).sort(),
       ["http://127.0.0.1:3008", "http://[::1]:3007"],
     );
-    assert.doesNotThrow(() => process.kill(ipv6.pid, 0));
+    assert.doesNotThrow(() => process.kill(ipv6Pid, 0));
     assert.equal(existsSync(ipv6Owner), true, "foreign IPv6 reassignment remains tracked and alive");
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.throws(
-      () => process.kill(ipv4.pid, 0),
+      () => process.kill(ipv4Pid, 0),
       (error) => error?.code === "ESRCH",
       "owned IPv4 process is terminated by the lease-held reset callback",
     );
@@ -332,8 +332,12 @@ test("default stop evaluates each tracked backend identity independently", async
       "verified dev cleanup preserves packaged sidecar credentials",
     );
   } finally {
-    if (ipv6.exitCode === null) ipv6.kill("SIGKILL");
-    if (ipv4.exitCode === null) ipv4.kill("SIGKILL");
+    try {
+      process.kill(-ipv6Pid, "SIGKILL");
+    } catch {}
+    try {
+      process.kill(-ipv4Pid, "SIGKILL");
+    } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -385,7 +389,7 @@ test("mobile tailscale runner persists state for remote invite regeneration", ()
   assert.match(script, /STATE_DIR=/);
   assert.match(script, /TOKEN_FILE=/);
   assert.match(script, /OWNER_FILE=.*next\.owner\.json/);
-  assert.match(script, /process_owner_cmd record/);
+  assert.match(script, /"\$PROCESS_OWNERSHIP_HELPER" launch/);
   assert.match(script, /INVITE_FILE=/);
   assert.match(script, /chmod 700 "\$STATE_DIR"/);
   assert.match(script, /chmod 600 "\$TOKEN_FILE"/);
@@ -412,9 +416,12 @@ test("mobile tailscale invite flow does not send the raw persisted token", () =>
 });
 
 test("mobile tailscale runner keeps dev server alive after the wrapper exits", () => {
-  assert.match(script, /tmux new-session -d/);
-  assert.match(script, /nohup env COVEN_CAVE_ACCESS_TOKEN=/);
-  assert.match(script, /<\/dev\/null/);
+  assert.match(
+    script,
+    /"\$PROCESS_OWNERSHIP_HELPER" launch[\s\S]{0,260}?--backend "\$\(backend_url\)"[\s\S]{0,260}?-- pnpm dev/,
+  );
+  assert.doesNotMatch(script, /tmux new-session -d/);
+  assert.doesNotMatch(script, /nohup env COVEN_CAVE_ACCESS_TOKEN=/);
 });
 
 test("mobile tailscale invite command is chat-safe by default", () => {

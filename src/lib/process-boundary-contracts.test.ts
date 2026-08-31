@@ -68,10 +68,31 @@ assert.match(
   /timedOut/,
   "the shared Tailscale process boundary should preserve timeout semantics through close",
 );
-assert.match(
-  mobileRuntime,
-  /const current = await readTailscaleServeStatus\(runTailscale\);\s*if \(current\.kind !== "status"\) return current;[\s\S]*?const reset = await runTailscale\(\["serve", "reset"\]\);[\s\S]*?if \(reset\.cleanupFailed\)[\s\S]*?const verified = await readTailscaleServeStatus\(runTailscale\);[\s\S]*?await afterVerifiedRemoval\?\.\(\);/,
-  "app-stop should finish process cleanup before reset and retire credentials only after verified removal",
+const resetTransaction = mobileRuntime.slice(
+  mobileRuntime.indexOf("export async function resetTailscaleServeRoute"),
+  mobileRuntime.indexOf("type ResolveTailscaleBinOptions"),
+);
+for (const marker of [
+  "const current = await readTailscaleServeStatus(runTailscale)",
+  'const reset = await runTailscale(["serve", "reset"])',
+  "const verified = await readTailscaleServeStatus(runTailscale)",
+  "return await finishVerifiedRemoval(false)",
+]) {
+  assert.notEqual(
+    resetTransaction.indexOf(marker),
+    -1,
+    `app-stop reset transaction should contain ${marker}`,
+  );
+}
+assert.ok(
+  resetTransaction.indexOf('const reset = await runTailscale(["serve", "reset"])')
+    < resetTransaction.indexOf("return await finishVerifiedRemoval(false)"),
+  "app-stop must remove and verify Serve before stopping the owned backend",
+);
+assert.ok(
+  resetTransaction.indexOf("await afterVerifiedRouteRemoval?.()")
+    < resetTransaction.indexOf("await afterVerifiedRemoval?.()"),
+  "app-stop must stop the backend before retiring credentials",
 );
 
 assert.match(install, /shell: false/, "installer stop should never execute through a shell");

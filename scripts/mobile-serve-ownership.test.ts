@@ -52,8 +52,8 @@ assert.equal(
         throw new Error("claim must not run");
       },
       reset: async (options) => {
-        assert.equal(typeof options.beforeReset, "function");
-        await options.beforeReset?.();
+        assert.equal(typeof options.afterVerifiedRouteRemoval, "function");
+        await options.afterVerifiedRouteRemoval?.();
         return { kind: "removed", alreadyAbsent: false };
       },
       stopProcessOwner: async (ownerPath) => {
@@ -87,7 +87,7 @@ assert.equal(
       },
       reset: async (options) => {
         try {
-          await options.beforeReset?.();
+          await options.afterVerifiedRouteRemoval?.();
           throw new Error("failed process cleanup must abort reset");
         } catch (error) {
           return { kind: "process-cleanup-failed", stderr: (error as Error).message };

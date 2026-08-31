@@ -323,7 +323,7 @@ async function resetOwnedServeRoute(
       break;
     case "process-cleanup-failed":
       response = mobileUnavailableResponse(
-        "The owned backend process did not stop safely; Tailscale Serve and its access credential were retained.",
+        "Tailscale Serve removal was verified, but the owned backend process did not stop safely; its access credential was retained.",
         { stderr: result.stderr, backendUrl: backend },
         503,
       );

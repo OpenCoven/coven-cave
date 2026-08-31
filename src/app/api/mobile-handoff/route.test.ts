@@ -11,6 +11,12 @@ const mobileHandoff = readFileSync(
 
 assert.match(
   route,
+  /Tailscale Serve removal was verified, but the owned backend process did not stop safely; its access credential was retained\./,
+  "process cleanup failure reports the route-first transaction truthfully",
+);
+
+assert.match(
+  route,
   /verifyArmedMobileAccessSecret/,
   "the env-armed secret is re-verified against the persisted file",
 );

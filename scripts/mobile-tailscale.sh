@@ -14,7 +14,6 @@ HOST="${HOST:-127.0.0.1}"
 TAILSCALE_TIMEOUT_MS="${TAILSCALE_TIMEOUT_MS:-8000}"
 PRINT_URL="${PRINT_URL:-0}"
 COPY_INVITE="${COPY_INVITE:-1}"
-USE_TMUX="${USE_TMUX:-1}"
 TAILSCALE_BIN="${TAILSCALE_BIN:-tailscale}"
 SERVE_OWNERSHIP_HELPER="${COVEN_CAVE_SERVE_OWNERSHIP_HELPER:-$PWD/scripts/mobile-serve-ownership.ts}"
 PROCESS_OWNERSHIP_HELPER="${COVEN_CAVE_PROCESS_OWNERSHIP_HELPER:-$PWD/scripts/mobile-process-ownership.ts}"
@@ -33,7 +32,6 @@ MODE_FILE="$STATE_DIR/server.mode"
 INVITE_FILE="$STATE_DIR/invite.url"
 EXPIRES_FILE="$STATE_DIR/invite.expires"
 LOG_FILE="${COVEN_CAVE_MOBILE_LOG:-$STATE_DIR/next.log}"
-TMUX_SESSION="${COVEN_CAVE_MOBILE_TMUX_SESSION:-coven-cave-mobile-${PORT}}"
 
 case "$HOST" in
   127.0.0.1|localhost|::1) ;;
@@ -77,14 +75,6 @@ process_owner_cmd() {
 
 process_owner_field() {
   process_owner_cmd field --state "$1" --name "$2"
-}
-
-record_process_owner() {
-  local pid="$1"
-  process_owner_cmd record \
-    --state "$OWNER_FILE" \
-    --pid "$pid" \
-    --backend "$(backend_url)"
 }
 
 recorded_process_is_running() {
@@ -384,63 +374,49 @@ wait_for_server() {
   return 1
 }
 
-start_with_tmux() {
-  local pid
-  need tmux
-  if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-    tmux kill-session -t "$TMUX_SESSION"
-  fi
-
+start_with_owned_group() {
+  local launch_result launch_status
+  launch_result=""
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     # Native SwiftUI app over Tailscale: protect the full API surface with the
     # same mobile access token used by invite mode. Tailscale membership is not
     # sufficient authorization because Serve exposes every /api route.
-    tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST; export COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-    pid="$(tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}')"
-    if ! record_process_owner "$pid"; then
-      tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
-      rm -f "$OWNER_FILE"
-      echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
-      return 1
-    fi
-    return 0
-  fi
-
-  tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-    "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-  pid="$(tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}')"
-  if ! record_process_owner "$pid"; then
-    tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
-    rm -f "$OWNER_FILE"
-    echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
-    return 1
-  fi
-}
-
-start_with_nohup() {
-  local pid
-  if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
-    # Token-gated native-app server. See start_with_tmux for the trust rationale.
-    nohup env -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST \
+    if launch_result="$(
+      env -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST \
       COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" \
       HOSTNAME="$HOST" \
       PORT="$PORT" \
-      pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-    pid="$!"
-    if ! record_process_owner "$pid"; then
-      rm -f "$OWNER_FILE"
-      echo "Could not record the started server process identity; refusing to signal an unverified PID. Inspect pid ${pid} manually." >&2
-      return 1
+      node --experimental-strip-types "$PROCESS_OWNERSHIP_HELPER" launch \
+        --state "$OWNER_FILE" \
+        --backend "$(backend_url)" \
+        --cwd "$PWD" \
+        --log "$LOG_FILE" \
+        -- pnpm dev
+    )"; then
+      launch_status=0
+    else
+      launch_status=$?
     fi
-    return 0
+  else
+    if launch_result="$(
+      env \
+        COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" \
+        HOSTNAME="$HOST" \
+        PORT="$PORT" \
+        node --experimental-strip-types "$PROCESS_OWNERSHIP_HELPER" launch \
+          --state "$OWNER_FILE" \
+          --backend "$(backend_url)" \
+          --cwd "$PWD" \
+          --log "$LOG_FILE" \
+          -- pnpm dev
+    )"; then
+      launch_status=0
+    else
+      launch_status=$?
+    fi
   fi
-
-  nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-  pid="$!"
-  if ! record_process_owner "$pid"; then
-    rm -f "$OWNER_FILE"
-    echo "Could not record the started server process identity; refusing to signal an unverified PID. Inspect pid ${pid} manually." >&2
+  if [ "$launch_status" -ne 0 ] || [[ "$launch_result" != *'"kind":"launched"'* ]]; then
+    echo "Could not launch an identity-owned mobile backend; no untracked process was accepted: ${launch_result:-no result}" >&2
     return 1
   fi
 }
@@ -485,13 +461,8 @@ start_next_server() {
   load_or_create_token
   : >"$LOG_FILE"
   echo "Starting Next server on ${HOST}:${PORT}"
-  if [ "$USE_TMUX" = "1" ] && command -v tmux >/dev/null 2>&1; then
-    start_with_tmux
-    echo "Server is running in tmux session: ${TMUX_SESSION}"
-  else
-    start_with_nohup
-    echo "Server is running as background pid: $(process_owner_field "$OWNER_FILE" pid)"
-  fi
+  start_with_owned_group
+  echo "Server is running as background pid: $(process_owner_field "$OWNER_FILE" pid)"
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     write_server_mode app
   else

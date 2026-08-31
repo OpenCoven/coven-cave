@@ -343,8 +343,13 @@ assert.match(
 assert.doesNotMatch(sidecarMonitorSource, /Boolean\(window\.__TAURI_INTERNALS__\)/, "mobile Tauri should not be treated as a sidecar host");
 assert.match(
   mobileScriptSource,
-  /mobile-serve-ownership\.ts" claim[\s\S]{0,100}?--backend "\$TAILSCALE_BACKEND" --channel dev/,
-  "mobile script should publish its exact loopback backend through the shared ownership protocol",
+  /SERVE_OWNERSHIP_HELPER="\$\{COVEN_CAVE_SERVE_OWNERSHIP_HELPER:-\$PWD\/scripts\/mobile-serve-ownership\.ts\}"/,
+  "mobile script should expose a deterministic, test-configurable ownership helper",
+);
+assert.match(
+  mobileScriptSource,
+  /"\$SERVE_OWNERSHIP_HELPER" claim[\s\S]{0,100}?--backend "\$TAILSCALE_BACKEND" --channel dev/,
+  "mobile script should publish its exact loopback backend through the configured ownership protocol",
 );
 assert.match(mobileScriptSource, /"authorization": `Bearer \$\{createMobileAccessToken\(accessToken\)\}`/, "mobile script should authenticate its local invite API request with a derived token");
 assert.match(nextConfigSource, /allowedDevOrigins:\s*\[[\s\S]*"\*\*\.ts\.net"/, "Next dev should allow Tailscale Serve origins for mobile browser access");

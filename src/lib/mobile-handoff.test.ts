@@ -727,7 +727,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       backendUrl: "http://127.0.0.1:3000",
       acquireLease: async () => lease,
       probeBackend: async () => false,
-      beforeReset: async () => {
+      afterVerifiedRouteRemoval: async () => {
         events.push("stop-process");
       },
       runTailscale: async (args: string[]) => {
@@ -753,23 +753,74 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
         },
       }),
       probeBackend: async () => false,
-      beforeReset: async () => {
+      afterVerifiedRouteRemoval: async () => {
         events.push("stop-process");
         throw new Error("process tree remained alive");
       },
       runTailscale: async (args: string[]) => {
         call += 1;
         events.push(args.join(" "));
-        return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 2) return commandResult();
+        return commandResult({ stdout: "{}" });
       },
     });
     assert.equal(result.kind, "process-cleanup-failed");
-    assert.equal(call, 1, "failed process cleanup prevents Serve reset and postcheck");
+    assert.equal(call, 3, "process cleanup runs only after Serve reset is verified");
     assert.deepEqual(
       events,
-      ["serve status --json", "stop-process", "release"],
-      "process cleanup runs after the owned status check while the machine lease is held",
+      ["serve status --json", "serve reset", "serve status --json", "stop-process", "release"],
+      "route removal is verified before slow process cleanup while the machine lease is held",
     );
+  }
+  {
+    const events: string[] = [];
+    let route: unknown = status;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        events.push(args.join(" "));
+        if (args[1] === "status") return commandResult({ stdout: JSON.stringify(route) });
+        route = {};
+        return commandResult();
+      },
+      afterVerifiedRouteRemoval: async () => {
+        route = healthyDevStatus;
+        events.push("foreign-reassigned");
+      },
+    });
+    assert.equal(result.kind, "verification-failed");
+    assert.deepEqual(
+      events,
+      [
+        "serve status --json",
+        "serve reset",
+        "serve status --json",
+        "foreign-reassigned",
+        "serve status --json",
+      ],
+      "a foreign route installed during process cleanup is never reset and blocks credential retirement",
+    );
+  }
+  {
+    let route: unknown = {};
+    let statusReads = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        statusReads += 1;
+        return commandResult({ stdout: JSON.stringify(route) });
+      },
+      afterVerifiedRouteRemoval: async () => {
+        route = healthyDevStatus;
+      },
+    });
+    assert.equal(result.kind, "verification-failed");
+    assert.equal(statusReads, 2, "an initially absent route is rechecked after process cleanup");
   }
   {
     const commands: string[][] = [];
@@ -906,12 +957,20 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       probeBackend: async () => false,
       runTailscale: async () => {
         call += 1;
-        events.push(call === 1 ? "status" : call === 2 ? "reset" : "postcheck");
+        events.push(
+          call === 1
+            ? "status"
+            : call === 2
+              ? "reset"
+              : call === 3
+                ? "postcheck"
+                : "final-status",
+        );
         if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
         if (call === 2) return commandResult();
         return commandResult({ stdout: "{}" });
       },
-      beforeReset: async () => {
+      afterVerifiedRouteRemoval: async () => {
         events.push("stop-process");
       },
       afterVerifiedRemoval: async () => {
@@ -921,8 +980,16 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     assert.equal(result.kind, "removed");
     assert.deepEqual(
       events,
-      ["status", "stop-process", "reset", "postcheck", "retire", "release"],
-      "process cleanup, reset verification, and credential retirement all happen under the lease",
+      [
+        "status",
+        "reset",
+        "postcheck",
+        "stop-process",
+        "final-status",
+        "retire",
+        "release",
+      ],
+      "route removal, process cleanup, and credential retirement all happen under the lease",
     );
   }
 }

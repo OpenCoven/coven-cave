@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   closeSync,
@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -16,12 +17,24 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+export type ProcessInfo = {
+  pid: number;
+  parentPid: number;
+  processGroupId: number;
+  sessionId: number;
+  processToken: string;
+};
+
 export type ProcessOwner = {
-  version: 1;
+  version: 2;
   pid: number;
   processToken: string;
+  processGroupId: number;
+  sessionId: number;
+  bootId: string | null;
   backendUrl: string;
   stopped?: true;
+  diagnostic?: "launch-state-persistence-failed";
 };
 
 export type StopOwnedProcessResult =
@@ -32,23 +45,73 @@ export type StopOwnedProcessResult =
   | { kind: "still-running" };
 
 type StopOwnedProcessOptions = {
-  tokenForPid?: (pid: number) => Promise<string | null>;
-  descendants?: (pid: number) => Promise<number[]>;
-  signal?: (pid: number, signal: NodeJS.Signals) => void;
+  currentBootId?: () => Promise<string | null>;
+  scanProcessTable?: () => Promise<ProcessInfo[]>;
+  signalGroup?: (processGroupId: number, signal: NodeJS.Signals) => void;
   sleep?: (milliseconds: number) => Promise<void>;
   termWaitMs?: number;
   killWaitMs?: number;
 };
 
+type LaunchOptions = {
+  ownerPath: string;
+  backendUrl: string;
+  cwd: string;
+  command: string;
+  args: string[];
+  logPath: string;
+  env: NodeJS.ProcessEnv;
+};
+
+type LaunchDependencies = {
+  spawnDetached?: (options: LaunchOptions) => { pid: number; unref?: () => void };
+  processInfo?: (pid: number) => Promise<ProcessInfo | null>;
+  currentBootId?: () => Promise<string | null>;
+  writeOwner?: (path: string, owner: ProcessOwner) => void;
+  writeDiagnostic?: (path: string, owner: ProcessOwner) => void;
+  stopOwner?: (owner: ProcessOwner) => Promise<StopOwnedProcessResult>;
+};
+
+export type LaunchOwnedProcessResult =
+  | { kind: "launched"; pid: number }
+  | { kind: "state-failed-cleaned"; error: string }
+  | {
+      kind: "state-failed-cleanup-failed";
+      error: string;
+      cleanup: StopOwnedProcessResult;
+      owner: ProcessOwner;
+    }
+  | { kind: "launch-failed"; error: string };
+
 function validPid(pid: number) {
   return Number.isSafeInteger(pid) && pid > 0;
+}
+
+function normalizeBackendUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.protocol !== "http:"
+      || !parsed.port
+      || !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname)
+      || parsed.pathname !== "/"
+      || parsed.search
+      || parsed.hash
+    ) {
+      return null;
+    }
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
 }
 
 function macIdentityBinary() {
   const configured = process.env.COVEN_CAVE_PROCESS_IDENTITY_BIN;
   if (configured) return configured;
   const stateRoot = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-  return join(stateRoot, "coven-cave", "mobile-process-identity-macos-v1");
+  return join(stateRoot, "coven-cave", "mobile-process-identity-macos-v2");
 }
 
 function ensureMacIdentityBinary() {
@@ -74,28 +137,74 @@ function ensureMacIdentityBinary() {
   return binary;
 }
 
-export function parseLinuxProcessStartTicks(stat: string): string {
-  const commandEnd = stat.lastIndexOf(")");
-  if (commandEnd < 0) throw new Error("malformed Linux process stat");
-  const fields = stat.slice(commandEnd + 1).trim().split(/\s+/);
-  const startTicks = fields[19];
-  if (!startTicks || !/^\d+$/.test(startTicks)) {
-    throw new Error("missing start ticks in Linux process stat");
-  }
-  return startTicks;
+function linuxBootId(): string {
+  const bootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+  if (!bootId) throw new Error("Linux boot_id is unavailable");
+  return bootId;
 }
 
-function linuxProcessToken(pid: number): string | null {
+export function parseLinuxProcessInfo(stat: string, bootId: string): ProcessInfo {
+  const commandEnd = stat.lastIndexOf(")");
+  const commandStart = stat.indexOf("(");
+  if (commandStart < 0 || commandEnd < commandStart) {
+    throw new Error("malformed Linux process stat");
+  }
+  const pid = Number(stat.slice(0, commandStart).trim());
+  const fields = stat.slice(commandEnd + 1).trim().split(/\s+/);
+  const parentPid = Number(fields[1]);
+  const processGroupId = Number(fields[2]);
+  const sessionId = Number(fields[3]);
+  const startTicks = fields[19];
+  if (
+    !validPid(pid)
+    || !Number.isSafeInteger(parentPid)
+    || !validPid(processGroupId)
+    || !validPid(sessionId)
+    || !startTicks
+    || !/^\d+$/.test(startTicks)
+  ) {
+    throw new Error("Linux process stat is missing identity fields");
+  }
+  return {
+    pid,
+    parentPid,
+    processGroupId,
+    sessionId,
+    processToken: `linux:${bootId}:${startTicks}`,
+  };
+}
+
+function linuxProcessInfo(pid: number, bootId = linuxBootId()): ProcessInfo | null {
   try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return `linux:${parseLinuxProcessStartTicks(stat)}`;
+    return parseLinuxProcessInfo(readFileSync(`/proc/${pid}/stat`, "utf8"), bootId);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
 }
 
-function macProcessToken(pid: number): string | null {
+function parseNativeProcessInfo(line: string): ProcessInfo {
+  const [pid, parentPid, processGroupId, sessionId, processToken] = line.trim().split("\t");
+  const info = {
+    pid: Number(pid),
+    parentPid: Number(parentPid),
+    processGroupId: Number(processGroupId),
+    sessionId: Number(sessionId),
+    processToken: processToken ?? "",
+  };
+  if (
+    !validPid(info.pid)
+    || !Number.isSafeInteger(info.parentPid)
+    || !validPid(info.processGroupId)
+    || !validPid(info.sessionId)
+    || !/^macos:\d+:\d+$/.test(info.processToken)
+  ) {
+    throw new Error("proc_pidinfo returned malformed process identity");
+  }
+  return info;
+}
+
+function macProcessInfo(pid: number): ProcessInfo | null {
   const result = spawnSync(ensureMacIdentityBinary(), [String(pid)], {
     encoding: "utf8",
     timeout: 2000,
@@ -104,38 +213,52 @@ function macProcessToken(pid: number): string | null {
   if (result.status !== 0) {
     throw new Error(result.stderr.trim() || `proc_pidinfo failed with status ${result.status}`);
   }
-  const token = result.stdout.trim();
-  if (!/^macos:\d+:\d+$/.test(token)) {
-    throw new Error("proc_pidinfo returned a malformed process token");
-  }
-  return token;
+  return parseNativeProcessInfo(result.stdout);
 }
 
-export async function kernelProcessToken(pid: number): Promise<string | null> {
+async function processInfo(pid: number): Promise<ProcessInfo | null> {
   if (!validPid(pid)) throw new Error(`invalid process id: ${pid}`);
-  if (process.platform === "linux") return linuxProcessToken(pid);
-  if (process.platform === "darwin") return macProcessToken(pid);
+  if (process.platform === "linux") return linuxProcessInfo(pid);
+  if (process.platform === "darwin") return macProcessInfo(pid);
   throw new Error(`kernel process identity is unsupported on ${process.platform}`);
 }
 
-function normalizeBackendUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = new URL(value);
-    if (
-      parsed.protocol !== "http:"
-      || !parsed.port
-      || !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname)
-      || parsed.pathname !== "/"
-      || parsed.search
-      || parsed.hash
-    ) {
-      return null;
+export async function kernelProcessToken(pid: number): Promise<string | null> {
+  return (await processInfo(pid))?.processToken ?? null;
+}
+
+async function currentBootId(): Promise<string | null> {
+  if (process.platform === "linux") return linuxBootId();
+  if (process.platform === "darwin") return null;
+  throw new Error(`kernel process identity is unsupported on ${process.platform}`);
+}
+
+async function scanProcessTable(): Promise<ProcessInfo[]> {
+  if (process.platform === "linux") {
+    const bootId = linuxBootId();
+    const infos: ProcessInfo[] = [];
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      const info = linuxProcessInfo(Number(entry), bootId);
+      if (info) infos.push(info);
     }
-    return parsed.toString().replace(/\/$/, "");
-  } catch {
-    return null;
+    return infos;
   }
+  if (process.platform === "darwin") {
+    const result = spawnSync(ensureMacIdentityBinary(), ["--all"], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    if (result.status !== 0) {
+      throw new Error(result.stderr.trim() || "proc_listpids failed");
+    }
+    return result.stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(parseNativeProcessInfo);
+  }
+  throw new Error(`process table scanning is unsupported on ${process.platform}`);
 }
 
 export function readProcessOwner(ownerPath: string): ProcessOwner | null {
@@ -143,22 +266,37 @@ export function readProcessOwner(ownerPath: string): ProcessOwner | null {
     const raw = JSON.parse(readFileSync(ownerPath, "utf8")) as Record<string, unknown>;
     const backendUrl = normalizeBackendUrl(raw.backendUrl);
     if (
-      raw.version !== 1
+      raw.version !== 2
       || typeof raw.pid !== "number"
       || !validPid(raw.pid)
       || typeof raw.processToken !== "string"
       || !raw.processToken
+      || typeof raw.processGroupId !== "number"
+      || !validPid(raw.processGroupId)
+      || typeof raw.sessionId !== "number"
+      || !validPid(raw.sessionId)
+      || (raw.bootId !== null && typeof raw.bootId !== "string")
       || !backendUrl
       || (raw.stopped !== undefined && raw.stopped !== true)
+      || (
+        raw.diagnostic !== undefined
+        && raw.diagnostic !== "launch-state-persistence-failed"
+      )
     ) {
       return null;
     }
     return {
-      version: 1,
+      version: 2,
       pid: raw.pid,
       processToken: raw.processToken,
+      processGroupId: raw.processGroupId,
+      sessionId: raw.sessionId,
+      bootId: raw.bootId as string | null,
       backendUrl,
       ...(raw.stopped === true ? { stopped: true as const } : {}),
+      ...(raw.diagnostic === "launch-state-persistence-failed"
+        ? { diagnostic: raw.diagnostic }
+        : {}),
     };
   } catch {
     return null;
@@ -167,6 +305,7 @@ export function readProcessOwner(ownerPath: string): ProcessOwner | null {
 
 function atomicWriteOwner(ownerPath: string, owner: ProcessOwner) {
   mkdirSync(dirname(ownerPath), { recursive: true, mode: 0o700 });
+  chmodSync(dirname(ownerPath), 0o700);
   const partial = `${ownerPath}.${process.pid}.${Math.random().toString(16).slice(2)}.partial`;
   let fd: number | null = null;
   try {
@@ -183,69 +322,82 @@ function atomicWriteOwner(ownerPath: string, owner: ProcessOwner) {
   }
 }
 
-export async function recordProcessOwner(
-  ownerPath: string,
-  pid: number,
-  backendUrl: string,
-): Promise<void> {
-  const normalizedBackend = normalizeBackendUrl(backendUrl);
-  if (!normalizedBackend) throw new Error("backend must be an explicit loopback HTTP URL");
-  const processToken = await kernelProcessToken(pid);
-  if (!processToken) throw new Error(`process ${pid} exited before ownership could be recorded`);
-  atomicWriteOwner(ownerPath, {
-    version: 1,
-    pid,
-    processToken,
-    backendUrl: normalizedBackend,
-  });
+function ownedGroupMembers(owner: ProcessOwner, table: ProcessInfo[]) {
+  return table.filter((candidate) =>
+    candidate.processGroupId === owner.processGroupId
+    && candidate.sessionId === owner.sessionId
+  );
 }
 
-async function processDescendants(rootPid: number): Promise<number[]> {
-  const result = spawnSync("ps", ["-axo", "pid=,ppid="], {
-    encoding: "utf8",
-    timeout: 2000,
-  });
-  if (result.status !== 0) {
-    throw new Error(result.stderr.trim() || "could not enumerate the process tree");
+function validateGroupSnapshot(owner: ProcessOwner, table: ProcessInfo[]) {
+  const members = ownedGroupMembers(owner, table);
+  const root = members.find((candidate) => candidate.pid === owner.pid);
+  if (root && root.processToken !== owner.processToken) {
+    throw new Error("identity-mismatch");
   }
-  const children = new Map<number, number[]>();
-  for (const line of result.stdout.split(/\r?\n/)) {
-    const [pidRaw, parentRaw] = line.trim().split(/\s+/);
-    const pid = Number(pidRaw);
-    const parent = Number(parentRaw);
-    if (!validPid(pid) || !validPid(parent)) continue;
-    const siblings = children.get(parent) ?? [];
-    siblings.push(pid);
-    children.set(parent, siblings);
-  }
-  const descendants: number[] = [];
-  const visit = (pid: number) => {
-    for (const child of children.get(pid) ?? []) {
-      visit(child);
-      descendants.push(child);
-    }
-  };
-  visit(rootPid);
-  return descendants;
+  return members;
 }
 
-type ProcessIdentity = { pid: number; token: string };
-
-async function snapshotTree(
+async function stopOwner(
   owner: ProcessOwner,
-  tokenForPid: (pid: number) => Promise<string | null>,
-  descendants: (pid: number) => Promise<number[]>,
-): Promise<ProcessIdentity[]> {
-  const rootToken = await tokenForPid(owner.pid);
-  if (rootToken === null) return [];
-  if (rootToken !== owner.processToken) throw new Error("identity-mismatch");
-  const identities: ProcessIdentity[] = [];
-  for (const pid of await descendants(owner.pid)) {
-    const token = await tokenForPid(pid);
-    if (token) identities.push({ pid, token });
+  options: StopOwnedProcessOptions = {},
+): Promise<StopOwnedProcessResult> {
+  if (owner.stopped) return { kind: "stopped", escalated: false };
+  const getBootId = options.currentBootId ?? currentBootId;
+  const scan = options.scanProcessTable ?? scanProcessTable;
+  const signalGroup = options.signalGroup
+    ?? ((group, signal) => process.kill(-group, signal));
+  const sleep = options.sleep
+    ?? ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const termWaitMs = options.termWaitMs ?? 3000;
+  const killWaitMs = options.killWaitMs ?? 1000;
+
+  try {
+    if (await getBootId() !== owner.bootId) return { kind: "identity-mismatch" };
+    const scanMembers = async () => validateGroupSnapshot(owner, await scan());
+    let members = await scanMembers();
+    if (members.length === 0) {
+      await sleep(20);
+      members = await scanMembers();
+      if (members.length === 0) return { kind: "stopped", escalated: false };
+    }
+    signalGroup(owner.processGroupId, "SIGTERM");
+
+    const waitForEmpty = async (timeoutMs: number) => {
+      const deadline = Date.now() + timeoutMs;
+      let emptyScans = 0;
+      while (Date.now() <= deadline) {
+        members = await scanMembers();
+        if (members.length === 0) {
+          emptyScans += 1;
+          if (emptyScans >= 2) return true;
+        } else {
+          emptyScans = 0;
+        }
+        await sleep(20);
+      }
+      return false;
+    };
+
+    if (await waitForEmpty(termWaitMs)) return { kind: "stopped", escalated: false };
+    members = await scanMembers();
+    if (members.length === 0) {
+      if (await waitForEmpty(40)) return { kind: "stopped", escalated: false };
+    } else {
+      signalGroup(owner.processGroupId, "SIGKILL");
+    }
+    return await waitForEmpty(killWaitMs)
+      ? { kind: "stopped", escalated: true }
+      : { kind: "still-running" };
+  } catch (error) {
+    if ((error as Error).message === "identity-mismatch") {
+      return { kind: "identity-mismatch" };
+    }
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+      return { kind: "stopped", escalated: false };
+    }
+    return { kind: "signal-failed", error: (error as Error).message };
   }
-  identities.push({ pid: owner.pid, token: owner.processToken });
-  return identities;
 }
 
 export async function stopOwnedProcessTree(
@@ -254,95 +406,100 @@ export async function stopOwnedProcessTree(
 ): Promise<StopOwnedProcessResult> {
   const owner = readProcessOwner(ownerPath);
   if (!owner) return { kind: "identity-unavailable", error: "process owner state is malformed" };
-  if (owner.stopped) return { kind: "stopped", escalated: false };
-  const tokenForPid = options.tokenForPid ?? kernelProcessToken;
-  const descendants = options.descendants ?? processDescendants;
-  const signal = options.signal ?? ((pid, requestedSignal) => process.kill(pid, requestedSignal));
-  const sleep = options.sleep ?? ((milliseconds) =>
-    new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
-  const termWaitMs = options.termWaitMs ?? 3000;
-  const killWaitMs = options.killWaitMs ?? 1000;
+  const result = await stopOwner(owner, options);
+  if (result.kind === "stopped" && !owner.stopped) {
+    atomicWriteOwner(ownerPath, { ...owner, stopped: true });
+  }
+  return result;
+}
 
-  let identities: ProcessIdentity[];
+function defaultSpawnDetached(options: LaunchOptions) {
+  mkdirSync(dirname(options.logPath), { recursive: true, mode: 0o700 });
+  const log = openSync(options.logPath, "a", 0o600);
   try {
-    identities = await snapshotTree(owner, tokenForPid, descendants);
+    const child = spawn(options.command, options.args, {
+      cwd: options.cwd,
+      env: options.env,
+      detached: true,
+      stdio: ["ignore", log, log],
+    });
+    if (!child.pid) throw new Error("detached launch returned no process id");
+    return { pid: child.pid, unref: () => child.unref() };
+  } finally {
+    closeSync(log);
+  }
+}
+
+export async function launchOwnedProcess(
+  options: LaunchOptions,
+  dependencies: LaunchDependencies = {},
+): Promise<LaunchOwnedProcessResult> {
+  const normalizedBackend = normalizeBackendUrl(options.backendUrl);
+  if (!normalizedBackend) return { kind: "launch-failed", error: "invalid backend URL" };
+  const spawnDetached = dependencies.spawnDetached ?? defaultSpawnDetached;
+  const readInfo = dependencies.processInfo ?? processInfo;
+  const getBootId = dependencies.currentBootId ?? currentBootId;
+  const writeOwner = dependencies.writeOwner ?? atomicWriteOwner;
+  let child: { pid: number; unref?: () => void };
+  try {
+    child = spawnDetached(options);
   } catch (error) {
-    if ((error as Error).message === "identity-mismatch") {
-      return { kind: "identity-mismatch" };
-    }
-    return { kind: "identity-unavailable", error: (error as Error).message };
+    return { kind: "launch-failed", error: (error as Error).message };
   }
 
-  const isOriginalAlive = async ({ pid, token }: ProcessIdentity) =>
-    (await tokenForPid(pid)) === token;
-  const signalTree = async (tree: ProcessIdentity[], requestedSignal: NodeJS.Signals) => {
-    for (const identity of tree) {
-      let alive: boolean;
-      try {
-        alive = await isOriginalAlive(identity);
-      } catch (error) {
-        throw new Error(`identity unavailable before ${requestedSignal}: ${(error as Error).message}`);
-      }
-      if (!alive) continue;
-      try {
-        signal(identity.pid, requestedSignal);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-    }
-  };
-  const waitForTree = async (tree: ProcessIdentity[], timeoutMs: number) => {
-    const deadline = Date.now() + timeoutMs;
-    while (true) {
-      let anyAlive = false;
-      for (const identity of tree) {
-        if (await isOriginalAlive(identity)) {
-          anyAlive = true;
-          break;
-        }
-      }
-      if (!anyAlive) return true;
-      if (Date.now() >= deadline) return false;
-      await sleep(Math.min(20, Math.max(1, deadline - Date.now())));
-    }
-  };
-
+  let info: ProcessInfo | null;
   try {
-    if (identities.length === 0) {
-      atomicWriteOwner(ownerPath, { ...owner, stopped: true });
-      return { kind: "stopped", escalated: false };
-    }
-    await signalTree(identities, "SIGTERM");
-    if (await waitForTree(identities, termWaitMs)) {
-      atomicWriteOwner(ownerPath, { ...owner, stopped: true });
-      return { kind: "stopped", escalated: false };
-    }
-
-    const survivors: ProcessIdentity[] = [];
-    for (const identity of identities) {
-      if (await isOriginalAlive(identity)) survivors.push(identity);
-    }
-    if (await tokenForPid(owner.pid) === owner.processToken) {
-      const refreshed = await snapshotTree(owner, tokenForPid, descendants);
-      for (const identity of refreshed) {
-        if (!survivors.some((existing) =>
-          existing.pid === identity.pid && existing.token === identity.token
-        )) {
-          survivors.push(identity);
-        }
-      }
-    }
-    identities = survivors;
-    if (identities.length > 0) {
-      await signalTree(identities, "SIGKILL");
-    }
-    if (!(await waitForTree(identities, killWaitMs))) {
-      return { kind: "still-running" };
-    }
-    atomicWriteOwner(ownerPath, { ...owner, stopped: true });
-    return { kind: "stopped", escalated: true };
+    info = await readInfo(child.pid);
   } catch (error) {
-    return { kind: "signal-failed", error: (error as Error).message };
+    return { kind: "launch-failed", error: (error as Error).message };
+  }
+  if (
+    !info
+    || info.pid !== child.pid
+    || info.processGroupId !== child.pid
+    || info.sessionId !== child.pid
+  ) {
+    return {
+      kind: "launch-failed",
+      error: "launched process did not enter its dedicated process group and session",
+    };
+  }
+  const owner: ProcessOwner = {
+    version: 2,
+    pid: info.pid,
+    processToken: info.processToken,
+    processGroupId: info.processGroupId,
+    sessionId: info.sessionId,
+    bootId: await getBootId(),
+    backendUrl: normalizedBackend,
+  };
+  try {
+    writeOwner(options.ownerPath, owner);
+    child.unref?.();
+    return { kind: "launched", pid: owner.pid };
+  } catch (error) {
+    const cleanup = await (
+      dependencies.stopOwner?.(owner)
+      ?? stopOwner(owner, {
+        currentBootId: dependencies.currentBootId,
+      })
+    );
+    if (cleanup.kind === "stopped") {
+      return { kind: "state-failed-cleaned", error: (error as Error).message };
+    }
+    const diagnostic = { ...owner, diagnostic: "launch-state-persistence-failed" as const };
+    try {
+      const writeDiagnostic = dependencies.writeDiagnostic ?? atomicWriteOwner;
+      writeDiagnostic(`${options.ownerPath}.diagnostic`, diagnostic);
+    } catch {
+      // The structured result still carries the exact owner identity if storage remains unavailable.
+    }
+    return {
+      kind: "state-failed-cleanup-failed",
+      error: (error as Error).message,
+      cleanup,
+      owner: diagnostic,
+    };
   }
 }
 
@@ -368,17 +525,25 @@ export async function runMobileProcessOwnershipCli(args: string[]): Promise<numb
   }
   const ownerPath = argumentValue(args, "--state");
   if (!ownerPath) return 2;
-  if (command === "record") {
-    const pid = Number(argumentValue(args, "--pid"));
+  if (command === "launch") {
     const backendUrl = argumentValue(args, "--backend");
-    if (!validPid(pid) || !backendUrl) return 2;
-    try {
-      await recordProcessOwner(ownerPath, pid, backendUrl);
-      return 0;
-    } catch (error) {
-      process.stderr.write(`${(error as Error).message}\n`);
-      return 1;
-    }
+    const cwd = argumentValue(args, "--cwd");
+    const logPath = argumentValue(args, "--log");
+    const separator = args.indexOf("--");
+    const childArgs = separator >= 0 ? args.slice(separator + 1) : [];
+    const childCommand = childArgs.shift();
+    if (!backendUrl || !cwd || !logPath || !childCommand) return 2;
+    const result = await launchOwnedProcess({
+      ownerPath,
+      backendUrl,
+      cwd,
+      logPath,
+      command: childCommand,
+      args: childArgs,
+      env: process.env,
+    });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return result.kind === "launched" ? 0 : 12;
   }
   if (command === "field") {
     const field = argumentValue(args, "--name");
@@ -399,7 +564,9 @@ export async function runMobileProcessOwnershipCli(args: string[]): Promise<numb
     const owner = readProcessOwner(ownerPath);
     if (!owner || owner.stopped) return 1;
     try {
-      return await kernelProcessToken(owner.pid) === owner.processToken ? 0 : 1;
+      const table = await scanProcessTable();
+      const members = validateGroupSnapshot(owner, table);
+      return members.length > 0 ? 0 : 1;
     } catch {
       return 1;
     }

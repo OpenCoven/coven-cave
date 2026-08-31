@@ -170,7 +170,7 @@ export async function runMobileServeOwnershipCli(
     env,
     ...(command === "reset" && processOwnerPath
       ? {
-          beforeReset: async () => {
+          afterVerifiedRouteRemoval: async () => {
             const stopProcessOwner = deps.stopProcessOwner
               ?? defaultDependencies.stopProcessOwner!;
             const stopped = await stopProcessOwner(processOwnerPath);
