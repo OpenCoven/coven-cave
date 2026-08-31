@@ -39,7 +39,7 @@ assert.match(
 );
 assert.match(
   route,
-  /async function runTailscale\(args: string\[\], timeoutMs = 8000\): Promise<TailscaleResult> \{\s*\n\s*const first = await runTailscaleOnce\(args, timeoutMs\);\s*\n\s*if \(first\.ok \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;\s*\n\s*return runTailscaleOnce\(args, timeoutMs\);\s*\n\}/,
+  /async function runTailscale\(args: string\[\], timeoutMs = 8000\): Promise<TailscaleResult> \{\s*\n\s*const first = await runTailscaleOnce\(args, timeoutMs\);\s*\n\s*if \(first\.ok \|\| first\.cleanupFailed \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;\s*\n\s*return runTailscaleOnce\(args, timeoutMs\);\s*\n\}/,
   "a timed-out probe is retried exactly once before the caller sees a failure",
 );
 assert.match(
@@ -66,6 +66,28 @@ assert.match(
   route,
   /child\.on\("error", \(error\) => \{\s*\n\s*if \(timedOut\) return;/,
   "a timed-out child's error event cannot resolve before process-tree cleanup completes",
+);
+assert.match(
+  route,
+  /type TailscaleResult = \{[\s\S]{0,180}?cleanupFailed: boolean;/,
+  "callers receive a typed signal when timeout cleanup is unconfirmed",
+);
+assert.match(
+  route,
+  /if \(first\.ok \|\| first\.cleanupFailed \|\| first\.stderr !== TAILSCALE_TIMED_OUT\) return first;/,
+  "cleanup failure is terminal and cannot trigger the same-command retry",
+);
+assert.match(
+  route,
+  /cleanupFailed: !terminated,/,
+  "the timeout result records whether process-tree cleanup failed",
+);
+assert.equal(
+  route.match(
+    /if \((?:serve|status)\.cleanupFailed\) return tailscaleCleanupFailureResponse\((?:serve|status), backend\);/g,
+  )?.length,
+  4,
+  "both Serve probe ladders abort after an unconfirmed cleanup before another command starts",
 );
 
 console.log("mobile-handoff route.test.ts OK");

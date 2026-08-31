@@ -41,6 +41,7 @@ type TailscaleResult = {
   status: number | null;
   stdout: string;
   stderr: string;
+  cleanupFailed: boolean;
 };
 
 const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
@@ -57,7 +58,7 @@ const TAILSCALE_TERMINATION_FAILED =
 // Tailscale was connected) into a brief, invisible delay. cave-j2056
 async function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
   const first = await runTailscaleOnce(args, timeoutMs);
-  if (first.ok || first.stderr !== TAILSCALE_TIMED_OUT) return first;
+  if (first.ok || first.cleanupFailed || first.stderr !== TAILSCALE_TIMED_OUT) return first;
   return runTailscaleOnce(args, timeoutMs);
 }
 
@@ -88,6 +89,7 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
         status: null,
         stdout: stdout.text(),
         stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
+        cleanupFailed: !terminated,
       });
     }, timeoutMs);
 
@@ -107,6 +109,7 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
         stderr: missing
           ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
           : safeProcessErrorMessage(error, "Tailscale CLI"),
+        cleanupFailed: false,
       });
     });
     child.on("close", (status) => {
@@ -116,6 +119,7 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
         status,
         stdout: stdout.text(),
         stderr: stderr.text(),
+        cleanupFailed: false,
       });
     });
   });
@@ -247,6 +251,13 @@ function mobileUnavailableResponse(
   details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
 ) {
   return NextResponse.json({ ok: false, unavailable: true, error, ...details });
+}
+
+function tailscaleCleanupFailureResponse(result: TailscaleResult, backend: string) {
+  return mobileUnavailableResponse(
+    "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
+    { stderr: result.stderr, backendUrl: backend },
+  );
 }
 
 function mobileAccessUnavailableResponse() {
@@ -394,12 +405,14 @@ async function ensureNativeAppServeReady(
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
   const serve = await runTailscale(["serve", "--bg", backend]);
+  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
   const serveWarning = serve.ok
     ? null
     : serve.stderr || "Tailscale Serve could not be (re)started.";
 
   let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
+  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
@@ -578,6 +591,7 @@ async function mobileHandoffReady(
   // though the serve config (and tunnel) is already live in the daemon. Capture
   // the error as a non-fatal warning and try to produce a working link anyway.
   const serve = await runTailscale(["serve", "--bg", backend]);
+  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
   const serveWarning = serve.ok
     ? null
     : serve.stderr || "Tailscale Serve could not be (re)started.";
@@ -585,6 +599,7 @@ async function mobileHandoffReady(
   // Prefer the real serve config when it's readable.
   let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
+  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
