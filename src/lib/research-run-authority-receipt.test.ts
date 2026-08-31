@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
+import { canonicalJson, sha256Digest } from "./research-protocol/digest.ts";
 import type { ResearchRunV1 } from "./research-protocol/research-run.ts";
 import type { RunManifestV1 } from "./research-protocol/run-manifest.ts";
 import {
@@ -16,6 +17,7 @@ import {
   validateResearchRunAuthorityState,
   validateResearchRunCompletionReceipt,
   verifyResearchRunCompletionReceipt,
+  type ResearchRunCompletionReceiptV1,
 } from "./research-run-authority-receipt.ts";
 import {
   loadResearchRunCompletionReceipt,
@@ -73,6 +75,8 @@ const RUN: ResearchRunV1 = {
   artifactManifest: MANIFEST,
 };
 
+const TEST_ARTIFACTS_ROOT = path.join(process.cwd(), ".test-artifacts");
+
 function authorityStateWithGrant() {
   const requested = requestResearchRunAuthority(createResearchRunAuthorityState(), {
     id: "request-repo-read",
@@ -90,6 +94,18 @@ function authorityStateWithGrant() {
     grantedAt: "2026-08-16T20:01:00.000Z",
     exercised: true,
   });
+}
+
+function receiptWithValidDigest(
+  receipt: ResearchRunCompletionReceiptV1,
+  changes: Partial<Omit<ResearchRunCompletionReceiptV1, "integrityDigest">>,
+): ResearchRunCompletionReceiptV1 {
+  const { integrityDigest: _integrityDigest, ...current } = receipt;
+  const unsigned = { ...current, ...changes };
+  return {
+    ...unsigned,
+    integrityDigest: sha256Digest(canonicalJson(unsigned)),
+  };
 }
 
 test("authority state makes a permission wait explicit and records its grant", () => {
@@ -119,6 +135,157 @@ test("authority state makes a permission wait explicit and records its grant", (
   assert.deepEqual(
     validateResearchRunAuthorityState(JSON.parse(serializeResearchRunAuthorityState(completed))),
     completed,
+  );
+});
+
+test("authority grants require the pending request capability and canonical scope", () => {
+  const requested = requestResearchRunAuthority(createResearchRunAuthorityState(), {
+    id: "request-repo-read",
+    capability: "repository.read",
+    scope: { repository: "coven-cave", paths: ["src", "schemas"] },
+    requestedAt: "2026-08-16T20:00:30.000Z",
+  });
+
+  assert.throws(
+    () => grantResearchRunAuthority(requested, {
+      id: "grant-wrong-capability",
+      requestId: "request-repo-read",
+      capability: "repository.write",
+      scope: { paths: ["src", "schemas"], repository: "coven-cave" },
+      grantedAt: "2026-08-16T20:01:00.000Z",
+      exercised: true,
+    }),
+    /capability must canonically match the pending authority request/,
+  );
+  assert.throws(
+    () => grantResearchRunAuthority(requested, {
+      id: "grant-wrong-scope",
+      requestId: "request-repo-read",
+      capability: "repository.read",
+      scope: { paths: ["src"], repository: "coven-cave" },
+      grantedAt: "2026-08-16T20:01:00.000Z",
+      exercised: true,
+    }),
+    /scope must canonically match the pending authority request/,
+  );
+  assert.equal(requested.status, "awaiting_authority");
+  assert.equal(requested.requests[0]?.status, "pending");
+  assert.deepEqual(requested.grants, []);
+
+  const granted = grantResearchRunAuthority(requested, {
+    id: "grant-repo-read",
+    requestId: "request-repo-read",
+    capability: "repository.read",
+    scope: { paths: ["src", "schemas"], repository: "coven-cave" },
+    grantedAt: "2026-08-16T20:01:00.000Z",
+    exercised: true,
+  });
+  assert.equal(granted.status, "running");
+  assert.equal(granted.requests[0]?.status, "granted");
+});
+
+test("authority grants reject nonexistent and already-resolved requests", () => {
+  const requested = requestResearchRunAuthority(createResearchRunAuthorityState(), {
+    id: "request-network",
+    capability: "network.query",
+    scope: ["example.com"],
+    requestedAt: "2026-08-16T20:00:30.000Z",
+  });
+  const missingRequestGrant = {
+    id: "grant-missing",
+    requestId: "request-other",
+    capability: "network.query",
+    scope: ["example.com"],
+    grantedAt: "2026-08-16T20:01:00.000Z",
+    exercised: true,
+  };
+  assert.throws(
+    () => grantResearchRunAuthority(requested, missingRequestGrant),
+    /must identify an existing pending authority request/,
+  );
+
+  const granted = grantResearchRunAuthority(requested, {
+    ...missingRequestGrant,
+    id: "grant-network",
+    requestId: "request-network",
+  });
+  assert.throws(
+    () => grantResearchRunAuthority(granted, {
+      ...missingRequestGrant,
+      id: "grant-network-again",
+      requestId: "request-network",
+    }),
+    /must identify an existing pending authority request/,
+  );
+  assert.equal(granted.status, "running");
+  assert.equal(granted.grants.length, 1);
+});
+
+test("authority requests are new pending transitions and cannot reopen a resolved id", () => {
+  assert.throws(
+    () => requestResearchRunAuthority(createResearchRunAuthorityState(), {
+      id: "request-network",
+      capability: "network.query",
+      requestedAt: "2026-08-16T20:00:30.000Z",
+      status: "granted",
+    }),
+    /new authority requests must be pending/,
+  );
+
+  const granted = authorityStateWithGrant();
+  assert.throws(
+    () => requestResearchRunAuthority(granted, {
+      id: "request-repo-read",
+      capability: "repository.read",
+      scope: { repository: "coven-cave" },
+      requestedAt: "2026-08-16T20:02:00.000Z",
+    }),
+    /authority request id already exists/,
+  );
+});
+
+test("authority validation rejects grants without one matching resolved request", () => {
+  const coherent = authorityStateWithGrant();
+  const { resolvedAt: _resolvedAt, ...pendingRequest } = coherent.requests[0];
+  assert.deepEqual(validateResearchRunAuthorityState(coherent), coherent);
+
+  assert.throws(
+    () => validateResearchRunAuthorityState({
+      ...coherent,
+      grants: [{ ...coherent.grants[0], capability: "repository.write" }],
+    }),
+    /capability must canonically match its authority request/,
+  );
+  assert.throws(
+    () => validateResearchRunAuthorityState({
+      ...coherent,
+      grants: [{ ...coherent.grants[0], scope: { repository: "another-repo" } }],
+    }),
+    /scope must canonically match its authority request/,
+  );
+  assert.throws(
+    () => validateResearchRunAuthorityState({
+      status: "running",
+      requests: [{ ...pendingRequest, status: "pending" }],
+      grants: [],
+    }),
+    /pending requests require awaiting_authority status/,
+  );
+  assert.throws(
+    () => validateResearchRunAuthorityState({
+      status: "running",
+      requests: coherent.requests,
+      grants: [],
+    }),
+    /granted requests require exactly one matching authority grant/,
+  );
+  assert.throws(
+    () => validateResearchRunAuthorityState({
+      status: "running",
+      requests: [],
+      grants: coherent.grants,
+    }),
+    /must identify an existing granted authority request/,
   );
 });
 
@@ -210,8 +377,84 @@ test("completion receipts contain manifest provenance and a deterministic integr
   assert.equal(verifyResearchRunCompletionReceipt(tampered), false);
 });
 
+test("completion receipt creation rejects malformed and duplicate manifest provenance", () => {
+  const malformedSource = {
+    ...MANIFEST.sources[0],
+    digest: "not-a-digest",
+  };
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, {
+      sourceManifest: [malformedSource],
+    }),
+    /sourceManifest.*digest/i,
+  );
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, {
+      sourceManifest: [MANIFEST.sources[0], MANIFEST.sources[0]],
+    }),
+    /sourceManifest.*unique/i,
+  );
+
+  const malformedArtifact = {
+    ...MANIFEST.artifacts[0],
+    title: "../receipt.json",
+  };
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, {
+      artifactManifest: [malformedArtifact],
+    }),
+    /artifactManifest.*title/i,
+  );
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, {
+      artifactManifest: [MANIFEST.artifacts[0], MANIFEST.artifacts[0]],
+    }),
+    /artifactManifest.*unique/i,
+  );
+});
+
+test("schema-invalid manifest provenance cannot verify with a matching receipt digest", () => {
+  const receipt = createResearchRunCompletionReceipt(RUN);
+  const malformedSourceReceipt = receiptWithValidDigest(receipt, {
+    sourceManifest: [{
+      ...receipt.sourceManifest[0],
+      digest: "not-a-digest",
+    }],
+  });
+  assert.equal(verifyResearchRunCompletionReceipt(malformedSourceReceipt), false);
+  assert.throws(
+    () => validateResearchRunCompletionReceipt(malformedSourceReceipt),
+    /sourceManifest.*digest/i,
+  );
+
+  const duplicateArtifactReceipt = receiptWithValidDigest(receipt, {
+    artifactManifest: [receipt.artifactManifest[0], receipt.artifactManifest[0]],
+  });
+  assert.equal(verifyResearchRunCompletionReceipt(duplicateArtifactReceipt), false);
+  assert.throws(
+    () => validateResearchRunCompletionReceipt(duplicateArtifactReceipt),
+    /artifactManifest.*unique/i,
+  );
+});
+
+test("completion receipt validation requires both manifest provenance arrays", () => {
+  const receipt = createResearchRunCompletionReceipt(RUN);
+  for (const field of ["sourceManifest", "artifactManifest"] as const) {
+    const missing = structuredClone(receipt) as Record<string, unknown>;
+    delete missing[field];
+    const { integrityDigest: _integrityDigest, ...unsigned } = missing;
+    missing.integrityDigest = sha256Digest(canonicalJson(unsigned));
+    assert.throws(
+      () => validateResearchRunCompletionReceipt(missing),
+      new RegExp(`${field}.*array`, "i"),
+    );
+    assert.equal(verifyResearchRunCompletionReceipt(missing), false);
+  }
+});
+
 test("completion receipts survive an atomic store round trip and reject tampering", async () => {
-  const root = await mkdtemp(path.join(process.env.TMPDIR || "/tmp", "coven-receipt-"));
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "coven-receipt-"));
   try {
     const receipt = createResearchRunCompletionReceipt(RUN, {
       authority: authorityStateWithGrant(),
@@ -239,6 +482,25 @@ test("completion receipts survive an atomic store round trip and reject tamperin
     await assert.rejects(
       () => loadResearchRunCompletionReceipt(RUN.id, root),
       /integrity validation/,
+    );
+
+    const malformed = receiptWithValidDigest(receipt, {
+      artifactManifest: [{
+        ...receipt.artifactManifest[0],
+        title: "../receipt.json",
+      }],
+    });
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(malformed, root),
+      /artifactManifest.*title/i,
+    );
+    await writeFile(
+      path.join(root, `${RUN.id}.json`),
+      JSON.stringify(malformed),
+    );
+    await assert.rejects(
+      () => loadResearchRunCompletionReceipt(RUN.id, root),
+      /artifactManifest.*title/i,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

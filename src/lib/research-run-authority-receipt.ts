@@ -4,6 +4,8 @@ import {
   sha256Digest,
 } from "./research-protocol/digest.ts";
 import {
+  parseRunManifestArtifactsV1,
+  parseRunManifestSourcesV1,
   parseRunManifestV1,
   type ArtifactRegistrationV1,
   type RunManifestSourceV1,
@@ -235,6 +237,27 @@ function sameId(left: { id: string }, right: { id: string }): boolean {
   return left.id === right.id;
 }
 
+function scopesCanonicallyEqual(
+  left: ResearchRunAuthorityScopeV1 | undefined,
+  right: ResearchRunAuthorityScopeV1 | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function assertGrantMatchesRequest(
+  grant: ResearchRunAuthorityGrantV1,
+  request: ResearchRunAuthorityRequestV1,
+  field: string,
+): void {
+  if (grant.capability !== request.capability) {
+    throw new TypeError(`${field}.capability must canonically match its authority request`);
+  }
+  if (!scopesCanonicallyEqual(grant.scope, request.scope)) {
+    throw new TypeError(`${field}.scope must canonically match its authority request`);
+  }
+}
+
 export function createResearchRunAuthorityState(): ResearchRunAuthorityStateV1 {
   return { status: "running", requests: [], grants: [] };
 }
@@ -243,12 +266,18 @@ export function requestResearchRunAuthority(
   state: ResearchRunAuthorityStateV1,
   input: ResearchRunAuthorityRequestInputV1,
 ): ResearchRunAuthorityStateV1 {
+  const current = validateResearchRunAuthorityState(state);
   const request = normalizeRequest({ ...input, status: input.status ?? "pending" }, "authorityRequest");
-  const requests = state.requests.filter((candidate) => !sameId(candidate, request));
+  if (request.status !== "pending") {
+    throw new TypeError("new authority requests must be pending");
+  }
+  if (current.requests.some((candidate) => sameId(candidate, request))) {
+    throw new TypeError("authority request id already exists");
+  }
   return {
     status: "awaiting_authority",
-    requests: [...requests, request],
-    grants: [...state.grants],
+    requests: [...current.requests, request],
+    grants: [...current.grants],
   };
 }
 
@@ -256,21 +285,39 @@ export function grantResearchRunAuthority(
   state: ResearchRunAuthorityStateV1,
   input: ResearchRunAuthorityGrantV1,
 ): ResearchRunAuthorityStateV1 {
+  const current = validateResearchRunAuthorityState(state);
   const grant = normalizeGrant(input, "authorityGrant");
+  const request = current.requests.find((candidate) =>
+    candidate.id === grant.requestId && candidate.status === "pending");
+  if (!request) {
+    throw new TypeError(
+      "authorityGrant.requestId must identify an existing pending authority request",
+    );
+  }
+  if (grant.capability !== request.capability) {
+    throw new TypeError(
+      "authorityGrant.capability must canonically match the pending authority request",
+    );
+  }
+  if (!scopesCanonicallyEqual(grant.scope, request.scope)) {
+    throw new TypeError(
+      "authorityGrant.scope must canonically match the pending authority request",
+    );
+  }
   const grants = [
-    ...state.grants.filter((candidate) => !sameId(candidate, grant)),
+    ...current.grants.filter((candidate) => !sameId(candidate, grant)),
     grant,
   ];
-  const requests = state.requests.map((request) => {
-    if (request.id !== grant.requestId) return request;
-    return { ...request, status: "granted" as const, resolvedAt: grant.grantedAt };
+  const requests = current.requests.map((candidate) => {
+    if (candidate.id !== request.id) return candidate;
+    return { ...candidate, status: "granted" as const, resolvedAt: grant.grantedAt };
   });
   const hasPending = requests.some((request) => request.status === "pending");
-  return {
+  return validateResearchRunAuthorityState({
     status: hasPending ? "awaiting_authority" : "running",
     requests,
     grants,
-  };
+  });
 }
 
 export function completeResearchRunAuthority(
@@ -291,6 +338,45 @@ export function validateResearchRunAuthorityState(
     normalizeRequest(item, `authority.requests[${index}]`));
   const grants = copyRecordArray(value.grants, "authority.grants").map((item, index) =>
     normalizeGrant(item, `authority.grants[${index}]`));
+
+  const requestIds = new Set<string>();
+  for (const [index, request] of requests.entries()) {
+    if (requestIds.has(request.id)) {
+      throw new TypeError(`authority.requests[${index}].id must be unique`);
+    }
+    requestIds.add(request.id);
+  }
+  const grantIds = new Set<string>();
+  const grantsByRequest = new Map<string, number>();
+  for (const [index, grant] of grants.entries()) {
+    if (grantIds.has(grant.id)) {
+      throw new TypeError(`authority.grants[${index}].id must be unique`);
+    }
+    grantIds.add(grant.id);
+    const request = requests.find((candidate) =>
+      candidate.id === grant.requestId && candidate.status === "granted");
+    if (!request) {
+      throw new TypeError(
+        `authority.grants[${index}].requestId must identify an existing granted authority request`,
+      );
+    }
+    assertGrantMatchesRequest(grant, request, `authority.grants[${index}]`);
+    grantsByRequest.set(request.id, (grantsByRequest.get(request.id) ?? 0) + 1);
+  }
+  for (const [index, request] of requests.entries()) {
+    if (request.status === "granted" && grantsByRequest.get(request.id) !== 1) {
+      throw new TypeError(
+        `authority.requests[${index}] granted requests require exactly one matching authority grant`,
+      );
+    }
+  }
+  const hasPending = requests.some((request) => request.status === "pending");
+  if (hasPending && status !== "awaiting_authority") {
+    throw new TypeError("authority pending requests require awaiting_authority status");
+  }
+  if (!hasPending && status === "awaiting_authority") {
+    throw new TypeError("authority awaiting_authority status requires a pending request");
+  }
   return { status, requests, grants };
 }
 
@@ -314,12 +400,22 @@ function manifestForReceipt(
   return parsed.value;
 }
 
-function manifestEntries<T extends Record<string, unknown>>(
-  input: readonly T[] | undefined,
-  fallback: readonly T[] | undefined,
-  field: string,
-): T[] {
-  return copyRecordArray(input ?? fallback ?? [], field) as T[];
+function manifestSources(value: unknown): RunManifestSourceV1[] {
+  const parsed = parseRunManifestSourcesV1(value, "sourceManifest");
+  if (!parsed.ok) {
+    throw new TypeError(`sourceManifest is invalid at ${parsed.error.path}: ${parsed.error.message}`);
+  }
+  return copyCanonicalJsonValue(parsed.value);
+}
+
+function manifestArtifacts(value: unknown): ArtifactRegistrationV1[] {
+  const parsed = parseRunManifestArtifactsV1(value, "artifactManifest");
+  if (!parsed.ok) {
+    throw new TypeError(
+      `artifactManifest is invalid at ${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  return copyCanonicalJsonValue(parsed.value);
 }
 
 function normalizePlanHistory(
@@ -382,8 +478,8 @@ export function createResearchRunCompletionReceipt(
     ? validateResearchRunAuthorityState(input.authority)
     : createResearchRunAuthorityState();
   const grants = input.grantsExercised ?? authority.grants.filter((grant) => grant.exercised);
-  const sourceManifest = manifestEntries(input.sourceManifest, manifest?.sources, "sourceManifest");
-  const artifactManifest = manifestEntries(input.artifactManifest, manifest?.artifacts, "artifactManifest");
+  const sourceManifest = manifestSources(input.sourceManifest ?? manifest?.sources ?? []);
+  const artifactManifest = manifestArtifacts(input.artifactManifest ?? manifest?.artifacts ?? []);
   const citationCount = input.citationCount ?? 0;
   safeNonNegativeInteger(citationCount, "citationCount");
 
@@ -449,11 +545,8 @@ export function validateResearchRunCompletionReceipt(
     grantsExercised: copyRecordArray(copied.grantsExercised, "grantsExercised").map(
       (grant, index) => normalizeGrant(grant, `grantsExercised[${index}]`),
     ),
-    sourceManifest: copyRecordArray(copied.sourceManifest, "sourceManifest") as RunManifestSourceV1[],
-    artifactManifest: copyRecordArray(
-      copied.artifactManifest,
-      "artifactManifest",
-    ) as ArtifactRegistrationV1[],
+    sourceManifest: manifestSources(copied.sourceManifest),
+    artifactManifest: manifestArtifacts(copied.artifactManifest),
     citationCount: safeNonNegativeInteger(copied.citationCount, "citationCount"),
     partialFailures: normalizePartialFailures(
       copied.partialFailures as ResearchRunPartialFailureV1[],
