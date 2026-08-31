@@ -418,6 +418,11 @@ assert.match(
   "Compact response menu rows restore full touch targets on coarse pointers",
 );
 assert.match(
+  css,
+  /\.cave-response-menu \.ui-popover-item > svg:first-child \{[\s\S]*color: var\(--text-muted\);/,
+  "Only the leading row icon is muted — a trailing checked-item checkmark is also a direct <svg> child and must not be dimmed",
+);
+assert.match(
   overflowMenu,
   /popoverClassName\?: string;[\s\S]*className=\{popoverClassName\}/,
   "OverflowMenu exposes a scoped class for the portaled menu surface",

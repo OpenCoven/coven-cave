@@ -112,7 +112,7 @@
 .cave-response-menu .ui-popover-item[data-active="true"] {
   color: var(--text-primary);
 }
-.cave-response-menu .ui-popover-item > svg {
+.cave-response-menu .ui-popover-item > svg:first-child {
   flex: none;
   color: var(--text-muted);
 }
