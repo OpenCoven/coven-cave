@@ -6,11 +6,11 @@ const HUMAN_EMAIL_RE = /^([0-9]+)\+([A-Za-z0-9-]+)@users\.noreply\.github\.com$/
 const CO_AUTHOR_PREFIX_RE = /^\s*Co-authored-by:/i;
 const CO_AUTHOR_RE = /^\s*Co-authored-by:\s+(.+?)\s+<([^<>]+)>\s*$/i;
 const AI_LOGIN_RE =
-  /^(copilot|github-copilot|copilot-swe-agent|chatgpt|gpt-[0-9.]+|openai|anthropic|codex|cursor|aider|devin-ai|gemini-ai|grok|xai|meta-ai|mistral-ai|qwen-ai|deepseek-ai|kimi-ai|codeium|windsurf|sourcegraph-cody)$/i;
+  /^(copilot|github-copilot|copilot-swe-agent|chatgpt|gpt-[0-9][a-z0-9.-]*|openai|anthropic|codex|cursor|aider|devin-ai|gemini-ai|grok|xai|meta-ai|mistral-ai|qwen-ai|deepseek-ai|kimi-ai|codeium|windsurf|sourcegraph-cody)$/i;
 const AI_IDENTITY_RE =
-  /(?:^|[^a-z0-9])(copilot|claude|chatgpt|gpt(?:-[0-9.]+)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)(?:[^a-z0-9]|$)/i;
+  /(?:^|[^a-z0-9])(copilot|claude|chatgpt|gpt(?:-[0-9][a-z0-9.-]*)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)(?:[^a-z0-9]|$)/i;
 const AI_FOOTER_RE =
-  /(?:generated|authored|written|assisted|made|powered)\s+(?:with|by).*?(?:copilot|claude|chatgpt|gpt(?:-[0-9.]+)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)/i;
+  /(?:generated|authored|written|assisted|made|powered)\s+(?:with|by).*?(?:copilot|claude|chatgpt|gpt(?:-[0-9][a-z0-9.-]*)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)/i;
 
 function fail(message) {
   throw new Error(`pr-squash-message: ${message}`);

@@ -57,6 +57,12 @@ function runHook(message) {
 }
 
 {
+  const result = runHook("fix: reject alphanumeric model login\n\nCo-authored-by: GPT-4o <12345+gpt-4o@users.noreply.github.com>\n");
+  assert.notEqual(result.status, 0, "alphanumeric GPT model identities must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
+}
+
+{
   const result = runHook("fix: reject alternate generated footer\n\nMade with Claude Code\n");
   assert.notEqual(result.status, 0, "alternate AI attribution footers must be blocked");
   assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);

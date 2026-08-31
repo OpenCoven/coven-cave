@@ -15,8 +15,8 @@ fi
 trailer_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:'
 human_identity_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:[[:space:]]+.+[[:space:]]+<[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com>[[:space:]]*$'
 github_identity_re='<[0-9]+\+([A-Za-z0-9-]+)@users\.noreply\.github\.com>'
-ai_login_re='^(copilot|github-copilot|copilot-swe-agent|chatgpt|gpt-[0-9.]+|openai|anthropic|codex|cursor|aider|devin-ai|gemini-ai|grok|xai|meta-ai|mistral-ai|qwen-ai|deepseek-ai|kimi-ai|codeium|windsurf|sourcegraph-cody)$'
-ai_identity_re='(^|[^[:alnum:]])(copilot|claude|chatgpt|gpt(-[0-9.]+)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)([^[:alnum:]]|$)'
+ai_login_re='^(copilot|github-copilot|copilot-swe-agent|chatgpt|gpt-[0-9][A-Za-z0-9.-]*|openai|anthropic|codex|cursor|aider|devin-ai|gemini-ai|grok|xai|meta-ai|mistral-ai|qwen-ai|deepseek-ai|kimi-ai|codeium|windsurf|sourcegraph-cody)$'
+ai_identity_re='(^|[^[:alnum:]])(copilot|claude|chatgpt|gpt(-[0-9][A-Za-z0-9.-]*)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)([^[:alnum:]]|$)'
 ai_footer_re='(generated|authored|written|assisted|made|powered)[[:space:]]+(with|by)'
 
 shopt -s nocasematch

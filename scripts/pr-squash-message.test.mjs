@@ -26,6 +26,7 @@ test("strips AI attribution and preserves unique human GitHub trailers", () => {
       "Made with Claude Code",
       "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
       "Co-authored-by: GPT-5 <23456+gpt-5@users.noreply.github.com>",
+      "Co-authored-by: GPT-4o <34567+gpt-4o@users.noreply.github.com>",
       "Co-authored-by: Val Alexander <68980965+BunsDev@users.noreply.github.com>",
     ].join("\n"),
     commits: [
@@ -54,7 +55,7 @@ test("strips AI attribution and preserves unique human GitHub trailers", () => {
       "Co-authored-by: Claude Martin <98765+claude-martin@users.noreply.github.com>",
     ].join("\n"),
   );
-  assert.doesNotMatch(message.body, /Copilot|GPT-5|Generated with|Made with/i);
+  assert.doesNotMatch(message.body, /Copilot|GPT-5|GPT-4o|Generated with|Made with/i);
 });
 
 test("refuses ambiguous non-GitHub co-author trailers", () => {
