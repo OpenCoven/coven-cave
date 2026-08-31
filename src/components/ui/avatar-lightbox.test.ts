@@ -39,3 +39,26 @@ assert.match(
 );
 
 console.log("avatar-lightbox.test.ts: ok");
+
+// Popover focus-trap conflict fix (cave-fzr4p): a Modal's focus trap steals
+// focus the instant it opens, which an ancestor Popover reads as focus
+// leaving its panel and self-dismisses — unmounting both. AvatarLightbox must
+// register its Modal's dialog element as an "inside" layer via the shared
+// PopoverLayersContext hook so that doesn't happen; a no-op when there is no
+// ancestor Popover.
+assert.match(
+  src,
+  /from "\.\/popover"/,
+  "must import the shared popover-layers registration hook",
+);
+assert.match(
+  src,
+  /usePopoverLayerRegistration\(dialogEl\)/,
+  "registers the Modal's dialog element as an inside layer of any ancestor Popover",
+);
+assert.match(
+  src,
+  /onDialogElement=\{setDialogEl\}/,
+  "wires the Modal's dialog element callback through to the registration hook",
+);
+
