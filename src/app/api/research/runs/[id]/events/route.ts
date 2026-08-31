@@ -35,7 +35,12 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "invalid event query" }, { status: 400 });
   }
   try {
-    const result = await replayResearchRunGateway(authorized.value.missionId, afterSeq, limit);
+    const result = await replayResearchRunGateway(
+      authorized.value.missionId,
+      afterSeq,
+      limit,
+      authorized.value.requestedRunId ?? undefined,
+    );
     if (!result) {
       return NextResponse.json({ ok: false, error: "research run not found" }, { status: 404 });
     }

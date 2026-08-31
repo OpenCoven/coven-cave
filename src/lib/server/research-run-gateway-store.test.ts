@@ -3,12 +3,14 @@ import { before, after, test } from "node:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import type { ResearchMission } from "../research-missions.ts";
 import {
   appendResearchRunEvents,
   loadResearchRunEventLog,
   replayResearchRunEvents,
   type ResearchRunObservedProjection,
 } from "./research-run-gateway-store.ts";
+import { researchMissionToCanonicalRun } from "./research-run-gateway.ts";
 
 const originalMissionRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
 const originalEventRoot = process.env.COVEN_RESEARCH_RUN_EVENTS_DIR;
@@ -36,6 +38,39 @@ function event(sequence: number) {
       iterations: 0,
     },
   };
+}
+
+function finalizedRun(missionId: string, nextEventSequence: number) {
+  const completed: ResearchMission = {
+    version: 1,
+    id: missionId,
+    familiarId: "sage",
+    title: "Finalized run",
+    intent: "Persist an immutable finalized manifest",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 2,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: true,
+    },
+    status: "completed",
+    createdAt: "2026-08-30T12:00:00.000Z",
+    updatedAt: "2026-08-30T12:01:00.000Z",
+    finishedAt: "2026-08-30T12:01:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-30T12:01:00.000Z",
+    }],
+    artifacts: [],
+    sources: [],
+  };
+  return researchMissionToCanonicalRun(completed, nextEventSequence);
 }
 
 before(async () => {
@@ -176,12 +211,13 @@ test("append cannot reopen a terminal Research Run ledger", async () => {
     ...event(2),
     runId: terminalRunId,
     type: "run.completed" as const,
+    at: "2026-08-30T12:01:00.000Z",
     data: { status: "completed" },
   };
   await appendResearchRunEvents(terminalRunId, [created, completed], {
     ...projection,
     status: "completed",
-  });
+  }, finalizedRun("gateway-terminal", 3).artifactManifest);
 
   await assert.rejects(
     appendResearchRunEvents(terminalRunId, [{
@@ -201,4 +237,56 @@ test("append cannot reopen a terminal Research Run ledger", async () => {
     "run.completed",
   ]);
   assert.equal(unchanged?.projection?.status, "completed");
+});
+
+test("terminal append atomically persists one immutable finalized manifest", async () => {
+  const terminalRunId = "run_gateway-finalized";
+  const created = {
+    ...event(1),
+    runId: terminalRunId,
+    type: "run.created" as const,
+    data: {},
+  };
+  const completed = {
+    ...event(2),
+    runId: terminalRunId,
+    type: "run.completed" as const,
+    at: "2026-08-30T12:01:00.000Z",
+    data: { status: "completed" },
+  };
+  const finalized = finalizedRun("gateway-finalized", 3);
+
+  await assert.rejects(
+    appendResearchRunEvents(terminalRunId, [created, completed], {
+      ...projection,
+      status: "completed",
+      missionUpdatedAt: "2026-08-30T12:01:00.000Z",
+    }),
+    /finalized run manifest is required/i,
+  );
+  assert.equal(await loadResearchRunEventLog(terminalRunId), null);
+
+  await appendResearchRunEvents(terminalRunId, [created, completed], {
+    ...projection,
+    status: "completed",
+    missionUpdatedAt: "2026-08-30T12:01:00.000Z",
+  }, finalized.artifactManifest);
+  const first = await loadResearchRunEventLog(terminalRunId);
+  assert.deepEqual(first?.finalManifest, finalized.artifactManifest);
+
+  await appendResearchRunEvents(terminalRunId, [], {
+    ...projection,
+    status: "completed",
+    missionUpdatedAt: "2026-08-30T12:05:00.000Z",
+  });
+  const afterAdministration = await loadResearchRunEventLog(terminalRunId);
+  assert.deepEqual(afterAdministration?.finalManifest, finalized.artifactManifest);
+  assert.equal(
+    afterAdministration?.finalManifest?.digest,
+    finalized.artifactManifest?.digest,
+  );
+  assert.equal(
+    afterAdministration?.finalManifest?.finalizedAt,
+    "2026-08-30T12:01:00.000Z",
+  );
 });

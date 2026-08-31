@@ -2096,6 +2096,30 @@ test("terminal run events reject later lifecycle transitions but allow retention
       data: { retention: "7-days" },
     },
   ])).length, 3);
+
+  for (const status of ["completed", "failed", "cancelled", "expired"] as const) {
+    expectError(
+      validateRunEventSequence([
+        created,
+        {
+          ...created,
+          sequence: 2,
+          type: "run.status",
+          at: "2026-08-31T10:01:00.000Z",
+          data: { status },
+        },
+        {
+          ...created,
+          sequence: 3,
+          type: "run.status",
+          at: "2026-08-31T10:02:00.000Z",
+          data: { status: "scoping" },
+        },
+      ]),
+      "$[2].type",
+      "semantic_conflict",
+    );
+  }
 });
 
 test("schema and parser agree on expressible constraints and additive fields survive", () => {
@@ -2847,7 +2871,7 @@ test("completed deletion requires a final manifest and its exact event in the co
       parsedEvent(2, "run.status", { status: "completed" }),
       completed,
     ]),
-    "$[1].type",
+    "$[2].type",
     "semantic_conflict",
   );
   expectError(
@@ -2973,7 +2997,7 @@ test("deletion event composition rejects incomplete, malformed, and wrong-run st
       completed,
       parsedEvent(4, "run.status", { status: "completed" }),
     ]),
-    "$",
+    "$[3].type",
     "semantic_conflict",
   );
   expectError(

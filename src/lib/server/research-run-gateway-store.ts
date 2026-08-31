@@ -14,6 +14,10 @@ import {
   type ResearchRunStatusV1,
   type RunEventV1,
 } from "../research-protocol/research-run.ts";
+import {
+  parseRunManifestV1,
+  type RunManifestV1,
+} from "../research-protocol/run-manifest.ts";
 import { isUtcTimestamp } from "../research-protocol/common.ts";
 import { canonicalJson } from "../research-protocol/digest.ts";
 
@@ -79,6 +83,7 @@ export type ResearchRunEventLog = {
   runId: string;
   events: RunEventV1[];
   projection?: ResearchRunObservedProjection;
+  finalManifest?: RunManifestV1;
 };
 
 export class ResearchRunEventLogError extends Error {
@@ -120,6 +125,10 @@ function assertRunId(runId: string): void {
 
 export function missionIdForResearchRunId(runId: string): string {
   return parseResearchRunId(runId).missionId;
+}
+
+export function researchRunGenerationForRunId(runId: string): number {
+  return parseResearchRunId(runId).generation;
 }
 
 export function researchRunIdForMissionId(missionId: string, generation = 1): string {
@@ -202,6 +211,43 @@ function parseProjection(value: unknown): ResearchRunObservedProjection | undefi
     sourceCount: value.sourceCount,
     artifactCount: value.artifactCount,
   };
+}
+
+function terminalStatusForEvent(event: RunEventV1): ResearchRunStatusV1 | null {
+  if (event.type === "run.completed") return "completed";
+  if (event.type === "run.failed") return "failed";
+  if (event.type === "run.cancelled") return "cancelled";
+  if (
+    event.type === "run.status"
+    && typeof event.data.status === "string"
+    && ["completed", "failed", "cancelled", "expired"].includes(event.data.status)
+  ) {
+    return event.data.status as ResearchRunStatusV1;
+  }
+  return null;
+}
+
+function parseFinalManifest(
+  value: unknown,
+  runId: string,
+  events: readonly RunEventV1[],
+): RunManifestV1 | undefined {
+  if (value === undefined) return undefined;
+  const parsed = parseRunManifestV1(value);
+  if (!parsed.ok || parsed.value.runId !== runId) {
+    throw new ResearchRunEventLogError("research Run finalized manifest is malformed");
+  }
+  const terminalEvent = events.find((event) => terminalStatusForEvent(event) !== null);
+  if (
+    !terminalEvent
+    || parsed.value.state !== "final"
+    || parsed.value.finalizedAt !== terminalEvent.at
+  ) {
+    throw new ResearchRunEventLogError(
+      "research Run finalized manifest does not match its terminal event",
+    );
+  }
+  return parsed.value;
 }
 
 function assertSafeEventData(event: RunEventV1): void {
@@ -305,11 +351,13 @@ function parseEventLog(value: unknown, runId: string): ResearchRunEventLog {
     );
   }
   const projection = parseProjection(value.projection);
+  const finalManifest = parseFinalManifest(value.finalManifest, runId, events);
   return {
     version: EVENT_LOG_VERSION,
     runId,
     events,
     ...(projection ? { projection } : {}),
+    ...(finalManifest ? { finalManifest } : {}),
   };
 }
 
@@ -352,6 +400,10 @@ function canonicalProjection(value: ResearchRunObservedProjection | undefined): 
   return value === undefined ? "<absent>" : canonicalJson(value);
 }
 
+function canonicalFinalManifest(value: RunManifestV1 | undefined): string {
+  return value === undefined ? "<absent>" : canonicalJson(value);
+}
+
 function validateProjection(projection: ResearchRunObservedProjection | undefined): void {
   if (projection === undefined) return;
   if (!STATUS_SET.has(projection.status)
@@ -387,6 +439,7 @@ async function appendResearchRunEventsUnlocked(
   runId: string,
   events: readonly RunEventV1[],
   projection?: ResearchRunObservedProjection,
+  finalManifest?: RunManifestV1,
 ): Promise<ResearchRunEventLog> {
   const current = await readResearchRunEventLogUnlocked(runId);
   const existingEvents = current?.events ?? [];
@@ -421,6 +474,24 @@ async function appendResearchRunEventsUnlocked(
       `research Run event log sequence is invalid: ${sequence.error.message}`,
     );
   }
+  const suppliedFinalManifest = parseFinalManifest(finalManifest, runId, nextEvents);
+  if (
+    current?.finalManifest
+    && suppliedFinalManifest
+    && canonicalFinalManifest(current.finalManifest)
+      !== canonicalFinalManifest(suppliedFinalManifest)
+  ) {
+    throw new ResearchRunEventLogError("research Run finalized manifest is immutable");
+  }
+  const nextFinalManifest = current?.finalManifest ?? suppliedFinalManifest;
+  if (
+    nextEvents.some((event) => terminalStatusForEvent(event) !== null)
+    && !nextFinalManifest
+  ) {
+    throw new ResearchRunEventLogError(
+      "a finalized Run manifest is required with the terminal event",
+    );
+  }
   const next: ResearchRunEventLog = {
     version: EVENT_LOG_VERSION,
     runId,
@@ -430,10 +501,13 @@ async function appendResearchRunEventsUnlocked(
       : current?.projection !== undefined
         ? { projection: current.projection }
         : {}),
+    ...(nextFinalManifest ? { finalManifest: nextFinalManifest } : {}),
   };
   const changed = current === null
     || nextEvents.length !== current.events.length
-    || canonicalProjection(next.projection) !== canonicalProjection(current.projection);
+    || canonicalProjection(next.projection) !== canonicalProjection(current.projection)
+    || canonicalFinalManifest(next.finalManifest)
+      !== canonicalFinalManifest(current.finalManifest);
   if (changed) {
     const serialized = JSON.stringify(next, null, 2);
     if (Buffer.byteLength(serialized, "utf8") > MAX_EVENT_LOG_BYTES) {
@@ -454,9 +528,10 @@ export async function appendResearchRunEventsWithinMissionLock(
   runId: string,
   events: readonly RunEventV1[],
   projection?: ResearchRunObservedProjection,
+  finalManifest?: RunManifestV1,
 ): Promise<ResearchRunEventLog> {
   validateAppendRequest(runId, events, projection);
-  return appendResearchRunEventsUnlocked(runId, events, projection);
+  return appendResearchRunEventsUnlocked(runId, events, projection, finalManifest);
 }
 
 /**
@@ -469,11 +544,12 @@ export async function appendResearchRunEvents(
   runId: string,
   events: readonly RunEventV1[],
   projection?: ResearchRunObservedProjection,
+  finalManifest?: RunManifestV1,
 ): Promise<ResearchRunEventLog> {
   const missionId = validateAppendRequest(runId, events, projection);
   return withResearchMissionActionLock(
     missionId,
-    () => appendResearchRunEventsUnlocked(runId, events, projection),
+    () => appendResearchRunEventsUnlocked(runId, events, projection, finalManifest),
   );
 }
 

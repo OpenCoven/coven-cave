@@ -20,7 +20,10 @@ export async function GET(
   const authorized = await authorizeResearchRunRequest(req, id);
   if (!authorized.ok) return authorized.response;
   try {
-    const result = await loadResearchRunGateway(authorized.value.missionId);
+    const result = await loadResearchRunGateway(
+      authorized.value.missionId,
+      authorized.value.requestedRunId ?? undefined,
+    );
     if (!result) {
       return NextResponse.json({ ok: false, error: "research run not found" }, { status: 404 });
     }

@@ -15,6 +15,18 @@ test("gateway routes use the local origin and familiar ownership gates", () => {
   assert.match(access, /requireFamiliar/);
   assert.match(access, /mission\.familiarId !== familiarId/);
   assert.match(access, /research run not found/);
+  assert.match(
+    access,
+    /requestedRunId/,
+    "authorization must preserve an explicitly requested canonical run generation",
+  );
+  for (const source of [snapshot, route("events"), route("stream")]) {
+    assert.match(
+      source,
+      /authorized\.value\.requestedRunId/,
+      "every route must pass the exact requested run generation to the gateway",
+    );
+  }
 });
 
 test("replay and SSE routes preserve cursor semantics and clean up watchers", () => {
@@ -29,20 +41,35 @@ test("replay and SSE routes preserve cursor semantics and clean up watchers", ()
   assert.match(stream, /watchResearchRunSources/);
   assert.match(
     stream,
-    /subscribeBeforeInitialResearchRunRead\([\s\S]*?\(\) => replayResearchRunGateway\(/,
+    /subscribeBeforeInitialResearchRunRead\([\s\S]*?\(\) => replayForStream\(afterSeq\)/,
   );
   assert.match(stream, /stopWatching\?\.\(\)/);
   assert.match(stream, /clearInterval\(heartbeat\)/);
   assert.match(stream, /: ping/);
   assert.match(
     stream,
-    /watchResearchRunSources\(authorized\.value\.missionId, notify, signalWatcherFailure\)/,
+    /watchResearchRunSources\([\s\S]*?authorized\.value\.missionId,[\s\S]*?notify,[\s\S]*?signalWatcherFailure,[\s\S]*?requestedRunId/,
     "watcher failures must reach the stream owner instead of leaving heartbeat-only SSE open",
   );
   assert.match(
     stream,
     /signalWatcherFailure[\s\S]*?cleanup\(\)[\s\S]*?controller\.close\(\)/,
     "a watcher failure must close the SSE stream so EventSource reconnects",
+  );
+  assert.match(
+    stream,
+    /authorized\.value\.requestedRunId \?\? undefined[\s\S]*?watchResearchRunSources/,
+    "SSE watcher selection must distinguish current mission aliases from exact run ids",
+  );
+  assert.match(
+    stream,
+    /!requestedRunId \|\| requestedRunId === authorizedRunId/,
+    "an exact selector that still names the current run must watch mission transitions",
+  );
+  assert.match(
+    stream,
+    /page\.run\.id !== streamedRunId[\s\S]*?cursor = 0[\s\S]*?snapshotSent = false[\s\S]*?rebindWatching\(page\.run\.id\)/,
+    "a live current-selector generation change must reset replay and publish a fresh snapshot",
   );
 });
 

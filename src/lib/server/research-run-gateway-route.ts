@@ -14,6 +14,7 @@ import type { ResearchMission } from "../research-missions.ts";
 export type AuthorizedResearchRunRequest = {
   familiarId: string;
   missionId: string;
+  requestedRunId: string | null;
   mission: ResearchMission;
 };
 
@@ -66,5 +67,13 @@ export async function authorizeResearchRunRequest(
   if (!mission || mission.familiarId !== familiarId) {
     return { ok: false, response: notFound() };
   }
-  return { ok: true, value: { familiarId, missionId, mission } };
+  return {
+    ok: true,
+    value: {
+      familiarId,
+      missionId,
+      requestedRunId: rawId.startsWith("run_") ? rawId : null,
+      mission,
+    },
+  };
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   replayResearchRunGateway,
+  ResearchRunGatewayError,
   subscribeBeforeInitialResearchRunRead,
   watchResearchRunSources,
 } from "@/lib/server/research-run-gateway";
@@ -9,6 +10,7 @@ import {
   authorizeResearchRunRequest,
   researchRunGatewayErrorResponse,
 } from "@/lib/server/research-run-gateway-route";
+import { researchRunIdForMissionId } from "@/lib/server/research-run-gateway-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -49,10 +51,41 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "invalid event cursor" }, { status: 400 });
   }
   const afterSeq = Math.max(requestedQuery, requestedHeader);
+  const requestedRunId = authorized.value.requestedRunId ?? undefined;
+  const authorizedRunId = researchRunIdForMissionId(
+    authorized.value.missionId,
+    authorized.value.mission.runGeneration ?? 1,
+  );
+  const watchMissionSource =
+    !requestedRunId || requestedRunId === authorizedRunId;
+  const replayForStream = async (cursor: number) => {
+    try {
+      return await replayResearchRunGateway(
+        authorized.value.missionId,
+        cursor,
+        STREAM_PAGE_SIZE,
+        requestedRunId,
+      );
+    } catch (error) {
+      if (
+        !requestedRunId
+        && error instanceof ResearchRunGatewayError
+        && error.code === "cursor"
+      ) {
+        return replayResearchRunGateway(
+          authorized.value.missionId,
+          0,
+          STREAM_PAGE_SIZE,
+        );
+      }
+      throw error;
+    }
+  };
   let publishOnChange = () => {};
   let initial;
   let activateWatching: (() => void) | null = null;
   let stopWatching: (() => void) | null = null;
+  let rebindWatching = (_runId: string) => {};
   let watcherFailure: unknown = null;
   let closeStreamForWatcherFailure = () => {};
   const signalWatcherFailure = (error: unknown) => {
@@ -61,17 +94,25 @@ export async function GET(
   };
   try {
     const opened = await subscribeBeforeInitialResearchRunRead(
-      (notify) => watchResearchRunSources(authorized.value.missionId, notify, signalWatcherFailure),
+      (notify) => {
+        const subscription = watchResearchRunSources(
+          authorized.value.missionId,
+          notify,
+          signalWatcherFailure,
+          undefined,
+          requestedRunId ?? authorizedRunId,
+          watchMissionSource,
+        );
+        rebindWatching = subscription.rebind;
+        return subscription.stop;
+      },
       () => publishOnChange(),
-      () => replayResearchRunGateway(
-        authorized.value.missionId,
-        afterSeq,
-        STREAM_PAGE_SIZE,
-      ),
+      () => replayForStream(afterSeq),
     );
     initial = opened.value;
     activateWatching = opened.activate;
     stopWatching = opened.stopWatching;
+    if (!requestedRunId && initial) rebindWatching(initial.run.id);
   } catch (error) {
     return researchRunGatewayErrorResponse(error);
   }
@@ -86,7 +127,8 @@ export async function GET(
 
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let closed = false;
-  let cursor = afterSeq;
+  let cursor = initial.afterSequence;
+  let streamedRunId = initial.run.id;
   let publishChain = Promise.resolve();
   const encoder = new TextEncoder();
 
@@ -94,6 +136,7 @@ export async function GET(
     closed = true;
     publishOnChange = () => {};
     activateWatching = null;
+    rebindWatching = () => {};
     closeStreamForWatcherFailure = () => {};
     stopWatching?.();
     stopWatching = null;
@@ -117,14 +160,18 @@ export async function GET(
           if (closed) return;
           let page = firstPage
             ? initial!
-            : await replayResearchRunGateway(
-              authorized.value.missionId,
-              cursor,
-              STREAM_PAGE_SIZE,
-            );
+            : await replayForStream(cursor);
           let snapshotSent = !includeSnapshot;
           while (page) {
             if (closed) return;
+            if (!requestedRunId && page.run.id !== streamedRunId) {
+              cursor = 0;
+              page = await replayForStream(0);
+              snapshotSent = false;
+              if (!page) break;
+              rebindWatching(page.run.id);
+              streamedRunId = page.run.id;
+            }
             if (!snapshotSent) {
               controller.enqueue(sseFrame("snapshot", {
                 run: page.run,
@@ -133,6 +180,7 @@ export async function GET(
                 afterSeq: cursor,
               }));
               snapshotSent = true;
+              streamedRunId = page.run.id;
             }
             for (const event of page.events) {
               if (event.sequence <= cursor) continue;
@@ -140,11 +188,7 @@ export async function GET(
               cursor = event.sequence;
             }
             if (!page.hasMore) break;
-            page = await replayResearchRunGateway(
-              authorized.value.missionId,
-              cursor,
-              STREAM_PAGE_SIZE,
-            );
+            page = await replayForStream(cursor);
             if (!page) break;
           }
         }).catch(() => {

@@ -408,6 +408,25 @@ test("Continue after completed or cancelled starts a replay-safe canonical run g
       (await loadResearchRunEventLog(final.run.id))?.events.at(-1)?.type,
       "run.completed",
     );
+
+    const historical = await loadResearchRunGateway(missionId, first.run.id);
+    assert.ok(historical);
+    assert.equal(historical.run.id, first.run.id);
+    assert.equal(historical.run.status, terminalStatus);
+    assert.deepEqual(historical.run.artifactManifest, first.run.artifactManifest);
+    const historicalReplay = await replayResearchRunGateway(
+      missionId,
+      0,
+      20,
+      first.run.id,
+    );
+    assert.ok(historicalReplay);
+    assert.equal(historicalReplay.run.id, first.run.id);
+    assert.equal(historicalReplay.events.at(-1)?.type, terminalType);
+    assert.equal(
+      await loadResearchRunGateway(missionId, `run_${missionId}_g99`),
+      null,
+    );
   }
 });
 
@@ -430,6 +449,8 @@ test("archiving a terminal mission updates projection without duplicating its te
     assert.ok(before);
     const beforeLog = await loadResearchRunEventLog(before.run.id);
     assert.ok(beforeLog);
+    const finalizedManifest = before.run.artifactManifest;
+    assert.ok(finalizedManifest);
 
     await saveResearchMission({
       ...terminalMission,
@@ -448,6 +469,12 @@ test("archiving a terminal mission updates projection without duplicating its te
     const afterLog = await loadResearchRunEventLog(before.run.id);
     assert.deepEqual(afterLog?.events, beforeLog.events);
     assert.equal(afterLog?.projection?.missionUpdatedAt, "2026-08-30T12:06:00.000Z");
+    assert.deepEqual(archived.run.artifactManifest, finalizedManifest);
+    assert.equal(
+      archived.run.artifactManifest?.finalizedAt,
+      "2026-08-30T12:05:00.000Z",
+    );
+    assert.equal(archived.run.artifactManifest?.digest, finalizedManifest.digest);
   }
 });
 
@@ -489,7 +516,7 @@ test("a later watcher error stops every watcher and signals the SSE owner", () =
   const watchers = [new FakeWatcher(), new FakeWatcher()];
   let nextWatcher = 0;
   const failures: Error[] = [];
-  const stop = researchRunGateway.watchResearchRunSources(
+  const subscription = researchRunGateway.watchResearchRunSources(
     "gateway-watch-error",
     () => {},
     (error) => failures.push(error as Error),
@@ -502,8 +529,75 @@ test("a later watcher error stops every watcher and signals the SSE owner", () =
   watchers[1].emit("error", new Error("watcher lost"));
   assert.deepEqual(failures.map((error) => error.message), ["watcher lost"]);
   assert.equal(watchers.every((watcher) => watcher.closed), true);
-  stop();
+  subscription.stop();
   assert.deepEqual(failures.map((error) => error.message), ["watcher lost"]);
+});
+
+test("watching current and exact run selectors binds the right generation ledgers", async () => {
+  class FakeWatcher extends EventEmitter {
+    closed = false;
+    close() {
+      this.closed = true;
+    }
+  }
+  type Listener = (event: string, filename: string | Buffer | null) => void;
+  const currentWatchers: FakeWatcher[] = [];
+  const currentListeners: Listener[] = [];
+  let currentChanges = 0;
+  const currentSubscription = researchRunGateway.watchResearchRunSources(
+    "gateway-watch-generation",
+    () => { currentChanges += 1; },
+    () => {},
+    {
+      existsSync: () => true,
+      watch: (_path, _options, listener) => {
+        currentListeners.push(listener);
+        const watcher = new FakeWatcher();
+        currentWatchers.push(watcher);
+        return watcher as unknown as FSWatcher;
+      },
+    },
+    "run_gateway-watch-generation",
+    true,
+  );
+  currentListeners[1]("change", "run_gateway-watch-generation_g2.json");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(currentChanges, 0, "the current selector starts on its resolved exact ledger");
+  currentSubscription.rebind("run_gateway-watch-generation_g2");
+  currentListeners[1]("change", "run_gateway-watch-generation_g2.json");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(currentChanges, 1, "generation changes rebind the existing ledger watcher");
+  currentSubscription.stop();
+  assert.equal(currentWatchers.every((watcher) => watcher.closed), true);
+
+  const exactWatchers: FakeWatcher[] = [];
+  const exactListeners: Listener[] = [];
+  let exactChanges = 0;
+  const exactSubscription = researchRunGateway.watchResearchRunSources(
+    "gateway-watch-generation",
+    () => { exactChanges += 1; },
+    () => {},
+    {
+      existsSync: () => true,
+      watch: (_path, _options, listener) => {
+        exactListeners.push(listener);
+        const watcher = new FakeWatcher();
+        exactWatchers.push(watcher);
+        return watcher as unknown as FSWatcher;
+      },
+    },
+    "run_gateway-watch-generation_g2",
+    false,
+  );
+  assert.equal(exactWatchers.length, 1, "an exact historical selector needs only its ledger");
+  exactListeners[0]("change", "run_gateway-watch-generation_g3.json");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(exactChanges, 0);
+  exactListeners[0]("change", "run_gateway-watch-generation_g2.json");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(exactChanges, 1);
+  exactSubscription.stop();
+  assert.equal(exactWatchers.every((watcher) => watcher.closed), true);
 });
 
 test("invalid mission ids cannot be projected", () => {

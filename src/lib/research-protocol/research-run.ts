@@ -2001,7 +2001,13 @@ export function validateRunEventSequence(
         "A terminal Run event may be followed only by retention or deletion administration",
       );
     }
-    if (TERMINAL_RUN_EVENT_TYPES.has(event.type)) {
+    if (
+      TERMINAL_RUN_EVENT_TYPES.has(event.type)
+      || (
+        event.type === "run.status"
+        && TERMINAL_RUN_STATUSES.has(event.data.status as string)
+      )
+    ) {
       terminalEventSeen = true;
     }
   }
