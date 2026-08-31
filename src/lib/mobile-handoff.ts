@@ -565,6 +565,21 @@ function serveRouteProtocol(status: TailscaleServeStatus, host: string) {
   return port === "443" ? ("https" as const) : ("unknown" as const);
 }
 
+export function normalizeLoopbackBackendUrl(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (url.protocol !== "http:") return null;
+    if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(hostname)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 // Tailscale may store the proxy target with a trailing slash or as `localhost`
 // rather than the `http://127.0.0.1:<port>` we asked for. Normalize both sides
 // so the lookup doesn't fail on cosmetic differences.

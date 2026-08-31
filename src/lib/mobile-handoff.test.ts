@@ -48,11 +48,12 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       typeof module.assessServeOwnership,
       typeof module.serveRouteOwnedByBackend,
       typeof module.packagedServeMayTakeOverHealthyLoopback,
+      typeof module.normalizeLoopbackBackendUrl,
       typeof module.claimTailscaleServeRoute,
       typeof module.resetTailscaleServeRoute,
       typeof module.serveResetAllowsCredentialRetirement,
     ],
-    ["function", "function", "function", "function", "function", "function", "function"],
+    ["function", "function", "function", "function", "function", "function", "function", "function"],
     "Serve ownership exposes one canonical claim/reset protocol",
   );
 
@@ -73,6 +74,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       backend: string,
       env: Record<string, string | undefined>,
     ) => boolean;
+  const normalizeLoopbackBackendUrl =
+    module.normalizeLoopbackBackendUrl as (
+      backend: string | null | undefined,
+    ) => string | null;
   const claimTailscaleServeRoute = module.claimTailscaleServeRoute as (
     options: Record<string, unknown>,
   ) => Promise<{ kind: string; status?: unknown }>;
@@ -426,6 +431,47 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       },
     },
   };
+  {
+    const ipv6Backend = "http://[::1]:3007";
+    assert.equal(
+      normalizeLoopbackBackendUrl(`${ipv6Backend}/api/familiars`),
+      ipv6Backend,
+      "a bracketed IPv6 loopback override remains selected instead of falling back to IPv4",
+    );
+
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: normalizeLoopbackBackendUrl(ipv6Backend),
+      env: { PORT: "3000" },
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) return commandResult({ stdout: "{}" });
+        if (commands.length === 2) return commandResult();
+        return commandResult({
+          stdout: JSON.stringify({
+            TCP: { "443": { HTTPS: true } },
+            Web: {
+              [`${serveHost}:443`]: {
+                Handlers: { "/": { Proxy: ipv6Backend } },
+              },
+            },
+          }),
+        });
+      },
+    });
+    assert.equal(result.kind, "claimed");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "--bg", ipv6Backend],
+        ["serve", "status", "--json"],
+      ],
+      "Serve ownership claims and verifies the selected bracketed IPv6 backend",
+    );
+  }
   {
     const commands: string[][] = [];
     const result = await claimTailscaleServeRoute({

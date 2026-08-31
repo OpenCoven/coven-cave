@@ -103,6 +103,11 @@ assert.match(
 );
 assert.match(
   route,
+  /normalizeLoopbackBackendUrl\(process\.env\.COVEN_CAVE_NATIVE_APP_BACKEND_URL\)/,
+  "native app backend selection uses the shared normalizer that preserves bracketed IPv6 loopback origins",
+);
+assert.match(
+  route,
   /if \(mutation\.cleanupFailed\) \{\s*\n\s*return \{\s*\n\s*ok: false as const,\s*\n\s*response: tailscaleCleanupFailureResponse\(mutation, backend\),/,
   "a timed-out Serve mutation aborts before post-status discovery",
 );

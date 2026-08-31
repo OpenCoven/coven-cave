@@ -21,6 +21,7 @@ import {
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
+  normalizeLoopbackBackendUrl,
   packagedServeMayTakeOverHealthyLoopback,
   parseTailscaleServeStatus as parseServeStatus,
   resetTailscaleServeRoute,
@@ -57,20 +58,8 @@ function backendUrl() {
   return `http://127.0.0.1:${trustedBackendPort()}`;
 }
 
-function normalizeLoopbackBackend(value: string | null | undefined) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:") return null;
-    if (!["127.0.0.1", "localhost", "::1"].includes(url.hostname)) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
 function nativeAppBackendUrl() {
-  const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
+  const configured = normalizeLoopbackBackendUrl(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
   // App mode is token-gated (`pnpm mobile:tailscale:app` mints the mobile
@@ -131,7 +120,7 @@ function mobileAccessSecret() {
 // secret, so a packaged user needs no dev checkout to pair a phone (cave-gzje).
 function nativeTokenlessMode() {
   if (process.env.COVEN_CAVE_TAILNET_TRUST === "1") return true;
-  return Boolean(normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
+  return Boolean(normalizeLoopbackBackendUrl(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
 }
 
 function mobileUnavailableResponse(
