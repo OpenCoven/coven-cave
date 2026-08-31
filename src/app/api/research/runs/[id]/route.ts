@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  ResearchRunGatewayError,
-  loadResearchRunGateway,
-} from "@/lib/server/research-run-gateway";
+import { loadResearchRunGateway } from "@/lib/server/research-run-gateway";
 import {
   authorizeResearchRunRequest,
   researchRunGatewayErrorResponse,
@@ -34,7 +31,6 @@ export async function GET(
       nextEventSequence: result.nextEventSequence,
     });
   } catch (error) {
-    if (error instanceof ResearchRunGatewayError) return researchRunGatewayErrorResponse(error);
     return researchRunGatewayErrorResponse(error);
   }
 }
