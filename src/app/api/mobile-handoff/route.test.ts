@@ -47,5 +47,25 @@ assert.match(
   /function runTailscaleOnce\(args: string\[\], timeoutMs = 8000\): Promise<TailscaleResult> \{/,
   "the single-attempt spawn logic is a separate function the retry wrapper calls twice at most",
 );
+assert.match(
+  route,
+  /const TAILSCALE_TERMINATION_FAILED =\s*\n\s*"Tailscale command timed out and its process tree could not be stopped";/,
+  "failed timeout cleanup has a distinct non-retryable result",
+);
+assert.match(
+  route,
+  /const terminated = await terminateProcessTree\(child\);\s*\n\s*finish\(\{\s*\n\s*ok: false,\s*\n\s*status: null,\s*\n\s*stdout: stdout\.text\(\),\s*\n\s*stderr: terminated \? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,/,
+  "the timeout result waits for process-tree termination and reports cleanup failure",
+);
+assert.match(
+  route,
+  /child\.on\("close", \(status\) => \{\s*\n\s*if \(timedOut\) return;/,
+  "a timed-out child's close event cannot resolve before process-tree cleanup completes",
+);
+assert.match(
+  route,
+  /child\.on\("error", \(error\) => \{\s*\n\s*if \(timedOut\) return;/,
+  "a timed-out child's error event cannot resolve before process-tree cleanup completes",
+);
 
 console.log("mobile-handoff route.test.ts OK");

@@ -44,6 +44,8 @@ type TailscaleResult = {
 };
 
 const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
+const TAILSCALE_TERMINATION_FAILED =
+  "Tailscale command timed out and its process tree could not be stopped";
 
 // The local Tailscale daemon/system-extension IPC occasionally stalls a
 // single CLI invocation for several seconds (observed on macOS with the
@@ -78,15 +80,14 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
       clearTimeout(timer);
       resolve(result);
     };
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       timedOut = true;
-      void terminateProcessTree(child).then(() => {
-        finish({
-          ok: false,
-          status: null,
-          stdout: stdout.text(),
-          stderr: TAILSCALE_TIMED_OUT,
-        });
+      const terminated = await terminateProcessTree(child);
+      finish({
+        ok: false,
+        status: null,
+        stdout: stdout.text(),
+        stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
       });
     }, timeoutMs);
 
@@ -97,6 +98,7 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
       stderr.append(chunk);
     });
     child.on("error", (error) => {
+      if (timedOut) return;
       const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
       finish({
         ok: false,
@@ -108,15 +110,7 @@ function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleRe
       });
     });
     child.on("close", (status) => {
-      if (timedOut) {
-        finish({
-          ok: false,
-          status: null,
-          stdout: stdout.text(),
-          stderr: TAILSCALE_TIMED_OUT,
-        });
-        return;
-      }
+      if (timedOut) return;
       finish({
         ok: status === 0,
         status,
