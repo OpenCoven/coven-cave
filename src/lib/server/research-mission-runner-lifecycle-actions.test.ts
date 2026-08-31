@@ -313,6 +313,22 @@ function checkpointMission(overrides: Partial<ResearchMission> = {}): ResearchMi
     ...overrides,
   };
 }
+
+test("archive persists the mission-level status it replaced", async () => {
+  for (const status of ["paused", "completed", "failed"] as const) {
+    let stored = checkpointMission({ status });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      saveMission: async (mission) => { stored = structuredClone(mission); },
+    }));
+
+    const archived = await runner.act(stored.id, { action: "archive" });
+    assert.equal(archived.status, "archived");
+    assert.equal(archived.archivedFrom, status);
+    assert.equal(stored.archivedFrom, status);
+  }
+});
+
 test("create/start persists before launch and records the real session", async () => {
   const calls: string[] = [];
   const runner = makeResearchMissionRunner(deps({

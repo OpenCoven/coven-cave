@@ -118,3 +118,48 @@ test("malformed durable logs are rejected instead of repaired or served", async 
   const raw = await readFile(path.join(eventRoot, "run_gateway-malformed.json"), "utf8");
   assert.equal(raw, "{\"version\":1}");
 });
+
+test("append rejects a serialized log over 4 MiB without replacing the readable ledger", async () => {
+  const boundedRunId = "run_gateway-byte-bound";
+  const maximumBytes = 4 * 1024 * 1024;
+  const candidates = Array.from({ length: 20_000 }, (_, index) => ({
+    ...event(index + 1),
+    runId: boundedRunId,
+    data: {
+      status: "scoping",
+      message: "x".repeat(256),
+    },
+  }));
+  const bytesFor = (events: typeof candidates) => Buffer.byteLength(JSON.stringify({
+    version: 1,
+    runId: boundedRunId,
+    events,
+  }, null, 2), "utf8");
+
+  let low = 1;
+  let high = candidates.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (bytesFor(candidates.slice(0, middle)) <= maximumBytes) low = middle;
+    else high = middle - 1;
+  }
+  const belowLimit = candidates.slice(0, low);
+  const crossingEvent = candidates[low];
+  assert.ok(crossingEvent, "the event-count limit must leave room to cross the byte limit");
+  assert.ok(bytesFor(belowLimit) <= maximumBytes);
+  assert.ok(bytesFor([...belowLimit, crossingEvent]) > maximumBytes);
+
+  await appendResearchRunEvents(boundedRunId, belowLimit);
+  const before = await readFile(path.join(root, "events", `${boundedRunId}.json`), "utf8");
+  assert.ok(Buffer.byteLength(before, "utf8") <= maximumBytes);
+
+  await assert.rejects(
+    appendResearchRunEvents(boundedRunId, [crossingEvent]),
+    /event log is too large/i,
+  );
+  assert.equal(
+    await readFile(path.join(root, "events", `${boundedRunId}.json`), "utf8"),
+    before,
+  );
+  assert.equal((await loadResearchRunEventLog(boundedRunId))?.events.length, belowLimit.length);
+});

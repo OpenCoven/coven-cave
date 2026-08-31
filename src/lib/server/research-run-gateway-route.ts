@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { rejectNonLocalRequest } from "./api-security.ts";
+import {
+  rejectNonLocalRequest,
+  rejectResearchRunStreamRequest,
+} from "./api-security.ts";
 import { isValidFamiliarId } from "./familiar-id.ts";
 import { requireFamiliar } from "./familiar-reminder-route.ts";
 import { loadResearchMission } from "./research-mission-store.ts";
@@ -37,11 +40,14 @@ function notFound(): NextResponse {
 export async function authorizeResearchRunRequest(
   req: Request,
   rawId: string,
+  options: { allowValidatedSidecarQuery?: boolean } = {},
 ): Promise<
   | { ok: true; value: AuthorizedResearchRunRequest }
   | { ok: false; response: NextResponse }
 > {
-  const forbidden = rejectNonLocalRequest(req);
+  const forbidden = options.allowValidatedSidecarQuery
+    ? rejectResearchRunStreamRequest(req)
+    : rejectNonLocalRequest(req);
   if (forbidden) return { ok: false, response: forbidden };
 
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() ?? "";

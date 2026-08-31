@@ -53,6 +53,20 @@ export type ResearchRunGatewayReplay = ResearchRunGatewaySnapshot & {
   hasMore: boolean;
 };
 
+export type ResearchRunWatcherDeps = {
+  existsSync: (path: string) => boolean;
+  watch: (
+    path: string,
+    options: { persistent: false },
+    listener: (event: string, filename: string | Buffer | null) => void,
+  ) => FSWatcher;
+};
+
+const DEFAULT_WATCHER_DEPS: ResearchRunWatcherDeps = {
+  existsSync,
+  watch: (path, options, listener) => watch(path, options, listener),
+};
+
 function canonicalTimestamp(value: string, fallback: string): string {
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.getTime())) return fallback;
@@ -109,9 +123,8 @@ function canonicalStatusForMission(mission: ResearchMission): {
     case "cancelled":
       return { status: "cancelled" };
     case "archived": {
-      const latestIteration = mission.iterations.at(-1);
-      if (latestIteration?.status === "completed") return { status: "completed" };
-      if (latestIteration?.status === "failed") {
+      if (mission.archivedFrom === "completed") return { status: "completed" };
+      if (mission.archivedFrom === "failed") {
         return {
           status: "failed",
           failure: {
@@ -459,6 +472,8 @@ export async function replayResearchRunGateway(
 export function watchResearchRunSources(
   missionId: string,
   onChange: () => void,
+  onFailure: (error: unknown) => void,
+  deps: ResearchRunWatcherDeps = DEFAULT_WATCHER_DEPS,
 ): () => void {
   const runId = researchRunIdForMissionId(missionId);
   const specs = [
@@ -472,29 +487,45 @@ export function watchResearchRunSources(
     },
   ];
   const watchers: FSWatcher[] = [];
+  let stopped = false;
   let debounce: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
+    if (stopped) return;
     if (debounce) clearTimeout(debounce);
     debounce = setTimeout(onChange, 40);
   };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (debounce) clearTimeout(debounce);
+    debounce = null;
+    for (const watcher of watchers) {
+      watcher.removeListener("error", fail);
+      watcher.close();
+    }
+  };
+  const fail = (error: unknown) => {
+    if (stopped) return;
+    stop();
+    onFailure(error);
+  };
   for (const spec of specs) {
-    if (!existsSync(spec.dir)) continue;
+    if (!deps.existsSync(spec.dir)) continue;
     try {
-      watchers.push(watch(
+      const watcher = deps.watch(
         /* turbopackIgnore: true */ spec.dir,
         { persistent: false },
         (_event, filename) => {
           if (filename && filename.toString() !== spec.name) return;
           schedule();
         },
-      ));
-    } catch {
-      // An unavailable watcher leaves the initial snapshot truthful. The
-      // browser's EventSource will reconnect and retry the subscription.
+      );
+      watchers.push(watcher);
+      watcher.on("error", fail);
+    } catch (error) {
+      stop();
+      throw error;
     }
   }
-  return () => {
-    if (debounce) clearTimeout(debounce);
-    for (const watcher of watchers) watcher.close();
-  };
+  return stop;
 }

@@ -34,6 +34,16 @@ test("replay and SSE routes preserve cursor semantics and clean up watchers", ()
   assert.match(stream, /stopWatching\?\.\(\)/);
   assert.match(stream, /clearInterval\(heartbeat\)/);
   assert.match(stream, /: ping/);
+  assert.match(
+    stream,
+    /watchResearchRunSources\(authorized\.value\.missionId, notify, signalWatcherFailure\)/,
+    "watcher failures must reach the stream owner instead of leaving heartbeat-only SSE open",
+  );
+  assert.match(
+    stream,
+    /signalWatcherFailure[\s\S]*?cleanup\(\)[\s\S]*?controller\.close\(\)/,
+    "a watcher failure must close the SSE stream so EventSource reconnects",
+  );
 });
 
 test("routes never proxy generic session or autoresearch streams", () => {

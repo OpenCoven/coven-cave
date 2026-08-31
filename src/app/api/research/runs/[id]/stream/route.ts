@@ -37,7 +37,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const authorized = await authorizeResearchRunRequest(req, id);
+  const authorized = await authorizeResearchRunRequest(req, id, {
+    allowValidatedSidecarQuery: true,
+  });
   if (!authorized.ok) return authorized.response;
 
   const url = new URL(req.url);
@@ -51,9 +53,15 @@ export async function GET(
   let initial;
   let activateWatching: (() => void) | null = null;
   let stopWatching: (() => void) | null = null;
+  let watcherFailure: unknown = null;
+  let closeStreamForWatcherFailure = () => {};
+  const signalWatcherFailure = (error: unknown) => {
+    watcherFailure ??= error;
+    closeStreamForWatcherFailure();
+  };
   try {
     const opened = await subscribeBeforeInitialResearchRunRead(
-      (notify) => watchResearchRunSources(authorized.value.missionId, notify),
+      (notify) => watchResearchRunSources(authorized.value.missionId, notify, signalWatcherFailure),
       () => publishOnChange(),
       () => replayResearchRunGateway(
         authorized.value.missionId,
@@ -71,6 +79,10 @@ export async function GET(
     stopWatching();
     return NextResponse.json({ ok: false, error: "research run not found" }, { status: 404 });
   }
+  if (watcherFailure) {
+    stopWatching();
+    return researchRunGatewayErrorResponse(watcherFailure);
+  }
 
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let closed = false;
@@ -82,6 +94,7 @@ export async function GET(
     closed = true;
     publishOnChange = () => {};
     activateWatching = null;
+    closeStreamForWatcherFailure = () => {};
     stopWatching?.();
     stopWatching = null;
     if (heartbeat) clearInterval(heartbeat);
@@ -90,6 +103,15 @@ export async function GET(
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      closeStreamForWatcherFailure = () => {
+        if (closed) return;
+        cleanup();
+        try { controller.close(); } catch { /* client disconnected */ }
+      };
+      if (watcherFailure) {
+        closeStreamForWatcherFailure();
+        return;
+      }
       const publish = (includeSnapshot: boolean, firstPage = false) => {
         publishChain = publishChain.then(async () => {
           if (closed) return;
@@ -138,6 +160,10 @@ export async function GET(
       };
       await publish(true, true);
       if (closed) return;
+      if (watcherFailure) {
+        closeStreamForWatcherFailure();
+        return;
+      }
       activateWatching?.();
 
       heartbeat = setInterval(() => {

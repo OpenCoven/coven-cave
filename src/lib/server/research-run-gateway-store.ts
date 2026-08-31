@@ -7,7 +7,7 @@ import {
   researchMissionsRoot,
 } from "./research-mission-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
-import { writeJsonAtomic } from "./atomic-write.ts";
+import { writeFileAtomic } from "./atomic-write.ts";
 import {
   parseRunEventV1,
   validateRunEventSequence,
@@ -411,7 +411,11 @@ export async function appendResearchRunEvents(
       || nextEvents.length !== current.events.length
       || canonicalProjection(next.projection) !== canonicalProjection(current.projection);
     if (changed) {
-      await writeJsonAtomic(researchRunEventLogPath(runId), next);
+      const serialized = JSON.stringify(next, null, 2);
+      if (Buffer.byteLength(serialized, "utf8") > MAX_EVENT_LOG_BYTES) {
+        throw new ResearchRunEventLogError("research Run event log is too large");
+      }
+      await writeFileAtomic(researchRunEventLogPath(runId), serialized);
     }
     return next;
   });

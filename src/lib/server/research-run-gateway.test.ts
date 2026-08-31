@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { EventEmitter } from "node:events";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import type { FSWatcher } from "node:fs";
 
 import type { ResearchMission } from "../research-missions.ts";
 import {
@@ -103,6 +105,7 @@ test("terminal legacy status receives a metadata-only final manifest", () => {
 test("archived missions preserve a durable completed outcome", () => {
   const completed = researchMissionToCanonicalRun({
     ...mission("gateway-archived-completed", "archived"),
+    archivedFrom: "completed",
     finishedAt: "2026-08-30T12:10:00.000Z",
     iterations: [{
       number: 1,
@@ -117,6 +120,7 @@ test("archived missions preserve a durable completed outcome", () => {
 test("archived missions preserve a durable failed outcome", () => {
   const failed = researchMissionToCanonicalRun({
     ...mission("gateway-archived-failed", "archived"),
+    archivedFrom: "failed",
     lastError: "Provider exhausted its retry budget",
     iterations: [{
       number: 1,
@@ -127,6 +131,20 @@ test("archived missions preserve a durable failed outcome", () => {
   assert.equal(failed.status, "failed");
   assert.equal(failed.legacyMissionStatus, "archived");
   assert.equal(failed.failure?.code, "research_mission_failed");
+});
+
+test("archiving a pause between completed iterations is cancelled, not completed", () => {
+  const paused = researchMissionToCanonicalRun({
+    ...mission("gateway-archived-paused", "archived"),
+    archivedFrom: "paused",
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-30T12:10:00.000Z",
+    }],
+  }, 1);
+  assert.equal(paused.status, "cancelled");
+  assert.equal(paused.legacyMissionStatus, "archived");
 });
 
 test("archived missions without terminal evidence map to cancelled", () => {
@@ -183,6 +201,61 @@ test("subscription is active during the authoritative initial read and closes on
     },
   ), /initial read failed/);
   assert.equal(stopped, 2);
+});
+
+test("watch setup exceptions fail the subscription and close watchers already opened", () => {
+  class FakeWatcher extends EventEmitter {
+    closed = false;
+    close() {
+      this.closed = true;
+    }
+  }
+  const opened = new FakeWatcher();
+  let calls = 0;
+  assert.throws(
+    () => researchRunGateway.watchResearchRunSources(
+      "gateway-watch-setup",
+      () => {},
+      () => {},
+      {
+        existsSync: () => true,
+        watch: () => {
+          calls += 1;
+          if (calls === 1) return opened as unknown as FSWatcher;
+          throw new Error("watch setup unavailable");
+        },
+      },
+    ),
+    /watch setup unavailable/,
+  );
+  assert.equal(opened.closed, true);
+});
+
+test("a later watcher error stops every watcher and signals the SSE owner", () => {
+  class FakeWatcher extends EventEmitter {
+    closed = false;
+    close() {
+      this.closed = true;
+    }
+  }
+  const watchers = [new FakeWatcher(), new FakeWatcher()];
+  let nextWatcher = 0;
+  const failures: Error[] = [];
+  const stop = researchRunGateway.watchResearchRunSources(
+    "gateway-watch-error",
+    () => {},
+    (error) => failures.push(error as Error),
+    {
+      existsSync: () => true,
+      watch: () => watchers[nextWatcher++] as unknown as FSWatcher,
+    },
+  );
+
+  watchers[1].emit("error", new Error("watcher lost"));
+  assert.deepEqual(failures.map((error) => error.message), ["watcher lost"]);
+  assert.equal(watchers.every((watcher) => watcher.closed), true);
+  stop();
+  assert.deepEqual(failures.map((error) => error.message), ["watcher lost"]);
 });
 
 test("invalid mission ids cannot be projected", () => {

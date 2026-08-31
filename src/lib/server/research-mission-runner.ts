@@ -29,6 +29,7 @@ import {
   type ResearchArtifactRef,
   type ResearchMission,
   type ResearchMissionActionInput,
+  type ResearchMissionArchiveSource,
   type ResearchAutomationLink,
   type ResearchSourcePatch,
   type ResearchSourceRef,
@@ -1440,8 +1441,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         });
       }
       if (input.action === "archive") {
+        const archivedFrom = mission.status as ResearchMissionArchiveSource;
         mission = await pauseAutomation(mission, "Mission archived");
-        return saveUpdated({ ...mission, status: "archived" });
+        return saveUpdated({ ...mission, status: "archived", archivedFrom });
       }
       if (input.action === "resume") {
         if (
