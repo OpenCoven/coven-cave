@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
-import { canonicalJson, sha256Digest } from "./research-protocol/digest.ts";
+import {
+  canonicalJson,
+  digestProtocolObject,
+  sha256Digest,
+} from "./research-protocol/digest.ts";
 import type { ResearchRunV1 } from "./research-protocol/research-run.ts";
 import type { RunManifestV1 } from "./research-protocol/run-manifest.ts";
 import {
@@ -27,6 +31,13 @@ import {
 const MANIFEST = JSON.parse(
   await readFile(
     new URL("../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json", import.meta.url),
+    "utf8",
+  ),
+) as RunManifestV1;
+
+const CLOUD_MANIFEST = JSON.parse(
+  await readFile(
+    new URL("../../schemas/research/v1/fixtures/valid/run-manifest-final-cloud.json", import.meta.url),
     "utf8",
   ),
 ) as RunManifestV1;
@@ -105,6 +116,19 @@ function receiptWithValidDigest(
   return {
     ...unsigned,
     integrityDigest: sha256Digest(canonicalJson(unsigned)),
+  };
+}
+
+function manifestWithChanges(
+  changes: Partial<RunManifestV1>,
+): RunManifestV1 {
+  const candidate = {
+    ...structuredClone(MANIFEST),
+    ...changes,
+  };
+  return {
+    ...candidate,
+    digest: digestProtocolObject(candidate),
   };
 }
 
@@ -244,6 +268,56 @@ test("authority requests are new pending transitions and cannot reopen a resolve
   );
 });
 
+test("completed authority state is terminal and cannot complete with pending requests", () => {
+  const completed = completeResearchRunAuthority(authorityStateWithGrant());
+  assert.throws(
+    () => requestResearchRunAuthority(completed, {
+      id: "request-after-completion",
+      capability: "network.query",
+      requestedAt: "2026-08-16T20:03:00.000Z",
+    }),
+    /completed authority state is terminal/,
+  );
+
+  const pending = requestResearchRunAuthority(createResearchRunAuthorityState(), {
+    id: "request-pending",
+    capability: "network.query",
+    requestedAt: "2026-08-16T20:00:30.000Z",
+  });
+  assert.throws(
+    () => completeResearchRunAuthority(pending),
+    /pending authority requests cannot be completed/,
+  );
+});
+
+test("authority grants require an explicit boolean exercised field", () => {
+  const requested = requestResearchRunAuthority(createResearchRunAuthorityState(), {
+    id: "request-network",
+    capability: "network.query",
+    requestedAt: "2026-08-16T20:00:30.000Z",
+  });
+  const baseGrant = {
+    id: "grant-network",
+    requestId: "request-network",
+    capability: "network.query",
+    grantedAt: "2026-08-16T20:01:00.000Z",
+  };
+  assert.throws(
+    () => grantResearchRunAuthority(
+      requested,
+      baseGrant as Parameters<typeof grantResearchRunAuthority>[1],
+    ),
+    /exercised must be boolean/,
+  );
+  assert.throws(
+    () => grantResearchRunAuthority(requested, {
+      ...baseGrant,
+      exercised: "true",
+    } as unknown as Parameters<typeof grantResearchRunAuthority>[1]),
+    /exercised must be boolean/,
+  );
+});
+
 test("authority validation rejects grants without one matching resolved request", () => {
   const coherent = authorityStateWithGrant();
   const { resolvedAt: _resolvedAt, ...pendingRequest } = coherent.requests[0];
@@ -307,7 +381,6 @@ test("completion receipts contain manifest provenance and a deterministic integr
     ],
     skillId: "research.synthesis",
     skillVersion: "1.4.0",
-    runtime: "cave-device:gpt-5.6-sol",
     citationCount: 6,
     partialFailures: [
       {
@@ -318,7 +391,6 @@ test("completion receipts contain manifest provenance and a deterministic integr
         phase: "challenge",
       },
     ],
-    completedAt: "2026-08-16T20:04:00.000Z",
   });
 
   assert.deepEqual(
@@ -339,11 +411,11 @@ test("completion receipts contain manifest provenance and a deterministic integr
       runId: RUN.id,
       familiarId: "sage",
       skill: ["research.synthesis", "1.4.0"],
-      runtime: "cave-device:gpt-5.6-sol",
+      runtime: "cave-device",
       timestamps: [
         "2026-08-16T19:59:00.000Z",
         "2026-08-16T19:59:00.000Z",
-        "2026-08-16T20:04:00.000Z",
+        "2026-08-16T20:06:00.000Z",
       ],
       planRevisions: [1, 2],
       grants: ["grant-repo-read"],
@@ -375,6 +447,202 @@ test("completion receipts contain manifest provenance and a deterministic integr
   const tampered = JSON.parse(serialized) as Record<string, unknown>;
   tampered.citationCount = 7;
   assert.equal(verifyResearchRunCompletionReceipt(tampered), false);
+});
+
+test("completion receipt provenance comes from one canonically validated terminal run", () => {
+  const divergences: Array<{
+    label: string;
+    run: ResearchRunV1;
+    expected: RegExp;
+  }> = [
+    {
+      label: "context",
+      run: {
+        ...structuredClone(RUN),
+        context: {
+          ...RUN.context!,
+          contextPackDigest: "c".repeat(64),
+        },
+      },
+      expected: /artifactManifest context must match/i,
+    },
+    {
+      label: "model",
+      run: {
+        ...structuredClone(RUN),
+        execution: {
+          ...RUN.execution,
+          modelBinding: {
+            ...RUN.execution.modelBinding,
+            model: "gpt-5-mini",
+          },
+        },
+        artifactManifest: manifestWithChanges({
+          modelExecutions: structuredClone(CLOUD_MANIFEST.modelExecutions),
+          usage: structuredClone(CLOUD_MANIFEST.usage),
+        }),
+      },
+      expected: /effectiveModel must equal the pinned run model/i,
+    },
+    {
+      label: "retention",
+      run: {
+        ...structuredClone(RUN),
+        privacy: {
+          ...RUN.privacy,
+          retention: "run-only",
+        },
+      },
+      expected: /retention policy must match run privacy retention/i,
+    },
+    {
+      label: "chronology",
+      run: {
+        ...structuredClone(RUN),
+        updatedAt: "2026-08-16T20:00:00.000Z",
+      },
+      expected: /artifactManifest.*timestamp|manifest.*updatedAt|chronology/i,
+    },
+    {
+      label: "run binding",
+      run: {
+        ...structuredClone(RUN),
+        artifactManifest: manifestWithChanges({ runId: "run_other" }),
+      },
+      expected: /artifactManifest\.runId must match the enclosing run id/i,
+    },
+  ];
+
+  for (const divergence of divergences) {
+    assert.throws(
+      () => createResearchRunCompletionReceipt(divergence.run),
+      divergence.expected,
+      divergence.label,
+    );
+  }
+});
+
+test("completion receipt manifest overrides cannot replace embedded provenance", () => {
+  const alternateManifest = manifestWithChanges({
+    artifacts: MANIFEST.artifacts.map((artifact, index) =>
+      index === 0 ? { ...artifact, title: "Alternate valid title" } : artifact),
+  });
+  const alternateSources = MANIFEST.sources.map((source, index) =>
+    index === 0 ? { ...source, id: "ctx_alternate_01" } : source);
+  const alternateArtifacts = MANIFEST.artifacts.map((artifact, index) =>
+    index === 0 ? { ...artifact, title: "Alternate valid title" } : artifact);
+
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, { manifest: alternateManifest }),
+    /manifest override must canonically equal the embedded artifactManifest/,
+  );
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, { sourceManifest: alternateSources }),
+    /sourceManifest override must canonically equal the embedded manifest sources/,
+  );
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, { artifactManifest: alternateArtifacts }),
+    /artifactManifest override must canonically equal the embedded manifest artifacts/,
+  );
+
+  assert.doesNotThrow(() =>
+    createResearchRunCompletionReceipt(RUN, {
+      manifest: structuredClone(MANIFEST),
+      sourceManifest: structuredClone(MANIFEST.sources),
+      artifactManifest: structuredClone(MANIFEST.artifacts),
+    }));
+});
+
+test("completion receipt scalar provenance overrides must equal the canonical run", () => {
+  const divergences = [
+    { familiarId: "another-familiar" },
+    { runtime: "user-hosted-executor" },
+    { startedAt: "2026-08-16T20:00:00.000Z" },
+    { completedAt: "2026-08-16T20:05:00.000Z" },
+  ];
+  for (const divergence of divergences) {
+    assert.throws(
+      () => createResearchRunCompletionReceipt(RUN, divergence),
+      /override must match the canonical ResearchRun/,
+    );
+  }
+});
+
+test("completion receipts require a terminal run with an embedded final manifest", () => {
+  const { artifactManifest: _artifactManifest, ...withoutManifest } = structuredClone(RUN);
+  for (const status of ["queued", "publishing"] as const) {
+    assert.throws(
+      () => createResearchRunCompletionReceipt({
+        ...withoutManifest,
+        status,
+      }),
+      /Terminal runs require|completion receipts require a terminal ResearchRun/i,
+      status,
+    );
+  }
+  assert.throws(
+    () => createResearchRunCompletionReceipt({
+      ...withoutManifest,
+    }),
+    /Terminal runs require an embedded final artifactManifest/i,
+  );
+});
+
+test("completion receipt grants derive only from matching validated authority state", () => {
+  const authority = completeResearchRunAuthority(authorityStateWithGrant());
+  assert.throws(
+    () => createResearchRunCompletionReceipt(RUN, {
+      authority,
+      grantsExercised: [{
+        ...authority.grants[0],
+        id: "grant-forged",
+        capability: "repository.write",
+      }],
+    } as unknown as Parameters<typeof createResearchRunCompletionReceipt>[1]),
+    /grantsExercised cannot override validated authority state/,
+  );
+
+  const unexercised = completeResearchRunAuthority(grantResearchRunAuthority(
+    requestResearchRunAuthority(createResearchRunAuthorityState(), {
+      id: "request-network",
+      capability: "network.query",
+      scope: ["example.com"],
+      requestedAt: "2026-08-16T20:00:30.000Z",
+    }),
+    {
+      id: "grant-network",
+      requestId: "request-network",
+      capability: "network.query",
+      scope: ["example.com"],
+      grantedAt: "2026-08-16T20:01:00.000Z",
+      exercised: false,
+    },
+  ));
+  assert.deepEqual(
+    createResearchRunCompletionReceipt(RUN, { authority: unexercised }).grantsExercised,
+    [],
+  );
+});
+
+test("completion receipt validation accepts only explicitly exercised grants", () => {
+  const receipt = createResearchRunCompletionReceipt(RUN, {
+    authority: completeResearchRunAuthority(authorityStateWithGrant()),
+  });
+  for (const exercised of [false, undefined, "true"] as const) {
+    const grant = { ...receipt.grantsExercised[0] } as Record<string, unknown>;
+    if (exercised === undefined) delete grant.exercised;
+    else grant.exercised = exercised;
+    const candidate = receiptWithValidDigest(receipt, {
+      grantsExercised: [grant as ResearchRunCompletionReceiptV1["grantsExercised"][number]],
+    });
+    assert.throws(
+      () => validateResearchRunCompletionReceipt(candidate),
+      exercised === false
+        ? /grantsExercised\[0\]\.exercised must be true/
+        : /grantsExercised\[0\]\.exercised must be boolean/,
+    );
+    assert.equal(verifyResearchRunCompletionReceipt(candidate), false);
+  }
 });
 
 test("completion receipt creation rejects malformed and duplicate manifest provenance", () => {
@@ -460,9 +728,7 @@ test("completion receipts survive an atomic store round trip and reject tamperin
       authority: authorityStateWithGrant(),
       skillId: "research.synthesis",
       skillVersion: "1.4.0",
-      runtime: "cave-device:gpt-5.6-sol",
       citationCount: 2,
-      completedAt: "2026-08-16T20:04:00.000Z",
     });
     await saveResearchRunCompletionReceipt(receipt, root);
     assert.equal(

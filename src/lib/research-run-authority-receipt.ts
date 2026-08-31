@@ -4,15 +4,18 @@ import {
   sha256Digest,
 } from "./research-protocol/digest.ts";
 import {
+  parseEmbeddedRunManifestCandidateV1,
   parseRunManifestArtifactsV1,
   parseRunManifestSourcesV1,
-  parseRunManifestV1,
   type ArtifactRegistrationV1,
   type RunManifestSourceV1,
   type RunManifestV1,
 } from "./research-protocol/run-manifest.ts";
 import { isUtcTimestamp } from "./research-protocol/common.ts";
-import type { ResearchRunV1 } from "./research-protocol/research-run.ts";
+import {
+  parseResearchRunV1,
+  type ResearchRunV1,
+} from "./research-protocol/research-run.ts";
 
 export const RESEARCH_RUN_RECEIPT_SCHEMA = "opencoven.research-run-receipt/v1" as const;
 
@@ -102,7 +105,6 @@ export type ResearchRunCompletionReceiptV1 = {
 export type ResearchRunCompletionReceiptInputV1 = {
   manifest?: RunManifestV1;
   authority?: ResearchRunAuthorityStateV1;
-  grantsExercised?: readonly ResearchRunAuthorityGrantV1[];
   planRevisionHistory?: readonly ResearchRunPlanRevisionV1[];
   sourceManifest?: readonly RunManifestSourceV1[];
   artifactManifest?: readonly ArtifactRegistrationV1[];
@@ -217,11 +219,14 @@ function normalizeRequest(value: unknown, field: string): ResearchRunAuthorityRe
 
 function normalizeGrant(value: unknown, field: string): ResearchRunAuthorityGrantV1 {
   if (!isRecord(value)) throw new TypeError(`${field} must be an object`);
+  if (typeof value.exercised !== "boolean") {
+    throw new TypeError(`${field}.exercised must be boolean`);
+  }
   const grant: ResearchRunAuthorityGrantV1 = {
     id: text(value.id, `${field}.id`),
     capability: text(value.capability, `${field}.capability`),
     grantedAt: utcText(value.grantedAt, `${field}.grantedAt`),
-    exercised: value.exercised === undefined ? true : value.exercised === true,
+    exercised: value.exercised,
   };
   const requestId = optionalText(value.requestId, `${field}.requestId`);
   const mode = optionalText(value.mode, `${field}.mode`);
@@ -267,6 +272,9 @@ export function requestResearchRunAuthority(
   input: ResearchRunAuthorityRequestInputV1,
 ): ResearchRunAuthorityStateV1 {
   const current = validateResearchRunAuthorityState(state);
+  if (current.status === "completed") {
+    throw new TypeError("completed authority state is terminal");
+  }
   const request = normalizeRequest({ ...input, status: input.status ?? "pending" }, "authorityRequest");
   if (request.status !== "pending") {
     throw new TypeError("new authority requests must be pending");
@@ -286,6 +294,9 @@ export function grantResearchRunAuthority(
   input: ResearchRunAuthorityGrantV1,
 ): ResearchRunAuthorityStateV1 {
   const current = validateResearchRunAuthorityState(state);
+  if (current.status === "completed") {
+    throw new TypeError("completed authority state is terminal");
+  }
   const grant = normalizeGrant(input, "authorityGrant");
   const request = current.requests.find((candidate) =>
     candidate.id === grant.requestId && candidate.status === "pending");
@@ -323,7 +334,11 @@ export function grantResearchRunAuthority(
 export function completeResearchRunAuthority(
   state: ResearchRunAuthorityStateV1,
 ): ResearchRunAuthorityStateV1 {
-  return { ...state, status: "completed" };
+  const current = validateResearchRunAuthorityState(state);
+  if (current.requests.some((request) => request.status === "pending")) {
+    throw new TypeError("pending authority requests cannot be completed");
+  }
+  return validateResearchRunAuthorityState({ ...current, status: "completed" });
 }
 
 export function validateResearchRunAuthorityState(
@@ -386,18 +401,73 @@ export function serializeResearchRunAuthorityState(
   return canonicalJson(validateResearchRunAuthorityState(state));
 }
 
-function manifestForReceipt(
+function validatedRunForReceipt(
+  run: ResearchRunV1,
+): ResearchRunV1 & { artifactManifest: RunManifestV1 } {
+  const parsed = parseResearchRunV1(run);
+  if (!parsed.ok) {
+    throw new TypeError(
+      `ResearchRun is invalid at ${parsed.error.path}: ${parsed.error.message}`,
+    );
+  }
+  if (!["completed", "failed", "cancelled", "expired"].includes(parsed.value.status)) {
+    throw new TypeError("completion receipts require a terminal ResearchRun");
+  }
+  if (!parsed.value.artifactManifest || parsed.value.artifactManifest.state !== "final") {
+    throw new TypeError("completion receipts require an embedded final artifactManifest");
+  }
+  return parsed.value as ResearchRunV1 & { artifactManifest: RunManifestV1 };
+}
+
+function assertManifestOverridesMatch(
+  manifest: RunManifestV1,
+  input: ResearchRunCompletionReceiptInputV1,
+): void {
+  if (input.manifest !== undefined) {
+    const parsed = parseEmbeddedRunManifestCandidateV1(input.manifest);
+    if (!parsed.ok) {
+      throw new TypeError(`artifact manifest is invalid: ${parsed.error.message}`);
+    }
+    if (canonicalJson(parsed.value) !== canonicalJson(manifest)) {
+      throw new TypeError(
+        "manifest override must canonically equal the embedded artifactManifest",
+      );
+    }
+  }
+  if (input.sourceManifest !== undefined) {
+    const sources = manifestSources(input.sourceManifest);
+    if (canonicalJson(sources) !== canonicalJson(manifest.sources)) {
+      throw new TypeError(
+        "sourceManifest override must canonically equal the embedded manifest sources",
+      );
+    }
+  }
+  if (input.artifactManifest !== undefined) {
+    const artifacts = manifestArtifacts(input.artifactManifest);
+    if (canonicalJson(artifacts) !== canonicalJson(manifest.artifacts)) {
+      throw new TypeError(
+        "artifactManifest override must canonically equal the embedded manifest artifacts",
+      );
+    }
+  }
+}
+
+function assertScalarProvenanceOverridesMatch(
   run: ResearchRunV1,
   input: ResearchRunCompletionReceiptInputV1,
-): RunManifestV1 | undefined {
-  const candidate = input.manifest ?? run.artifactManifest;
-  if (candidate === undefined) return undefined;
-  const parsed = parseRunManifestV1(candidate);
-  if (!parsed.ok) throw new TypeError(`artifact manifest is invalid: ${parsed.error.message}`);
-  if (parsed.value.runId !== run.id) {
-    throw new TypeError("artifact manifest runId must match the receipt runId");
+): void {
+  const canonical = {
+    familiarId: run.execution.modelBinding.familiarId,
+    runtime: run.execution.modelExecution,
+    startedAt: run.createdAt,
+    completedAt: run.updatedAt,
+  };
+  for (const [field, expected] of Object.entries(canonical)) {
+    const supplied = input[field as keyof ResearchRunCompletionReceiptInputV1];
+    if (supplied !== undefined && supplied !== expected) {
+      throw new TypeError(`${field} override must match the canonical ResearchRun`);
+    }
   }
-  return parsed.value;
 }
 
 function manifestSources(value: unknown): RunManifestSourceV1[] {
@@ -473,33 +543,39 @@ export function createResearchRunCompletionReceipt(
   run: ResearchRunV1,
   input: ResearchRunCompletionReceiptInputV1 = {},
 ): ResearchRunCompletionReceiptV1 {
-  const manifest = manifestForReceipt(run, input);
+  const validatedRun = validatedRunForReceipt(run);
+  const manifest = validatedRun.artifactManifest;
+  assertScalarProvenanceOverridesMatch(validatedRun, input);
+  assertManifestOverridesMatch(manifest, input);
   const authority = input.authority
     ? validateResearchRunAuthorityState(input.authority)
     : createResearchRunAuthorityState();
-  const grants = input.grantsExercised ?? authority.grants.filter((grant) => grant.exercised);
-  const sourceManifest = manifestSources(input.sourceManifest ?? manifest?.sources ?? []);
-  const artifactManifest = manifestArtifacts(input.artifactManifest ?? manifest?.artifacts ?? []);
+  if (hasOwn(input as Record<string, unknown>, "grantsExercised")) {
+    throw new TypeError("grantsExercised cannot override validated authority state");
+  }
+  const grants = authority.grants.filter((grant) => grant.exercised === true);
+  const sourceManifest = manifestSources(manifest.sources);
+  const artifactManifest = manifestArtifacts(manifest.artifacts);
   const citationCount = input.citationCount ?? 0;
   safeNonNegativeInteger(citationCount, "citationCount");
 
-  const familiarId = input.familiarId ?? run.execution.modelBinding.familiarId;
+  const familiarId = validatedRun.execution.modelBinding.familiarId;
   const skillId = input.skillId ?? "research";
   const skillVersion = input.skillVersion ?? "unknown";
-  const runtime = input.runtime ?? run.execution.modelExecution;
-  const startedAt = input.startedAt ?? run.createdAt;
-  const completedAt = input.completedAt ?? run.updatedAt;
+  const runtime = validatedRun.execution.modelExecution;
+  const startedAt = validatedRun.createdAt;
+  const completedAt = validatedRun.updatedAt;
   const unsigned: Omit<ResearchRunCompletionReceiptV1, "integrityDigest"> = {
     schema: RESEARCH_RUN_RECEIPT_SCHEMA,
-    runId: safeRunId(run.id),
+    runId: safeRunId(validatedRun.id),
     familiarId: text(familiarId, "familiarId"),
     skillId: text(skillId, "skillId"),
     skillVersion: text(skillVersion, "skillVersion"),
     runtime: text(runtime, "runtime"),
-    createdAt: utcText(run.createdAt, "createdAt"),
+    createdAt: utcText(validatedRun.createdAt, "createdAt"),
     startedAt: utcText(startedAt, "startedAt"),
     completedAt: utcText(completedAt, "completedAt"),
-    planRevisionHistory: normalizePlanHistory(input.planRevisionHistory, run.createdAt),
+    planRevisionHistory: normalizePlanHistory(input.planRevisionHistory, validatedRun.createdAt),
     grantsExercised: grants.map((grant, index) => normalizeGrant(grant, `grantsExercised[${index}]`)),
     sourceManifest,
     artifactManifest,
@@ -543,7 +619,13 @@ export function validateResearchRunCompletionReceipt(
       copied.createdAt as string,
     ),
     grantsExercised: copyRecordArray(copied.grantsExercised, "grantsExercised").map(
-      (grant, index) => normalizeGrant(grant, `grantsExercised[${index}]`),
+      (grant, index) => {
+        const normalized = normalizeGrant(grant, `grantsExercised[${index}]`);
+        if (normalized.exercised !== true) {
+          throw new TypeError(`grantsExercised[${index}].exercised must be true`);
+        }
+        return normalized;
+      },
     ),
     sourceManifest: manifestSources(copied.sourceManifest),
     artifactManifest: manifestArtifacts(copied.artifactManifest),

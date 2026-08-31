@@ -121,6 +121,7 @@ export const SUITES = {
     "src/lib/research-missions.test.ts",
     "src/lib/research-run-event-reducer.test.ts",
     "src/lib/research-run-authority-receipt.test.ts",
+    "src/lib/server/research-run-receipt-store.test.ts",
     "src/lib/research-chat-command.test.ts",
     "src/lib/research-prompt-brief.test.ts",
     "src/lib/research-refine-direction.test.ts",
