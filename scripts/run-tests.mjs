@@ -1449,6 +1449,7 @@ export const SUITES = {
     "scripts/worktree-retention-push.test.mjs",
     "scripts/branch-curator-manual-cleanup-contract.test.mjs",
     "scripts/branch-to-merge-contract.test.mjs",
+    "scripts/pr-squash-message.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
     "scripts/git-hooks-commit-msg.test.mjs",
     "scripts/secret-preflight.test.mjs",

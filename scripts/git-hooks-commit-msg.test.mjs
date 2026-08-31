@@ -28,9 +28,44 @@ function runHook(message) {
 }
 
 {
+  const result = runHook("fix: preserve a human whose name overlaps a model\n\nCo-authored-by: Claude Martin <98765+claude-martin@users.noreply.github.com>\n");
+  assert.equal(result.status, 0, result.stderr);
+}
+
+{
   const result = runHook("fix: reject vendor attribution\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>\n");
   assert.notEqual(result.status, 0, "AI/vendor co-author trailers must be blocked");
   assert.match(result.stderr, /numeric no-reply identity/i);
+}
+
+{
+  const result = runHook("fix: reject linked assistant attribution\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\n");
+  assert.notEqual(result.status, 0, "numeric GitHub identities for AI assistants must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
+}
+
+{
+  const result = runHook("fix: reject generated footer\n\nGenerated with GitHub Copilot\n");
+  assert.notEqual(result.status, 0, "AI-generated attribution footers must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
+}
+
+{
+  const result = runHook("fix: reject broader AI attribution\n\nCo-authored-by: Anthropic <12345+anthropic@users.noreply.github.com>\n");
+  assert.notEqual(result.status, 0, "AI vendor identities must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
+}
+
+{
+  const result = runHook("fix: reject alphanumeric model login\n\nCo-authored-by: GPT-4o <12345+gpt-4o@users.noreply.github.com>\n");
+  assert.notEqual(result.status, 0, "alphanumeric GPT model identities must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
+}
+
+{
+  const result = runHook("fix: reject alternate generated footer\n\nMade with Claude Code\n");
+  assert.notEqual(result.status, 0, "alternate AI attribution footers must be blocked");
+  assert.match(result.stderr, /AI model, assistant, vendor, or coding harness/i);
 }
 
 {

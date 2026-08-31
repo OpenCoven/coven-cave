@@ -84,7 +84,7 @@ test("skill offers a PR as the only path onto main", () => {
   );
   const mergeCommands = skill.match(/^gh pr merge .*$/gm) ?? [];
   assert.ok(
-    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head"'),
+    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"'),
   );
   assert.ok(mergeCommands.every((command) => !command.includes("--delete-branch")));
 });
@@ -112,7 +112,7 @@ test("skill requires all checks on the exact current PR head", () => {
 test("CLAUDE.md documents the same exact-head, patrol-safe merge", () => {
   const mergeCommands = claude.match(/^gh pr merge .*$/gm) ?? [];
   assert.ok(
-    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head"'),
+    mergeCommands.includes('gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"'),
   );
   assert.ok(mergeCommands.every((command) => !command.includes("--delete-branch")));
   assert.ok(claude.includes('test "$actual_head" = "$expected_head"'));
@@ -190,6 +190,10 @@ test("skill carries the repository's no-AI-attribution rule", () => {
   );
   assert.ok(skill.includes("No AI attribution"));
   assert.ok(skill.includes("ID+username@users.noreply.github.com"));
+  assert.ok(skill.includes("node scripts/pr-squash-message.mjs"));
+  assert.ok(skill.includes("squash_subject=$(jq -er .subject"));
+  assert.ok(skill.includes("squash_body=$(jq -er .body"));
+  assert.ok(claude.includes("node scripts/pr-squash-message.mjs"));
 });
 
 test("skill uses the managed worktree command in its documented form", () => {
