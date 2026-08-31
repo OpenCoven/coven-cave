@@ -352,6 +352,13 @@ function runIdForMission(mission: ResearchMission): string {
     : `run_${mission.id}_g${generation}`;
 }
 
+export function researchMissionMatchesRunSelector(
+  mission: ResearchMission,
+  selector: string,
+): boolean {
+  return selector === mission.id || selector === runIdForMission(mission);
+}
+
 export function hydrateResearchRunProjectionInput(
   run: ResearchRunV1,
   historicalValues: readonly unknown[],
@@ -769,7 +776,7 @@ export function selectResearchRunActivity(input: ResearchRunProjectionInput): Re
   return {
     entries: entries
       .slice()
-      .sort((left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence)
+      .sort((left, right) => left.sequence - right.sequence)
       .slice(-MAX_ITEMS),
   };
 }
@@ -1284,8 +1291,16 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
     });
   }
   if (!selectedExport) {
-    const hasPublished = [...artifactsById.values()].some((artifact) => artifact.status === "published");
-    selectedExport = { status: hasPublished ? "exported" : artifactsById.size > 0 ? "ready" : "not_started" };
+    const artifactStatuses = [...artifactsById.values()].map((artifact) => artifact.status);
+    selectedExport = {
+      status: artifactStatuses.includes("published")
+        ? "exported"
+        : artifactStatuses.includes("ready")
+          ? "ready"
+          : artifactStatuses.includes("working")
+            ? "draft"
+            : "not_started",
+    };
   }
   return {
     outline: [...outlineById.values()],

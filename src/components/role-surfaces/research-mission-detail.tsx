@@ -63,6 +63,7 @@ type Props = {
   runGatewayStatus?: "idle" | "loading" | "connected" | "reconnecting" | "error";
   runGatewayError?: string | null;
   onRetryRunGateway?(): void;
+  missionDetailAvailable?: boolean;
   showEvidence: boolean;
   /** Collapse the evidence rail to its spine. Absent = not collapsible here
    *  (focus mode already hides the rail outright). */
@@ -133,6 +134,255 @@ function stopDirectionRun(runId: string | null) {
   });
 }
 
+function HistoricalResearchRunDetail({
+  canonicalRun,
+  runProjections,
+  runProjectionSource,
+  runGatewayStatus,
+  runGatewayError,
+  onRetry,
+}: {
+  canonicalRun?: ResearchRunEventState | null;
+  runProjections?: ResearchRunProjections | null;
+  runProjectionSource?: "canonical" | "legacy" | null;
+  runGatewayStatus: "idle" | "loading" | "connected" | "reconnecting" | "error";
+  runGatewayError?: string | null;
+  onRetry?(): void;
+}) {
+  const run = canonicalRun?.run;
+  const plan = runProjections?.plan;
+  const activity = runProjections?.activity.entries ?? [];
+  const evidence = runProjections?.evidence;
+  const report = runProjections?.report;
+  const evidenceCounts = evidence
+    ? Object.entries(evidence.counts).filter((entry): entry is [string, number] =>
+      typeof entry[1] === "number")
+    : [];
+  const hasEvidence = Boolean(evidence
+    && (
+      evidence.sources.length > 0
+      || evidence.claims.length > 0
+      || evidenceCounts.length > 0
+    ));
+  const hasReport = Boolean(report
+    && (
+      report.outline.length > 0
+      || report.claims.length > 0
+      || report.artifacts.length > 0
+      || report.exportStatus !== "not_started"
+    ));
+  const hasGenerationDetails = Boolean(plan?.revisions.length || hasEvidence || hasReport);
+  const failed = runGatewayStatus === "error" || Boolean(runGatewayError);
+
+  return (
+    <section
+      className="research-mission-detail"
+      aria-labelledby="research-mission-title"
+      data-research-run-id={runProjections?.runId ?? run?.id}
+      data-research-run-projection-source={runProjectionSource ?? undefined}
+    >
+      <div className="research-mission-detail__body" data-evidence-open={false}>
+        <div className="research-desk-center">
+          <header className="research-mission-detail__header">
+            <div>
+              <span className="research-mission-detail__eyebrow">
+                Historical run
+                {run ? (
+                  <>
+                    {" · "}{run.status}
+                    {" · "}
+                    <time dateTime={run.updatedAt}>updated {relativeTime(run.updatedAt) || "just now"}</time>
+                  </>
+                ) : null}
+              </span>
+              <h2 id="research-mission-title">
+                {run?.acceptedTopic.question ?? "Historical research run"}
+              </h2>
+            </div>
+          </header>
+
+          {failed ? (
+            <ErrorState
+              compact
+              headline="Couldn't load historical run"
+              subtitle={runProjectionSource === "canonical"
+                ? "Showing the last complete generation-specific data. Current mission data remains hidden."
+                : "No generation-specific details are available. Current mission data is hidden because it belongs to another run generation."}
+              actions={onRetry ? (
+                <Button size="xs" variant="secondary" onClick={onRetry}>
+                  Retry
+                </Button>
+              ) : undefined}
+            />
+          ) : runGatewayStatus === "loading" ? (
+            <p className="research-desk-block__empty" role="status">
+              Loading historical run history. Current mission data is hidden to keep generations separate.
+            </p>
+          ) : runGatewayStatus === "reconnecting" ? (
+            <p className="research-desk-block__empty" role="status">
+              Reconnecting to historical run history. Showing the last complete generation-specific data.
+            </p>
+          ) : null}
+
+          {plan?.revisions.length ? (
+            <section
+              className="research-desk-block"
+              aria-label="Run plan"
+              data-research-run-projection="plan"
+              data-active-stage={plan.activeStageId}
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Run plan</span>
+                <span className="research-desk-block__aside">
+                  {plan.hasRevision ? `${plan.revisions.length} revisions` : "Original plan"}
+                </span>
+              </div>
+              <ul className="research-desk-activity">
+                {plan.revisions.map((revision) => (
+                  <li key={`revision-${revision.revision}`}>
+                    <em>v{revision.revision}</em>
+                    <span>
+                      {revision.label ?? `Revision ${revision.revision}`}
+                      {revision.reason ? ` · ${revision.reason}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {plan.revised?.stages.length ? (
+                <ul className="research-desk-activity" aria-label="Current plan stages">
+                  {plan.revised.stages.map((stage) => {
+                    const active = plan.activeStageId === stage.id;
+                    const status = stage.status === "active" && !active ? "last recorded" : stage.status;
+                    return (
+                      <li key={`${stage.revision}-${stage.id}`} data-status={active ? "running" : status}>
+                        <em>{status}</em>
+                        <span>
+                          {stage.label}
+                          {stage.attempt > 1 ? ` · attempt ${stage.attempt}` : ""}
+                          {stage.detail ? ` · ${stage.detail}` : ""}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activity.length > 0 ? (
+            <section
+              className="research-desk-block"
+              aria-label="Run activity"
+              data-research-run-projection="activity"
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Run activity</span>
+              </div>
+              <ul className="research-desk-activity" data-source="canonical-research-run">
+                {activity.map((entry) => (
+                  <li key={entry.id}>
+                    <em>#{entry.sequence}</em>
+                    <span>{entry.label}{entry.detail ? ` · ${entry.detail}` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {hasEvidence && evidence ? (
+            <section
+              className="research-desk-block"
+              aria-label="Evidence"
+              data-research-run-projection="evidence"
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Evidence</span>
+                <span className="research-desk-block__aside">
+                  {evidence.sources.length} source{evidence.sources.length === 1 ? "" : "s"}
+                  {" · "}
+                  {evidence.claims.length} claim{evidence.claims.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {evidenceCounts.length > 0 ? (
+                <div className="research-desk-tiles">
+                  {evidenceCounts.map(([label, value]) => (
+                    <div key={label} className="research-desk-tile">
+                      <strong>{value}</strong>
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {evidence.claims.length > 0 ? (
+                <ul className="research-desk-activity">
+                  {evidence.claims.map((claim) => (
+                    <li key={claim.id} data-status={claim.status}>
+                      <em>{claim.status}</em>
+                      <span>{claim.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : evidence.sources.length > 0 ? (
+                <ul className="research-desk-activity">
+                  {evidence.sources.map((source) => (
+                    <li key={source.id} data-status={source.status}>
+                      <em>{source.status}</em>
+                      <span>{source.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
+          {hasReport && report ? (
+            <section
+              className="research-desk-block"
+              aria-label="Report"
+              data-research-run-projection="report"
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Report</span>
+                <span className="research-desk-block__aside">
+                  {report.exportStatus === "exported"
+                    ? `Exported${report.exportDetail ? ` · ${report.exportDetail}` : ""}`
+                    : `Export ${report.exportStatus.replaceAll("_", " ")}`}
+                </span>
+              </div>
+              {report.outline.length > 0 ? (
+                <ul className="research-desk-activity" aria-label="Report outline">
+                  {report.outline.map((item) => (
+                    <li key={item.id} data-status={item.status}>
+                      <em>{item.status}</em>
+                      <span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {report.artifacts.length > 0 ? (
+                <ul className="research-desk-activity" aria-label="Report artifacts">
+                  {report.artifacts.map((artifact) => (
+                    <li key={artifact.id} data-status={artifact.status}>
+                      <em>{artifact.status}</em>
+                      <span>{artifact.title}{artifact.kind ? ` · ${artifact.kind}` : ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
+          {runGatewayStatus === "connected" && !hasGenerationDetails ? (
+            <p className="research-desk-block__empty" role="status">
+              No generation-specific plan, evidence, or report details were recorded for this run.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function ResearchMissionDetail({
   mission,
   canonicalRun,
@@ -141,6 +391,7 @@ export function ResearchMissionDetail({
   runGatewayStatus = "idle",
   runGatewayError,
   onRetryRunGateway,
+  missionDetailAvailable = true,
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
@@ -246,6 +497,24 @@ export function ResearchMissionDetail({
     };
   }, [missionId]);
 
+  const retryCanonicalHistory = () => {
+    announce("Retrying canonical run history.");
+    onRetryRunGateway?.();
+  };
+
+  if (!missionDetailAvailable) {
+    return (
+      <HistoricalResearchRunDetail
+        canonicalRun={canonicalRun}
+        runProjections={runProjections}
+        runProjectionSource={runProjectionSource}
+        runGatewayStatus={runGatewayStatus}
+        runGatewayError={runGatewayError}
+        onRetry={onRetryRunGateway ? retryCanonicalHistory : undefined}
+      />
+    );
+  }
+
   if (!mission) {
     return (
       <section className="research-mission-empty" aria-label="Research mission detail">
@@ -345,10 +614,6 @@ export function ResearchMissionDetail({
     }
     return null;
   })();
-  const retryCanonicalHistory = () => {
-    announce("Retrying canonical run history.");
-    onRetryRunGateway?.();
-  };
   const projectedPlan = runProjections?.plan;
   const projectedActivity = runProjections?.activity.entries ?? [];
   const projectedEvidence = runProjections?.evidence;

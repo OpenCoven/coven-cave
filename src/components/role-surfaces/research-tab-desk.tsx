@@ -386,6 +386,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             runGatewayStatus={canonicalRun.status}
             runGatewayError={canonicalRun.error ?? canonicalRun.projectionError}
             onRetryRunGateway={canonicalRun.retry}
+            missionDetailAvailable={canonicalRun.missionDetailAvailable}
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}

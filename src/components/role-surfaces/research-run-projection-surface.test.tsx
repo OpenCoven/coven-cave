@@ -301,6 +301,7 @@ function Harness({
       runGatewayStatus: gateway.status,
       runGatewayError: gateway.error ?? gateway.projectionError,
       onRetryRunGateway: gateway.retry,
+      missionDetailAvailable: gateway.missionDetailAvailable,
       showEvidence: false,
       onOpenSession: () => {},
       onOpenUrl: () => {},
@@ -423,6 +424,67 @@ describe("Research Desk canonical projection integration", () => {
     await act(async () => renderer.unmount());
   });
 
+  test("sparse production history keeps working artifacts in draft export state", async () => {
+    const workingMission = mission({
+      artifacts: [{
+        key: "report-working",
+        kind: "report",
+        title: "Working report",
+        relativePath: "artifacts/working.md",
+        iteration: 1,
+        state: "working",
+        updatedAt: UPDATED_AT,
+      }, {
+        key: "report-rejected",
+        kind: "report",
+        title: "Rejected report",
+        relativePath: "artifacts/rejected.md",
+        iteration: 1,
+        state: "rejected",
+        updatedAt: UPDATED_AT,
+      }],
+    });
+    const sparseRun = run(RUN_ID, {
+      status: "gathering_public_sources",
+      nextEventSequence: 3,
+      artifactManifest: undefined,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        ok: true,
+        run: sparseRun,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+      }),
+    })));
+    const renderer = await mount(workingMission);
+    const source = FakeEventSource.instances[0];
+
+    await act(async () => {
+      source.emit("snapshot", {
+        run: sparseRun,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {}));
+      source.emit("run-event", event(2, "run.status", {
+        status: "gathering_public_sources",
+        sources: 0,
+        artifacts: 2,
+        iterations: 1,
+      }));
+    });
+
+    const rendered = textOf(renderer.toJSON());
+    expect(rendered).toContain("Working report");
+    expect(rendered).toContain("Rejected report");
+    expect(rendered).toContain("Export draft");
+    expect(rendered).not.toContain("Export ready");
+
+    await act(async () => renderer.unmount());
+  });
+
   test("drops the prior generation before replaying a replacement generation", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       json: async () => ({
@@ -460,7 +522,8 @@ describe("Research Desk canonical projection integration", () => {
       });
     });
     expect(textOf(renderer.toJSON())).not.toContain("Canonical launch");
-    expect(textOf(renderer.toJSON())).toContain("Persisted mission fallback");
+    expect(textOf(renderer.toJSON())).toContain("Loading historical run history.");
+    expect(textOf(renderer.toJSON())).not.toContain("Persisted mission fallback");
 
     await act(async () => {
       source.emit("run-event", event(1, "run.created", {
@@ -616,30 +679,99 @@ describe("Research Desk canonical projection integration", () => {
     expect(currentSource.closed).toBe(true);
   });
 
-  test("an exact historical terminal run never absorbs artifacts from a later mission generation", async () => {
+  test("an exact historical run never exposes the current generation during loading, error, or replay", async () => {
     const currentMission = mission({
       runGeneration: 2,
+      title: "Generation two mission",
+      intent: "Generation two intent",
+      lastError: "Generation two failure",
+      sources: [{
+        id: "future-source",
+        title: "Generation two evidence",
+        sourceType: "web",
+        status: "used",
+      }],
+      iterations: [{
+        number: 2,
+        status: "running",
+        startedAt: "2026-08-31T19:00:00.000Z",
+        steps: [{
+          id: "future-plan",
+          type: "future plan",
+          status: "running",
+          detail: "Generation two plan",
+        }],
+      }],
       artifacts: [{
         key: "future-report",
         kind: "report",
-        title: "Later generation report",
+        title: "Generation two report",
         relativePath: "artifacts/later.md",
         iteration: 2,
         state: "published",
         updatedAt: "2026-08-31T19:00:00.000Z",
       }],
     });
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({
-        ok: true,
-        run: run(),
-        lastEventSequence: 6,
-        nextEventSequence: 7,
-      }),
-    })));
+    let resolveInitial!: (response: { json(): Promise<unknown> }) => void;
+    let resolveRetry!: (response: { json(): Promise<unknown> }) => void;
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveInitial = resolve;
+      }))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRetry = resolve;
+      }));
+    vi.stubGlobal("fetch", fetchMock);
     const renderer = await mount(currentMission, RUN_ID);
-    const source = FakeEventSource.instances[0];
+    const assertNoCurrentGeneration = () => {
+      const rendered = textOf(renderer.toJSON());
+      expect(rendered).not.toContain("Generation two mission");
+      expect(rendered).not.toContain("Generation two intent");
+      expect(rendered).not.toContain("Generation two failure");
+      expect(rendered).not.toContain("Generation two plan");
+      expect(rendered).not.toContain("Generation two evidence");
+      expect(rendered).not.toContain("Generation two report");
+      expect(rendered).not.toContain("Cancel run");
+    };
 
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(textOf(renderer.toJSON())).toContain("Historical research run");
+    expect(textOf(renderer.toJSON())).toContain("Loading historical run history.");
+    assertNoCurrentGeneration();
+
+    await act(async () => {
+      resolveInitial({
+        json: async () => ({ ok: false, error: "historical run unavailable" }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(textOf(renderer.toJSON())).toContain("Couldn't load historical run");
+    assertNoCurrentGeneration();
+
+    const retry = renderer.root.findAllByType("button")
+      .find((button) => textOf(button) === "Retry");
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry!.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveRetry({
+        json: async () => ({
+          ok: true,
+          run: run(),
+          lastEventSequence: 6,
+          nextEventSequence: 7,
+        }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const source = FakeEventSource.instances[0];
     await act(async () => {
       source.emit("snapshot", {
         run: run(),
@@ -650,8 +782,10 @@ describe("Research Desk canonical projection integration", () => {
       for (const item of canonicalEvents()) source.emit("run-event", item);
     });
 
+    expect(textOf(renderer.toJSON())).toContain("Which evidence supports the launch?");
+    expect(textOf(renderer.toJSON())).toContain("Canonical launch");
     expect(textOf(renderer.toJSON())).toContain("Launch report");
-    expect(textOf(renderer.toJSON())).not.toContain("Later generation report");
+    assertNoCurrentGeneration();
 
     await act(async () => renderer.unmount());
   });

@@ -471,6 +471,72 @@ test("Hybrid hydration fills producer-omitted detail without weakening canonical
   assert.equal(projections.report.exportStatus, "ready");
 });
 
+test("Sparse hybrid artifacts derive export state from artifact semantics, not mere presence", () => {
+  const mission = {
+    version: 1,
+    id: "projection_01",
+    familiarId: "sage",
+    title: "Sparse persisted artifacts",
+    intent: "Do not fabricate export readiness",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "running",
+    runGeneration: 1,
+    createdAt: run.createdAt,
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [],
+    sources: [],
+    artifacts: [{
+      key: "artifact-working",
+      kind: "report",
+      title: "Working report",
+      relativePath: "artifacts/working.md",
+      iteration: 1,
+      state: "working",
+      updatedAt: RUN_UPDATED_AT,
+    }, {
+      key: "artifact-rejected",
+      kind: "report",
+      title: "Rejected report",
+      relativePath: "artifacts/rejected.md",
+      iteration: 1,
+      state: "rejected",
+      updatedAt: RUN_UPDATED_AT,
+    }],
+  } as ResearchMission;
+  const gatewayEvents = [
+    event(1, "run.created", {}),
+    event(2, "run.status", {
+      status: "gathering_public_sources",
+      sources: 0,
+      artifacts: 2,
+      iterations: 0,
+    }),
+  ];
+  const snapshot: ResearchRunV1 = {
+    ...run,
+    status: "gathering_public_sources",
+    updatedAt: gatewayEvents[1].at,
+    nextEventSequence: 3,
+  };
+
+  const working = selectResearchRunProjections(
+    hydrateHybridResearchRunProjectionInput(snapshot, gatewayEvents, mission),
+  );
+  const rejectedOnly = selectResearchRunProjections(
+    hydrateHybridResearchRunProjectionInput(snapshot, gatewayEvents, {
+      ...mission,
+      artifacts: [mission.artifacts[1]],
+    }),
+  );
+
+  assert.equal(working.report.exportStatus, "draft");
+  assert.equal(rejectedOnly.report.exportStatus, "not_started");
+});
+
 test("Hybrid detail cannot override canonical publication or immutable manifest metadata", () => {
   const mission = {
     version: 1,
@@ -951,21 +1017,19 @@ test("Activity is chronological and only projects explicit user-safe fields", ()
   assert.equal(activity.entries.some((entry) => entry.detail?.includes("private")), false);
 });
 
-test("Activity retains the newest 200 entries after globally sorting out-of-order events", () => {
+test("Activity retains the newest 200 canonical sequences despite regressing timestamps", () => {
   const eventCount = 205;
   const activityEvents = Array.from({ length: eventCount }, (_, index) => {
     const sequence = index + 1;
-    const chronologicalRank = (sequence * 73) % eventCount;
     return {
-      ...event(sequence, "run.status", { activity: `Activity ${sequence}` }),
-      at: new Date(Date.UTC(2026, 0, 1) + chronologicalRank * 1_000).toISOString(),
+      ...event(
+        sequence,
+        sequence === eventCount ? "run.completed" : "run.status",
+        sequence === eventCount ? {} : { activity: `Activity ${sequence}` },
+      ),
+      at: new Date(Date.UTC(2026, 0, 1) + (eventCount - sequence) * 1_000).toISOString(),
     };
   });
-  const expectedSequences = activityEvents
-    .slice()
-    .sort((left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence)
-    .slice(-200)
-    .map((entry) => entry.sequence);
 
   const activity = selectResearchRunActivity({
     state: {
@@ -975,7 +1039,11 @@ test("Activity retains the newest 200 entries after globally sorting out-of-orde
   });
 
   assert.equal(activity.entries.length, 200);
-  assert.deepEqual(activity.entries.map((entry) => entry.sequence), expectedSequences);
+  assert.deepEqual(
+    activity.entries.map((entry) => entry.sequence),
+    Array.from({ length: 200 }, (_, index) => index + 6),
+  );
+  assert.equal(activity.entries.at(-1)?.label, "Run completed");
 });
 
 test("Evidence maps claims to sources and retains contradiction, rejection, counts, and freshness", () => {

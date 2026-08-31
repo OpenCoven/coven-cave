@@ -18,6 +18,7 @@ import type { ResearchMission } from "@/lib/research-missions";
 import type { ResearchRunV1 } from "@/lib/research-protocol/research-run";
 import {
   hydrateHybridResearchRunProjectionInput,
+  researchMissionMatchesRunSelector,
   researchMissionToRunProjectionInput,
   selectResearchRunProjections,
   type ResearchRunProjections,
@@ -32,6 +33,7 @@ export type ResearchRunGatewayViewState = {
   projections: ResearchRunProjections | null;
   projectionSource: "canonical" | "legacy" | null;
   projectionError: string | null;
+  missionDetailAvailable: boolean;
   retry(): void;
 };
 
@@ -226,6 +228,16 @@ export function useResearchRunGateway(
       status: missionOrRunId ? "loading" as const : "idle" as const,
       error: null,
     };
+  const missionDetailAvailable = Boolean(
+    missionOrRunId
+    && legacyMission
+    && researchMissionMatchesRunSelector(legacyMission, missionOrRunId)
+    && (
+      !currentState.run
+      || researchMissionMatchesRunSelector(legacyMission, currentState.run.id)
+    ),
+  );
+  const projectionMission = missionDetailAvailable ? legacyMission : null;
   const historyComplete = hasCompleteEventHistory(currentState.eventState);
   const projection = useMemo(() => {
     if (historyComplete && currentState.eventState) {
@@ -233,7 +245,7 @@ export function useResearchRunGateway(
         const hydrated = hydrateHybridResearchRunProjectionInput(
           currentState.eventState.run,
           currentState.eventState.appliedEvents,
-          legacyMission,
+          projectionMission,
         );
         return {
           projections: selectResearchRunProjections(hydrated),
@@ -241,10 +253,10 @@ export function useResearchRunGateway(
           projectionError: null,
         };
       } catch {
-        if (legacyMission) {
+        if (projectionMission) {
           return {
             projections: selectResearchRunProjections(
-              researchMissionToRunProjectionInput(legacyMission),
+              researchMissionToRunProjectionInput(projectionMission),
             ),
             projectionSource: "legacy" as const,
             projectionError: "Canonical Research Run history could not be projected",
@@ -257,10 +269,10 @@ export function useResearchRunGateway(
         };
       }
     }
-    if (legacyMission) {
+    if (projectionMission) {
       return {
         projections: selectResearchRunProjections(
-          researchMissionToRunProjectionInput(legacyMission),
+          researchMissionToRunProjectionInput(projectionMission),
         ),
         projectionSource: "legacy" as const,
         projectionError: null,
@@ -271,7 +283,7 @@ export function useResearchRunGateway(
       projectionSource: null,
       projectionError: null,
     };
-  }, [currentState.eventState, historyComplete, legacyMission]);
+  }, [currentState.eventState, historyComplete, projectionMission]);
 
   return {
     run: currentState.run,
@@ -279,6 +291,7 @@ export function useResearchRunGateway(
     status: currentState.status,
     error: currentState.error,
     historyComplete,
+    missionDetailAvailable,
     retry,
     ...projection,
   };

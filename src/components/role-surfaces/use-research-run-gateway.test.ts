@@ -12,6 +12,7 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   assert.match(hook, /createResearchRunEventState/);
   assert.match(hook, /consumeResearchRunEvent/);
   assert.match(hook, /hydrateHybridResearchRunProjectionInput/);
+  assert.match(hook, /researchMissionMatchesRunSelector/);
   assert.match(hook, /selectResearchRunProjections/);
   assert.match(hook, /researchMissionToRunProjectionInput/);
   assert.match(hook, /const \[retryGeneration, setRetryGeneration\] = useState\(0\)/);
@@ -29,7 +30,9 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   );
   assert.match(desk, /data-research-run-gateway-status/);
   assert.match(desk, /onRetryRunGateway=\{canonicalRun\.retry\}/);
+  assert.match(desk, /missionDetailAvailable=\{canonicalRun\.missionDetailAvailable\}/);
   assert.match(detail, /headline="Couldn't load canonical run history"/);
+  assert.match(detail, /headline="Couldn't load historical run"/);
   assert.match(detail, /onRetryRunGateway\?\.\(\)/);
   assert.match(detail, /data-research-run-projection="plan"/);
   assert.match(detail, /data-research-run-projection="activity"/);
