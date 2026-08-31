@@ -243,7 +243,10 @@ const sidebarPrefs = vi.hoisted(() => ({
   pinnedIds: [] as string[],
 }));
 
-vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
+vi.mock("@/lib/use-focus-trap", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/use-focus-trap")>()),
+  useFocusTrap: () => undefined,
+}));
 vi.mock("@/lib/use-minute-tick", () => ({ useMinuteTick: () => 0 }));
 vi.mock("@/lib/use-projects", () => ({ useProjects: () => mockProjects.state }));
 vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
