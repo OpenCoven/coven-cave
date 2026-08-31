@@ -14,10 +14,26 @@ fi
 
 trailer_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:'
 human_identity_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:[[:space:]]+.+[[:space:]]+<[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com>[[:space:]]*$'
+github_identity_re='<[0-9]+\+([A-Za-z0-9-]+)@users\.noreply\.github\.com>'
+ai_login_re='^(copilot|github-copilot|copilot-swe-agent|chatgpt|gpt-[0-9.]+|openai|anthropic|codex|cursor|aider|devin-ai|gemini-ai|grok|xai|meta-ai|mistral-ai|qwen-ai|deepseek-ai|kimi-ai|codeium|windsurf|sourcegraph-cody)$'
+ai_identity_re='(^|[^[:alnum:]])(copilot|claude|chatgpt|gpt(-[0-9.]+)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)([^[:alnum:]]|$)'
+ai_footer_re='(generated|authored|written|assisted|made|powered)[[:space:]]+(with|by)'
+
+shopt -s nocasematch
 
 while IFS= read -r line || [ -n "$line" ]; do
-  if [[ "$line" =~ $trailer_re ]] && ! [[ "$line" =~ $human_identity_re ]]; then
-    printf '%s\n' "[commit-msg blocked] Co-authored-by trailers must credit a person with GitHub's numeric no-reply identity: Full Name <ID+username@users.noreply.github.com>." >&2
+  if [[ "$line" =~ $trailer_re ]]; then
+    if ! [[ "$line" =~ $human_identity_re ]]; then
+      printf '%s\n' "[commit-msg blocked] Co-authored-by trailers must credit a person with GitHub's numeric no-reply identity: Full Name <ID+username@users.noreply.github.com>." >&2
+      exit 1
+    fi
+    [[ "$line" =~ $github_identity_re ]]
+    if [[ "${BASH_REMATCH[1]}" =~ $ai_login_re ]]; then
+      printf '%s\n' "[commit-msg blocked] Do not credit an AI model, assistant, vendor, or coding harness in commit metadata." >&2
+      exit 1
+    fi
+  elif [[ "$line" =~ $ai_footer_re ]] && [[ "$line" =~ $ai_identity_re ]]; then
+    printf '%s\n' "[commit-msg blocked] Do not credit an AI model, assistant, vendor, or coding harness in commit metadata." >&2
     exit 1
   fi
 done < "$message_file"
