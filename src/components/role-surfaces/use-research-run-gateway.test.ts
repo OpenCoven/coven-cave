@@ -19,9 +19,11 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   assert.match(hook, /controller\.abort\(\)/);
   assert.match(
     hook,
-    /researchRunGatewayStreamUrl\(missionOrRunId,\s*familiarId,\s*0,\s*snapshot\.run\.id\)/,
+    /researchRunGatewayStreamUrl\(missionOrRunId,\s*familiarId,\s*0,\s*boundRunId\)/,
     "initial replay must bind its zero cursor to the snapshot run generation",
   );
+  assert.match(hook, /openSource\(snapshot\.run\.id\)/);
+  assert.match(hook, /frame\.run\.id !== boundRunId[\s\S]*?openSource\(frame\.run\.id\)/);
   assert.match(hook, /eventState\.run\.id !== frame\.event\.runId/);
   assert.match(hook, /source\?\.close\(\)/);
   assert.match(

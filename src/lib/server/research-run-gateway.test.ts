@@ -520,7 +520,7 @@ test("Continue after completed or cancelled starts a replay-safe canonical run g
   }
 });
 
-test("current-selector stream reconnect resets a prior-generation browser cursor", async () => {
+test("current-selector stream resets an old cursor once then resumes repeated current-generation reconnects", async () => {
   const missionId = "gateway-stream-rollover";
   const firstMission: ResearchMission = {
     ...mission(missionId, "completed"),
@@ -579,6 +579,66 @@ test("current-selector stream reconnect resets a prior-generation browser cursor
   assert.deepEqual(
     hydrated.appliedEvents.map((event) => event.sequence),
     Array.from({ length: reconnected.lastEventSequence }, (_, index) => index + 1),
+  );
+
+  const firstGenerationTwoReconnect = await replayResearchRunGateway(
+    missionId,
+    1,
+    200,
+    undefined,
+    {
+      requireCursorIdentity: true,
+      cursorRunId: reconnected.run.id,
+    },
+  );
+  assert.ok(firstGenerationTwoReconnect);
+  assert.equal(firstGenerationTwoReconnect.afterSequence, 1);
+  assert.deepEqual(
+    firstGenerationTwoReconnect.events.map((event) => event.sequence),
+    [2],
+  );
+
+  const runningMission = await loadResearchRunGateway(missionId);
+  assert.ok(runningMission);
+  await saveResearchMission({
+    ...firstMission,
+    runGeneration: 2,
+    status: "completed",
+    updatedAt: "2026-08-30T12:07:00.000Z",
+    finishedAt: "2026-08-30T12:07:00.000Z",
+    iterations: [
+      ...firstMission.iterations,
+      {
+        number: 2,
+        status: "completed",
+        startedAt: "2026-08-30T12:06:00.000Z",
+        finishedAt: "2026-08-30T12:07:00.000Z",
+      },
+    ],
+  });
+  globalThis.__caveResearchMissionActionLocks = undefined;
+  const completed = await loadResearchRunGateway(missionId);
+  assert.ok(completed);
+  assert.ok(completed.lastEventSequence > runningMission.lastEventSequence);
+
+  const secondGenerationTwoReconnect = await replayResearchRunGateway(
+    missionId,
+    runningMission.lastEventSequence,
+    200,
+    undefined,
+    {
+      requireCursorIdentity: true,
+      cursorRunId: reconnected.run.id,
+    },
+  );
+  assert.ok(secondGenerationTwoReconnect);
+  assert.equal(
+    secondGenerationTwoReconnect.afterSequence,
+    runningMission.lastEventSequence,
+  );
+  assert.deepEqual(
+    secondGenerationTwoReconnect.events.map((event) => event.sequence),
+    [completed.lastEventSequence],
   );
 });
 

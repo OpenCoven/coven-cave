@@ -92,14 +92,30 @@ export function useResearchRunGateway(
     let stopped = false;
 
     const current = () => !stopped && generation.current === currentGeneration;
-    const applyFrame = (frame: ResearchRunGatewaySseFrame) => {
-      if (!current()) return;
+    const applyFrame = (
+      frame: ResearchRunGatewaySseFrame,
+      candidate: EventSource,
+      boundRunId: string,
+    ) => {
+      if (!current() || source !== candidate) return;
       if (frame.kind === "error") {
-        source?.close();
+        candidate.close();
         setState((previous) => ({ ...previous, status: "error", error: frame.message }));
         return;
       }
       if (frame.kind === "snapshot") {
+        if (frame.run.id !== boundRunId) {
+          candidate.close();
+          setState({
+            selector: missionOrRunId,
+            run: frame.run,
+            eventState: createResearchRunEventState(frame.run),
+            status: "loading",
+            error: null,
+          });
+          openSource(frame.run.id);
+          return;
+        }
         setState((previous) => ({
           selector: missionOrRunId,
           run: frame.run,
@@ -143,6 +159,38 @@ export function useResearchRunGateway(
       });
     };
 
+    const openSource = (boundRunId: string) => {
+      source?.close();
+      const candidate = new EventSource(
+        researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0, boundRunId),
+      );
+      source = candidate;
+      candidate.onopen = () => {
+        if (current() && source === candidate) {
+          setState((previous) => ({
+            ...previous,
+            status: hasCompleteEventHistory(previous.eventState)
+              ? "connected"
+              : previous.status === "reconnecting" ? "reconnecting" : "loading",
+            error: null,
+          }));
+        }
+      };
+      candidate.addEventListener("snapshot", (event) => {
+        const frame = parseResearchRunGatewaySseFrame("snapshot", (event as MessageEvent<string>).data);
+        if (frame) applyFrame(frame, candidate, boundRunId);
+      });
+      candidate.addEventListener("run-event", (event) => {
+        const frame = parseResearchRunGatewaySseFrame("run-event", (event as MessageEvent<string>).data);
+        if (frame) applyFrame(frame, candidate, boundRunId);
+      });
+      candidate.onerror = () => {
+        if (current() && source === candidate) {
+          setState((previous) => ({ ...previous, status: "reconnecting" }));
+        }
+      };
+    };
+
     const connect = async () => {
       setState((previous) => previous.selector === missionOrRunId
         ? { ...previous, status: "loading", error: null }
@@ -173,31 +221,7 @@ export function useResearchRunGateway(
         status: "loading",
         error: null,
       });
-      source = new EventSource(
-        researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0, snapshot.run.id),
-      );
-      source.onopen = () => {
-        if (current()) {
-          setState((previous) => ({
-            ...previous,
-            status: hasCompleteEventHistory(previous.eventState)
-              ? "connected"
-              : previous.status === "reconnecting" ? "reconnecting" : "loading",
-            error: null,
-          }));
-        }
-      };
-      source.addEventListener("snapshot", (event) => {
-        const frame = parseResearchRunGatewaySseFrame("snapshot", (event as MessageEvent<string>).data);
-        if (frame) applyFrame(frame);
-      });
-      source.addEventListener("run-event", (event) => {
-        const frame = parseResearchRunGatewaySseFrame("run-event", (event as MessageEvent<string>).data);
-        if (frame) applyFrame(frame);
-      });
-      source.onerror = () => {
-        if (current()) setState((previous) => ({ ...previous, status: "reconnecting" }));
-      };
+      openSource(snapshot.run.id);
     };
 
     void connect().catch((error) => {

@@ -478,7 +478,7 @@ describe("Research Desk canonical projection integration", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("drops the prior generation before replaying a replacement generation", async () => {
+  test("reopens a generation-bound stream before replaying a replacement generation", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       json: async () => ({
         ok: true,
@@ -514,12 +514,25 @@ describe("Research Desk canonical projection integration", () => {
         afterSeq: 0,
       });
     });
+    expect(source.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    const nextSource = FakeEventSource.instances[1];
+    expect(nextSource.url).toContain(`cursorRunId=${encodeURIComponent(nextRunId)}`);
     expect(textOf(renderer.toJSON())).not.toContain("Canonical launch");
     expect(textOf(renderer.toJSON())).toContain("Loading historical run history.");
     expect(textOf(renderer.toJSON())).not.toContain("Persisted mission fallback");
 
     await act(async () => {
       source.emit("run-event", event(1, "run.created", {
+        activity: "Stale generation activity",
+      }, nextRunId));
+      nextSource.emit("snapshot", {
+        run: nextRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      nextSource.emit("run-event", event(1, "run.created", {
         activity: "Generation two launch",
         plan: {
           revision: 1,
@@ -529,9 +542,112 @@ describe("Research Desk canonical projection integration", () => {
     });
     expect(textOf(renderer.toJSON())).toContain("Generation two launch");
     expect(textOf(renderer.toJSON())).toContain("Generation two scope");
+    expect(textOf(renderer.toJSON())).not.toContain("Stale generation activity");
     expect(textOf(renderer.toJSON())).not.toContain("Canonical launch");
 
+    for (let reconnect = 0; reconnect < 2; reconnect += 1) {
+      await act(async () => {
+        nextSource.onerror?.();
+        nextSource.onopen?.();
+        nextSource.emit("snapshot", {
+          run: nextRun,
+          lastEventSequence: 1,
+          nextEventSequence: 2,
+          afterSeq: 1,
+        });
+      });
+      const reconnected = textOf(renderer.toJSON());
+      expect(reconnected).toContain("Generation two launch");
+      expect(reconnected.match(/Generation two launch/g)).toHaveLength(1);
+      expect(FakeEventSource.instances).toHaveLength(2);
+    }
+
     await act(async () => renderer.unmount());
+    expect(nextSource.closed).toBe(true);
+  });
+
+  test("selection change closes every prior generation stream and ignores stale callbacks", async () => {
+    const selectedMission = mission({
+      id: "mission-2",
+      title: "Selected mission",
+      intent: "Selected mission intent",
+    });
+    const selectedRunId = "run_mission-2";
+    const selectedRun = run(selectedRunId, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
+      json: async () => String(input).includes("mission-2")
+        ? {
+            ok: true,
+            run: selectedRun,
+            lastEventSequence: 1,
+            nextEventSequence: 2,
+          }
+        : {
+            ok: true,
+            run: run(),
+            lastEventSequence: 6,
+            nextEventSequence: 7,
+          },
+    })));
+    const renderer = await mount();
+    const firstSource = FakeEventSource.instances[0];
+    const rolloverRunId = `${RUN_ID}_g2`;
+    const rolloverRun = run(rolloverRunId, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+
+    await act(async () => {
+      firstSource.emit("snapshot", {
+        run: rolloverRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+    });
+    const rolloverSource = FakeEventSource.instances[1];
+
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: selectedMission,
+        selector: selectedMission.id,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(firstSource.closed).toBe(true);
+    expect(rolloverSource.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(3);
+    const selectedSource = FakeEventSource.instances[2];
+
+    await act(async () => {
+      firstSource.emit("run-event", event(1, "run.created", {
+        activity: "Stale first stream",
+      }, rolloverRunId));
+      rolloverSource.emit("run-event", event(1, "run.created", {
+        activity: "Stale rollover stream",
+      }, rolloverRunId));
+      selectedSource.emit("snapshot", {
+        run: selectedRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      selectedSource.emit("run-event", event(1, "run.created", {
+        activity: "Selected mission launch",
+      }, selectedRunId));
+    });
+
+    const rendered = textOf(renderer.toJSON());
+    expect(rendered).toContain("Selected mission launch");
+    expect(rendered).not.toContain("Stale first stream");
+    expect(rendered).not.toContain("Stale rollover stream");
+
+    await act(async () => renderer.unmount());
+    expect(selectedSource.closed).toBe(true);
   });
 
   test("keeps the mission adapter as an explicit fallback when the gateway is unavailable", async () => {
