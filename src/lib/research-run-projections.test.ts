@@ -468,10 +468,10 @@ test("Hybrid hydration fills producer-omitted detail without weakening canonical
   assert.equal(projections.report.outline[0]?.detail, "Persisted report detail");
   assert.equal(projections.report.artifacts[0]?.title, "Persisted artifact detail");
   assert.equal(projections.report.artifacts[0]?.status, "ready");
-  assert.equal(projections.report.exportStatus, "ready");
+  assert.equal(projections.report.exportStatus, "not_started");
 });
 
-test("Sparse hybrid artifacts derive export state from artifact semantics, not mere presence", () => {
+test("Sparse canonical history does not derive export state from descriptive mission artifacts", () => {
   const mission = {
     version: 1,
     id: "projection_01",
@@ -533,8 +533,61 @@ test("Sparse hybrid artifacts derive export state from artifact semantics, not m
     }),
   );
 
-  assert.equal(working.report.exportStatus, "draft");
+  assert.equal(working.report.exportStatus, "not_started");
   assert.equal(rejectedOnly.report.exportStatus, "not_started");
+});
+
+test("Continued generations do not inherit export readiness from prior published mission artifacts", () => {
+  const mission = {
+    version: 1,
+    id: "projection_01",
+    familiarId: "sage",
+    title: "Continued mission",
+    intent: "Keep generation export evidence separate",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "running",
+    runGeneration: 2,
+    createdAt: run.createdAt,
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [],
+    sources: [],
+    artifacts: [{
+      key: "generation-one-report",
+      kind: "report",
+      title: "Generation one report",
+      relativePath: "artifacts/generation-one.md",
+      iteration: 1,
+      state: "published",
+      updatedAt: RUN_UPDATED_AT,
+    }],
+  } as ResearchMission;
+  const gatewayEvents = [
+    { ...event(1, "run.created", {}), runId: "run_projection_01_g2" },
+    { ...event(2, "run.status", {
+      status: "gathering_public_sources",
+      sources: 0,
+      artifacts: 0,
+      iterations: 0,
+    }), runId: "run_projection_01_g2" },
+  ];
+  const snapshot: ResearchRunV1 = {
+    ...run,
+    id: "run_projection_01_g2",
+    status: "gathering_public_sources",
+    updatedAt: gatewayEvents[1].at,
+    nextEventSequence: 3,
+  };
+
+  const projections = selectResearchRunProjections(
+    hydrateHybridResearchRunProjectionInput(snapshot, gatewayEvents, mission),
+  );
+
+  assert.equal(projections.report.artifacts[0]?.title, "Generation one report");
+  assert.equal(projections.report.exportStatus, "not_started");
 });
 
 test("Hybrid detail cannot override canonical publication or immutable manifest metadata", () => {

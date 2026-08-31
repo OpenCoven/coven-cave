@@ -446,6 +446,14 @@ function snapshotRun(
   };
   const candidate = {
     ...researchMissionToCanonicalRun(finalizedMission, nextEventSequence),
+    ...(researchRunIdForMission(mission) !== log.runId
+      ? {
+          acceptedTopic: {
+            question: "Historical research run",
+            editedByUser: false,
+          },
+        }
+      : {}),
     status: terminalStatus,
     artifactManifest: log.finalManifest,
   };
@@ -650,6 +658,10 @@ export async function replayResearchRunGateway(
   afterSequence: number,
   limit: number,
   requestedRunId?: string,
+  streamCursor?: {
+    requireCursorIdentity: true;
+    cursorRunId?: string | null;
+  },
 ): Promise<ResearchRunGatewayReplay | null> {
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunGatewayError("invalid", "invalid research mission id", 409);
@@ -661,14 +673,20 @@ export async function replayResearchRunGateway(
   );
   if (!synced) return null;
   const { mission, log } = synced;
-  const replay = replayFromLog(log, afterSequence, limit);
+  const effectiveAfterSequence = streamCursor?.requireCursorIdentity
+    && !requestedRunId
+    && afterSequence > 0
+    && streamCursor.cursorRunId !== log.runId
+    ? 0
+    : afterSequence;
+  const replay = replayFromLog(log, effectiveAfterSequence, limit);
   const lastEventSequence = log.events.at(-1)?.sequence ?? 0;
   return {
     run: snapshotRun(mission, log),
     lastEventSequence,
     nextEventSequence: lastEventSequence + 1,
     events: replay.events,
-    afterSequence,
+    afterSequence: effectiveAfterSequence,
     hasMore: replay.hasMore,
   };
 }

@@ -406,7 +406,7 @@ describe("Research Desk canonical projection integration", () => {
     expect(rendered).toContain("Persisted evidence claim");
     expect(rendered).toContain("Persisted report detail");
     expect(rendered).toContain("Persisted report artifact");
-    expect(rendered).toContain("Export ready");
+    expect(rendered).toContain("Export not started");
     expect(rendered).not.toContain("Exported");
 
     const plan = renderer.root.findByProps({ "data-research-run-projection": "plan" });
@@ -424,27 +424,21 @@ describe("Research Desk canonical projection integration", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("sparse production history keeps working artifacts in draft export state", async () => {
-    const workingMission = mission({
+  test("continued sparse history renders prior artifacts without inheriting their export readiness", async () => {
+    const continuedMission = mission({
+      runGeneration: 2,
       artifacts: [{
-        key: "report-working",
+        key: "generation-one-report",
         kind: "report",
-        title: "Working report",
-        relativePath: "artifacts/working.md",
+        title: "Generation one report",
+        relativePath: "artifacts/generation-one.md",
         iteration: 1,
-        state: "working",
-        updatedAt: UPDATED_AT,
-      }, {
-        key: "report-rejected",
-        kind: "report",
-        title: "Rejected report",
-        relativePath: "artifacts/rejected.md",
-        iteration: 1,
-        state: "rejected",
+        state: "published",
         updatedAt: UPDATED_AT,
       }],
     });
-    const sparseRun = run(RUN_ID, {
+    const sparseRunId = `${RUN_ID}_g2`;
+    const sparseRun = run(sparseRunId, {
       status: "gathering_public_sources",
       nextEventSequence: 3,
       artifactManifest: undefined,
@@ -457,7 +451,7 @@ describe("Research Desk canonical projection integration", () => {
         nextEventSequence: 3,
       }),
     })));
-    const renderer = await mount(workingMission);
+    const renderer = await mount(continuedMission);
     const source = FakeEventSource.instances[0];
 
     await act(async () => {
@@ -467,19 +461,18 @@ describe("Research Desk canonical projection integration", () => {
         nextEventSequence: 3,
         afterSeq: 0,
       });
-      source.emit("run-event", event(1, "run.created", {}));
+      source.emit("run-event", event(1, "run.created", {}, sparseRunId));
       source.emit("run-event", event(2, "run.status", {
         status: "gathering_public_sources",
         sources: 0,
-        artifacts: 2,
-        iterations: 1,
-      }));
+        artifacts: 0,
+        iterations: 0,
+      }, sparseRunId));
     });
 
     const rendered = textOf(renderer.toJSON());
-    expect(rendered).toContain("Working report");
-    expect(rendered).toContain("Rejected report");
-    expect(rendered).toContain("Export draft");
+    expect(rendered).toContain("Generation one report");
+    expect(rendered).toContain("Export not started");
     expect(rendered).not.toContain("Export ready");
 
     await act(async () => renderer.unmount());

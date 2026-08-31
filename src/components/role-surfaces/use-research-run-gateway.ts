@@ -174,7 +174,7 @@ export function useResearchRunGateway(
         error: null,
       });
       source = new EventSource(
-        researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0),
+        researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0, snapshot.run.id),
       );
       source.onopen = () => {
         if (current()) {

@@ -15,6 +15,7 @@ import {
   appendResearchRunEvents,
   loadResearchRunEventLog,
 } from "./research-run-gateway-store.ts";
+import { rehydrateResearchRun } from "../research-run-event-reducer.ts";
 import {
   loadResearchRunGateway,
   replayResearchRunGateway,
@@ -428,6 +429,7 @@ test("Continue after completed or cancelled starts a replay-safe canonical run g
 
     const continuedMission: ResearchMission = {
       ...terminalMission,
+      intent: "A changed intent that belongs only to generation two",
       runGeneration: 2,
       status: "running",
       updatedAt: "2026-08-30T12:06:00.000Z",
@@ -499,6 +501,8 @@ test("Continue after completed or cancelled starts a replay-safe canonical run g
     assert.ok(historical);
     assert.equal(historical.run.id, first.run.id);
     assert.equal(historical.run.status, terminalStatus);
+    assert.equal(historical.run.acceptedTopic.question, "Historical research run");
+    assert.notEqual(historical.run.acceptedTopic.question, continuedMission.intent);
     assert.deepEqual(historical.run.artifactManifest, first.run.artifactManifest);
     const historicalReplay = await replayResearchRunGateway(
       missionId,
@@ -514,6 +518,68 @@ test("Continue after completed or cancelled starts a replay-safe canonical run g
       null,
     );
   }
+});
+
+test("current-selector stream reconnect resets a prior-generation browser cursor", async () => {
+  const missionId = "gateway-stream-rollover";
+  const firstMission: ResearchMission = {
+    ...mission(missionId, "completed"),
+    updatedAt: "2026-08-30T12:05:00.000Z",
+    finishedAt: "2026-08-30T12:05:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-30T12:05:00.000Z",
+    }],
+  };
+  await createResearchMissionWorkspace(firstMission);
+  const first = await loadResearchRunGateway(missionId);
+  assert.ok(first);
+
+  await saveResearchMission({
+    ...firstMission,
+    runGeneration: 2,
+    status: "running",
+    updatedAt: "2026-08-30T12:06:00.000Z",
+    finishedAt: undefined,
+    iterations: [
+      ...firstMission.iterations,
+      {
+        number: 2,
+        status: "running",
+        startedAt: "2026-08-30T12:06:00.000Z",
+      },
+    ],
+  });
+  globalThis.__caveResearchMissionActionLocks = undefined;
+
+  const reconnected = await replayResearchRunGateway(
+    missionId,
+    first.lastEventSequence,
+    200,
+    undefined,
+    {
+      requireCursorIdentity: true,
+      cursorRunId: first.run.id,
+    },
+  );
+  assert.ok(reconnected);
+  assert.equal(reconnected.run.id, `run_${missionId}_g2`);
+  assert.equal(reconnected.afterSequence, 0);
+  assert.deepEqual(
+    reconnected.events.map((event) => event.sequence),
+    Array.from({ length: reconnected.lastEventSequence }, (_, index) => index + 1),
+  );
+
+  const hydrated = rehydrateResearchRun(reconnected.run, reconnected.events, {
+    afterSequence: reconnected.afterSequence,
+  });
+  assert.equal(hydrated.sync.status, "synced");
+  assert.equal(hydrated.lastEventSequence, reconnected.lastEventSequence);
+  assert.deepEqual(
+    hydrated.appliedEvents.map((event) => event.sequence),
+    Array.from({ length: reconnected.lastEventSequence }, (_, index) => index + 1),
+  );
 });
 
 test("archiving a terminal mission updates projection without duplicating its terminal event", async () => {

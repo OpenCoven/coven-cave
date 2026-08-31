@@ -1269,6 +1269,8 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
       ? { ...current, ...parsed, status: current.status }
       : parsed);
   }
+  const canonicalArtifactStatuses = [...artifactsById.values()]
+    .map((artifact) => artifact.status);
   for (const artifact of input.mission?.artifacts ?? []) {
     const parsed = artifactFromMission(artifact, input.missionDetailOnly);
     if (!artifactsById.has(parsed.id)) artifactsById.set(parsed.id, parsed);
@@ -1291,7 +1293,9 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
     });
   }
   if (!selectedExport) {
-    const artifactStatuses = [...artifactsById.values()].map((artifact) => artifact.status);
+    const artifactStatuses = input.missionDetailOnly
+      ? canonicalArtifactStatuses
+      : [...artifactsById.values()].map((artifact) => artifact.status);
     selectedExport = {
       status: artifactStatuses.includes("published")
         ? "exported"

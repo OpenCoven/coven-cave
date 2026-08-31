@@ -77,9 +77,14 @@ test("malformed, wrong-run, and gap frames fail closed", () => {
   assert.equal(buffered.state.sync.status, "gap");
 });
 
-test("stream URLs carry familiar ownership and the requested replay cursor", () => {
+test("stream URLs bind browser replay cursors to their originating run generation", () => {
   assert.equal(
-    researchRunGatewayStreamUrl("gateway-01", "sage", 12),
-    "/api/research/runs/gateway-01/stream?familiarId=sage&afterSeq=12",
+    researchRunGatewayStreamUrl(
+      "gateway-01",
+      "sage",
+      12,
+      "run_gateway-01_g2",
+    ),
+    "/api/research/runs/gateway-01/stream?familiarId=sage&afterSeq=12&cursorRunId=run_gateway-01_g2",
   );
 });
