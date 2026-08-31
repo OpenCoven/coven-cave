@@ -42,12 +42,22 @@ that diverge. It pairs with the conformance suite that enforces them.
 
 | Concern | Default | Override |
 | --- | --- | --- |
-| Dev server port | `3000` | `PORT` env ([`server.ts`](../server.ts)) |
-| E2E (Playwright) port | `3100` (fixed, avoids colliding with `pnpm dev`) | `PORT` env ([`playwright.config.ts`](../playwright.config.ts)) |
+| Dev server port | `3000` | `COVEN_CAVE_PORT`, then `PORT` ([`scripts/ports.mjs`](../scripts/ports.mjs)) |
+| Packaged desktop sidecar port | `3020` | `COVEN_CAVE_PORT` ([`src-tauri/src/sidecar_ports.rs`](../src-tauri/src/sidecar_ports.rs)) |
+| E2E (Playwright) port | `3100` (fixed, avoids colliding with `pnpm dev` and the packaged sidecar) | `COVEN_CAVE_PORT`, then `PORT` ([`playwright.config.ts`](../playwright.config.ts)) |
 | Config / state home | `~/.coven/` | `COVEN_HOME` env ([`src/lib/coven-paths.ts`](../src/lib/coven-paths.ts)) |
 | Familiar workspaces | `~/.coven/workspaces/familiars/<id>/` | via `COVEN_HOME` |
 | `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts), [`src-tauri/src/sidecar_discovery.rs`](../src-tauri/src/sidecar_discovery.rs)) |
 | CI Node.js | `24` | — |
+
+The shared resolver selects one fixed channel port; it does not search a range
+for a free port. `COVEN_CAVE_PORT` takes precedence over `PORT` where both are
+accepted. The dev launcher probes the resolved port and attaches only when it
+can identify CovenCave; known stranger or gated holders are refused, while a
+silent holder is left for the wrapper's own bind to report. The packaged shell
+claims its resolved port before spawning the sidecar. To run another copy,
+choose a free explicit `COVEN_CAVE_PORT` rather than expecting either launcher
+to relocate itself.
 
 ## Per-OS deltas
 

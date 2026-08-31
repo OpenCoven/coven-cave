@@ -237,11 +237,17 @@ test("review threads render at their line, and an unplaced one is still shown", 
 test("the note is reachable without opening a dialog, and required for changes", () => {
   assert.doesNotMatch(surface, /<textarea/);
   assert.match(inspector, /id="rd-inspector-note"/);
+  assert.match(inspector, /maxLength=\{GITHUB_REVIEW_BODY_MAX_LENGTH\}/);
+  assert.match(inspector, /aria-describedby="rd-inspector-note-count"/);
+  assert.match(inspector, /id="rd-inspector-note-count"/);
+  assert.doesNotMatch(inspector, /rd-inspector-note-count"[^>]*aria-live/);
   assert.match(verdict, /open=\{reviewMode != null\}/);
   assert.match(verdict, /Review note · \{reviewMode === "changes" \? "Required" : "Optional"\}/);
   assert.match(verdict, /The draft stays with this session/);
   assert.match(verdict, /maxLength=\{GITHUB_REVIEW_BODY_MAX_LENGTH\}/);
   assert.match(verdict, /aria-describedby="rd-review-help rd-review-count"/);
+  assert.match(verdict, /aria-errormessage=\{noteError \? "rd-review-error"/);
+  assert.doesNotMatch(verdict, /rd-review-count"[^>]*aria-live/);
   assert.match(surface, /A note is required — GitHub sends it/);
 });
 

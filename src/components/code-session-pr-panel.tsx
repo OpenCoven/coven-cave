@@ -587,7 +587,7 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
               <h2 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
                 Actions
               </h2>
-              <div className="rounded-lg border border-[var(--border-muted)] bg-[var(--surface-muted)] p-3 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--surface-muted)] p-3 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                 This PR was detected from the chat transcript, so it is shown for reference only.
                 Review and merge actions stay disabled until a PR is resolved from this session&apos;s work branch.
               </div>

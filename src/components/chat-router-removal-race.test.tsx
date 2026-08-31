@@ -48,7 +48,6 @@ vi.mock("@/components/chat-view", async () => {
 });
 
 vi.mock("@/components/chat-list", () => ({ ChatList: () => null }));
-vi.mock("@/components/chat-project-sidebar", () => ({ ChatProjectSidebar: () => null }));
 vi.mock("@/components/new-chat-launch", () => ({ NewChatLaunch: () => null }));
 vi.mock("@/components/familiar-chatout-codex", () => ({ FamiliarChatoutCodexSurface: () => null }));
 vi.mock("@/lib/feature-flags", () => ({ caveChatoutCodex: () => false }));

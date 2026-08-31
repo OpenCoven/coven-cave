@@ -5,6 +5,7 @@
 **Issue:** [OpenCoven/coven-cave#4780](https://github.com/OpenCoven/coven-cave/issues/4780) (GitHub Teamwork visibility mirror; Beads is authoritative)
 **Plan of record:** [`OpenCoven/chat/docs/superpowers/plans/2026-08-15-phase-1-discovery-pairing.md`](https://github.com/OpenCoven/chat/blob/main/docs/superpowers/plans/2026-08-15-phase-1-discovery-pairing.md)
 **Status doc scope:** verified state + handoff only. No code changes, no workflow changes, no edits to other status docs.
+**Refresh:** 2026-08-30 (intraday, ~15:00 UTC) re-verification against the current tips appended as §7 — verdict unchanged (§0); implementation verification re-confirmed at `OpenCoven/sdk` `66edd4d9d`.
 
 ---
 
@@ -150,3 +151,44 @@ The daemon side publishes `apiVersion: "coven.daemon.v1"` plus `covenVersion` an
 | SDK permissions (read-only for this token) | `gh api /repos/OpenCoven/sdk` → `push: false`, fetched 2026-08-30 |
 | coven-cave client-side contract | `src/lib/daemon-startup-contract.ts`, `src/lib/coven-daemon.ts`, `src/lib/windows-local-path.ts`, `src/lib/daemon-socket-occupancy.ts`, `src/lib/coven-paths.ts`, `server.ts` at `main` tip `dacbe617` (2026-08-30) |
 | Daemon (server side) repo | https://github.com/OpenCoven/coven (existence + timestamps only; out of scope) |
+
+## 7. Refresh — 2026-08-30 (intraday re-verification)
+
+Re-verified against the current tips on 2026-08-30 (~15:00 UTC), after this record itself landed on upstream `main`. Same read-only method as §1 (GitHub REST via `gh` as `CompleteDotTech`; Contents API at explicit SHAs; worktree grep at the coven-cave tip). **Verdict unchanged** (§0): the `coven.daemon.v1` SDK IPC lane is implemented and merged on `OpenCoven/sdk` `main`; what remains is bookkeeping (bead/gate/mirror closure), not code.
+
+### 7.1 What moved since this record was written
+
+| Surface | Pinned at record time | Now (2026-08-30 ~15:00Z) | Change |
+|---|---|---|---|
+| `OpenCoven/coven-cave` `main` | `dacbe617` (03:59:22 −05:00) | `bdbf97159` (`Bake absolute node path into the beads-jsonl merge driver (#5212)`) | 2 commits (`f4331e094` #5211, `bdbf97159` #5212); neither touches the §4 contract surface (§7.2) |
+| This record's location | fork `CompleteDotTech/main` only | **Canonical on upstream `main`** via [#5211](https://github.com/OpenCoven/coven-cave/pull/5211) (merged 2026-08-30T11:42:49Z) | The 2026-08-30 sweep records (`docs/superpowers/plans/2026-08-30-chat-v1-phase-1-*.md`) landed upstream |
+| `OpenCoven/sdk` `main` | `4736bf2e0` (#73, 2026-08-29) | `66edd4d9d` (`docs: reconcile release issue status (#75)`, 2026-08-30T09:50:25Z) | Docs-only drift (§7.3); no code changes |
+| `OpenCoven/chat` `main` | not pinned at record time | `b3146263e` (`feat: refine the responsive chat demo shell`; `pushed_at 2026-08-30T14:38:10Z`) | Plan-of-record set unchanged (§7.4) |
+
+### 7.2 coven-cave contract surface — unchanged
+
+`git diff --stat dacbe617..bdbf97159` over every §4 contract path (`src/lib/daemon-startup-contract.ts`, `coven-daemon.ts`, `coven-paths.ts`, `windows-local-path.ts`, `daemon-socket-occupancy.ts`, `daemon-start.ts`, `daemon-connection-supervisor.ts`, `daemon-readiness.ts`, `server.ts`, `server.mjs`) is **empty**; the only two commits touch the sweep docs (#5211) and the beads-jsonl merge driver (#5212). §4 remains accurate at `bdbf97159`.
+
+### 7.3 OpenCoven/sdk — re-verified at `66edd4d9d`; §5.4 open question (e) answered
+
+- Every deliverable/coverage file cited in §2/§5.3 exists at `66edd4d9d` (Contents API, size-checked): `packages/coven/src/{schemas,discovery,transport-unix,transport-windows,client}.ts`, `packages/core/src/discovery.ts`, `packages/cli/src/{coven,main}.ts`, `tests/{coven-discovery,cli-coven-security,import-purity,package-boundaries}.spec.ts`, `conformance/client-v1-cross-repository-assertions.json` + `client-v1-cross-repository-evidence.schema.json`.
+- Fail-closed markers spot-checked in the fetched sources at the tip: `COVEN_DAEMON_PROTOCOL = 'coven.daemon.v1'` and `CovenHealthResponse { ok, apiVersion, covenVersion, capabilities }` (`schemas.ts`); Windows `validateIdentity` refuses `ownerOnly !== true` (`unsafe_endpoint`) and throws `owner_mismatch` (`transport-windows.ts`); the CLI selects the `peer_identity`/`pipe_ownership` provider, fails closed with `platform_security_unavailable`, and `coven health` dispatches through the SDK client (`packages/cli/src/coven.ts`).
+- Path-filtered history is unchanged from §2: `packages/coven` last code commit `3d2e61f71` (#64, 2026-08-25); `packages/cli/src/coven.ts` last commit `a57ca8ea1` (#54, 2026-08-24). The only commit after #73 is `66edd4d9d` (#75), which touches `README.md` and `docs/` only. Same-day docs commits #71/#72 precede #73.
+- **§5.4(e) resolved: no code hardening landed after #73** — the implementation verification in §2/§5.3 is still current at the 2026-08-30 tip.
+- `gh api /repos/OpenCoven/sdk` re-checked: `permissions.push` still `false` — §5.1's handoff constraint stands.
+
+### 7.4 OpenCoven/chat — plan-of-record set unchanged; Chat-side probe confirmed merged
+
+- Plan of record `2026-08-15-phase-1-discovery-pairing.md` (18,046 B), approved spec `2026-08-20-phase-1-discovery-pairing-design.md` (17,827 B), and the 1b split plan `2026-08-20-phase-1b-sdk-discovery-pairing.md` (26,633 B) are all present at chat `main` (`b3146263e`); the plan of record was last edited 2026-08-20 (#25), so the 2026-08-20 supersession note cited in §5 is still the latest state.
+- [chat#38](https://github.com/OpenCoven/chat/pull/38) `feat: add native Coven health integration` confirmed **merged** 2026-08-29T04:24:40Z (merge commit `dbbcf3a71`) — the Chat-side `coven_health` probe the 2026-08-30 gate status doc cites.
+
+### 7.5 Trackers — unchanged; Beads still unreachable read-only
+
+- #4780 open, 4 comments, `updated_at 2026-08-24T12:46:10Z` (BunsDev: bead `cave-p8qkk` blocked on the connected-peer security decision). No tracker movement since §3.
+- #4818 (`cave-fz01p`) open (updated 2026-08-21); #4833 (`cave-23nmv`) open (updated 2026-08-22) — both still stale relative to the merged implementation, as recorded in §3.
+- `.beads/issues.jsonl` at coven-cave tip `bdbf97159` still contains only the four `cave-hlv*` dogfood rows; `cave-p8qkk`/`cave-bt9wx`/`cave-fz01p` remain unverifiable from the passive export. The Beads Dolt DB (`refs/dolt/data`) remains the only authority for their closure state.
+- No open PR in `OpenCoven/coven-cave` touches this record or issue #4780 (org search + open-PR head-label scan, 2026-08-30).
+
+### 7.6 Remaining work (re-confirmed)
+
+Identical to §5.4/§5.6 with (e) now answered: bead/gate/mirror bookkeeping only — close/annotate bead `cave-p8qkk` with the merged evidence (Wave 1 `3ab5b3132`; CLI health `a57ca8ea1`), reconcile the #4780 mirror and the #4833 gate record, confirm `cave-bt9wx` via `bd show` where the Dolt DB is reachable, and owner-side confirmation of live-daemon conformance + Windows named-pipe runtime validation (release lane). No new feature PR is required in `OpenCoven/sdk`.

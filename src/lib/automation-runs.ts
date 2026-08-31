@@ -9,7 +9,12 @@
  */
 export const AUTOMATION_RUNS_CAP = 200;
 
-export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed";
+// `cancelled` is part of the daemon's RoutineRun vocabulary
+// (coven.automations.runs), and the runs route passes statuses through
+// untouched — so it belongs here: a cancelled run must render as what it is,
+// never as "unknown status" (coven-cave#5217: authoritative state mapping for
+// every run state).
+export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type AutomationRunRecord = {
   id: string;
   automationId: string;

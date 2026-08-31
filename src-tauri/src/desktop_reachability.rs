@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 #[cfg(desktop)]
 use std::io::Write;
+#[cfg(all(desktop, target_os = "macos"))]
+use std::os::unix::io::AsRawFd;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(all(desktop, target_os = "macos"))]
@@ -33,6 +35,12 @@ const POWER_MONITOR_INTERVAL: Duration = Duration::from_secs(5);
 const SERVE_REPAIR_INTERVAL: Duration = Duration::from_secs(30);
 #[cfg(all(desktop, target_os = "macos"))]
 const SERVE_REPAIR_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(all(desktop, target_os = "macos"))]
+const SERVE_REPAIR_OUTPUT_BYTES: usize = 64 * 1024;
+#[cfg(all(desktop, target_os = "macos"))]
+const SERVE_REPAIR_OUTPUT_DRAIN: Duration = Duration::from_millis(250);
+#[cfg(all(desktop, target_os = "macos"))]
+const SERVE_REPAIR_KILL_GRACE: Duration = Duration::from_millis(500);
 
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -620,6 +628,55 @@ struct TailscaleCommandOutput {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
+fn set_nonblocking(file: &impl AsRawFd) -> Result<(), String> {
+    let fd = file.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn drain_tailscale_stdout(
+    stdout: &mut impl Read,
+    output: &mut Vec<u8>,
+) -> Result<bool, String> {
+    let mut buffer = [0_u8; 8192];
+    loop {
+        if output.len() >= SERVE_REPAIR_OUTPUT_BYTES {
+            return Err(format!(
+                "Tailscale output exceeded {} bytes",
+                SERVE_REPAIR_OUTPUT_BYTES
+            ));
+        }
+        let want = buffer.len().min(SERVE_REPAIR_OUTPUT_BYTES - output.len());
+        match stdout.read(&mut buffer[..want]) {
+            Ok(0) => return Ok(true),
+            Ok(read) => output.extend_from_slice(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(false),
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn terminate_tailscale_child(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let deadline = Instant::now() + SERVE_REPAIR_KILL_GRACE;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => return,
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
 fn run_tailscale_command(args: &[String]) -> Result<TailscaleCommandOutput, String> {
     let command_name = args.join(" ");
     let mut child = Command::new(tailscale_binary())
@@ -629,40 +686,70 @@ fn run_tailscale_command(args: &[String]) -> Result<TailscaleCommandOutput, Stri
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("could not launch Tailscale {command_name}: {error}"))?;
-    let stdout = child.stdout.take().map(|mut stdout| {
-        thread::spawn(move || {
-            let mut output = Vec::new();
-            let _ = stdout.read_to_end(&mut output);
-            output
-        })
-    });
+    let mut stdout = child.stdout.take();
+    if let Some(stdout_ref) = stdout.as_ref() {
+        if let Err(error) = set_nonblocking(stdout_ref) {
+            terminate_tailscale_child(&mut child);
+            return Err(format!(
+                "could not make Tailscale {command_name} output nonblocking: {error}"
+            ));
+        }
+    }
+    let mut output = Vec::with_capacity(SERVE_REPAIR_OUTPUT_BYTES.min(8192));
     let deadline = Instant::now() + SERVE_REPAIR_TIMEOUT;
     loop {
+        let drain_result = stdout
+            .as_mut()
+            .map(|stdout| drain_tailscale_stdout(stdout, &mut output));
+        match drain_result {
+            Some(Ok(true)) => stdout = None,
+            Some(Ok(false)) | None => {}
+            Some(Err(error)) => {
+                terminate_tailscale_child(&mut child);
+                return Err(format!(
+                    "could not read Tailscale {command_name} output: {error}"
+                ));
+            }
+        }
+
         match child.try_wait() {
             Ok(Some(status)) => {
-                let stdout = stdout
-                    .and_then(|reader| reader.join().ok())
-                    .unwrap_or_default();
-                return Ok(TailscaleCommandOutput { status, stdout });
+                // A direct child normally closes stdout with its exit. Give a
+                // short, bounded drain window for the final bytes, but never
+                // join a reader that a descendant inherited and kept open.
+                let drain_deadline = Instant::now() + SERVE_REPAIR_OUTPUT_DRAIN;
+                while stdout.is_some() && Instant::now() < drain_deadline {
+                    let drain_result = stdout
+                        .as_mut()
+                        .map(|stdout| drain_tailscale_stdout(stdout, &mut output));
+                    match drain_result {
+                        Some(Ok(true)) => stdout = None,
+                        Some(Ok(false)) => thread::sleep(Duration::from_millis(10)),
+                        None => break,
+                        Some(Err(error)) => {
+                            drop(stdout);
+                            return Err(format!(
+                                "could not read Tailscale {command_name} output: {error}"
+                            ));
+                        }
+                    }
+                }
+                drop(stdout);
+                return Ok(TailscaleCommandOutput {
+                    status,
+                    stdout: output,
+                });
             }
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                if let Some(reader) = stdout {
-                    let _ = reader.join();
-                }
+                terminate_tailscale_child(&mut child);
                 return Err(format!(
                     "Tailscale {command_name} timed out after {}s",
                     SERVE_REPAIR_TIMEOUT.as_secs()
                 ));
             }
-            Ok(None) => thread::sleep(Duration::from_millis(100)),
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                if let Some(reader) = stdout {
-                    let _ = reader.join();
-                }
+                terminate_tailscale_child(&mut child);
                 return Err(format!(
                     "could not wait for Tailscale {command_name}: {error}"
                 ));
@@ -2040,6 +2127,19 @@ mod tests {
                 "http://127.0.0.1:3007".to_string(),
             ]
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn tailscale_output_drain_rejects_output_beyond_the_cap() {
+        let mut stdout = std::io::Cursor::new(vec![b'x'; SERVE_REPAIR_OUTPUT_BYTES + 1]);
+        let mut output = Vec::new();
+
+        let error = drain_tailscale_stdout(&mut stdout, &mut output)
+            .expect_err("oversized Tailscale output must be rejected");
+
+        assert!(error.contains("output exceeded"));
+        assert_eq!(output.len(), SERVE_REPAIR_OUTPUT_BYTES);
     }
 
     #[test]

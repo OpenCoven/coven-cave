@@ -74,6 +74,7 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
   assert.match(detail, /maxLength=\{RESEARCH_DIRECTION_MAX_LENGTH\}/);
   assert.match(detail, /research-refine-direction-count/);
   assert.match(detail, /direction\.length\.toLocaleString\(\)\} \/ \{RESEARCH_DIRECTION_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.doesNotMatch(detail, /research-refine-direction-count"[^>]*aria-live/);
   assert.match(
     detail,
     /onClick=\{\(\) => void runAction\(\{[\s\S]{0,180}?action: "refine",[\s\S]{0,180}?direction,[\s\S]{0,180}?approveCostUnavailable/,

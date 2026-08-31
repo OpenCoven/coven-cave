@@ -224,6 +224,31 @@ assert.match(
   "Vault error status keeps the danger token",
 );
 assert.match(
+  panelSource,
+  /data-visibility-transition=\{inputVisibilityChanged \? \(showInput \? "reveal" : "mask"\) : undefined\}/,
+  "secret visibility changes expose their direction without animating the initial masked render",
+);
+assert.match(
+  panelStylesSource,
+  /\.vault-paste-input\[data-visibility-transition="reveal"\]\s*\{[^}]*animation:\s*vault-paste-reveal var\(--duration-slow\) var\(--ease-standard\)/,
+  "revealing secret text uses the design-system motion tokens",
+);
+assert.match(
+  panelStylesSource,
+  /@keyframes vault-paste-reveal\s*\{[\s\S]*?color:\s*transparent;[\s\S]*?-webkit-text-security:\s*none;/,
+  "the reveal swaps the discrete text-security mode while the glyphs are transparent",
+);
+assert.match(
+  panelStylesSource,
+  /@keyframes vault-paste-mask\s*\{[\s\S]*?color:\s*transparent;[\s\S]*?-webkit-text-security:\s*disc;/,
+  "the mask swaps the discrete text-security mode while the glyphs are transparent",
+);
+assert.match(
+  panelStylesSource,
+  /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.vault-paste-input\[data-visibility-transition\][\s\S]*?animation:\s*none;/,
+  "secret visibility changes respect reduced-motion preferences",
+);
+assert.match(
   themesSource,
   /\.vault-row-error\s*\{[^}]*color:\s*var\(--color-danger\)/,
   "Vault row errors keep the danger token",

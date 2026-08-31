@@ -1046,7 +1046,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     mission: ResearchMission,
     options: { allowCostUnavailable?: boolean } = {},
   ): Promise<ResearchMission> => {
-    const stopReason = stopBeforeNextIteration(mission, deps.now(), options);
+    const now = deps.now();
+    const stopReason = stopBeforeNextIteration(mission, now, options);
     if (stopReason) {
       if (mission.status === "completed" || mission.status === "cancelled") {
         return mission;
@@ -1055,12 +1056,12 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       return saveUpdated({
         ...mission,
         status: atIterationLimit ? "completed" : "paused",
-        ...(atIterationLimit ? { finishedAt: deps.now().toISOString() } : {}),
+        ...(atIterationLimit ? { finishedAt: now.toISOString() } : {}),
         lastError: stopReason,
       });
     }
     const number = nextResearchIterationNumber(mission);
-    const timestamp = deps.now().toISOString();
+    const timestamp = now.toISOString();
     const workingArtifact = mission.artifacts[0]?.state === "rejected" ? {
       ...mission.artifacts[0],
       key: `primary-i${number}`,

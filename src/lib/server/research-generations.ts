@@ -1341,8 +1341,8 @@ type DialogueTemplate = {
 
 const MAX_TAKEAWAY_CHARS = 160;
 
-/** First sentence of a chunk, when whole (terminator + trailing quotes). */
-const FIRST_SENTENCE_RE = /^[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/;
+/** Sentences in a chunk, when whole (terminator + trailing quotes). */
+const SENTENCE_RE = /[\s\S]*?[.!?…]["'”’)\]]*(?=\s|$)/g;
 
 /**
  * A list enumerator or bullet marker opening a chunk (`1.`, `2)`, `a.`, `-`,
@@ -1357,20 +1357,25 @@ const LEAD_LIST_MARKER_RE = /^(?:[-*•]|(?:\d{1,3}|[a-z])[.)])\s+/i;
 const TAKEAWAY_SUBSTANCE_RE = /(?:\S+\s+){2}\S/;
 
 /**
- * The section's lead sentence, restated verbatim by content-bearing closers.
- * Declarative sentences only — a question restated as "the takeaway" is not a
- * synthesis — and only when short enough to work as a spoken bookend. Any
- * non-question terminator qualifies; only `?` disqualifies. A leading list
- * marker is not part of the sentence, and a match without real word content
- * (three words, one carrying letters) is structure, not a takeaway.
+ * The first short declarative sentence in the section's lead chunk, restated
+ * verbatim by content-bearing closers. Dense findings often lead with a long
+ * qualification before a concise conclusion; looking only at sentence one
+ * turns those sections back into acknowledgment-only closers and loses the
+ * host's content-bearing share. Questions remain excluded, and a leading list
+ * marker is not part of the sentence. A match without real word content (three
+ * words, one carrying letters) is structure, not a takeaway.
  */
 function sectionTakeaway(chunks: string[]): string | undefined {
   const lead = chunks[0]?.trimStart().replace(LEAD_LIST_MARKER_RE, "");
   if (!lead) return undefined;
-  const sentence = lead.match(FIRST_SENTENCE_RE)?.[0]?.trim();
-  if (!sentence || sentence.length > MAX_TAKEAWAY_CHARS) return undefined;
-  if (!TAKEAWAY_SUBSTANCE_RE.test(sentence) || !/\p{L}/u.test(sentence)) return undefined;
-  return /\?["'”’)\]]*$/.test(sentence) ? undefined : sentence;
+  for (const match of lead.matchAll(SENTENCE_RE)) {
+    const sentence = match[0].trim();
+    if (sentence.length > MAX_TAKEAWAY_CHARS) continue;
+    if (!TAKEAWAY_SUBSTANCE_RE.test(sentence) || !/\p{L}/u.test(sentence)) continue;
+    if (/\?["'”’)\]]*$/.test(sentence)) continue;
+    return sentence;
+  }
+  return undefined;
 }
 
 /**

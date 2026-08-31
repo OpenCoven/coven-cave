@@ -1056,7 +1056,7 @@ export async function rebuildResearchResourceSemanticIndex(
     // Cross-process handles observe the marker and release their SQLite file
     // descriptors. Rename retries cover Windows handles still unwinding.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const currentIdentity = existsSync(file) ? lstatSync(file) : null;
+    const currentIdentity = existsSync(/* turbopackIgnore: true */ file) ? lstatSync(file) : null;
     const sameFile = expectedIdentity === null
       ? currentIdentity === null
       : currentIdentity !== null
@@ -1067,7 +1067,7 @@ export async function rebuildResearchResourceSemanticIndex(
       syncDirectory(path.dirname(file));
       lostRace = true;
     } else {
-      quarantinePath = existsSync(file)
+      quarantinePath = existsSync(/* turbopackIgnore: true */ file)
         ? `${file}.corrupt-${Date.now()}-${randomBytes(4).toString("hex")}`
         : null;
       if (quarantinePath) {

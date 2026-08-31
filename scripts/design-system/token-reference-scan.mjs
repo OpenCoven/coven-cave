@@ -424,32 +424,23 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
   // Semantic colour names from a vocabulary this repo never adopted. The
   // foundations sheet spells these --text-primary / --text-secondary /
   // --bg-panel / --border-hairline; these are the ones that got typed anyway.
-  ["--bg-inset", 2],
+  // cave-z2sbd first slice: direct contract aliases retired in source:
+  // --bg-inset -> --bg-sunken; border-muted/panel/subtle -> --border-hairline;
+  // fg-primary -> --text-primary; surface-raised/sunken -> --bg-raised/sunken;
+  // text-danger -> --danger-text; text-strong -> --text-primary;
+  // text-success/warning -> --color-success/warning; danger -> --color-danger;
+  // focus-ring -> --ring-focus; motion-fast -> --duration-fast;
+  // font-display -> --font-serif.
   // --bg-surface is gone: defined in foundations.css as an alias of --bg-base
   // (cave-w387r). It was the worst entry in this bank — the Thread Signal card
   // asked for a mix with NO transparent component and still rendered
   // see-through.
-  ["--border-muted", 1],
-  ["--border-panel", 11],
-  ["--border-subtle", 3],
-  ["--fg-primary", 5],
   ["--surface-muted", 1],
-  ["--surface-raised", 1],
-  ["--surface-sunken", 1],
-  ["--text-danger", 7],
-  ["--text-strong", 1],
-  ["--text-success", 1],
-  ["--text-warning", 7],
-  ["--danger", 2],
-  ["--focus-ring", 2],
   // Scale steps that do not exist: the space scale is 1/2/3/4/5/6/8/10.
   ["--space-7", 8],
   ["--space-9", 3],
   // Shadow and motion vocabularies that were never defined here.
   ["--shadow-elevated", 1],
-  ["--motion-fast", 13],
-  // A font role with no definition; the type system is serif/sans/mono.
-  ["--font-display", 1],
   // Vendored Beautiful UI's own shadow token, which did not come across with
   // the components (src/components/ui/beautiful/, MIT, beautifului.dev).
   ["--bui-shadow-bui-btn", 1],
@@ -463,7 +454,9 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
  * an author reads the right remedy.
  */
 export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
-  ["--accent-fg", 1],
+  // cave-z2sbd first slice: accent-fg -> --accent-presence-foreground,
+  // surface-raised -> --bg-raised, text-faint -> --text-muted, and
+  // text-warning -> --color-warning are direct contract mappings.
   // --bg-surface is defined now (cave-w387r). This entry was the sole usage
   // that carried a fallback, and its `var(--bg-surface, var(--background))` is
   // what told us the token's intended value.
@@ -472,9 +465,6 @@ export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
   ["--gh-diff-gutter", 2],
   ["--metric-accent", 2],
   ["--shadow-panel", 1],
-  ["--surface-raised", 2],
-  ["--text-faint", 1],
-  ["--text-warning", 1],
 ]);
 
 /**
