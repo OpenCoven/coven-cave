@@ -630,6 +630,34 @@ test("enrichment metadata sets the stored title and paper block", async () => {
   });
 });
 
+test("a paper block with an oversized field is dropped whole, not truncated", async () => {
+  const url = "https://huggingface.co/papers/2403.22222";
+  const oversizedTitle: HfPaperMetadata = {
+    title: "x".repeat(1_001),
+    authors: ["A. Author"],
+    abstract: "An abstract.",
+    publishedAt: "2024-01-22T00:00:00.000Z",
+  };
+  const { added } = await saveResearchLinks([url], "desk", new Map([[url, { paper: oversizedTitle }]]));
+  assert.equal(added.length, 1);
+  assert.equal(added[0].paper, undefined, "an oversized title must not land in the store");
+
+  const url2 = "https://huggingface.co/papers/2403.33333";
+  const tooManyAuthors: HfPaperMetadata = {
+    title: "A Well-Formed Paper",
+    authors: Array.from({ length: 501 }, (_, i) => `Author ${i}`),
+    abstract: "An abstract.",
+    publishedAt: "2024-01-22T00:00:00.000Z",
+  };
+  const { added: added2 } = await saveResearchLinks(
+    [url2],
+    "desk",
+    new Map([[url2, { paper: tooManyAuthors }]]),
+  );
+  assert.equal(added2.length, 1);
+  assert.equal(added2[0].paper, undefined, "an oversized author count must not land in the store");
+});
+
 test("a URL that merely embeds a paper URL never gets a paper block", async () => {
   // The stored arxivId drives the Read affordance and is interpolated into the
   // PDF route's URL, so it has to come from classifying THIS url — not from
