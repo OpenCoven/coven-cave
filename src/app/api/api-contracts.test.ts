@@ -348,6 +348,9 @@ const contracts: RouteContract[] = [
   { route: "/research/resources", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/resources/[id]", methods: ["GET", "POST", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/research/resources/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/research/runs/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/runs/[id]/events", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/runs/[id]/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/running-activity", methods: ["GET"], kind: "json" },
@@ -484,6 +487,9 @@ function effectiveRouteSource(file: string, source: string): string {
   // service. Inline that reviewed helper just like the OAuth route above.
   if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
+  }
+  if (source.includes('from "@/lib/server/research-run-gateway-route"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "research-run-gateway-route.ts"), "utf8"));
   }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
