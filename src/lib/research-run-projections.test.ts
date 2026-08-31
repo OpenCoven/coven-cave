@@ -5,6 +5,7 @@ import type {
   RunEventV1,
 } from "./research-protocol/research-run.ts";
 import {
+  hydrateResearchRunProjectionInput,
   researchMissionToRunProjectionInput,
   selectResearchRunActivity,
   selectResearchRunEvidence,
@@ -13,7 +14,11 @@ import {
   selectResearchRunReport,
 } from "./research-run-projections.ts";
 import type { ResearchMission } from "./research-missions.ts";
-import { rehydrateResearchRun } from "./research-run-event-reducer.ts";
+import {
+  createResearchRunEventState,
+  rehydrateResearchRun,
+  reduceResearchRunEvent,
+} from "./research-run-event-reducer.ts";
 
 const RUN_ID = "run_projection_01";
 const RUN_UPDATED_AT = "2026-08-30T10:06:00.000Z";
@@ -199,6 +204,222 @@ function fixtureInput() {
   return { state: rehydrateResearchRun(run, [events[2], events[0], events[5], events[1], events[4], events[3]]) };
 }
 
+test("Current snapshots retain complete historical events for every projection without replaying state", () => {
+  const snapshot = {
+    ...run,
+    status: "completed" as const,
+    updatedAt: RUN_UPDATED_AT,
+    nextEventSequence: events.length + 1,
+  };
+  const state = createResearchRunEventState(snapshot);
+  const input = {
+    state,
+    eventHistory: [events[3], events[0], events[5], events[1], events[4], events[2]],
+  };
+
+  const projections = selectResearchRunProjections(input);
+
+  assert.equal(projections.plan.original?.revision, 1);
+  assert.equal(projections.plan.revised?.revision, 2);
+  assert.deepEqual(projections.activity.entries.map((entry) => entry.sequence), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(projections.evidence.claims.map((claim) => claim.id), ["C1"]);
+  assert.deepEqual(projections.evidence.counts, {
+    sources: 3,
+    reviewed: 3,
+    retained: 1,
+    rejected: 1,
+    cited: 1,
+    artifacts: 1,
+  });
+  assert.deepEqual(projections.report.outline.map((item) => item.id), ["overview", "decision"]);
+  assert.equal(projections.report.exportStatus, "exported");
+  assert.equal(state.run.status, "completed");
+  assert.equal(state.lastEventSequence, 6);
+  assert.deepEqual(state.appliedEvents, []);
+  assert.deepEqual(state.evidence, {});
+});
+
+test("Snapshot projection hydration validates and orders a complete historical prefix", () => {
+  const snapshot = {
+    ...run,
+    status: "completed" as const,
+    updatedAt: RUN_UPDATED_AT,
+    nextEventSequence: events.length + 1,
+  };
+
+  const input = hydrateResearchRunProjectionInput(
+    snapshot,
+    [events[3], events[0], events[5], events[1], events[4], events[2]],
+  );
+
+  assert.deepEqual(input.eventHistory?.map((item) => item.sequence), [1, 2, 3, 4, 5, 6]);
+  assert.equal(input.state.run, snapshot);
+  assert.equal(input.state.lastEventSequence, 6);
+  assert.deepEqual(input.state.appliedEvents, []);
+  const nextState = reduceResearchRunEvent(
+    input.state,
+    event(7, "run.status", { activity: "New live activity" }),
+  );
+  const updated = selectResearchRunProjections({ ...input, state: nextState });
+  assert.equal(nextState.lastEventSequence, 7);
+  assert.deepEqual(nextState.appliedEvents.map((item) => item.sequence), [7]);
+  assert.deepEqual(updated.activity.entries.map((item) => item.sequence), [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(updated.activity.entries.at(-1)?.label, "New live activity");
+  assert.throws(
+    () => hydrateResearchRunProjectionInput(snapshot, events.slice(1)),
+    /complete event prefix through sequence 6/,
+  );
+  assert.throws(
+    () => hydrateResearchRunProjectionInput(snapshot, [
+      ...events.slice(0, -1),
+      { ...events.at(-1), at: "not-a-timestamp" },
+    ]),
+    /invalid historical event/,
+  );
+  assert.throws(
+    () => hydrateResearchRunProjectionInput({
+      ...snapshot,
+      artifactManifest: {
+        schema: "opencoven.run-manifest/v1",
+        id: "manifest_deleted_projection",
+        runId: RUN_ID,
+        digest: "a".repeat(64),
+        revision: 1,
+        state: "final",
+        createdAt: run.createdAt,
+        finalizedAt: RUN_UPDATED_AT,
+        sources: [],
+        artifacts: [],
+        modelExecutions: [],
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          completeness: "unreported",
+        },
+        retention: {
+          policy: "7-days",
+          effectivePolicy: "7-days",
+          status: "deleted",
+          contentExpiresAt: null,
+          updatedAt: RUN_UPDATED_AT,
+        },
+        deletion: {
+          status: "completed",
+          requestedAt: RUN_UPDATED_AT,
+          completedAt: RUN_UPDATED_AT,
+          deletedObjectCount: 1,
+          retainedAuditUntil: RUN_UPDATED_AT,
+          eventSequence: 1,
+        },
+      },
+    }, events),
+    /content\.deleted/,
+  );
+  assert.throws(
+    () => hydrateResearchRunProjectionInput(
+      snapshot,
+      events,
+      { id: "mission-other" } as ResearchMission,
+    ),
+    /does not belong to snapshot/,
+  );
+});
+
+test("Historical and newly applied artifact registrations contribute to one projection count", () => {
+  const snapshot = {
+    ...run,
+    nextEventSequence: 2,
+  };
+  const input = hydrateResearchRunProjectionInput(
+    snapshot,
+    [event(1, "artifact.registered")],
+  );
+  const state = reduceResearchRunEvent(input.state, event(2, "artifact.registered"));
+
+  const evidence = selectResearchRunEvidence({ ...input, state });
+
+  assert.equal(state.evidence.artifacts, 1);
+  assert.equal(evidence.counts.artifacts, 2);
+});
+
+test("Snapshot manifest artifacts remain the baseline for newly applied registrations", () => {
+  const snapshot = {
+    ...run,
+    status: "completed" as const,
+    nextEventSequence: 2,
+    artifactManifest: {
+      schema: "opencoven.run-manifest/v1" as const,
+      id: "manifest_artifact_count",
+      runId: RUN_ID,
+      digest: "a".repeat(64),
+      revision: 1,
+      state: "final" as const,
+      createdAt: run.createdAt,
+      finalizedAt: RUN_UPDATED_AT,
+      sources: [],
+      artifacts: [{
+        id: "artifact_existing",
+        kind: "report",
+        title: "Existing report",
+        mediaType: "text/markdown",
+        digest: "b".repeat(64),
+        bytes: 12,
+        placement: "device-local" as const,
+        contentSync: "not-requested" as const,
+        createdAt: run.createdAt,
+      }],
+      modelExecutions: [],
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        completeness: "unreported" as const,
+      },
+      retention: {
+        policy: "7-days" as const,
+        effectivePolicy: "7-days" as const,
+        status: "active" as const,
+        contentExpiresAt: null,
+        updatedAt: RUN_UPDATED_AT,
+      },
+      deletion: { status: "not_scheduled" as const },
+    },
+  };
+  const input = hydrateResearchRunProjectionInput(
+    snapshot,
+    [event(1, "run.created")],
+  );
+  const state = reduceResearchRunEvent(input.state, event(2, "artifact.registered"));
+
+  const evidence = selectResearchRunEvidence({ ...input, state });
+
+  assert.equal(state.evidence.artifacts, 2);
+  assert.equal(evidence.counts.artifacts, 2);
+});
+
+test("Snapshot history preserves the active plan stage without mutating reducer phase state", () => {
+  const snapshot = {
+    ...run,
+    status: "challenging" as const,
+    nextEventSequence: 3,
+  };
+  const input = hydrateResearchRunProjectionInput(snapshot, [
+    event(1, "run.created", {
+      plan: {
+        revision: 1,
+        stages: [{ id: "challenge", label: "Challenge evidence", status: "pending" }],
+      },
+    }),
+    event(2, "phase.started", { phase: "challenge" }),
+  ]);
+
+  const plan = selectResearchRunPlan(input);
+
+  assert.equal(input.state.activePhase, undefined);
+  assert.equal(plan.activeStageId, "challenge");
+});
+
 test("Plan projects the original and revised stages, including additions, supersession, and retry", () => {
   const plan = selectResearchRunPlan(fixtureInput());
 
@@ -298,6 +519,161 @@ test("Evidence maps claims to sources and retains contradiction, rejection, coun
     cited: 1,
     artifacts: 1,
   });
+});
+
+test("Manifest source provenance enriches richer evidence without replacing its semantics", () => {
+  const usedId = "evidence_manifest_used";
+  const conflictingId = "evidence_manifest_conflicting";
+  const rejectedId = "evidence_manifest_rejected";
+  const manifestSources = [usedId, conflictingId, rejectedId].map((id, index) => ({
+    kind: "public-evidence" as const,
+    id,
+    contentDigest: String(index + 1).repeat(64),
+    snapshotDigest: String(index + 4).repeat(64),
+    canonicalUrl: `https://canonical.example.test/${id}`,
+    fetchedAt: `2026-08-${String(27 + index).padStart(2, "0")}T10:00:00.000Z`,
+  }));
+  const snapshot = {
+    ...run,
+    status: "completed" as const,
+    artifactManifest: {
+      schema: "opencoven.run-manifest/v1" as const,
+      id: "manifest_projection_merge",
+      runId: RUN_ID,
+      digest: "a".repeat(64),
+      revision: 1,
+      state: "final" as const,
+      createdAt: run.createdAt,
+      finalizedAt: RUN_UPDATED_AT,
+      sources: manifestSources,
+      artifacts: [],
+      modelExecutions: [],
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        completeness: "unreported" as const,
+      },
+      retention: {
+        policy: "7-days" as const,
+        effectivePolicy: "7-days" as const,
+        status: "active" as const,
+        contentExpiresAt: null,
+        updatedAt: RUN_UPDATED_AT,
+      },
+      deletion: { status: "not_scheduled" as const },
+    },
+  };
+  const evidenceEvent = event(1, "phase.completed", {
+    evidence: {
+      sources: [
+        {
+          id: usedId,
+          title: "Primary migration evidence",
+          sourceType: "web",
+          status: "used",
+          freshness: "stale",
+          claim: "The migration can be reversed.",
+        },
+        {
+          id: conflictingId,
+          title: "Conflicting migration evidence",
+          sourceType: "web",
+          status: "conflicting",
+          fetchedAt: "2025-01-01T10:00:00.000Z",
+          claim: "The migration can be reversed.",
+        },
+      ],
+    },
+  });
+  const mission = {
+    version: 1,
+    id: "mission-manifest-merge",
+    familiarId: "sage",
+    title: "Manifest merge",
+    intent: "Preserve evidence semantics",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: run.bounds,
+    status: "completed",
+    createdAt: run.createdAt,
+    updatedAt: RUN_UPDATED_AT,
+    iterations: [],
+    artifacts: [],
+    sources: [{
+      id: rejectedId,
+      title: "Rejected mission evidence",
+      sourceType: "document",
+      status: "rejected",
+      claim: "The migration is irreversible.",
+      note: "Superseded source",
+    }],
+  } as ResearchMission;
+
+  const evidence = selectResearchRunEvidence({
+    state: rehydrateResearchRun(snapshot, [evidenceEvent]),
+    mission,
+  });
+
+  assert.deepEqual(
+    evidence.sources.map((source) => ({
+      id: source.id,
+      title: source.title,
+      status: source.status,
+      sourceType: source.sourceType,
+      url: source.url,
+      fetchedAt: source.fetchedAt,
+      freshness: source.freshness,
+      contentDigest: source.contentDigest,
+      snapshotDigest: source.snapshotDigest,
+    })),
+    [
+      {
+        id: usedId,
+        title: "Primary migration evidence",
+        status: "used",
+        sourceType: "web",
+        url: `https://canonical.example.test/${usedId}`,
+        fetchedAt: "2026-08-27T10:00:00.000Z",
+        freshness: "stale",
+        contentDigest: "1".repeat(64),
+        snapshotDigest: "4".repeat(64),
+      },
+      {
+        id: conflictingId,
+        title: "Conflicting migration evidence",
+        status: "conflicting",
+        sourceType: "web",
+        url: `https://canonical.example.test/${conflictingId}`,
+        fetchedAt: "2026-08-28T10:00:00.000Z",
+        freshness: "fresh",
+        contentDigest: "2".repeat(64),
+        snapshotDigest: "5".repeat(64),
+      },
+      {
+        id: rejectedId,
+        title: "Rejected mission evidence",
+        status: "rejected",
+        sourceType: "document",
+        url: `https://canonical.example.test/${rejectedId}`,
+        fetchedAt: "2026-08-29T10:00:00.000Z",
+        freshness: "fresh",
+        contentDigest: "3".repeat(64),
+        snapshotDigest: "6".repeat(64),
+      },
+    ],
+  );
+  assert.equal(evidence.counts.retained, 1);
+  assert.equal(evidence.counts.rejected, 1);
+  assert.deepEqual(
+    evidence.claims.map((claim) => ({ text: claim.text, status: claim.status })),
+    [
+      { text: "The migration can be reversed.", status: "contradicted" },
+      { text: "The migration is irreversible.", status: "rejected" },
+    ],
+  );
 });
 
 test("Evidence gives anonymous records stable event-scoped IDs without cross-event collisions", () => {

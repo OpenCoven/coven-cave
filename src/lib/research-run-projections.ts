@@ -7,11 +7,18 @@ import type {
 import {
   createResearchRunEventState,
   type ResearchRunEventState,
+  type ResearchRunPhaseV1,
 } from "./research-run-event-reducer.ts";
-import type {
-  ResearchRunStatusV1,
-  RunEventV1,
+import {
+  parseRunEventV1,
+  validateRunManifestDeletionEventV1,
+  type ResearchRunStatusV1,
+  type ResearchRunV1,
+  type RunEventV1,
 } from "./research-protocol/research-run.ts";
+import type {
+  RunManifestSourceV1,
+} from "./research-protocol/run-manifest.ts";
 
 /**
  * Presentation data carried by canonical run events. These are deliberately
@@ -20,6 +27,8 @@ import type {
  */
 export type ResearchRunProjectionInput = {
   state: ResearchRunEventState;
+  /** Validated event history represented by the current snapshot, kept separate from newly applied events. */
+  eventHistory?: readonly RunEventV1[];
   /** Legacy Desk data until the run gateway replaces the mission endpoint. */
   mission?: ResearchMission | null;
 };
@@ -98,6 +107,10 @@ export type ResearchRunEvidenceSource = {
   publishedAt?: string;
   fetchedAt?: string;
   rejectionReason?: string;
+  digest?: string;
+  contentDigest?: string;
+  snapshotDigest?: string;
+  availability?: "device-local";
 };
 
 export type ResearchRunEvidenceClaim = {
@@ -296,6 +309,66 @@ function eventData(event: RunEventV1): Record<string, unknown> {
   return event.data;
 }
 
+function projectionEvents(input: ResearchRunProjectionInput): RunEventV1[] {
+  const bySequence = new Map<number, RunEventV1>();
+  for (const event of input.eventHistory ?? []) bySequence.set(event.sequence, event);
+  for (const event of input.state.appliedEvents) bySequence.set(event.sequence, event);
+  return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
+}
+
+function activePhaseFromEvents(events: readonly RunEventV1[]): ResearchRunPhaseV1 | undefined {
+  let activePhase: ResearchRunPhaseV1 | undefined;
+  for (const event of events) {
+    if (event.type !== "phase.started" && event.type !== "phase.completed") continue;
+    const phase = event.data.phase;
+    if (phase !== "scope" && phase !== "challenge" && phase !== "synthesize" && phase !== "control") {
+      continue;
+    }
+    if (event.type === "phase.started") activePhase = phase;
+    else if (activePhase === phase) activePhase = undefined;
+  }
+  return activePhase;
+}
+
+export function hydrateResearchRunProjectionInput(
+  run: ResearchRunV1,
+  historicalValues: readonly unknown[],
+  mission?: ResearchMission | null,
+): ResearchRunProjectionInput {
+  const expectedLastSequence = run.nextEventSequence - 1;
+  const eventHistory: RunEventV1[] = [];
+  for (const value of historicalValues) {
+    const parsed = parseRunEventV1(value);
+    if (!parsed.ok || parsed.value.runId !== run.id) {
+      throw new TypeError("Research Run projection history contains an invalid historical event or foreign run");
+    }
+    eventHistory.push(parsed.value);
+  }
+  eventHistory.sort((left, right) => left.sequence - right.sequence);
+  if (
+    eventHistory.length !== expectedLastSequence
+    || eventHistory.some((event, index) => event.sequence !== index + 1)
+  ) {
+    throw new RangeError(
+      `Research Run projection history must be a complete event prefix through sequence ${expectedLastSequence}`,
+    );
+  }
+  const validatedHistory = validateRunManifestDeletionEventV1(run, eventHistory);
+  if (!validatedHistory.ok) {
+    throw new RangeError(
+      `Research Run projection history is inconsistent with its snapshot: ${validatedHistory.error.message}`,
+    );
+  }
+  if (mission && run.id !== mission.id && run.id !== `run_${mission.id}`) {
+    throw new RangeError("Research mission does not belong to snapshot Research Run");
+  }
+  return {
+    state: createResearchRunEventState(run),
+    eventHistory,
+    ...(mission !== undefined ? { mission } : {}),
+  };
+}
+
 function eventPlanRevision(value: unknown, fallbackRevision: number, at: string): ResearchRunPlanRevision | undefined {
   if (!isRecord(value) || !Array.isArray(value.stages ?? value.steps)) return undefined;
   const rawStages = (value.stages ?? value.steps) as unknown[];
@@ -389,9 +462,9 @@ function planFromMission(mission: ResearchMission): ResearchRunPlanRevision[] {
   return revisions;
 }
 
-function stageRetryUpdates(state: ResearchRunEventState): ReadonlyMap<string, { attempt: number; retryable: boolean }> {
+function stageRetryUpdates(events: readonly RunEventV1[]): ReadonlyMap<string, { attempt: number; retryable: boolean }> {
   const updates = new Map<string, { attempt: number; retryable: boolean }>();
-  for (const event of state.appliedEvents) {
+  for (const event of events) {
     const data = eventData(event);
     const candidate = isRecord(data.stageRetry) ? data.stageRetry : data;
     const stageId = textValue(candidate.stageId ?? candidate.stage, 120);
@@ -406,7 +479,7 @@ function stageRetryUpdates(state: ResearchRunEventState): ReadonlyMap<string, { 
 }
 
 function selectPlanRevisions(input: ResearchRunProjectionInput): ResearchRunPlanRevision[] {
-  const eventRevisions = revisionsByNumber(input.state.appliedEvents.flatMap(planRevisionsFromEvent));
+  const eventRevisions = revisionsByNumber(projectionEvents(input).flatMap(planRevisionsFromEvent));
   if (eventRevisions.length > 0) return eventRevisions;
   return revisionsByNumber(input.mission ? planFromMission(input.mission) : []);
 }
@@ -415,7 +488,7 @@ export function selectResearchRunPlan(input: ResearchRunProjectionInput): Resear
   const revisions = selectPlanRevisions(input);
   const original = revisions[0] ?? null;
   const rawRevised = revisions.at(-1) ?? null;
-  const retries = stageRetryUpdates(input.state);
+  const retries = stageRetryUpdates(projectionEvents(input));
   const revised = rawRevised
     ? {
       ...rawRevised,
@@ -449,8 +522,9 @@ export function selectResearchRunPlan(input: ResearchRunProjectionInput): Resear
       }),
     }
     : null;
+  const activePhase = input.state.activePhase ?? activePhaseFromEvents(projectionEvents(input));
   const activeStage = revised?.stages.find((stage) => stage.status === "active")
-    ?? (input.state.activePhase ? revised?.stages.find((stage) => stage.id === input.state.activePhase) : undefined);
+    ?? (activePhase ? revised?.stages.find((stage) => stage.id === activePhase) : undefined);
   return {
     original: markedOriginal,
     revised,
@@ -562,9 +636,10 @@ function activityFromMission(mission: ResearchMission): ResearchRunActivityEntry
 }
 
 export function selectResearchRunActivity(input: ResearchRunProjectionInput): ResearchRunActivityProjection {
+  const events = projectionEvents(input);
   let entries: ResearchRunActivityEntry[];
-  if (input.state.appliedEvents.length > 0) {
-    entries = input.state.appliedEvents.map(activityForEvent);
+  if (events.length > 0) {
+    entries = events.map(activityForEvent);
   } else if (input.mission) {
     entries = activityFromMission(input.mission);
   } else if (input.state.activity) {
@@ -593,8 +668,11 @@ export function selectResearchRunActivity(input: ResearchRunProjectionInput): Re
   };
 }
 
-function sourceStatus(value: unknown): ResearchSourceRef["status"] {
-  return value === "used" || value === "conflicting" || value === "rejected" ? value : "candidate";
+function sourceStatus(value: unknown): ResearchSourceRef["status"] | undefined {
+  if (value === "candidate" || value === "used" || value === "conflicting" || value === "rejected") {
+    return value;
+  }
+  return undefined;
 }
 
 function freshnessValue(value: unknown): ResearchRunEvidenceFreshness | undefined {
@@ -603,19 +681,24 @@ function freshnessValue(value: unknown): ResearchRunEvidenceFreshness | undefine
     : undefined;
 }
 
-function sourceFromValue(value: unknown, runUpdatedAt: string): ResearchRunEvidenceSource | undefined {
+type ResearchRunEvidenceSourcePatch =
+  & Pick<ResearchRunEvidenceSource, "id">
+  & Partial<Omit<ResearchRunEvidenceSource, "id">>;
+
+function sourceFromValue(value: unknown): ResearchRunEvidenceSourcePatch | undefined {
   if (!isRecord(value)) return undefined;
   const id = textValue(value.id ?? value.sourceId, 160);
   if (!id) return undefined;
+  const title = textValue(value.title ?? value.name, MAX_TEXT);
+  const status = sourceStatus(value.status);
   const fetchedAt = textValue(value.fetchedAt ?? value.retrievedAt ?? value.capturedAt, 64);
   const publishedAt = textValue(value.publishedAt, 64);
   const explicitFreshness = freshnessValue(value.freshness);
-  const freshness = explicitFreshness ?? freshnessForTimestamp(fetchedAt, runUpdatedAt);
   return {
     id,
-    title: textValue(value.title ?? value.name, MAX_TEXT) ?? `Source ${id}`,
-    status: sourceStatus(value.status),
-    freshness,
+    ...(title ? { title } : {}),
+    ...(status ? { status } : {}),
+    ...(explicitFreshness ? { freshness: explicitFreshness } : {}),
     ...(textValue(value.sourceType ?? value.kind, 80) ? { sourceType: textValue(value.sourceType ?? value.kind, 80) } : {}),
     ...(safeUrl(value.url ?? value.canonicalUrl) ? { url: safeUrl(value.url ?? value.canonicalUrl) } : {}),
     ...(textValue(value.claim, MAX_DETAIL) ? { claim: textValue(value.claim, MAX_DETAIL) } : {}),
@@ -625,17 +708,33 @@ function sourceFromValue(value: unknown, runUpdatedAt: string): ResearchRunEvide
   };
 }
 
-function sourceFromMission(source: ResearchSourceRef): ResearchRunEvidenceSource {
+function sourceFromMission(source: ResearchSourceRef): ResearchRunEvidenceSourcePatch {
   return {
     id: source.id,
     title: textValue(source.title) ?? `Source ${source.id}`,
     status: source.status,
-    freshness: "unknown",
     ...(textValue(source.sourceType, 80) ? { sourceType: textValue(source.sourceType, 80) } : {}),
     ...(safeUrl(source.url) ? { url: safeUrl(source.url) } : {}),
     ...(textValue(source.claim, MAX_DETAIL) ? { claim: textValue(source.claim, MAX_DETAIL) } : {}),
     ...(textValue(source.publishedAt, 64) ? { publishedAt: textValue(source.publishedAt, 64) } : {}),
     ...(source.status === "rejected" && textValue(source.note, MAX_DETAIL) ? { rejectionReason: textValue(source.note, MAX_DETAIL) } : {}),
+  };
+}
+
+function sourceFromManifest(source: RunManifestSourceV1): ResearchRunEvidenceSourcePatch {
+  if (source.kind === "context-pack") {
+    return {
+      id: source.id,
+      digest: source.digest,
+      availability: source.availability,
+    };
+  }
+  return {
+    id: source.id,
+    contentDigest: source.contentDigest,
+    snapshotDigest: source.snapshotDigest,
+    url: source.canonicalUrl,
+    fetchedAt: source.fetchedAt,
   };
 }
 
@@ -733,11 +832,11 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
   contradictions: ResearchRunContradiction[];
   rejected: ResearchRunRejectedEvidence[];
 } {
-  const sourceMap = new Map<string, ResearchRunEvidenceSource>();
+  const sourceMap = new Map<string, ResearchRunEvidenceSourcePatch>();
   const claimMap = new Map<string, ResearchRunEvidenceClaim>();
   const contradictionMap = new Map<string, ResearchRunContradiction>();
   const rejectedMap = new Map<string, ResearchRunRejectedEvidence>();
-  const addSource = (source: ResearchRunEvidenceSource | undefined) => {
+  const addSource = (source: ResearchRunEvidenceSourcePatch | undefined) => {
     if (!source) return;
     const current = sourceMap.get(source.id);
     sourceMap.set(source.id, current ? { ...current, ...source } : source);
@@ -749,13 +848,13 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
       ? { ...current, ...claim, sourceIds: [...new Set([...current.sourceIds, ...claim.sourceIds])] }
       : claim);
   };
-  for (const event of input.state.appliedEvents) {
+  for (const event of projectionEvents(input)) {
     for (const record of evidenceRecords(event)) {
       const rawSources = record.sources;
       if (Array.isArray(rawSources)) {
-        for (const value of rawSources.slice(0, MAX_ITEMS)) addSource(sourceFromValue(value, input.state.run.updatedAt));
+        for (const value of rawSources.slice(0, MAX_ITEMS)) addSource(sourceFromValue(value));
       }
-      addSource(sourceFromValue(record.source, input.state.run.updatedAt));
+      addSource(sourceFromValue(record.source));
       const reportClaims = isRecord(record.report) ? record.report.claims : undefined;
       const hasEvidenceClaims = Array.isArray(record.claims);
       const rawClaims = hasEvidenceClaims
@@ -779,14 +878,21 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
     }
   }
   for (const source of input.state.run.artifactManifest?.sources ?? []) {
-    addSource(sourceFromValue(source, input.state.run.updatedAt));
+    addSource(sourceFromManifest(source));
   }
   for (const source of input.mission?.sources ?? []) {
     const current = sourceMap.get(source.id);
     const legacy = sourceFromMission(source);
     sourceMap.set(source.id, current ? { ...legacy, ...current } : legacy);
   }
-  for (const source of sourceMap.values()) {
+  const sources = [...sourceMap.values()].map((source): ResearchRunEvidenceSource => ({
+    ...source,
+    title: source.title ?? `Source ${source.id}`,
+    status: source.status ?? "candidate",
+    freshness: source.freshness ?? freshnessForTimestamp(source.fetchedAt, input.state.run.updatedAt),
+  }));
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  for (const source of sources) {
     if (source.claim) {
       const current = [...claimMap.values()].find((claim) => claim.text === source.claim);
       const id = current?.id ?? `claim-${source.id}`;
@@ -812,7 +918,7 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
     }
   }
   for (const claim of claimMap.values()) {
-    const sourceStatuses = claim.sourceIds.map((id) => sourceMap.get(id)?.status);
+    const sourceStatuses = claim.sourceIds.map((id) => sourceById.get(id)?.status);
     const status = sourceStatuses.includes("conflicting")
       ? "contradicted"
       : sourceStatuses.includes("rejected")
@@ -830,7 +936,7 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
     }
   }
   return {
-    sources: [...sourceMap.values()],
+    sources,
     claims: [...claimMap.values()],
     contradictions: [...contradictionMap.values()],
     rejected: [...rejectedMap.values()],
@@ -839,17 +945,46 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
 
 export function selectResearchRunEvidence(input: ResearchRunProjectionInput): ResearchRunEvidenceProjection {
   const collected = evidenceFromInput(input);
+  const observedCounts: ResearchRunEvidenceCounts = {};
+  for (const event of projectionEvents(input)) {
+    for (const key of ["sources", "reviewed", "retained", "rejected", "cited", "artifacts"] as const) {
+      const count = nonNegativeInteger(event.data[key]);
+      if (count !== undefined) observedCounts[key] = count;
+    }
+    if (
+      event.type === "artifact.registered"
+      && nonNegativeInteger(event.data.artifacts) === undefined
+      && nonNegativeInteger(event.data.artifactCount) === undefined
+    ) {
+      observedCounts.artifacts = (observedCounts.artifacts ?? 0) + 1;
+    }
+    const artifactCount = nonNegativeInteger(event.data.artifactCount);
+    if (artifactCount !== undefined) observedCounts.artifacts = artifactCount;
+  }
+  const evidenceCounts: ResearchRunEvidenceCounts = input.eventHistory === undefined
+    ? { ...observedCounts, ...input.state.evidence }
+    : { ...input.state.evidence, ...observedCounts };
+  if (
+    input.eventHistory !== undefined
+    && observedCounts.artifacts !== undefined
+    && input.state.evidence.artifacts !== undefined
+  ) {
+    evidenceCounts.artifacts = Math.max(
+      observedCounts.artifacts,
+      input.state.evidence.artifacts,
+    );
+  }
   const counts: ResearchRunEvidenceCounts = {
-    ...(input.state.evidence.sources !== undefined ? { sources: input.state.evidence.sources } : collected.sources.length > 0 ? { sources: collected.sources.length } : {}),
-    ...(input.state.evidence.reviewed !== undefined ? { reviewed: input.state.evidence.reviewed } : {}),
-    ...(input.state.evidence.retained !== undefined
-      ? { retained: input.state.evidence.retained }
+    ...(evidenceCounts.sources !== undefined ? { sources: evidenceCounts.sources } : collected.sources.length > 0 ? { sources: collected.sources.length } : {}),
+    ...(evidenceCounts.reviewed !== undefined ? { reviewed: evidenceCounts.reviewed } : {}),
+    ...(evidenceCounts.retained !== undefined
+      ? { retained: evidenceCounts.retained }
       : collected.sources.length > 0 ? { retained: collected.sources.filter((source) => source.status === "used").length } : {}),
-    ...(input.state.evidence.rejected !== undefined
-      ? { rejected: input.state.evidence.rejected }
+    ...(evidenceCounts.rejected !== undefined
+      ? { rejected: evidenceCounts.rejected }
       : collected.rejected.length > 0 ? { rejected: collected.rejected.length } : {}),
-    ...(input.state.evidence.cited !== undefined ? { cited: input.state.evidence.cited } : {}),
-    ...(input.state.evidence.artifacts !== undefined ? { artifacts: input.state.evidence.artifacts } : {}),
+    ...(evidenceCounts.cited !== undefined ? { cited: evidenceCounts.cited } : {}),
+    ...(evidenceCounts.artifacts !== undefined ? { artifacts: evidenceCounts.artifacts } : {}),
   };
   const freshness: Record<ResearchRunEvidenceFreshness, number> = {
     fresh: 0,
@@ -949,7 +1084,7 @@ function reportClaimsFromInput(input: ResearchRunProjectionInput): ResearchRunRe
   const claims = new Map<string, ResearchRunReportClaim>(
     evidence.claims.map((claim) => [claim.id, { ...claim, citationIds: claim.sourceIds }]),
   );
-  for (const event of input.state.appliedEvents) {
+  for (const event of projectionEvents(input)) {
     for (const record of evidenceRecords(event)) {
       const reportClaims = isRecord(record.report) ? record.report.claims : undefined;
       const hasEvidenceClaims = Array.isArray(record.claims);
@@ -977,7 +1112,7 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
   const outlineById = new Map<string, ResearchRunReportOutlineItem>();
   const artifactsById = new Map<string, ResearchRunReportArtifact>();
   let selectedExport: { status: ResearchRunExportStatus; detail?: string; at?: string } | undefined;
-  for (const event of input.state.appliedEvents) {
+  for (const event of projectionEvents(input)) {
     for (const record of evidenceRecords(event)) {
       const report = isRecord(record.report) ? record.report : record;
       const rawOutline = report.outline ?? report.sections;
@@ -1044,7 +1179,7 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
 
 export function selectResearchRunProjections(input: ResearchRunProjectionInput): ResearchRunProjections {
   return {
-    runId: input.mission?.id ?? input.state.run.id,
+    runId: input.state.run.id,
     plan: selectResearchRunPlan(input),
     activity: selectResearchRunActivity(input),
     evidence: selectResearchRunEvidence(input),
