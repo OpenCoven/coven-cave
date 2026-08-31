@@ -77,7 +77,7 @@ export function CovenInspector({
           <ul className="coven-inspector__threads">
             {threaded.map((familiar) => (
               <li key={familiar.id} className="coven-inspector__thread">
-                <FamiliarAvatar familiar={familiar} size="sm" />
+                <FamiliarAvatar familiar={familiar} size="sm" expandable />
                 <span className="coven-inspector__thread-name">{familiar.display_name}</span>
                 <button
                   type="button"
