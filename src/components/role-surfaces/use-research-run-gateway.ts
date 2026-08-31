@@ -42,17 +42,19 @@ type ResearchRunGatewayTransportState = Pick<
   "run" | "eventState" | "status" | "error"
 > & {
   selector: string | null;
+  completeEventState: ResearchRunEventState | null;
 };
 
 const IDLE: ResearchRunGatewayTransportState = {
   selector: null,
   run: null,
   eventState: null,
+  completeEventState: null,
   status: "idle",
   error: null,
 };
 
-function hasCompleteEventHistory(state: ResearchRunEventState | null): state is ResearchRunEventState {
+function hasCompleteEventHistory(state: ResearchRunEventState | null): boolean {
   if (!state || state.sync.status !== "synced" || state.pendingEvents.length > 0) return false;
   const expectedLastSequence = state.run.nextEventSequence - 1;
   return state.lastEventSequence === expectedLastSequence
@@ -110,24 +112,34 @@ export function useResearchRunGateway(
             selector: missionOrRunId,
             run: frame.run,
             eventState: createResearchRunEventState(frame.run),
+            completeEventState: null,
             status: "loading",
             error: null,
           });
           openSource(frame.run.id);
           return;
         }
-        setState((previous) => ({
-          selector: missionOrRunId,
-          run: frame.run,
-          eventState: rehydrateResearchRun(frame.run, [], {
+        setState((previous) => {
+          const eventState = rehydrateResearchRun(frame.run, [], {
             afterSequence: frame.afterSeq,
             previousState: previous.eventState ?? undefined,
-          }),
-          status: frame.afterSeq >= frame.lastEventSequence
-            ? "connected"
-            : previous.status === "reconnecting" ? "reconnecting" : "loading",
-          error: null,
-        }));
+          });
+          const historyComplete = hasCompleteEventHistory(eventState);
+          return {
+            selector: missionOrRunId,
+            run: frame.run,
+            eventState,
+            completeEventState: historyComplete
+              ? eventState
+              : previous.completeEventState?.run.id === frame.run.id
+                ? previous.completeEventState
+                : null,
+            status: historyComplete
+              ? "connected"
+              : previous.status === "reconnecting" ? "reconnecting" : "loading",
+            error: null,
+          };
+        });
         return;
       }
       setState((previous) => {
@@ -147,6 +159,11 @@ export function useResearchRunGateway(
           ...previous,
           run: consumed.state.run,
           eventState: consumed.state,
+          completeEventState: hasCompleteEventHistory(consumed.state)
+            ? consumed.state
+            : previous.completeEventState?.run.id === consumed.state.run.id
+              ? previous.completeEventState
+              : null,
           status: consumed.state.sync.status === "gap"
             ? "reconnecting"
             : hasCompleteEventHistory(consumed.state)
@@ -198,6 +215,7 @@ export function useResearchRunGateway(
           selector: missionOrRunId,
           run: null,
           eventState: null,
+          completeEventState: null,
           status: "loading",
           error: null,
         });
@@ -209,17 +227,24 @@ export function useResearchRunGateway(
           selector: missionOrRunId,
           run: null,
           eventState: null,
+          completeEventState: null,
           status: "error",
           error: snapshot.error ?? "Research Run could not be loaded",
         });
         return;
       }
-      setState({
-        selector: missionOrRunId,
-        run: snapshot.run,
-        eventState: createResearchRunEventState(snapshot.run),
-        status: "loading",
-        error: null,
+      setState((previous) => {
+        const eventState = createResearchRunEventState(snapshot.run);
+        return {
+          selector: missionOrRunId,
+          run: snapshot.run,
+          eventState,
+          completeEventState: previous.completeEventState?.run.id === snapshot.run.id
+            ? previous.completeEventState
+            : null,
+          status: "loading",
+          error: null,
+        };
       });
       openSource(snapshot.run.id);
     };
@@ -231,6 +256,7 @@ export function useResearchRunGateway(
           selector: missionOrRunId,
           run: null,
           eventState: null,
+          completeEventState: null,
           status: "error",
           error: "Research Run gateway could not be loaded",
         });
@@ -249,6 +275,7 @@ export function useResearchRunGateway(
       selector: missionOrRunId,
       run: null,
       eventState: null,
+      completeEventState: null,
       status: missionOrRunId ? "loading" as const : "idle" as const,
       error: null,
     };
@@ -262,13 +289,18 @@ export function useResearchRunGateway(
     ),
   );
   const projectionMission = missionDetailAvailable ? legacyMission : null;
-  const historyComplete = hasCompleteEventHistory(currentState.eventState);
+  const canonicalEventState = hasCompleteEventHistory(currentState.eventState)
+    ? currentState.eventState
+    : currentState.completeEventState?.run.id === currentState.eventState?.run.id
+      ? currentState.completeEventState
+      : null;
+  const historyComplete = Boolean(canonicalEventState);
   const projection = useMemo(() => {
-    if (historyComplete && currentState.eventState) {
+    if (canonicalEventState) {
       try {
         const hydrated = hydrateHybridResearchRunProjectionInput(
-          currentState.eventState.run,
-          currentState.eventState.appliedEvents,
+          canonicalEventState.run,
+          canonicalEventState.appliedEvents,
           projectionMission,
         );
         return {
@@ -307,11 +339,11 @@ export function useResearchRunGateway(
       projectionSource: null,
       projectionError: null,
     };
-  }, [currentState.eventState, historyComplete, projectionMission]);
+  }, [canonicalEventState, projectionMission]);
 
   return {
-    run: currentState.run,
-    eventState: currentState.eventState,
+    run: canonicalEventState?.run ?? null,
+    eventState: canonicalEventState,
     status: currentState.status,
     error: currentState.error,
     historyComplete,

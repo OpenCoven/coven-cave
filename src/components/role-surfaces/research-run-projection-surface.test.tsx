@@ -566,6 +566,132 @@ describe("Research Desk canonical projection integration", () => {
     expect(nextSource.closed).toBe(true);
   });
 
+  test("keeps the last complete same-generation projection visible until a missed suffix is complete", async () => {
+    const generationTwoRunId = `${RUN_ID}_g2`;
+    const generationTwoRun = run(generationTwoRunId, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
+      json: async () => String(input).includes("mission-2")
+        ? {
+            ok: true,
+            run: run("run_mission-2", {
+              status: "scoping",
+              nextEventSequence: 2,
+            }),
+            lastEventSequence: 1,
+            nextEventSequence: 2,
+          }
+        : {
+            ok: true,
+            run: generationTwoRun,
+            lastEventSequence: 1,
+            nextEventSequence: 2,
+          },
+    })));
+    const renderer = await mount();
+    const source = FakeEventSource.instances[0];
+
+    await act(async () => {
+      source.emit("snapshot", {
+        run: generationTwoRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Stable generation two launch",
+        plan: {
+          revision: 1,
+          stages: [{ id: "scope", label: "Stable generation two scope", status: "active" }],
+        },
+      }, generationTwoRunId));
+    });
+    expect(textOf(renderer.toJSON())).toContain("Stable generation two launch");
+
+    const completedSnapshot = run(generationTwoRunId, {
+      status: "completed",
+      nextEventSequence: 3,
+      updatedAt: "2026-08-31T18:10:00.000Z",
+    });
+    await act(async () => {
+      source.onerror?.();
+      source.emit("snapshot", {
+        run: completedSnapshot,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+        afterSeq: 1,
+      });
+    });
+
+    const catchingUp = textOf(renderer.toJSON());
+    expect(catchingUp).toContain("Stable generation two launch");
+    expect(catchingUp).toContain(
+      "Reconnecting to historical run history. Showing the last complete generation-specific data.",
+    );
+    expect(catchingUp).not.toContain("Persisted mission fallback");
+    expect(catchingUp).not.toContain("Generation two completed");
+    expect(catchingUp).not.toContain("Historical run · completed");
+
+    const completionEvent = event(2, "run.completed", {
+      status: "completed",
+      activity: "Generation two completed",
+      sources: 0,
+      artifacts: 0,
+      iterations: 0,
+    }, generationTwoRunId);
+    await act(async () => {
+      source.emit("run-event", completionEvent);
+      source.emit("run-event", completionEvent);
+    });
+    const caughtUp = textOf(renderer.toJSON());
+    expect(caughtUp).toContain("Stable generation two launch");
+    expect(caughtUp).toContain("Generation two completed");
+    expect(caughtUp.match(/Generation two completed/g)).toHaveLength(1);
+    expect(caughtUp).toContain("Historical run · completed");
+
+    const generationThreeRun = run(`${RUN_ID}_g3`, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+    await act(async () => {
+      source.emit("snapshot", {
+        run: generationThreeRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+    });
+    expect(textOf(renderer.toJSON())).not.toContain("Stable generation two launch");
+    expect(textOf(renderer.toJSON())).not.toContain("Generation two completed");
+
+    const generationThreeSource = FakeEventSource.instances[1];
+    const selectedMission = mission({
+      id: "mission-2",
+      title: "Selected mission",
+      intent: "Selected mission intent",
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: selectedMission,
+        selector: selectedMission.id,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+      generationThreeSource.emit("run-event", event(1, "run.created", {
+        activity: "Stale generation three launch",
+      }, generationThreeRun.id));
+    });
+    expect(textOf(renderer.toJSON())).not.toContain("Stale generation three launch");
+
+    const selectedSource = FakeEventSource.instances[2];
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
+    expect(generationThreeSource.closed).toBe(true);
+    expect(selectedSource.closed).toBe(true);
+  });
+
   test("selection change closes every prior generation stream and ignores stale callbacks", async () => {
     const selectedMission = mission({
       id: "mission-2",
