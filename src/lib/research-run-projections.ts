@@ -187,8 +187,51 @@ const MAX_ITEMS = 200;
 const MAX_TEXT = 320;
 const MAX_DETAIL = 512;
 
+type ProjectionIdNamespace =
+  | "evidence-claim"
+  | "evidence-contradiction"
+  | "evidence-rejected"
+  | "report-claim"
+  | "report-section"
+  | "report-artifact";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "undefined") return "undefined";
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(",")}]`;
+  if (!isRecord(value)) return JSON.stringify(String(value));
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+    .join(",")}}`;
+}
+
+function projectionIdentityHash(value: unknown): string {
+  const serialized = stableSerialize(value);
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < serialized.length; index += 1) {
+    const code = serialized.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+    second ^= second >>> 13;
+  }
+  return `${(first >>> 0).toString(36)}${(second >>> 0).toString(36)}`;
+}
+
+function projectionFallbackId(
+  namespace: ProjectionIdNamespace,
+  event: RunEventV1,
+  semanticIdentity: unknown,
+): string {
+  return `${namespace}-${event.sequence}-${projectionIdentityHash(semanticIdentity)}`;
 }
 
 function textValue(value: unknown, maximum = MAX_TEXT): string | undefined {
@@ -521,7 +564,7 @@ function activityFromMission(mission: ResearchMission): ResearchRunActivityEntry
 export function selectResearchRunActivity(input: ResearchRunProjectionInput): ResearchRunActivityProjection {
   let entries: ResearchRunActivityEntry[];
   if (input.state.appliedEvents.length > 0) {
-    entries = input.state.appliedEvents.slice(0, MAX_ITEMS).map(activityForEvent);
+    entries = input.state.appliedEvents.map(activityForEvent);
   } else if (input.mission) {
     entries = activityFromMission(input.mission);
   } else if (input.state.activity) {
@@ -545,7 +588,8 @@ export function selectResearchRunActivity(input: ResearchRunProjectionInput): Re
   return {
     entries: entries
       .slice()
-      .sort((left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence),
+      .sort((left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence)
+      .slice(-MAX_ITEMS),
   };
 }
 
@@ -614,48 +658,72 @@ function evidenceRecords(event: RunEventV1): Record<string, unknown>[] {
   return records;
 }
 
-function claimFromValue(value: unknown, fallbackId: string): ResearchRunEvidenceClaim | undefined {
+function claimFromValue(
+  value: unknown,
+  event: RunEventV1,
+  namespace: "evidence-claim" | "report-claim",
+): ResearchRunEvidenceClaim | undefined {
   if (!isRecord(value)) return undefined;
   const text = textValue(value.text ?? value.claim ?? value.statement, MAX_DETAIL);
   if (!text) return undefined;
-  const id = textValue(value.id ?? value.claimId, 160) ?? fallbackId;
   const status = value.status === "supported" || value.status === "contradicted" || value.status === "rejected"
     ? value.status
     : "unresolved";
+  const sourceIds = stringArray(value.sourceIds ?? value.sources ?? value.citationIds);
+  const id = textValue(value.id ?? value.claimId, 160) ?? projectionFallbackId(namespace, event, {
+    text,
+    sourceIds: sourceIds.slice().sort(),
+    status,
+  });
   return {
     id,
     text,
-    sourceIds: stringArray(value.sourceIds ?? value.sources ?? value.citationIds),
+    sourceIds,
     status,
   };
 }
 
-function contradictionFromValue(value: unknown, fallbackId: string): ResearchRunContradiction | undefined {
+function contradictionFromValue(value: unknown, event: RunEventV1): ResearchRunContradiction | undefined {
   if (!isRecord(value)) return undefined;
-  const id = textValue(value.id ?? value.contradictionId, 160) ?? fallbackId;
   const claim = textValue(value.claim ?? value.text, MAX_DETAIL);
   const claimId = textValue(value.claimId, 160);
   const sourceIds = stringArray(value.sourceIds ?? value.sources);
   if (!claim && !claimId && sourceIds.length === 0) return undefined;
+  const detail = textValue(value.detail ?? value.reason, MAX_DETAIL);
+  const id = textValue(value.id ?? value.contradictionId, 160) ?? projectionFallbackId(
+    "evidence-contradiction",
+    event,
+    {
+      claim,
+      claimId,
+      sourceIds: sourceIds.slice().sort(),
+      detail,
+    },
+  );
   return {
     id,
     ...(claimId ? { claimId } : {}),
     ...(claim ? { claim } : {}),
     sourceIds,
-    ...(textValue(value.detail ?? value.reason, MAX_DETAIL) ? { detail: textValue(value.detail ?? value.reason, MAX_DETAIL) } : {}),
+    ...(detail ? { detail } : {}),
   };
 }
 
-function rejectedFromValue(value: unknown, fallbackId: string): ResearchRunRejectedEvidence | undefined {
+function rejectedFromValue(value: unknown, event: RunEventV1): ResearchRunRejectedEvidence | undefined {
   if (!isRecord(value)) return undefined;
   const sourceId = textValue(value.sourceId ?? value.id, 160);
   const title = textValue(value.title ?? value.name ?? value.claim, MAX_TEXT);
   if (!sourceId && !title) return undefined;
+  const reason = textValue(value.reason ?? value.rejectionReason ?? value.detail, MAX_DETAIL);
+  const id = sourceId ?? projectionFallbackId("evidence-rejected", event, {
+    title,
+    reason,
+  });
   return {
-    id: sourceId ?? fallbackId,
+    id,
     title: title ?? `Evidence ${sourceId}`,
     ...(sourceId ? { sourceId } : {}),
-    ...(textValue(value.reason ?? value.rejectionReason ?? value.detail, MAX_DETAIL) ? { reason: textValue(value.reason ?? value.rejectionReason ?? value.detail, MAX_DETAIL) } : {}),
+    ...(reason ? { reason } : {}),
   };
 }
 
@@ -689,21 +757,23 @@ function evidenceFromInput(input: ResearchRunProjectionInput): {
       }
       addSource(sourceFromValue(record.source, input.state.run.updatedAt));
       const reportClaims = isRecord(record.report) ? record.report.claims : undefined;
-      const rawClaims = Array.isArray(record.claims)
-        ? record.claims
+      const hasEvidenceClaims = Array.isArray(record.claims);
+      const rawClaims = hasEvidenceClaims
+        ? record.claims as unknown[]
         : Array.isArray(reportClaims) ? reportClaims : [];
-      for (const [index, value] of rawClaims.slice(0, MAX_ITEMS).entries()) {
-        addClaim(claimFromValue(value, `claim-${index + 1}`));
+      const claimNamespace = hasEvidenceClaims ? "evidence-claim" : "report-claim";
+      for (const value of rawClaims.slice(0, MAX_ITEMS)) {
+        addClaim(claimFromValue(value, event, claimNamespace));
       }
-      for (const [index, value] of (Array.isArray(record.contradictions) ? record.contradictions : []).slice(0, MAX_ITEMS).entries()) {
-        const contradiction = contradictionFromValue(value, `contradiction-${index + 1}`);
+      for (const value of (Array.isArray(record.contradictions) ? record.contradictions : []).slice(0, MAX_ITEMS)) {
+        const contradiction = contradictionFromValue(value, event);
         if (contradiction) contradictionMap.set(contradiction.id, contradiction);
       }
       const rawRejected = Array.isArray(record.rejected)
         ? record.rejected
         : Array.isArray(record.rejectedEvidence) ? record.rejectedEvidence : [];
-      for (const [index, value] of rawRejected.slice(0, MAX_ITEMS).entries()) {
-        const rejected = rejectedFromValue(value, `rejected-${index + 1}`);
+      for (const value of rawRejected.slice(0, MAX_ITEMS)) {
+        const rejected = rejectedFromValue(value, event);
         if (rejected) rejectedMap.set(rejected.id, rejected);
       }
     }
@@ -798,36 +868,60 @@ function outlineStatus(value: unknown): ResearchRunReportOutlineStatus {
   return "pending";
 }
 
-function outlineFromValue(value: unknown, fallbackId: string): ResearchRunReportOutlineItem | undefined {
+function outlineFromValue(value: unknown, event: RunEventV1): ResearchRunReportOutlineItem | undefined {
   if (!isRecord(value)) return undefined;
-  const id = textValue(value.id ?? value.key, 160) ?? fallbackId;
   const title = textValue(value.title ?? value.label ?? value.name, MAX_TEXT);
   if (!title) return undefined;
   const depth = nonNegativeInteger(value.depth) ?? 0;
+  const status = outlineStatus(value.status ?? value.state);
+  const detail = textValue(value.detail ?? value.summary, MAX_DETAIL);
+  const id = textValue(value.id ?? value.key, 160) ?? projectionFallbackId("report-section", event, {
+    title,
+    status,
+    depth: Math.min(depth, 8),
+    detail,
+  });
   return {
     id,
     title,
-    status: outlineStatus(value.status ?? value.state),
+    status,
     depth: Math.min(depth, 8),
-    ...(textValue(value.detail ?? value.summary, MAX_DETAIL) ? { detail: textValue(value.detail ?? value.summary, MAX_DETAIL) } : {}),
+    ...(detail ? { detail } : {}),
   };
 }
 
-function artifactFromValue(value: unknown): ResearchRunReportArtifact | undefined {
+function artifactFromValue(
+  value: unknown,
+  event?: RunEventV1,
+): ResearchRunReportArtifact | undefined {
   if (!isRecord(value)) return undefined;
-  const id = textValue(value.id ?? value.key ?? value.artifactId, 160);
-  if (!id) return undefined;
+  const explicitId = textValue(value.id ?? value.key ?? value.artifactId, 160);
+  const explicitTitle = textValue(value.title ?? value.name, MAX_TEXT);
+  if (!explicitId && !explicitTitle) return undefined;
   const rawStatus = value.status ?? value.state;
   const status = rawStatus === "published" || rawStatus === "ready" || rawStatus === "rejected" || rawStatus === "working"
     ? rawStatus
     : "ready";
+  const kind = textValue(value.kind, 80);
+  const contentSync = textValue(value.contentSync, 80);
+  const at = textValue(value.at ?? value.createdAt ?? value.updatedAt, 64);
+  const id = explicitId ?? (event
+    ? projectionFallbackId("report-artifact", event, {
+      title: explicitTitle,
+      kind,
+      status,
+      contentSync,
+      at,
+    })
+    : undefined);
+  if (!id) return undefined;
   return {
     id,
-    title: textValue(value.title ?? value.name, MAX_TEXT) ?? `Artifact ${id}`,
-    ...(textValue(value.kind, 80) ? { kind: textValue(value.kind, 80) } : {}),
+    title: explicitTitle ?? `Artifact ${id}`,
+    ...(kind ? { kind } : {}),
     status,
-    ...(textValue(value.contentSync, 80) ? { contentSync: textValue(value.contentSync, 80) } : {}),
-    ...(textValue(value.at ?? value.createdAt ?? value.updatedAt, 64) ? { at: textValue(value.at ?? value.createdAt ?? value.updatedAt, 64) } : {}),
+    ...(contentSync ? { contentSync } : {}),
+    ...(at ? { at } : {}),
   };
 }
 
@@ -858,11 +952,13 @@ function reportClaimsFromInput(input: ResearchRunProjectionInput): ResearchRunRe
   for (const event of input.state.appliedEvents) {
     for (const record of evidenceRecords(event)) {
       const reportClaims = isRecord(record.report) ? record.report.claims : undefined;
-      const rawClaims = Array.isArray(record.claims)
-        ? record.claims
+      const hasEvidenceClaims = Array.isArray(record.claims);
+      const rawClaims = hasEvidenceClaims
+        ? record.claims as unknown[]
         : Array.isArray(reportClaims) ? reportClaims : [];
-      for (const [index, value] of rawClaims.slice(0, MAX_ITEMS).entries()) {
-        const claim = claimFromValue(value, `claim-${index + 1}`);
+      const claimNamespace = hasEvidenceClaims ? "evidence-claim" : "report-claim";
+      for (const value of rawClaims.slice(0, MAX_ITEMS)) {
+        const claim = claimFromValue(value, event, claimNamespace);
         if (!claim) continue;
         const current = claims.get(claim.id);
         claims.set(claim.id, {
@@ -886,14 +982,14 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
       const report = isRecord(record.report) ? record.report : record;
       const rawOutline = report.outline ?? report.sections;
       if (Array.isArray(rawOutline)) {
-        for (const [index, value] of rawOutline.slice(0, MAX_ITEMS).entries()) {
-          const item = outlineFromValue(value, `section-${index + 1}`);
+        for (const value of rawOutline.slice(0, MAX_ITEMS)) {
+          const item = outlineFromValue(value, event);
           if (item) outlineById.set(item.id, item);
         }
       }
       const rawArtifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
-      for (const [index, value] of rawArtifacts.slice(0, MAX_ITEMS).entries()) {
-        const artifact = artifactFromValue(value ?? { id: `artifact-${index + 1}` });
+      for (const value of rawArtifacts.slice(0, MAX_ITEMS)) {
+        const artifact = artifactFromValue(value, event);
         if (artifact) artifactsById.set(artifact.id, artifact);
       }
       const candidateExport = exportStatus(
@@ -908,7 +1004,7 @@ export function selectResearchRunReport(input: ResearchRunProjectionInput): Rese
         };
       }
     }
-    const artifact = artifactFromValue(eventData(event).artifact);
+    const artifact = artifactFromValue(eventData(event).artifact, event);
     if (artifact) artifactsById.set(artifact.id, artifact);
   }
   for (const artifact of input.state.run.artifactManifest?.artifacts ?? []) {

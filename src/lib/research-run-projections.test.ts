@@ -240,6 +240,33 @@ test("Activity is chronological and only projects explicit user-safe fields", ()
   assert.equal(activity.entries.some((entry) => entry.detail?.includes("private")), false);
 });
 
+test("Activity retains the newest 200 entries after globally sorting out-of-order events", () => {
+  const eventCount = 205;
+  const activityEvents = Array.from({ length: eventCount }, (_, index) => {
+    const sequence = index + 1;
+    const chronologicalRank = (sequence * 73) % eventCount;
+    return {
+      ...event(sequence, "run.status", { activity: `Activity ${sequence}` }),
+      at: new Date(Date.UTC(2026, 0, 1) + chronologicalRank * 1_000).toISOString(),
+    };
+  });
+  const expectedSequences = activityEvents
+    .slice()
+    .sort((left, right) => left.at.localeCompare(right.at) || left.sequence - right.sequence)
+    .slice(-200)
+    .map((entry) => entry.sequence);
+
+  const activity = selectResearchRunActivity({
+    state: {
+      ...rehydrateResearchRun(run, activityEvents),
+      appliedEvents: activityEvents,
+    },
+  });
+
+  assert.equal(activity.entries.length, 200);
+  assert.deepEqual(activity.entries.map((entry) => entry.sequence), expectedSequences);
+});
+
 test("Evidence maps claims to sources and retains contradiction, rejection, counts, and freshness", () => {
   const evidence = selectResearchRunEvidence(fixtureInput());
 
@@ -273,6 +300,64 @@ test("Evidence maps claims to sources and retains contradiction, rejection, coun
   });
 });
 
+test("Evidence gives anonymous records stable event-scoped IDs without cross-event collisions", () => {
+  const anonymousEvents = [
+    event(1, "phase.completed", {
+      evidence: {
+        claims: [{ text: "Anonymous claim alpha", sourceIds: ["S1"], status: "supported" }],
+        contradictions: [{
+          claim: "Anonymous claim alpha",
+          sourceIds: ["S1"],
+          detail: "Anonymous contradiction alpha",
+        }],
+        rejectedEvidence: [{ title: "Anonymous rejection alpha", reason: "Rejected alpha" }],
+      },
+    }),
+    event(2, "phase.completed", {
+      evidence: {
+        claims: [{ text: "Anonymous claim beta", sourceIds: ["S2"], status: "supported" }],
+        contradictions: [{
+          claim: "Anonymous claim beta",
+          sourceIds: ["S2"],
+          detail: "Anonymous contradiction beta",
+        }],
+        rejectedEvidence: [{ title: "Anonymous rejection beta", reason: "Rejected beta" }],
+      },
+    }),
+  ];
+  const input = {
+    state: {
+      ...rehydrateResearchRun(run, anonymousEvents),
+      appliedEvents: anonymousEvents,
+    },
+  };
+
+  const evidence = selectResearchRunEvidence(input);
+  const repeated = selectResearchRunEvidence(input);
+
+  assert.equal(evidence.claims.length, 2);
+  assert.equal(evidence.contradictions.length, 2);
+  assert.equal(evidence.rejected.length, 2);
+  assert.equal(new Set(evidence.claims.map((claim) => claim.id)).size, 2);
+  assert.equal(new Set(evidence.contradictions.map((contradiction) => contradiction.id)).size, 2);
+  assert.equal(new Set(evidence.rejected.map((rejected) => rejected.id)).size, 2);
+  assert.ok(evidence.claims.every((claim) => claim.id.startsWith("evidence-claim-")));
+  assert.ok(evidence.contradictions.every((item) => item.id.startsWith("evidence-contradiction-")));
+  assert.ok(evidence.rejected.every((item) => item.id.startsWith("evidence-rejected-")));
+  assert.deepEqual(
+    {
+      claims: repeated.claims.map((claim) => claim.id),
+      contradictions: repeated.contradictions.map((contradiction) => contradiction.id),
+      rejected: repeated.rejected.map((rejected) => rejected.id),
+    },
+    {
+      claims: evidence.claims.map((claim) => claim.id),
+      contradictions: evidence.contradictions.map((contradiction) => contradiction.id),
+      rejected: evidence.rejected.map((rejected) => rejected.id),
+    },
+  );
+});
+
 test("Report projects progressive outline, claim citations, artifact metadata, and export state", () => {
   const report = selectResearchRunReport(fixtureInput());
 
@@ -296,6 +381,57 @@ test("Report projects progressive outline, claim citations, artifact metadata, a
   }]);
   assert.equal(report.exportStatus, "exported");
   assert.equal(report.exportedAt, RUN_UPDATED_AT);
+});
+
+test("Report gives anonymous claims, sections, and artifacts stable event-scoped IDs", () => {
+  const anonymousEvents = [
+    event(1, "artifact.registered", {
+      report: {
+        claims: [{ text: "Anonymous report claim alpha", citationIds: ["S1"] }],
+        outline: [{ title: "Anonymous section alpha", status: "complete", depth: 0 }],
+        artifacts: [{ title: "Anonymous artifact alpha", kind: "report", status: "ready" }],
+      },
+    }),
+    event(2, "artifact.registered", {
+      report: {
+        claims: [{ text: "Anonymous report claim beta", citationIds: ["S2"] }],
+        outline: [{ title: "Anonymous section beta", status: "active", depth: 1 }],
+        artifacts: [{ title: "Anonymous artifact beta", kind: "notes", status: "working" }],
+      },
+    }),
+  ];
+  const input = {
+    state: {
+      ...rehydrateResearchRun(run, anonymousEvents),
+      appliedEvents: anonymousEvents,
+    },
+  };
+
+  const report = selectResearchRunReport(input);
+  const repeated = selectResearchRunReport(input);
+  const anonymousClaims = report.claims.filter((claim) => claim.text.startsWith("Anonymous report"));
+
+  assert.equal(anonymousClaims.length, 2);
+  assert.equal(report.outline.length, 2);
+  assert.equal(report.artifacts.length, 2);
+  assert.equal(new Set(anonymousClaims.map((claim) => claim.id)).size, 2);
+  assert.equal(new Set(report.outline.map((section) => section.id)).size, 2);
+  assert.equal(new Set(report.artifacts.map((artifact) => artifact.id)).size, 2);
+  assert.ok(anonymousClaims.every((claim) => claim.id.startsWith("report-claim-")));
+  assert.ok(report.outline.every((section) => section.id.startsWith("report-section-")));
+  assert.ok(report.artifacts.every((artifact) => artifact.id.startsWith("report-artifact-")));
+  assert.deepEqual(
+    {
+      claims: repeated.claims.filter((claim) => claim.text.startsWith("Anonymous report")).map((claim) => claim.id),
+      outline: repeated.outline.map((section) => section.id),
+      artifacts: repeated.artifacts.map((artifact) => artifact.id),
+    },
+    {
+      claims: anonymousClaims.map((claim) => claim.id),
+      outline: report.outline.map((section) => section.id),
+      artifacts: report.artifacts.map((artifact) => artifact.id),
+    },
+  );
 });
 
 test("the legacy mission adapter enters the same reducer-backed selector contract", () => {
