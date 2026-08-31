@@ -180,6 +180,23 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     [{ kind: "protected", raw: "<malformed status>" }],
     "a non-object Serve status is protected rather than mistaken for an empty route",
   );
+  assert.deepEqual(
+    enumerateServeProxyBackends({
+      Web: {
+        "null.tailnet.ts.net:443": null,
+        "primitive.tailnet.ts.net:443": 42,
+        "array.tailnet.ts.net:443": [],
+        "missing-handlers.tailnet.ts.net:443": {},
+      },
+    }),
+    [
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+      { kind: "protected", raw: "<malformed Web config>" },
+    ],
+    "every malformed per-host Web config is protected instead of becoming an empty takeover",
+  );
 
   const healthyAssessment = await assessServeOwnership(
     competingStatus,
@@ -259,9 +276,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     [
       typeof module.tailscaleServeLeasePath,
       typeof module.acquireTailscaleServeLease,
+      typeof module.recoverStaleTailscaleServeLease,
     ],
-    ["function", "function"],
-    "Serve ownership exposes the shared lock path and bounded lease acquisition",
+    ["function", "function", "function"],
+    "Serve ownership exposes the shared lock path, bounded acquisition, and fenced recovery",
   );
 
   const tailscaleServeLeasePath = module.tailscaleServeLeasePath as (home: string) => string;
@@ -274,6 +292,12 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     new URL("../../src-tauri/src/desktop_reachability.rs", import.meta.url),
     "utf8",
   );
+  const typescriptHandoff = readFileSync(new URL("./mobile-handoff.ts", import.meta.url), "utf8");
+  assert.match(
+    typescriptHandoff,
+    /const TAILSCALE_SERVE_RECLAMATION_PORT = 61_987;/,
+    "TypeScript pins the shared crash-released reclamation fence",
+  );
   assert.match(
     rustReachability,
     /const TAILSCALE_SERVE_LEASE_FILE: &str = "tailscale-serve-ownership\.lock";/,
@@ -283,6 +307,11 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     rustReachability,
     /const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;/,
     "Rust uses the identical lease record version",
+  );
+  assert.match(
+    rustReachability,
+    /const TAILSCALE_SERVE_RECLAMATION_PORT: u16 = 61_987;/,
+    "Rust uses the identical crash-released reclamation fence",
   );
 
   type FakeEntry = { content: string; dev: number; ino: number };
@@ -341,10 +370,21 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     sleep: (milliseconds: number) => Promise<void>;
     timeoutMs: number;
     pollMs: number;
+    acquireReclamationFence?: () => Promise<ReclamationFence | null>;
+  };
+  type ReclamationFence = { release(): Promise<void> };
+  type RecoverOptions = {
+    path: string;
+    fs: FakeLeaseFs;
+    isProcessAlive: (pid: number) => boolean;
+    acquireReclamationFence: () => Promise<ReclamationFence | null>;
   };
   const acquireTailscaleServeLease = module.acquireTailscaleServeLease as (
     options: LeaseOptions,
   ) => Promise<{ release(): Promise<void> } | null>;
+  const recoverStaleTailscaleServeLease = module.recoverStaleTailscaleServeLease as (
+    options: RecoverOptions,
+  ) => Promise<boolean>;
   const lockPath = tailscaleServeLeasePath("/Users/coven");
   let now = 0;
   const sleep = async (milliseconds: number) => {
@@ -361,6 +401,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     sleep,
     timeoutMs: 10,
     pollMs: 5,
+    acquireReclamationFence: async () => ({ async release() {} }),
   });
   assert.ok(first, "the first reconciler acquires the machine-wide lease");
   const contended = await acquireTailscaleServeLease({
@@ -413,6 +454,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     sleep,
     timeoutMs: 10,
     pollMs: 5,
+    acquireReclamationFence: async () => ({ async release() {} }),
   });
   assert.ok(recovered, "a dead process owner is safely recovered");
   await recovered.release();
@@ -435,6 +477,52 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     await fs.readFile(lockPath),
     /replacement-owner/,
     "release never unlinks a replacement owner's lease",
+  );
+
+  const interleavedFs = new FakeLeaseFs();
+  interleavedFs.replace(
+    lockPath,
+    JSON.stringify({ version: 1, pid: 701, token: "stale-owner" }),
+  );
+  let fenceCalls = 0;
+  let grantFirstFence: ((lease: ReclamationFence) => void) | null = null;
+  let grantSecondFence: ((lease: ReclamationFence) => void) | null = null;
+  const acquireInterleavedFence = () => new Promise<ReclamationFence>((resolve) => {
+    fenceCalls += 1;
+    if (fenceCalls === 1) {
+      grantFirstFence = resolve;
+      return;
+    }
+    grantSecondFence = resolve;
+    grantFirstFence?.({
+      async release() {
+        interleavedFs.replace(
+          lockPath,
+          JSON.stringify({ version: 1, pid: 703, token: "third-owner" }),
+        );
+        grantSecondFence?.({ async release() {} });
+      },
+    });
+  });
+  const recoverOptions: RecoverOptions = {
+    path: lockPath,
+    fs: interleavedFs,
+    isProcessAlive: (pid) => pid === 703,
+    acquireReclamationFence: acquireInterleavedFence,
+  };
+  const [firstRecovery, delayedRecovery] = await Promise.all([
+    recoverStaleTailscaleServeLease(recoverOptions),
+    recoverStaleTailscaleServeLease(recoverOptions),
+  ]);
+  assert.deepEqual(
+    [firstRecovery, delayedRecovery],
+    [true, false],
+    "only the fenced reclaimer removes the stale canonical lease",
+  );
+  assert.match(
+    await interleavedFs.readFile(lockPath),
+    /third-owner/,
+    "a delayed second reclaimer rereads under the fence and never deletes the third acquirer",
   );
 
   const malformedFs = new FakeLeaseFs();

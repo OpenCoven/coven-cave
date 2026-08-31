@@ -51,6 +51,8 @@ const TAILSCALE_SERVE_LEASE_VERSION: u8 = 1;
 const TAILSCALE_SERVE_LEASE_TIMEOUT: Duration = Duration::from_millis(1500);
 #[cfg(all(desktop, target_os = "macos"))]
 const TAILSCALE_SERVE_LEASE_POLL: Duration = Duration::from_millis(50);
+#[cfg(all(desktop, target_os = "macos"))]
+const TAILSCALE_SERVE_RECLAMATION_PORT: u16 = 61_987;
 
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -586,7 +588,12 @@ fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
     };
     let mut targets = Vec::new();
     for config in web.values() {
+        let Some(config) = config.as_object() else {
+            targets.push(ServeProxyTarget::Protected);
+            continue;
+        };
         let Some(handlers) = config.get("Handlers") else {
+            targets.push(ServeProxyTarget::Protected);
             continue;
         };
         let Some(handlers) = handlers.as_object() else {
@@ -635,7 +642,7 @@ fn decide_serve_repair(
     {
         return ServeRepairDecision::Noop;
     }
-    if packaged {
+    if packaged && requested_port == super::sidecar_ports::CAVE_PRODUCTION_PORT {
         return ServeRepairDecision::Repair(mode);
     }
     if targets.iter().any(|target| match target {
@@ -727,6 +734,15 @@ fn serve_mutation_lease_matches(
         && current.token == expected.token
 }
 
+#[cfg(desktop)]
+fn stale_lease_matches_under_fence(
+    expected: &ServeMutationLeaseRecord,
+    current: &ServeMutationLeaseRecord,
+    is_process_alive: impl FnOnce(u32) -> bool,
+) -> bool {
+    serve_mutation_lease_matches(expected, current) && !is_process_alive(current.pid)
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 fn serve_mutation_lease_candidate_path(
     lease_path: &Path,
@@ -763,6 +779,14 @@ fn recover_stale_tailscale_serve_lease(lease_path: &Path) -> bool {
         return false;
     }
 
+    // Node binds the same loopback port before stale reclamation. The kernel
+    // releases this fence on crash, so only one reclaimer can reread and
+    // remove the canonical path while a delayed contender waits.
+    let Ok(_reclamation_fence) =
+        std::net::TcpListener::bind(("127.0.0.1", TAILSCALE_SERVE_RECLAMATION_PORT))
+    else {
+        return false;
+    };
     let Ok(second_raw) = std::fs::read_to_string(lease_path) else {
         return false;
     };
@@ -772,7 +796,7 @@ fn recover_stale_tailscale_serve_lease(lease_path: &Path) -> bool {
     let Ok(second_record) = serde_json::from_str::<ServeMutationLeaseRecord>(&second_raw) else {
         return false;
     };
-    if !serve_mutation_lease_matches(&first_record, &second_record)
+    if !stale_lease_matches_under_fence(&first_record, &second_record, process_is_alive)
         || first_metadata.dev() != second_metadata.dev()
         || first_metadata.ino() != second_metadata.ino()
     {
@@ -2621,6 +2645,27 @@ mod tests {
     }
 
     #[test]
+    fn serve_proxy_inventory_protects_malformed_per_host_configs() {
+        let status = serde_json::json!({
+            "Web": {
+                "null.tailnet.ts.net:443": null,
+                "primitive.tailnet.ts.net:443": 42,
+                "array.tailnet.ts.net:443": [],
+                "missing-handlers.tailnet.ts.net:443": {}
+            }
+        });
+        assert_eq!(
+            serve_proxy_targets(&status),
+            vec![
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+                ServeProxyTarget::Protected,
+            ]
+        );
+    }
+
+    #[test]
     fn packaged_serve_repair_has_precedence_over_a_healthy_dev_backend() {
         let status = serde_json::json!({
             "TCP": { "443": { "HTTPS": true } },
@@ -2629,6 +2674,18 @@ mod tests {
         assert_eq!(
             decide_serve_repair(&status, 3020, true, |_| true),
             ServeRepairDecision::Repair(TailscaleServeMode::Https)
+        );
+    }
+
+    #[test]
+    fn packaged_serve_repair_override_preserves_a_healthy_different_owner() {
+        let status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3008" } } } }
+        });
+        assert_eq!(
+            decide_serve_repair(&status, 3007, true, |port| port == 3008),
+            ServeRepairDecision::Preserve
         );
     }
 
@@ -2671,6 +2728,25 @@ mod tests {
         };
         assert!(serve_mutation_lease_matches(&owner, &owner));
         assert!(!serve_mutation_lease_matches(&owner, &replacement));
+    }
+
+    #[test]
+    fn delayed_reclaimer_revalidates_after_the_fence_before_removing() {
+        let stale = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4001,
+            token: "stale-owner".to_string(),
+        };
+        let third_owner = ServeMutationLeaseRecord {
+            version: 1,
+            pid: 4003,
+            token: "third-owner".to_string(),
+        };
+        assert!(stale_lease_matches_under_fence(&stale, &stale, |_| false));
+        assert!(
+            !stale_lease_matches_under_fence(&stale, &third_owner, |pid| pid == 4003),
+            "a second reclaimer authorized before the wait cannot remove the third acquirer"
+        );
     }
 
     #[test]

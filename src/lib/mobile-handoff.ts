@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
+import { createServer } from "node:net";
 import path from "node:path";
 import { CAVE_PORTS } from "../../scripts/ports.mjs";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
@@ -21,6 +22,8 @@ const TAILSCALE_SERVE_LEASE_VERSION = 1;
 const TAILSCALE_SERVE_LEASE_FILE = "tailscale-serve-ownership.lock";
 const TAILSCALE_SERVE_LEASE_TIMEOUT_MS = 1_500;
 const TAILSCALE_SERVE_LEASE_POLL_MS = 50;
+const TAILSCALE_SERVE_RECLAMATION_PORT = 61_987;
+const TAILSCALE_SERVE_RECLAMATION_TIMEOUT_MS = 500;
 
 type TailscaleServeLeaseRecord = {
   version: number;
@@ -45,6 +48,10 @@ export type TailscaleServeLease = {
   release(): Promise<void>;
 };
 
+type TailscaleServeReclamationFence = {
+  release(): Promise<void>;
+};
+
 type AcquireTailscaleServeLeaseOptions = {
   path?: string;
   fs?: TailscaleServeLeaseFileSystem;
@@ -55,6 +62,7 @@ type AcquireTailscaleServeLeaseOptions = {
   sleep?: (milliseconds: number) => Promise<void>;
   timeoutMs?: number;
   pollMs?: number;
+  acquireReclamationFence?: () => Promise<TailscaleServeReclamationFence | null>;
 };
 
 const tailscaleServeLeaseFs: TailscaleServeLeaseFileSystem = {
@@ -121,38 +129,98 @@ async function unlinkIfPresent(
   }
 }
 
-async function recoverStaleTailscaleServeLease(
-  fs: TailscaleServeLeaseFileSystem,
-  leasePath: string,
-  isProcessAlive: (pid: number) => boolean,
-): Promise<boolean> {
-  try {
-    const [firstRaw, firstStat] = await Promise.all([
-      fs.readFile(leasePath, "utf8"),
-      fs.stat(leasePath),
-    ]);
-    const firstRecord = parseTailscaleServeLeaseRecord(firstRaw);
-    if (!firstRecord || isProcessAlive(firstRecord.pid)) return false;
+type RecoverStaleTailscaleServeLeaseOptions = {
+  fs: TailscaleServeLeaseFileSystem;
+  path: string;
+  isProcessAlive: (pid: number) => boolean;
+  acquireReclamationFence?: () => Promise<TailscaleServeReclamationFence | null>;
+};
 
-    const [secondRaw, secondStat] = await Promise.all([
+async function acquireTailscaleServeReclamationFence():
+  Promise<TailscaleServeReclamationFence | null> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    let settled = false;
+    const finish = (value: TailscaleServeReclamationFence | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        server.close();
+      } catch {
+        // A bind that has not completed has no listener to close yet.
+      }
+      finish(null);
+    }, TAILSCALE_SERVE_RECLAMATION_TIMEOUT_MS);
+    server.once("error", () => finish(null));
+    server.listen({
+      host: "127.0.0.1",
+      port: TAILSCALE_SERVE_RECLAMATION_PORT,
+      exclusive: true,
+    }, () => {
+      if (settled) {
+        server.close();
+        return;
+      }
+      server.unref();
+      finish({
+        release: () => new Promise<void>((released) => {
+          server.close(() => released());
+        }),
+      });
+    });
+  });
+}
+
+export async function recoverStaleTailscaleServeLease({
+  fs,
+  path: leasePath,
+  isProcessAlive,
+  acquireReclamationFence = acquireTailscaleServeReclamationFence,
+}: RecoverStaleTailscaleServeLeaseOptions): Promise<boolean> {
+  let expectedRecord: TailscaleServeLeaseRecord;
+  let expectedStat: { dev: number; ino: number };
+  try {
+    const [raw, stats] = await Promise.all([
       fs.readFile(leasePath, "utf8"),
       fs.stat(leasePath),
     ]);
-    const secondRecord = parseTailscaleServeLeaseRecord(secondRaw);
+    const record = parseTailscaleServeLeaseRecord(raw);
+    if (!record || isProcessAlive(record.pid)) return false;
+    expectedRecord = record;
+    expectedStat = stats;
+  } catch {
+    return false;
+  }
+
+  const fence = await acquireReclamationFence();
+  if (!fence) return false;
+  try {
+    const [currentRaw, currentStat] = await Promise.all([
+      fs.readFile(leasePath, "utf8"),
+      fs.stat(leasePath),
+    ]);
+    const currentRecord = parseTailscaleServeLeaseRecord(currentRaw);
     if (
-      !secondRecord
-      || secondRecord.pid !== firstRecord.pid
-      || secondRecord.token !== firstRecord.token
-      || secondStat.dev !== firstStat.dev
-      || secondStat.ino !== firstStat.ino
+      !currentRecord
+      || currentRecord.pid !== expectedRecord.pid
+      || currentRecord.token !== expectedRecord.token
+      || currentStat.dev !== expectedStat.dev
+      || currentStat.ino !== expectedStat.ino
+      || isProcessAlive(currentRecord.pid)
     ) {
       return false;
     }
     await fs.unlink(leasePath);
-    await unlinkIfPresent(fs, tailscaleServeLeaseCandidatePath(leasePath, firstRecord));
+    await unlinkIfPresent(fs, tailscaleServeLeaseCandidatePath(leasePath, currentRecord));
     return true;
   } catch {
     return false;
+  } finally {
+    await fence.release().catch(() => undefined);
   }
 }
 
@@ -162,7 +230,8 @@ export function tailscaleServeLeasePath(home = homedir()): string {
 
 // Rust uses the same record and path. Linking a fully-written unique owner
 // file makes acquisition atomic without a Node-native flock dependency; a
-// dead PID can be recovered after rechecking both the record and inode.
+// dead PID is recovered only while both runtimes hold the same OS-released
+// loopback fence and recheck the record and inode.
 export async function acquireTailscaleServeLease(
   options: AcquireTailscaleServeLeaseOptions = {},
 ): Promise<TailscaleServeLease | null> {
@@ -176,6 +245,8 @@ export async function acquireTailscaleServeLease(
     new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const timeoutMs = options.timeoutMs ?? TAILSCALE_SERVE_LEASE_TIMEOUT_MS;
   const pollMs = options.pollMs ?? TAILSCALE_SERVE_LEASE_POLL_MS;
+  const acquireReclamationFence =
+    options.acquireReclamationFence ?? acquireTailscaleServeReclamationFence;
   const record: TailscaleServeLeaseRecord = {
     version: TAILSCALE_SERVE_LEASE_VERSION,
     pid,
@@ -223,7 +294,12 @@ export async function acquireTailscaleServeLease(
       }
     }
 
-    if (await recoverStaleTailscaleServeLease(fs, leasePath, isProcessAlive)) {
+    if (await recoverStaleTailscaleServeLease({
+      fs,
+      path: leasePath,
+      isProcessAlive,
+      acquireReclamationFence,
+    })) {
       continue;
     }
     if (now() >= deadline) {
@@ -392,8 +468,11 @@ export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[
 
   const backends: ServeProxyBackend[] = [];
   for (const config of Object.values(web)) {
-    const handlers = config?.Handlers;
-    if (handlers === undefined) continue;
+    if (!config || typeof config !== "object" || Array.isArray(config) || !("Handlers" in config)) {
+      backends.push({ kind: "protected", raw: "<malformed Web config>" });
+      continue;
+    }
+    const handlers = config.Handlers;
     if (!handlers || typeof handlers !== "object" || Array.isArray(handlers)) {
       backends.push({ kind: "protected", raw: "<malformed Handlers>" });
       continue;
