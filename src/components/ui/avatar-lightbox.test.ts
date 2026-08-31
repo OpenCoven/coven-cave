@@ -50,14 +50,18 @@ assert.match(
 );
 assert.match(
   src,
-  /usePopoverLayerRegistration\(layerEl, enlarged, closeLightbox\)/,
-  "registers the complete Modal as an inside and Escape layer of any ancestor Popover",
+  /usePopoverLayerRegistration\(layerEl, enlarged, closeLightbox, true\)/,
+  "registers the complete Modal as an inside and Escape layer and covers its owning Popover",
 );
 assert.match(
   src,
   /onLayerElement=\{setLayerEl\}/,
   "wires the Modal's backdrop callback through to the registration hook",
 );
-assert.match(src, /abovePopovers/, "stacks the nested Modal above its owning Popover");
+assert.doesNotMatch(
+  src,
+  /abovePopovers/,
+  "does not force every lightbox above Popovers opened from inside the Modal",
+);
 
 console.log("avatar-lightbox.test.ts: ok");

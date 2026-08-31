@@ -30,8 +30,6 @@ type ModalProps = {
    *  unmount. This lets a caller register the whole Modal — including backdrop
    *  presses — with an owning portaled layer such as Popover. */
   onLayerElement?: (el: HTMLDivElement | null) => void;
-  /** Stack above Popovers when this Modal was launched from inside one. */
-  abovePopovers?: boolean;
 };
 
 export function Modal({
@@ -47,7 +45,6 @@ export function Modal({
   ariaLabel,
   ariaDescribedBy,
   onLayerElement,
-  abovePopovers,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -67,7 +64,7 @@ export function Modal({
   return createPortal(
     <div
       ref={setLayerElement}
-      className={`ui-modal-backdrop${abovePopovers ? " ui-modal-backdrop--above-popovers" : ""}`}
+      className="ui-modal-backdrop"
       onClick={dismissOnBackdrop ? onClose : undefined}
       role="presentation"
     >

@@ -49,8 +49,9 @@ export function AvatarLightbox({
   const closeLightbox = useCallback(() => setEnlarged(false), []);
 
   // If this trigger renders inside a Popover, its complete Modal layer counts
-  // as inside and owns Escape until it closes. A no-op outside a Popover.
-  usePopoverLayerRegistration(layerEl, enlarged, closeLightbox);
+  // as inside, owns Escape, and covers that Popover until it closes. A no-op
+  // outside a Popover.
+  usePopoverLayerRegistration(layerEl, enlarged, closeLightbox, true);
 
   return (
     <>
@@ -70,7 +71,6 @@ export function AvatarLightbox({
           breadcrumb={[label, category]}
           footerActions={footerActions}
           onLayerElement={setLayerEl}
-          abovePopovers
         >
           <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
             <img src={src} alt={`${label} ${noun}`} className="h-full w-full object-cover" />

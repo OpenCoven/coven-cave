@@ -31,6 +31,7 @@ import { computeSubmenuPosition } from "@/lib/submenu-position";
 export const PopoverLayersContext = createContext<{
   register: (el: HTMLElement) => () => void;
   contains: (node: Node | null) => boolean;
+  cover: () => () => void;
 } | null>(null);
 const NOOP = () => {};
 
@@ -45,12 +46,18 @@ export function usePopoverLayerRegistration(
   el: HTMLElement | null,
   active = Boolean(el),
   onEscape?: () => void,
+  coverOwner = false,
 ) {
   const layers = useContext(PopoverLayersContext);
   useLayoutEffect(() => {
     if (!el || !layers) return;
-    return layers.register(el);
-  }, [el, layers]);
+    const unregister = layers.register(el);
+    const uncover = coverOwner ? layers.cover() : NOOP;
+    return () => {
+      unregister();
+      uncover();
+    };
+  }, [el, layers, coverOwner]);
   usePopoverEscapeLayer(Boolean(layers && active && onEscape), onEscape ?? NOOP);
 }
 
@@ -157,6 +164,8 @@ export function Popover({
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [style, setStyle] = useState<CSSProperties>({});
   const [compact, setCompact] = useState(false);
+  const [covered, setCovered] = useState(false);
+  const coverCountRef = useRef(0);
 
   // Registry of portal-rendered descendant layers (cascading submenus): they
   // live outside this panel's DOM subtree but count as "inside" for dismissal.
@@ -174,6 +183,17 @@ export function Popover({
         if (popoverRef.current?.contains(node)) return true;
         for (const el of layersRef.current) if (el.contains(node)) return true;
         return false;
+      },
+      cover: () => {
+        coverCountRef.current += 1;
+        setCovered(true);
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          coverCountRef.current = Math.max(0, coverCountRef.current - 1);
+          if (coverCountRef.current === 0) setCovered(false);
+        };
       },
     }),
     [],
@@ -319,6 +339,7 @@ export function Popover({
         role="dialog"
         aria-label={ariaLabel}
         data-compact={compact || undefined}
+        data-covered={covered || undefined}
         tabIndex={-1}
         onBlur={(e) => {
           const next = e.relatedTarget as Node | null;

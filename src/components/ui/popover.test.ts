@@ -301,27 +301,33 @@ assert.match(
 );
 assert.match(
   src,
-  /export function usePopoverLayerRegistration\(\s*el: HTMLElement \| null,\s*active = Boolean\(el\),\s*onEscape\?: \(\) => void,/,
+  /export function usePopoverLayerRegistration\(\s*el: HTMLElement \| null,\s*active = Boolean\(el\),\s*onEscape\?: \(\) => void,\s*coverOwner = false,/,
   "exports a hook that registers an element as an inside layer",
 );
 assert.match(
   src,
-  /usePopoverLayerRegistration[\s\S]{0,200}if \(!el \|\| !layers\) return;\s*return layers\.register\(el\);/,
-  "the hook is a no-op with no ancestor Popover and unregisters on cleanup/element change",
+  /usePopoverLayerRegistration[\s\S]{0,300}if \(!el \|\| !layers\) return;\s*const unregister = layers\.register\(el\);/,
+  "the hook is a no-op with no ancestor Popover and registers the complete child layer",
 );
 assert.match(
   src,
   /usePopoverEscapeLayer\(Boolean\(layers && active && onEscape\), onEscape \?\? NOOP\)/,
   "a registered modal can absorb Escape before the owning Popover closes",
 );
-
-const nestedModalZ = Number(
-  primitivesCss.match(/\.ui-modal-backdrop--above-popovers\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
+assert.match(
+  src,
+  /const uncover = coverOwner \? layers\.cover\(\) : NOOP;[\s\S]{0,160}uncover\(\);/,
+  "a modal layer covers its owner and reliably releases it on cleanup",
 );
-assert.ok(Number.isFinite(nestedModalZ), "found the nested modal z-index");
-assert.ok(
-  nestedModalZ > portalZ,
-  `nested modal (z ${nestedModalZ}) must stack above its owning popover (z ${portalZ})`,
+assert.match(
+  src,
+  /data-covered=\{covered \|\| undefined\}/,
+  "the owning Popover exposes its covered state to CSS",
+);
+assert.match(
+  primitivesCss,
+  /\.ui-popover\[data-covered\]\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/,
+  "a covered owner is hidden and inert while its portaled Modal remains visible",
 );
 
 console.log("popover.test.ts: ok");

@@ -166,7 +166,9 @@ describe("AvatarLightbox nested in Popover", () => {
   test("ordinary parent re-renders do not churn layer registration", () => {
     const cleanup = vi.fn();
     const register = vi.fn(() => cleanup);
-    const layers = { register, contains: () => false };
+    const uncover = vi.fn();
+    const cover = vi.fn(() => uncover);
+    const layers = { register, contains: () => false, cover };
 
     function Scene({ revision }) {
       return (
@@ -184,14 +186,19 @@ describe("AvatarLightbox nested in Popover", () => {
     });
     act(() => hostButton("Enlarge Wren avatar").props.onClick());
     expect(register).toHaveBeenCalledTimes(1);
+    expect(cover).toHaveBeenCalledTimes(1);
     expect(cleanup).not.toHaveBeenCalled();
+    expect(uncover).not.toHaveBeenCalled();
 
     act(() => renderer.update(<Scene revision={2} />));
     expect(register).toHaveBeenCalledTimes(1);
+    expect(cover).toHaveBeenCalledTimes(1);
     expect(cleanup).not.toHaveBeenCalled();
+    expect(uncover).not.toHaveBeenCalled();
 
     act(() => backdrop().props.onClick());
     expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(uncover).toHaveBeenCalledTimes(1);
   });
 
   test("backdrop and Escape dismiss only the lightbox and return focus to its trigger", () => {
@@ -218,6 +225,14 @@ describe("AvatarLightbox nested in Popover", () => {
     const trigger = hostButton("Enlarge Wren avatar");
     activeElement = makeNode(trigger.props);
     act(() => trigger.props.onClick());
+    expect(
+      renderer.root.find(
+        (node) =>
+          node.type === "div" &&
+          typeof node.props.className === "string" &&
+          node.props.className.split(/\s+/).includes("ui-popover"),
+      ).props["data-covered"],
+    ).toBe(true);
     const firstBackdrop = backdrop();
     const backdropNode = nodesByClass.get("ui-modal-backdrop");
 
@@ -226,6 +241,14 @@ describe("AvatarLightbox nested in Popover", () => {
     act(() => firstBackdrop.props.onClick());
     expect(popoverClose).not.toHaveBeenCalled();
     expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
+    expect(
+      renderer.root.find(
+        (node) =>
+          node.type === "div" &&
+          typeof node.props.className === "string" &&
+          node.props.className.split(/\s+/).includes("ui-popover"),
+      ).props["data-covered"],
+    ).toBeUndefined();
 
     const reopenedTrigger = hostButton("Enlarge Wren avatar");
     const triggerNode = makeNode(reopenedTrigger.props);

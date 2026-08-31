@@ -59,14 +59,13 @@ assert.match(
 );
 assert.match(
   src,
-  /ref=\{setLayerElement\}[\s\S]{0,120}className=\{`ui-modal-backdrop/,
+  /ref=\{setLayerElement\}[\s\S]{0,120}className="ui-modal-backdrop"/,
   "the stable callback ref exposes the backdrop rather than only the inner dialog",
 );
-assert.match(src, /abovePopovers\?: boolean/, "Modal can opt into the nested-popover layer");
-assert.match(
+assert.doesNotMatch(
   src,
-  /ui-modal-backdrop--above-popovers/,
-  "the nested-popover layer receives a dedicated stacking class",
+  /abovePopovers|ui-modal-backdrop--above-popovers/,
+  "Modal keeps the shared layer order; its owning Popover is covered instead",
 );
 
 console.log("modal.test.ts: ok");
