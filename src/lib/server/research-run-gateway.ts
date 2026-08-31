@@ -25,6 +25,12 @@ import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 
 const PHASES = ["scope", "challenge", "synthesize", "control"] as const;
 type ResearchRunPhase = (typeof PHASES)[number];
+const TERMINAL_RUN_STATUSES: ReadonlySet<ResearchRunStatusV1> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "expired",
+]);
 
 export class ResearchRunGatewayError extends Error {
   readonly code: "not_found" | "invalid" | "integrity" | "cursor";
@@ -189,10 +195,16 @@ function safeModelName(value: string | undefined): string | undefined {
   return value;
 }
 
-function finalManifest(runId: string, mission: ResearchMission, createdAt: string, updatedAt: string) {
+function researchRunIdForMission(
+  mission: Pick<ResearchMission, "id" | "runGeneration">,
+): string {
+  return researchRunIdForMissionId(mission.id, mission.runGeneration ?? 1);
+}
+
+function finalManifest(runId: string, createdAt: string, updatedAt: string) {
   const candidate = {
     schema: "opencoven.run-manifest/v1" as const,
-    id: `manifest_${mission.id}`,
+    id: `manifest_${runId.slice("run_".length)}`,
     runId,
     digest: "",
     revision: 1,
@@ -239,7 +251,7 @@ export function researchMissionToCanonicalRun(
   const model = safeModelName(mission.model);
   const run: Record<string, unknown> = {
     schema: "opencoven.research-run/v1",
-    id: researchRunIdForMissionId(mission.id),
+    id: researchRunIdForMission(mission),
     acceptedTopic: {
       question: mission.intent,
       // The legacy mission record does not distinguish topic editing from
@@ -287,8 +299,7 @@ export function researchMissionToCanonicalRun(
   };
   if (status.status === "completed" || status.status === "failed" || status.status === "cancelled") {
     run.artifactManifest = finalManifest(
-      researchRunIdForMissionId(mission.id),
-      mission,
+      researchRunIdForMission(mission),
       createdAt,
       updatedAt,
     );
@@ -364,7 +375,7 @@ export async function syncObservedMission(
   return withResearchMissionActionLock(missionId, async () => {
     const mission = await deps.loadMission(missionId);
     if (!mission) return null;
-    const runId = researchRunIdForMissionId(mission.id);
+    const runId = researchRunIdForMission(mission);
     const existing = await deps.loadEventLog(runId);
     const initialSequence = (existing?.events.at(-1)?.sequence ?? 0) + 1;
     const projectedRun = researchMissionToCanonicalRun(mission, initialSequence);
@@ -397,6 +408,13 @@ export async function syncObservedMission(
     }
     if (canonicalJson(existing.projection) === canonicalJson(projection)) {
       return { mission, log: existing };
+    }
+    if (
+      existing.projection.status === projection.status
+      && TERMINAL_RUN_STATUSES.has(projection.status)
+    ) {
+      const log = await deps.appendEventsWithinMissionLock(runId, [], projection);
+      return { mission, log };
     }
 
     const nextSequence = existing.events.at(-1)!.sequence + 1;

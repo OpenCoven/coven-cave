@@ -89,6 +89,15 @@ const RUN_EVENT_TYPES = [
   "retention.changed",
   "content.deleted",
 ] as const;
+const TERMINAL_RUN_EVENT_TYPES = new Set([
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+]);
+const POST_TERMINAL_RUN_EVENT_TYPES = new Set([
+  "retention.changed",
+  "content.deleted",
+]);
 const CONTENT_DELETED_DATA_FIELDS = new Set([
   "deletedObjectCount",
   "manifestStatus",
@@ -1961,6 +1970,7 @@ export function validateRunEventSequence(
   }
 
   const runId = first.runId;
+  let terminalEventSeen = false;
   for (const [index, event] of events.entries()) {
     const eventPath = indexPath("$", index);
     if (event.runId !== runId) {
@@ -1980,6 +1990,19 @@ export function validateRunEventSequence(
         childPath(eventPath, "sequence"),
         `Event sequence must equal ${expectedSequence}`,
       );
+    }
+    if (
+      terminalEventSeen
+      && !POST_TERMINAL_RUN_EVENT_TYPES.has(event.type)
+    ) {
+      return fail(
+        "semantic_conflict",
+        childPath(eventPath, "type"),
+        "A terminal Run event may be followed only by retention or deletion administration",
+      );
+    }
+    if (TERMINAL_RUN_EVENT_TYPES.has(event.type)) {
+      terminalEventSeen = true;
     }
   }
 

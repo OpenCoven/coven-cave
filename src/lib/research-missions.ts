@@ -258,6 +258,8 @@ export type ResearchMission = {
   harness?: string;
   model?: string;
   status: ResearchMissionStatus;
+  /** Current immutable canonical Research Run generation; legacy missions are generation 1. */
+  runGeneration?: number;
   /** Durable mission-level outcome/status replaced by the Archive action. */
   archivedFrom?: ResearchMissionArchiveSource;
   createdAt: string;
@@ -799,6 +801,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ))
     || !isRecord(value.bounds)
     || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
+    || (value.runGeneration !== undefined
+      && (!Number.isSafeInteger(value.runGeneration) || (value.runGeneration as number) < 1))
     || !validTimestamp(value.createdAt)
     || !validTimestamp(value.updatedAt)
     || !Array.isArray(value.iterations)
@@ -891,6 +895,9 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(harness !== undefined ? { harness } : {}),
     ...(model !== undefined ? { model } : {}),
     status: value.status as ResearchMissionStatus,
+    ...(value.runGeneration !== undefined
+      ? { runGeneration: value.runGeneration as number }
+      : {}),
     ...(archivedFrom !== undefined
       ? { archivedFrom: archivedFrom as ResearchMissionArchiveSource }
       : {}),

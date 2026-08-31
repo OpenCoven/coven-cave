@@ -329,6 +329,64 @@ test("archive persists the mission-level status it replaced", async () => {
   }
 });
 
+test("Continue from a terminal mission allocates a new canonical run generation", async () => {
+  for (const status of ["completed", "cancelled"] as const) {
+    let stored = checkpointMission({
+      status,
+      finishedAt: NOW.toISOString(),
+      iterations: [{
+        number: 1,
+        status,
+        finishedAt: NOW.toISOString(),
+      }],
+      artifacts: [{
+        key: "primary",
+        kind: "findings",
+        title: "Published first run",
+        relativePath: "artifacts/primary.md",
+        iteration: 1,
+        state: "published",
+        updatedAt: NOW.toISOString(),
+      }],
+    });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      saveMission: async (mission) => { stored = structuredClone(mission); },
+    }));
+
+    const continued = await runner.act(stored.id, { action: "continue" });
+    assert.equal(continued.status, "running");
+    assert.equal(continued.runGeneration, 2);
+    assert.equal(continued.iterations.length, 2);
+    assert.equal(continued.artifacts[0]?.state, "published");
+    assert.equal(stored.runGeneration, 2);
+  }
+});
+
+test("Retry and Finish cannot reopen an observed failed canonical run", async () => {
+  for (const action of ["retry", "finish"] as const) {
+    let stored = checkpointMission({
+      status: "failed",
+      finishedAt: NOW.toISOString(),
+      lastError: "Provider failed",
+      iterations: [{
+        number: 1,
+        status: "failed",
+        finishedAt: NOW.toISOString(),
+      }],
+    });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      saveMission: async (mission) => { stored = structuredClone(mission); },
+      readMissionFile: async () => "# Final research",
+    }));
+
+    const restarted = await runner.act(stored.id, { action });
+    assert.equal(restarted.runGeneration, 2);
+    assert.equal(stored.runGeneration, 2);
+  }
+});
+
 test("create/start persists before launch and records the real session", async () => {
   const calls: string[] = [];
   const runner = makeResearchMissionRunner(deps({

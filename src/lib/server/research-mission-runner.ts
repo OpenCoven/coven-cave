@@ -1043,6 +1043,14 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     return { ...mission, projectRoot: resolved };
   };
 
+  const nextCanonicalRunGeneration = (mission: ResearchMission): number => {
+    const current = mission.runGeneration ?? 1;
+    if (current >= Number.MAX_SAFE_INTEGER) {
+      throw new Error("Research Run generation limit reached");
+    }
+    return current + 1;
+  };
+
   const startNextIteration = async (
     mission: ResearchMission,
     options: { allowCostUnavailable?: boolean } = {},
@@ -1063,6 +1071,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     }
     const number = nextResearchIterationNumber(mission);
     const timestamp = now.toISOString();
+    const startsNewCanonicalRun =
+      mission.status === "completed" || mission.status === "cancelled";
     const workingArtifact = mission.artifacts[0]?.state === "rejected" ? {
       ...mission.artifacts[0],
       key: `primary-i${number}`,
@@ -1088,6 +1098,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     let next: ResearchMission = {
       ...mission,
       status: "planning",
+      ...(startsNewCanonicalRun
+        ? { runGeneration: nextCanonicalRunGeneration(mission) }
+        : {}),
+      ...(startsNewCanonicalRun ? { archivedFrom: undefined } : {}),
       updatedAt: timestamp,
       finishedAt: undefined,
       lastError: undefined,
@@ -1141,6 +1155,8 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     let retried: ResearchMission = {
       ...mission,
       status: "planning",
+      runGeneration: nextCanonicalRunGeneration(mission),
+      archivedFrom: undefined,
       finishedAt: undefined,
       lastError: undefined,
       updatedAt: timestamp,
@@ -1389,6 +1405,13 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return cancelled;
       }
       if (input.action === "finish") {
+        if (mission.status === "failed") {
+          mission = {
+            ...mission,
+            runGeneration: nextCanonicalRunGeneration(mission),
+            archivedFrom: undefined,
+          };
+        }
         mission = await pauseAutomation(mission, "Mission finished");
         const finishedMission = mission;
         // Read the primary defensively. A symlinked/oversized/escaping primary

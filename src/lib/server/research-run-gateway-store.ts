@@ -20,7 +20,7 @@ import { canonicalJson } from "../research-protocol/digest.ts";
 const EVENT_LOG_VERSION = 1 as const;
 const MAX_EVENT_LOG_BYTES = 4 * 1024 * 1024;
 const MAX_EVENT_COUNT = 20_000;
-const RUN_ID_RE = /^run_[A-Za-z0-9_-]+$/;
+const RUN_ID_RE = /^run_([a-z0-9][a-z0-9-]{0,63})(?:_g([1-9]\d*))?$/;
 const EVENT_FIELDS = new Set(["schema", "runId", "sequence", "type", "at", "data"]);
 const SAFE_EVENT_DATA_FIELDS = new Set([
   "status",
@@ -94,24 +94,42 @@ function isWithin(candidate: string, root: string): boolean {
   return left === right || left.startsWith(`${right}${path.sep}`);
 }
 
-function assertRunId(runId: string): void {
-  if (!RUN_ID_RE.test(runId)) throw new ResearchRunEventLogError("invalid research run id");
-  const missionId = runId.slice("run_".length);
+function parseResearchRunId(runId: string): { missionId: string; generation: number } {
+  const match = RUN_ID_RE.exec(runId);
+  if (!match) throw new ResearchRunEventLogError("invalid research run id");
+  const missionId = match[1];
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunEventLogError("research run id is not bound to a mission");
   }
+  const generation = match[2] === undefined ? 1 : Number(match[2]);
+  if (
+    match[2] !== undefined
+    && (
+      !Number.isSafeInteger(generation)
+      || generation < 2
+    )
+  ) {
+    throw new ResearchRunEventLogError("invalid research run generation");
+  }
+  return { missionId, generation };
+}
+
+function assertRunId(runId: string): void {
+  parseResearchRunId(runId);
 }
 
 export function missionIdForResearchRunId(runId: string): string {
-  assertRunId(runId);
-  return runId.slice("run_".length);
+  return parseResearchRunId(runId).missionId;
 }
 
-export function researchRunIdForMissionId(missionId: string): string {
+export function researchRunIdForMissionId(missionId: string, generation = 1): string {
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunEventLogError("invalid research mission id");
   }
-  return `run_${missionId}`;
+  if (!Number.isSafeInteger(generation) || generation < 1) {
+    throw new ResearchRunEventLogError("invalid research run generation");
+  }
+  return generation === 1 ? `run_${missionId}` : `run_${missionId}_g${generation}`;
 }
 
 export function researchRunEventLogRoot(): string {
@@ -396,6 +414,12 @@ async function appendResearchRunEventsUnlocked(
   }
   if (nextEvents.length > MAX_EVENT_COUNT) {
     throw new ResearchRunEventLogError("research Run event log has reached its event limit");
+  }
+  const sequence = validateRunEventSequence(nextEvents);
+  if (!sequence.ok) {
+    throw new ResearchRunEventLogError(
+      `research Run event log sequence is invalid: ${sequence.error.message}`,
+    );
   }
   const next: ResearchRunEventLog = {
     version: EVENT_LOG_VERSION,

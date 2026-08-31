@@ -11,6 +11,7 @@ import {
   saveResearchMission,
 } from "./research-mission-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
+import { loadResearchRunEventLog } from "./research-run-gateway-store.ts";
 import {
   loadResearchRunGateway,
   replayResearchRunGateway,
@@ -312,6 +313,142 @@ test("gateway sync rereads the mission under the action lock before appending", 
     synced.log.events.map((event) => event.type),
     ["run.created", "run.completed"],
   );
+});
+
+test("Continue after completed or cancelled starts a replay-safe canonical run generation", async () => {
+  for (const terminalStatus of ["completed", "cancelled"] as const) {
+    const missionId = `gateway-continue-${terminalStatus}`;
+    const terminalMission: ResearchMission = {
+      ...mission(missionId, terminalStatus),
+      finishedAt: "2026-08-30T12:05:00.000Z",
+      iterations: [{
+        number: 1,
+        status: terminalStatus,
+        finishedAt: "2026-08-30T12:05:00.000Z",
+      }],
+    };
+    await createResearchMissionWorkspace(terminalMission);
+
+    const first = await loadResearchRunGateway(missionId);
+    assert.ok(first);
+    assert.equal(first.run.id, `run_${missionId}`);
+    assert.equal(first.run.status, terminalStatus);
+    assert.equal(first.run.artifactManifest?.state, "final");
+    const terminalType = terminalStatus === "completed"
+      ? "run.completed"
+      : "run.cancelled";
+    const firstLog = await loadResearchRunEventLog(first.run.id);
+    assert.equal(firstLog?.events.at(-1)?.type, terminalType);
+
+    const continuedMission: ResearchMission = {
+      ...terminalMission,
+      runGeneration: 2,
+      status: "running",
+      updatedAt: "2026-08-30T12:06:00.000Z",
+      finishedAt: undefined,
+      iterations: [
+        ...terminalMission.iterations,
+        {
+          number: 2,
+          status: "running",
+          startedAt: "2026-08-30T12:06:00.000Z",
+        },
+      ],
+    };
+    await saveResearchMission(continuedMission);
+    globalThis.__caveResearchMissionActionLocks = undefined;
+
+    const continued = await loadResearchRunGateway(missionId);
+    assert.ok(continued);
+    assert.equal(continued.run.id, `run_${missionId}_g2`);
+    assert.equal(continued.run.status, "synthesizing");
+    assert.equal(continued.run.artifactManifest, undefined);
+    assert.equal((await loadResearchRunEventLog(first.run.id))?.events.at(-1)?.type, terminalType);
+
+    globalThis.__caveResearchMissionActionLocks = undefined;
+    const replay = await replayResearchRunGateway(missionId, 0, 20);
+    assert.ok(replay);
+    assert.equal(replay.run.id, `run_${missionId}_g2`);
+    assert.equal(replay.run.artifactManifest, undefined);
+    assert.deepEqual(
+      replay.events.map((event) => event.type),
+      ["run.created", "run.status"],
+    );
+    assert.equal(
+      replay.events.some((event) => event.type === terminalType),
+      false,
+    );
+
+    await saveResearchMission({
+      ...continuedMission,
+      status: "completed",
+      updatedAt: "2026-08-30T12:07:00.000Z",
+      finishedAt: "2026-08-30T12:07:00.000Z",
+      iterations: continuedMission.iterations.map((iteration, index) => (
+        index === continuedMission.iterations.length - 1
+          ? {
+              ...iteration,
+              status: "completed",
+              finishedAt: "2026-08-30T12:07:00.000Z",
+            }
+          : iteration
+      )),
+    });
+    const final = await loadResearchRunGateway(missionId);
+    assert.ok(final);
+    assert.equal(final.run.id, `run_${missionId}_g2`);
+    assert.equal(final.run.status, "completed");
+    assert.equal(final.run.artifactManifest?.state, "final");
+    assert.equal(final.run.artifactManifest?.runId, final.run.id);
+    assert.notEqual(
+      final.run.artifactManifest?.id,
+      first.run.artifactManifest?.id,
+    );
+    assert.equal(
+      (await loadResearchRunEventLog(final.run.id))?.events.at(-1)?.type,
+      "run.completed",
+    );
+  }
+});
+
+test("archiving a terminal mission updates projection without duplicating its terminal event", async () => {
+  for (const terminalStatus of ["completed", "failed", "cancelled"] as const) {
+    const missionId = `gateway-archive-${terminalStatus}`;
+    const terminalMission: ResearchMission = {
+      ...mission(missionId, terminalStatus),
+      updatedAt: "2026-08-30T12:05:00.000Z",
+      finishedAt: "2026-08-30T12:05:00.000Z",
+      ...(terminalStatus === "failed" ? { lastError: "Provider failed" } : {}),
+      iterations: [{
+        number: 1,
+        status: terminalStatus,
+        finishedAt: "2026-08-30T12:05:00.000Z",
+      }],
+    };
+    await createResearchMissionWorkspace(terminalMission);
+    const before = await loadResearchRunGateway(missionId);
+    assert.ok(before);
+    const beforeLog = await loadResearchRunEventLog(before.run.id);
+    assert.ok(beforeLog);
+
+    await saveResearchMission({
+      ...terminalMission,
+      status: "archived",
+      archivedFrom: terminalStatus,
+      updatedAt: "2026-08-30T12:06:00.000Z",
+    });
+    const archived = await replayResearchRunGateway(
+      missionId,
+      before.lastEventSequence,
+      20,
+    );
+    assert.ok(archived);
+    assert.equal(archived.run.status, terminalStatus);
+    assert.deepEqual(archived.events, []);
+    const afterLog = await loadResearchRunEventLog(before.run.id);
+    assert.deepEqual(afterLog?.events, beforeLog.events);
+    assert.equal(afterLog?.projection?.missionUpdatedAt, "2026-08-30T12:06:00.000Z");
+  }
 });
 
 test("watch setup exceptions fail the subscription and close watchers already opened", () => {

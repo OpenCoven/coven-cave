@@ -2054,6 +2054,50 @@ test("events parse and validateRunEventSequence enforces contiguous same-run seq
   );
 });
 
+test("terminal run events reject later lifecycle transitions but allow retention administration", () => {
+  const created: RunEventV1 = {
+    schema: "opencoven.run-event/v1",
+    runId: "run_terminal",
+    sequence: 1,
+    type: "run.created",
+    at: "2026-08-31T10:00:00.000Z",
+    data: {},
+  };
+  const completed: RunEventV1 = {
+    ...created,
+    sequence: 2,
+    type: "run.completed",
+    at: "2026-08-31T10:01:00.000Z",
+    data: { status: "completed" },
+  };
+  expectError(
+    validateRunEventSequence([
+      created,
+      completed,
+      {
+        ...created,
+        sequence: 3,
+        type: "run.status",
+        at: "2026-08-31T10:02:00.000Z",
+        data: { status: "scoping" },
+      },
+    ]),
+    "$[2].type",
+    "semantic_conflict",
+  );
+  assert.equal(expectOk(validateRunEventSequence([
+    created,
+    completed,
+    {
+      ...created,
+      sequence: 3,
+      type: "retention.changed",
+      at: "2026-08-31T10:02:00.000Z",
+      data: { retention: "7-days" },
+    },
+  ])).length, 3);
+});
+
 test("schema and parser agree on expressible constraints and additive fields survive", () => {
   const run = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal((run.futureExtension as { preserve: boolean }).preserve, true);

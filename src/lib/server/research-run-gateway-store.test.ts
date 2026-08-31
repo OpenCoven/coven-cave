@@ -163,3 +163,42 @@ test("append rejects a serialized log over 4 MiB without replacing the readable 
   );
   assert.equal((await loadResearchRunEventLog(boundedRunId))?.events.length, belowLimit.length);
 });
+
+test("append cannot reopen a terminal Research Run ledger", async () => {
+  const terminalRunId = "run_gateway-terminal";
+  const created = {
+    ...event(1),
+    runId: terminalRunId,
+    type: "run.created" as const,
+    data: {},
+  };
+  const completed = {
+    ...event(2),
+    runId: terminalRunId,
+    type: "run.completed" as const,
+    data: { status: "completed" },
+  };
+  await appendResearchRunEvents(terminalRunId, [created, completed], {
+    ...projection,
+    status: "completed",
+  });
+
+  await assert.rejects(
+    appendResearchRunEvents(terminalRunId, [{
+      ...event(3),
+      runId: terminalRunId,
+      data: { status: "scoping" },
+    }], {
+      ...projection,
+      status: "scoping",
+      missionUpdatedAt: "2026-08-30T12:01:00.000Z",
+    }),
+    /terminal run event/i,
+  );
+  const unchanged = await loadResearchRunEventLog(terminalRunId);
+  assert.deepEqual(unchanged?.events.map((entry) => entry.type), [
+    "run.created",
+    "run.completed",
+  ]);
+  assert.equal(unchanged?.projection?.status, "completed");
+});
