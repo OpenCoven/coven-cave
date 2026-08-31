@@ -201,13 +201,8 @@ assert.match(
 );
 assert.match(
   src,
-  /parentLayers\?\.register\(popoverRef\.current\)/,
-  "a nested Popover registers its portal with the owning Popover",
-);
-assert.match(
-  src,
-  /focusTrapPortalLayers\?\.register\(popoverRef\.current\)/,
-  "a Popover inside a Modal remains part of the Modal focus boundary",
+  /useRegisterPopoverOwner\(open, popoverRef, parentLayers, focusTrapPortalLayers\)/,
+  "each Popover registers its panel with its owning Popover and Modal boundaries",
 );
 assert.match(
   src,

@@ -32,12 +32,15 @@ import { computeSubmenuPosition } from "@/lib/submenu-position";
 // that, the Modal stealing focus reads to the Popover as focus leaving its
 // panel and self-dismisses, unmounting both (see usePopoverLayerRegistration
 // below, and cave-fzr4p).
-export const PopoverLayersContext = createContext<{
+type PopoverLayers = {
   register: (el: HTMLElement) => () => void;
   contains: (node: Node | null) => boolean;
   cover: () => () => void;
-} | null>(null);
+};
+export const PopoverLayersContext = createContext<PopoverLayers | null>(null);
+const PopoverEscapeRootContext = createContext<number | null>(null);
 const NOOP = () => {};
+let nextEscapeRootId = 1;
 
 /**
  * Registers `el` as an "inside" layer of an ancestor Popover (if any) for as
@@ -72,17 +75,83 @@ const SubmenuGroupContext = createContext<{
   setOpenId: (id: string | null) => void;
 } | null>(null);
 
-// Deepest-first Escape routing: the root Popover's window-capture Escape
-// listener (which stopPropagation()s before React handlers run) pops this
-// stack — closing one submenu level per press — and only closes the popover
-// itself once no flyout remains open.
+// Deepest-first Escape routing: entries are scoped to their owning root and
+// ranked by explicit portal depth, so effect timing and unrelated open roots
+// cannot steal one another's Escape presses.
 type EscapeLayer = {
   close: () => void;
   depth: number;
   order: number;
+  rootId: number;
 };
+type EscapeRoot = { id: number; order: number };
 const submenuEscapeStack: EscapeLayer[] = [];
+const popoverEscapeRoots: EscapeRoot[] = [];
 let nextEscapeLayerOrder = 1;
+let nextEscapeRootOrder = 1;
+
+function usePopoverLayerRegistry(
+  ownerRef: React.RefObject<HTMLElement | null>,
+  parentLayers: PopoverLayers | null,
+  focusTrapPortalLayers: React.ContextType<typeof FocusTrapPortalLayersContext>,
+) {
+  const [covered, setCovered] = useState(false);
+  const coverCountRef = useRef(0);
+  const layersRef = useRef<Set<HTMLElement>>(new Set());
+  const layers = useMemo<PopoverLayers>(
+    () => ({
+      register: (el: HTMLElement) => {
+        layersRef.current.add(el);
+        const unregisterParent = parentLayers?.register(el) ?? NOOP;
+        const unregisterFocusTrap = focusTrapPortalLayers?.register(el) ?? NOOP;
+        return () => {
+          unregisterFocusTrap();
+          unregisterParent();
+          layersRef.current.delete(el);
+        };
+      },
+      contains: (node: Node | null) => {
+        if (!node) return false;
+        if (ownerRef.current?.contains(node)) return true;
+        for (const el of layersRef.current) if (el.contains(node)) return true;
+        return false;
+      },
+      cover: () => {
+        coverCountRef.current += 1;
+        setCovered(true);
+        const uncoverParent = parentLayers?.cover() ?? NOOP;
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          uncoverParent();
+          coverCountRef.current = Math.max(0, coverCountRef.current - 1);
+          if (coverCountRef.current === 0) setCovered(false);
+        };
+      },
+    }),
+    [ownerRef, parentLayers, focusTrapPortalLayers],
+  );
+  return { covered, layers };
+}
+
+function useRegisterPopoverOwner(
+  active: boolean,
+  ownerRef: React.RefObject<HTMLElement | null>,
+  parentLayers: PopoverLayers | null,
+  focusTrapPortalLayers: React.ContextType<typeof FocusTrapPortalLayersContext>,
+) {
+  useLayoutEffect(() => {
+    if (!active || !ownerRef.current) return;
+    const unregisterParent = parentLayers?.register(ownerRef.current) ?? NOOP;
+    const unregisterFocusTrap =
+      focusTrapPortalLayers?.register(ownerRef.current) ?? NOOP;
+    return () => {
+      unregisterFocusTrap();
+      unregisterParent();
+    };
+  }, [active, ownerRef, parentLayers, focusTrapPortalLayers]);
+}
 
 
 
@@ -140,22 +209,24 @@ export function usePopoverInitialFocus(open: boolean, panelSelector: string) {
 export function usePopoverEscapeLayer(active: boolean, close: () => void) {
   const closeRef = useRef(close);
   const ownerDepth = useContext(PortalLayerDepthContext);
+  const rootId = useContext(PopoverEscapeRootContext);
   useEffect(() => {
     closeRef.current = close;
   });
   useEffect(() => {
-    if (!active) return;
+    if (!active || rootId === null) return;
     const entry = {
       close: () => closeRef.current(),
       depth: ownerDepth + 1,
       order: nextEscapeLayerOrder++,
+      rootId,
     };
     submenuEscapeStack.push(entry);
     return () => {
       const i = submenuEscapeStack.indexOf(entry);
       if (i !== -1) submenuEscapeStack.splice(i, 1);
     };
-  }, [active, ownerDepth]);
+  }, [active, ownerDepth, rootId]);
 }
 
 /**
@@ -178,60 +249,30 @@ export function Popover({
 }: PopoverProps) {
   const parentLayers = useContext(PopoverLayersContext);
   const parentLayerDepth = useContext(PortalLayerDepthContext);
+  const inheritedEscapeRootId = useContext(PopoverEscapeRootContext);
   const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const ownEscapeRootIdRef = useRef(0);
+  if (ownEscapeRootIdRef.current === 0) ownEscapeRootIdRef.current = nextEscapeRootId++;
+  const escapeRootId = inheritedEscapeRootId ?? ownEscapeRootIdRef.current;
+  const isEscapeRoot = parentLayers === null;
   const [style, setStyle] = useState<CSSProperties>({});
   const [compact, setCompact] = useState(false);
-  const [covered, setCovered] = useState(false);
-  const coverCountRef = useRef(0);
-
-  // Registry of portal-rendered descendant layers (cascading submenus): they
-  // live outside this panel's DOM subtree but count as "inside" for dismissal.
-  const layersRef = useRef<Set<HTMLElement>>(new Set());
-  const layers = useMemo(
-    () => ({
-      register: (el: HTMLElement) => {
-        layersRef.current.add(el);
-        const unregisterParent = parentLayers?.register(el) ?? NOOP;
-        const unregisterFocusTrap = focusTrapPortalLayers?.register(el) ?? NOOP;
-        return () => {
-          unregisterFocusTrap();
-          unregisterParent();
-          layersRef.current.delete(el);
-        };
-      },
-      contains: (node: Node | null) => {
-        if (!node) return false;
-        if (popoverRef.current?.contains(node)) return true;
-        for (const el of layersRef.current) if (el.contains(node)) return true;
-        return false;
-      },
-      cover: () => {
-        coverCountRef.current += 1;
-        setCovered(true);
-        const uncoverParent = parentLayers?.cover() ?? NOOP;
-        let released = false;
-        return () => {
-          if (released) return;
-          released = true;
-          uncoverParent();
-          coverCountRef.current = Math.max(0, coverCountRef.current - 1);
-          if (coverCountRef.current === 0) setCovered(false);
-        };
-      },
-    }),
-    [parentLayers, focusTrapPortalLayers],
+  const { covered, layers } = usePopoverLayerRegistry(
+    popoverRef,
+    parentLayers,
+    focusTrapPortalLayers,
   );
-  useLayoutEffect(() => {
-    if (!open || !popoverRef.current) return;
-    const unregisterParent = parentLayers?.register(popoverRef.current) ?? NOOP;
-    const unregisterFocusTrap =
-      focusTrapPortalLayers?.register(popoverRef.current) ?? NOOP;
+  useRegisterPopoverOwner(open, popoverRef, parentLayers, focusTrapPortalLayers);
+  useEffect(() => {
+    if (!open || !isEscapeRoot) return;
+    const entry = { id: escapeRootId, order: nextEscapeRootOrder++ };
+    popoverEscapeRoots.push(entry);
     return () => {
-      unregisterFocusTrap();
-      unregisterParent();
+      const index = popoverEscapeRoots.indexOf(entry);
+      if (index !== -1) popoverEscapeRoots.splice(index, 1);
     };
-  }, [open, parentLayers, focusTrapPortalLayers]);
+  }, [open, isEscapeRoot, escapeRootId]);
   usePopoverEscapeLayer(
     Boolean(parentLayers && open),
     useCallback(() => onOpenChange(false), [onOpenChange]),
@@ -309,6 +350,12 @@ export function Popover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (parentLayers) return;
+        const activeRoot = popoverEscapeRoots.reduce<EscapeRoot | undefined>(
+          (current, candidate) =>
+            !current || candidate.order > current.order ? candidate : current,
+          undefined,
+        );
+        if (activeRoot?.id !== escapeRootId) return;
         // Consume the Escape so it doesn't bubble to a parent dialog's keydown
         // handler (e.g. the Settings panel, which closes itself on Escape). The
         // listener is registered in the capture phase below so it runs before any
@@ -316,7 +363,9 @@ export function Popover({
         e.stopPropagation();
         // An open cascading submenu absorbs the press first (one level per
         // Escape); the popover itself closes only when none remain.
-        const deepest = submenuEscapeStack.reduce<EscapeLayer | undefined>(
+        const deepest = submenuEscapeStack
+          .filter((entry) => entry.rootId === escapeRootId)
+          .reduce<EscapeLayer | undefined>(
           (current, candidate) =>
             !current ||
             candidate.depth > current.depth ||
@@ -403,9 +452,11 @@ export function Popover({
         }}
       >
         <PopoverLayersContext.Provider value={layers}>
-          <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
-            <SubmenuGroup>{children}</SubmenuGroup>
-          </PortalLayerDepthContext.Provider>
+          <PopoverEscapeRootContext.Provider value={escapeRootId}>
+            <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
+              <SubmenuGroup>{children}</SubmenuGroup>
+            </PortalLayerDepthContext.Provider>
+          </PopoverEscapeRootContext.Provider>
         </PopoverLayersContext.Provider>
       </div>
     </div>,
@@ -566,8 +617,9 @@ export function PopoverSubmenu({
   children: ReactNode;
 }) {
   const id = useId();
-  const layers = useContext(PopoverLayersContext);
+  const parentLayers = useContext(PopoverLayersContext);
   const parentLayerDepth = useContext(PortalLayerDepthContext);
+  const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const group = useContext(SubmenuGroupContext);
   const rowRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -578,6 +630,11 @@ export function PopoverSubmenu({
   // panel at its real rendered width (the CSS floor is narrower than the
   // call sites' minWidth props).
   const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden", minWidth });
+  const { covered, layers } = usePopoverLayerRegistry(
+    panelRef,
+    parentLayers,
+    focusTrapPortalLayers,
+  );
   // Keyboard-open intent: the first item can only be focused once the panel
   // is positioned and visible — focus() on a visibility:hidden subtree is
   // silently ignored by the browser.
@@ -601,13 +658,8 @@ export function PopoverSubmenu({
   };
   useEffect(() => clearHoverTimer, []);
 
-  // Register the flyout as an inside layer of the root popover while open.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const el = panelRef.current;
-    if (!el || !layers) return;
-    return layers.register(el);
-  }, [open, layers]);
+  // Register the flyout as an inside layer of every owning portal boundary.
+  useRegisterPopoverOwner(open, panelRef, parentLayers, focusTrapPortalLayers);
 
   const closeToRow = useCallback(() => {
     setOpen(false);
@@ -735,9 +787,12 @@ export function PopoverSubmenu({
               <div
                 ref={panelRef}
                 className="ui-popover ui-popover-submenu"
-                style={style}
+                style={covered ? { ...style, visibility: "hidden" } : style}
                 role={panelRole}
                 aria-label={typeof label === "string" ? label : undefined}
+                data-covered={covered || undefined}
+                aria-hidden={covered || undefined}
+                inert={covered || undefined}
                 onKeyDown={(e) => {
                   // ArrowLeft/Escape step back to the trigger row; Escape stops
                   // here so the root menu stays open (one level per press).
@@ -752,16 +807,18 @@ export function PopoverSubmenu({
                   if (!next) return;
                   // Nested flyouts portal to body — consult the root registry
                   // (they register there) so descending a level doesn't close us.
-                  if (layers ? layers.contains(next) : panelRef.current?.contains(next)) return;
+                  if (layers.contains(next)) return;
                   if (rowRef.current?.contains(next)) return;
                   setOpen(false);
                 }}
               >
-                <div className="ui-popover-body" role="presentation">
-                  <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
-                    <SubmenuGroup>{children}</SubmenuGroup>
-                  </PortalLayerDepthContext.Provider>
-                </div>
+                <PopoverLayersContext.Provider value={layers}>
+                  <div className="ui-popover-body" role="presentation">
+                    <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
+                      <SubmenuGroup>{children}</SubmenuGroup>
+                    </PortalLayerDepthContext.Provider>
+                  </div>
+                </PopoverLayersContext.Provider>
               </div>
             </div>,
             document.body,

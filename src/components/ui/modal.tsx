@@ -51,7 +51,7 @@ export function Modal({
   onLayerElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const portalLayerElementsRef = useRef<Set<HTMLElement>>(new Set());
+  const portalLayerElementsRef = useRef<Map<HTMLElement, number>>(new Map());
   const ownerLayerDepth = useContext(PortalLayerDepthContext);
   const headingId = useId();
   const setLayerElement = useCallback(
@@ -63,17 +63,22 @@ export function Modal({
   const portalLayers = useMemo(
     () => ({
       register: (el: HTMLElement) => {
-        portalLayerElementsRef.current.add(el);
+        portalLayerElementsRef.current.set(
+          el,
+          (portalLayerElementsRef.current.get(el) ?? 0) + 1,
+        );
         return () => {
-          portalLayerElementsRef.current.delete(el);
+          const next = (portalLayerElementsRef.current.get(el) ?? 1) - 1;
+          if (next === 0) portalLayerElementsRef.current.delete(el);
+          else portalLayerElementsRef.current.set(el, next);
         };
       },
       contains: (node: Node | null) => {
         if (!node) return false;
-        for (const el of portalLayerElementsRef.current) if (el.contains(node)) return true;
+        for (const el of portalLayerElementsRef.current.keys()) if (el.contains(node)) return true;
         return false;
       },
-      elements: () => Array.from(portalLayerElementsRef.current),
+      elements: () => Array.from(portalLayerElementsRef.current.keys()),
     }),
     [],
   );

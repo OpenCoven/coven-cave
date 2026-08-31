@@ -42,6 +42,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   FocusTrapOwnerHiddenContext,
+  PortalLayerDepthContext,
   resetFocusTrapStackForTest,
   useFocusTrap,
 } from "@/lib/use-focus-trap";
@@ -283,6 +284,57 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     });
     expect(parentEscapeCount).toBe(1);
     expect(childEscapeCount).toBe(1);
+  });
+
+  test("an initially-mounted nested trap owns focus and Escape by layer depth", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    const trigger = makeElement("trigger", activeHolder);
+    const parentFocusable = makeElement("parent-focusable", activeHolder);
+    const childFocusable = makeElement("child-focusable", activeHolder);
+    const parentContainer = makeContainer([parentFocusable], activeHolder);
+    const childContainer = makeContainer([childFocusable], activeHolder);
+    activeHolder.current = trigger;
+    let parentEscapeCount = 0;
+    let childEscapeCount = 0;
+
+    function ParentWithInitiallyOpenChild() {
+      const parentRef = useRef<unknown>(null);
+      useFocusTrap(true, parentRef as never, {
+        onEscape: () => {
+          parentEscapeCount += 1;
+        },
+      });
+      return (
+        <div data-probe-id="parent" ref={parentRef as never}>
+          <PortalLayerDepthContext.Provider value={1}>
+            <TrapProbe
+              probeId="child"
+              active
+              onEscape={() => {
+                childEscapeCount += 1;
+              }}
+            />
+          </PortalLayerDepthContext.Provider>
+        </div>
+      );
+    }
+
+    act(() => {
+      renderer = create(<ParentWithInitiallyOpenChild />, {
+        createNodeMock: (element) =>
+          element.props["data-probe-id"] === "parent" ? parentContainer : childContainer,
+      });
+    });
+    expect(activeHolder.current).toBe(childFocusable);
+
+    act(() => {
+      win.dispatchKeydown({ key: "Escape" });
+    });
+    expect(childEscapeCount).toBe(1);
+    expect(parentEscapeCount).toBe(0);
   });
 
   test("Tab containment is owned solely by the topmost trap — the background trap never inspects its own focusables", () => {

@@ -13,7 +13,7 @@ vi.mock("@/lib/icon", () => ({
 }));
 
 import { AvatarLightbox } from "./avatar-lightbox";
-import { Popover, PopoverLayersContext } from "./popover";
+import { Popover, PopoverLayersContext, PopoverSubmenu } from "./popover";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -183,6 +183,46 @@ afterEach(() => {
 });
 
 describe("AvatarLightbox nested in Popover", () => {
+  test("Escape closes only the most recently opened independent root Popover", () => {
+    const firstClose = vi.fn();
+    const secondClose = vi.fn();
+
+    function Scene() {
+      const firstAnchorRef = useRef(null);
+      const secondAnchorRef = useRef(null);
+      return (
+        <>
+          <button ref={firstAnchorRef}>first anchor</button>
+          <Popover
+            open
+            onOpenChange={firstClose}
+            anchorRef={firstAnchorRef}
+            ariaLabel="First menu"
+          >
+            first
+          </Popover>
+          <button ref={secondAnchorRef}>second anchor</button>
+          <Popover
+            open
+            onOpenChange={secondClose}
+            anchorRef={secondAnchorRef}
+            ariaLabel="Second menu"
+          >
+            second
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => dispatchEscape());
+    expect(firstClose).not.toHaveBeenCalled();
+    expect(secondClose).toHaveBeenCalledOnce();
+    expect(secondClose).toHaveBeenCalledWith(false);
+  });
+
   test("ordinary parent re-renders do not churn layer registration", () => {
     const cleanup = vi.fn();
     const register = vi.fn(() => cleanup);
@@ -470,5 +510,72 @@ describe("AvatarLightbox nested in Popover", () => {
         node.props.className.split(/\s+/).includes("ui-popover"),
     );
     expect(remainingPopovers.filter((node) => node.props["data-covered"] === true)).toHaveLength(1);
+  });
+
+  test("a submenu that launches a Modal is covered with every ancestor", () => {
+    const ownerClose = vi.fn();
+
+    function SubmenuActions() {
+      return (
+        <PopoverSubmenu label="More">
+          <AvatarLightbox src="/finch.png" label="Finch">
+            <span>finch</span>
+          </AvatarLightbox>
+        </PopoverSubmenu>
+      );
+    }
+
+    function Scene() {
+      const anchorRef = useRef(null);
+      return (
+        <>
+          <button ref={anchorRef}>anchor</button>
+          <Popover open onOpenChange={ownerClose} anchorRef={anchorRef} ariaLabel="Avatar menu">
+            <AvatarLightbox
+              src="/wren.png"
+              label="Wren"
+              footerActions={<SubmenuActions />}
+            >
+              <span>wren</span>
+            </AvatarLightbox>
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => hostButton("Enlarge Wren avatar").props.onClick());
+    const submenuTrigger = renderer.root.find(
+      (node) => node.type === "button" && node.props["aria-haspopup"] === "menu",
+    );
+    act(() => submenuTrigger.props.onClick());
+    act(() => hostButton("Enlarge Finch avatar").props.onClick());
+
+    const panels = renderer.root.findAll(
+      (node) =>
+        node.type === "div" &&
+        typeof node.props.className === "string" &&
+        node.props.className.split(/\s+/).includes("ui-popover"),
+    );
+    expect(panels).toHaveLength(2);
+    expect(panels.every((node) => node.props["data-covered"] === true)).toBe(true);
+    expect(panels.every((node) => node.props.inert === true)).toBe(true);
+    expect(
+      panels.find((node) => node.props.className.includes("ui-popover-submenu"))?.props.style
+        .visibility,
+    ).toBe("hidden");
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(2);
+    const visibleSubmenu = renderer.root.find(
+      (node) =>
+        node.type === "div" &&
+        typeof node.props.className === "string" &&
+        node.props.className.split(/\s+/).includes("ui-popover-submenu"),
+    );
+    expect(visibleSubmenu.props["data-covered"]).toBeUndefined();
   });
 });

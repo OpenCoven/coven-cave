@@ -35,27 +35,31 @@ export const FocusTrapPortalLayersContext = createContext<FocusTrapPortalLayers 
 export const PortalLayerDepthContext = createContext(0);
 
 /**
- * One entry per currently-ACTIVE trap, in activation order — the
- * module-level stack every useFocusTrap instance in the app shares. Keyed by
- * a stable per-hook-instance `id` (see `idRef` below), never by object
+ * One entry per currently-ACTIVE trap. Layer depth determines ownership and
+ * activation order breaks ties, so an initially-mounted descendant still wins
+ * even though React runs its passive effect before its ancestor's. Entries are
+ * keyed by a stable per-hook-instance `id` (see `idRef` below), never by object
  * identity, so a React StrictMode mount→cleanup→mount cycle registers and
- * unregisters the SAME logical trap without ever leaving a duplicate behind:
- * `registerTrap` removes any existing entry for `id` before pushing, and
- * `unregisterTrap` finds and removes `id` from wherever it sits — not just
- * the top — because an ancestor trap can legitimately deactivate while a
- * still-active nested trap remains above it (e.g. a drawer closing out from
- * under an open child dialog; see FocusTrapOwnerHiddenContext below, which
- * exists to make that the rare case rather than the normal one).
+ * unregisters the SAME logical trap without leaving a duplicate behind.
  */
-type TrapEntry = { readonly id: number };
+type TrapEntry = {
+  readonly id: number;
+  readonly depth: number;
+  readonly order: number;
+};
 
 const trapStack: TrapEntry[] = [];
 let nextTrapId = 1;
+let nextTrapOrder = 1;
 
-function registerTrap(id: number): void {
+function compareTrapOrder(a: TrapEntry, b: TrapEntry): number {
+  return a.depth - b.depth || a.order - b.order;
+}
+
+function registerTrap(id: number, depth: number): void {
   const stale = trapStack.findIndex((entry) => entry.id === id);
   if (stale !== -1) trapStack.splice(stale, 1);
-  trapStack.push({ id });
+  trapStack.push({ id, depth, order: nextTrapOrder++ });
 }
 
 /** Removes `id` (wherever it sits) and reports whether a still-active trap
@@ -65,13 +69,19 @@ function registerTrap(id: number): void {
 function unregisterTrap(id: number): { hadTrapAbove: boolean } {
   const index = trapStack.findIndex((entry) => entry.id === id);
   if (index === -1) return { hadTrapAbove: false };
-  const hadTrapAbove = index < trapStack.length - 1;
+  const entry = trapStack[index];
+  const hadTrapAbove = trapStack.some((candidate) => compareTrapOrder(candidate, entry) > 0);
   trapStack.splice(index, 1);
   return { hadTrapAbove };
 }
 
 function isTopmostTrap(id: number): boolean {
-  return trapStack.length > 0 && trapStack[trapStack.length - 1].id === id;
+  const topmost = trapStack.reduce<TrapEntry | undefined>(
+    (current, candidate) =>
+      !current || compareTrapOrder(candidate, current) > 0 ? candidate : current,
+    undefined,
+  );
+  return topmost?.id === id;
 }
 
 /** Test seam — drops every registered trap. Prevents a test that mounts a
@@ -108,8 +118,8 @@ export const FocusTrapOwnerHiddenContext = createContext(false);
  * onEscape.
  *
  * Stack-aware: every active trap in the app registers on a shared
- * module-level stack (see trapStack above), and only the TOPMOST one ever
- * acts on a keydown or restores focus on deactivation — everything below it
+ * module-level stack (see trapStack above), and only the deepest/topmost one
+ * ever acts on a keydown or restores focus on deactivation — everything below it
  * is a complete no-op until the trap above it deactivates, at which point it
  * "resumes" (the very next keydown routes to it again; no explicit re-focus
  * step is needed). This is what lets a body-portaled child dialog opened
@@ -138,6 +148,7 @@ export function useFocusTrap(
   const idRef = useRef(0);
   if (idRef.current === 0) idRef.current = nextTrapId++;
   const ownerHidden = useContext(FocusTrapOwnerHiddenContext);
+  const ownerLayerDepth = useContext(PortalLayerDepthContext);
 
   // Keep the latest callback reachable from the keydown handler without
   // making it a useEffect dep.
@@ -154,8 +165,10 @@ export function useFocusTrap(
     if (!container) return;
 
     returnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
+    const trapId = idRef.current;
+    registerTrap(trapId, ownerLayerDepth + 1);
 
-    if (focusFirst) {
+    if (focusFirst && isTopmostTrap(trapId)) {
       const first = container.querySelector<HTMLElement>(FOCUSABLE);
       if (first) {
         first.focus();
@@ -165,9 +178,6 @@ export function useFocusTrap(
         container.focus();
       }
     }
-
-    const trapId = idRef.current;
-    registerTrap(trapId);
 
     function onKey(e: KeyboardEvent) {
       // Only the topmost active trap owns the keyboard (see trapStack doc
@@ -239,7 +249,7 @@ export function useFocusTrap(
         returnFocusRef.current?.focus();
       }
     };
-  }, [active, containerRef, focusFirst, portalLayers]); // intentionally no onEscape
+  }, [active, containerRef, focusFirst, portalLayers, ownerLayerDepth]); // intentionally no onEscape
 
   // If an ancestor "modal owner" becomes hidden while this trap is still
   // active, ask it to close through the SAME callback Escape already uses

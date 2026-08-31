@@ -112,7 +112,7 @@ assert.match(
 // leave two entries for the same logical trap.
 assert.match(
   source,
-  /function registerTrap\(id: number\): void \{/,
+  /function registerTrap\(id: number, depth: number\): void \{/,
   "registerTrap is keyed by the stable id",
 );
 assert.match(
@@ -128,7 +128,17 @@ assert.match(
 assert.match(
   source,
   /function isTopmostTrap\(id: number\): boolean \{/,
-  "isTopmostTrap checks the id against the top of the stack",
+  "isTopmostTrap resolves the deepest active trap",
+);
+assert.match(
+  source,
+  /a\.depth - b\.depth \|\| a\.order - b\.order/,
+  "layer depth owns focus and Escape, with activation order only breaking ties",
+);
+assert.match(
+  source,
+  /registerTrap\(trapId, ownerLayerDepth \+ 1\);[\s\S]{0,120}if \(focusFirst && isTopmostTrap\(trapId\)\)/,
+  "the trap registers its depth before deciding whether it may take initial focus",
 );
 
 // Only the topmost trap acts on a keydown — everything below it is a
