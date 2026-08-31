@@ -28,9 +28,23 @@ test("trigger row and flyout expose their configured popup semantics", () => {
 });
 
 test("flyouts register as inside layers so root dismissal ignores them", () => {
-  assert.match(src, /const onDocClick = \(e: MouseEvent\) => \{\s*const t = e\.target as Node;\s*if \(layers\.contains\(t\)\) return;/, "outside-click consults the layer registry");
+  assert.match(src, /const onDocClick = \(e: MouseEvent\) => \{\s*(?:if \(covered\) return;\s*)?const t = e\.target as Node;\s*if \(layers\.contains\(t\)\) return;/, "outside-click consults the layer registry");
   assert.match(src, /if \(layers\.contains\(next\)\) return;/, "root focus-out consults the layer registry");
-  assert.match(src, /return layers\.register\(el\);/, "open flyouts register with the root popover");
+  assert.match(
+    src,
+    /useRegisterPopoverOwner\(open, panelRef, parentLayers, focusTrapPortalLayers\)/,
+    "open flyouts register with every owning portal boundary",
+  );
+  assert.match(
+    src,
+    /className="ui-popover ui-popover-submenu"[\s\S]{0,300}data-covered=\{covered \|\| undefined\}[\s\S]{0,120}aria-hidden=\{covered \|\| undefined\}[\s\S]{0,120}inert=\{covered \|\| undefined\}/,
+    "a submenu owner is hidden and inert while its descendant Modal is active",
+  );
+  assert.match(
+    src,
+    /style=\{covered \? \{ \.\.\.style, visibility: "hidden" \} : style\}/,
+    "covered state overrides the submenu's inline visible positioning style",
+  );
 });
 
 test("keyboard: ArrowRight/Enter opens focusing first item; ArrowLeft returns to the row", () => {
@@ -78,10 +92,15 @@ test("pre-measure pass carries minWidth so flip/clamp math sees the rendered wid
 test("Escape closes one submenu level per press before the root menu", () => {
   assert.match(
     src,
-    /const closeDeepest = submenuEscapeStack\[submenuEscapeStack\.length - 1\];\s*if \(closeDeepest\) \{\s*closeDeepest\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
-    "root Escape handler pops the submenu stack first",
+    /const deepest = submenuEscapeStack[\s\S]{0,260}entry\.rootId === escapeRootId && entry\.treeId === escapeTreeId[\s\S]{0,500}if \(deepest\) \{\s*deepest\.close\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
+    "root Escape handler selects the deepest registered layer first",
   );
-  assert.match(src, /submenuEscapeStack\.push\(closeSelf\);/, "open flyouts join the Escape stack");
+  assert.match(src, /usePopoverEscapeLayer\(open, closeToRow\);/, "open flyouts join the Escape stack");
+  assert.match(
+    src,
+    /candidate\.depth > current\.depth/,
+    "Escape precedence follows layer depth rather than effect registration order",
+  );
 });
 
 test("hover-intent opens for mouse pointers only, after a delay", () => {

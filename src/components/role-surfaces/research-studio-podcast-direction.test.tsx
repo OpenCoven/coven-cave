@@ -9,7 +9,10 @@ import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { describe, expect, test, vi } from "vitest";
 
-vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => {} }));
+vi.mock("@/lib/use-focus-trap", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/use-focus-trap")>()),
+  useFocusTrap: () => {},
+}));
 vi.mock("@/components/ui/live-region", () => ({
   useAnnouncer: () => ({ announce: () => {} }),
 }));
