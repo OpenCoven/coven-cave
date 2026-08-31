@@ -105,7 +105,11 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   // rails for reading, this keeps the queue while widening the run.
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const rail = useResearchPane(RAIL_PANE);
-  const canonicalRun = useResearchRunGateway(research.selected?.id ?? null, familiarId);
+  const canonicalRun = useResearchRunGateway(
+    research.selected?.id ?? null,
+    familiarId,
+    research.selected,
+  );
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
@@ -377,6 +381,10 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           <ResearchMissionDetail
             mission={research.selected}
             canonicalRun={canonicalRun.eventState}
+            runProjections={canonicalRun.projections}
+            runProjectionSource={canonicalRun.projectionSource}
+            runGatewayStatus={canonicalRun.status}
+            runGatewayError={canonicalRun.error ?? canonicalRun.projectionError}
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}

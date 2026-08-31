@@ -47,6 +47,7 @@ import {
 } from "@/lib/research-missions";
 import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
 import type { ResearchRunEventState } from "@/lib/research-run-event-reducer";
+import type { ResearchRunProjections } from "@/lib/research-run-projections";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
@@ -56,6 +57,10 @@ type Props = {
   mission: ResearchMission | null;
   /** Canonical ResearchRun state when the gateway has connected. */
   canonicalRun?: ResearchRunEventState | null;
+  runProjections?: ResearchRunProjections | null;
+  runProjectionSource?: "canonical" | "legacy" | null;
+  runGatewayStatus?: "idle" | "loading" | "connected" | "reconnecting" | "error";
+  runGatewayError?: string | null;
   showEvidence: boolean;
   /** Collapse the evidence rail to its spine. Absent = not collapsible here
    *  (focus mode already hides the rail outright). */
@@ -129,6 +134,10 @@ function stopDirectionRun(runId: string | null) {
 export function ResearchMissionDetail({
   mission,
   canonicalRun,
+  runProjections,
+  runProjectionSource,
+  runGatewayStatus = "idle",
+  runGatewayError,
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
@@ -319,6 +328,49 @@ export function ResearchMissionDetail({
   // Archived missions are read-only: automation controls gate on this the
   // same way "Create schedule" already does.
   const isArchived = mission.status === "archived";
+  const projectionNotice = (() => {
+    if (runProjectionSource === "canonical" && runGatewayStatus === "reconnecting") {
+      return "Reconnecting to live updates. Showing the last complete canonical history.";
+    }
+    if (runProjectionSource === "canonical" && runGatewayStatus === "error") {
+      return "Live updates are unavailable. Showing the last complete canonical history.";
+    }
+    if (runProjectionSource !== "legacy") return null;
+    if (runGatewayStatus === "loading") {
+      return "Loading canonical run history. Showing persisted mission data.";
+    }
+    if (runGatewayStatus === "reconnecting") {
+      return "Reconnecting to canonical run history. Showing persisted mission data.";
+    }
+    if (runGatewayStatus === "error" || runGatewayError) {
+      return "Couldn't load canonical run history. Showing persisted mission data.";
+    }
+    return null;
+  })();
+  const projectedPlan = runProjections?.plan;
+  const projectedActivity = runProjections?.activity.entries ?? [];
+  const projectedEvidence = runProjections?.evidence;
+  const projectedReport = runProjections?.report;
+  const projectedStages = projectedPlan?.revised?.stages ?? [];
+  const projectedEvidenceCounts = projectedEvidence
+    ? Object.entries(projectedEvidence.counts).filter((entry): entry is [string, number] =>
+      typeof entry[1] === "number")
+    : [];
+  const hasProjectedEvidence = Boolean(projectedEvidence
+    && (
+      projectedEvidence.sources.length > 0
+      || projectedEvidence.claims.length > 0
+      || projectedEvidence.contradictions.length > 0
+      || projectedEvidence.rejected.length > 0
+      || projectedEvidenceCounts.length > 0
+    ));
+  const hasProjectedReport = Boolean(projectedReport
+    && (
+      projectedReport.outline.length > 0
+      || projectedReport.claims.length > 0
+      || projectedReport.artifacts.length > 0
+      || projectedReport.exportStatus !== "not_started"
+    ));
 
   // Root-blocked failures get a self-healing Retry: untouched config clears the
   // rejected root so the retried iteration runs in the mission workspace.
@@ -541,7 +593,12 @@ export function ResearchMissionDetail({
   );
 
   return (
-    <section className="research-mission-detail" aria-labelledby="research-mission-title">
+    <section
+      className="research-mission-detail"
+      aria-labelledby="research-mission-title"
+      data-research-run-id={runProjections?.runId ?? canonicalRun?.run.id}
+      data-research-run-projection-source={runProjectionSource ?? undefined}
+    >
       <div
         className="research-mission-detail__body"
         data-evidence-open={showEvidence}
@@ -593,6 +650,17 @@ export function ResearchMissionDetail({
               </div>
             ) : null}
           </header>
+
+          {projectionNotice ? (
+            <p
+              className={runGatewayStatus === "error"
+                ? "research-mission-error"
+                : "research-desk-block__empty"}
+              role={runGatewayStatus === "error" ? "alert" : "status"}
+            >
+              {projectionNotice}
+            </p>
+          ) : null}
 
           {/* ── Stepper card: 6 reconciled phases + bounds row ──
              Each node carries a meta line derived from the mission (source
@@ -747,6 +815,58 @@ export function ResearchMissionDetail({
             </div>
           </Modal>
 
+          {projectedPlan?.revisions.length ? (
+            <section
+              className="research-desk-block"
+              aria-label="Run plan"
+              data-research-run-projection="plan"
+              data-active-stage={projectedPlan.activeStageId}
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Run plan</span>
+                <span className="research-desk-block__aside">
+                  {projectedPlan.hasRevision
+                    ? `${projectedPlan.revisions.length} revisions`
+                    : "Original plan"}
+                </span>
+              </div>
+              <ul className="research-desk-activity">
+                {projectedPlan.revisions.map((revision) => (
+                  <li key={`revision-${revision.revision}`}>
+                    <em>v{revision.revision}</em>
+                    <span>
+                      {revision.label ?? `Revision ${revision.revision}`}
+                      {revision.reason ? ` · ${revision.reason}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {projectedStages.length ? (
+                <ul className="research-desk-activity" aria-label="Current plan stages">
+                  {projectedStages.map((stage) => {
+                    const isActiveStage = projectedPlan.activeStageId === stage.id;
+                    const status = stage.status === "active" && !isActiveStage
+                      ? "last recorded"
+                      : stage.status;
+                    return (
+                      <li
+                        key={`${stage.revision}-${stage.id}`}
+                        data-status={isActiveStage ? "running" : status}
+                      >
+                        <em>{status}</em>
+                        <span>
+                          {stage.label}
+                          {stage.attempt > 1 ? ` · attempt ${stage.attempt}` : ""}
+                          {stage.detail ? ` · ${stage.detail}` : ""}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
           {/* ── Checkpoint / paused: what changed + refine box.
                 Tiles derive from real data only — a tile whose datum is
                 missing is omitted, never invented. Per-iteration source
@@ -790,24 +910,43 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
-          {/* ── Running: live activity from the latest iteration's real step
-                reports — no fake timestamps, honest when detail is absent. ── */}
-          {isLive ? (
-            <section className="research-desk-block" aria-label="Live activity">
+          {projectedActivity.length > 0 || isLive ? (
+            <section
+              className="research-desk-block"
+              aria-label={isLive ? "Live activity" : "Run activity"}
+              data-research-run-projection="activity"
+            >
               <div className="research-desk-block__head">
-                <span className="research-desk-block__kicker">Live activity</span>
-                <span className="research-desk-block__aside">
-                  {mission.bounds.checkpointEvery === 1
-                    ? "checkpoint after this iteration"
-                    : `checkpoint every ${mission.bounds.checkpointEvery} iterations`}
+                <span className="research-desk-block__kicker">
+                  {isLive ? "Live activity" : "Run activity"}
                 </span>
+                {isLive ? (
+                  <span className="research-desk-block__aside">
+                    {mission.bounds.checkpointEvery === 1
+                      ? "checkpoint after this iteration"
+                      : `checkpoint every ${mission.bounds.checkpointEvery} iterations`}
+                  </span>
+                ) : null}
               </div>
-              {canonicalRun?.activity ? (
-                <ul className="research-desk-activity" data-source="canonical-research-run">
-                  <li data-status="running">
-                    <em>{canonicalRun.activity.label}</em>
-                    <span>{canonicalRun.activity.detail || "Reported by the ResearchRun gateway"}</span>
-                  </li>
+              {projectedActivity.length > 0 ? (
+                <ul
+                  className="research-desk-activity"
+                  data-source={runProjectionSource === "canonical"
+                    ? "canonical-research-run"
+                    : "persisted-mission"}
+                >
+                  {projectedActivity.map((entry) => (
+                    <li
+                      key={entry.id}
+                      data-status={entry.stageId === projectedPlan?.activeStageId ? "running" : undefined}
+                    >
+                      <em>#{entry.sequence}</em>
+                      <span>
+                        {entry.label}
+                        {entry.detail ? ` · ${entry.detail}` : ""}
+                      </span>
+                    </li>
+                  ))}
                 </ul>
               ) : iteration?.steps?.length ? (
                 <ul className="research-desk-activity">
@@ -826,9 +965,98 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
+          {hasProjectedEvidence && projectedEvidence ? (
+            <section
+              className="research-desk-block"
+              aria-label="Evidence"
+              data-research-run-projection="evidence"
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Evidence</span>
+                <span className="research-desk-block__aside">
+                  {projectedEvidence.sources.length} source{projectedEvidence.sources.length === 1 ? "" : "s"}
+                  {" · "}
+                  {projectedEvidence.claims.length} claim{projectedEvidence.claims.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {projectedEvidenceCounts.length > 0 ? (
+                <div className="research-desk-tiles">
+                  {projectedEvidenceCounts.map(([label, value]) => (
+                    <div key={label} className="research-desk-tile">
+                      <strong>{value}</strong>
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {projectedEvidence.claims.length > 0 ? (
+                <ul className="research-desk-activity">
+                  {projectedEvidence.claims.map((claim) => (
+                    <li key={claim.id} data-status={claim.status}>
+                      <em>{claim.status}</em>
+                      <span>{claim.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : projectedEvidence.sources.length > 0 ? (
+                <ul className="research-desk-activity">
+                  {projectedEvidence.sources.map((source) => (
+                    <li key={source.id} data-status={source.status}>
+                      <em>{source.status}</em>
+                      <span>{source.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
+          {hasProjectedReport && projectedReport ? (
+            <section
+              className="research-desk-block"
+              aria-label="Report"
+              data-research-run-projection="report"
+            >
+              <div className="research-desk-block__head">
+                <span className="research-desk-block__kicker">Report</span>
+                <span className="research-desk-block__aside">
+                  {projectedReport.exportStatus === "exported"
+                    ? `Exported${projectedReport.exportDetail ? ` · ${projectedReport.exportDetail}` : ""}`
+                    : `Export ${projectedReport.exportStatus.replaceAll("_", " ")}`}
+                </span>
+              </div>
+              {projectedReport.outline.length > 0 ? (
+                <ul className="research-desk-activity" aria-label="Report outline">
+                  {projectedReport.outline.map((item) => (
+                    <li key={item.id} data-status={item.status}>
+                      <em>{item.status}</em>
+                      <span>
+                        {item.title}
+                        {item.detail ? ` · ${item.detail}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {projectedReport.artifacts.length > 0 ? (
+                <ul className="research-desk-activity" aria-label="Report artifacts">
+                  {projectedReport.artifacts.map((artifact) => (
+                    <li key={artifact.id} data-status={artifact.status}>
+                      <em>{artifact.status}</em>
+                      <span>
+                        {artifact.title}
+                        {artifact.kind ? ` · ${artifact.kind}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
           {/* ── Completed: iteration summary as abstract + honest meta line.
                 Findings chips are not derivable from mission data — skipped. ── */}
-          {mission.status === "completed" ? (
+          {mission.status === "completed" && !hasProjectedReport ? (
             <section className="research-desk-block" aria-label="Findings">
               <div className="research-desk-block__head">
                 <span className="research-desk-block__kicker">Findings · published</span>

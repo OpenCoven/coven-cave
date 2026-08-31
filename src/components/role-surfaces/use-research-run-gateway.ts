@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   getResearchRunGateway,
@@ -14,27 +14,56 @@ import {
   rehydrateResearchRun,
   type ResearchRunEventState,
 } from "@/lib/research-run-event-reducer";
+import type { ResearchMission } from "@/lib/research-missions";
 import type { ResearchRunV1 } from "@/lib/research-protocol/research-run";
+import {
+  hydrateResearchRunProjectionInput,
+  researchMissionToRunProjectionInput,
+  selectResearchRunProjections,
+  type ResearchRunProjections,
+} from "@/lib/research-run-projections";
 
 export type ResearchRunGatewayViewState = {
   run: ResearchRunV1 | null;
   eventState: ResearchRunEventState | null;
   status: "idle" | "loading" | "connected" | "reconnecting" | "error";
   error: string | null;
+  historyComplete: boolean;
+  projections: ResearchRunProjections | null;
+  projectionSource: "canonical" | "legacy" | null;
+  projectionError: string | null;
 };
 
-const IDLE: ResearchRunGatewayViewState = {
+type ResearchRunGatewayTransportState = Pick<
+  ResearchRunGatewayViewState,
+  "run" | "eventState" | "status" | "error"
+> & {
+  selector: string | null;
+};
+
+const IDLE: ResearchRunGatewayTransportState = {
+  selector: null,
   run: null,
   eventState: null,
   status: "idle",
   error: null,
 };
 
+function hasCompleteEventHistory(state: ResearchRunEventState | null): state is ResearchRunEventState {
+  if (!state || state.sync.status !== "synced" || state.pendingEvents.length > 0) return false;
+  const expectedLastSequence = state.run.nextEventSequence - 1;
+  return state.lastEventSequence === expectedLastSequence
+    && state.appliedEvents.length === expectedLastSequence
+    && state.appliedEvents.every((event, index) =>
+      event.runId === state.run.id && event.sequence === index + 1);
+}
+
 export function useResearchRunGateway(
   missionOrRunId: string | null,
   familiarId: string,
+  legacyMission?: ResearchMission | null,
 ): ResearchRunGatewayViewState {
-  const [state, setState] = useState<ResearchRunGatewayViewState>(IDLE);
+  const [state, setState] = useState<ResearchRunGatewayTransportState>(IDLE);
   const generation = useRef(0);
 
   useEffect(() => {
@@ -51,17 +80,21 @@ export function useResearchRunGateway(
     const applyFrame = (frame: ResearchRunGatewaySseFrame) => {
       if (!current()) return;
       if (frame.kind === "error") {
+        source?.close();
         setState((previous) => ({ ...previous, status: "error", error: frame.message }));
         return;
       }
       if (frame.kind === "snapshot") {
         setState((previous) => ({
+          selector: missionOrRunId,
           run: frame.run,
           eventState: rehydrateResearchRun(frame.run, [], {
             afterSequence: frame.afterSeq,
             previousState: previous.eventState ?? undefined,
           }),
-          status: "connected",
+          status: frame.afterSeq >= frame.lastEventSequence
+            ? "connected"
+            : previous.status === "reconnecting" ? "reconnecting" : "loading",
           error: null,
         }));
         return;
@@ -83,6 +116,11 @@ export function useResearchRunGateway(
           ...previous,
           run: consumed.state.run,
           eventState: consumed.state,
+          status: consumed.state.sync.status === "gap"
+            ? "reconnecting"
+            : hasCompleteEventHistory(consumed.state)
+              ? "connected"
+              : previous.status === "reconnecting" ? "reconnecting" : "loading",
           error: consumed.state.sync.status === "gap"
             ? "Research Run event stream has a gap; reconnecting"
             : null,
@@ -91,14 +129,27 @@ export function useResearchRunGateway(
     };
 
     const connect = async () => {
-      setState({ run: null, eventState: null, status: "loading", error: null });
+      setState({
+        selector: missionOrRunId,
+        run: null,
+        eventState: null,
+        status: "loading",
+        error: null,
+      });
       const snapshot = await getResearchRunGateway(missionOrRunId, familiarId, controller.signal);
       if (!current()) return;
       if (!snapshot.ok) {
-        setState({ run: null, eventState: null, status: "error", error: snapshot.error ?? "Research Run could not be loaded" });
+        setState({
+          selector: missionOrRunId,
+          run: null,
+          eventState: null,
+          status: "error",
+          error: snapshot.error ?? "Research Run could not be loaded",
+        });
         return;
       }
       setState({
+        selector: missionOrRunId,
         run: snapshot.run,
         eventState: createResearchRunEventState(snapshot.run),
         status: "loading",
@@ -108,7 +159,15 @@ export function useResearchRunGateway(
         researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0),
       );
       source.onopen = () => {
-        if (current()) setState((previous) => ({ ...previous, status: "connected", error: null }));
+        if (current()) {
+          setState((previous) => ({
+            ...previous,
+            status: hasCompleteEventHistory(previous.eventState)
+              ? "connected"
+              : previous.status === "reconnecting" ? "reconnecting" : "loading",
+            error: null,
+          }));
+        }
       };
       source.addEventListener("snapshot", (event) => {
         const frame = parseResearchRunGatewaySseFrame("snapshot", (event as MessageEvent<string>).data);
@@ -125,7 +184,13 @@ export function useResearchRunGateway(
 
     void connect().catch((error) => {
       if (current() && (error as Error).name !== "AbortError") {
-        setState({ run: null, eventState: null, status: "error", error: "Research Run gateway could not be loaded" });
+        setState({
+          selector: missionOrRunId,
+          run: null,
+          eventState: null,
+          status: "error",
+          error: "Research Run gateway could not be loaded",
+        });
       }
     });
     return () => {
@@ -135,5 +200,71 @@ export function useResearchRunGateway(
     };
   }, [familiarId, missionOrRunId]);
 
-  return state;
+  const currentState = state.selector === missionOrRunId
+    ? state
+    : {
+      selector: missionOrRunId,
+      run: null,
+      eventState: null,
+      status: missionOrRunId ? "loading" as const : "idle" as const,
+      error: null,
+    };
+  const historyComplete = hasCompleteEventHistory(currentState.eventState);
+  const projection = useMemo(() => {
+    if (historyComplete && currentState.eventState) {
+      try {
+        const hydrated = hydrateResearchRunProjectionInput(
+          currentState.eventState.run,
+          currentState.eventState.appliedEvents,
+          legacyMission,
+        );
+        return {
+          projections: selectResearchRunProjections({
+            ...hydrated,
+            mission: null,
+          }),
+          projectionSource: "canonical" as const,
+          projectionError: null,
+        };
+      } catch {
+        if (legacyMission) {
+          return {
+            projections: selectResearchRunProjections(
+              researchMissionToRunProjectionInput(legacyMission),
+            ),
+            projectionSource: "legacy" as const,
+            projectionError: "Canonical Research Run history could not be projected",
+          };
+        }
+        return {
+          projections: null,
+          projectionSource: null,
+          projectionError: "Canonical Research Run history could not be projected",
+        };
+      }
+    }
+    if (legacyMission) {
+      return {
+        projections: selectResearchRunProjections(
+          researchMissionToRunProjectionInput(legacyMission),
+        ),
+        projectionSource: "legacy" as const,
+        projectionError: null,
+      };
+    }
+    return {
+      projections: null,
+      projectionSource: null,
+      projectionError: null,
+    };
+  }, [currentState.eventState, historyComplete, legacyMission]);
+
+  return {
+    run: currentState.run,
+    eventState: currentState.eventState,
+    status: currentState.status,
+    error: currentState.error,
+    historyComplete,
+    ...projection,
+  };
 }

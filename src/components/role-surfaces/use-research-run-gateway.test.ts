@@ -11,6 +11,9 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   assert.match(hook, /researchRunGatewayStreamUrl/);
   assert.match(hook, /createResearchRunEventState/);
   assert.match(hook, /consumeResearchRunEvent/);
+  assert.match(hook, /hydrateResearchRunProjectionInput/);
+  assert.match(hook, /selectResearchRunProjections/);
+  assert.match(hook, /researchMissionToRunProjectionInput/);
   assert.match(
     hook,
     /researchRunGatewayStreamUrl\(missionOrRunId,\s*familiarId,\s*0\)/,
@@ -18,7 +21,13 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   );
   assert.match(hook, /eventState\.run\.id !== frame\.event\.runId/);
   assert.match(hook, /source\?\.close\(\)/);
-  assert.match(desk, /useResearchRunGateway\(research\.selected\?\.id \?\? null, familiarId\)/);
+  assert.match(
+    desk,
+    /useResearchRunGateway\(\s*research\.selected\?\.id \?\? null,\s*familiarId,\s*research\.selected,\s*\)/,
+  );
   assert.match(desk, /data-research-run-gateway-status/);
-  assert.match(detail, /canonicalRun\?\.activity/);
+  assert.match(detail, /data-research-run-projection="plan"/);
+  assert.match(detail, /data-research-run-projection="activity"/);
+  assert.match(detail, /data-research-run-projection="evidence"/);
+  assert.match(detail, /data-research-run-projection="report"/);
 });
