@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   replayResearchRunGateway,
+  subscribeBeforeInitialResearchRunRead,
   watchResearchRunSources,
 } from "@/lib/server/research-run-gateway";
 import {
@@ -46,21 +47,31 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "invalid event cursor" }, { status: 400 });
   }
   const afterSeq = Math.max(requestedQuery, requestedHeader);
+  let publishOnChange = () => {};
   let initial;
+  let activateWatching: (() => void) | null = null;
+  let stopWatching: (() => void) | null = null;
   try {
-    initial = await replayResearchRunGateway(
-      authorized.value.missionId,
-      afterSeq,
-      STREAM_PAGE_SIZE,
+    const opened = await subscribeBeforeInitialResearchRunRead(
+      (notify) => watchResearchRunSources(authorized.value.missionId, notify),
+      () => publishOnChange(),
+      () => replayResearchRunGateway(
+        authorized.value.missionId,
+        afterSeq,
+        STREAM_PAGE_SIZE,
+      ),
     );
+    initial = opened.value;
+    activateWatching = opened.activate;
+    stopWatching = opened.stopWatching;
   } catch (error) {
     return researchRunGatewayErrorResponse(error);
   }
   if (!initial) {
+    stopWatching();
     return NextResponse.json({ ok: false, error: "research run not found" }, { status: 404 });
   }
 
-  let stopWatching: (() => void) | null = null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let closed = false;
   let cursor = afterSeq;
@@ -69,6 +80,8 @@ export async function GET(
 
   const cleanup = () => {
     closed = true;
+    publishOnChange = () => {};
+    activateWatching = null;
     stopWatching?.();
     stopWatching = null;
     if (heartbeat) clearInterval(heartbeat);
@@ -120,14 +133,12 @@ export async function GET(
         return publishChain;
       };
 
-      // Subscribe before sending the first page. If mission.json changes
-      // between the route's initial read and this write, the invalidation is
-      // serialized behind the snapshot and replayed from the advanced cursor.
-      stopWatching = watchResearchRunSources(authorized.value.missionId, () => {
+      publishOnChange = () => {
         void publish(false);
-      });
+      };
       await publish(true, true);
       if (closed) return;
+      activateWatching?.();
 
       heartbeat = setInterval(() => {
         if (closed) return;

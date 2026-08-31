@@ -27,6 +27,10 @@ test("replay and SSE routes preserve cursor semantics and clean up watchers", ()
   assert.match(stream, /event: \$\{event\}/);
   assert.match(stream, /text\/event-stream/);
   assert.match(stream, /watchResearchRunSources/);
+  assert.match(
+    stream,
+    /subscribeBeforeInitialResearchRunRead\([\s\S]*?\(\) => replayResearchRunGateway\(/,
+  );
   assert.match(stream, /stopWatching\?\.\(\)/);
   assert.match(stream, /clearInterval\(heartbeat\)/);
   assert.match(stream, /: ping/);

@@ -11,6 +11,7 @@ import {
 import {
   consumeResearchRunEvent,
   createResearchRunEventState,
+  rehydrateResearchRun,
   type ResearchRunEventState,
 } from "@/lib/research-run-event-reducer";
 import type { ResearchRunV1 } from "@/lib/research-protocol/research-run";
@@ -54,12 +55,15 @@ export function useResearchRunGateway(
         return;
       }
       if (frame.kind === "snapshot") {
-        setState({
+        setState((previous) => ({
           run: frame.run,
-          eventState: createResearchRunEventState(frame.run),
+          eventState: rehydrateResearchRun(frame.run, [], {
+            afterSequence: frame.afterSeq,
+            previousState: previous.eventState ?? undefined,
+          }),
           status: "connected",
           error: null,
-        });
+        }));
         return;
       }
       setState((previous) => {
@@ -101,7 +105,7 @@ export function useResearchRunGateway(
         error: null,
       });
       source = new EventSource(
-        researchRunGatewayStreamUrl(missionOrRunId, familiarId, snapshot.lastEventSequence),
+        researchRunGatewayStreamUrl(missionOrRunId, familiarId, 0),
       );
       source.onopen = () => {
         if (current()) setState((previous) => ({ ...previous, status: "connected", error: null }));

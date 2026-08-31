@@ -13,6 +13,7 @@ import {
   replayResearchRunGateway,
   researchMissionToCanonicalRun,
 } from "./research-run-gateway.ts";
+import * as researchRunGateway from "./research-run-gateway.ts";
 
 const originalMissionRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
 const originalEventRoot = process.env.COVEN_RESEARCH_RUN_EVENTS_DIR;
@@ -97,6 +98,91 @@ test("terminal legacy status receives a metadata-only final manifest", () => {
   assert.equal(run.artifactManifest?.state, "final");
   assert.deepEqual(run.artifactManifest?.sources, []);
   assert.deepEqual(run.artifactManifest?.artifacts, []);
+});
+
+test("archived missions preserve a durable completed outcome", () => {
+  const completed = researchMissionToCanonicalRun({
+    ...mission("gateway-archived-completed", "archived"),
+    finishedAt: "2026-08-30T12:10:00.000Z",
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-30T12:10:00.000Z",
+    }],
+  }, 1);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.legacyMissionStatus, "archived");
+});
+
+test("archived missions preserve a durable failed outcome", () => {
+  const failed = researchMissionToCanonicalRun({
+    ...mission("gateway-archived-failed", "archived"),
+    lastError: "Provider exhausted its retry budget",
+    iterations: [{
+      number: 1,
+      status: "failed",
+      finishedAt: "2026-08-30T12:10:00.000Z",
+    }],
+  }, 1);
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.legacyMissionStatus, "archived");
+  assert.equal(failed.failure?.code, "research_mission_failed");
+});
+
+test("archived missions without terminal evidence map to cancelled", () => {
+  const nonterminal = researchMissionToCanonicalRun(
+    mission("gateway-archived-planning", "archived"),
+    1,
+  );
+  assert.equal(nonterminal.status, "cancelled");
+});
+
+test("subscription is active during the authoritative initial read and closes on failure", async () => {
+  const subscribeBeforeInitialRead = (
+    researchRunGateway as Record<string, unknown>
+  ).subscribeBeforeInitialResearchRunRead;
+  assert.equal(typeof subscribeBeforeInitialRead, "function");
+
+  const order: string[] = [];
+  const subscription: { notify?: () => void } = {};
+  let invalidations = 0;
+  let stopped = 0;
+  const read = subscribeBeforeInitialRead as <T>(
+    subscribe: (onChange: () => void) => () => void,
+    onChange: () => void,
+    initialRead: () => Promise<T>,
+  ) => Promise<{ value: T; activate: () => void; stopWatching: () => void }>;
+  const opened = await read(
+    (onChange) => {
+      order.push("watch");
+      subscription.notify = onChange;
+      return () => { stopped += 1; };
+    },
+    () => { invalidations += 1; },
+    async () => {
+      order.push("read");
+      subscription.notify?.();
+      return "snapshot";
+    },
+  );
+  assert.deepEqual(order, ["watch", "read"]);
+  assert.equal(invalidations, 0, "updates during the initial read stay buffered");
+  opened.activate();
+  assert.equal(invalidations, 1);
+  subscription.notify?.();
+  assert.equal(invalidations, 2, "updates after activation publish immediately");
+  assert.equal(opened.value, "snapshot");
+  opened.stopWatching();
+  assert.equal(stopped, 1);
+
+  await assert.rejects(read(
+    () => () => { stopped += 1; },
+    () => {},
+    async () => {
+      throw new Error("initial read failed");
+    },
+  ), /initial read failed/);
+  assert.equal(stopped, 2);
 });
 
 test("invalid mission ids cannot be projected", () => {

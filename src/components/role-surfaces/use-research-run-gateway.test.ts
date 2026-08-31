@@ -11,6 +11,11 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   assert.match(hook, /researchRunGatewayStreamUrl/);
   assert.match(hook, /createResearchRunEventState/);
   assert.match(hook, /consumeResearchRunEvent/);
+  assert.match(
+    hook,
+    /researchRunGatewayStreamUrl\(missionOrRunId,\s*familiarId,\s*0\)/,
+    "initial load must replay from the beginning so event-derived state is hydrated",
+  );
   assert.match(hook, /eventState\.run\.id !== frame\.event\.runId/);
   assert.match(hook, /source\?\.close\(\)/);
   assert.match(desk, /useResearchRunGateway\(research\.selected\?\.id \?\? null, familiarId\)/);

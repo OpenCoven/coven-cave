@@ -107,8 +107,60 @@ function canonicalStatusForMission(mission: ResearchMission): {
         },
       };
     case "cancelled":
-    case "archived":
       return { status: "cancelled" };
+    case "archived": {
+      const latestIteration = mission.iterations.at(-1);
+      if (latestIteration?.status === "completed") return { status: "completed" };
+      if (latestIteration?.status === "failed") {
+        return {
+          status: "failed",
+          failure: {
+            code: "research_mission_failed",
+            message: "The persisted research mission reported a failure.",
+            retryable: false,
+          },
+        };
+      }
+      if (
+        mission.finishedAt
+        && mission.artifacts.some((artifact) => artifact.state === "published")
+      ) {
+        return { status: "completed" };
+      }
+      return { status: "cancelled" };
+    }
+  }
+}
+
+export async function subscribeBeforeInitialResearchRunRead<T>(
+  subscribe: (onChange: () => void) => () => void,
+  onChange: () => void,
+  initialRead: () => Promise<T>,
+): Promise<{ value: T; activate: () => void; stopWatching: () => void }> {
+  let active = false;
+  let pending = false;
+  const notify = () => {
+    if (active) onChange();
+    else pending = true;
+  };
+  const stopWatching = subscribe(notify);
+  try {
+    const value = await initialRead();
+    return {
+      value,
+      activate: () => {
+        if (active) return;
+        active = true;
+        if (pending) {
+          pending = false;
+          onChange();
+        }
+      },
+      stopWatching,
+    };
+  } catch (error) {
+    stopWatching();
+    throw error;
   }
 }
 
