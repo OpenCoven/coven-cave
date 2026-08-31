@@ -38,13 +38,18 @@ assert.match(src, /dismissOnEscape\?: boolean/, "Modal exposes a dismissOnEscape
 assert.match(src, /dismissOnEscape = true/, "dismissOnEscape defaults to true");
 assert.match(
   src,
-  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*\}\)/,
+  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*\}\)/,
   "the trap stays active while busy; only the Esc dismissal callback is gated",
 );
 assert.match(
   src,
   /<FocusTrapPortalLayersContext\.Provider value=\{portalLayers\}>/,
   "body-portaled descendants can join the Modal's focus boundary",
+);
+assert.match(
+  src,
+  /<PortalLayerRootContext\.Provider value=\{portalLayerRootId\}>[\s\S]{0,120}<PortalLayerDepthContext\.Provider value=\{ownerLayerDepth \+ 1\}>/,
+  "nested traps share a root while increasing their portal depth",
 );
 
 // Optional escape hatch (cave-fzr4p): Modal itself stays Popover-agnostic, but

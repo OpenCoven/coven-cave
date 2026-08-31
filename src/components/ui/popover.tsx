@@ -57,14 +57,14 @@ export function usePopoverLayerRegistration(
 ) {
   const layers = useContext(PopoverLayersContext);
   useLayoutEffect(() => {
-    if (!el || !layers) return;
+    if (!active || !el || !layers) return;
     const unregister = layers.register(el);
     const uncover = coverOwner ? layers.cover() : NOOP;
     return () => {
       unregister();
       uncover();
     };
-  }, [el, layers, coverOwner]);
+  }, [active, el, layers, coverOwner]);
   usePopoverEscapeLayer(Boolean(layers && active && onEscape), onEscape ?? NOOP);
 }
 

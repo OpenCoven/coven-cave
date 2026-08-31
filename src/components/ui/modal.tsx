@@ -6,7 +6,9 @@ import { Icon } from "@/lib/icon";
 import {
   FocusTrapPortalLayersContext,
   PortalLayerDepthContext,
+  PortalLayerRootContext,
   useFocusTrap,
+  usePortalLayerRootId,
 } from "@/lib/use-focus-trap";
 
 type ModalProps = {
@@ -53,6 +55,7 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const portalLayerElementsRef = useRef<Map<HTMLElement, number>>(new Map());
   const ownerLayerDepth = useContext(PortalLayerDepthContext);
+  const portalLayerRootId = usePortalLayerRootId();
   const headingId = useId();
   const setLayerElement = useCallback(
     (el: HTMLDivElement | null) => {
@@ -88,6 +91,7 @@ export function Modal({
   useFocusTrap(open, dialogRef, {
     onEscape: dismissOnEscape ? onClose : undefined,
     portalLayers,
+    portalRootId: portalLayerRootId,
   });
 
   if (!open || typeof document === "undefined") return null;
@@ -115,41 +119,43 @@ export function Modal({
         tabIndex={-1}
       >
         <FocusTrapPortalLayersContext.Provider value={portalLayers}>
-          <PortalLayerDepthContext.Provider value={ownerLayerDepth + 1}>
-            {breadcrumb ? (
-              <header className="ui-modal-header">
-                <div className="ui-modal-header-breadcrumb" id={headingId}>
-                  {breadcrumb.map((segment, i) => (
-                    <span key={i} className="contents">
-                      {i > 0 ? (
-                        <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
-                          ›
-                        </span>
-                      ) : null}
-                      {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="ui-modal-close focus-ring"
-                  onClick={onClose}
-                  aria-label="Close"
-                >
-                  <Icon name="ph:x" width={14} />
-                </button>
-              </header>
-            ) : null}
+          <PortalLayerRootContext.Provider value={portalLayerRootId}>
+            <PortalLayerDepthContext.Provider value={ownerLayerDepth + 1}>
+              {breadcrumb ? (
+                <header className="ui-modal-header">
+                  <div className="ui-modal-header-breadcrumb" id={headingId}>
+                    {breadcrumb.map((segment, i) => (
+                      <span key={i} className="contents">
+                        {i > 0 ? (
+                          <span className="ui-modal-header-breadcrumb-sep" aria-hidden>
+                            ›
+                          </span>
+                        ) : null}
+                        {i === breadcrumb.length - 1 ? <strong>{segment}</strong> : <span>{segment}</span>}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-modal-close focus-ring"
+                    onClick={onClose}
+                    aria-label="Close"
+                  >
+                    <Icon name="ph:x" width={14} />
+                  </button>
+                </header>
+              ) : null}
 
-            <div className="ui-modal-body">{children}</div>
+              <div className="ui-modal-body">{children}</div>
 
-            {footerPills || footerActions ? (
-              <footer className="ui-modal-footer">
-                <div className="ui-modal-footer-pills">{footerPills}</div>
-                <div className="ui-modal-footer-actions">{footerActions}</div>
-              </footer>
-            ) : null}
-          </PortalLayerDepthContext.Provider>
+              {footerPills || footerActions ? (
+                <footer className="ui-modal-footer">
+                  <div className="ui-modal-footer-pills">{footerPills}</div>
+                  <div className="ui-modal-footer-actions">{footerActions}</div>
+                </footer>
+              ) : null}
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
         </FocusTrapPortalLayersContext.Provider>
       </div>
     </div>,

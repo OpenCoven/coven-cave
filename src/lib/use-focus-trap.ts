@@ -23,6 +23,8 @@ type Options = {
   restoreFocus?: () => boolean;
   /** Body-portaled descendants that remain part of this trap's focus boundary. */
   portalLayers?: FocusTrapPortalLayers;
+  /** Root shared by nested traps; independent roots compete by activation order. */
+  portalRootId?: number;
 };
 
 export type FocusTrapPortalLayers = {
@@ -33,33 +35,74 @@ export type FocusTrapPortalLayers = {
 
 export const FocusTrapPortalLayersContext = createContext<FocusTrapPortalLayers | null>(null);
 export const PortalLayerDepthContext = createContext(0);
+export const PortalLayerRootContext = createContext<number | null>(null);
+let nextPortalLayerRootId = 1;
+
+export function usePortalLayerRootId(): number {
+  const inheritedRootId = useContext(PortalLayerRootContext);
+  const ownRootIdRef = useRef(0);
+  if (ownRootIdRef.current === 0) ownRootIdRef.current = nextPortalLayerRootId++;
+  return inheritedRootId ?? ownRootIdRef.current;
+}
 
 /**
- * One entry per currently-ACTIVE trap. Layer depth determines ownership and
- * activation order breaks ties, so an initially-mounted descendant still wins
- * even though React runs its passive effect before its ancestor's. Entries are
- * keyed by a stable per-hook-instance `id` (see `idRef` below), never by object
- * identity, so a React StrictMode mount→cleanup→mount cycle registers and
- * unregisters the SAME logical trap without leaving a duplicate behind.
+ * One entry per currently-ACTIVE trap. The newest independent root wins;
+ * within that root, layer depth determines ownership and activation order
+ * breaks ties. An initially-mounted descendant therefore still wins even
+ * though React runs its passive effect before its ancestor's. Entries are
+ * keyed by a stable per-hook-instance `id` (see `idRef` below), never by
+ * object identity, so a React StrictMode mount→cleanup→mount cycle registers
+ * and unregisters the SAME logical trap without leaving a duplicate behind.
  */
 type TrapEntry = {
   readonly id: number;
   readonly depth: number;
   readonly order: number;
+  readonly rootId: number;
+  readonly rootOrder: number;
 };
 
 const trapStack: TrapEntry[] = [];
+const trapRoots = new Map<number, { order: number; count: number }>();
 let nextTrapId = 1;
 let nextTrapOrder = 1;
+let nextTrapRootOrder = 1;
 
 function compareTrapOrder(a: TrapEntry, b: TrapEntry): number {
-  return a.depth - b.depth || a.order - b.order;
+  return a.rootOrder - b.rootOrder || a.depth - b.depth || a.order - b.order;
 }
 
-function registerTrap(id: number, depth: number): void {
+function acquireTrapRoot(rootId: number): number {
+  const current = trapRoots.get(rootId);
+  if (current) {
+    current.count += 1;
+    return current.order;
+  }
+  const order = nextTrapRootOrder++;
+  trapRoots.set(rootId, { order, count: 1 });
+  return order;
+}
+
+function releaseTrapRoot(rootId: number): void {
+  const current = trapRoots.get(rootId);
+  if (!current) return;
+  current.count -= 1;
+  if (current.count === 0) trapRoots.delete(rootId);
+}
+
+function registerTrap(id: number, depth: number, rootId: number): void {
   const stale = trapStack.findIndex((entry) => entry.id === id);
-  if (stale !== -1) trapStack.splice(stale, 1);
-  trapStack.push({ id, depth, order: nextTrapOrder++ });
+  if (stale !== -1) {
+    releaseTrapRoot(trapStack[stale].rootId);
+    trapStack.splice(stale, 1);
+  }
+  trapStack.push({
+    id,
+    depth,
+    order: nextTrapOrder++,
+    rootId,
+    rootOrder: acquireTrapRoot(rootId),
+  });
 }
 
 /** Removes `id` (wherever it sits) and reports whether a still-active trap
@@ -72,6 +115,7 @@ function unregisterTrap(id: number): { hadTrapAbove: boolean } {
   const entry = trapStack[index];
   const hadTrapAbove = trapStack.some((candidate) => compareTrapOrder(candidate, entry) > 0);
   trapStack.splice(index, 1);
+  releaseTrapRoot(entry.rootId);
   return { hadTrapAbove };
 }
 
@@ -89,6 +133,7 @@ function isTopmostTrap(id: number): boolean {
  *  later test in the same file/process. */
 export function resetFocusTrapStackForTest(): void {
   trapStack.length = 0;
+  trapRoots.clear();
 }
 
 /**
@@ -137,7 +182,13 @@ export const FocusTrapOwnerHiddenContext = createContext(false);
 export function useFocusTrap(
   active: boolean,
   containerRef: RefObject<HTMLElement | null>,
-  { onEscape, focusFirst = true, restoreFocus = () => true, portalLayers }: Options = {},
+  {
+    onEscape,
+    focusFirst = true,
+    restoreFocus = () => true,
+    portalLayers,
+    portalRootId,
+  }: Options = {},
 ) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const onEscapeRef = useRef(onEscape);
@@ -149,6 +200,10 @@ export function useFocusTrap(
   if (idRef.current === 0) idRef.current = nextTrapId++;
   const ownerHidden = useContext(FocusTrapOwnerHiddenContext);
   const ownerLayerDepth = useContext(PortalLayerDepthContext);
+  const inheritedRootId = useContext(PortalLayerRootContext);
+  const ownRootIdRef = useRef(0);
+  if (ownRootIdRef.current === 0) ownRootIdRef.current = nextPortalLayerRootId++;
+  const trapRootId = portalRootId ?? inheritedRootId ?? ownRootIdRef.current;
 
   // Keep the latest callback reachable from the keydown handler without
   // making it a useEffect dep.
@@ -166,7 +221,7 @@ export function useFocusTrap(
 
     returnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
     const trapId = idRef.current;
-    registerTrap(trapId, ownerLayerDepth + 1);
+    registerTrap(trapId, ownerLayerDepth + 1, trapRootId);
 
     if (focusFirst && isTopmostTrap(trapId)) {
       const first = container.querySelector<HTMLElement>(FOCUSABLE);
@@ -187,6 +242,7 @@ export function useFocusTrap(
       if (!isTopmostTrap(trapId)) return;
 
       if (e.key === "Escape") {
+        e.stopImmediatePropagation();
         onEscapeRef.current?.();
         return;
       }
@@ -249,7 +305,14 @@ export function useFocusTrap(
         returnFocusRef.current?.focus();
       }
     };
-  }, [active, containerRef, focusFirst, portalLayers, ownerLayerDepth]); // intentionally no onEscape
+  }, [
+    active,
+    containerRef,
+    focusFirst,
+    portalLayers,
+    ownerLayerDepth,
+    trapRootId,
+  ]); // intentionally no onEscape
 
   // If an ancestor "modal owner" becomes hidden while this trap is still
   // active, ask it to close through the SAME callback Escape already uses

@@ -206,6 +206,11 @@ assert.match(
 );
 assert.match(
   src,
+  /if \(!active \|\| !el \|\| !layers\) return;[\s\S]{0,300}\[active, el, layers, coverOwner\]/,
+  "closing releases owner cover during layout cleanup before focus restoration",
+);
+assert.match(
+  src,
   /register: \(el: HTMLElement\) => \{[\s\S]{0,220}parentLayers\?\.register\(el\)[\s\S]{0,160}focusTrapPortalLayers\?\.register\(el\)/,
   "descendant portals propagate through every ancestor Popover and Modal boundary",
 );
@@ -331,7 +336,7 @@ assert.match(
 );
 assert.match(
   src,
-  /usePopoverLayerRegistration[\s\S]{0,300}if \(!el \|\| !layers\) return;\s*const unregister = layers\.register\(el\);/,
+  /usePopoverLayerRegistration[\s\S]{0,300}if \(!active \|\| !el \|\| !layers\) return;\s*const unregister = layers\.register\(el\);/,
   "the hook is a no-op with no ancestor Popover and registers the complete child layer",
 );
 assert.match(

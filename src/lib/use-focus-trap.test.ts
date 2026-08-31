@@ -112,12 +112,12 @@ assert.match(
 // leave two entries for the same logical trap.
 assert.match(
   source,
-  /function registerTrap\(id: number, depth: number\): void \{/,
+  /function registerTrap\(id: number, depth: number, rootId: number\): void \{/,
   "registerTrap is keyed by the stable id",
 );
 assert.match(
   source,
-  /const stale = trapStack\.findIndex\(\(entry\) => entry\.id === id\);\s*\n\s*if \(stale !== -1\) trapStack\.splice\(stale, 1\);/,
+  /const stale = trapStack\.findIndex\(\(entry\) => entry\.id === id\);\s*\n\s*if \(stale !== -1\) \{[\s\S]{0,160}trapStack\.splice\(stale, 1\);/,
   "registerTrap removes any stale entry for the same id before pushing (StrictMode safety)",
 );
 assert.match(
@@ -132,13 +132,18 @@ assert.match(
 );
 assert.match(
   source,
-  /a\.depth - b\.depth \|\| a\.order - b\.order/,
-  "layer depth owns focus and Escape, with activation order only breaking ties",
+  /a\.rootOrder - b\.rootOrder \|\| a\.depth - b\.depth \|\| a\.order - b\.order/,
+  "newer independent roots win globally, then depth and activation order rank nested traps",
 );
 assert.match(
   source,
-  /registerTrap\(trapId, ownerLayerDepth \+ 1\);[\s\S]{0,120}if \(focusFirst && isTopmostTrap\(trapId\)\)/,
+  /registerTrap\(trapId, ownerLayerDepth \+ 1, trapRootId\);[\s\S]{0,120}if \(focusFirst && isTopmostTrap\(trapId\)\)/,
   "the trap registers its depth before deciding whether it may take initial focus",
+);
+assert.match(
+  source,
+  /if \(e\.key === "Escape"\) \{\s*e\.stopImmediatePropagation\(\);\s*onEscapeRef\.current\?\.\(\);/,
+  "the top trap claims an Escape before synchronous cleanup can expose a lower trap",
 );
 
 // Only the topmost trap acts on a keydown — everything below it is a
