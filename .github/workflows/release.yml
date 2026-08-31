@@ -1101,7 +1101,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
-            echo "::error::X release recovery must be dispatched from the repository default branch."
+            echo "::error::Release recovery must be dispatched from the repository default branch."
             exit 1
           fi
           tooling_path="scripts/check-x-app-release.mjs"
@@ -1809,7 +1809,7 @@ jobs:
             echo "$actual_blob  $tooling_path"
           done
           git diff --check
-          echo "Using the reviewed X provenance renderer from workflow commit $RECOVERY_TOOLING_SHA against tag source."
+          echo "Using the reviewed recovery provenance renderer from workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
       - name: Resolve release tag
         shell: bash
