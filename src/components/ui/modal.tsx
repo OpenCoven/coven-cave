@@ -26,6 +26,13 @@ type ModalProps = {
   ariaLabel?: string;
   /** Description element inside the modal body. */
   ariaDescribedBy?: string;
+  /** Called with the dialog's DOM node once mounted, and null on unmount. For
+   *  a caller that needs to register the dialog with something outside this
+   *  component's own tree — e.g. AvatarLightbox marking it as an "inside"
+   *  layer of an ancestor Popover, so the Popover's outside-click/focus-out
+   *  dismissal doesn't fire the instant this focus-trapped dialog steals
+   *  focus (cave-fzr4p). Optional; Modal itself stays Popover-agnostic. */
+  onDialogElement?: (el: HTMLDivElement | null) => void;
 };
 
 export function Modal({
@@ -40,6 +47,7 @@ export function Modal({
   dismissOnEscape = true,
   ariaLabel,
   ariaDescribedBy,
+  onDialogElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -57,7 +65,10 @@ export function Modal({
       role="presentation"
     >
       <div
-        ref={dialogRef}
+        ref={(el) => {
+          dialogRef.current = el;
+          onDialogElement?.(el);
+        }}
         className={`ui-modal${wide ? " ui-modal--wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

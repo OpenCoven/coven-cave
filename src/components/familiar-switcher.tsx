@@ -214,7 +214,7 @@ export function FamiliarSwitcher({
             <span className="familiar-switcher__header-id">
               {active ? (
                 <>
-                  <FamiliarAvatar familiar={active} size="md" />
+                  <FamiliarAvatar familiar={active} size="md" expandable />
                   <span className="familiar-switcher__header-text">
                     <span className="familiar-switcher__header-name">{active.display_name}</span>
                     {active.role ? (
