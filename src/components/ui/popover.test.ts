@@ -172,7 +172,7 @@ const drawerZ = Math.max(
   ),
 );
 assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in primitives.css");
-assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in board.css");
+assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in styles/board/kanban-inspector.css");
 assert.ok(
   portalZ > drawerZ,
   `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
