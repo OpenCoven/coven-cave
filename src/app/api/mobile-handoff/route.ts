@@ -27,6 +27,7 @@ import {
   resetTailscaleServeRoute,
   resolveIosInstallUrl,
   runTailscaleCommand as runTailscale,
+  serveStatusFingerprint,
   serveRouteOwnedByBackend,
   serveRouteFailure,
   tailnetDiscoveryProof,
@@ -125,7 +126,12 @@ function nativeTokenlessMode() {
 
 function mobileUnavailableResponse(
   error: string,
-  details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
+  details?: {
+    stderr?: string;
+    backendUrl?: string;
+    steps?: PairingStep[];
+    routeRemoved?: boolean;
+  },
   status = 200,
 ) {
   return NextResponse.json(
@@ -253,7 +259,27 @@ async function withServeMutationLease(
   }
 }
 
-async function mutateOwnedServeRoute(args: string[], backend: string) {
+async function mutateOwnedServeRoute(
+  args: string[],
+  backend: string,
+  expectedStatus: unknown,
+) {
+  const beforeMutation = await readServeStatus(backend);
+  if (!beforeMutation.ok) return beforeMutation;
+  if (
+    serveStatusFingerprint(beforeMutation.status)
+    !== serveStatusFingerprint(expectedStatus)
+  ) {
+    return {
+      ok: false as const,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve changed ownership before the route could be updated; no route was changed.",
+        { backendUrl: backend },
+        503,
+      ),
+    };
+  }
+
   const mutation = await runTailscale(args);
   if (mutation.cleanupFailed) {
     return {
@@ -285,13 +311,20 @@ async function mutateOwnedServeRoute(args: string[], backend: string) {
 
 async function resetOwnedServeRoute(
   backend: string,
-  afterVerifiedRemoval?: () => void,
+  afterVerifiedRemoval?: () => ReturnType<typeof retireMobileAccessSecret>,
 ) {
   const result = await resetTailscaleServeRoute({
     backendUrl: backend,
     runTailscale,
     probeBackend: probeLoopbackBackend,
-    afterVerifiedRemoval,
+    afterVerifiedRemoval: afterVerifiedRemoval
+      ? async () => {
+          const retirement = afterVerifiedRemoval();
+          if (retirement.kind === "retained") {
+            throw new Error(retirement.error);
+          }
+        }
+      : undefined,
   });
   let response: NextResponse;
   switch (result.kind) {
@@ -325,6 +358,13 @@ async function resetOwnedServeRoute(
       response = mobileUnavailableResponse(
         "Tailscale Serve removal was verified, but the owned backend process did not stop safely; its access credential was retained.",
         { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "finalization-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve removal was verified, but the access credential could not be retired and remains armed.",
+        { stderr: result.stderr, backendUrl: backend, routeRemoved: true },
         503,
       );
       break;
@@ -511,7 +551,11 @@ async function ensureNativeAppServeReady(
   let serveStatus = ownership.status;
   let serveWarning: string | null = null;
   if (ownership.kind !== "owned") {
-    const claim = await mutateOwnedServeRoute(["serve", "--bg", backend], backend);
+    const claim = await mutateOwnedServeRoute(
+      ["serve", "--bg", backend],
+      backend,
+      ownership.status,
+    );
     if (!claim.ok) return claim.response;
     serveStatus = claim.status;
     serveWarning = claim.warning;
@@ -537,6 +581,7 @@ async function ensureNativeAppServeReady(
       const httpClaim = await mutateOwnedServeRoute(
         ["serve", "--bg", `--http=${backendPort(backend)}`, backend],
         backend,
+        serveStatus,
       );
       if (!httpClaim.ok) return httpClaim.response;
       serveStatus = httpClaim.status;
@@ -692,7 +737,11 @@ async function mobileHandoffReady(
   let serveStatus = ownership.status;
   let serveWarning: string | null = null;
   if (ownership.kind !== "owned") {
-    const claim = await mutateOwnedServeRoute(["serve", "--bg", backend], backend);
+    const claim = await mutateOwnedServeRoute(
+      ["serve", "--bg", backend],
+      backend,
+      ownership.status,
+    );
     if (!claim.ok) return claim.response;
     serveStatus = claim.status;
     serveWarning = claim.warning;

@@ -165,7 +165,9 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
     env: process.env,
   });
   assert.equal(launched.kind, "launched");
-  const sleeperPid = readProcessOwner(ownerPath).pid;
+  const sleeperOwner = readProcessOwner(ownerPath);
+  const sleeperPid = sleeperOwner.child.pid;
+  const supervisorPid = sleeperOwner.supervisor.pid;
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -192,7 +194,7 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
     assert.equal(existsSync(ownerPath), true);
   } finally {
     try {
-      process.kill(-sleeperPid, "SIGKILL");
+      process.kill(-supervisorPid, "SIGKILL");
     } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -219,8 +221,15 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
   });
   assert.equal(launched.kind, "launched");
   const foreignOwner = readProcessOwner(ownerPath);
-  const foreignPid = foreignOwner.pid;
-  writeFileSync(ownerPath, JSON.stringify({ ...foreignOwner, processToken: "foreign-token" }));
+  const foreignPid = foreignOwner.child.pid;
+  const supervisorPid = foreignOwner.supervisor.pid;
+  writeFileSync(ownerPath, JSON.stringify({
+    ...foreignOwner,
+    supervisor: {
+      ...foreignOwner.supervisor,
+      processToken: "macos:999999:1:1",
+    },
+  }));
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -246,7 +255,7 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
     try {
-      process.kill(-foreignPid, "SIGKILL");
+      process.kill(-supervisorPid, "SIGKILL");
     } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -285,8 +294,12 @@ test("default stop evaluates each tracked backend identity independently", async
   });
   assert.equal(ipv6Launch.kind, "launched");
   assert.equal(ipv4Launch.kind, "launched");
-  const ipv6Pid = readProcessOwner(ipv6Owner).pid;
-  const ipv4Pid = readProcessOwner(ipv4Owner).pid;
+  const ipv6State = readProcessOwner(ipv6Owner);
+  const ipv4State = readProcessOwner(ipv4Owner);
+  const ipv6Pid = ipv6State.child.pid;
+  const ipv4Pid = ipv4State.child.pid;
+  const ipv6SupervisorPid = ipv6State.supervisor.pid;
+  const ipv4SupervisorPid = ipv4State.supervisor.pid;
   assert.equal(
     JSON.parse(readFileSync(ipv6Owner, "utf8")).backendUrl,
     "http://[::1]:3007",
@@ -333,10 +346,10 @@ test("default stop evaluates each tracked backend identity independently", async
     );
   } finally {
     try {
-      process.kill(-ipv6Pid, "SIGKILL");
+      process.kill(-ipv6SupervisorPid, "SIGKILL");
     } catch {}
     try {
-      process.kill(-ipv4Pid, "SIGKILL");
+      process.kill(-ipv4SupervisorPid, "SIGKILL");
     } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }

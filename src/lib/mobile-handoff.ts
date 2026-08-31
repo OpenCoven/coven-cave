@@ -477,6 +477,7 @@ type TailscaleServeOperationFailure =
   | { kind: "busy" }
   | { kind: "cleanup-failed"; stderr: string }
   | { kind: "process-cleanup-failed"; stderr: string }
+  | { kind: "finalization-failed"; stderr: string }
   | { kind: "status-failed"; stderr: string }
   | { kind: "status-malformed"; stderr: string };
 
@@ -821,6 +822,25 @@ async function readTailscaleServeStatus(
   return { kind: "status", status: parsed.value };
 }
 
+function stableServeStatusValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableServeStatusValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, stableServeStatusValue(child)]),
+  );
+}
+
+export function serveStatusFingerprint(status: unknown): string {
+  return JSON.stringify(stableServeStatusValue(status));
+}
+
+function serveTargets(status: unknown): string[] {
+  return enumerateServeProxyBackends(status).map((target) =>
+    target.kind === "loopback" ? target.target : target.raw);
+}
+
 export async function claimTailscaleServeRoute({
   backendUrl,
   runTailscale,
@@ -849,6 +869,15 @@ export async function claimTailscaleServeRoute({
     }
     if (ownership.kind === "owned") {
       return { kind: "owned", status: current.status };
+    }
+
+    const beforeMutation = await readTailscaleServeStatus(runTailscale);
+    if (beforeMutation.kind !== "status") return beforeMutation;
+    if (
+      serveStatusFingerprint(beforeMutation.status)
+      !== serveStatusFingerprint(current.status)
+    ) {
+      return { kind: "conflict", targets: serveTargets(beforeMutation.status) };
     }
 
     const mutation = await runTailscale(["serve", "--bg", backendUrl]);
@@ -901,7 +930,11 @@ export async function resetTailscaleServeRoute({
           return { kind: "verification-failed", status: finalStatus.status };
         }
       }
-      await afterVerifiedRemoval?.();
+      try {
+        await afterVerifiedRemoval?.();
+      } catch (error) {
+        return { kind: "finalization-failed", stderr: (error as Error).message };
+      }
       return { kind: "removed", alreadyAbsent };
     };
     const current = await readTailscaleServeStatus(runTailscale);

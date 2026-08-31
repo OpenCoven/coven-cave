@@ -584,6 +584,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       commands,
       [
         ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
         ["serve", "--bg", ipv6Backend],
         ["serve", "status", "--json"],
       ],
@@ -602,7 +603,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
         if (commands.length === 1) {
           return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
         }
-        if (commands.length === 2) return commandResult();
+        if (commands.length === 2) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (commands.length === 3) return commandResult();
         return commandResult({ stdout: JSON.stringify(packagedOwnedStatus) });
       },
     });
@@ -611,10 +615,36 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       commands,
       [
         ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
         ["serve", "--bg", packagedBackend],
         ["serve", "status", "--json"],
       ],
       "packaged recovery takes over a healthy dev route only under the canonical lease and postcheck",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (commands.length === 1) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        return commandResult({ stdout: JSON.stringify(packagedOwnedStatus) });
+      },
+    });
+    assert.equal(result.kind, "conflict");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+      ],
+      "an ownership change after probing aborts before Serve mutation",
     );
   }
   {
@@ -673,7 +703,10 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       runTailscale: async () => {
         calls += 1;
         if (calls === 1) return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
-        if (calls === 2) return commandResult();
+        if (calls <= 2) {
+          return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
+        }
+        if (calls === 3) return commandResult();
         return commandResult({ stdout: JSON.stringify(healthyDevStatus) });
       },
     });
@@ -932,6 +965,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "reset-failed",
     "verification-failed",
     "process-cleanup-failed",
+    "finalization-failed",
   ]) {
     assert.equal(
       serveResetAllowsCredentialRetirement({ kind }),
@@ -991,6 +1025,27 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       ],
       "route removal, process cleanup, and credential retirement all happen under the lease",
     );
+  }
+  {
+    let call = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async () => {
+        call += 1;
+        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 2) return commandResult();
+        return commandResult({ stdout: "{}" });
+      },
+      afterVerifiedRemoval: async () => {
+        throw new Error("credential file remained");
+      },
+    });
+    assert.deepEqual(result, {
+      kind: "finalization-failed",
+      stderr: "credential file remained",
+    });
   }
 }
 

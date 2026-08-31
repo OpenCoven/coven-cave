@@ -117,6 +117,16 @@ assert.match(
   /if \(mutation\.cleanupFailed\) \{\s*\n\s*return \{\s*\n\s*ok: false as const,\s*\n\s*response: tailscaleCleanupFailureResponse\(mutation, backend\),/,
   "a timed-out Serve mutation aborts before post-status discovery",
 );
+assert.match(
+  route,
+  /async function mutateOwnedServeRoute\([\s\S]+?const beforeMutation = await readServeStatus\(backend\);[\s\S]+?serveStatusFingerprint\(beforeMutation\.status\)[\s\S]+?serveStatusFingerprint\(expectedStatus\)[\s\S]+?const mutation = await runTailscale\(args\);/,
+  "every direct API mutation rereads and compares complete Serve status after probing and immediately before mutation",
+);
+assert.equal(
+  route.match(/mutateOwnedServeRoute\([\s\S]{0,180}?(?:ownership\.status|serveStatus),\s*\)/g)?.length,
+  3,
+  "native HTTPS, native HTTP fallback, and browser handoff mutations all carry their inspected status into the final race guard",
+);
 
 // Every read/decide/mutate sequence shares one bounded machine-wide lease with
 // the Rust desktop repair loop. In particular, reset must reacquire and reread
@@ -166,6 +176,16 @@ assert.match(
   route,
   /const reset = await resetOwnedServeRoute\(\s*nativeAppBackendUrl\(\),\s*retireMobileAccessSecret,\s*\);[\s\S]{0,500}?return reset\.response;/,
   "app-stop delegates credential retirement to the locked verified-removal callback",
+);
+assert.match(
+  route,
+  /const retirement = afterVerifiedRemoval\(\);[\s\S]+?if \(retirement\.kind === "retained"\) \{[\s\S]+?throw new Error\(retirement\.error\);/,
+  "credential retirement failure becomes a typed non-success reset result instead of being swallowed",
+);
+assert.match(
+  route,
+  /Tailscale Serve removal was verified, but the access credential could not be retired and remains armed\./,
+  "partial route-removal success reports that the credential remains armed",
 );
 
 console.log("mobile-handoff route.test.ts OK");

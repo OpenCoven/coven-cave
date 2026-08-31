@@ -427,10 +427,30 @@ test("retire disarms and removes the persisted secret", async () => {
   assert.ok(secret);
   armMobileAccessSecret(secret, env);
 
-  retireMobileAccessSecret(env);
+  assert.deepEqual(retireMobileAccessSecret(env), { kind: "retired" });
   assert.equal(env.COVEN_CAVE_ACCESS_TOKEN, undefined);
   assert.equal(existsSync(mobileAccessSecretFile(env)), false);
   assert.equal(rearmPersistedMobileAccessSecret(env), null, "next boot stays tokenless");
+});
+
+test("retire preserves the armed and persisted credential when removal fails", async () => {
+  const env = devEnv();
+  const secret = await provisionMobileAccessSecret(env);
+  assert.ok(secret);
+  armMobileAccessSecret(secret, env);
+
+  const result = retireMobileAccessSecret(env, {
+    removeFile: () => {
+      throw new Error("read-only filesystem");
+    },
+  });
+
+  assert.deepEqual(result, {
+    kind: "retained",
+    error: "read-only filesystem",
+  });
+  assert.equal(env.COVEN_CAVE_ACCESS_TOKEN, secret);
+  assert.equal(loadPersistedMobileAccessSecret(env), secret);
 });
 
 test("retiring one dev port preserves competing and packaged credentials", async () => {

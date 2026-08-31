@@ -774,6 +774,14 @@ fn decide_serve_repair(
     }
 }
 
+#[cfg(desktop)]
+fn serve_inventory_unchanged_before_mutation(
+    inspected: &serde_json::Value,
+    current: &serde_json::Value,
+) -> bool {
+    inspected == current
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 fn loopback_backend_responds(backend: LoopbackBackend) -> bool {
     let address = match backend.host {
@@ -1078,17 +1086,8 @@ fn run_tailscale_serve_repair(port: u16) {
         "status".to_string(),
         "--json".to_string(),
     ];
-    let decision = match run_tailscale_command(&status_args) {
-        Ok(output) if output.status.success() => {
-            serde_json::from_slice(&output.stdout).ok().map(|status| {
-                decide_serve_repair(
-                    &status,
-                    requested_backend,
-                    !cfg!(debug_assertions),
-                    loopback_backend_responds,
-                )
-            })
-        }
+    let inspected_status = match run_tailscale_command(&status_args) {
+        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout).ok(),
         Ok(output) => {
             log::warn!(
                 "[cave] could not inspect Tailscale Serve before repairing port {port}: exited with {}",
@@ -1103,11 +1102,17 @@ fn run_tailscale_serve_repair(port: u16) {
             None
         }
     };
-    let Some(decision) = decision else {
+    let Some(inspected_status) = inspected_status else {
         // There is no paired Serve route to repair. Avoid creating an HTTPS
         // listener that could overwrite an unavailable or managed fallback.
         return;
     };
+    let decision = decide_serve_repair(
+        &inspected_status,
+        requested_backend,
+        !cfg!(debug_assertions),
+        loopback_backend_responds,
+    );
     let mode = match decision {
         ServeRepairDecision::Noop => return,
         ServeRepairDecision::Preserve => {
@@ -1122,6 +1127,22 @@ fn run_tailscale_serve_repair(port: u16) {
         TailscaleServeMode::Https => serve_arguments(port).to_vec(),
         TailscaleServeMode::Http(http_port) => http_serve_arguments(port, http_port).to_vec(),
     };
+    let current_status = run_tailscale_command(&status_args)
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| serde_json::from_slice(&output.stdout).ok());
+    let Some(current_status) = current_status else {
+        log::warn!(
+            "[cave] could not re-read Tailscale Serve immediately before repairing port {port}"
+        );
+        return;
+    };
+    if !serve_inventory_unchanged_before_mutation(&inspected_status, &current_status) {
+        log::warn!(
+            "[cave] Tailscale Serve changed after ownership probing; preserving the newer route instead of repairing port {port}"
+        );
+        return;
+    }
     match run_tailscale_command(&args) {
         Ok(output) => {
             let mutation_succeeded = output.status.success();
@@ -2730,6 +2751,22 @@ mod tests {
     }
 
     #[test]
+    fn serve_repair_aborts_when_inventory_changes_after_liveness_probes() {
+        let inspected = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3001" } } } }
+        });
+        let reassigned = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3020" } } } }
+        });
+        assert!(
+            !serve_inventory_unchanged_before_mutation(&inspected, &reassigned),
+            "a reassignment after probing must prevent the pending Serve mutation"
+        );
+    }
+
+    #[test]
     fn serve_ownership_does_not_collapse_ipv4_and_ipv6_by_port() {
         let ipv6_status = serde_json::json!({
             "TCP": { "443": { "HTTPS": true } },
@@ -3071,6 +3108,11 @@ mod tests {
         let status = body
             .find("run_tailscale_command(&status_args)")
             .expect("status read");
+        let final_status = status
+            + 1
+            + body[status + 1..]
+                .find("run_tailscale_command(&status_args)")
+                .expect("final pre-mutation status read");
         let mutation = body
             .find("run_tailscale_command(&args)")
             .expect("Serve mutation");
@@ -3078,7 +3120,8 @@ mod tests {
             .rfind("run_tailscale_command(&status_args)")
             .expect("post-mutation status read");
         assert!(lease < status);
-        assert!(status < mutation);
+        assert!(status < final_status);
+        assert!(final_status < mutation);
         assert!(mutation < verification);
     }
 

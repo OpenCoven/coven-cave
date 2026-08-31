@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/proc.h>
 #include <sys/proc_info.h>
 #include <unistd.h>
 
@@ -28,11 +29,15 @@ static int print_stable_identity(pid_t pid) {
       before.pbi_start_tvusec != after.pbi_start_tvusec) {
     return 5;
   }
-  printf("%u\t%u\t%u\t%d\tmacos:%llu:%llu\n",
+  if (after.pbi_status == SZOMB) {
+    return 3;
+  }
+  printf("%u\t%u\t%u\t%d\tmacos:%u:%llu:%llu\n",
          after.pbi_pid,
          after.pbi_ppid,
          after.pbi_pgid,
          sid,
+         after.pbi_pid,
          after.pbi_start_tvsec,
          after.pbi_start_tvusec);
   return 0;
