@@ -866,11 +866,14 @@ export function HomeComposer({
           card without being clipped by the card's `overflow: hidden`. */}
       <div className="home-composer-card-wrap">
 
-        {/* Shared familiar selector (cave-3pnnq): a dedicated full-width context
+        {/* Shared familiar selector (cave-3pnnq): a compact context
             row directly above the reference composer — and therefore above the
-            Chat/Task destination tabs inside it. singleRequired keeps Home a
-            one-familiar launch surface; the sidebar switcher is unchanged. */}
+            Chat/Task destination tabs inside it. The visible label keeps the
+            compact control legible without turning it back into a full-width
+            toolbar. singleRequired keeps Home a one-familiar launch surface;
+            the sidebar switcher is unchanged. */}
         <div className="home-composer-familiar-context">
+          <span className="home-composer-familiar-label">Familiar</span>
           <FamiliarQuickSwitch
             familiars={familiars}
             activeFamiliarId={activeFamiliarId}
