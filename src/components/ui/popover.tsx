@@ -15,7 +15,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/lib/icon";
-import { FocusTrapPortalLayersContext } from "@/lib/use-focus-trap";
+import {
+  FocusTrapPortalLayersContext,
+  PortalLayerDepthContext,
+} from "@/lib/use-focus-trap";
 import { computeSubmenuPosition } from "@/lib/submenu-position";
 
 // ── Submenu plumbing ─────────────────────────────────────────────────────────
@@ -73,7 +76,13 @@ const SubmenuGroupContext = createContext<{
 // listener (which stopPropagation()s before React handlers run) pops this
 // stack — closing one submenu level per press — and only closes the popover
 // itself once no flyout remains open.
-const submenuEscapeStack: Array<() => void> = [];
+type EscapeLayer = {
+  close: () => void;
+  depth: number;
+  order: number;
+};
+const submenuEscapeStack: EscapeLayer[] = [];
+let nextEscapeLayerOrder = 1;
 
 
 
@@ -130,18 +139,23 @@ export function usePopoverInitialFocus(open: boolean, panelSelector: string) {
  */
 export function usePopoverEscapeLayer(active: boolean, close: () => void) {
   const closeRef = useRef(close);
+  const ownerDepth = useContext(PortalLayerDepthContext);
   useEffect(() => {
     closeRef.current = close;
   });
   useEffect(() => {
     if (!active) return;
-    const closeSelf = () => closeRef.current();
-    submenuEscapeStack.push(closeSelf);
+    const entry = {
+      close: () => closeRef.current(),
+      depth: ownerDepth + 1,
+      order: nextEscapeLayerOrder++,
+    };
+    submenuEscapeStack.push(entry);
     return () => {
-      const i = submenuEscapeStack.indexOf(closeSelf);
+      const i = submenuEscapeStack.indexOf(entry);
       if (i !== -1) submenuEscapeStack.splice(i, 1);
     };
-  }, [active]);
+  }, [active, ownerDepth]);
 }
 
 /**
@@ -163,6 +177,7 @@ export function Popover({
   children,
 }: PopoverProps) {
   const parentLayers = useContext(PopoverLayersContext);
+  const parentLayerDepth = useContext(PortalLayerDepthContext);
   const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [style, setStyle] = useState<CSSProperties>({});
@@ -177,7 +192,11 @@ export function Popover({
     () => ({
       register: (el: HTMLElement) => {
         layersRef.current.add(el);
+        const unregisterParent = parentLayers?.register(el) ?? NOOP;
+        const unregisterFocusTrap = focusTrapPortalLayers?.register(el) ?? NOOP;
         return () => {
+          unregisterFocusTrap();
+          unregisterParent();
           layersRef.current.delete(el);
         };
       },
@@ -190,16 +209,18 @@ export function Popover({
       cover: () => {
         coverCountRef.current += 1;
         setCovered(true);
+        const uncoverParent = parentLayers?.cover() ?? NOOP;
         let released = false;
         return () => {
           if (released) return;
           released = true;
+          uncoverParent();
           coverCountRef.current = Math.max(0, coverCountRef.current - 1);
           if (coverCountRef.current === 0) setCovered(false);
         };
       },
     }),
-    [],
+    [parentLayers, focusTrapPortalLayers],
   );
   useLayoutEffect(() => {
     if (!open || !popoverRef.current) return;
@@ -295,9 +316,17 @@ export function Popover({
         e.stopPropagation();
         // An open cascading submenu absorbs the press first (one level per
         // Escape); the popover itself closes only when none remain.
-        const closeDeepest = submenuEscapeStack[submenuEscapeStack.length - 1];
-        if (closeDeepest) {
-          closeDeepest();
+        const deepest = submenuEscapeStack.reduce<EscapeLayer | undefined>(
+          (current, candidate) =>
+            !current ||
+            candidate.depth > current.depth ||
+            (candidate.depth === current.depth && candidate.order > current.order)
+              ? candidate
+              : current,
+          undefined,
+        );
+        if (deepest) {
+          deepest.close();
           return;
         }
         onOpenChange(false);
@@ -374,7 +403,9 @@ export function Popover({
         }}
       >
         <PopoverLayersContext.Provider value={layers}>
-          <SubmenuGroup>{children}</SubmenuGroup>
+          <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
+            <SubmenuGroup>{children}</SubmenuGroup>
+          </PortalLayerDepthContext.Provider>
         </PopoverLayersContext.Provider>
       </div>
     </div>,
@@ -536,6 +567,7 @@ export function PopoverSubmenu({
 }) {
   const id = useId();
   const layers = useContext(PopoverLayersContext);
+  const parentLayerDepth = useContext(PortalLayerDepthContext);
   const group = useContext(SubmenuGroupContext);
   const rowRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -577,20 +609,14 @@ export function PopoverSubmenu({
     return layers.register(el);
   }, [open, layers]);
 
+  const closeToRow = useCallback(() => {
+    setOpen(false);
+    rowRef.current?.focus();
+  }, [setOpen]);
+
   // While open, join the Escape stack so the root popover's window-capture
   // Escape handler closes this flyout (deepest first) instead of the menu.
-  useEffect(() => {
-    if (!open) return;
-    const closeSelf = () => {
-      setOpen(false);
-      rowRef.current?.focus();
-    };
-    submenuEscapeStack.push(closeSelf);
-    return () => {
-      const i = submenuEscapeStack.indexOf(closeSelf);
-      if (i !== -1) submenuEscapeStack.splice(i, 1);
-    };
-  }, [open, setOpen]);
+  usePopoverEscapeLayer(open, closeToRow);
 
   const position = useCallback(() => {
     const row = rowRef.current;
@@ -651,11 +677,6 @@ export function PopoverSubmenu({
 
   const focusFirstItem = () => {
     wantsFirstItemFocus.current = true;
-  };
-
-  const closeToRow = () => {
-    setOpen(false);
-    rowRef.current?.focus();
   };
 
   return (
@@ -737,7 +758,9 @@ export function PopoverSubmenu({
                 }}
               >
                 <div className="ui-popover-body" role="presentation">
-                  <SubmenuGroup>{children}</SubmenuGroup>
+                  <PortalLayerDepthContext.Provider value={parentLayerDepth + 1}>
+                    <SubmenuGroup>{children}</SubmenuGroup>
+                  </PortalLayerDepthContext.Provider>
                 </div>
               </div>
             </div>,

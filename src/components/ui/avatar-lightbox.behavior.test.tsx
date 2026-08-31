@@ -345,4 +345,130 @@ describe("AvatarLightbox nested in Popover", () => {
     expect(ownerClose).not.toHaveBeenCalled();
     expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
   });
+
+  test("an initially-open Popover still owns Escape ahead of the Modal", () => {
+    const ownerClose = vi.fn();
+
+    function InitiallyOpenActions() {
+      const anchorRef = useRef(null);
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button ref={anchorRef}>Actions</button>
+          <Popover
+            open={open}
+            onOpenChange={setOpen}
+            anchorRef={anchorRef}
+            ariaLabel="Initially open actions"
+          >
+            <button>Run</button>
+          </Popover>
+        </>
+      );
+    }
+
+    function Scene() {
+      const anchorRef = useRef(null);
+      return (
+        <>
+          <button ref={anchorRef}>anchor</button>
+          <Popover open onOpenChange={ownerClose} anchorRef={anchorRef} ariaLabel="Avatar menu">
+            <AvatarLightbox
+              src="/avatar.png"
+              label="Wren"
+              footerActions={<InitiallyOpenActions />}
+            >
+              <span>avatar</span>
+            </AvatarLightbox>
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => hostButton("Enlarge Wren avatar").props.onClick());
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(3);
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(2);
+  });
+
+  test("deep portal ownership propagates through a nested Popover", () => {
+    const ownerClose = vi.fn();
+
+    function NestedActions() {
+      const anchorRef = useRef(null);
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button ref={anchorRef} aria-label="Open nested actions" onClick={() => setOpen(true)}>
+            Actions
+          </button>
+          <Popover
+            open={open}
+            onOpenChange={setOpen}
+            anchorRef={anchorRef}
+            ariaLabel="Nested actions"
+          >
+            <AvatarLightbox src="/finch.png" label="Finch">
+              <span>finch</span>
+            </AvatarLightbox>
+          </Popover>
+        </>
+      );
+    }
+
+    function Scene() {
+      const anchorRef = useRef(null);
+      return (
+        <>
+          <button ref={anchorRef}>anchor</button>
+          <Popover open onOpenChange={ownerClose} anchorRef={anchorRef} ariaLabel="Avatar menu">
+            <AvatarLightbox
+              src="/wren.png"
+              label="Wren"
+              footerActions={<NestedActions />}
+            >
+              <span>wren</span>
+            </AvatarLightbox>
+          </Popover>
+        </>
+      );
+    }
+
+    act(() => {
+      renderer = create(<Scene />, { createNodeMock });
+    });
+    act(() => hostButton("Enlarge Wren avatar").props.onClick());
+    act(() => hostButton("Open nested actions").props.onClick());
+    act(() => hostButton("Enlarge Finch avatar").props.onClick());
+
+    const popovers = renderer.root.findAll(
+      (node) =>
+        node.type === "div" &&
+        typeof node.props.className === "string" &&
+        node.props.className.split(/\s+/).includes("ui-popover"),
+    );
+    expect(popovers).toHaveLength(2);
+    expect(popovers.every((node) => node.props["data-covered"] === true)).toBe(true);
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(4);
+
+    const deepestBackdropNode = nodesByClass.get("ui-modal-backdrop");
+    act(() => dispatchDocument("mousedown", deepestBackdropNode));
+    expect(ownerClose).not.toHaveBeenCalled();
+
+    act(() => dispatchEscape());
+    expect(ownerClose).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(3);
+    const remainingPopovers = renderer.root.findAll(
+      (node) =>
+        node.type === "div" &&
+        typeof node.props.className === "string" &&
+        node.props.className.split(/\s+/).includes("ui-popover"),
+    );
+    expect(remainingPopovers.filter((node) => node.props["data-covered"] === true)).toHaveLength(1);
+  });
 });

@@ -32,6 +32,7 @@ export type FocusTrapPortalLayers = {
 };
 
 export const FocusTrapPortalLayersContext = createContext<FocusTrapPortalLayers | null>(null);
+export const PortalLayerDepthContext = createContext(0);
 
 /**
  * One entry per currently-ACTIVE trap, in activation order — the

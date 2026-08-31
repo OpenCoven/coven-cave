@@ -78,10 +78,15 @@ test("pre-measure pass carries minWidth so flip/clamp math sees the rendered wid
 test("Escape closes one submenu level per press before the root menu", () => {
   assert.match(
     src,
-    /const closeDeepest = submenuEscapeStack\[submenuEscapeStack\.length - 1\];\s*if \(closeDeepest\) \{\s*closeDeepest\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
-    "root Escape handler pops the submenu stack first",
+    /const deepest = submenuEscapeStack\.reduce<EscapeLayer \| undefined>[\s\S]{0,500}if \(deepest\) \{\s*deepest\.close\(\);\s*return;\s*\}\s*onOpenChange\(false\);/,
+    "root Escape handler selects the deepest registered layer first",
   );
-  assert.match(src, /submenuEscapeStack\.push\(closeSelf\);/, "open flyouts join the Escape stack");
+  assert.match(src, /usePopoverEscapeLayer\(open, closeToRow\);/, "open flyouts join the Escape stack");
+  assert.match(
+    src,
+    /candidate\.depth > current\.depth/,
+    "Escape precedence follows layer depth rather than effect registration order",
+  );
 });
 
 test("hover-intent opens for mouse pointers only, after a delay", () => {

@@ -211,6 +211,16 @@ assert.match(
 );
 assert.match(
   src,
+  /register: \(el: HTMLElement\) => \{[\s\S]{0,220}parentLayers\?\.register\(el\)[\s\S]{0,160}focusTrapPortalLayers\?\.register\(el\)/,
+  "descendant portals propagate through every ancestor Popover and Modal boundary",
+);
+assert.match(
+  src,
+  /cover: \(\) => \{[\s\S]{0,180}parentLayers\?\.cover\(\)/,
+  "cover ownership propagates through the complete Popover chain",
+);
+assert.match(
+  src,
   /if \(covered\) return;[\s\S]{0,200}const t = e\.target as Node/,
   "a covered owner ignores outside-click dismissal while its child Modal is active",
 );
