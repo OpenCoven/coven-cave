@@ -11,6 +11,12 @@ assert.match(workflow, /Require signed OpenClaw compatibility registry[\s\S]*?NE
 assert.match(workflow, /NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_PUBLIC_KEYS/);
 assert.match(workflow, /NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_CHECKPOINT/);
 assert.match(workflow, /OpenCode, Grok, and OpenClaw/);
+assert.match(workflow, /allow_unconfigured_openclaw_registry/);
+assert.match(
+  workflow,
+  /Require signed OpenClaw compatibility registry[\s\S]*?if:.*allow_unconfigured_openclaw_registry/,
+);
+assert.match(workflow, /COVEN_RELEASE_OPENCLAW_REGISTRY_GUARD_SKIPPED/);
 assert.match(guard, /registry URL must use HTTPS without credentials/);
 assert.match(guard, /asymmetricKeyType !== "ed25519"/);
 assert.match(guard, /keyring must contain one to four keys/);

@@ -20,6 +20,13 @@ Every desktop release must provide these GitHub Actions secrets:
   current positive `sequence` and lowercase SHA-256 `payloadHash` of the
   canonical unsigned bundle.
 
+Until the external publisher is provisioned, a maintainer may recover an
+already-created final tag through `workflow_dispatch` with
+`allow_unconfigured_openclaw_registry`. That recovery skips only the OpenClaw
+gate, keeps the configured OpenCode and Grok gates active, records the exception
+in the job summary and release notes, and uses the source-trusted built-in
+OpenClaw profile. Tag-push releases remain fail-closed.
+
 The release workflow validates these values, then maps them to
 `NEXT_PUBLIC_COVEN_OPENCLAW_SCHEMA_REGISTRY_*` for packaging. They are public
 verification anchors, never signing credentials. Development can use
