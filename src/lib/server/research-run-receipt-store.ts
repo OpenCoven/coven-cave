@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   realpath,
   rm,
   type FileHandle,
@@ -23,6 +24,8 @@ import { withProcessIntentLock } from "./process-intent-lock.ts";
 import { researchMissionsRoot } from "./research-mission-store.ts";
 
 const RUN_ID_RE = /^run_[A-Za-z0-9_-]+$/;
+const RECEIPT_FILE_RE = /^run_[A-Za-z0-9_-]+\.json$/;
+const TEMPORARY_FILE_RE = /^\.tmp-\d+-[a-f0-9]{24}$/;
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 export const MAX_RESEARCH_RUN_RECEIPT_BYTES = 2 * 1024 * 1024;
@@ -84,6 +87,74 @@ function receiptRoot(override?: string): string {
     throw new Error("Research run receipt directory must be outside mission workspaces");
   }
   return root;
+}
+
+async function resolvedPathWithoutSymlinks(
+  candidate: string,
+  label: string,
+): Promise<string> {
+  const absolute = path.resolve(candidate);
+  const parsed = path.parse(absolute);
+  const components = absolute.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  let current = parsed.root;
+  let existingCount = 0;
+  for (const component of components) {
+    const next = path.join(current, component);
+    let metadata: Awaited<ReturnType<typeof lstat>>;
+    try {
+      metadata = await lstat(next);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw error;
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new ResearchRunReceiptStoreError(
+        "symlink",
+        `${label} has a symlink ancestor`,
+      );
+    }
+    if (!metadata.isDirectory()) {
+      throw new ResearchRunReceiptStoreError(
+        "unsafe-path",
+        `${label} ancestor is not a directory`,
+      );
+    }
+    current = next;
+    existingCount += 1;
+  }
+  const resolvedExisting = await realpath(current);
+  return path.join(resolvedExisting, ...components.slice(existingCount));
+}
+
+async function createDirectoryTreeWithoutSymlinks(
+  candidate: string,
+  label: string,
+): Promise<void> {
+  const absolute = path.resolve(candidate);
+  const parsed = path.parse(absolute);
+  const components = absolute.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  let current = parsed.root;
+  for (const component of components) {
+    current = path.join(current, component);
+    try {
+      await mkdir(current, { mode: DIRECTORY_MODE });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const metadata = await pathMetadata(current, `${label} ancestor is missing`);
+    if (metadata.isSymbolicLink()) {
+      throw new ResearchRunReceiptStoreError(
+        "symlink",
+        `${label} has a symlink ancestor`,
+      );
+    }
+    if (!metadata.isDirectory()) {
+      throw new ResearchRunReceiptStoreError(
+        "unsafe-path",
+        `${label} ancestor is not a directory`,
+      );
+    }
+  }
 }
 
 function receiptPath(runId: string, root?: string): string {
@@ -201,14 +272,103 @@ async function assertStableDirectory(entry: PathIdentity, label: string): Promis
 
 async function openLayout(rootInput: string): Promise<StoreLayout> {
   const rootPath = receiptRoot(rootInput);
-  await mkdir(rootPath, { recursive: true, mode: DIRECTORY_MODE });
+  const missionRootPath = path.resolve(researchMissionsRoot());
+  const [resolvedRootCandidate, resolvedMissionCandidate] = await Promise.all([
+    resolvedPathWithoutSymlinks(rootPath, "store root"),
+    resolvedPathWithoutSymlinks(missionRootPath, "mission root"),
+  ]);
+  if (
+    isWithin(resolvedRootCandidate, resolvedMissionCandidate)
+    || isWithin(resolvedMissionCandidate, resolvedRootCandidate)
+  ) {
+    throw new Error("Research run receipt directory must be outside mission workspaces");
+  }
+  await createDirectoryTreeWithoutSymlinks(rootPath, "store root");
   const root = await ensureRealDirectory(rootPath, null, "store root");
   const rootRealPath = await realpath(rootPath);
+  const resolvedMissionAfterCreation = await resolvedPathWithoutSymlinks(
+    missionRootPath,
+    "mission root",
+  );
+  if (
+    isWithin(rootRealPath, resolvedMissionAfterCreation)
+    || isWithin(resolvedMissionAfterCreation, rootRealPath)
+  ) {
+    throw new Error("Research run receipt directory must be outside mission workspaces");
+  }
   const locksParent = path.join(rootPath, ".locks");
   const locksDir = path.join(locksParent, "intents");
   await ensureRealDirectory(locksParent, rootRealPath, "lock root");
   await ensureRealDirectory(locksDir, rootRealPath, "lock intents");
   return { root, rootRealPath, locksDir };
+}
+
+async function recoverStalePublications(layout: StoreLayout): Promise<void> {
+  await assertStableDirectory(layout.root, "store root");
+  const names = await readdir(layout.root.path);
+  const receiptNames = names.filter((name) => RECEIPT_FILE_RE.test(name));
+  let changed = false;
+  for (const name of names) {
+    if (!TEMPORARY_FILE_RE.test(name)) continue;
+    const temporary = path.join(layout.root.path, name);
+    let metadata: Awaited<ReturnType<typeof lstat>>;
+    try {
+      metadata = await lstat(temporary);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new ResearchRunReceiptStoreError(
+        "symlink",
+        "receipt temporary publication is unsafe",
+      );
+    }
+    await assertSafeOwnership(temporary, metadata, "Research run receipt temporary");
+    assertPrivateMode(metadata.mode, FILE_MODE, "receipt temporary publication");
+    if (metadata.nlink === 1) {
+      await rm(temporary);
+      changed = true;
+      continue;
+    }
+    if (metadata.nlink !== 2) {
+      throw new ResearchRunReceiptStoreError(
+        "unsafe-path",
+        "receipt temporary publication has an unsafe link count",
+      );
+    }
+    const matchingTargets: string[] = [];
+    for (const receiptName of receiptNames) {
+      const target = path.join(layout.root.path, receiptName);
+      const targetMetadata = await lstat(target);
+      if (
+        !targetMetadata.isSymbolicLink()
+        && targetMetadata.isFile()
+        && sameIdentity(metadata, targetMetadata)
+      ) {
+        matchingTargets.push(target);
+      }
+    }
+    if (matchingTargets.length !== 1) {
+      throw new ResearchRunReceiptStoreError(
+        "unsafe-path",
+        "receipt temporary publication has no unique target",
+      );
+    }
+    await rm(temporary);
+    const published = await pathMetadata(
+      matchingTargets[0],
+      "receipt publication target is missing",
+    );
+    if (!published.isFile() || published.nlink !== 1 || !sameIdentity(metadata, published)) {
+      throw new ResearchRunReceiptStoreError(
+        "unsafe-path",
+        "receipt publication recovery is unsafe",
+      );
+    }
+    changed = true;
+  }
+  if (changed) await syncDirectory(layout.root.path);
 }
 
 function noFollowFlag(): number {
@@ -422,7 +582,10 @@ export async function saveResearchRunCompletionReceipt(
   const target = path.join(layout.root.path, `${validated.runId}.json`);
   await withProcessIntentLock(
     { intentsDirectory: layout.locksDir, label: "research-run-receipt-store" },
-    () => publishNoReplace(layout, target, bytes, `receipt ${validated.runId}`),
+    async () => {
+      await recoverStalePublications(layout);
+      await publishNoReplace(layout, target, bytes, `receipt ${validated.runId}`);
+    },
   );
 }
 
@@ -433,25 +596,31 @@ export async function loadResearchRunCompletionReceipt(
   if (!RUN_ID_RE.test(runId)) throw new TypeError("runId must be a canonical ResearchRun id");
   const layout = await openLayout(receiptRoot(root));
   const target = path.join(layout.root.path, `${runId}.json`);
-  let bytes: Uint8Array;
-  try {
-    bytes = await readSafeFile(layout, target, `receipt ${runId}`);
-  } catch (error) {
-    if (error instanceof ResearchRunReceiptStoreError && error.code === "missing") {
-      return null;
-    }
-    throw error;
-  }
+  return withProcessIntentLock(
+    { intentsDirectory: layout.locksDir, label: "research-run-receipt-store" },
+    async () => {
+      await recoverStalePublications(layout);
+      let bytes: Uint8Array;
+      try {
+        bytes = await readSafeFile(layout, target, `receipt ${runId}`);
+      } catch (error) {
+        if (error instanceof ResearchRunReceiptStoreError && error.code === "missing") {
+          return null;
+        }
+        throw error;
+      }
 
-  let value: unknown;
-  try {
-    value = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    throw new Error("Research run completion receipt is malformed JSON");
-  }
-  const receipt = validateResearchRunCompletionReceipt(value);
-  if (receipt.runId !== runId || !verifyResearchRunCompletionReceipt(receipt)) {
-    throw new Error("Research run completion receipt failed integrity validation");
-  }
-  return receipt;
+      let value: unknown;
+      try {
+        value = JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        throw new Error("Research run completion receipt is malformed JSON");
+      }
+      const receipt = validateResearchRunCompletionReceipt(value);
+      if (receipt.runId !== runId || !verifyResearchRunCompletionReceipt(receipt)) {
+        throw new Error("Research run completion receipt failed integrity validation");
+      }
+      return receipt;
+    },
+  );
 }

@@ -20,6 +20,46 @@ import {
 export const RESEARCH_RUN_RECEIPT_SCHEMA = "opencoven.research-run-receipt/v1" as const;
 
 const RUN_ID_RE = /^run_[A-Za-z0-9_-]+$/;
+const AUTHORITY_STATE_FIELDS = new Set(["status", "requests", "grants"]);
+const AUTHORITY_REQUEST_FIELDS = new Set([
+  "id",
+  "capability",
+  "requestedAt",
+  "status",
+  "scope",
+  "reason",
+  "resolvedAt",
+]);
+const AUTHORITY_GRANT_FIELDS = new Set([
+  "id",
+  "capability",
+  "grantedAt",
+  "exercised",
+  "requestId",
+  "scope",
+  "mode",
+  "expiresAt",
+]);
+const PLAN_REVISION_FIELDS = new Set(["revision", "at", "digest", "reason"]);
+const PARTIAL_FAILURE_FIELDS = new Set(["code", "message", "retryable", "at", "phase"]);
+const COMPLETION_RECEIPT_FIELDS = new Set([
+  "schema",
+  "runId",
+  "familiarId",
+  "skillId",
+  "skillVersion",
+  "runtime",
+  "createdAt",
+  "startedAt",
+  "completedAt",
+  "planRevisionHistory",
+  "grantsExercised",
+  "sourceManifest",
+  "artifactManifest",
+  "citationCount",
+  "partialFailures",
+  "integrityDigest",
+]);
 
 export type ResearchRunAuthorityStatusV1 = "running" | "awaiting_authority" | "completed";
 
@@ -126,6 +166,18 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+function assertOnlyKeys(
+  record: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  field: string,
+): void {
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) {
+      throw new TypeError(`${field} contains unknown field ${key}`);
+    }
+  }
+}
+
 function text(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new TypeError(`${field} must be a non-empty string`);
@@ -198,6 +250,7 @@ function copyRecordArray<T extends Record<string, unknown>>(value: unknown, fiel
 
 function normalizeRequest(value: unknown, field: string): ResearchRunAuthorityRequestV1 {
   if (!isRecord(value)) throw new TypeError(`${field} must be an object`);
+  assertOnlyKeys(value, AUTHORITY_REQUEST_FIELDS, field);
   const request: ResearchRunAuthorityRequestV1 = {
     id: text(value.id, `${field}.id`),
     capability: text(value.capability, `${field}.capability`),
@@ -219,6 +272,7 @@ function normalizeRequest(value: unknown, field: string): ResearchRunAuthorityRe
 
 function normalizeGrant(value: unknown, field: string): ResearchRunAuthorityGrantV1 {
   if (!isRecord(value)) throw new TypeError(`${field} must be an object`);
+  assertOnlyKeys(value, AUTHORITY_GRANT_FIELDS, field);
   if (typeof value.exercised !== "boolean") {
     throw new TypeError(`${field}.exercised must be boolean`);
   }
@@ -345,6 +399,7 @@ export function validateResearchRunAuthorityState(
   value: unknown,
 ): ResearchRunAuthorityStateV1 {
   if (!isRecord(value)) throw new TypeError("authority state must be an object");
+  assertOnlyKeys(value, AUTHORITY_STATE_FIELDS, "authority state");
   const status = text(value.status, "authority.status") as ResearchRunAuthorityStatusV1;
   if (!["running", "awaiting_authority", "completed"].includes(status)) {
     throw new TypeError("authority.status is not supported");
@@ -494,6 +549,7 @@ function normalizePlanHistory(
 ): ResearchRunPlanRevisionV1[] {
   const history = (values ?? []).map((value, index) => {
     if (!isRecord(value)) throw new TypeError(`planRevisionHistory[${index}] must be an object`);
+    assertOnlyKeys(value, PLAN_REVISION_FIELDS, `planRevisionHistory[${index}]`);
     const revision = safePositiveInteger(value.revision, `planRevisionHistory[${index}].revision`);
     const at = value.at === undefined
       ? createdAt
@@ -517,6 +573,7 @@ function normalizePartialFailures(
 ): ResearchRunPartialFailureV1[] {
   return (values ?? []).map((value, index) => {
     if (!isRecord(value)) throw new TypeError(`partialFailures[${index}] must be an object`);
+    assertOnlyKeys(value, PARTIAL_FAILURE_FIELDS, `partialFailures[${index}]`);
     const failure: ResearchRunPartialFailureV1 = {
       code: text(value.code, `partialFailures[${index}].code`),
       message: text(value.message, `partialFailures[${index}].message`),
@@ -594,6 +651,7 @@ export function validateResearchRunCompletionReceipt(
   if (!isRecord(value)) throw new TypeError("completion receipt must be an object");
   const copied = copyCanonicalJsonValue(value);
   if (!isRecord(copied)) throw new TypeError("completion receipt must be a JSON object");
+  assertOnlyKeys(copied, COMPLETION_RECEIPT_FIELDS, "completion receipt");
   if (copied.schema !== RESEARCH_RUN_RECEIPT_SCHEMA) {
     throw new TypeError("unsupported completion receipt schema");
   }

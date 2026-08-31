@@ -9,6 +9,7 @@ import {
   readFile,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -27,6 +28,7 @@ import {
   researchRunCompletionReceiptPath,
   saveResearchRunCompletionReceipt,
 } from "./research-run-receipt-store.ts";
+import { withProcessIntentLock } from "./process-intent-lock.ts";
 
 const MANIFEST = JSON.parse(
   await readFile(
@@ -122,6 +124,44 @@ async function spawnSave(
   return stdout;
 }
 
+function spawnLoad(root: string): {
+  child: ReturnType<typeof spawn>;
+  outcome: Promise<string>;
+} {
+  const moduleUrl = pathToFileURL(
+    path.join(process.cwd(), "src/lib/server/research-run-receipt-store.ts"),
+  ).href;
+  const child = spawn(process.execPath, [
+    "--experimental-strip-types",
+    "--input-type=module",
+    "-e",
+    `const { loadResearchRunCompletionReceipt } = await import(${JSON.stringify(moduleUrl)});
+     try {
+       const receipt = await loadResearchRunCompletionReceipt(process.argv[1], process.argv[2]);
+       process.stdout.write(receipt ? "loaded" : "missing");
+     } catch (error) {
+       process.stdout.write("rejected:" + (error instanceof Error ? error.message : String(error)));
+     }`,
+    RUN.id,
+    root,
+  ], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const outcome = new Promise<string>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code !== 0) reject(new Error(stderr || `load process exited ${code}`));
+      else resolve(stdout);
+    });
+  });
+  return { child, outcome };
+}
+
 test("receipt publication is immutable and idempotent under cross-process contention", async () => {
   await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
   const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-contention-"));
@@ -155,6 +195,56 @@ test("receipt publication is immutable and idempotent under cross-process conten
       await readFile(researchRunCompletionReceiptPath(RUN.id, root), "utf8"),
       serializeResearchRunCompletionReceipt(winner),
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("receipt reads wait until hard-link publication has only one name", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-read-publication-"));
+  try {
+    assert.equal(await loadResearchRunCompletionReceipt(RUN.id, root), null);
+    const target = researchRunCompletionReceiptPath(RUN.id, root);
+    const temporary = path.join(root, `.tmp-${process.pid}-${"a".repeat(24)}`);
+    await writeFile(temporary, serializeResearchRunCompletionReceipt(receipt()), { mode: 0o600 });
+
+    let reader: ReturnType<typeof spawnLoad> | undefined;
+    await withProcessIntentLock(
+      {
+        intentsDirectory: path.join(root, ".locks", "intents"),
+        label: "receipt publication test",
+      },
+      async () => {
+        await link(temporary, target);
+        reader = spawnLoad(root);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        assert.equal(reader.child.exitCode, null, "reader observed an in-progress publication");
+        await unlink(temporary);
+      },
+    );
+
+    assert.equal(await reader!.outcome, "loaded");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("receipt reads recover a stale hard-link publication after publisher crash", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const root = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-crash-recovery-"));
+  try {
+    assert.equal(await loadResearchRunCompletionReceipt(RUN.id, root), null);
+    const target = researchRunCompletionReceiptPath(RUN.id, root);
+    const temporary = path.join(root, `.tmp-${process.pid}-${"b".repeat(24)}`);
+    const expected = receipt();
+    await writeFile(temporary, serializeResearchRunCompletionReceipt(expected), { mode: 0o600 });
+    await link(temporary, target);
+    assert.equal((await lstat(target)).nlink, 2);
+
+    assert.deepEqual(await loadResearchRunCompletionReceipt(RUN.id, root), expected);
+    await assert.rejects(() => lstat(temporary), { code: "ENOENT" });
+    assert.equal((await lstat(target)).nlink, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -214,6 +304,47 @@ test("receipt store rejects relative, symlinked, shared, and workspace-overlappi
     await assert.rejects(
       () => saveResearchRunCompletionReceipt(receipt(), parent),
       /outside mission workspaces/,
+    );
+  } finally {
+    if (previousMissionsRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
+    else process.env.COVEN_RESEARCH_MISSIONS_DIR = previousMissionsRoot;
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("receipt store rejects a symlink in a receipt-root ancestor", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const parent = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "receipt-ancestor-"));
+  const realParent = path.join(parent, "real");
+  const linkedParent = path.join(parent, "linked");
+  try {
+    await mkdir(realParent, { mode: 0o700 });
+    await symlink(realParent, linkedParent, "dir");
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(receipt(), path.join(linkedParent, "receipts")),
+      /store root.*symlink|symlink.*ancestor/i,
+    );
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("receipt store rejects a symlink in a mission-root ancestor", async () => {
+  await mkdir(TEST_ARTIFACTS_ROOT, { recursive: true });
+  const parent = await mkdtemp(path.join(TEST_ARTIFACTS_ROOT, "mission-ancestor-"));
+  const realParent = path.join(parent, "real");
+  const linkedParent = path.join(parent, "linked");
+  const previousMissionsRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
+  try {
+    await mkdir(path.join(realParent, "missions"), { recursive: true, mode: 0o700 });
+    await symlink(realParent, linkedParent, "dir");
+    process.env.COVEN_RESEARCH_MISSIONS_DIR = path.join(linkedParent, "missions");
+    await assert.rejects(
+      () => saveResearchRunCompletionReceipt(
+        receipt(),
+        path.join(realParent, "missions", "receipts"),
+      ),
+      /mission root.*symlink|symlink.*ancestor/i,
     );
   } finally {
     if (previousMissionsRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;

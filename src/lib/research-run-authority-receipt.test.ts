@@ -363,6 +363,27 @@ test("authority validation rejects grants without one matching resolved request"
   );
 });
 
+test("authority validation rejects unknown fields in its closed schemas", () => {
+  const coherent = completeResearchRunAuthority(authorityStateWithGrant());
+  const cases: unknown[] = [
+    { ...coherent, unexpected: true },
+    {
+      ...coherent,
+      requests: [{ ...coherent.requests[0], unexpected: true }],
+    },
+    {
+      ...coherent,
+      grants: [{ ...coherent.grants[0], unexpected: true }],
+    },
+  ];
+  for (const candidate of cases) {
+    assert.throws(
+      () => validateResearchRunAuthorityState(candidate),
+      /unknown.*field/i,
+    );
+  }
+});
+
 test("completion receipts contain manifest provenance and a deterministic integrity digest", () => {
   const receipt = createResearchRunCompletionReceipt(RUN, {
     authority: authorityStateWithGrant(),
@@ -640,6 +661,43 @@ test("completion receipt validation accepts only explicitly exercised grants", (
       exercised === false
         ? /grantsExercised\[0\]\.exercised must be true/
         : /grantsExercised\[0\]\.exercised must be boolean/,
+    );
+    assert.equal(verifyResearchRunCompletionReceipt(candidate), false);
+  }
+});
+
+test("completion receipt validation rejects unknown fields in every closed schema", () => {
+  const original = createResearchRunCompletionReceipt(RUN, {
+    authority: completeResearchRunAuthority(authorityStateWithGrant()),
+    planRevisionHistory: [{
+      revision: 1,
+      at: "2026-08-16T20:00:10.000Z",
+    }],
+    partialFailures: [{
+      code: "source_unavailable",
+      message: "One optional source was unavailable",
+    }],
+  });
+  const cases: ResearchRunCompletionReceiptV1[] = [
+    { ...structuredClone(original), unexpected: true } as ResearchRunCompletionReceiptV1,
+    {
+      ...structuredClone(original),
+      grantsExercised: [{ ...original.grantsExercised[0], unexpected: true }],
+    } as unknown as ResearchRunCompletionReceiptV1,
+    {
+      ...structuredClone(original),
+      planRevisionHistory: [{ ...original.planRevisionHistory[0], unexpected: true }],
+    } as unknown as ResearchRunCompletionReceiptV1,
+    {
+      ...structuredClone(original),
+      partialFailures: [{ ...original.partialFailures[0], unexpected: true }],
+    } as unknown as ResearchRunCompletionReceiptV1,
+  ];
+
+  for (const candidate of cases) {
+    assert.throws(
+      () => validateResearchRunCompletionReceipt(candidate),
+      /unknown.*field/i,
     );
     assert.equal(verifyResearchRunCompletionReceipt(candidate), false);
   }
