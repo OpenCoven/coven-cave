@@ -1954,7 +1954,7 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   });
 }
 
-export function validateRunEventSequence(
+function validateRunEventStructure(
   events: readonly RunEventV1[],
 ): ProtocolParseResult<readonly RunEventV1[]> {
   if (events.length === 0) {
@@ -1968,9 +1968,7 @@ export function validateRunEventSequence(
   if (first.sequence !== 1) {
     return fail("semantic_conflict", "$[0].sequence", "First event sequence must equal 1");
   }
-
   const runId = first.runId;
-  let terminalEventSeen = false;
   for (const [index, event] of events.entries()) {
     const eventPath = indexPath("$", index);
     if (event.runId !== runId) {
@@ -1991,10 +1989,17 @@ export function validateRunEventSequence(
         `Event sequence must equal ${expectedSequence}`,
       );
     }
-    if (
-      terminalEventSeen
-      && !POST_TERMINAL_RUN_EVENT_TYPES.has(event.type)
-    ) {
+  }
+  return pass(events);
+}
+
+function validateRunEventTerminalMonotonicity(
+  events: readonly RunEventV1[],
+): ProtocolParseResult<readonly RunEventV1[]> {
+  let terminalEventSeen = false;
+  for (const [index, event] of events.entries()) {
+    const eventPath = indexPath("$", index);
+    if (terminalEventSeen && !POST_TERMINAL_RUN_EVENT_TYPES.has(event.type)) {
       return fail(
         "semantic_conflict",
         childPath(eventPath, "type"),
@@ -2011,8 +2016,15 @@ export function validateRunEventSequence(
       terminalEventSeen = true;
     }
   }
-
   return pass(events);
+}
+
+export function validateRunEventSequence(
+  events: readonly RunEventV1[],
+): ProtocolParseResult<readonly RunEventV1[]> {
+  const structure = validateRunEventStructure(events);
+  if (!structure.ok) return structure;
+  return validateRunEventTerminalMonotonicity(events);
 }
 
 /**
@@ -2025,7 +2037,7 @@ export function validateRunManifestDeletionEventV1(
   events: readonly RunEventV1[],
 ): ProtocolParseResult<ResearchRunV1> {
   if (events.length > 0) {
-    const orderedEvents = validateRunEventSequence(events);
+    const orderedEvents = validateRunEventStructure(events);
     if (!orderedEvents.ok) return orderedEvents;
     if (events[0].runId !== run.id) {
       return fail(
@@ -2047,6 +2059,8 @@ export function validateRunManifestDeletionEventV1(
 
   const manifest = run.artifactManifest;
   if (!manifest || manifest.deletion.status !== "completed") {
+    const monotonic = validateRunEventTerminalMonotonicity(events);
+    if (!monotonic.ok) return monotonic;
     return pass(run);
   }
   if (manifest.runId !== run.id) {
@@ -2117,5 +2131,7 @@ export function validateRunManifestDeletionEventV1(
     );
   }
 
+  const monotonic = validateRunEventTerminalMonotonicity(events);
+  if (!monotonic.ok) return monotonic;
   return pass(run);
 }

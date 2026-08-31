@@ -2871,7 +2871,7 @@ test("completed deletion requires a final manifest and its exact event in the co
       parsedEvent(2, "run.status", { status: "completed" }),
       completed,
     ]),
-    "$[2].type",
+    "$[1].type",
     "semantic_conflict",
   );
   expectError(
@@ -2997,7 +2997,7 @@ test("deletion event composition rejects incomplete, malformed, and wrong-run st
       completed,
       parsedEvent(4, "run.status", { status: "completed" }),
     ]),
-    "$[3].type",
+    "$",
     "semantic_conflict",
   );
   expectError(
