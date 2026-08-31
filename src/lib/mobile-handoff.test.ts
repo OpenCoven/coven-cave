@@ -64,6 +64,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     status: unknown,
     backend: string,
     probe: (target: string) => Promise<boolean>,
+    options?: { takeOverHealthyLoopback?: boolean },
   ) => Promise<{ kind: string; targets: string[] }>;
   const serveRouteOwnedByBackend = module.serveRouteOwnedByBackend as (
     status: unknown,
@@ -252,6 +253,19 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     "Cave's generated HTTP listener metadata remains part of the owned route",
   );
 
+  const handlerMetadataStatus = {
+    ...status,
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: {
+          "/": {
+            Proxy: "http://127.0.0.1:3000",
+            AcceptAppCaps: true,
+          },
+        },
+      },
+    },
+  };
   const protectedCompleteSettings = [
     {
       Web: status.Web,
@@ -306,14 +320,52 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
         },
       },
     },
+    handlerMetadataStatus,
+    {
+      ...status,
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: {
+            "/": {
+              Proxy: "http://127.0.0.1:3000",
+              FutureHandlerSetting: {},
+            },
+          },
+        },
+      },
+    },
+    {
+      ...status,
+      Web: {
+        [`${serveHost}:443`]: {
+          Handlers: { "/": null },
+        },
+      },
+    },
   ];
   for (const protectedConfig of protectedCompleteSettings) {
     assert.equal(
       serveRouteOwnedByBackend(protectedConfig, "http://127.0.0.1:3000"),
       false,
-      "non-Cave listeners, services, funnel, and foreground settings prevent global reset",
+      "non-Cave listeners, handler metadata, services, funnel, and foreground settings prevent global reset",
     );
   }
+  let handlerMetadataProbeCount = 0;
+  const handlerMetadataAssessment = await assessServeOwnership(
+    handlerMetadataStatus,
+    "http://127.0.0.1:3020",
+    async () => {
+      handlerMetadataProbeCount += 1;
+      return false;
+    },
+    { takeOverHealthyLoopback: true },
+  );
+  assert.equal(
+    handlerMetadataAssessment.kind,
+    "conflict",
+    "packaged precedence cannot replace a handler carrying additional metadata",
+  );
+  assert.equal(handlerMetadataProbeCount, 0, "protected handler metadata is never probed");
 
   let protectedProbeCount = 0;
   const protectedStatus = {
@@ -685,6 +737,24 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       commands,
       [["serve", "status", "--json"]],
       "reset refuses to clear an IPv4 route for an IPv6 backend on the same port",
+    );
+  }
+  {
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return commandResult({ stdout: JSON.stringify(handlerMetadataStatus) });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [["serve", "status", "--json"]],
+      "reset leaves a route with additional handler metadata untouched",
     );
   }
   assert.equal(

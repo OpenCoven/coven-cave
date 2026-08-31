@@ -31,6 +31,27 @@ const serveOwnershipHelper = fileURLToPath(
   new URL("./mobile-serve-ownership.ts", import.meta.url),
 );
 
+function processBirthToken(pid) {
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], {
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const token = result.stdout.trim();
+  assert.notEqual(token, "");
+  return token;
+}
+
+function installNotOwnedNodeShim(binDir) {
+  mkdirSync(binDir, { recursive: true });
+  const nodeShim = join(binDir, "node");
+  writeFileSync(
+    nodeShim,
+    '#!/usr/bin/env bash\nprintf \'{"kind":"not-owned","backendUrl":"http://127.0.0.1:3000"}\\n\'\nexit 10\n',
+  );
+  chmodSync(nodeShim, 0o755);
+}
+
 test("mobile tailscale runner exposes operator commands", () => {
   assert.match(script, /COMMAND="\$\{1:-start\}"/);
   assert.match(script, /start\|invite\|app\|status\|stop/);
@@ -108,13 +129,7 @@ test("mobile tailscale stop terminates its tracked process after a not-owned res
   const stateDir = join(stateRoot, "mobile-tailscale-3000");
   const binDir = join(fixture, "bin");
   mkdirSync(stateDir, { recursive: true });
-  mkdirSync(binDir, { recursive: true });
-  const nodeShim = join(binDir, "node");
-  writeFileSync(
-    nodeShim,
-    '#!/usr/bin/env bash\nprintf \'{"kind":"not-owned","backendUrl":"http://127.0.0.1:3000"}\\n\'\nexit 10\n',
-  );
-  chmodSync(nodeShim, 0o755);
+  installNotOwnedNodeShim(binDir);
 
   const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
@@ -124,6 +139,7 @@ test("mobile tailscale stop terminates its tracked process after a not-owned res
     sleeper.once("error", reject);
   });
   writeFileSync(join(stateDir, "next.pid"), String(sleeper.pid));
+  writeFileSync(join(stateDir, "next.identity"), processBirthToken(sleeper.pid));
 
   try {
     const result = spawnSync("bash", [scriptPath, "stop"], {
@@ -150,6 +166,79 @@ test("mobile tailscale stop terminates its tracked process after a not-owned res
     );
   } finally {
     if (sleeper.exitCode === null) sleeper.kill("SIGKILL");
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("mobile tailscale stop never signals a reused foreign PID", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-stale-pid-"));
+  const stateRoot = join(fixture, "state");
+  const stateDir = join(stateRoot, "mobile-tailscale-3000");
+  const binDir = join(fixture, "bin");
+  mkdirSync(stateDir, { recursive: true });
+  installNotOwnedNodeShim(binDir);
+
+  const foreign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: "ignore",
+  });
+  await new Promise((resolve, reject) => {
+    foreign.once("spawn", resolve);
+    foreign.once("error", reject);
+  });
+  writeFileSync(join(stateDir, "next.pid"), String(foreign.pid));
+  writeFileSync(join(stateDir, "next.identity"), "stale-process-birth-token");
+
+  try {
+    const result = spawnSync("bash", [scriptPath, "stop"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:/usr/bin:/bin`,
+        HOME: fixture,
+        PORT: "3000",
+        HOST: "127.0.0.1",
+        COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+        COVEN_CAVE_MOBILE_STATE_DIR: stateDir,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotThrow(
+      () => process.kill(foreign.pid, 0),
+      "a stale state file must not authorize signaling a reused foreign PID",
+    );
+    assert.equal(existsSync(join(stateDir, "next.pid")), false);
+    assert.equal(existsSync(join(stateDir, "next.identity")), false);
+  } finally {
+    if (foreign.exitCode === null) foreign.kill("SIGKILL");
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("IPv6 readiness recognizes the canonical bracketed backend URL", () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-ipv6-ready-"));
+  const logFile = join(fixture, "next.log");
+  writeFileSync(logFile, "> Ready on http://[::1]:3000\n");
+  try {
+    const result = spawnSync(
+      "bash",
+      ["-c", 'source "$1"; server_logged_ready', "mobile-tailscale-test", scriptPath],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: fixture,
+          HOST: "::1",
+          PORT: "3000",
+          COVEN_CAVE_MOBILE_LOG: logFile,
+          COVEN_CAVE_MOBILE_STATE_DIR: join(fixture, "state"),
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -214,7 +303,7 @@ test("mobile tailscale invite command is chat-safe by default", () => {
 
 test("mobile tailscale readiness requires this server's ready log", () => {
   assert.match(script, /server_logged_ready\(\)/);
-  assert.match(script, /grep -F "> Ready on http:\/\/\$\{HOST\}:\$\{PORT\}" "\$LOG_FILE"/);
+  assert.match(script, /grep -F "> Ready on \$\(backend_url\)" "\$LOG_FILE"/);
   assert.match(script, /recorded_server_is_running && port_is_listening.*&& server_logged_ready/);
 });
 

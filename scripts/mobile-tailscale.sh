@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 SELF="$PWD/scripts/mobile-tailscale.sh"
 
 COMMAND="${1:-start}"
@@ -27,6 +27,7 @@ STATE_DIR="${COVEN_CAVE_MOBILE_STATE_DIR:-$STATE_ROOT/mobile-tailscale-${PORT}}"
 TOKEN_FILE="$STATE_DIR/access-token"
 SIDECAR_TOKEN_FILE="$STATE_DIR/sidecar-auth-token"
 PID_FILE="$STATE_DIR/next.pid"
+PID_IDENTITY_FILE="$STATE_DIR/next.identity"
 MODE_FILE="$STATE_DIR/server.mode"
 INVITE_FILE="$STATE_DIR/invite.url"
 EXPIRES_FILE="$STATE_DIR/invite.expires"
@@ -69,17 +70,55 @@ backend_url() {
   fi
 }
 
-recorded_server_is_running() {
-  if [ ! -s "$PID_FILE" ]; then
+process_birth_token() {
+  local pid="$1" token
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  token="$(
+    LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null |
+      sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+  )" || return 1
+  [ -n "$token" ] || return 1
+  printf '%s\n' "$token"
+}
+
+process_identity_matches() {
+  local pid="$1" identity_file="$2" expected actual
+  [ -s "$identity_file" ] || return 1
+  expected="$(cat "$identity_file")"
+  [ -n "$expected" ] || return 1
+  actual="$(process_birth_token "$pid")" || return 1
+  [ "$actual" = "$expected" ]
+}
+
+record_process_identity() {
+  local pid_file="$1" identity_file="$2" pid token
+  [ -s "$pid_file" ] || return 1
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  token="$(process_birth_token "$pid")" || return 1
+  printf '%s\n' "$token" >"$identity_file"
+  chmod 600 "$identity_file"
+}
+
+recorded_process_is_running() {
+  local pid_file="$1" identity_file="$2" pid
+  if [ ! -s "$pid_file" ]; then
     return 1
   fi
 
-  pid="$(cat "$PID_FILE")"
+  pid="$(cat "$pid_file")"
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
 
-  kill -0 "$pid" >/dev/null 2>&1
+  kill -0 "$pid" >/dev/null 2>&1 &&
+    process_identity_matches "$pid" "$identity_file"
+}
+
+recorded_server_is_running() {
+  recorded_process_is_running "$PID_FILE" "$PID_IDENTITY_FILE"
 }
 
 describe_port_occupant() {
@@ -151,7 +190,7 @@ take_over_same_checkout_server_for_app() {
     describe_port_occupant "$PORT" >&2
     exit 1
   fi
-  rm -f "$PID_FILE" "$MODE_FILE"
+  rm -f "$PID_FILE" "$PID_IDENTITY_FILE" "$MODE_FILE"
   return 0
 }
 
@@ -211,10 +250,8 @@ resolve_active_port() {
     [ -d "$dir" ] || continue
     port="${dir##*mobile-tailscale-}"
     case "$port" in ''|*[!0-9]*) continue ;; esac
-    [ -s "$dir/next.pid" ] || continue
+    recorded_process_is_running "$dir/next.pid" "$dir/next.identity" || continue
     pid="$(cat "$dir/next.pid")"
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    kill -0 "$pid" >/dev/null 2>&1 || continue
     if [ -n "$live" ] && [ "$live" != "$port" ]; then
       # More than one live instance: ambiguous, keep the requested port.
       return 0
@@ -355,7 +392,7 @@ ensure_tailscale() {
 }
 
 server_logged_ready() {
-  grep -F "> Ready on http://${HOST}:${PORT}" "$LOG_FILE" >/dev/null 2>&1
+  grep -F "> Ready on $(backend_url)" "$LOG_FILE" >/dev/null 2>&1
 }
 
 wait_for_server() {
@@ -381,15 +418,28 @@ start_with_tmux() {
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
       "bash -lc 'unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST; export COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
     tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
+    if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+      tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
+      rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+      echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+      return 1
+    fi
     return 0
   fi
 
   tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
     "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
   tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
+  if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+    tmux kill-session -t "$TMUX_SESSION" >/dev/null 2>&1 || true
+    rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+    echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+    return 1
+  fi
 }
 
 start_with_nohup() {
+  local pid
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     # Token-gated native-app server. See start_with_tmux for the trust rationale.
     nohup env -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST \
@@ -397,12 +447,26 @@ start_with_nohup() {
       HOSTNAME="$HOST" \
       PORT="$PORT" \
       pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-    echo "$!" >"$PID_FILE"
+    pid="$!"
+    echo "$pid" >"$PID_FILE"
+    if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+      kill "$pid" >/dev/null 2>&1 || true
+      rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+      echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+      return 1
+    fi
     return 0
   fi
 
   nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-  echo "$!" >"$PID_FILE"
+  pid="$!"
+  echo "$pid" >"$PID_FILE"
+  if ! record_process_identity "$PID_FILE" "$PID_IDENTITY_FILE"; then
+    kill "$pid" >/dev/null 2>&1 || true
+    rm -f "$PID_FILE" "$PID_IDENTITY_FILE"
+    echo "Could not record the started server process identity; stopped it rather than leaving unsafe PID state." >&2
+    return 1
+  fi
 }
 
 start_next_server() {
@@ -655,27 +719,30 @@ status_command() {
 }
 
 stop_instance() {
-  local dir="$1" session="$2" pid_file pid
-  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$session" 2>/dev/null; then
-    tmux kill-session -t "$session"
-    echo "Stopped tmux session: ${session}"
-  fi
-
+  local dir="$1" session="$2" pid_file identity_file pid
   pid_file="$dir/next.pid"
+  identity_file="$dir/next.identity"
   if [ -s "$pid_file" ]; then
     pid="$(cat "$pid_file")"
     case "$pid" in
       ''|*[!0-9]*) ;;
       *)
-        if kill -0 "$pid" >/dev/null 2>&1; then
-          kill "$pid" >/dev/null 2>&1 || true
-          echo "Stopped pid: ${pid}"
+        if process_identity_matches "$pid" "$identity_file"; then
+          if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$session" 2>/dev/null; then
+            tmux kill-session -t "$session"
+            echo "Stopped tmux session: ${session}"
+          elif kill -0 "$pid" >/dev/null 2>&1; then
+            kill "$pid" >/dev/null 2>&1 || true
+            echo "Stopped pid: ${pid}"
+          fi
+        elif kill -0 "$pid" >/dev/null 2>&1; then
+          echo "Ignored stale PID state for ${pid}; its process birth identity does not match." >&2
         fi
         ;;
     esac
   fi
 
-  rm -f "$dir/next.pid" "$dir/invite.url" "$dir/invite.expires" "$dir/server.mode"
+  rm -f "$dir/next.pid" "$dir/next.identity" "$dir/invite.url" "$dir/invite.expires" "$dir/server.mode"
 }
 
 stop_command() {
@@ -726,15 +793,21 @@ stop_command() {
   echo "CovenCave mobile Tailscale state stopped."
 }
 
-case "$COMMAND" in
-  start) resolve_active_port; maybe_fallback_port; start_command ;;
-  invite) resolve_active_port; invite_command ;;
-  app) resolve_active_port; maybe_fallback_port; app_command ;;
-  status) resolve_active_port; status_command ;;
-  stop) resolve_active_port; stop_command ;;
-  *)
-    echo "Usage: pnpm mobile:tailscale[:invite|:app|:status|:stop]" >&2
-    echo "       bash scripts/mobile-tailscale.sh {start|invite|app|status|stop}" >&2
-    exit 2
-    ;;
-esac
+main() {
+  case "$COMMAND" in
+    start) resolve_active_port; maybe_fallback_port; start_command ;;
+    invite) resolve_active_port; invite_command ;;
+    app) resolve_active_port; maybe_fallback_port; app_command ;;
+    status) resolve_active_port; status_command ;;
+    stop) resolve_active_port; stop_command ;;
+    *)
+      echo "Usage: pnpm mobile:tailscale[:invite|:app|:status|:stop]" >&2
+      echo "       bash scripts/mobile-tailscale.sh {start|invite|app|status|stop}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main
+fi

@@ -690,7 +690,17 @@ export function enumerateServeProxyBackends(status: unknown): ServeProxyBackend[
         }
         if (port) webPorts.add(port);
         for (const handler of Object.values(handlers)) {
-          const raw = handler?.Proxy;
+          if (
+            !handler
+            || typeof handler !== "object"
+            || Array.isArray(handler)
+            || Object.keys(handler).length !== 1
+            || !Object.prototype.hasOwnProperty.call(handler, "Proxy")
+          ) {
+            backends.push({ kind: "protected", raw: "<protected Handler>" });
+            continue;
+          }
+          const raw = handler.Proxy;
           if (typeof raw !== "string" || !raw.trim()) {
             backends.push({ kind: "protected", raw: "<malformed Proxy>" });
             continue;

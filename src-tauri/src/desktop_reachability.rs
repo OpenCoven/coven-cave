@@ -669,7 +669,9 @@ fn serve_proxy_targets(status: &serde_json::Value) -> Vec<ServeProxyTarget> {
             }
             for handler in handlers.values() {
                 let target = handler
-                    .get("Proxy")
+                    .as_object()
+                    .filter(|handler| handler.len() == 1 && handler.contains_key("Proxy"))
+                    .and_then(|handler| handler.get("Proxy"))
                     .and_then(serde_json::Value::as_str)
                     .and_then(parse_loopback_proxy_backend)
                     .map(ServeProxyTarget::Loopback)
@@ -2845,6 +2847,32 @@ mod tests {
                 "TCP": normal_web["TCP"].clone(),
                 "Web": normal_web["Web"].clone(),
                 "Foreground": { "session": { "TCP": { "8080": { "TCPForward": "127.0.0.1:8080" } } } }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": {
+                    "cave.tailnet.ts.net:443": {
+                        "Handlers": {
+                            "/": {
+                                "Proxy": "http://127.0.0.1:3007",
+                                "AcceptAppCaps": true
+                            }
+                        }
+                    }
+                }
+            }),
+            serde_json::json!({
+                "TCP": normal_web["TCP"].clone(),
+                "Web": {
+                    "cave.tailnet.ts.net:443": {
+                        "Handlers": {
+                            "/": {
+                                "Proxy": "http://127.0.0.1:3007",
+                                "FutureHandlerSetting": {}
+                            }
+                        }
+                    }
+                }
             }),
         ];
         for status in protected {
