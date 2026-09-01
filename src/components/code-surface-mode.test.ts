@@ -173,6 +173,26 @@ assert.match(
 );
 assert.match(
   codeView,
+  /role="tablist"[\s\S]*aria-label="Code surface"[\s\S]*Review[\s\S]*Work[\s\S]*GitHub/,
+  "the primary Coding Desk tablist is simplified to Review, Work, and GitHub",
+);
+assert.match(
+  codeView,
+  /const githubTab: CodeGithubTab \| null = isCodeGithubTab\(topTab\) \? topTab : null;/,
+  "the simplified GitHub primary selection is still driven by the existing CodeTopTab GitHub values",
+);
+assert.match(
+  codeView,
+  /aria-selected=\{githubTab !== null\}[\s\S]*onClick=\{\(\) => setTopTab\(githubTab \?\? "activity"\)\}/,
+  "activating the GitHub primary tab preserves the current GitHub subtab when present and otherwise falls back to Activity",
+);
+assert.match(
+  codeView,
+  /githubTab \? \(\s*<div[\s\S]*role="tablist"[\s\S]*aria-label="GitHub filter"[\s\S]*CODE_GITHUB_TABS\.map\(\(id\) =>/,
+  "an active GitHub tab renders the secondary GitHub filter tablist from the existing tab metadata",
+);
+assert.match(
+  codeView,
   /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
   "Coding Desk preserves the former all feed and each specialized filter",
 );

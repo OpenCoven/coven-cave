@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
 // workbench — session rail grouped by project, per-session workbench
-// (Diff | Files | Terminal | PR), inspector column, and the GitHub content top
-// tabs (Activity | PRs | Issues | Reviews).
+// (Diff | Files | Terminal | PR), inspector column, and simplified top-level
+// navigation (Review | Work | GitHub) with GitHub sub-filters.
 // Default-on since phase 2 (cave-m6ys); since cave-cc5r it lives as the
 // Coding familiar's Role Surface room (`?mode=code` aliases onto
 // `surface:code`), so the mocked familiar carries the explicit
@@ -35,12 +35,29 @@ const NEWEST = mkSession({
   title: "Wire the flux capacitor",
   project_root: "/repo/alpha",
   updated_at: NEW_ISO,
+  familiarWorkspace: false,
   workBranch: "feat/flux",
-  git: { branch: "feat/flux", worktreeRoot: "/repo/alpha/.worktrees/feat-flux", isWorktree: true },
+  git: {
+    branch: "feat/flux",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha/.worktrees/feat-flux",
+    isWorktree: true,
+  },
   pullRequest: { repo: "acme/alpha", number: 7, url: "https://github.com/acme/alpha/pull/7", state: "open" },
   diff: { additions: 12, deletions: 3 },
 });
-const OLDER = mkSession({ id: "s-old", title: "Fix login retry", project_root: "/repo/alpha" });
+const OLDER = mkSession({
+  id: "s-old",
+  title: "Fix login retry",
+  project_root: "/repo/alpha",
+  familiarWorkspace: false,
+  git: {
+    branch: "main",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha/.worktrees/fix-login-retry",
+    isWorktree: true,
+  },
+});
 
 async function base(
   page: Page,
@@ -195,16 +212,16 @@ test.describe("code surface (Coding familiar's room)", () => {
     await base(page);
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    // Top tabs: Sessions active, then the GitHub content tabs (PRs · Issues ·
-    // Reviews) that replaced the single generic GitHub tab.
+    // Top tabs: Review is the default landing, with Work and one GitHub
+    // primary destination replacing the previous equal-weight GitHub tabs.
     const topTabs = page.getByRole("tablist", { name: "Code surface" });
     await expect(topTabs).toBeVisible({ timeout: 30_000 });
-    await expect(topTabs.getByRole("tab", { name: "Sessions" })).toHaveAttribute("aria-selected", "true");
-    await expect(topTabs.getByRole("tab", { name: "Activity" })).toBeVisible();
-    await expect(topTabs.getByRole("tab", { name: "PRs" })).toBeVisible();
-    await expect(topTabs.getByRole("tab", { name: "Issues" })).toBeVisible();
-    await expect(topTabs.getByRole("tab", { name: "Reviews" })).toBeVisible();
-    await expect(topTabs.getByRole("tab", { name: "GitHub", exact: true })).toHaveCount(0);
+    await expect(topTabs.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
+    await expect(topTabs.getByRole("tab", { name: "Work" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "GitHub" })).toBeVisible();
+    await expect(topTabs.getByRole("tab", { name: "Sessions", exact: true })).toHaveCount(0);
+    await expect(topTabs.getByRole("tab", { name: "Activity", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tablist", { name: "GitHub filter" })).toHaveCount(0);
 
     // Rail: both sessions listed under their project group.
     const rail = page.getByRole("navigation", { name: "Coding sessions" });
@@ -303,11 +320,36 @@ test.describe("code surface (Coding familiar's room)", () => {
     // (cave-u5fh7). Every other assertion for this surface in this file already
     // carries the 30s budget.
     await expect(topTabs).toBeVisible({ timeout: 30_000 });
-    await expect(topTabs.getByRole("tab", { name: "Activity" })).toHaveAttribute(
+    await expect(topTabs.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
+    await expect(githubFilter).toBeVisible({ timeout: 30_000 });
+    await expect(githubFilter.getByRole("tab", { name: "Activity" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("GitHub deep links keep the GitHub primary tab active and select the matching filter", async ({ page }) => {
+    await base(page);
+    await mockGitHubActivity(page);
+    await page.goto("/?mode=code&ctab=issues", { waitUntil: "domcontentloaded" });
+
+    const topTabs = page.getByRole("tablist", { name: "Code surface" });
+    await expect(topTabs).toBeVisible({ timeout: 30_000 });
+    await expect(topTabs.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
+    await expect(githubFilter).toBeVisible({ timeout: 30_000 });
+    await expect(githubFilter.getByRole("tab", { name: "Issues" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   test("a non-coding familiar sees the closed Coding Desk door", async ({ page }) => {
@@ -346,7 +388,7 @@ test.describe("code surface (Coding familiar's room)", () => {
 
     const sessionsTab = page
       .getByRole("tablist", { name: "Code surface" })
-      .getByRole("tab", { name: "Sessions" });
+      .getByRole("tab", { name: "Review" });
     // Establish keyboard modality before programmatically selecting the exact
     // tab under test so Chromium applies the :focus-visible inset ring.
     await page.keyboard.press("Tab");
