@@ -133,12 +133,18 @@ export function runRailModel(
   let lastCall: { name: string; input?: string; durationMs?: number; error: boolean } | null = null;
 
   for (const turn of turns) {
-    for (const tool of turn.tools ?? []) {
+    for (const [toolIndex, tool] of (turn.tools ?? []).entries()) {
       const category = toolCategory(tool.name);
       const durationMs = Math.max(0, tool.durationMs ?? 0);
       totalMs += durationMs;
       counts.set(category, (counts.get(category) ?? 0) + 1);
-      segments.push({ id: tool.id, category, ratio: 0, durationMs, status: tool.status });
+      segments.push({
+        id: JSON.stringify([turn.id, tool.id, toolIndex]),
+        category,
+        ratio: 0,
+        durationMs,
+        status: tool.status,
+      });
       if (tool.status === "running") {
         running += 1;
         // Last running call wins: the newest is the one in flight.
