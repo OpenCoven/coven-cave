@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
 // workbench — session rail grouped by project, per-session workbench
@@ -84,10 +84,171 @@ const ALL_LOCAL_ONLY = mkSession({
     isWorktree: true,
   },
 });
+const REVIEW_ROOT = mkSession({
+  id: "s-review-root",
+  title: "Review root checkout",
+  status: "running",
+  updated_at: "2026-06-12T13:00:00.000Z",
+  project_root: "/repo/alpha",
+  familiarWorkspace: false,
+  workBranch: "feat/review-root",
+  git: {
+    branch: "feat/review-root",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+  pullRequest: { repo: "acme/alpha", number: 42, url: "https://github.com/acme/alpha/pull/42", state: "open" },
+  diff: { additions: 9, deletions: 2 },
+});
+const REVIEW_LINKED = mkSession({
+  id: "s-review-linked",
+  title: "Linked worktree review",
+  status: "idle",
+  updated_at: "2026-06-12T12:20:00.000Z",
+  project_root: "/repo/alpha/.worktrees/review-linked",
+  familiarWorkspace: false,
+  git: {
+    branch: "feat/review-linked",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha/.worktrees/review-linked",
+    repositoryRoot: "/repo/alpha",
+    isWorktree: true,
+  },
+});
+const FAMILIAR_WORKSPACE = mkSession({
+  id: "s-familiar",
+  title: "Familiar workspace scratch",
+  status: "idle",
+  updated_at: "2026-06-12T12:10:00.000Z",
+  project_root: "/Users/dev/.coven/workspaces/familiars/nova/project",
+  familiarWorkspace: true,
+  git: {
+    branch: "feat/familiar-scratch",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/Users/dev/.coven/workspaces/familiars/nova/project",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+});
+const NON_GITHUB = mkSession({
+  id: "s-non-github",
+  title: "Private forge session",
+  status: "running",
+  updated_at: "2026-06-12T12:40:00.000Z",
+  project_root: "/Users/dev/code/private-forge",
+  familiarWorkspace: false,
+  git: {
+    branch: "feat/private-forge",
+    repositoryUrl: null,
+    worktreeRoot: "/Users/dev/code/private-forge",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+});
+const ROOTLESS = mkSession({
+  id: "s-rootless",
+  title: "Rootless handoff",
+  status: "idle",
+  updated_at: "2026-06-12T12:00:00.000Z",
+  project_root: "",
+  familiarWorkspace: false,
+  git: null,
+});
+const UNCLASSIFIED = mkSession({
+  id: "s-unclassified",
+  title: "Unclassified workspace session",
+  status: "idle",
+  updated_at: "2026-06-12T12:30:00.000Z",
+  project_root: "/Users/dev/code/unclassified",
+  git: {
+    branch: "feat/unclassified",
+    repositoryUrl: "https://github.com/acme/unclassified",
+    worktreeRoot: "/Users/dev/code/unclassified",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+  diff: { additions: 1, deletions: 1 },
+});
+const ARCHIVED_LOCAL = mkSession({
+  id: "s-archived",
+  title: "Archived importer",
+  status: "idle",
+  updated_at: "2026-06-12T11:50:00.000Z",
+  archived_at: "2026-06-12T13:05:00.000Z",
+  project_root: "/Users/dev/code/archived",
+  familiarWorkspace: false,
+  git: {
+    branch: "feat/archived",
+    repositoryUrl: "https://github.com/acme/archived",
+    worktreeRoot: "/Users/dev/code/archived",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+});
+const GENERATED_LOCAL = mkSession({
+  id: "s-generated",
+  title: "Generated planner run",
+  status: "idle",
+  updated_at: "2026-06-12T11:45:00.000Z",
+  generated: true,
+  project_root: "/Users/dev/code/generated",
+  familiarWorkspace: false,
+  git: {
+    branch: "feat/generated",
+    repositoryUrl: "https://github.com/acme/generated",
+    worktreeRoot: "/Users/dev/code/generated",
+    repositoryRoot: null,
+    isWorktree: false,
+  },
+});
+
+const REVIEW_FIRST_MATRIX = [
+  REVIEW_ROOT,
+  REVIEW_LINKED,
+  FAMILIAR_WORKSPACE,
+  NON_GITHUB,
+  ROOTLESS,
+  UNCLASSIFIED,
+  ARCHIVED_LOCAL,
+  GENERATED_LOCAL,
+];
+const REVIEW_FIRST_REVIEWABLE_IDS = ["s-review-root", "s-review-linked"];
+const REVIEW_FIRST_ALL_LOCAL_IDS = [
+  "s-review-root",
+  "s-non-github",
+  "s-unclassified",
+  "s-review-linked",
+  "s-familiar",
+  "s-rootless",
+];
+const REVIEW_FIRST_EXCLUDED_ONLY = [
+  FAMILIAR_WORKSPACE,
+  NON_GITHUB,
+  ROOTLESS,
+  UNCLASSIFIED,
+  ARCHIVED_LOCAL,
+  GENERATED_LOCAL,
+];
+const REVIEW_FIRST_EXCLUDED_ONLY_IDS = [
+  "s-non-github",
+  "s-unclassified",
+  "s-familiar",
+  "s-rootless",
+];
 
 async function activeCodeSessionId(page: Page) {
   return page.evaluate(
     () => document.activeElement?.getAttribute("data-code-session-id") ?? null,
+  );
+}
+
+async function visibleCodeSessionIds(scope: Locator) {
+  return scope.locator("[data-code-session-id]").evaluateAll((nodes) =>
+    nodes
+      .map((node) => node.getAttribute("data-code-session-id"))
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
   );
 }
 
@@ -259,6 +420,122 @@ async function mockWorkScheduler(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("code surface (Coding familiar's room)", () => {
+  test("review-first queue defaults to Reviewable, keeps rail/picker order aligned, and resets on reload", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, REVIEW_FIRST_MATRIX);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const rail = page.getByRole("complementary", { name: "Coding sessions" });
+    const scope = rail.getByRole("group", { name: "Session scope" });
+    const reviewableButton = scope.getByRole("button", { name: /Reviewable/ });
+    const allLocalButton = scope.getByRole("button", { name: /All local/ });
+    const pickerTrigger = page.locator(".code-picker__trigger");
+
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(reviewableButton).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("acme/alpha", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("code-workbench-header").getByRole("button", { name: /Review root checkout/ })).toBeVisible();
+    await expect(rail.locator('[data-code-session-id="s-review-linked"]')).toBeVisible();
+    await expect.poll(() => visibleCodeSessionIds(rail)).toEqual(REVIEW_FIRST_REVIEWABLE_IDS);
+    await expect(rail.locator('[data-code-session-id="s-familiar"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-non-github"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-rootless"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-unclassified"]')).toHaveCount(0);
+
+    await pickerTrigger.click();
+    const picker = page.getByRole("dialog", { name: "Switch session" });
+    await expect(picker).toBeVisible();
+    await expect.poll(() => visibleCodeSessionIds(picker)).toEqual(REVIEW_FIRST_REVIEWABLE_IDS);
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+
+    await allLocalButton.click();
+    await expect(allLocalButton).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => visibleCodeSessionIds(rail)).toEqual(REVIEW_FIRST_ALL_LOCAL_IDS);
+    await expect(rail.locator('[data-code-session-id="s-archived"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-generated"]')).toHaveCount(0);
+
+    await pickerTrigger.click();
+    await expect(picker.getByRole("group", { name: "Session scope" }).getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => visibleCodeSessionIds(picker)).toEqual(REVIEW_FIRST_ALL_LOCAL_IDS);
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+
+    const reviewRow = rail.locator('[data-code-session-id="s-review-root"]');
+    await reviewRow.focus();
+    await expect.poll(() => activeCodeSessionId(page)).toBe("s-review-root");
+    await page.keyboard.press("j");
+    await expect.poll(() => activeCodeSessionId(page)).toBe("s-non-github");
+    await page.keyboard.press("k");
+    await expect.poll(() => activeCodeSessionId(page)).toBe("s-review-root");
+
+    await reviewableButton.click();
+    await expect(reviewableButton).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => visibleCodeSessionIds(rail)).toEqual(REVIEW_FIRST_REVIEWABLE_IDS);
+
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+    const reloadedRail = page.getByRole("complementary", { name: "Coding sessions" });
+    const reloadedScope = reloadedRail.getByRole("group", { name: "Session scope" });
+    await expect(reloadedRail).toBeVisible({ timeout: 30_000 });
+    await expect(reloadedScope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => visibleCodeSessionIds(reloadedRail)).toEqual(REVIEW_FIRST_REVIEWABLE_IDS);
+    await expect(reloadedRail.locator('[data-code-session-id="s-non-github"]')).toHaveCount(0);
+  });
+
+  test("a deep-linked excluded non-GitHub session stays open outside the current filter without leaking raw path details", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, REVIEW_FIRST_MATRIX);
+    await page.goto("/?mode=code&session=s-non-github", { waitUntil: "domcontentloaded" });
+
+    const rail = page.getByRole("complementary", { name: "Coding sessions" });
+    const scope = rail.getByRole("group", { name: "Session scope" });
+
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(scope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("Outside current filter")).toBeVisible();
+    await expect(page.getByTestId("code-workbench-header").getByRole("button", { name: /Private forge session/ })).toBeVisible();
+    await expect(rail.locator("[data-code-session-id]")).toHaveCount(3);
+    await expect(rail.locator('[data-code-session-id="s-review-root"]')).toBeVisible();
+    await expect(rail.locator('[data-code-session-id="s-review-linked"]')).toBeVisible();
+    await expect(rail.locator('[data-code-session-id="s-non-github"]')).toBeVisible();
+    await expect(rail.locator('[data-code-session-id="s-familiar"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-rootless"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-unclassified"]')).toHaveCount(0);
+    await expect(page.getByText("/Users/dev/code/private-forge")).toHaveCount(0);
+    await expect(page.getByText("/Users/dev/.coven/workspaces/familiars/nova/project")).toHaveCount(0);
+  });
+
+  test("reviewable empty state uses the approved copy and All local remains the explicit escape hatch", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, REVIEW_FIRST_EXCLUDED_ONLY);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const rail = page.getByRole("complementary", { name: "Coding sessions" });
+    const scope = rail.getByRole("group", { name: "Session scope" });
+
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await expect(scope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByText("No GitHub repository sessions need review.")).toBeVisible();
+    await expect(rail.getByText("No reviewable sessions match this scope.")).toHaveCount(0);
+    await expect(page.getByText("/Users/dev/code/private-forge")).toHaveCount(0);
+    await expect(page.getByText("/Users/dev/code/unclassified")).toHaveCount(0);
+
+    await scope.getByRole("button", { name: /All local/ }).click();
+    await expect(scope.getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => visibleCodeSessionIds(rail)).toEqual(REVIEW_FIRST_EXCLUDED_ONLY_IDS);
+    await expect(rail.locator('[data-code-session-id="s-archived"]')).toHaveCount(0);
+    await expect(rail.locator('[data-code-session-id="s-generated"]')).toHaveCount(0);
+  });
+
   test("landing: rail groups sessions, newest auto-selected, attribution chips in the header", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
