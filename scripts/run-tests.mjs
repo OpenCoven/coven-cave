@@ -32,6 +32,7 @@ export const SUITES = {
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
+    "src/components/code-work-scheduler.test.ts",
     "src/lib/session-list-deletes.test.ts",
     "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",

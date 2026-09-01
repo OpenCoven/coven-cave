@@ -401,6 +401,66 @@ try {
     "degraded computeSessionsList classification archived a session despite sweepArchives:false",
   );
 
+  await reset();
+  const unregisteredWorkspaceRoot = path.join(
+    covenHome,
+    "workspaces",
+    "familiars",
+    "ember",
+  );
+  await mkdir(unregisteredWorkspaceRoot, { recursive: true });
+  await saveFixtureConversation(
+    saveConversation,
+    clearConversationListMetadataCache,
+    chat(
+      "familiar-unregistered-local",
+      `local:${unregisteredWorkspaceRoot}`,
+      "2099-08-23T11:12:30.000Z",
+    ),
+  );
+  const degradedUnregistered = await computeSessionsList(false, null, false, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  const degradedUnregisteredRow = degradedUnregistered.payload.sessions.find(
+    (row) => row.id === "familiar-unregistered-local",
+  );
+  assert.equal(
+    degradedUnregisteredRow?.project_root,
+    "",
+    "degraded local familiar-workspace chats still stay in the no-project bucket",
+  );
+  assert.equal(
+    degradedUnregisteredRow?.familiarWorkspace,
+    true,
+    "degraded local familiar-workspace chats keep trusted classification from their original runtime cwd",
+  );
+
+  await reset();
+  await rm(path.join(covenHome, "familiars.toml"), { force: true });
+  await mkdir(path.join(covenHome, "familiars.toml"), { recursive: true });
+  clearCaveStoreReadCache();
+  const strictFailureUnknown = await computeSessionsList(false, null, false, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(strictFailureUnknown.payload.ok, true);
+  assert.equal(strictFailureUnknown.payload.degraded, true);
+  assert.deepEqual(
+    strictFailureUnknown.payload.sessions.map((row) => row.id),
+    readOnlyIds,
+    "classification read failures stay metadata-only and do not change degraded session membership",
+  );
+  for (const row of strictFailureUnknown.payload.sessions) {
+    assert.equal(
+      row.familiarWorkspace,
+      undefined,
+      "strict familiar-workspace read failures leave classification unknown so later filters fail closed",
+    );
+  }
+
   // --- default: the sweep still runs ------------------------------------
   await reset();
   daemonUrl = await startDaemon([]);

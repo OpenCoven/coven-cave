@@ -154,10 +154,19 @@ export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
   return workspaces;
 }
 
-export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
+export async function readFamiliarWorkspacesStrict(): Promise<Map<string, string>> {
   try {
     const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
     return parseFamiliarWorkspaces(raw);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return new Map();
+    throw error;
+  }
+}
+
+export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
+  try {
+    return await readFamiliarWorkspacesStrict();
   } catch {
     return new Map();
   }

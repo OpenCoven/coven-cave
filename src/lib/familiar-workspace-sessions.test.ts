@@ -109,4 +109,16 @@ describe("classifyFamiliarWorkspaceSessions", () => {
       ],
     );
   });
+
+  it("preserves an earlier true mark when a later pass no longer has the original cwd", () => {
+    const [classified] = classifyFamiliarWorkspaceSessions(
+      [{ ...row("degraded-local", ""), familiarWorkspace: true }],
+      WS_ROOT,
+    );
+    assert.equal(
+      classified?.familiarWorkspace,
+      true,
+      "metadata-only reclassification must not overwrite a trusted true mark with false",
+    );
+  });
 });

@@ -102,6 +102,8 @@ export function classifyFamiliarWorkspaceSessions(
   const prefixes = normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots);
   return sessions.map((session) => ({
     ...session,
-    familiarWorkspace: matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
+    familiarWorkspace:
+      session.familiarWorkspace === true ||
+      matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
   }));
 }

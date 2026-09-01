@@ -60,8 +60,13 @@ import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
 import {
   classifyFamiliarWorkspaceSessions,
   collapseFamiliarWorkspaceSessions,
+  isFamiliarWorkspaceRoot,
 } from "@/lib/familiar-workspace-sessions";
-import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
+import {
+  familiarWorkspacesRoot,
+  readFamiliarWorkspaces,
+  readFamiliarWorkspacesStrict,
+} from "@/lib/coven-paths";
 import type { SessionsListResult } from "@/lib/server/sessions-list-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
@@ -216,6 +221,7 @@ async function applyAutoArchiveSweep(
 type FamiliarWorkspaceRoots = {
   root: string;
   declaredRoots: string[];
+  classificationAvailable: boolean;
 };
 
 async function loadFamiliarWorkspaceRoots(
@@ -223,10 +229,40 @@ async function loadFamiliarWorkspaceRoots(
   classifyFamiliarWorkspace: boolean,
 ): Promise<FamiliarWorkspaceRoots | null> {
   if (!collapseFamiliarWorkspace && !classifyFamiliarWorkspace) return null;
-  return {
-    root: familiarWorkspacesRoot(),
-    declaredRoots: Array.from((await readFamiliarWorkspaces()).values()),
-  };
+  const root = familiarWorkspacesRoot();
+  if (!classifyFamiliarWorkspace) {
+    return {
+      root,
+      declaredRoots: Array.from((await readFamiliarWorkspaces()).values()),
+      classificationAvailable: false,
+    };
+  }
+  try {
+    return {
+      root,
+      declaredRoots: Array.from((await readFamiliarWorkspacesStrict()).values()),
+      classificationAvailable: true,
+    };
+  } catch {
+    return {
+      root,
+      declaredRoots: [],
+      classificationAvailable: false,
+    };
+  }
+}
+
+function familiarWorkspaceForCwd(
+  familiarWorkspaceRoots: FamiliarWorkspaceRoots | null,
+  classifyFamiliarWorkspace: boolean,
+): ((cwd: string) => boolean | undefined) | undefined {
+  if (!classifyFamiliarWorkspace || !familiarWorkspaceRoots?.classificationAvailable) return undefined;
+  return (cwd: string) =>
+    isFamiliarWorkspaceRoot(
+      cwd,
+      familiarWorkspaceRoots.root,
+      familiarWorkspaceRoots.declaredRoots,
+    );
 }
 
 /**
@@ -247,7 +283,7 @@ function applyFamiliarWorkspacePresentation(
   const visible = collapseFamiliarWorkspace
     ? collapseFamiliarWorkspaceSessions(sessions, root, declaredRoots)
     : sessions;
-  return classifyFamiliarWorkspace
+  return classifyFamiliarWorkspace && familiarWorkspaceRoots.classificationAvailable
     ? classifyFamiliarWorkspaceSessions(visible, root, declaredRoots)
     : visible;
 }
@@ -270,6 +306,10 @@ export async function computeSessionsList(
     loadProjects(),
     loadFamiliarWorkspaceRoots(collapseFamiliarWorkspace, classifyFamiliarWorkspace),
   ]);
+  const classifyFamiliarWorkspaceForCwd = familiarWorkspaceForCwd(
+    familiarWorkspaceRoots,
+    classifyFamiliarWorkspace,
+  );
   const localConversations = (await listConversations()).map((conv) => {
     // Resolve every live chat against the in-process run registry so an
     // existing conversation's follow-up cannot retain stale attention while
@@ -287,7 +327,13 @@ export async function computeSessionsList(
   const projectRootForCwd = (cwd: string) => projectForRoot(cwd, projects)?.root ?? null;
   if (!res.ok || !res.data) {
     const localSessions = await applyAutoArchiveSweep(
-      localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd),
+      localConversationSessionRows(
+        localConversations,
+        state,
+        includeArchived,
+        projectRootForCwd,
+        classifyFamiliarWorkspaceForCwd,
+      ),
       state,
       includeArchived,
       sweepArchives,
@@ -341,6 +387,7 @@ export async function computeSessionsList(
       includeArchived,
       isValidDaemonProjectRoot: isKnownProjectOrValidDir,
       projectRootForCwd,
+      familiarWorkspaceForCwd: classifyFamiliarWorkspaceForCwd,
     }).map((session) =>
       hasActiveChatRun(session.id)
         ? { ...session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION }

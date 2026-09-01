@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
@@ -11,6 +11,8 @@ import {
   familiarWorkspace,
   familiarWorkspacesRoot,
   parseFamiliarWorkspaces,
+  readFamiliarWorkspaces,
+  readFamiliarWorkspacesStrict,
 } from "./coven-paths.ts";
 
 const originalEnv = {
@@ -111,3 +113,42 @@ const chatSendRuntime = await readFile("src/app/api/chat/send/chat-send-runtime.
 assert.match(chatSend, /resolveFamiliarWorkspace/);
 assert.match(chatSendRuntime, /Resolve a familiar workspace/);
 assert.doesNotMatch(chatSend, /\.openclaw\/workspace/);
+
+const covenPathsSource = await readFile("src/lib/coven-paths.ts", "utf8");
+assert.match(
+  covenPathsSource,
+  /if \(\(error as NodeJS\.ErrnoException \| undefined\)\?\.code === "ENOENT"\) return new Map\(\);/,
+  "strict familiar-workspace reads treat only a missing familiars.toml as empty",
+);
+
+const strictScratch = path.join(process.cwd(), `.coven-paths-strict-${process.pid}`);
+try {
+  process.env.COVEN_HOME = path.join(strictScratch, "home");
+  delete process.env.COVEN_CAVE_HOME;
+  delete process.env.COVEN_WORKSPACES_ROOT;
+  delete process.env.COVEN_WORKSPACE_ROOT;
+  delete process.env.WORKSPACE_ROOT;
+  delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
+
+  assert.deepEqual(
+    Array.from((await readFamiliarWorkspacesStrict()).entries()),
+    [],
+    "missing familiars.toml legitimately means no declared relocated workspaces",
+  );
+
+  await mkdir(path.join(process.env.COVEN_HOME, "familiars.toml"), { recursive: true });
+
+  await assert.rejects(
+    () => readFamiliarWorkspacesStrict(),
+    /EISDIR/,
+    "non-ENOENT familiar-workspace read failures propagate from the strict path",
+  );
+  assert.deepEqual(
+    Array.from((await readFamiliarWorkspaces()).entries()),
+    [],
+    "the forgiving familiar-workspace reader stays compatible for existing callers",
+  );
+} finally {
+  await rm(strictScratch, { recursive: true, force: true });
+  restoreEnv();
+}
