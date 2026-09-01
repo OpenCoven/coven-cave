@@ -10,15 +10,15 @@ import {
 import type { SessionGitContext, SessionRow } from "./types.ts";
 
 const NOW = "2026-09-01T12:00:00.000Z";
-const DEFAULT_ROOT = "/Users/dev/code/acme-alpha/.worktrees/feat-queue";
+const DEFAULT_ROOT = "/Users/dev/code/acme-alpha";
 const DEFAULT_REPO_URL = "https://github.com/acme/alpha";
 
 function gitFixture(overrides: Partial<SessionGitContext> = {}): SessionGitContext {
   return {
     branch: "feat/queue",
-    isWorktree: true,
+    isWorktree: false,
     worktreeRoot: DEFAULT_ROOT,
-    repositoryRoot: "/Users/dev/code/acme-alpha",
+    repositoryRoot: null,
     repositoryUrl: DEFAULT_REPO_URL,
     ...overrides,
   };
@@ -76,11 +76,11 @@ test("CodeSessionEligibility reason union stays exact", () => {
   assert.equal(mode, "reviewable");
 });
 
-test("codeSessionEligibility keeps canonical GitHub worktrees reviewable", () => {
+test("codeSessionEligibility keeps verified GitHub repositories reviewable", () => {
   assert.deepEqual(codeSessionEligibility(sessionFixture()), {
     reviewable: true,
     reason: "eligible",
-  });
+  }, "normal repository checkouts stay eligible when enrichment proves the GitHub repository root");
 
   assert.deepEqual(
     codeSessionEligibility(
@@ -122,15 +122,22 @@ test("codeSessionEligibility fails closed with explicit reasons", () => {
       expected: "unverified_git",
     },
     {
-      name: "shared checkouts without worktree proof",
+      name: "missing git worktree root",
       overrides: {
         git: gitFixture({
-          isWorktree: false,
-          worktreeRoot: "/Users/dev/code/acme-alpha",
-          repositoryRoot: null,
+          worktreeRoot: null,
         }),
         pullRequest: { repo: "acme/alpha", number: 42, state: "open", branch: "feat/queue" },
         diff: { additions: 4, deletions: 1 },
+      },
+      expected: "unverified_git",
+    },
+    {
+      name: "blank git worktree root",
+      overrides: {
+        git: gitFixture({
+          worktreeRoot: "   ",
+        }),
       },
       expected: "unverified_git",
     },
@@ -310,13 +317,13 @@ test("codeReviewQueue keeps all local Code-visible rows and root labels in all m
         updated_at: "2026-09-01T12:06:00.000Z",
       }),
       sessionFixture({
-        id: "shared-running",
+        id: "unverified-running",
         project_root: "/Users/dev/code/shared",
         updated_at: "2026-09-01T12:05:00.000Z",
         status: "running",
         git: gitFixture({
           isWorktree: false,
-          worktreeRoot: "/Users/dev/code/shared",
+          worktreeRoot: null,
           repositoryRoot: null,
           repositoryUrl: "https://github.com/acme/shared",
         }),
@@ -336,7 +343,7 @@ test("codeReviewQueue keeps all local Code-visible rows and root labels in all m
     null,
   );
 
-  assert.equal(queue.reviewableCount, 2, "only canonical GitHub worktrees count as reviewable");
+  assert.equal(queue.reviewableCount, 2, "only verified GitHub repositories count as reviewable");
   assert.equal(queue.allLocalCount, 4, "archived and generated rows remain outside generic Code visibility");
   assert.equal(queue.excludedCount, 2);
   assert.equal(queue.outsideCurrentFilter, false);
@@ -344,12 +351,12 @@ test("codeReviewQueue keeps all local Code-visible rows and root labels in all m
     queue.groups.map((group) => ({ key: group.key, label: group.label, ids: group.sessions.map((row) => row.id) })),
     [
       { key: "/Users/dev/code/bravo", label: "bravo", ids: ["bravo-failed"] },
-      { key: "/Users/dev/code/shared", label: "shared", ids: ["shared-running"] },
+      { key: "/Users/dev/code/shared", label: "shared", ids: ["unverified-running"] },
       { key: "/Users/dev/code/alpha", label: "alpha", ids: ["alpha-clean"] },
       { key: "", label: "(unknown)", ids: ["rootless"] },
     ],
   );
-  assert.deepEqual(queue.sessions.map((row) => row.id), ["bravo-failed", "shared-running", "alpha-clean", "rootless"]);
+  assert.deepEqual(queue.sessions.map((row) => row.id), ["bravo-failed", "unverified-running", "alpha-clean", "rootless"]);
 });
 
 test("codeReviewQueue appends one selected outside-filter row without changing counts", () => {

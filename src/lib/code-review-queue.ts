@@ -135,7 +135,7 @@ export function codeSessionEligibility(row: SessionRow): CodeSessionEligibility 
   if (!row.project_root.trim()) return { reviewable: false, reason: "rootless" };
 
   const git = row.git;
-  if (!git || git.isWorktree !== true || !git.worktreeRoot?.trim()) {
+  if (!git || !git.worktreeRoot?.trim()) {
     return { reviewable: false, reason: "unverified_git" };
   }
 
