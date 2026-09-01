@@ -808,6 +808,160 @@ describe("Research Desk canonical projection integration", () => {
     expect(selectedSource.closed).toBe(true);
   });
 
+  test("refreshes a complete same-sequence mission overlay and invalidates generation mismatch", async () => {
+    const generationTwoRunId = `${RUN_ID}_g2`;
+    const laggingMission = mission({
+      runGeneration: 2,
+      title: "Lagging running mission",
+      status: "running",
+      sources: [{
+        id: "lagging-source",
+        title: "Lagging evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Lagging running claim",
+      }],
+    });
+    const terminalRun = run(generationTwoRunId, {
+      status: "completed",
+      nextEventSequence: 3,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        ok: true,
+        run: terminalRun,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+      }),
+    })));
+    const renderer = await mount(laggingMission);
+    const source = FakeEventSource.instances[0];
+
+    await act(async () => {
+      source.emit("snapshot", {
+        run: terminalRun,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Generation two started",
+      }, generationTwoRunId));
+      source.emit("run-event", event(2, "run.completed", {
+        status: "completed",
+        activity: "Canonical generation two completed",
+        sources: 1,
+        artifacts: 0,
+        iterations: 1,
+      }, generationTwoRunId));
+    });
+    const beforePoll = textOf(renderer.toJSON());
+    expect(beforePoll).toContain("Canonical generation two completed");
+    expect(beforePoll).toContain("Lagging running mission");
+    expect(beforePoll).toContain("Lagging running claim");
+    expect(beforePoll).toContain("Cancel run");
+
+    const completedMission = mission({
+      ...laggingMission,
+      title: "Polled completed mission",
+      status: "completed",
+      finishedAt: "2026-08-31T18:20:00.000Z",
+      updatedAt: "2026-08-31T18:20:00.000Z",
+      iterations: [{
+        number: 1,
+        status: "completed",
+        startedAt: "2026-08-31T16:05:00.000Z",
+        finishedAt: "2026-08-31T18:20:00.000Z",
+        summary: "Polled completed report",
+      }],
+      sources: [{
+        id: "completed-source",
+        title: "Completed evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Polled completed claim",
+      }],
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: completedMission,
+        selector: completedMission.id,
+      }));
+      await Promise.resolve();
+    });
+    const completed = textOf(renderer.toJSON());
+    expect(completed).toContain("Canonical generation two completed");
+    expect(completed).toContain("Polled completed mission");
+    expect(completed).toContain("Polled completed claim");
+    expect(completed).toContain("Polled completed report");
+    expect(completed).not.toContain("Lagging running mission");
+    expect(completed).not.toContain("Cancel run");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button) === "Archive")).toBe(true);
+
+    const archivedMission = mission({
+      ...completedMission,
+      title: "Archived mission truth",
+      status: "archived",
+      archivedAt: "2026-08-31T18:25:00.000Z",
+      updatedAt: "2026-08-31T18:25:00.000Z",
+      sources: [{
+        id: "archived-source",
+        title: "Archived evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Archived retained claim",
+      }],
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: archivedMission,
+        selector: archivedMission.id,
+      }));
+      await Promise.resolve();
+    });
+    const archived = textOf(renderer.toJSON());
+    expect(archived).toContain("brief · archived");
+    expect(archived).toContain("Archived mission truth");
+    expect(archived).toContain("Archived retained claim");
+    expect(archived).toContain("Canonical generation two completed");
+    expect(archived).not.toContain("Cancel run");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button) === "Archive")).toBe(false);
+
+    const futureMission = mission({
+      ...archivedMission,
+      runGeneration: 3,
+      title: "Future generation mission",
+      sources: [{
+        id: "future-source",
+        title: "Future evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Future generation claim",
+      }],
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: futureMission,
+        selector: futureMission.id,
+      }));
+      await Promise.resolve();
+    });
+    const mismatched = textOf(renderer.toJSON());
+    expect(mismatched).toContain("Historical run");
+    expect(mismatched).toContain("Canonical generation two completed");
+    expect(mismatched).not.toContain("Archived mission truth");
+    expect(mismatched).not.toContain("Archived retained claim");
+    expect(mismatched).not.toContain("Future generation mission");
+    expect(mismatched).not.toContain("Future generation claim");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button) === "Archive")).toBe(false);
+
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
+  });
+
   test("retry visibly loads while retaining the last complete atomic view", async () => {
     const cachedMission = mission({
       title: "Cached mission detail",

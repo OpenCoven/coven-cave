@@ -84,6 +84,21 @@ function missionDetailForRun(
     : null;
 }
 
+function missionLifecycleMatchesRun(
+  mission: ResearchMission,
+  run: ResearchRunV1,
+): boolean {
+  if (mission.status === "archived") {
+    return ["completed", "failed", "cancelled", "expired"].includes(run.status);
+  }
+  if (run.status === "completed") return mission.status === "completed";
+  if (run.status === "failed") return mission.status === "failed";
+  if (run.status === "cancelled" || run.status === "expired") {
+    return mission.status === "cancelled";
+  }
+  return !["completed", "failed", "cancelled"].includes(mission.status);
+}
+
 function createCompleteView(
   eventState: ResearchRunEventState,
   missionDetail: ResearchMission | null,
@@ -391,9 +406,35 @@ export function useResearchRunGateway(
     ),
   );
   const projectionMission = liveMissionDetailAvailable ? legacyMission ?? null : null;
-  const completeView = currentState.completeView?.eventState.run.id === currentState.eventState?.run.id
+  const storedCompleteView = currentState.completeView?.eventState.run.id === currentState.eventState?.run.id
     ? currentState.completeView
     : null;
+  const completeView = useMemo(() => {
+    if (!storedCompleteView || !missionOrRunId) return storedCompleteView;
+    const matchingMission = missionDetailForRun(
+      legacyMission,
+      missionOrRunId,
+      storedCompleteView.eventState.run.id,
+    );
+    if (legacyMission && !matchingMission) {
+      return createCompleteView(storedCompleteView.eventState, null);
+    }
+    if (
+      matchingMission
+      && currentState.status === "connected"
+      && hasCompleteEventHistory(currentState.eventState)
+      && missionLifecycleMatchesRun(matchingMission, currentState.eventState!.run)
+    ) {
+      return createCompleteView(currentState.eventState!, matchingMission);
+    }
+    return storedCompleteView;
+  }, [
+    currentState.eventState,
+    currentState.status,
+    legacyMission,
+    missionOrRunId,
+    storedCompleteView,
+  ]);
   const historyComplete = Boolean(completeView);
   const projection = useMemo(() => {
     if (completeView) {
