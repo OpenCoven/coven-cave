@@ -162,6 +162,10 @@ export function CodeSessionPicker({
   };
 
   const triggerTitle = selected?.title || selected?.id || "Search sessions";
+  const emptyMessage =
+    mode === "reviewable"
+      ? "No GitHub repository sessions need review."
+      : "No coding sessions yet.";
 
   return (
     <>
@@ -252,7 +256,7 @@ export function CodeSessionPicker({
               </div>
             ) : null}
             {!result.offersCreate && result.count === 0 ? (
-              <p className="code-picker__empty-text">No coding sessions yet.</p>
+              <p className="code-picker__empty-text">{emptyMessage}</p>
             ) : null}
           </div>
         </div>

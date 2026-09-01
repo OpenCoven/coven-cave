@@ -116,8 +116,8 @@ export function CodeSessionRail({
         {scopeControls}
         {newButton}
         <div className="px-3 py-4 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-          {mode === "reviewable" && queue.allLocalCount > 0
-            ? "No reviewable sessions match this scope. Switch to All local to browse the rest."
+          {mode === "reviewable"
+            ? "No GitHub repository sessions need review."
             : "No coding sessions yet. Start one here — or from Chat — and it will appear with its branch, diff, and PR context."}
         </div>
       </div>
