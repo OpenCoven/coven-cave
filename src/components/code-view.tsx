@@ -32,12 +32,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
+import { codeReviewQueue, type CodeQueueMode } from "@/lib/code-review-queue";
 import {
   CODE_GITHUB_TABS,
   CODE_ROOM_RAIL_WIDTH_PX,
   codeRoomFitsRail,
   codeSessionWorkRoot,
-  groupCodeRailSessions,
   isCodeGithubTab,
   parseCodeDeepLink,
   type CodeGithubTab,
@@ -174,6 +174,7 @@ export function CodeView({
   const [selectedId, setSelectedId] = useState<string | null | undefined>(
     deepLink?.sessionId ?? undefined,
   );
+  const [queueMode, setQueueMode] = useState<CodeQueueMode>("reviewable");
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   // The workbench picker offers "start a new session about <query>" when the
   // filter matches nothing. There is no title field to set — a session's title
@@ -204,7 +205,11 @@ export function CodeView({
     setNarrowLanding(narrowLandingRef.current);
   }, [roomWidth, isMobile]);
 
-  const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
+  const queueSelectedId = pendingOpen?.sessionId ?? (typeof selectedId === "string" ? selectedId : null);
+  const queue = useMemo(
+    () => codeReviewQueue(sessions, queueMode, queueSelectedId),
+    [queueMode, queueSelectedId, sessions],
+  );
 
   // Consume a routed file/diff open (cave-ohcj): select the raising chat
   // session's workbench — or, for a Projects-hub root browse, the newest
@@ -217,14 +222,15 @@ export function CodeView({
   } | null>(null);
   useEffect(() => {
     if (!pendingOpen) return;
+    const queueSessions = queue.sessions;
     const byId = pendingOpen.sessionId
-      ? groups.flatMap((g) => g.sessions).find((row) => row.id === pendingOpen.sessionId)
+      ? queueSessions.find((row) => row.id === pendingOpen.sessionId)
       : undefined;
     const root = pendingOpen.kind === "files" ? pendingOpen.root : undefined;
     const trim = (p: string) => p.replace(/\/+$/, "");
     const byRoot =
       !byId && root
-        ? groups.flatMap((g) => g.sessions).find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
+        ? queueSessions.find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
         : undefined;
     const target = byId ?? byRoot;
     setTopTab("sessions");
@@ -237,7 +243,7 @@ export function CodeView({
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
     onPendingOpenHandled?.();
-  }, [groups, onPendingOpenHandled, pendingOpen]);
+  }, [onPendingOpenHandled, pendingOpen, queue.sessions]);
 
   // Only opens raised from a conversation carry an origin; a file picked from
   // the tree shows nothing, because there is no conversation to point back to.
@@ -259,12 +265,8 @@ export function CodeView({
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    for (const group of groups) {
-      const hit = group.sessions.find((row) => row.id === selectedId);
-      if (hit) return hit;
-    }
-    return null;
-  }, [groups, selectedId]);
+    return queue.sessions.find((row) => row.id === selectedId) ?? null;
+  }, [queue.sessions, selectedId]);
 
   // Land on the newest session so the surface is immediately useful; keep the
   // user's explicit pick as long as that session is still visible. Skipped
@@ -277,9 +279,9 @@ export function CodeView({
     if (selectedId === null) return;
     if (narrowLanding !== false) return;
     if (selectedId && pendingNewIdRef.current === selectedId) return;
-    const first = groups[0]?.sessions[0];
+    const first = queue.sessions[0];
     if (first) setSelectedId(first.id);
-  }, [groups, selected, selectedId, narrowLanding]);
+  }, [narrowLanding, queue.sessions, selected, selectedId]);
 
   return (
     <div ref={roomRef} className="flex h-full min-h-0 flex-col">
@@ -385,7 +387,9 @@ export function CodeView({
             >
               {(open, setOpen) => (
                 <CodeSessionRail
-                  sessions={sessions}
+                  queue={queue}
+                  mode={queueMode}
+                  onModeChange={setQueueMode}
                   selectedId={selectedId ?? null}
                   onSelect={selectSession}
                   open={open}
@@ -398,7 +402,9 @@ export function CodeView({
               className={`${selected ? "hidden" : "block w-full"} shrink-0 border-[var(--border-hairline)]`}
             >
               <CodeSessionRail
-                sessions={sessions}
+                queue={queue}
+                mode={queueMode}
+                onModeChange={setQueueMode}
                 selectedId={selectedId ?? null}
                 onSelect={selectSession}
                 onNewSession={() => {
@@ -442,9 +448,11 @@ export function CodeView({
                   <CodeWorkbench
                     key={selected.id}
                     row={selected}
-                    // The workbench header carries its own session picker
-                    // (cave-0rcku), so it needs the same list the rail shows.
-                    sessions={sessions}
+                    // The workbench header carries the same shared queue scope
+                    // as the rail, so switching lenses cannot drift.
+                    queue={queue}
+                    queueMode={queueMode}
+                    onQueueModeChange={setQueueMode}
                     onSelectSession={(id) => {
                       setWorkbenchTarget(null);
                       setSelectedId(id);

@@ -916,6 +916,7 @@ export const SUITES = {
     "src/components/session-changes-inner.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
+    "src/components/code-review-queue-controls.test.tsx",
     "src/lib/code-surface.test.ts",
     "src/lib/code-review-queue.test.ts",
     "src/lib/code-session-picker.test.ts",
@@ -2148,12 +2149,6 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-retention.test.ts",
   // same reason: the idempotence suite loads cave-board.ts directly.
   "src/lib/cave-board-backfill-idempotence.test.ts",
-  // the queue imports github-repo-link.ts and code-surface.ts through "@/lib"
-  // aliases, so the resolver must be loaded before the module graph can link.
-  "src/lib/code-review-queue.test.ts",
-  // the picker imports the module under test, which resolves
-  // "@/lib/code-surface" for the shared session-visibility rule.
-  "src/lib/code-session-picker.test.ts",
   // the session-finished emit test loads session-finished-inbox-emit.ts,
   // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
   // runtime values; the suite cannot load without the alias resolver.
@@ -2462,6 +2457,8 @@ const VITEST_TESTS = new Set([
   "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
   "src/components/project-root-workspace-notice.behavior.test.tsx",
+  // rendered JSX for the shared reviewable/all queue scope control
+  "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",

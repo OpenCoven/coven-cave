@@ -73,6 +73,7 @@ import {
 } from "@/lib/code-shortcuts";
 import { useWorktreeChanges } from "@/lib/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
 import type { SessionRow } from "@/lib/types";
 
 // The reader pulls a markdown renderer and a diff highlighter; the room opens
@@ -90,22 +91,26 @@ const STEP_LABEL: Record<CodeWorkbenchStep, string> = {
 
 export function CodeWorkbench({
   row,
-  sessions,
+  queue,
+  queueMode,
   initialTab,
   openTarget,
+  onQueueModeChange,
   onSelectSession,
   onNewSession,
   onJumpToSession,
   onRefresh,
 }: {
   row: SessionRow;
-  /** Every code session, for the header picker. */
-  sessions: SessionRow[];
+  /** The shared precomputed queue, for the header picker. */
+  queue: CodeReviewQueue;
+  queueMode: CodeQueueMode;
   /** Deep-linked review tab (?wtab=), mapped through the rail vocabulary. */
   initialTab?: CodeWorkbenchTab;
   /** A routed file/diff open (cave-ohcj): lands on the file or the review rail
    *  with that path focused. `nonce` re-triggers the jump for a repeat path. */
   openTarget?: PendingCodeOpen;
+  onQueueModeChange: (mode: CodeQueueMode) => void;
   onSelectSession?: (sessionId: string) => void;
   /** Receives the picker's unmatched query, which seeds the kickoff prompt. */
   onNewSession?: (seed: string) => void;
@@ -271,8 +276,10 @@ export function CodeWorkbench({
     <div className="code-room" data-testid="code-workbench">
       <div className="code-room__header" data-testid="code-workbench-header">
         <CodeSessionPicker
-          sessions={sessions}
+          queue={queue}
+          mode={queueMode}
           selected={row}
+          onModeChange={onQueueModeChange}
           onSelect={(id) => onSelectSession?.(id)}
           onCreate={onNewSession}
         />

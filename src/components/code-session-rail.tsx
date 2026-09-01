@@ -2,19 +2,33 @@
 
 /**
  * CodeSessionRail — left rail of the Code surface (cave-k0ua): every active
- * coding conversation grouped by project, newest first, with per-session git
- * attribution badges (branch, PR, diffstat, worktree). Selection drives the
- * workbench; the rail never mutates sessions itself.
+ * coding conversation from the shared review queue, with per-session branch,
+ * diff, PR and recency context. Selection drives the workbench; the rail never
+ * mutates sessions itself.
  */
 
 import { Icon } from "@/lib/icon";
+import { CodeReviewQueueControls } from "@/components/code-review-queue-controls";
+import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
+import { relativeTime } from "@/lib/relative-time";
 import {
   codeSessionActivity,
   codeSessionBranch,
   codeSessionDiffstat,
-  groupCodeRailSessions,
 } from "@/lib/code-surface";
 import type { SessionRow } from "@/lib/types";
+
+const ACTIVITY_WORD = {
+  running: "Running",
+  error: "Failed",
+  idle: "Idle",
+} as const;
+
+const ACTIVITY_A11Y = {
+  running: "running",
+  error: "failed",
+  idle: "idle",
+} as const;
 
 function PrChip({ pr }: { pr: NonNullable<SessionRow["pullRequest"]> }) {
   const state = (pr.state ?? "").toLowerCase();
@@ -47,7 +61,9 @@ function ActivityDot({ row }: { row: SessionRow }) {
 }
 
 export type CodeSessionRailProps = {
-  sessions: SessionRow[];
+  queue: CodeReviewQueue;
+  mode: CodeQueueMode;
+  onModeChange: (mode: CodeQueueMode) => void;
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
   onNewSession?: () => void;
@@ -56,15 +72,28 @@ export type CodeSessionRailProps = {
 };
 
 export function CodeSessionRail({
-  sessions,
+  queue,
+  mode,
+  onModeChange,
   selectedId,
   onSelect,
   onNewSession,
   open = true,
   onExpand,
 }: CodeSessionRailProps) {
-  const groups = groupCodeRailSessions(sessions);
+  const groups = queue.groups;
   const openRailClassName = onExpand ? "py-2" : "overflow-y-auto py-2";
+  const scopeControls = open ? (
+    <div className="px-2 pb-2">
+      <CodeReviewQueueControls
+        mode={mode}
+        reviewableCount={queue.reviewableCount}
+        allLocalCount={queue.allLocalCount}
+        outsideCurrentFilter={queue.outsideCurrentFilter}
+        onModeChange={onModeChange}
+      />
+    </div>
+  ) : null;
 
   const newButton = open && onNewSession ? (
     <div className="px-2 pb-1">
@@ -84,10 +113,12 @@ export function CodeSessionRail({
     }
     return (
       <div className="flex h-full flex-col py-2">
+        {scopeControls}
         {newButton}
         <div className="px-3 py-4 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-          No coding sessions yet. Start one here — or from Chat — and it will
-          appear with its branch, diff, and PR context.
+          {mode === "reviewable" && queue.allLocalCount > 0
+            ? "No reviewable sessions match this scope. Switch to All local to browse the rest."
+            : "No coding sessions yet. Start one here — or from Chat — and it will appear with its branch, diff, and PR context."}
         </div>
       </div>
     );
@@ -105,13 +136,14 @@ export function CodeSessionRail({
       }`}
 
     >
+      {scopeControls}
       {newButton}
       {groups.map((group) => (
-        <section key={group.root || "(unknown)"} className="mb-2">
+        <section key={group.key || "(unknown)"} className="mb-2">
           {open ? (
             <div
               className="truncate px-3 py-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
-              title={group.root || undefined}
+              title={group.key || undefined}
             >
               {group.label}
             </div>
@@ -123,6 +155,13 @@ export function CodeSessionRail({
               const selected = row.id === selectedId;
               const title = row.title || row.id;
               const activity = codeSessionActivity(row);
+              const activityText = ACTIVITY_WORD[activity];
+              const activityTone =
+                activity === "running"
+                  ? "text-[var(--color-success)]"
+                  : activity === "error"
+                    ? "text-[var(--color-danger)]"
+                    : "text-[var(--text-muted)]";
               return (
                 <li key={row.id}>
                   <button
@@ -132,7 +171,7 @@ export function CodeSessionRail({
                       onSelect(row.id);
                     }}
                     aria-current={selected ? "true" : undefined}
-                    aria-label={open ? undefined : `Open ${title} in ${group.label}, ${activity}`}
+                    aria-label={open ? undefined : `Open ${title} in ${group.label}, ${ACTIVITY_A11Y[activity]}`}
                     title={open ? undefined : title}
                     className={
                       open
@@ -146,17 +185,16 @@ export function CodeSessionRail({
                   >
                     {open ? (
                       <>
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <ActivityDot row={row} />
+                        <span className="flex min-w-0 items-start justify-between gap-2">
                           <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
                             {title}
                           </span>
+                          <span className={`shrink-0 font-mono text-[length:var(--text-2xs)] uppercase tracking-wide ${activityTone}`}>
+                            {activityText}
+                          </span>
                         </span>
-                        {(branch || diffstat || row.pullRequest || row.git?.isWorktree) ? (
-                          <span className="flex min-w-0 items-center gap-1.5 pl-3">
-                            {row.git?.isWorktree ? (
-                              <Icon name="ph:git-fork" width={10} height={10} className="shrink-0 text-[var(--text-muted)]" />
-                            ) : null}
+                        {(branch || diffstat || row.pullRequest || row.updated_at) ? (
+                          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                             {branch ? (
                               <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={branch}>
                                 {branch}
@@ -166,6 +204,7 @@ export function CodeSessionRail({
                               <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-secondary)]">{diffstat}</span>
                             ) : null}
                             {row.pullRequest ? <PrChip pr={row.pullRequest} /> : null}
+                            <span className="shrink-0 text-[var(--text-secondary)]">{relativeTime(row.updated_at)}</span>
                           </span>
                         ) : null}
                       </>

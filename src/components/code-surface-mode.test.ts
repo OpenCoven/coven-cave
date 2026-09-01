@@ -521,9 +521,39 @@ assert.match(
   "the measured layout uses the collapsible rail only when it fits and preserves narrow list-first drill-in",
 );
 assert.match(
+  codeView,
+  /const \[queueMode, setQueueMode\] = useState<CodeQueueMode>\("reviewable"\);[\s\S]*const queue = useMemo\(\s*\(\) => codeReviewQueue\(sessions, queueMode, queueSelectedId\),/,
+  "CodeView owns the non-persisted reviewable/all mode and one shared precomputed queue",
+);
+assert.match(
+  codeView,
+  /<CodeSessionRail[\s\S]*queue=\{queue\}[\s\S]*mode=\{queueMode\}[\s\S]*onModeChange=\{setQueueMode\}/,
+  "the rail renders from the shared queue and the room-owned scope toggle",
+);
+assert.match(
+  codeView,
+  /<CodeWorkbench[\s\S]*queue=\{queue\}[\s\S]*queueMode=\{queueMode\}[\s\S]*onQueueModeChange=\{setQueueMode\}/,
+  "the selected workbench receives the same queue and scope control the rail uses",
+);
+assert.match(
   rail,
-  /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{activity\}`\}/,
+  /const groups = queue\.groups;/,
+  "the rail renders the precomputed queue groups instead of regrouping sessions locally",
+);
+assert.doesNotMatch(
+  rail,
+  /groupCodeRailSessions/,
+  "the rail never re-runs session grouping — queue ownership stays in CodeView",
+);
+assert.match(
+  rail,
+  /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{ACTIVITY_A11Y\[activity\]\}`\}/,
   "collapsed session buttons identify the session, project, and activity without relying on color",
+);
+assert.match(
+  rail,
+  /<CodeReviewQueueControls[\s\S]*outsideCurrentFilter=\{queue\.outsideCurrentFilter\}/,
+  "open rail scope controls surface the outside-filter notice in the shared queue chrome",
 );
 assert.match(
   rail,

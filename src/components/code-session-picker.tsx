@@ -5,8 +5,9 @@
  *
  * The `Cody Code Reading v2` frame replaces the permanently-docked session rail
  * with a header control: the current session's name in a button, opening a
- * filterable list grouped by project. The room gets the rail's width back and
- * the switch becomes an explicit act rather than an always-on column.
+ * filterable list from the same precomputed queue the rail uses. The room gets
+ * the rail's width back and the switch becomes an explicit act rather than an
+ * always-on column.
  *
  * The filter searches title, project and branch (`code-session-picker.ts`), and
  * a miss is not a dead end — Enter on an unmatched query offers to start a
@@ -15,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CodeReviewQueueControls } from "@/components/code-review-queue-controls";
 import { Icon } from "@/lib/icon";
 import { Popover, usePopoverInitialFocus } from "@/components/ui/popover";
 import { relativeTime } from "@/lib/relative-time";
@@ -22,6 +24,7 @@ import {
   codeSessionPickerResult,
   type CodeSessionPickerChip,
 } from "@/lib/code-session-picker";
+import type { CodeQueueMode, CodeReviewQueue } from "@/lib/code-review-queue";
 import { codeSessionActivity, codeSessionBranch } from "@/lib/code-surface";
 import type { SessionRow } from "@/lib/types";
 
@@ -68,8 +71,10 @@ function SessionRowButton({
 }
 
 export type CodeSessionPickerProps = {
-  sessions: SessionRow[];
+  queue: CodeReviewQueue;
+  mode: CodeQueueMode;
   selected: SessionRow;
+  onModeChange: (mode: CodeQueueMode) => void;
   onSelect: (sessionId: string) => void;
   /**
    * Start a new session from an unmatched query — the frame's Enter path. The
@@ -80,14 +85,16 @@ export type CodeSessionPickerProps = {
 };
 
 export function CodeSessionPicker({
-  sessions,
+  queue,
+  mode,
   selected,
+  onModeChange,
   onSelect,
   onCreate,
 }: CodeSessionPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [project, setProject] = useState<string | null>(null);
+  const [groupKey, setGroupKey] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
 
   // Reopening with the last search still applied reads as missing sessions, so
@@ -95,15 +102,15 @@ export function CodeSessionPicker({
   useEffect(() => {
     if (!open) {
       setQuery("");
-      setProject(null);
+      setGroupKey(null);
     }
   }, [open]);
 
   usePopoverInitialFocus(open, "[data-code-picker-panel]");
 
   const result = useMemo(
-    () => codeSessionPickerResult(sessions, query, project),
-    [project, query, sessions],
+    () => codeSessionPickerResult(queue, query, groupKey),
+    [groupKey, query, queue],
   );
 
   const pick = useCallback(
@@ -136,7 +143,7 @@ export function CodeSessionPicker({
   );
 
   const chipButton = (chip: CodeSessionPickerChip) => {
-    const on = chip.root === project || (chip.root === null && project === null);
+    const on = chip.key === groupKey || (chip.key === null && groupKey === null);
     return (
       <button
         key={chip.id}
@@ -144,7 +151,7 @@ export function CodeSessionPicker({
         aria-pressed={on}
         className="focus-ring code-picker__chip"
         data-on={on ? "true" : undefined}
-        onClick={() => setProject(chip.root)}
+        onClick={() => setGroupKey(chip.key)}
       >
         {chip.label}
         <span className="code-picker__chip-count">{chip.count}</span>
@@ -185,6 +192,7 @@ export function CodeSessionPicker({
               placeholder="Search sessions…"
               aria-label="Search sessions by title, project or branch"
               className="code-picker__search-input"
+              data-code-session-search=""
             />
             {query ? (
               <button
@@ -197,12 +205,22 @@ export function CodeSessionPicker({
               </button>
             ) : null}
           </div>
+          <CodeReviewQueueControls
+            mode={mode}
+            reviewableCount={queue.reviewableCount}
+            allLocalCount={queue.allLocalCount}
+            outsideCurrentFilter={queue.outsideCurrentFilter}
+            onModeChange={(next) => {
+              setGroupKey(null);
+              onModeChange(next);
+            }}
+          />
           {result.chips.length > 1 ? (
             <div className="code-picker__chips">{result.chips.map(chipButton)}</div>
           ) : null}
           <div className="code-picker__list" role="listbox" aria-label="Sessions">
             {result.groups.map((group) => (
-              <div key={group.root || "unknown"} className="code-picker__group">
+              <div key={group.key || "unknown"} className="code-picker__group">
                 <div className="code-picker__group-head">
                   <span className="code-picker__group-label">{group.label}</span>
                   <span className="code-picker__group-count">{group.sessions.length}</span>
