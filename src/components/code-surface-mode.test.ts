@@ -344,13 +344,18 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(event\.defaultPrevented\) return;[\s\S]*if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*const combo = codeComboFromEvent\(event\);[\s\S]*combo === "\/"[\s\S]*\.code-picker__trigger[\s\S]*\[data-code-session-search\]/,
-  "the room keydown handler honors earlier owners, normalizes combos once, and slash-focuses the picker search",
+  /if \(event\.defaultPrevented\) return;[\s\S]*if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*const combo = codeComboFromEvent\(event\);[\s\S]*combo === "\/"[\s\S]*stopImmediatePropagation\(\)[\s\S]*activeQueuePickerTrigger\(\)[\s\S]*\[data-code-picker-panel\] \[data-code-session-search\]/,
+  "the room keydown handler normalizes combos once, claims slash before broader listeners can steal it, and focuses the active picker search",
 );
 assert.match(
   codeView,
   /querySelectorAll<HTMLButtonElement>\("\[data-code-session-id\]"\)[\s\S]*combo === "J" \|\| combo === "K"[\s\S]*rows\[nextIndex\]\?\.focus\(\)[\s\S]*combo === "Shift\+A"/,
   "the room keydown handler walks visible session rows and toggles scope from normalized fixed queue combos",
+);
+assert.match(
+  codeView,
+  /window\.addEventListener\("keydown", onKeyDown, true\)/,
+  "queue shortcuts listen in capture phase so the narrow landing's slash reaches the Code surface before broader slash search handlers",
 );
 assert.match(
   codeView,
@@ -670,6 +675,11 @@ assert.match(
   codeView,
   /\{fitsRail \? \(\s*<SurfaceRail[\s\S]*\) : \(\s*<div[\s\S]*<CodeSessionRail/,
   "the measured layout uses the collapsible rail only when it fits and preserves narrow list-first drill-in",
+);
+assert.match(
+  codeView,
+  /\{!selected \? \(\s*<div className="px-2 pt-2">[\s\S]*<CodeSessionPicker[\s\S]*selected=\{null\}/,
+  "the narrow list-first landing mounts the shared picker with no selected session so slash search still has an owner after Back",
 );
 assert.match(
   codeView,

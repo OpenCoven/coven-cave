@@ -424,6 +424,43 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(search).toHaveValue("jk/A");
   });
 
+  test("narrow landing slash opens the shared picker after Back to sessions", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only narrow viewport; mobile drill-in lives in tests/mobile/");
+    await page.setViewportSize({ width: 760, height: 900 });
+    await base(page, [NEWEST, OLDER, ALL_LOCAL_ONLY]);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const rail = page.getByRole("navigation", { name: "Coding sessions" });
+    const newest = rail.locator('button[data-code-session-id="s-new"]');
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    await newest.click();
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
+    ).toBeVisible();
+    await expect(page.locator(".code-picker__trigger")).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Back to sessions" }).click();
+    await expect(page.locator(".code-picker__trigger")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Search sessions" })).toBeVisible();
+
+    const older = rail.locator('button[data-code-session-id="s-old"]');
+    await older.focus();
+    await page.keyboard.press("/");
+
+    const picker = page.getByRole("dialog", { name: "Switch session" });
+    const search = picker.locator("[data-code-session-search]");
+    await expect(search).toHaveCount(1);
+    await expect(search).toBeFocused();
+
+    await page.keyboard.type("Fix");
+    await expect(search).toHaveValue("Fix");
+    await expect(picker.locator('[data-code-session-id="s-old"]')).toBeVisible();
+    await expect(picker.locator('[data-code-session-id="s-new"]')).toHaveCount(0);
+  });
+
   test("review rail and terminal panel state stays per-session with content-aware defaults", async ({
     page,
     isMobile,

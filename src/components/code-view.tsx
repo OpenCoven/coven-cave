@@ -51,6 +51,7 @@ import {
 } from "@/lib/code-surface";
 import { codeComboFromEvent, isCodeShortcutTarget } from "@/lib/code-shortcuts";
 import type { Filter as GitHubFilter } from "@/components/github-view-data";
+import { CodeSessionPicker } from "@/components/code-session-picker";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
@@ -311,6 +312,13 @@ export function CodeView({
     if (roomRef.current?.contains(node)) return true;
     return Boolean(document.querySelector("[data-code-picker-panel]")?.contains(node));
   }, []);
+  const activeQueuePickerTrigger = useCallback(() => {
+    if (!roomRef.current) return null;
+    return [...roomRef.current.querySelectorAll<HTMLElement>(".code-picker__trigger")].find((trigger) => {
+      const style = window.getComputedStyle(trigger);
+      return style.display !== "none" && style.visibility !== "hidden" && trigger.getClientRects().length > 0;
+    }) ?? null;
+  }, []);
   const visibleQueueRows = useCallback((target: EventTarget | null) => {
     const node = target instanceof Node ? target : null;
     const pickerPanel = document.querySelector<HTMLElement>("[data-code-picker-panel]");
@@ -341,10 +349,11 @@ export function CodeView({
       const combo = codeComboFromEvent(event);
       if (combo === "/") {
         event.preventDefault();
-        const picker = document.querySelector<HTMLElement>(".code-picker__trigger");
+        event.stopImmediatePropagation();
+        const picker = activeQueuePickerTrigger();
         if (!document.querySelector("[data-code-picker-panel]")) picker?.click();
         requestAnimationFrame(() => {
-          document.querySelector<HTMLElement>("[data-code-session-search]")?.focus();
+          document.querySelector<HTMLElement>("[data-code-picker-panel] [data-code-session-search]")?.focus();
         });
         return;
       }
@@ -352,6 +361,7 @@ export function CodeView({
         const rows = visibleQueueRows(event.target);
         if (!rows.length) return;
         event.preventDefault();
+        event.stopImmediatePropagation();
         const active = document.activeElement as HTMLElement | null;
         const currentIndex = rows.findIndex((row) => row === active || row.contains(active));
         const selectedIndex = rows.findIndex(
@@ -375,12 +385,13 @@ export function CodeView({
       }
       if (combo === "Shift+A") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         setQueueMode((current) => (current === "reviewable" ? "all" : "reviewable"));
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [queueTargetBelongsToRoom, topTab, visibleQueueRows]);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [activeQueuePickerTrigger, queueTargetBelongsToRoom, topTab, visibleQueueRows]);
 
   // Consume a routed file/diff open (cave-ohcj): select the raising chat
   // session's workbench — or, for a Projects-hub root browse, the newest
@@ -610,6 +621,21 @@ export function CodeView({
             <div
               className={`${selected ? "hidden" : "block w-full"} shrink-0 border-[var(--border-hairline)]`}
             >
+              {!selected ? (
+                <div className="px-2 pt-2">
+                  <CodeSessionPicker
+                    queue={queue}
+                    mode={queueMode}
+                    selected={null}
+                    onModeChange={setQueueMode}
+                    onSelect={selectSession}
+                    onCreate={(seed) => {
+                      setNewSessionSeed(seed);
+                      setNewSessionOpen(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               <CodeSessionRail
                 queue={queue}
                 mode={queueMode}

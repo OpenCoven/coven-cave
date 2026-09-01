@@ -75,7 +75,7 @@ function SessionRowButton({
 export type CodeSessionPickerProps = {
   queue: CodeReviewQueue;
   mode: CodeQueueMode;
-  selected: SessionRow;
+  selected: SessionRow | null;
   onModeChange: (mode: CodeQueueMode) => void;
   onSelect: (sessionId: string) => void;
   /**
@@ -161,6 +161,8 @@ export function CodeSessionPicker({
     );
   };
 
+  const triggerTitle = selected?.title || selected?.id || "Search sessions";
+
   return (
     <>
       <button
@@ -171,7 +173,7 @@ export function CodeSessionPicker({
         className="focus-ring code-picker__trigger"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="code-picker__trigger-title">{selected.title || selected.id}</span>
+        <span className="code-picker__trigger-title">{triggerTitle}</span>
         <Icon name="ph:caret-down" width={11} height={11} aria-hidden />
       </button>
       <Popover
@@ -231,7 +233,7 @@ export function CodeSessionPicker({
                   <SessionRowButton
                     key={row.id}
                     row={row}
-                    selected={row.id === selected.id}
+                    selected={row.id === selected?.id}
                     onPick={() => pick(row.id)}
                   />
                 ))}
