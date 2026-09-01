@@ -22,10 +22,12 @@ const previousEnv = {
   COVEN_HOME: process.env.COVEN_HOME,
   COVEN_SOCKET: process.env.COVEN_SOCKET,
   CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+  CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
 };
 const scratchRoot = path.join(process.cwd(), `.slct-${process.pid}`);
 const covenHome = path.join(scratchRoot, "h");
 const projectsPath = path.join(scratchRoot, "projects.json");
+const permissionsPath = path.join(scratchRoot, "project-permissions.json");
 const projectRoot = path.join(scratchRoot, "p");
 const familiarRootProject = path.join(covenHome, "workspaces", "familiars", "nova");
 const familiarNestedProject = path.join(familiarRootProject, "notes");
@@ -216,11 +218,35 @@ workspace = "${relocatedProjectRoot}"
   clearCaveStoreReadCache();
 }
 
+async function writePermissions() {
+  await writeFile(
+    permissionsPath,
+    JSON.stringify({
+      version: 2,
+      projectGrants: [
+        {
+          familiarId: "nova",
+          projectId: "relocated",
+          access: "write",
+          source: "human",
+          grantedAt: "2026-08-23T00:00:00.000Z",
+        },
+      ],
+      accessGroups: [],
+      grantProposals: [],
+      permissionAudit: [],
+      grantAudit: [],
+      repairAudit: [],
+    }),
+  );
+}
+
 const realNow = Date.now;
 try {
   process.env.COVEN_HOME = covenHome;
   delete process.env.COVEN_SOCKET;
   process.env.CAVE_PROJECTS_PATH_OVERRIDE = projectsPath;
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = permissionsPath;
 
   const { computeSessionsList } = await import("./sessions-list.ts");
   const { loadState } = await import("../cave-config.ts");
@@ -241,6 +267,7 @@ try {
     await mkdir(path.dirname(projectsPath), { recursive: true });
     await writeProjects(clearCaveStoreReadCache);
     await writeFamiliarsToml(clearCaveStoreReadCache);
+    await writePermissions();
     clearConversationListMetadataCache();
     clearCaveStoreReadCache();
     await saveFixtureConversation(
@@ -340,9 +367,15 @@ try {
   assert.equal(classifiedById.get("normal-project")?.familiarWorkspace, false);
   assert.equal(classifiedById.get("rootless")?.familiarWorkspace, false);
   assert.equal(classifiedById.get("stale-chat")?.familiarWorkspace, false);
+  assert.deepEqual(
+    await archivedIds(),
+    before,
+    "computeSessionsList classification archived a session despite sweepArchives:false",
+  );
 
   await stopDaemon();
   stopDaemon = async () => {};
+  const beforeDegraded = await archivedIds();
   const degradedClassified = await computeSessionsList(false, null, false, {
     sweepArchives: false,
     enrichGit: false,
@@ -362,6 +395,11 @@ try {
   assert.equal(degradedById.get("normal-project")?.familiarWorkspace, false);
   assert.equal(degradedById.get("rootless")?.familiarWorkspace, false);
   assert.equal(degradedById.get("stale-chat")?.familiarWorkspace, false);
+  assert.deepEqual(
+    await archivedIds(),
+    beforeDegraded,
+    "degraded computeSessionsList classification archived a session despite sweepArchives:false",
+  );
 
   // --- default: the sweep still runs ------------------------------------
   await reset();
@@ -376,6 +414,27 @@ try {
     afterDefault.includes("stale-chat"),
     "the default compute must still perform the idle sweep the session poll is the only driver of; " +
       `archived ids were ${JSON.stringify(afterDefault)}`,
+  );
+
+  await reset();
+  await writeConfig(daemonUrl);
+  const scopedClassified = await computeSessionsList(false, "nova", false, {
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(scopedClassified.payload.ok, true, "scoped classified compute still returns a list");
+  assert.deepEqual(
+    scopedClassified.payload.sessions.map((row) => row.id),
+    ["rootless", "familiar-relocated"],
+    "familiar-scoped classification keeps only granted and rootless rows while preserving familiar-workspace metadata",
+  );
+  const scopedClassifiedById = new Map(
+    scopedClassified.payload.sessions.map((row) => [row.id, row]),
+  );
+  assert.equal(scopedClassifiedById.get("familiar-relocated")?.familiarWorkspace, true);
+  assert.equal(scopedClassifiedById.get("rootless")?.familiarWorkspace, false);
+  assert.ok(
+    (await archivedIds()).includes("stale-chat"),
+    "the explicit scoped classified compute still preserves the default idle sweep",
   );
 
   // The positive control above is what makes the negative one meaningful: if
