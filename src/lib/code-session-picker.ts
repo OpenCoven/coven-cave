@@ -24,6 +24,7 @@ import {
   type CodeSessionActivity,
 } from "./code-surface.ts";
 import type { CodeReviewQueue } from "./code-review-queue.ts";
+import { gitHubRepoSlug } from "./github-repo-link.ts";
 import type { SessionRow } from "./types.ts";
 
 /** A queue bucket in the open picker: one shared rail group, in queue order. */
@@ -64,8 +65,9 @@ function projectLabel(root: string): string {
 }
 
 /**
- * Does this session match the typed filter? Title, project label and branch,
- * case-insensitively. A blank query matches everything.
+ * Does this session match the typed filter? Title, local project basename,
+ * canonical GitHub owner/repo slug and branch, case-insensitively. A blank
+ * query matches everything.
  */
 export function codeSessionMatchesQuery(row: SessionRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -74,6 +76,7 @@ export function codeSessionMatchesQuery(row: SessionRow, query: string): boolean
     row.title ?? "",
     row.id,
     row.project_root ? projectLabel(row.project_root) : "",
+    gitHubRepoSlug(row.git?.repositoryUrl) ?? "",
     codeSessionBranch(row) ?? "",
   ];
   return haystacks.some((value) => value.toLowerCase().includes(needle));

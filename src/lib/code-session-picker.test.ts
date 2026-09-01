@@ -31,12 +31,60 @@ assert.equal(codeSessionMatchesQuery(row(), "   "), true);
 // at least as often as by name.
 assert.equal(codeSessionMatchesQuery(row(), "LOOPBACK"), true);
 assert.equal(codeSessionMatchesQuery(row(), "coven-cave"), true);
+assert.equal(
+  codeSessionMatchesQuery(
+    row({ git: { repositoryUrl: "https://github.com/acme/coven-cave" } }),
+    "acme/coven-cave",
+  ),
+  true,
+);
 assert.equal(codeSessionMatchesQuery(row({ workBranch: "feat/cave-8i8q5-x-api" }), "8i8q5"), true);
 assert.equal(codeSessionMatchesQuery(row(), "nothing-here"), false);
 
 // The project label is matched, not the whole absolute path — otherwise every
 // session matches "Users".
 assert.equal(codeSessionMatchesQuery(row(), "/Users/x/code"), false);
+
+// Reviewable groups show canonical owner/repo labels, so the same slug must be
+// searchable even when multiple local checkouts share one basename.
+{
+  const rows = [
+    row({
+      id: "acme",
+      project_root: "/Users/x/worktrees/coven-cave",
+      git: { repositoryUrl: "https://github.com/acme/coven-cave" },
+    }),
+    row({
+      id: "other",
+      title: "Other fork",
+      project_root: "/Users/x/sandboxes/coven-cave",
+      git: { repositoryUrl: "https://github.com/other/coven-cave" },
+    }),
+  ];
+  const sharedBasename = queue([
+    {
+      key: "https://github.com/acme/coven-cave",
+      label: "acme/coven-cave",
+      sessions: [rows[0]],
+    },
+    {
+      key: "https://github.com/other/coven-cave",
+      label: "other/coven-cave",
+      sessions: [rows[1]],
+    },
+  ]);
+
+  const slugMatch = codeSessionPickerResult(sharedBasename, "other/coven-cave", null);
+  assert.equal(slugMatch.offersCreate, false);
+  assert.equal(slugMatch.count, 1);
+  assert.deepEqual(slugMatch.groups.map((group) => group.label), ["other/coven-cave"]);
+  assert.deepEqual(slugMatch.groups[0].sessions.map((session) => session.id), ["other"]);
+
+  const basenameMatch = codeSessionPickerResult(sharedBasename, "coven-cave", null);
+  assert.equal(basenameMatch.offersCreate, false);
+  assert.equal(basenameMatch.count, 2);
+  assert.deepEqual(basenameMatch.groups.map((group) => group.label), ["acme/coven-cave", "other/coven-cave"]);
+}
 
 // ── Grouping ─────────────────────────────────────────────────────────────────
 

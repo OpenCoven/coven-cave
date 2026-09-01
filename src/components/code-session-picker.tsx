@@ -9,10 +9,11 @@
  * the rail's width back and the switch becomes an explicit act rather than an
  * always-on column.
  *
- * The filter searches title, project and branch (`code-session-picker.ts`), and
- * a miss is not a dead end — Enter on an unmatched query offers to start a
- * session with that name, which is the frame's own affordance and the reason
- * the empty state is a button rather than a shrug.
+ * The filter searches title, project, repository and branch
+ * (`code-session-picker.ts`), and a miss is not a dead end — Enter on an
+ * unmatched query offers to start a session with that name, which is the
+ * frame's own affordance and the reason the empty state is a button rather
+ * than a shrug.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -190,7 +191,7 @@ export function CodeSessionPicker({
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onQueryKeyDown}
               placeholder="Search sessions…"
-              aria-label="Search sessions by title, project or branch"
+              aria-label="Search sessions by title, project, repository or branch"
               className="code-picker__search-input"
               data-code-session-search=""
             />
