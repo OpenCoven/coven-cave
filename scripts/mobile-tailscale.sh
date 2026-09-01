@@ -707,7 +707,30 @@ stop_tracked_instance() {
         echo "Tailscale Serve ownership returned an inconsistent not-owned result; tracked state was retained: ${serve_result}" >&2
         return 1
       fi
-      echo "Tailscale Serve belongs to another backend; preserving the tracked backend process and its state: ${backend}" >&2
+      local process_result
+      if ! process_result="$(
+        node --experimental-strip-types "$PROCESS_OWNERSHIP_HELPER" stop \
+          --state "$owner_file"
+      )"; then
+        echo "Tailscale Serve belongs to another backend, but the tracked Cave backend could not be stopped safely; state was retained: ${process_result:-no result}" >&2
+        return 1
+      fi
+      case "$process_result" in
+        *'"kind":"stopped"'*) ;;
+        *)
+          echo "Tracked Cave backend stop returned an unexpected result; state was retained: ${process_result}" >&2
+          return 1
+          ;;
+      esac
+      rm -f \
+        "$owner_file" \
+        "$dir/next.pid" \
+        "$dir/next.identity" \
+        "$dir/access-token" \
+        "$dir/invite.url" \
+        "$dir/invite.expires" \
+        "$dir/server.mode"
+      echo "Tailscale Serve belongs to another backend; preserving the foreign Serve route after stopping this tracked Cave backend: ${backend}" >&2
       ;;
     *)
       echo "Tailscale Serve ownership could not safely stop/reset this backend; tracked state was retained: ${serve_result:-no result}" >&2

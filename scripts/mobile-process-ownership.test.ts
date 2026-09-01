@@ -58,8 +58,9 @@ async function waitForExit(pid: number) {
 async function waitForOwnerStatus(
   ownerPath: string,
   status: ProcessOwner["status"],
+  timeoutMs = 3000,
 ) {
-  const deadline = Date.now() + 3000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (readProcessOwner(ownerPath)?.status === status) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -125,7 +126,7 @@ test("Linux process-table scanning skips unrelated kernel entries with zero grou
   );
 });
 
-test("launch persists a live supervisor anchor and its backend child atomically", async () => {
+test("launch persists independent supervisor and backend-root anchors atomically", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-launch-"));
   const ownerPath = join(fixture, "next.owner.json");
   const readyPath = join(fixture, "ready");
@@ -141,19 +142,232 @@ test("launch persists a live supervisor anchor and its backend child atomically"
     });
     assert.equal(result.kind, "launched");
     await waitForFile(readyPath);
-    const owner = readProcessOwner(ownerPath)!;
-    assert.equal(owner.version, 3);
+    const owner = JSON.parse(readFileSync(ownerPath, "utf8"));
+    assert.equal(owner.version, 4);
     assert.equal(owner.status, "running");
-    assert.notEqual(owner.supervisor.pid, owner.child?.pid);
+    assert.notEqual(owner.supervisor.pid, owner.backendRoot?.pid);
     assert.equal(owner.supervisor.pid, owner.supervisor.processGroupId);
     assert.equal(owner.supervisor.pid, owner.supervisor.sessionId);
-    assert.equal(owner.child?.processGroupId, owner.supervisor.processGroupId);
-    assert.equal(owner.child?.sessionId, owner.supervisor.sessionId);
+    assert.equal(owner.backendRoot?.pid, owner.backendRoot?.processGroupId);
+    assert.equal(owner.backendRoot?.pid, owner.backendRoot?.sessionId);
     assert.equal(owner.backendUrl, "http://[::1]:3007");
     assert.match(owner.supervisor.processToken, /^(?:linux:[^:]+:\d+:\d+|macos:\d+:\d+:\d+)$/);
+    assert.match(owner.backendRoot.processToken, /^(?:linux:[^:]+:\d+:\d+|macos:\d+:\d+:\d+)$/);
     assert.equal((await stopOwnedProcessTree(ownerPath)).kind, "stopped");
     await waitForExit(owner.supervisor.pid);
-    await waitForExit(owner.child!.pid);
+    await waitForExit(owner.backendRoot.pid);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("backend-root anchor survives supervisor SIGKILL and drains the real backend tree", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-supervisor-crash-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  const backendPidPath = join(fixture, "backend-pid");
+  const childPidPath = join(fixture, "child-pid");
+  let supervisorPid: number | null = null;
+  let backendRootPid: number | null = null;
+  let backendPid: number | null = null;
+  let childPid: number | null = null;
+  try {
+    const backend = `
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));
+writeFileSync(${JSON.stringify(childPidPath)}, String(child.pid));
+setInterval(() => {}, 1000);
+`;
+    const launched = await launchOwnedProcess({
+      ownerPath,
+      backendUrl: "http://127.0.0.1:3007",
+      cwd: fixture,
+      command: process.execPath,
+      args: ["-e", backend],
+      logPath: join(fixture, "next.log"),
+      env: process.env,
+    });
+    assert.equal(launched.kind, "launched");
+    await waitForFile(childPidPath);
+    const owner = JSON.parse(readFileSync(ownerPath, "utf8"));
+    supervisorPid = owner.supervisor.pid;
+    backendRootPid = owner.backendRoot?.pid;
+    backendPid = Number(readFileSync(backendPidPath, "utf8"));
+    childPid = Number(readFileSync(childPidPath, "utf8"));
+
+    process.kill(supervisorPid!, "SIGKILL");
+    await waitForExit(supervisorPid!);
+
+    const stopped = await stopOwnedProcessTree(ownerPath);
+    assert.equal(stopped.kind, "stopped");
+    await waitForExit(backendRootPid!);
+    await waitForExit(backendPid!);
+    await waitForExit(childPid!);
+    assert.equal(readProcessOwner(ownerPath)?.status, "stopped");
+  } finally {
+    for (const pid of [childPid, backendPid, backendRootPid, supervisorPid]) {
+      if (!pid) continue;
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("supervisor crash between backend-root spawn and promotion leaves no orphan", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-promotion-crash-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  const harnessPath = join(fixture, "harness.mjs");
+  const moduleUrl = new URL("./mobile-process-ownership.ts", import.meta.url).href;
+  writeFileSync(harnessPath, `
+import { superviseOwnedBackend } from ${JSON.stringify(moduleUrl)};
+await superviseOwnedBackend({
+  ownerPath: ${JSON.stringify(ownerPath)},
+  backendUrl: "http://127.0.0.1:3007",
+  cwd: ${JSON.stringify(fixture)},
+  command: process.execPath,
+  args: ["-e", "setInterval(() => {}, 1000)"],
+  logPath: ${JSON.stringify(join(fixture, "next.log"))},
+  env: process.env,
+}, {
+  launchTimeoutMs: 5000,
+  beforePromotion: async () => await new Promise(() => {}),
+});
+`);
+  const supervisor = spawn(process.execPath, ["--experimental-strip-types", harnessPath], {
+    cwd: fixture,
+    detached: true,
+    stdio: "ignore",
+  });
+  await spawned(supervisor);
+  supervisor.unref();
+  let backendRootPid: number | null = null;
+  try {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const owner = readProcessOwner(ownerPath);
+      if (owner?.status === "launching" && owner.backendRoot) {
+        backendRootPid = owner.backendRoot.pid;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(backendRootPid, "backend-root launching anchor was persisted");
+    process.kill(supervisor.pid!, "SIGKILL");
+    await waitForExit(supervisor.pid!);
+    await waitForOwnerStatus(ownerPath, "stopped");
+    await waitForExit(backendRootPid);
+    assert.equal((await stopOwnedProcessTree(ownerPath)).kind, "stopped");
+  } finally {
+    for (const pid of [backendRootPid, supervisor.pid]) {
+      if (!pid) continue;
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("supervisor retains its anchor and diagnostic state when backend-root cleanup cannot finish", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-supervisor-cleanup-failure-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  const launched = await launchOwnedProcess({
+    ownerPath,
+    backendUrl: "http://127.0.0.1:3007",
+    cwd: fixture,
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    logPath: join(fixture, "next.log"),
+    env: process.env,
+  });
+  assert.equal(launched.kind, "launched");
+  const owner = readProcessOwner(ownerPath);
+  assert.ok(owner?.backendRoot);
+  try {
+    process.kill(owner.backendRoot.pid, "SIGSTOP");
+    process.kill(owner.supervisor.pid, "SIGTERM");
+    await waitForOwnerStatus(ownerPath, "diagnostic", 6000);
+    assert.doesNotThrow(
+      () => process.kill(owner.supervisor.pid, 0),
+      "failed cleanup must retain the continuously verified supervisor anchor",
+    );
+    assert.match(readProcessOwner(ownerPath)?.error ?? "", /still-running/);
+  } finally {
+    try {
+      process.kill(owner.backendRoot.pid, "SIGCONT");
+    } catch {}
+    await stopOwnedProcessTree(ownerPath).catch(() => undefined);
+    for (const pid of [owner.backendRoot.pid, owner.supervisor.pid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("backend-root disappearance without a stopped acknowledgement fails closed", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-unacknowledged-root-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  writeFileSync(ownerPath, JSON.stringify({
+    version: 4,
+    status: "running",
+    bootId: "boot-a",
+    backendUrl: "http://127.0.0.1:3007",
+    launchDeadlineMs: Date.now() + 1000,
+    supervisor: {
+      pid: 600,
+      parentPid: 1,
+      processGroupId: 600,
+      sessionId: 600,
+      processToken: "linux:boot-a:600:100",
+    },
+    backendRoot: {
+      pid: 700,
+      parentPid: 1,
+      processGroupId: 700,
+      sessionId: 700,
+      processToken: "linux:boot-a:700:101",
+    },
+  }));
+  let rootAlive = true;
+  let supervisorAlive = true;
+  const signals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+  const table = () => [
+    ...(supervisorAlive ? [{
+      pid: 600,
+      parentPid: 1,
+      processGroupId: 600,
+      sessionId: 600,
+      processToken: "linux:boot-a:600:100",
+    }] : []),
+    ...(rootAlive ? [{
+      pid: 700,
+      parentPid: 1,
+      processGroupId: 700,
+      sessionId: 700,
+      processToken: "linux:boot-a:700:101",
+    }] : []),
+  ];
+  try {
+    const stopped = await stopOwnedProcessTree(ownerPath, {
+      currentBootId: async () => "boot-a",
+      scanProcessTable: async () => table(),
+      signalProcess: (pid, signal) => {
+        signals.push({ pid, signal });
+        if (pid === 700) rootAlive = false;
+        if (pid === 600) supervisorAlive = false;
+      },
+      sleep: async () => {},
+      termWaitMs: 0,
+      killWaitMs: 0,
+    });
+    assert.equal(stopped.kind, "identity-mismatch");
+    assert.deepEqual(signals, [{ pid: 700, signal: "SIGTERM" }]);
+    assert.equal(readProcessOwner(ownerPath)?.status, "running");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -163,10 +377,11 @@ test("a rootless reused session and process group never authorizes signaling a f
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-rootless-"));
   const ownerPath = join(fixture, "next.owner.json");
   writeFileSync(ownerPath, JSON.stringify({
-    version: 3,
+    version: 4,
     status: "running",
     bootId: "boot-a",
     backendUrl: "http://127.0.0.1:3007",
+    launchDeadlineMs: Date.now() - 1,
     supervisor: {
       pid: 700,
       parentPid: 1,
@@ -174,11 +389,11 @@ test("a rootless reused session and process group never authorizes signaling a f
       sessionId: 700,
       processToken: "linux:boot-a:700:100",
     },
-    child: {
+    backendRoot: {
       pid: 701,
-      parentPid: 700,
-      processGroupId: 700,
-      sessionId: 700,
+      parentPid: 1,
+      processGroupId: 701,
+      sessionId: 701,
       processToken: "linux:boot-a:701:101",
     },
   }));
@@ -189,8 +404,8 @@ test("a rootless reused session and process group never authorizes signaling a f
       scanProcessTable: async () => [{
         pid: 900,
         parentPid: 1,
-        processGroupId: 700,
-        sessionId: 700,
+        processGroupId: 701,
+        sessionId: 701,
         processToken: "linux:boot-a:900:999",
       }],
       signalProcess: (pid: number, signal: NodeJS.Signals) => {
@@ -210,6 +425,7 @@ test("stubborn backend escalation waits for readiness and drains the supervised 
   const ownerPath = join(fixture, "next.owner.json");
   const readyPath = join(fixture, "ready");
   let owner: ProcessOwner | null = null;
+  let backendPid: number | null = null;
   try {
     const result = await launchOwnedProcess({
       ownerPath,
@@ -221,18 +437,23 @@ test("stubborn backend escalation waits for readiness and drains the supervised 
       env: process.env,
     });
     assert.equal(result.kind, "launched");
+    backendPid = result.pid;
     await waitForFile(readyPath);
     owner = readProcessOwner(ownerPath);
-    assert.ok(owner?.child);
+    assert.ok(owner?.backendRoot);
     const stopped = await stopOwnedProcessTree(ownerPath, { termWaitMs: 80, killWaitMs: 1000 });
     assert.equal(stopped.kind, "stopped");
-    await waitForExit(owner.child.pid);
+    await waitForExit(backendPid);
+    await waitForExit(owner.backendRoot.pid);
     await waitForExit(owner.supervisor.pid);
   } finally {
     if (owner?.status !== "stopped") {
-      try {
-        process.kill(-owner!.supervisor.pid, "SIGKILL");
-      } catch {}
+      for (const pid of [backendPid, owner?.backendRoot?.pid, owner?.supervisor.pid]) {
+        if (!pid) continue;
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
     }
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -243,6 +464,7 @@ test("supervisor drains and retires itself when the backend exits on its own", a
   const ownerPath = join(fixture, "next.owner.json");
   const readyPath = join(fixture, "ready");
   let owner: ProcessOwner | null = null;
+  let backendPid: number | null = null;
   try {
     const result = await launchOwnedProcess({
       ownerPath,
@@ -257,17 +479,22 @@ test("supervisor drains and retires itself when the backend exits on its own", a
       env: process.env,
     });
     assert.equal(result.kind, "launched");
+    backendPid = result.pid;
     await waitForFile(readyPath);
     owner = readProcessOwner(ownerPath);
-    assert.ok(owner?.child);
+    assert.ok(owner?.backendRoot);
     await waitForOwnerStatus(ownerPath, "stopped");
-    await waitForExit(owner.child.pid);
+    await waitForExit(backendPid);
+    await waitForExit(owner.backendRoot.pid);
     await waitForExit(owner.supervisor.pid);
   } finally {
     if (owner) {
-      try {
-        process.kill(-owner.supervisor.pid, "SIGKILL");
-      } catch {}
+      for (const pid of [backendPid, owner.backendRoot?.pid, owner.supervisor.pid]) {
+        if (!pid) continue;
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
     }
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -280,6 +507,7 @@ test("supervisor keeps draining descendants forked while the recorded child exit
   const lateReadyPath = join(fixture, "late-ready");
   const latePidPath = join(fixture, "late-pid");
   let owner: ProcessOwner | null = null;
+  let backendPid: number | null = null;
   try {
     const backend = `
 const { existsSync, writeFileSync } = require("node:fs");
@@ -309,9 +537,10 @@ setInterval(() => {}, 1000);
       env: process.env,
     });
     assert.equal(result.kind, "launched");
+    backendPid = result.pid;
     await waitForFile(readyPath);
     owner = readProcessOwner(ownerPath);
-    assert.ok(owner?.child);
+    assert.ok(owner?.backendRoot);
     const stopped = await stopOwnedProcessTree(ownerPath, {
       termWaitMs: 120,
       killWaitMs: 1000,
@@ -319,19 +548,25 @@ setInterval(() => {}, 1000);
     assert.equal(stopped.kind, "stopped");
     await waitForFile(latePidPath);
     await waitForExit(Number(readFileSync(latePidPath, "utf8")));
-    await waitForExit(owner.child.pid);
+    await waitForExit(backendPid);
+    await waitForExit(owner.backendRoot.pid);
     await waitForExit(owner.supervisor.pid);
   } finally {
     if (owner) {
-      try {
-        process.kill(-owner.supervisor.pid, "SIGKILL");
-      } catch {}
+      for (const pid of [backendPid, owner.backendRoot?.pid, owner.supervisor.pid]) {
+        if (!pid) continue;
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
     }
     rmSync(fixture, { recursive: true, force: true });
   }
 });
 
-async function runSupervisorFailure(stage: "boot" | "identity" | "persistence" | "cleanup") {
+async function runSupervisorFailure(
+  stage: "boot" | "identity" | "persistence" | "cleanup" | "root-crash",
+) {
   const startedAt = Date.now();
   const fixture = mkdtempSync(join(scriptsDir, `.mobile-process-${stage}-`));
   const resultPath = join(fixture, "result.json");
@@ -342,6 +577,7 @@ async function runSupervisorFailure(stage: "boot" | "identity" | "persistence" |
 import { writeFileSync } from "node:fs";
 import {
   kernelProcessIdentity,
+  readProcessOwner,
   scanProcessTable,
   superviseOwnedBackend,
 } from ${JSON.stringify(moduleUrl)};
@@ -361,15 +597,26 @@ const result = await superviseOwnedBackend({
     if (identityCalls === 1) return kernelProcessIdentity(pid);
     throw new Error("child identity unavailable");
   },` : ""}
-  ${stage === "persistence" ? 'writeOwner: () => { throw new Error("disk full"); },' : ""}
-  ${stage === "cleanup" ? `writeOwner: (() => {
+  ${stage === "persistence" ? `writeOwner: (() => {
     let writes = 0;
     return (path, owner) => {
       writes += 1;
-      if (writes === 1) throw new Error("disk full");
+      if (writes === 2) throw new Error("disk full");
       writeFileSync(path, JSON.stringify(owner));
     };
   })(),` : ""}
+  ${stage === "cleanup" ? `beforePromotion: async () => {
+    const owner = readProcessOwner(${JSON.stringify(ownerPath)});
+    if (!owner?.backendRoot) throw new Error("backend root missing");
+    process.kill(owner.backendRoot.pid, "SIGSTOP");
+    throw new Error("promotion failed");
+  },` : ""}
+  ${stage === "root-crash" ? `beforePromotion: async () => {
+    const owner = readProcessOwner(${JSON.stringify(ownerPath)});
+    if (!owner?.backendRoot) throw new Error("backend root missing");
+    process.kill(owner.backendRoot.pid, "SIGKILL");
+    throw new Error("backend root crashed");
+  },` : ""}
   scanProcessTable: async () => {
     const table = await scanProcessTable();
     writeFileSync(${JSON.stringify(join(fixture, "scan.log"))}, JSON.stringify(table.filter((entry) => entry.processGroupId === process.pid)) + "\\n", { flag: "a" });
@@ -377,7 +624,6 @@ const result = await superviseOwnedBackend({
   },
   signalProcess: (pid, signal) => {
     writeFileSync(${JSON.stringify(join(fixture, "signal.log"))}, JSON.stringify({ pid, signal }) + "\\n", { flag: "a" });
-    ${stage === "cleanup" ? "return;" : ""}
     process.kill(pid, signal);
   },
 });
@@ -407,10 +653,33 @@ test("failed post-spawn cleanup persists an anchored diagnostic and returns prom
     const diagnostic = readProcessOwner(join(fixture, "next.owner.json"));
     assert.equal(diagnostic?.status, "diagnostic");
     assert.equal(diagnostic?.supervisor.pid, supervisor.pid);
+    assert.ok(diagnostic?.backendRoot);
+    assert.doesNotThrow(() => process.kill(supervisor.pid!, 0));
+  } finally {
+    const diagnostic = readProcessOwner(join(fixture, "next.owner.json"));
+    if (diagnostic?.backendRoot) {
+      try {
+        process.kill(diagnostic.backendRoot.pid, "SIGKILL");
+      } catch {}
+    }
+    try {
+      process.kill(supervisor.pid!, "SIGKILL");
+    } catch {}
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("a backend-root crash cannot be reported as successful setup cleanup", async () => {
+  const { fixture, result, supervisor } = await runSupervisorFailure("root-crash");
+  try {
+    assert.equal(result.kind, "state-failed-cleanup-failed");
+    const diagnostic = readProcessOwner(join(fixture, "next.owner.json"));
+    assert.equal(diagnostic?.status, "diagnostic");
+    assert.match(diagnostic?.error ?? "", /backend root crashed/);
     assert.doesNotThrow(() => process.kill(supervisor.pid!, 0));
   } finally {
     try {
-      process.kill(-supervisor.pid!, "SIGKILL");
+      process.kill(supervisor.pid!, "SIGKILL");
     } catch {}
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -431,12 +700,17 @@ for (const stage of ["boot", "identity", "persistence"] as const) {
           : "",
       };
       assert.equal(result.kind, "state-failed-cleaned", JSON.stringify(detail));
-      assert.ok(result.owner?.childPid, "cleanup result retains the exact spawned child identity");
-      await waitForExit(result.owner.childPid);
+      assert.ok(result.owner?.backendRoot, "cleanup result retains the exact backend-root identity");
+      await waitForExit(result.owner.backendRoot.pid);
       await waitForExit(supervisor.pid!);
     } finally {
+      if (result.owner?.backendRoot) {
+        try {
+          process.kill(result.owner.backendRoot.pid, "SIGKILL");
+        } catch {}
+      }
       try {
-        process.kill(-supervisor.pid!, "SIGKILL");
+        process.kill(supervisor.pid!, "SIGKILL");
       } catch {}
       rmSync(fixture, { recursive: true, force: true });
     }

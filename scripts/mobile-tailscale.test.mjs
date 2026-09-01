@@ -37,6 +37,15 @@ const serveOwnershipHelper = fileURLToPath(
   new URL("./mobile-serve-ownership.ts", import.meta.url),
 );
 
+async function waitForFile(path, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${path}`);
+}
+
 function installServeOwnershipShim(fixture, outcomes) {
   const helper = join(fixture, "serve-ownership-shim.mjs");
   const log = join(fixture, "serve-ownership.log");
@@ -133,11 +142,10 @@ test("supported shell mutations use the canonical Serve ownership executable", (
   assert.match(recovery, /"kind":"(?:owned|claimed)"/);
 });
 
-test("mobile tailscale stop preserves a tracked backend after foreign reassignment", () => {
-  assert.match(
-    script,
-    /"kind":"not-owned"[\s\S]{0,240}?"\$serve_status" -ne 10[\s\S]{0,500}?preserving the tracked backend process/,
-  );
+test("mobile tailscale stop preserves foreign Serve while identity-stopping its backend", () => {
+  assert.match(script, /"kind":"not-owned"/);
+  assert.match(script, /"\$PROCESS_OWNERSHIP_HELPER" stop\s+\\?\s*--state "\$owner_file"/);
+  assert.match(script, /preserving the foreign Serve route/);
   assert.match(
     script,
     /--process-owner "\$owner_file"/,
@@ -145,7 +153,7 @@ test("mobile tailscale stop preserves a tracked backend after foreign reassignme
   );
 });
 
-test("mobile tailscale stop retains a tracked process after a not-owned reset", async () => {
+test("mobile tailscale stop preserves foreign Serve but stops its tracked backend", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-tailscale-stop-"));
   const stateRoot = join(fixture, "state");
   const stateDir = join(stateRoot, "mobile-tailscale-3000");
@@ -155,18 +163,24 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
   });
 
   const ownerPath = join(stateDir, "next.owner.json");
+  const backendPidPath = join(fixture, "backend.pid");
   const launched = await launchOwnedProcess({
     ownerPath,
     backendUrl: "http://127.0.0.1:3000",
     cwd: fixture,
     command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1000)"],
+    args: [
+      "-e",
+      `require("node:fs").writeFileSync(${JSON.stringify(backendPidPath)}, String(process.pid));setInterval(() => {}, 1000)`,
+    ],
     logPath: join(stateDir, "next.log"),
     env: process.env,
   });
   assert.equal(launched.kind, "launched");
+  await waitForFile(backendPidPath);
   const sleeperOwner = readProcessOwner(ownerPath);
-  const sleeperPid = sleeperOwner.child.pid;
+  const sleeperPid = sleeperOwner.backendRoot.pid;
+  const backendPid = Number(readFileSync(backendPidPath, "utf8"));
   const supervisorPid = sleeperOwner.supervisor.pid;
 
   try {
@@ -186,16 +200,25 @@ test("mobile tailscale stop retains a tracked process after a not-owned reset", 
       },
     });
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
-    assert.match(result.stderr, /preserving the tracked backend process/);
-    assert.doesNotThrow(
+    assert.match(result.stderr, /preserving the foreign Serve route/);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.throws(
       () => process.kill(sleeperPid, 0),
-      "a foreign Serve reassignment must preserve the tracked backend process",
+      (error) => error?.code === "ESRCH",
+      "the Cave-owned tracked backend must still stop",
     );
-    assert.equal(existsSync(ownerPath), true);
+    assert.throws(
+      () => process.kill(backendPid, 0),
+      (error) => error?.code === "ESRCH",
+      "the real backend process must exit before stop reports success",
+    );
+    assert.equal(existsSync(ownerPath), false);
   } finally {
-    try {
-      process.kill(-supervisorPid, "SIGKILL");
-    } catch {}
+    for (const pid of [sleeperPid, supervisorPid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -221,13 +244,17 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
   });
   assert.equal(launched.kind, "launched");
   const foreignOwner = readProcessOwner(ownerPath);
-  const foreignPid = foreignOwner.child.pid;
+  const foreignPid = foreignOwner.backendRoot.pid;
   const supervisorPid = foreignOwner.supervisor.pid;
   writeFileSync(ownerPath, JSON.stringify({
     ...foreignOwner,
     supervisor: {
       ...foreignOwner.supervisor,
       processToken: "macos:999999:1:1",
+    },
+    backendRoot: {
+      ...foreignOwner.backendRoot,
+      processToken: "macos:999998:1:1",
     },
   }));
 
@@ -254,9 +281,11 @@ test("mobile tailscale stop never signals a reused foreign PID", async () => {
     );
     assert.equal(existsSync(ownerPath), true, "failed cleanup retains retryable owner state");
   } finally {
-    try {
-      process.kill(-supervisorPid, "SIGKILL");
-    } catch {}
+    for (const pid of [foreignPid, supervisorPid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
     rmSync(fixture, { recursive: true, force: true });
   }
 });
@@ -296,8 +325,8 @@ test("default stop evaluates each tracked backend identity independently", async
   assert.equal(ipv4Launch.kind, "launched");
   const ipv6State = readProcessOwner(ipv6Owner);
   const ipv4State = readProcessOwner(ipv4Owner);
-  const ipv6Pid = ipv6State.child.pid;
-  const ipv4Pid = ipv4State.child.pid;
+  const ipv6Pid = ipv6State.backendRoot.pid;
+  const ipv4Pid = ipv4State.backendRoot.pid;
   const ipv6SupervisorPid = ipv6State.supervisor.pid;
   const ipv4SupervisorPid = ipv4State.supervisor.pid;
   assert.equal(
@@ -329,9 +358,13 @@ test("default stop evaluates each tracked backend identity independently", async
       calls.map((args) => args[args.indexOf("--backend") + 1]).sort(),
       ["http://127.0.0.1:3008", "http://[::1]:3007"],
     );
-    assert.doesNotThrow(() => process.kill(ipv6Pid, 0));
-    assert.equal(existsSync(ipv6Owner), true, "foreign IPv6 reassignment remains tracked and alive");
     await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.throws(
+      () => process.kill(ipv6Pid, 0),
+      (error) => error?.code === "ESRCH",
+      "foreign IPv6 Serve is preserved while the tracked IPv6 backend is stopped",
+    );
+    assert.equal(existsSync(ipv6Owner), false, "verified process cleanup removes IPv6 owner state");
     assert.throws(
       () => process.kill(ipv4Pid, 0),
       (error) => error?.code === "ESRCH",
@@ -345,12 +378,11 @@ test("default stop evaluates each tracked backend identity independently", async
       "verified dev cleanup preserves packaged sidecar credentials",
     );
   } finally {
-    try {
-      process.kill(-ipv6SupervisorPid, "SIGKILL");
-    } catch {}
-    try {
-      process.kill(-ipv4SupervisorPid, "SIGKILL");
-    } catch {}
+    for (const pid of [ipv6Pid, ipv6SupervisorPid, ipv4Pid, ipv4SupervisorPid]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {}
+    }
     rmSync(fixture, { recursive: true, force: true });
   }
 });

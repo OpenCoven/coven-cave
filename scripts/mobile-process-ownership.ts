@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { fork, spawn, spawnSync, type ChildProcess } from "node:child_process";
+import {
+  fork,
+  spawn,
+  spawnSync,
+  type ChildProcess,
+  type Serializable,
+} from "node:child_process";
 import {
   chmodSync,
   closeSync,
@@ -26,13 +32,13 @@ export type ProcessInfo = {
 };
 
 export type ProcessOwner = {
-  version: 3;
-  status: "running" | "diagnostic" | "stopped";
+  version: 4;
+  status: "launching" | "running" | "diagnostic" | "stopped";
   bootId: string | null;
   backendUrl: string;
   supervisor: ProcessInfo;
-  child: ProcessInfo | null;
-  childPid?: number;
+  backendRoot: ProcessInfo | null;
+  launchDeadlineMs: number;
   error?: string;
 };
 
@@ -75,12 +81,10 @@ type SupervisorDependencies = {
   scanProcessTable?: () => Promise<ProcessInfo[]>;
   signalProcess?: (pid: number, signal: NodeJS.Signals) => void;
   sleep?: (milliseconds: number) => Promise<void>;
-  spawnBackend?: (options: LaunchOptions) => {
-    pid: number;
-    unref?: () => void;
-    onExit?: (callback: () => void) => void;
-  };
+  spawnBackendRoot?: (options: LaunchOptions, supervisor: ProcessInfo) => ChildProcess;
   writeOwner?: (path: string, owner: ProcessOwner) => void;
+  launchTimeoutMs?: number;
+  beforePromotion?: () => Promise<void>;
 };
 
 export type LaunchOwnedProcessResult =
@@ -317,28 +321,27 @@ export function readProcessOwner(ownerPath: string): ProcessOwner | null {
     const raw = JSON.parse(readFileSync(ownerPath, "utf8")) as Record<string, unknown>;
     const backendUrl = normalizeBackendUrl(raw.backendUrl);
     if (
-      raw.version !== 3
-      || !["running", "diagnostic", "stopped"].includes(String(raw.status))
+      raw.version !== 4
+      || !["launching", "running", "diagnostic", "stopped"].includes(String(raw.status))
       || (raw.bootId !== null && typeof raw.bootId !== "string")
       || !backendUrl
       || !validProcessInfo(raw.supervisor)
-      || (raw.child !== null && !validProcessInfo(raw.child))
-      || (raw.childPid !== undefined && (
-        typeof raw.childPid !== "number" || !validPid(raw.childPid)
-      ))
+      || (raw.backendRoot !== null && !validProcessInfo(raw.backendRoot))
+      || typeof raw.launchDeadlineMs !== "number"
+      || !Number.isFinite(raw.launchDeadlineMs)
       || (raw.error !== undefined && typeof raw.error !== "string")
-      || (raw.status === "running" && !validProcessInfo(raw.child))
+      || (raw.status === "running" && !validProcessInfo(raw.backendRoot))
     ) {
       return null;
     }
     return {
-      version: 3,
+      version: 4,
       status: raw.status as ProcessOwner["status"],
       bootId: raw.bootId as string | null,
       backendUrl,
       supervisor: raw.supervisor,
-      child: raw.child as ProcessInfo | null,
-      ...(typeof raw.childPid === "number" ? { childPid: raw.childPid } : {}),
+      backendRoot: raw.backendRoot as ProcessInfo | null,
+      launchDeadlineMs: raw.launchDeadlineMs,
       ...(typeof raw.error === "string" ? { error: raw.error } : {}),
     };
   } catch {
@@ -374,26 +377,20 @@ function sameProcessIdentity(expected: ProcessInfo, actual: ProcessInfo) {
   );
 }
 
-function validatedAnchor(owner: ProcessOwner, table: ProcessInfo[]) {
-  const candidate = table.find((info) => info.pid === owner.supervisor.pid);
-  if (!candidate || !sameProcessIdentity(owner.supervisor, candidate)) {
+function validatedAnchor(anchor: ProcessInfo, table: ProcessInfo[]) {
+  const candidate = table.find((info) => info.pid === anchor.pid);
+  if (!candidate || !sameProcessIdentity(anchor, candidate)) {
     throw new Error("identity-mismatch");
   }
   return candidate;
 }
 
-function ownedMembers(owner: ProcessOwner, table: ProcessInfo[]) {
-  validatedAnchor(owner, table);
-  const childAtRecordedPid = owner.child
-    ? table.find((candidate) => candidate.pid === owner.child!.pid)
-    : null;
-  if (childAtRecordedPid && !sameProcessIdentity(owner.child!, childAtRecordedPid)) {
-    throw new Error("identity-mismatch");
-  }
+function ownedMembers(anchor: ProcessInfo, table: ProcessInfo[]) {
+  validatedAnchor(anchor, table);
   return table.filter((candidate) =>
-    candidate.pid !== owner.supervisor.pid
-    && candidate.processGroupId === owner.supervisor.processGroupId
-    && candidate.sessionId === owner.supervisor.sessionId
+    candidate.pid !== anchor.pid
+    && candidate.processGroupId === anchor.processGroupId
+    && candidate.sessionId === anchor.sessionId
   );
 }
 
@@ -404,6 +401,7 @@ function bootIdFromToken(info: ProcessInfo): string | null {
 
 async function drainAnchoredGroup(
   owner: ProcessOwner,
+  anchor: ProcessInfo,
   options: StopOwnedProcessOptions = {},
 ): Promise<StopOwnedProcessResult> {
   const getBootId = options.currentBootId ?? currentBootId;
@@ -416,12 +414,12 @@ async function drainAnchoredGroup(
 
   try {
     if (await getBootId() !== owner.bootId) return { kind: "identity-mismatch" };
-    const scanMembers = async () => ownedMembers(owner, await scan());
+    const scanMembers = async () => ownedMembers(anchor, await scan());
     const signalMembers = async (name: NodeJS.Signals) => {
       const members = await scanMembers();
       for (const member of members) {
         const fresh = await scan();
-        validatedAnchor(owner, fresh);
+        validatedAnchor(anchor, fresh);
         const current = fresh.find((candidate) => candidate.pid === member.pid);
         if (!current || !sameProcessIdentity(member, current)) continue;
         try {
@@ -465,31 +463,231 @@ async function drainAnchoredGroup(
   }
 }
 
-function defaultSpawnBackend(options: LaunchOptions) {
-  const child = spawn(options.command, options.args, {
-    cwd: options.cwd,
-    env: options.env,
-    detached: false,
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  if (!child.pid) throw new Error("backend launch returned no process id");
-  return {
-    pid: child.pid,
-    unref: () => child.unref(),
-    onExit: (callback: () => void) => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        queueMicrotask(callback);
-      } else {
-        child.once("exit", callback);
-      }
-    },
-  };
-}
-
 function sendSupervisorResult(result: LaunchOwnedProcessResult) {
   if (typeof process.send === "function" && process.connected) {
-    process.send(result);
+    try {
+      process.send(result, () => undefined);
+    } catch {
+      // The persisted lifecycle state remains the recovery source of truth.
+    }
   }
+}
+
+function sendProcessMessage(child: ChildProcess, message: Serializable) {
+  return new Promise<void>((resolve, reject) => {
+    if (!child.connected) {
+      reject(new Error("backend root IPC channel is closed"));
+      return;
+    }
+    try {
+      child.send(message, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function defaultSpawnBackendRoot(options: LaunchOptions, supervisor: ProcessInfo) {
+  return fork(fileURLToPath(import.meta.url), [
+    "backend-root",
+    "--state",
+    options.ownerPath,
+    "--backend",
+    options.backendUrl,
+    "--cwd",
+    options.cwd,
+    "--log",
+    options.logPath,
+    "--supervisor",
+    JSON.stringify(supervisor),
+    "--",
+    options.command,
+    ...options.args,
+  ], {
+    cwd: options.cwd,
+    env: options.env,
+    detached: true,
+    execArgv: ["--experimental-strip-types"],
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+  });
+}
+
+function waitForProcessMessage(
+  child: ChildProcess,
+  timeoutMs: number,
+  accept: (message: unknown) => boolean,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const finish = (error: Error | null, message?: unknown) => {
+      clearTimeout(timer);
+      child.off("message", onMessage);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      if (error) reject(error);
+      else resolve(message);
+    };
+    const onMessage = (message: unknown) => {
+      if (accept(message)) finish(null, message);
+    };
+    const onError = (error: Error) => finish(error);
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      finish(new Error(`backend root exited during setup (${signal ?? code ?? "unknown"})`));
+    };
+    const timer = setTimeout(
+      () => finish(new Error("backend root setup timed out")),
+      timeoutMs,
+    );
+    child.on("message", onMessage);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
+}
+
+async function waitForExactProcessExit(
+  expected: ProcessInfo,
+  timeoutMs: number,
+  scan = scanProcessTable,
+  sleep = (milliseconds: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const candidate = (await scan()).find((entry) => entry.pid === expected.pid);
+    if (!candidate) return true;
+    if (!sameProcessIdentity(expected, candidate)) return true;
+    await sleep(20);
+  }
+  return false;
+}
+
+export async function runBackendRoot(
+  options: LaunchOptions,
+  expectedSupervisor: ProcessInfo,
+): Promise<number> {
+  const backendRoot = await kernelProcessIdentity(process.pid);
+  if (
+    !backendRoot
+    || backendRoot.pid !== process.pid
+    || backendRoot.processGroupId !== process.pid
+    || backendRoot.sessionId !== process.pid
+  ) {
+    return 1;
+  }
+  const initial = readProcessOwner(options.ownerPath);
+  if (
+    !initial
+    || initial.status !== "launching"
+    || initial.backendRoot !== null
+    || !sameProcessIdentity(initial.supervisor, expectedSupervisor)
+    || initial.launchDeadlineMs < Date.now()
+  ) {
+    return 1;
+  }
+  let owner: ProcessOwner = {
+    ...initial,
+    bootId: bootIdFromToken(backendRoot),
+    backendRoot,
+  };
+  try {
+    atomicWriteOwner(options.ownerPath, owner);
+  } catch {
+    return 1;
+  }
+
+  return await new Promise<number>((resolve) => {
+    const keepAlive = setInterval(() => undefined, 60_000);
+    let backend: ChildProcess | null = null;
+    let started = false;
+    let shuttingDown = false;
+    const finish = (code: number) => {
+      clearInterval(keepAlive);
+      process.removeAllListeners("SIGTERM");
+      process.removeAllListeners("message");
+      process.removeAllListeners("disconnect");
+      resolve(code);
+    };
+    const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      const current = readProcessOwner(options.ownerPath);
+      if (current?.backendRoot && sameProcessIdentity(current.backendRoot, backendRoot)) {
+        owner = current;
+      }
+      const cleanup = await drainAnchoredGroup(owner, backendRoot);
+      if (cleanup.kind === "stopped") {
+        try {
+          atomicWriteOwner(options.ownerPath, { ...owner, status: "stopped" });
+        } catch {
+          // The external stopper verifies the root exit before removing state.
+        }
+        finish(0);
+        return;
+      }
+      owner = { ...owner, status: "diagnostic", error: cleanup.kind };
+      try {
+        atomicWriteOwner(options.ownerPath, owner);
+      } catch {
+        // Keep the live root anchor when diagnostics cannot be persisted.
+      }
+      shuttingDown = false;
+    };
+    process.on("SIGTERM", () => {
+      void shutdown();
+    });
+    process.on("message", (message) => {
+      if (!message || typeof message !== "object" || !("kind" in message)) return;
+      if (message.kind === "abort") {
+        void shutdown();
+        return;
+      }
+      if (message.kind !== "start" || started) return;
+      try {
+        backend = spawn(options.command, options.args, {
+          cwd: options.cwd,
+          env: options.env,
+          detached: false,
+          stdio: ["ignore", "inherit", "inherit"],
+        });
+      } catch (error) {
+        sendSupervisorResult({
+          kind: "launch-failed",
+          error: (error as Error).message,
+        });
+        void shutdown();
+        return;
+      }
+      if (!backend.pid) {
+        sendSupervisorResult({ kind: "launch-failed", error: "backend launch returned no pid" });
+        void shutdown();
+        return;
+      }
+      started = true;
+      backend.once("exit", () => {
+        void shutdown();
+      });
+      backend.unref();
+      if (typeof process.send === "function" && process.connected) {
+        try {
+          process.send({ kind: "backend-started", pid: backend.pid }, () => undefined);
+        } catch {
+          void shutdown();
+        }
+      }
+    });
+    process.on("disconnect", () => {
+      if (!started) void shutdown();
+    });
+    if (typeof process.send === "function" && process.connected) {
+      try {
+        process.send({ kind: "backend-root-ready", identity: backendRoot }, () => undefined);
+      } catch {
+        void shutdown();
+      }
+    }
+  });
 }
 
 export async function superviseOwnedBackend(
@@ -498,7 +696,7 @@ export async function superviseOwnedBackend(
 ): Promise<LaunchOwnedProcessResult> {
   const readInfo = dependencies.processInfo ?? kernelProcessIdentity;
   const getBootId = dependencies.currentBootId ?? currentBootId;
-  const spawnBackend = dependencies.spawnBackend ?? defaultSpawnBackend;
+  const spawnBackendRoot = dependencies.spawnBackendRoot ?? defaultSpawnBackendRoot;
   const writeOwner = dependencies.writeOwner ?? atomicWriteOwner;
   const supervisor = await readInfo(process.pid);
   if (
@@ -510,39 +708,72 @@ export async function superviseOwnedBackend(
     return { kind: "launch-failed", error: "supervisor has no dedicated process group and session" };
   }
 
+  const launchTimeoutMs = dependencies.launchTimeoutMs ?? 10_000;
   const keepAlive = setInterval(() => undefined, 60_000);
-  let currentOwner: ProcessOwner | null = null;
+  let currentOwner: ProcessOwner = {
+    version: 4,
+    status: "launching",
+    bootId: bootIdFromToken(supervisor),
+    backendUrl: options.backendUrl,
+    supervisor,
+    backendRoot: null,
+    launchDeadlineMs: Date.now() + launchTimeoutMs,
+  };
   let shuttingDown = false;
   const shutdown = async () => {
-    if (shuttingDown || !currentOwner) return;
+    if (shuttingDown) return;
     shuttingDown = true;
-    const result = await drainAnchoredGroup(currentOwner, {
-      currentBootId: dependencies.currentBootId,
-      scanProcessTable: dependencies.scanProcessTable,
-      signalProcess: dependencies.signalProcess,
-      sleep: dependencies.sleep,
-    });
-    if (result.kind === "stopped") {
+    const current = readProcessOwner(options.ownerPath) ?? currentOwner;
+    const root = current.backendRoot;
+    let cleanupError: string | null = null;
+    if (root) {
       try {
-        writeOwner(options.ownerPath, { ...currentOwner, status: "stopped" });
-      } catch {
-        // The caller retains its existing owner record when the final write fails.
+        const actual = await readInfo(root.pid);
+        if (!actual) {
+          if (readProcessOwner(options.ownerPath)?.status !== "stopped") {
+            cleanupError = "backend-root-exited-without-cleanup-acknowledgement";
+          }
+        } else if (!sameProcessIdentity(root, actual)) {
+          cleanupError = "backend-root-identity-mismatch";
+        } else {
+          (dependencies.signalProcess ?? ((pid, signal) => process.kill(pid, signal)))(
+            root.pid,
+            "SIGTERM",
+          );
+          const exited = await waitForExactProcessExit(
+            root,
+            4000,
+            dependencies.scanProcessTable,
+            dependencies.sleep,
+          );
+          if (!exited) {
+            cleanupError = "backend-root-still-running";
+          } else if (readProcessOwner(options.ownerPath)?.status !== "stopped") {
+            cleanupError = "backend-root-exited-without-cleanup-acknowledgement";
+          }
+        }
+      } catch (error) {
+        cleanupError = `backend-root-cleanup-failed: ${(error as Error).message}`;
       }
-      clearInterval(keepAlive);
-      process.disconnect?.();
-      process.exit(0);
     }
-    currentOwner = {
-      ...currentOwner,
-      status: "diagnostic",
-      error: result.kind,
-    };
+    if (cleanupError) {
+      currentOwner = { ...current, status: "diagnostic", error: cleanupError };
+      try {
+        writeOwner(options.ownerPath, currentOwner);
+      } catch {
+        // Keep the live supervisor anchor when diagnostics cannot be persisted.
+      }
+      shuttingDown = false;
+      return;
+    }
     try {
-      writeOwner(options.ownerPath, currentOwner);
+      writeOwner(options.ownerPath, { ...current, status: "stopped" });
     } catch {
-      // The launcher also receives the diagnostic record over its private IPC channel.
+      // External recovery verifies both anchors before removing state.
     }
-    shuttingDown = false;
+    clearInterval(keepAlive);
+    process.disconnect?.();
+    process.exit(0);
   };
   process.on("SIGTERM", () => {
     void shutdown();
@@ -553,65 +784,97 @@ export async function superviseOwnedBackend(
     }
   });
 
-  let child: {
-    pid: number;
-    unref?: () => void;
-    onExit?: (callback: () => void) => void;
-  };
-  let childInfo: ProcessInfo | null = null;
-  let bootId = bootIdFromToken(supervisor);
   try {
-    child = spawnBackend(options);
+    writeOwner(options.ownerPath, currentOwner);
   } catch (error) {
     clearInterval(keepAlive);
-    return { kind: "launch-failed", error: (error as Error).message };
+    return { kind: "launch-failed", error: `launching state could not be persisted: ${(error as Error).message}` };
   }
+  let backendRootProcess: ChildProcess;
   try {
-    bootId = await getBootId();
-    childInfo = await readInfo(child.pid);
+    backendRootProcess = spawnBackendRoot(options, supervisor);
+    if (!backendRootProcess.pid) throw new Error("backend root returned no process id");
+    const ready = await waitForProcessMessage(
+      backendRootProcess,
+      launchTimeoutMs,
+      (message) => Boolean(
+        message
+        && typeof message === "object"
+        && "kind" in message
+        && message.kind === "backend-root-ready",
+      ),
+    ) as { identity?: ProcessInfo };
+    const backendRoot = ready.identity;
+    const actualRoot = backendRoot ? await readInfo(backendRoot.pid) : null;
+    const staged = readProcessOwner(options.ownerPath);
     if (
-      !childInfo
-      || childInfo.pid !== child.pid
-      || childInfo.parentPid !== supervisor.pid
-      || childInfo.processGroupId !== supervisor.processGroupId
-      || childInfo.sessionId !== supervisor.sessionId
+      !backendRoot
+      || !actualRoot
+      || !sameProcessIdentity(backendRoot, actualRoot)
+      || backendRoot.pid !== backendRoot.processGroupId
+      || backendRoot.pid !== backendRoot.sessionId
+      || !staged?.backendRoot
+      || !sameProcessIdentity(staged.backendRoot, backendRoot)
+      || !sameProcessIdentity(staged.supervisor, supervisor)
     ) {
-      throw new Error("backend did not inherit the supervisor process group and session");
+      throw new Error("backend root identity could not be established");
     }
+    await dependencies.beforePromotion?.();
+    const bootId = await getBootId();
     currentOwner = {
-      version: 3,
+      ...staged,
       status: "running",
       bootId,
-      backendUrl: options.backendUrl,
-      supervisor,
-      child: childInfo,
     };
     writeOwner(options.ownerPath, currentOwner);
-    child.onExit?.(() => {
-      void shutdown();
+    const startedMessage = waitForProcessMessage(
+      backendRootProcess,
+      launchTimeoutMs,
+      (message) => Boolean(
+        message
+        && typeof message === "object"
+        && "kind" in message
+        && ["backend-started", "launch-failed"].includes(String(message.kind)),
+      ),
+    );
+    await sendProcessMessage(backendRootProcess, { kind: "start" });
+    const started = await startedMessage as { kind: string; pid?: number; error?: string };
+    if (started.kind !== "backend-started" || !validPid(started.pid ?? 0)) {
+      throw new Error(started.error ?? "backend root did not start the backend");
+    }
+    backendRootProcess.once("exit", () => {
+      const finalOwner = readProcessOwner(options.ownerPath);
+      if (finalOwner?.status === "stopped") {
+        clearInterval(keepAlive);
+        process.disconnect?.();
+        process.exit(0);
+      }
     });
-    child.unref?.();
-    return { kind: "launched", pid: childInfo.pid };
+    backendRootProcess.unref();
+    return { kind: "launched", pid: started.pid! };
   } catch (error) {
-    child.unref?.();
-    const diagnostic: ProcessOwner = {
-      version: 3,
-      status: "diagnostic",
-      bootId,
-      backendUrl: options.backendUrl,
-      supervisor,
-      child: childInfo,
-      childPid: child.pid,
-      error: (error as Error).message,
-    };
-    currentOwner = diagnostic;
-    const cleanup = await drainAnchoredGroup(diagnostic, {
-      currentBootId: async () => bootId,
-      scanProcessTable: dependencies.scanProcessTable,
-      signalProcess: dependencies.signalProcess,
-      sleep: dependencies.sleep,
-    });
-    if (cleanup.kind === "stopped") {
+    const staged = readProcessOwner(options.ownerPath) ?? currentOwner;
+    const diagnostic = { ...staged, status: "diagnostic" as const, error: (error as Error).message };
+    if (backendRootProcess!?.connected) {
+      await sendProcessMessage(backendRootProcess!, { kind: "abort" }).catch(() => undefined);
+    }
+    const root = staged.backendRoot;
+    const cleaned = !root || await waitForExactProcessExit(
+      root,
+      4000,
+      dependencies.scanProcessTable,
+      dependencies.sleep,
+    );
+    const completed = readProcessOwner(options.ownerPath);
+    const cleanupAcknowledged = cleaned && (
+      !root
+      || (
+        completed?.status === "stopped"
+        && completed.backendRoot
+        && sameProcessIdentity(completed.backendRoot, root)
+      )
+    );
+    if (cleanupAcknowledged) {
       clearInterval(keepAlive);
       process.removeAllListeners("SIGTERM");
       process.removeAllListeners("message");
@@ -625,7 +888,7 @@ export async function superviseOwnedBackend(
     return {
       kind: "state-failed-cleanup-failed",
       error: diagnostic.error!,
-      cleanup,
+      cleanup: { kind: "still-running" },
       owner: diagnostic,
     };
   }
@@ -746,8 +1009,11 @@ export async function stopOwnedProcessTree(
   ownerPath: string,
   options: StopOwnedProcessOptions = {},
 ): Promise<StopOwnedProcessResult> {
-  let owner = readProcessOwner(ownerPath);
-  if (!owner) return { kind: "identity-unavailable", error: "process owner state is malformed" };
+  const initialOwner = readProcessOwner(ownerPath);
+  if (!initialOwner) {
+    return { kind: "identity-unavailable", error: "process owner state is malformed" };
+  }
+  let owner = initialOwner;
   if (owner.status === "stopped") return { kind: "stopped", escalated: false };
   const getBootId = options.currentBootId ?? currentBootId;
   const scan = options.scanProcessTable ?? scanProcessTable;
@@ -757,34 +1023,109 @@ export async function stopOwnedProcessTree(
   const writeOwner = options.writeOwner ?? atomicWriteOwner;
   try {
     if (await getBootId() !== owner.bootId) return { kind: "identity-mismatch" };
-    validatedAnchor(owner, await scan());
-    signal(owner.supervisor.pid, "SIGTERM");
-
-    const deadline = Date.now() + (options.termWaitMs ?? 3000);
-    while (Date.now() <= deadline) {
-      await sleep(20);
-      const current = readProcessOwner(ownerPath);
-      if (current?.status === "stopped") {
-        return await waitForSupervisorExit(current, scan, sleep, options.killWaitMs ?? 1000)
-          ? { kind: "stopped", escalated: false }
-          : { kind: "still-running" };
-      }
+    const stopSupervisor = async () => {
       const table = await scan();
-      validatedAnchor(owner, table);
-    }
-
-    const cleanup = await drainAnchoredGroup(owner, options);
-    if (cleanup.kind !== "stopped") return cleanup;
-    validatedAnchor(owner, await scan());
-    signal(owner.supervisor.pid, "SIGTERM");
-    if (!await waitForSupervisorExit(owner, scan, sleep, options.killWaitMs ?? 1000)) {
-      validatedAnchor(owner, await scan());
+      const current = table.find((entry) => entry.pid === owner.supervisor.pid);
+      if (!current) return true;
+      if (!sameProcessIdentity(owner.supervisor, current)) return false;
+      signal(owner.supervisor.pid, "SIGTERM");
+      if (await waitForSupervisorExit(owner, scan, sleep, options.killWaitMs ?? 1000)) {
+        return true;
+      }
+      const fresh = await scan();
+      validatedAnchor(owner.supervisor, fresh);
       signal(owner.supervisor.pid, "SIGKILL");
-      if (!await waitForSupervisorExit(owner, scan, sleep, options.killWaitMs ?? 1000)) {
+      return await waitForSupervisorExit(
+        owner,
+        scan,
+        sleep,
+        options.killWaitMs ?? 1000,
+      );
+    };
+
+    if (!owner.backendRoot) {
+      const table = await scan();
+      const supervisor = table.find((entry) => entry.pid === owner.supervisor.pid);
+      if (supervisor && sameProcessIdentity(owner.supervisor, supervisor)) {
+        signal(owner.supervisor.pid, "SIGTERM");
+        await waitForSupervisorExit(
+          owner,
+          scan,
+          sleep,
+          options.termWaitMs ?? 3000,
+        );
+      }
+      const current = readProcessOwner(ownerPath);
+      if (current?.status === "stopped") return { kind: "stopped", escalated: false };
+      if (Date.now() < owner.launchDeadlineMs) {
+        await sleep(Math.min(owner.launchDeadlineMs - Date.now(), options.termWaitMs ?? 3000));
+      }
+      const after = await scan();
+      const stillSupervisor = after.find((entry) => entry.pid === owner.supervisor.pid);
+      if (
+        stillSupervisor
+        && sameProcessIdentity(owner.supervisor, stillSupervisor)
+      ) {
         return { kind: "still-running" };
       }
+      owner = { ...owner, status: "stopped" };
+      writeOwner(ownerPath, owner);
+      return { kind: "stopped", escalated: false };
     }
-    owner = { ...owner, status: "stopped" };
+
+    const backendRoot = owner.backendRoot;
+    let table = await scan();
+    const root = table.find((entry) => entry.pid === backendRoot.pid);
+    if (!root || !sameProcessIdentity(backendRoot, root)) {
+      const completed = readProcessOwner(ownerPath);
+      if (completed?.status === "stopped" && !root) {
+        if (!await stopSupervisor()) return { kind: "identity-mismatch" };
+        return { kind: "stopped", escalated: false };
+      }
+      return { kind: "identity-mismatch" };
+    }
+    signal(backendRoot.pid, "SIGTERM");
+    if (await waitForExactProcessExit(
+      backendRoot,
+      options.termWaitMs ?? 3000,
+      scan,
+      sleep,
+    )) {
+      const completed = readProcessOwner(ownerPath);
+      if (
+        completed?.status !== "stopped"
+        || !completed.backendRoot
+        || !sameProcessIdentity(completed.backendRoot, backendRoot)
+      ) {
+        return { kind: "identity-mismatch" };
+      }
+      if (!await stopSupervisor()) return { kind: "identity-mismatch" };
+      return { kind: "stopped", escalated: false };
+    }
+
+    const cleanup = await drainAnchoredGroup(owner, backendRoot, options);
+    if (cleanup.kind !== "stopped") {
+      const completed = readProcessOwner(ownerPath);
+      const currentRoot = (await scan()).find((entry) => entry.pid === backendRoot.pid);
+      if (completed?.status === "stopped" && !currentRoot) {
+        if (!await stopSupervisor()) return { kind: "identity-mismatch" };
+        return { kind: "stopped", escalated: false };
+      }
+      return cleanup;
+    }
+    table = await scan();
+    validatedAnchor(backendRoot, table);
+    signal(backendRoot.pid, "SIGKILL");
+    if (!await waitForExactProcessExit(
+      backendRoot,
+      options.killWaitMs ?? 1000,
+      scan,
+      sleep,
+    )) {
+      return { kind: "still-running" };
+    }
+    if (!await stopSupervisor()) return { kind: "identity-mismatch" };
+    owner = { ...(readProcessOwner(ownerPath) ?? owner), status: "stopped" };
     writeOwner(ownerPath, owner);
     return { kind: "stopped", escalated: true };
   } catch (error) {
@@ -867,6 +1208,18 @@ export async function runMobileProcessOwnershipCli(args: string[]): Promise<numb
     }
     return result.kind === "state-failed-cleaned" ? 12 : 1;
   }
+  if (command === "backend-root") {
+    const options = launchOptionsFromArgs(args);
+    const rawSupervisor = argumentValue(args, "--supervisor");
+    if (!options || !rawSupervisor) return 2;
+    try {
+      const supervisor = JSON.parse(rawSupervisor);
+      if (!validProcessInfo(supervisor)) return 2;
+      return await runBackendRoot(options, supervisor);
+    } catch {
+      return 2;
+    }
+  }
   const ownerPath = argumentValue(args, "--state");
   if (!ownerPath) return 2;
   if (command === "launch") {
@@ -881,7 +1234,7 @@ export async function runMobileProcessOwnershipCli(args: string[]): Promise<numb
     const owner = readProcessOwner(ownerPath);
     if (!owner) return 1;
     if (field === "pid") {
-      process.stdout.write(`${owner.child?.pid ?? owner.childPid ?? owner.supervisor.pid}\n`);
+      process.stdout.write(`${owner.backendRoot?.pid ?? owner.supervisor.pid}\n`);
       return 0;
     }
     if (field === "backendUrl") {
@@ -897,10 +1250,16 @@ export async function runMobileProcessOwnershipCli(args: string[]): Promise<numb
   }
   if (command === "matches") {
     const owner = readProcessOwner(ownerPath);
-    if (!owner || owner.status !== "running") return 1;
+    if (!owner || !["launching", "running"].includes(owner.status)) return 1;
     try {
       if (await currentBootId() !== owner.bootId) return 1;
-      return ownedMembers(owner, await scanProcessTable()).length > 0 ? 0 : 1;
+      const table = await scanProcessTable();
+      if (owner.backendRoot) {
+        validatedAnchor(owner.backendRoot, table);
+        return 0;
+      }
+      validatedAnchor(owner.supervisor, table);
+      return 0;
     } catch {
       return 1;
     }
