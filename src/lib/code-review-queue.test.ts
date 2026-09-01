@@ -359,7 +359,128 @@ test("codeReviewQueue keeps all local Code-visible rows and root labels in all m
   assert.deepEqual(queue.sessions.map((row) => row.id), ["bravo-failed", "unverified-running", "alpha-clean", "rootless"]);
 });
 
-test("codeReviewQueue appends one selected outside-filter row without changing counts", () => {
+test("codeReviewQueue sorts a selected generated override inside an existing reviewable group", () => {
+  const queue = codeReviewQueue(
+    [
+      sessionFixture({
+        id: "repo-changed",
+        project_root: "/Users/dev/code/repo-a/.worktrees/changed",
+        updated_at: "2026-09-01T12:01:00.000Z",
+        diff: { additions: 3, deletions: 1 },
+        git: gitFixture({
+          worktreeRoot: "/Users/dev/code/repo-a/.worktrees/changed",
+          repositoryRoot: "/Users/dev/code/repo-a",
+          repositoryUrl: "https://github.com/acme/repo-a",
+        }),
+      }),
+      sessionFixture({
+        id: "repo-clean",
+        project_root: "/Users/dev/code/repo-a/.worktrees/clean",
+        updated_at: "2026-09-01T12:00:00.000Z",
+        git: gitFixture({
+          worktreeRoot: "/Users/dev/code/repo-a/.worktrees/clean",
+          repositoryRoot: "/Users/dev/code/repo-a",
+          repositoryUrl: "https://github.com/acme/repo-a",
+        }),
+      }),
+      sessionFixture({
+        id: "selected-generated-running",
+        project_root: "/Users/dev/code/repo-a/.worktrees/generated",
+        updated_at: "2026-09-01T12:02:00.000Z",
+        status: "running",
+        generated: true,
+        git: gitFixture({
+          worktreeRoot: "/Users/dev/code/repo-a/.worktrees/generated",
+          repositoryRoot: "/Users/dev/code/repo-a",
+          repositoryUrl: "https://github.com/acme/repo-a",
+        }),
+      }),
+    ],
+    "reviewable",
+    "selected-generated-running",
+  );
+
+  assert.equal(queue.reviewableCount, 2);
+  assert.equal(queue.allLocalCount, 2);
+  assert.equal(queue.excludedCount, 0);
+  assert.equal(queue.outsideCurrentFilter, true);
+  assert.deepEqual(queue.groups.map((group) => group.sessions.map((row) => row.id)), [
+    ["selected-generated-running", "repo-changed", "repo-clean"],
+  ]);
+  assert.deepEqual(queue.sessions.map((row) => row.id), [
+    "selected-generated-running",
+    "repo-changed",
+    "repo-clean",
+  ]);
+  assert.equal(queue.sessions.filter((row) => row.id === "selected-generated-running").length, 1);
+});
+
+test("codeReviewQueue re-sorts groups when a selected archived override creates a higher-priority repo", () => {
+  const queue = codeReviewQueue(
+    [
+      sessionFixture({
+        id: "repo-pr",
+        project_root: "/Users/dev/code/repo-a/.worktrees/pr",
+        updated_at: "2026-09-01T12:01:00.000Z",
+        diff: { additions: 5, deletions: 2 },
+        pullRequest: { repo: "acme/repo-a", number: 7, state: "open", branch: "feat/pr" },
+        git: gitFixture({
+          branch: "feat/pr",
+          worktreeRoot: "/Users/dev/code/repo-a/.worktrees/pr",
+          repositoryRoot: "/Users/dev/code/repo-a",
+          repositoryUrl: "https://github.com/acme/repo-a",
+        }),
+        workBranch: "feat/pr",
+      }),
+      sessionFixture({
+        id: "repo-clean",
+        project_root: "/Users/dev/code/repo-z/.worktrees/clean",
+        updated_at: "2026-09-01T12:00:00.000Z",
+        git: gitFixture({
+          worktreeRoot: "/Users/dev/code/repo-z/.worktrees/clean",
+          repositoryRoot: "/Users/dev/code/repo-z",
+          repositoryUrl: "https://github.com/acme/repo-z",
+        }),
+      }),
+      sessionFixture({
+        id: "selected-archived-failed",
+        project_root: "/Users/dev/code/repo-b/.worktrees/fail",
+        updated_at: "2026-09-01T12:02:00.000Z",
+        status: "exited",
+        exit_code: 1,
+        archived_at: "2026-09-01T12:03:00.000Z",
+        git: gitFixture({
+          worktreeRoot: "/Users/dev/code/repo-b/.worktrees/fail",
+          repositoryRoot: "/Users/dev/code/repo-b",
+          repositoryUrl: "https://github.com/acme/repo-b",
+        }),
+      }),
+    ],
+    "reviewable",
+    "selected-archived-failed",
+  );
+
+  assert.equal(queue.reviewableCount, 2);
+  assert.equal(queue.allLocalCount, 2);
+  assert.equal(queue.excludedCount, 0);
+  assert.equal(queue.outsideCurrentFilter, true);
+  assert.deepEqual(
+    queue.groups.map((group) => ({ key: group.key, ids: group.sessions.map((row) => row.id) })),
+    [
+      { key: "https://github.com/acme/repo-b", ids: ["selected-archived-failed"] },
+      { key: "https://github.com/acme/repo-a", ids: ["repo-pr"] },
+      { key: "https://github.com/acme/repo-z", ids: ["repo-clean"] },
+    ],
+  );
+  assert.deepEqual(queue.sessions.map((row) => row.id), [
+    "selected-archived-failed",
+    "repo-pr",
+    "repo-clean",
+  ]);
+  assert.equal(queue.sessions.filter((row) => row.id === "selected-archived-failed").length, 1);
+});
+
+test("codeReviewQueue includes one selected outside-filter row without changing counts", () => {
   const rows = [
     sessionFixture({
       id: "eligible",
@@ -382,8 +503,8 @@ test("codeReviewQueue appends one selected outside-filter row without changing c
   assert.equal(reviewable.allLocalCount, 2);
   assert.equal(reviewable.excludedCount, 1);
   assert.equal(reviewable.outsideCurrentFilter, true);
-  assert.deepEqual(reviewable.sessions.map((row) => row.id), ["eligible", "selected-rootless"]);
-  assert.equal(reviewable.groups.at(-1)?.sessions.at(-1)?.id, "selected-rootless");
+  assert.equal(reviewable.sessions.some((row) => row.id === "selected-rootless"), true);
+  assert.equal(reviewable.sessions.filter((row) => row.id === "selected-rootless").length, 1);
 
   const allLocal = codeReviewQueue(
     [
@@ -397,7 +518,8 @@ test("codeReviewQueue appends one selected outside-filter row without changing c
   assert.equal(allLocal.allLocalCount, 2);
   assert.equal(allLocal.excludedCount, 1);
   assert.equal(allLocal.outsideCurrentFilter, true);
-  assert.equal(allLocal.sessions.at(-1)?.id, "selected-archived");
+  assert.equal(allLocal.sessions.some((row) => row.id === "selected-archived"), true);
+  assert.equal(allLocal.sessions.filter((row) => row.id === "selected-archived").length, 1);
 
   const alreadyIncluded = codeReviewQueue(rows, "reviewable", "eligible");
   assert.equal(alreadyIncluded.outsideCurrentFilter, false);

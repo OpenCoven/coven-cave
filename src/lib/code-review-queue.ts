@@ -158,31 +158,13 @@ export function codeReviewQueue(
 ): CodeReviewQueue {
   const allLocal = rows.filter((row) => isCodeRailSession(row));
   const reviewable = allLocal.filter((row) => codeSessionEligibility(row).reviewable);
-  const visible = mode === "reviewable" ? reviewable : allLocal;
-  const groups = buildGroups(visible, mode);
-
   let outsideCurrentFilter = false;
-  if (selectedId) {
-    const selected = rows.find((row) => row.id === selectedId) ?? null;
-    const alreadyVisible = visible.some((row) => row.id === selectedId);
-    if (selected && !alreadyVisible) {
-      outsideCurrentFilter = true;
-      const key = groupKey(selected, mode);
-      const label = groupLabel(selected, mode);
-      const existingGroup = groups.find((group) => group.key === key);
-      if (existingGroup) {
-        if (!existingGroup.sessions.some((row) => row.id === selected.id)) existingGroup.sessions.push(selected);
-      } else {
-        groups.push({
-          key,
-          label,
-          sessions: [selected],
-          bestPriority: reviewPriority(selected),
-          newestUpdate: updatedAt(selected),
-        });
-      }
-    }
-  }
+  const visible = mode === "reviewable" ? reviewable : allLocal;
+  const selected = selectedId ? rows.find((row) => row.id === selectedId) ?? null : null;
+  const alreadyVisible = selected ? visible.some((row) => row.id === selected.id) : false;
+  const visibleWithSelected = selected && !alreadyVisible ? [...visible, selected] : visible;
+  if (selected && !alreadyVisible) outsideCurrentFilter = true;
+  const groups = buildGroups(visibleWithSelected, mode);
 
   const flatSessions = groups.flatMap((group) => group.sessions);
   return {
