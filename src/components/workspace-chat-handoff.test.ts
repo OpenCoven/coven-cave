@@ -207,8 +207,8 @@ assert.match(
 );
 assert.match(
   codeWorkbench,
-  /setRailTab\("changes"\);\s*setRailOpen\(true\);/,
-  "a routed diff open shows Changes in an OPEN rail — a correct-but-hidden rail reads as a no-op",
+  /setRailTab\("changes"\);\s*onReviewOpenChange\(true\);/,
+  "a routed diff open shows Changes and asks the host to reopen the review rail",
 );
 assert.match(
   codeWorkbench,

@@ -2460,6 +2460,7 @@ const VITEST_TESTS = new Set([
   "src/components/project-picker-focus.test.tsx",
   "src/components/project-root-workspace-notice.behavior.test.tsx",
   "src/components/code-session-picker.test.tsx",
+  "src/components/code-shortcuts-dialog.test.tsx",
   // rendered JSX for the shared reviewable/all queue scope control
   "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",

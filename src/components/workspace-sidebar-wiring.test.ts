@@ -171,7 +171,7 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /const capturedActiveId = activeIdRef\.current;\s*\n\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);[\s\S]*?const scope = capturedActiveId/,
+  /const capturedActiveId = activeIdRef\.current;\s*\n\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);\s*\n\s*const reqId = \+\+loadSessionsReqRef\.current;\s*\n\s*const isCurrent = \(\) => isCurrentSessionListRequest\(\{[\s\S]*?capturedScopeKey,[\s\S]*?currentScopeKey: chatAttentionProjectionScopeKey\(activeIdRef\.current\),/,
   "loadSessions captures the current familiar and attention projection scope from activeIdRef",
 );
 assert.match(
