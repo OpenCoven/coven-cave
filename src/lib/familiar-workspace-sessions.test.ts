@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  classifyFamiliarWorkspaceSessions,
   collapseFamiliarWorkspaceSessions,
   isFamiliarWorkspaceRoot,
 } from "./familiar-workspace-sessions.ts";
@@ -81,5 +82,31 @@ describe("collapseFamiliarWorkspaceSessions", () => {
   it("is a no-op when nothing is a familiar workspace", () => {
     const sessions = [row("a", "/repo/a"), row("b", "")];
     assert.equal(collapseFamiliarWorkspaceSessions(sessions, WS_ROOT).length, 2);
+  });
+});
+
+describe("classifyFamiliarWorkspaceSessions", () => {
+  it("annotates root, nested, relocated, normal-project, and rootless rows", () => {
+    const classified = classifyFamiliarWorkspaceSessions(
+      [
+        row("workspace-root", `${WS_ROOT}/nova`),
+        row("workspace-nested", `${WS_ROOT}/nova/notes`),
+        row("workspace-relocated", "/opt/coven/nova-ws/memory"),
+        row("project", "/home/test/Documents/GitHub/OpenCoven/coven-cave"),
+        row("rootless", ""),
+      ],
+      WS_ROOT,
+      ["/opt/coven/nova-ws"],
+    );
+    assert.deepEqual(
+      classified.map(({ id, familiarWorkspace }) => ({ id, familiarWorkspace })),
+      [
+        { id: "workspace-root", familiarWorkspace: true },
+        { id: "workspace-nested", familiarWorkspace: true },
+        { id: "workspace-relocated", familiarWorkspace: true },
+        { id: "project", familiarWorkspace: false },
+        { id: "rootless", familiarWorkspace: false },
+      ],
+    );
   });
 });

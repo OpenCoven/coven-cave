@@ -130,6 +130,8 @@ export type SessionRow = {
   pinned?: boolean;
   /** Cave-local auto-archive defer-until timestamp, if set. */
   archive_extended_until?: string | null;
+  /** Trusted server classification; true only for configured familiar workspace roots. */
+  familiarWorkspace?: boolean;
 };
 
 export type SessionGitContext = {

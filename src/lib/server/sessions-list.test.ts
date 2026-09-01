@@ -25,7 +25,13 @@ const previousEnv = {
 };
 const scratchRoot = path.join(process.cwd(), `.slct-${process.pid}`);
 const covenHome = path.join(scratchRoot, "h");
+const projectsPath = path.join(scratchRoot, "projects.json");
 const projectRoot = path.join(scratchRoot, "p");
+const familiarRootProject = path.join(covenHome, "workspaces", "familiars", "nova");
+const familiarNestedProject = path.join(familiarRootProject, "notes");
+const relocatedProjectRoot = path.join(scratchRoot, "relocated-nova");
+const normalProjectRoot = path.join(scratchRoot, "repo");
+const rootlessCwd = path.join(scratchRoot, "scratch");
 const configPath = path.join(covenHome, "cave", "config.json");
 
 let stopDaemon = async () => {};
@@ -89,56 +95,184 @@ const STALE = {
   harness: "claude",
   runtime: null,
   title: "Stale chat",
-  createdAt: "2026-08-01T10:00:00.000Z",
-  updatedAt: "2026-08-01T11:00:00.000Z",
+  createdAt: "2000-08-01T10:00:00.000Z",
+  updatedAt: "2000-08-01T11:00:00.000Z",
   turns: [
     {
       id: "u1",
       role: "user",
       text: "Anything left?",
-      createdAt: "2026-08-01T10:00:00.000Z",
+      createdAt: "2000-08-01T10:00:00.000Z",
       parentId: null,
     },
     {
       id: "a1",
       role: "assistant",
       text: "No.",
-      createdAt: "2026-08-01T11:00:00.000Z",
+      createdAt: "2000-08-01T11:00:00.000Z",
       parentId: "u1",
     },
   ],
   activeLeafId: "a1",
 };
 
+function chat(sessionId, runtime, updatedAt) {
+  return {
+    sessionId,
+    familiarId: "charm",
+    harness: "claude",
+    runtime,
+    title: sessionId,
+    createdAt: updatedAt,
+    updatedAt,
+    turns: [
+      {
+        id: `${sessionId}-u`,
+        role: "user",
+        text: "Anything left?",
+        createdAt: updatedAt,
+        parentId: null,
+      },
+      {
+        id: `${sessionId}-a`,
+        role: "assistant",
+        text: "No.",
+        createdAt: updatedAt,
+        parentId: `${sessionId}-u`,
+      },
+    ],
+    activeLeafId: `${sessionId}-a`,
+  };
+}
+
+async function saveFixtureConversation(saveConversation, clearConversationListMetadataCache, conversation) {
+  const createdAt = conversation.createdAt;
+  const updatedAt = conversation.updatedAt;
+  await saveConversation(conversation);
+  const convPath = path.join(covenHome, "cave", "conversations", `${conversation.sessionId}.json`);
+  const saved = JSON.parse(await readFile(convPath, "utf8"));
+  await writeFile(
+    convPath,
+    JSON.stringify({ ...saved, createdAt, updatedAt }),
+  );
+  clearConversationListMetadataCache();
+}
+
+async function writeProjects(clearCaveStoreReadCache) {
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        {
+          id: "familiar-root",
+          name: "Familiar Root",
+          root: familiarRootProject,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+        },
+        {
+          id: "familiar-nested",
+          name: "Familiar Nested",
+          root: familiarNestedProject,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+        },
+        {
+          id: "relocated",
+          name: "Relocated Familiar",
+          root: relocatedProjectRoot,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+        },
+        {
+          id: "normal",
+          name: "Normal Project",
+          root: normalProjectRoot,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+        },
+        {
+          id: "stale",
+          name: "Stale Project",
+          root: projectRoot,
+          createdAt: "2000-08-01T00:00:00.000Z",
+          updatedAt: "2000-08-01T00:00:00.000Z",
+        },
+      ],
+    }),
+  );
+  clearCaveStoreReadCache();
+}
+
+async function writeFamiliarsToml(clearCaveStoreReadCache) {
+  await writeFile(
+    path.join(covenHome, "familiars.toml"),
+    `[[familiar]]
+id = "nova"
+workspace = "${relocatedProjectRoot}"
+`,
+  );
+  clearCaveStoreReadCache();
+}
+
 const realNow = Date.now;
 try {
   process.env.COVEN_HOME = covenHome;
   delete process.env.COVEN_SOCKET;
-  delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+  process.env.CAVE_PROJECTS_PATH_OVERRIDE = projectsPath;
 
   const { computeSessionsList } = await import("./sessions-list.ts");
   const { loadState } = await import("../cave-config.ts");
   const { saveConversation, clearConversationListMetadataCache } = await import(
     "../cave-conversations.ts"
   );
+  const { clearCaveStoreReadCache } = await import("./store-read-cache.ts");
 
   async function reset() {
     await rm(scratchRoot, { recursive: true, force: true });
     await mkdir(covenHome, { recursive: true });
     await mkdir(projectRoot, { recursive: true });
+    await mkdir(familiarRootProject, { recursive: true });
+    await mkdir(familiarNestedProject, { recursive: true });
+    await mkdir(relocatedProjectRoot, { recursive: true });
+    await mkdir(normalProjectRoot, { recursive: true });
+    await mkdir(rootlessCwd, { recursive: true });
+    await mkdir(path.dirname(projectsPath), { recursive: true });
+    await writeProjects(clearCaveStoreReadCache);
+    await writeFamiliarsToml(clearCaveStoreReadCache);
     clearConversationListMetadataCache();
-    await saveConversation({ ...STALE, runtime: `local:${projectRoot}` });
-    // saveConversation stamps `updatedAt` with the wall clock, so the row it
-    // produces is always zero days idle and would never be due for the sweep.
-    // Rewriting the file is how the sibling route test ages a fixture, and it
-    // is what makes the positive control below actually exercise the sweep.
-    const convPath = path.join(covenHome, "cave", "conversations", `${STALE.sessionId}.json`);
-    const saved = JSON.parse(await readFile(convPath, "utf8"));
-    await writeFile(
-      convPath,
-      JSON.stringify({ ...saved, updatedAt: STALE.updatedAt }),
+    clearCaveStoreReadCache();
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      { ...STALE, runtime: `local:${projectRoot}` },
     );
-    clearConversationListMetadataCache();
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      chat("familiar-root", `local:${familiarRootProject}`, "2099-08-23T11:00:00.000Z"),
+    );
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      chat("familiar-nested", `local:${familiarNestedProject}`, "2099-08-23T11:05:00.000Z"),
+    );
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      chat("familiar-relocated", `local:${relocatedProjectRoot}`, "2099-08-23T11:10:00.000Z"),
+    );
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      chat("normal-project", `local:${normalProjectRoot}`, "2099-08-23T11:15:00.000Z"),
+    );
+    await saveFixtureConversation(
+      saveConversation,
+      clearConversationListMetadataCache,
+      chat("rootless", `local:${rootlessCwd}`, "2099-08-23T11:20:00.000Z"),
+    );
   }
 
   /** sessionIds cave state currently records as archived. */
@@ -149,7 +283,7 @@ try {
 
   Date.now = () => Date.parse("2026-08-23T12:00:00.000Z");
 
-  const daemonUrl = await startDaemon([]);
+  let daemonUrl = await startDaemon([]);
 
   // --- read-only: the sweep must not run --------------------------------
   await reset();
@@ -161,6 +295,26 @@ try {
     enrichGit: false,
   });
   assert.equal(readOnly.payload.ok, true, "the read-only compute still returns a list");
+  const readOnlyIds = readOnly.payload.sessions.map((row) => row.id);
+  assert.deepEqual(
+    readOnlyIds,
+    [
+      "rootless",
+      "normal-project",
+      "familiar-relocated",
+      "familiar-nested",
+      "familiar-root",
+      "stale-chat",
+    ],
+    "read-only classification-off compute keeps the same session membership",
+  );
+  for (const row of readOnly.payload.sessions) {
+    assert.equal(
+      row.familiarWorkspace,
+      undefined,
+      "classification remains absent unless explicitly requested",
+    );
+  }
 
   assert.deepEqual(
     await archivedIds(),
@@ -168,8 +322,50 @@ try {
     "computeSessionsList with sweepArchives:false archived a session — a dashboard GET must never mutate cave state",
   );
 
+  const classified = await computeSessionsList(false, null, false, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(classified.payload.ok, true, "opt-in classification returns a list");
+  assert.deepEqual(
+    classified.payload.sessions.map((row) => row.id),
+    readOnlyIds,
+    "trusted familiar-workspace classification is metadata-only and does not change result membership",
+  );
+  const classifiedById = new Map(classified.payload.sessions.map((row) => [row.id, row]));
+  assert.equal(classifiedById.get("familiar-root")?.familiarWorkspace, true);
+  assert.equal(classifiedById.get("familiar-nested")?.familiarWorkspace, true);
+  assert.equal(classifiedById.get("familiar-relocated")?.familiarWorkspace, true);
+  assert.equal(classifiedById.get("normal-project")?.familiarWorkspace, false);
+  assert.equal(classifiedById.get("rootless")?.familiarWorkspace, false);
+  assert.equal(classifiedById.get("stale-chat")?.familiarWorkspace, false);
+
+  await stopDaemon();
+  stopDaemon = async () => {};
+  const degradedClassified = await computeSessionsList(false, null, false, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(degradedClassified.payload.ok, true, "degraded compute still returns local rows");
+  assert.equal(degradedClassified.payload.degraded, true);
+  assert.deepEqual(
+    degradedClassified.payload.sessions.map((row) => row.id),
+    readOnlyIds,
+    "degraded classification keeps the same session membership",
+  );
+  const degradedById = new Map(degradedClassified.payload.sessions.map((row) => [row.id, row]));
+  assert.equal(degradedById.get("familiar-root")?.familiarWorkspace, true);
+  assert.equal(degradedById.get("familiar-nested")?.familiarWorkspace, true);
+  assert.equal(degradedById.get("familiar-relocated")?.familiarWorkspace, true);
+  assert.equal(degradedById.get("normal-project")?.familiarWorkspace, false);
+  assert.equal(degradedById.get("rootless")?.familiarWorkspace, false);
+  assert.equal(degradedById.get("stale-chat")?.familiarWorkspace, false);
+
   // --- default: the sweep still runs ------------------------------------
   await reset();
+  daemonUrl = await startDaemon([]);
   await writeConfig(daemonUrl);
 
   const swept = await computeSessionsList(true, null, false);

@@ -15,23 +15,27 @@ export const dynamic = "force-dynamic";
 // handlers, and session mutators must be able to bust the cache so
 // post-mutation refreshes never serve the pre-mutation list.
 //
-// No options are passed to computeSessionsList: this route keeps the default
-// behaviour it has always had, auto-archive sweeps and git enrichment included.
+// The route forwards only the opt-in familiar-workspace metadata toggle.
+// Auto-archive sweeps and git enrichment still come from computeSessionsList's
+// defaults, preserving the polling behaviour this route has always owned.
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
   const familiarId = url.searchParams.get("familiarId")?.trim() || null;
   const collapseFamiliarWorkspace =
     url.searchParams.get("collapseFamiliarWorkspace") === "1";
+  const classifyFamiliarWorkspace =
+    url.searchParams.get("classifyFamiliarWorkspace") === "1";
   if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
   }
-  // Cache per (archived, familiar, collapse) — each view differs by its result set.
+  // Cache per (archived, familiar, collapse, classification) — these views
+  // differ both by membership and by whether trusted familiar metadata is present.
   const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}:${
     collapseFamiliarWorkspace ? "collapse" : "full"
-  }`;
+  }:${classifyFamiliarWorkspace ? "classified" : "unclassified"}`;
   const result = await sessionsListCache.get(cacheKey, () =>
-    computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace),
+    computeSessionsList(includeArchived, familiarId, collapseFamiliarWorkspace, { classifyFamiliarWorkspace }),
   );
   return NextResponse.json(result.payload, result.init);
 }
