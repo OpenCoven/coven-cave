@@ -30,7 +30,7 @@
  * record.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
@@ -100,6 +100,10 @@ function topTabForNavigation(request: PendingCodeNavigation): CodeTopTab {
     : request.topTab;
 }
 
+function githubTabFromTopTab(topTab: CodeTopTab | null | undefined): CodeGithubTab | null {
+  return isCodeGithubTab(topTab) ? topTab : null;
+}
+
 export type CodeViewProps = {
   sessions: SessionRow[];
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
@@ -150,6 +154,24 @@ export function CodeView({
         ? topTabForNavigation(navigationRequest)
         : deepLink?.topTab ?? "sessions",
   );
+  const [lastGithubTab, setLastGithubTab] = useState<CodeGithubTab>(
+    githubTabFromTopTab(
+      pendingOpen
+        ? navigationRequest
+          ? topTabForNavigation(navigationRequest)
+          : deepLink?.topTab ?? null
+        : navigationRequest
+          ? topTabForNavigation(navigationRequest)
+          : deepLink?.topTab ?? null,
+    ) ?? "activity",
+  );
+  const lastGithubTabRef = useRef(lastGithubTab);
+  const rememberGithubTab = useCallback((nextTopTab: CodeTopTab | null | undefined) => {
+    const nextGithubTab = githubTabFromTopTab(nextTopTab);
+    if (!nextGithubTab || lastGithubTabRef.current === nextGithubTab) return;
+    lastGithubTabRef.current = nextGithubTab;
+    setLastGithubTab(nextGithubTab);
+  }, []);
   const [initialGithubTarget, setInitialGithubTarget] = useState<GitHubItemTarget | null>(
     pendingOpen
       ? null
@@ -164,15 +186,58 @@ export function CodeView({
   useEffect(() => {
     if (!navigationRequest) return;
     if (handledNavigationNonceRef.current === navigationRequest.nonce) return;
-    setTopTab(topTabForNavigation(navigationRequest));
+    const nextTopTab = topTabForNavigation(navigationRequest);
+    setTopTab(nextTopTab);
+    rememberGithubTab(nextTopTab);
     setInitialGithubTarget(
       navigationRequest.kind === "github-item" ? navigationRequest.target : null,
     );
     setGithubNavigationKey(navigationRequest.nonce);
     handledNavigationNonceRef.current = navigationRequest.nonce;
     onNavigationHandled?.(navigationRequest.nonce);
-  }, [navigationRequest, onNavigationHandled]);
+  }, [navigationRequest, onNavigationHandled, rememberGithubTab]);
   const githubTab: CodeGithubTab | null = isCodeGithubTab(topTab) ? topTab : null;
+  const githubFilterBaseId = useId().replaceAll(":", "");
+  const githubFilterRefs = useRef<Record<CodeGithubTab, HTMLButtonElement | null>>({
+    activity: null,
+    prs: null,
+    issues: null,
+    reviews: null,
+  });
+  const githubFilterTabId = useCallback(
+    (id: CodeGithubTab) => `${githubFilterBaseId}-github-filter-tab-${id}`,
+    [githubFilterBaseId],
+  );
+  const githubFilterPanelId = useCallback(
+    (id: CodeGithubTab) => `${githubFilterBaseId}-github-filter-panel-${id}`,
+    [githubFilterBaseId],
+  );
+  const selectGithubTab = useCallback((id: CodeGithubTab, focus = false) => {
+    rememberGithubTab(id);
+    setTopTab(id);
+    if (focus) githubFilterRefs.current[id]?.focus();
+  }, [rememberGithubTab]);
+  const handleGithubFilterKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>, id: CodeGithubTab) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const currentIndex = CODE_GITHUB_TABS.indexOf(id);
+      if (currentIndex < 0) return;
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") {
+        nextIndex = (currentIndex + 1) % CODE_GITHUB_TABS.length;
+      } else if (event.key === "ArrowLeft") {
+        nextIndex = (currentIndex - 1 + CODE_GITHUB_TABS.length) % CODE_GITHUB_TABS.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = CODE_GITHUB_TABS.length - 1;
+      }
+      if (nextIndex === null) return;
+      event.preventDefault();
+      selectGithubTab(CODE_GITHUB_TABS[nextIndex], true);
+    },
+    [selectGithubTab],
+  );
   // Selection is tri-state for the mobile drill-in: `undefined` = nothing
   // chosen yet (auto-pick allowed), `null` = the user explicitly went Back to
   // the session list (auto-pick must NOT re-select), string = a session.
@@ -333,7 +398,7 @@ export function CodeView({
               type="button"
               role="tab"
               aria-selected={githubTab !== null}
-              onClick={() => setTopTab(githubTab ?? "activity")}
+              onClick={() => setTopTab(lastGithubTabRef.current)}
               className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
                 githubTab !== null
                   ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
@@ -352,15 +417,23 @@ export function CodeView({
           <div
             role="tablist"
             aria-label="GitHub filter"
+            aria-orientation="horizontal"
             className="mt-1 flex min-w-0 items-center gap-1 overflow-x-auto"
           >
             {CODE_GITHUB_TABS.map((id) => (
               <button
                 key={id}
+                ref={(node) => {
+                  githubFilterRefs.current[id] = node;
+                }}
                 type="button"
                 role="tab"
+                id={githubFilterTabId(id)}
                 aria-selected={githubTab === id}
-                onClick={() => setTopTab(id)}
+                aria-controls={githubFilterPanelId(id)}
+                tabIndex={githubTab === id ? 0 : -1}
+                onClick={() => selectGithubTab(id)}
+                onKeyDown={(event) => handleGithubFilterKeyDown(event, id)}
                 className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
                   githubTab === id
                     ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
@@ -379,7 +452,12 @@ export function CodeView({
           <LazyWorkScheduler onJumpToSession={onJumpToSession} />
         </div>
       ) : githubTab ? (
-        <div className="min-h-0 flex-1">
+        <div
+          role="tabpanel"
+          id={githubFilterPanelId(githubTab)}
+          aria-labelledby={githubFilterTabId(githubTab)}
+          className="min-h-0 flex-1"
+        >
           <LazyGitHubView
             key={githubNavigationKey}
             onJumpToSession={onJumpToSession}

@@ -204,6 +204,26 @@ async function mockGitHubActivity(page: Page) {
   );
 }
 
+async function mockWorkScheduler(page: Page) {
+  await page.route("**/api/queue/readiness", (route) =>
+    route.fulfill({
+      json: {
+        readiness: {
+          ok: true,
+          message: "",
+          project: { id: "e2e-project", name: "E2E Project", root: "/repo/alpha" },
+        },
+      },
+    }),
+  );
+  await page.route("**/api/beads?mode=ready**", (route) =>
+    route.fulfill({ json: { ok: true, data: [] } }),
+  );
+  await page.route("**/api/beads?mode=blocked**", (route) =>
+    route.fulfill({ json: { ok: true, data: [], blockers: [] } }),
+  );
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("code surface (Coding familiar's room)", () => {
@@ -359,6 +379,108 @@ test.describe("code surface (Coding familiar's room)", () => {
       );
     });
   }
+
+  test("GitHub preserves the last selected PRs, Issues, or Reviews filter after visiting Review or Work", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page);
+    await mockGitHubActivity(page);
+    await mockWorkScheduler(page);
+    await page.goto("/?mode=code&ctab=prs", { waitUntil: "domcontentloaded" });
+
+    const topTabs = page.getByRole("tablist", { name: "Code surface" });
+    const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
+    await expect(topTabs).toBeVisible({ timeout: 30_000 });
+    await expect(githubFilter).toBeVisible({ timeout: 30_000 });
+
+    for (const step of [
+      { filter: "PRs", detour: "Work" },
+      { filter: "Issues", detour: "Review" },
+      { filter: "Reviews", detour: "Work" },
+    ] as const) {
+      await githubFilter.getByRole("tab", { name: step.filter }).click();
+      await expect(githubFilter.getByRole("tab", { name: step.filter })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+
+      await topTabs.getByRole("tab", { name: step.detour }).click();
+      await expect(topTabs.getByRole("tab", { name: step.detour })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+
+      await topTabs.getByRole("tab", { name: "GitHub" }).click();
+      await expect(topTabs.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(githubFilter.getByRole("tab", { name: step.filter })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    }
+  });
+
+  test("the GitHub filter tablist uses roving tabindex and arrow-key selection with wraparound", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page);
+    await mockGitHubActivity(page);
+    await page.goto("/?mode=code&ctab=prs", { waitUntil: "domcontentloaded" });
+
+    const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
+    const activityTab = githubFilter.getByRole("tab", { name: "Activity" });
+    const prsTab = githubFilter.getByRole("tab", { name: "PRs" });
+    const issuesTab = githubFilter.getByRole("tab", { name: "Issues" });
+    const reviewsTab = githubFilter.getByRole("tab", { name: "Reviews" });
+
+    await expect(githubFilter).toBeVisible({ timeout: 30_000 });
+    await expect(prsTab).toHaveAttribute("aria-selected", "true");
+    await expect(prsTab).toHaveAttribute("tabindex", "0");
+    await expect(activityTab).toHaveAttribute("tabindex", "-1");
+    const prsPanelId = await prsTab.getAttribute("aria-controls");
+    if (!prsPanelId) throw new Error("PRs tab should control a GitHub tabpanel");
+    const prsTabId = await prsTab.getAttribute("id");
+    if (!prsTabId) throw new Error("PRs tab should expose a stable id");
+    await expect(page.locator(`#${prsPanelId}`)).toHaveAttribute("role", "tabpanel");
+    await expect(page.locator(`#${prsPanelId}`)).toHaveAttribute("aria-labelledby", prsTabId);
+
+    await prsTab.focus();
+    await expect(prsTab).toBeFocused();
+
+    await page.keyboard.press("ArrowRight");
+    await expect(issuesTab).toBeFocused();
+    await expect(issuesTab).toHaveAttribute("aria-selected", "true");
+    await expect(issuesTab).toHaveAttribute("tabindex", "0");
+    await expect(prsTab).toHaveAttribute("tabindex", "-1");
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(prsTab).toBeFocused();
+    await expect(prsTab).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("End");
+    await expect(reviewsTab).toBeFocused();
+    await expect(reviewsTab).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(activityTab).toBeFocused();
+    await expect(activityTab).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("Home");
+    await expect(activityTab).toBeFocused();
+    await expect(activityTab).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(reviewsTab).toBeFocused();
+    await expect(reviewsTab).toHaveAttribute("aria-selected", "true");
+    await expect(reviewsTab).toHaveAttribute("tabindex", "0");
+    await expect(activityTab).toHaveAttribute("tabindex", "-1");
+  });
 
   test("a non-coding familiar sees the closed Coding Desk door", async ({ page }) => {
     await base(page, [NEWEST, OLDER], "general");

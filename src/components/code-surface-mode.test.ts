@@ -183,13 +183,28 @@ assert.match(
 );
 assert.match(
   codeView,
-  /aria-selected=\{githubTab !== null\}[\s\S]*onClick=\{\(\) => setTopTab\(githubTab \?\? "activity"\)\}/,
-  "activating the GitHub primary tab preserves the current GitHub subtab when present and otherwise falls back to Activity",
+  /const \[lastGithubTab, setLastGithubTab\] = useState<CodeGithubTab>\([\s\S]*?\?\? "activity",\s*\);[\s\S]*const lastGithubTabRef = useRef\(lastGithubTab\);/,
+  "CodeView keeps a remembered GitHub subtab in state and a ref so leaving GitHub does not reset the secondary filter",
+);
+assert.match(
+  codeView,
+  /aria-selected=\{githubTab !== null\}[\s\S]*onClick=\{\(\) => setTopTab\(lastGithubTabRef\.current\)\}/,
+  "activating the GitHub primary tab re-enters the last remembered GitHub subtab instead of always resetting to Activity",
 );
 assert.match(
   codeView,
   /githubTab \? \(\s*<div[\s\S]*role="tablist"[\s\S]*aria-label="GitHub filter"[\s\S]*CODE_GITHUB_TABS\.map\(\(id\) =>/,
   "an active GitHub tab renders the secondary GitHub filter tablist from the existing tab metadata",
+);
+assert.match(
+  codeView,
+  /role="tablist"[\s\S]*aria-label="GitHub filter"[\s\S]*aria-orientation="horizontal"[\s\S]*CODE_GITHUB_TABS\.map\(\(id\) =>[\s\S]*id=\{githubFilterTabId\(id\)\}[\s\S]*aria-controls=\{githubFilterPanelId\(id\)\}[\s\S]*tabIndex=\{githubTab === id \? 0 : -1\}[\s\S]*onKeyDown=\{\(event\) => handleGithubFilterKeyDown\(event, id\)\}/,
+  "the secondary GitHub filter is a keyboard-operable tablist with roving tabindex and stable aria wiring",
+);
+assert.match(
+  codeView,
+  /role="tabpanel"[\s\S]*id=\{githubFilterPanelId\(githubTab\)\}[\s\S]*aria-labelledby=\{githubFilterTabId\(githubTab\)\}/,
+  "the visible GitHub surface is exposed as the tabpanel controlled by the selected GitHub filter tab",
 );
 assert.match(
   codeView,
