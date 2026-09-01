@@ -262,6 +262,16 @@ export function rearmPersistedMobileAccessSecret(
   return secret;
 }
 
+export type MobileAccessRetirementResult =
+  | { kind: "retired" }
+  | { kind: "skipped" }
+  | { kind: "retained"; error: string };
+
+type MobileAccessRetirementOptions = {
+  removeFile?: (file: string) => void;
+  fileExists?: (file: string) => boolean;
+};
+
 /**
  * Turn Mobile mode off: disarm the in-process gate and remove the persisted
  * secret so the next boot stays tokenless. Only removes the secret this
@@ -270,13 +280,26 @@ export function rearmPersistedMobileAccessSecret(
  */
 export function retireMobileAccessSecret(
   env: Record<string, string | undefined> = process.env,
-): void {
-  if (!provisioningAllowed(env)) return;
-  delete env.COVEN_CAVE_ACCESS_TOKEN;
+  options: MobileAccessRetirementOptions = {},
+): MobileAccessRetirementResult {
+  if (!provisioningAllowed(env)) return { kind: "skipped" };
   const file = mobileAccessSecretFile(env);
+  const fileExists = options.fileExists ?? existsSync;
+  const removeFile = options.removeFile ?? ((target: string) => rmSync(target));
   try {
-    if (existsSync(file)) rmSync(file);
-  } catch {
-    // Best-effort — a stale file only means the next boot re-arms.
+    if (fileExists(file)) removeFile(file);
+    if (fileExists(file)) {
+      return {
+        kind: "retained",
+        error: "persisted mobile access credential still exists after removal",
+      };
+    }
+  } catch (error) {
+    return {
+      kind: "retained",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
+  delete env.COVEN_CAVE_ACCESS_TOKEN;
+  return { kind: "retired" };
 }

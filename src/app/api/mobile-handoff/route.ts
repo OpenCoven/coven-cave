@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
-import { spawn } from "node:child_process";
 import QRCode from "qrcode";
-import {
-  BoundedProcessOutput,
-  safeProcessErrorMessage,
-  terminateProcessTree,
-} from "@/lib/process-execution";
 import { lstatSync } from "node:fs";
 import { assertExclusivePathOwnership } from "@/lib/server/client-v1/path-ownership";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
@@ -19,134 +13,30 @@ import { signMobileAccessToken } from "@/lib/mobile-access-token";
 import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
 import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
 import {
+  acquireTailscaleServeLease,
+  assessServeOwnership,
   buildPairingSteps,
   classifyTailscaleSelf,
   createMobileInvite,
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
+  normalizeLoopbackBackendUrl,
+  packagedServeMayTakeOverHealthyLoopback,
+  parseTailscaleServeStatus as parseServeStatus,
+  resetTailscaleServeRoute,
   resolveIosInstallUrl,
+  runTailscaleCommand as runTailscale,
+  serveStatusFingerprint,
+  serveRouteOwnedByBackend,
   serveRouteFailure,
-  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
-  tailscaleBin,
-  tailscaleSpawnEnv,
   type PairingStep,
+  type TailscaleServeCommandResult,
+  type TailscaleServeResetResult,
 } from "@/lib/mobile-handoff";
 
 export const dynamic = "force-dynamic";
-
-type TailscaleResult = {
-  ok: boolean;
-  status: number | null;
-  stdout: string;
-  stderr: string;
-  cleanupFailed: boolean;
-};
-
-const TAILSCALE_TIMED_OUT = "Tailscale command timed out";
-const TAILSCALE_TERMINATION_FAILED =
-  "Tailscale command timed out and its process tree could not be stopped";
-
-// The local Tailscale daemon/system-extension IPC occasionally stalls a
-// single CLI invocation for several seconds (observed on macOS with the
-// managed/sysext install) even while Tailscale itself is fully connected.
-// Any of the sequential probes below can be the one that stalls — not just
-// the first. A retried invocation almost always returns immediately, so one
-// bounded retry turns a spurious "Tailscale command timed out" (which used
-// to hard-block the whole pairing screen, including the QR code, even though
-// Tailscale was connected) into a brief, invisible delay. cave-j2056
-async function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
-  const first = await runTailscaleOnce(args, timeoutMs);
-  if (first.ok || first.cleanupFailed || first.stderr !== TAILSCALE_TIMED_OUT) return first;
-  return runTailscaleOnce(args, timeoutMs);
-}
-
-function runTailscaleOnce(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
-  return new Promise((resolve) => {
-    const bin = tailscaleBin();
-    const child = spawn(bin, args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: tailscaleSpawnEnv(),
-      detached: process.platform !== "win32",
-    });
-    const stdout = new BoundedProcessOutput(64 * 1024);
-    const stderr = new BoundedProcessOutput(64 * 1024);
-    let settled = false;
-    let timedOut = false;
-    const finish = (result: TailscaleResult) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    const timer = setTimeout(async () => {
-      timedOut = true;
-      const terminated = await terminateProcessTree(child);
-      finish({
-        ok: false,
-        status: null,
-        stdout: stdout.text(),
-        stderr: terminated ? TAILSCALE_TIMED_OUT : TAILSCALE_TERMINATION_FAILED,
-        cleanupFailed: !terminated,
-      });
-    }, timeoutMs);
-
-    child.stdout.on("data", (chunk) => {
-      stdout.append(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr.append(chunk);
-    });
-    child.on("error", (error) => {
-      if (timedOut) return;
-      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-      finish({
-        ok: false,
-        status: null,
-        stdout: stdout.text(),
-        stderr: missing
-          ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
-          : safeProcessErrorMessage(error, "Tailscale CLI"),
-        cleanupFailed: false,
-      });
-    });
-    child.on("close", (status) => {
-      if (timedOut) return;
-      finish({
-        ok: status === 0,
-        status,
-        stdout: stdout.text(),
-        stderr: stderr.text(),
-        cleanupFailed: false,
-      });
-    });
-  });
-}
-
-// `tailscale serve status --json` is normally a clean JSON document, but some
-// builds prepend health/warning lines (or emit nothing when there is no serve
-// config). Parse tolerantly: empty output means "no serve config" ({}), and we
-// fall back to extracting the outermost JSON object before giving up.
-function parseServeStatus(raw: string): { value: unknown } | { error: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { value: {} };
-  try {
-    return { value: JSON.parse(trimmed) };
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      try {
-        return { value: JSON.parse(trimmed.slice(start, end + 1)) };
-      } catch {
-        // fall through
-      }
-    }
-    return { error: trimmed.slice(0, 500) };
-  }
-}
 
 function trustedBackendPort() {
   return (process.env.PORT || "3000").trim();
@@ -169,20 +59,8 @@ function backendUrl() {
   return `http://127.0.0.1:${trustedBackendPort()}`;
 }
 
-function normalizeLoopbackBackend(value: string | null | undefined) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:") return null;
-    if (!["127.0.0.1", "localhost", "::1"].includes(url.hostname)) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
 function nativeAppBackendUrl() {
-  const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
+  const configured = normalizeLoopbackBackendUrl(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
   // App mode is token-gated (`pnpm mobile:tailscale:app` mints the mobile
@@ -243,17 +121,29 @@ function mobileAccessSecret() {
 // secret, so a packaged user needs no dev checkout to pair a phone (cave-gzje).
 function nativeTokenlessMode() {
   if (process.env.COVEN_CAVE_TAILNET_TRUST === "1") return true;
-  return Boolean(normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
+  return Boolean(normalizeLoopbackBackendUrl(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
 }
 
 function mobileUnavailableResponse(
   error: string,
-  details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
+  details?: {
+    stderr?: string;
+    backendUrl?: string;
+    steps?: PairingStep[];
+    routeRemoved?: boolean;
+  },
+  status = 200,
 ) {
-  return NextResponse.json({ ok: false, unavailable: true, error, ...details });
+  return NextResponse.json(
+    { ok: false, unavailable: true, error, ...details },
+    { status },
+  );
 }
 
-function tailscaleCleanupFailureResponse(result: TailscaleResult, backend: string) {
+function tailscaleCleanupFailureResponse(
+  result: TailscaleServeCommandResult,
+  backend: string,
+) {
   return mobileUnavailableResponse(
     "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
     { stderr: result.stderr, backendUrl: backend },
@@ -271,6 +161,239 @@ function mobileAccessUnavailableResponse() {
   return mobileUnavailableResponse(error, {
     steps: buildPairingSteps({ access: { ok: false, detail: error } }),
   });
+}
+
+type ServeStatusSnapshot =
+  | { ok: true; status: unknown }
+  | { ok: false; response: NextResponse };
+
+async function readServeStatus(backend: string): Promise<ServeStatusSnapshot> {
+  const result = await runTailscale(["serve", "status", "--json"]);
+  if (result.cleanupFailed) {
+    return { ok: false, response: tailscaleCleanupFailureResponse(result, backend) };
+  }
+  if (!result.ok) {
+    return {
+      ok: false,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve ownership could not be inspected; no route was changed.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  const parsed = parseServeStatus(result.stdout);
+  if ("error" in parsed) {
+    return {
+      ok: false,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve returned an unreadable status; no route was changed.",
+        { stderr: parsed.error, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  return { ok: true, status: parsed.value };
+}
+
+async function probeLoopbackBackend(target: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1200);
+  try {
+    await fetch(new URL("/api/familiars", target), {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    // Any HTTP response proves that a different instance is alive. In
+    // particular, 401/403 are healthy credential boundaries, not stale routes.
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function inspectServeOwnership(backend: string) {
+  const snapshot = await readServeStatus(backend);
+  if (!snapshot.ok) return snapshot;
+  const ownership = await assessServeOwnership(
+    snapshot.status,
+    backend,
+    probeLoopbackBackend,
+    {
+      takeOverHealthyLoopback: packagedServeMayTakeOverHealthyLoopback(backend),
+    },
+  );
+  return { ok: true as const, ...ownership, status: snapshot.status };
+}
+
+function serveOwnershipConflictResponse(
+  backend: string,
+  targets: string[],
+  steps?: PairingStep[],
+) {
+  const detail = targets.length > 0
+    ? `Tailscale Serve is owned by another backend (${targets.join(", ")}).`
+    : "Tailscale Serve ownership is protected by an unknown route.";
+  return mobileUnavailableResponse(detail, { backendUrl: backend, steps }, 503);
+}
+
+async function withServeMutationLease(
+  backend: string,
+  operation: () => Promise<NextResponse>,
+): Promise<NextResponse> {
+  const lease = await acquireTailscaleServeLease();
+  if (!lease) {
+    return mobileUnavailableResponse(
+      "Tailscale Serve ownership is busy; no route was changed.",
+      { backendUrl: backend },
+      503,
+    );
+  }
+  try {
+    return await operation();
+  } finally {
+    await lease.release();
+  }
+}
+
+async function mutateOwnedServeRoute(
+  args: string[],
+  backend: string,
+  expectedStatus: unknown,
+) {
+  const beforeMutation = await readServeStatus(backend);
+  if (!beforeMutation.ok) return beforeMutation;
+  if (
+    serveStatusFingerprint(beforeMutation.status)
+    !== serveStatusFingerprint(expectedStatus)
+  ) {
+    return {
+      ok: false as const,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve changed ownership before the route could be updated; no route was changed.",
+        { backendUrl: backend },
+        503,
+      ),
+    };
+  }
+
+  const mutation = await runTailscale(args);
+  if (mutation.cleanupFailed) {
+    return {
+      ok: false as const,
+      response: tailscaleCleanupFailureResponse(mutation, backend),
+    };
+  }
+
+  const verified = await readServeStatus(backend);
+  if (!verified.ok) return verified;
+  if (!serveRouteOwnedByBackend(verified.status, backend)) {
+    return {
+      ok: false as const,
+      response: mobileUnavailableResponse(
+        "Tailscale Serve changed ownership while the route was being updated; no invite was created.",
+        { stderr: mutation.stderr, backendUrl: backend },
+        503,
+      ),
+    };
+  }
+  return {
+    ok: true as const,
+    status: verified.status,
+    warning: mutation.ok
+      ? null
+      : mutation.stderr || "Tailscale Serve reported an error, but the requested route is active.",
+  };
+}
+
+async function resetOwnedServeRoute(
+  backend: string,
+  afterVerifiedRemoval?: () => ReturnType<typeof retireMobileAccessSecret>,
+) {
+  const result = await resetTailscaleServeRoute({
+    backendUrl: backend,
+    runTailscale,
+    probeBackend: probeLoopbackBackend,
+    afterVerifiedRemoval: afterVerifiedRemoval
+      ? async () => {
+          const retirement = afterVerifiedRemoval();
+          if (retirement.kind === "retained") {
+            throw new Error(retirement.error);
+          }
+        }
+      : undefined,
+  });
+  let response: NextResponse;
+  switch (result.kind) {
+    case "removed":
+      response = NextResponse.json({ ok: true, alreadyAbsent: result.alreadyAbsent });
+      break;
+    case "not-owned":
+      response = NextResponse.json({
+        ok: true,
+        skipped: true,
+        notOwned: true,
+        backendUrl: backend,
+        currentTargets: result.targets,
+      });
+      break;
+    case "busy":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve ownership is busy; no route was changed.",
+        { backendUrl: backend },
+        503,
+      );
+      break;
+    case "cleanup-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale did not stop a timed-out command. Retry after the previous command exits.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "process-cleanup-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve removal was verified, but the owned backend process did not stop safely; its access credential was retained.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "finalization-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve removal was verified, but the access credential could not be retired and remains armed.",
+        { stderr: result.stderr, backendUrl: backend, routeRemoved: true },
+        503,
+      );
+      break;
+    case "status-failed":
+    case "status-malformed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve ownership could not be verified; the access credential was retained.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "reset-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve reset failed; the access credential was retained.",
+        { stderr: result.stderr, backendUrl: backend },
+        503,
+      );
+      break;
+    case "verification-failed":
+      response = mobileUnavailableResponse(
+        "Tailscale Serve still has active configuration after reset; the access credential was retained.",
+        { backendUrl: backend },
+        503,
+      );
+      break;
+  }
+  return { ...result, response } satisfies TailscaleServeResetResult & {
+    response: NextResponse;
+  };
 }
 
 /**
@@ -360,7 +483,11 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await ensureNativeAppServeReady(chatId, access.secret);
+  const backend = nativeAppBackendUrl();
+  const res = await withServeMutationLease(
+    backend,
+    async () => ensureNativeAppServeReady(chatId, access.secret),
+  );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
@@ -381,6 +508,7 @@ async function ensureNativeAppServeReady(
   }
 
   const self = await runTailscale(["status", "--self", "--json"]);
+  if (self.cleanupFailed) return tailscaleCleanupFailureResponse(self, backend);
   // BackendState separates "install Tailscale" / "start it" / "sign in" —
   // the old exit-code-only check lumped a signed-out machine in with a
   // missing CLI and let a Stopped one fail later with a route error.
@@ -404,58 +532,69 @@ async function ensureNativeAppServeReady(
 
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
-  const serve = await runTailscale(["serve", "--bg", backend]);
-  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
-  const serveWarning = serve.ok
-    ? null
-    : serve.stderr || "Tailscale Serve could not be (re)started.";
-
-  let serveStatus: unknown = {};
-  const status = await runTailscale(["serve", "status", "--json"]);
-  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
-  if (status.ok) {
-    const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveStatus = parsed.value;
+  const ownership = await inspectServeOwnership(backend);
+  if (!ownership.ok) return ownership.response;
+  if (ownership.kind === "conflict") {
+    const detail = `Tailscale Serve is owned by another backend (${ownership.targets.join(", ")}).`;
+    return serveOwnershipConflictResponse(
+      backend,
+      ownership.targets,
+      buildPairingSteps({
+        access: { ok: true },
+        backend: { ok: true },
+        tailscale,
+        route: { ok: false, detail },
+      }),
+    );
   }
+
+  let serveStatus = ownership.status;
+  let serveWarning: string | null = null;
+  if (ownership.kind !== "owned") {
+    const claim = await mutateOwnedServeRoute(
+      ["serve", "--bg", backend],
+      backend,
+      ownership.status,
+    );
+    if (!claim.ok) return claim.response;
+    serveStatus = claim.status;
+    serveWarning = claim.warning;
+  }
+
   const tailnetDiscovery = tailnetDiscoveryProof({
     selfStatus,
     serveStatus,
     backendUrl: backend,
-    // A successful status command with no matching handler proves there is no
-    // live route. MagicDNS alone only identifies the node; it does not publish
-    // the loopback backend.
-    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
-      serveOk: serve.ok,
-      statusOk: status.ok,
-    }),
+    allowMagicDnsFallback: false,
   });
   let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
   let fallbackWarning: string | null = null;
   if (!tailnetDiscovery.ok) {
-    const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
-    if (httpServe.ok) {
+    if (ownership.kind === "owned") {
       discovery = nativeAppDiscoveryProof({
         selfStatus,
         serveStatus,
         backendUrl: backend,
-        // The explicit HTTP Serve fallback is addressed by Tailscale IP. Do
-        // not replace it with an unproven MagicDNS HTTPS URL.
         allowMagicDnsFallback: false,
       });
-      if (discovery.ok && discovery.source === "tailscale-ip-http") {
-        fallbackWarning = serveWarning
-          ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
-          : "Using the Tailscale IP fallback for the native app.";
-      }
     } else {
-      const httpServeError = httpServe.stderr || "Tailscale HTTP Serve could not be started.";
-      fallbackWarning = serveWarning
-        ? `${serveWarning} HTTP fallback failed: ${httpServeError}`
-        : httpServeError;
-      discovery = {
-        ok: false,
-        reason: fallbackWarning,
-      };
+      const httpClaim = await mutateOwnedServeRoute(
+        ["serve", "--bg", `--http=${backendPort(backend)}`, backend],
+        backend,
+        serveStatus,
+      );
+      if (!httpClaim.ok) return httpClaim.response;
+      serveStatus = httpClaim.status;
+      discovery = nativeAppDiscoveryProof({
+        selfStatus,
+        serveStatus,
+        backendUrl: backend,
+        allowMagicDnsFallback: false,
+      });
+      fallbackWarning = httpClaim.warning ?? "Using the Tailscale IP fallback for the native app.";
+    }
+    if (discovery.ok && discovery.source === "tailscale-ip-http" && !fallbackWarning) {
+      fallbackWarning = "Using the Tailscale IP fallback for the native app.";
     }
   }
 
@@ -463,7 +602,6 @@ async function ensureNativeAppServeReady(
     const routeFailure = serveRouteFailure({
       backendUrl: backend,
       serveError: fallbackWarning ?? serveWarning,
-      statusError: status.stderr,
       routeReason: discovery.reason,
     });
     const routeDetail = routeFailure.error;
@@ -564,7 +702,11 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await mobileHandoffReady(access.secret, chatId);
+  const backend = backendUrl();
+  const res = await withServeMutationLease(
+    backend,
+    async () => mobileHandoffReady(access.secret, chatId),
+  );
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
@@ -572,9 +714,11 @@ async function mobileHandoffReady(
   accessSecret: string,
   chatId?: string | null,
 ) {
+  const backend = backendUrl();
   // `--json` doubles as the connectivity check (exit 0 == connected) and the
   // source for the MagicDNS fallback host below.
   const self = await runTailscale(["status", "--self", "--json"]);
+  if (self.cleanupFailed) return tailscaleCleanupFailureResponse(self, backend);
   if (!self.ok) {
     return mobileUnavailableResponse("tailscale is not connected", { stderr: self.stderr });
   }
@@ -584,42 +728,36 @@ async function mobileHandoffReady(
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
 
-  const backend = backendUrl();
+  const ownership = await inspectServeOwnership(backend);
+  if (!ownership.ok) return ownership.response;
+  if (ownership.kind === "conflict") {
+    return serveOwnershipConflictResponse(backend, ownership.targets);
+  }
 
-  // Best-effort (re)start of Tailscale Serve. Don't hard-fail when this errors
-  // — on macOS the CLI can return "GUI failed to start (CLIError 3)" even
-  // though the serve config (and tunnel) is already live in the daemon. Capture
-  // the error as a non-fatal warning and try to produce a working link anyway.
-  const serve = await runTailscale(["serve", "--bg", backend]);
-  if (serve.cleanupFailed) return tailscaleCleanupFailureResponse(serve, backend);
-  const serveWarning = serve.ok
-    ? null
-    : serve.stderr || "Tailscale Serve could not be (re)started.";
-
-  // Prefer the real serve config when it's readable.
-  let serveStatus: unknown = {};
-  const status = await runTailscale(["serve", "status", "--json"]);
-  if (status.cleanupFailed) return tailscaleCleanupFailureResponse(status, backend);
-  if (status.ok) {
-    const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveStatus = parsed.value;
+  let serveStatus = ownership.status;
+  let serveWarning: string | null = null;
+  if (ownership.kind !== "owned") {
+    const claim = await mutateOwnedServeRoute(
+      ["serve", "--bg", backend],
+      backend,
+      ownership.status,
+    );
+    if (!claim.ok) return claim.response;
+    serveStatus = claim.status;
+    serveWarning = claim.warning;
   }
 
   const discovery = tailnetDiscoveryProof({
     selfStatus,
     serveStatus,
     backendUrl: backend,
-    allowMagicDnsFallback: shouldAllowMagicDnsFallback({
-      serveOk: serve.ok,
-      statusOk: status.ok,
-    }),
+    allowMagicDnsFallback: false,
   });
 
   if (!discovery.ok) {
     const routeFailure = serveRouteFailure({
       backendUrl: backend,
       serveError: serveWarning,
-      statusError: status.stderr,
       routeReason: discovery.reason,
     });
     // Nothing usable — surface the most actionable error we have.
@@ -691,12 +829,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "reset") {
-    const reset = await runTailscale(["serve", "reset"]);
-    return NextResponse.json({
-      ok: reset.ok,
-      error: reset.ok ? undefined : "failed to reset tailscale serve",
-      stderr: reset.stderr,
-    }, { status: reset.ok ? 200 : 500 });
+    return (await resetOwnedServeRoute(backendUrl())).response;
   }
 
   // Cheap paired-signal read for the handoff modal's "phone seen" poll: no
@@ -725,16 +858,15 @@ export async function POST(req: Request) {
   }
 
   if (action === "app-stop") {
-    const reset = await runTailscale(["serve", "reset"]);
+    const reset = await resetOwnedServeRoute(
+      nativeAppBackendUrl(),
+      retireMobileAccessSecret,
+    );
     // Mobile mode Off retires the self-provisioned pairing secret (cave-os73):
     // disarm the in-process gate and drop the persisted file so the next dev
-    // boot stays tokenless. No-op in the packaged bundle.
-    retireMobileAccessSecret();
-    return NextResponse.json({
-      ok: reset.ok,
-      error: reset.ok ? undefined : "failed to stop mobile mode",
-      stderr: reset.stderr,
-    }, { status: reset.ok ? 200 : 500 });
+    // boot stays tokenless, but only after Serve removal is verified. A live
+    // or unknown route must remain protected by the existing credential.
+    return reset.response;
   }
 
   return mobileHandoff(req, chatId);

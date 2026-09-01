@@ -10,6 +10,7 @@ set -euo pipefail
 PACKAGED_SERVER_SUFFIX="/Applications/CovenCave.app/Contents/Resources/resources/server/server.mjs"
 TAILSCALE_BIN="${TAILSCALE_BIN:-tailscale}"
 DRY_RUN="${DRY_RUN:-0}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 fail() {
   printf 'mobile-recovery: %s\n' "$*" >&2
@@ -23,6 +24,7 @@ need() {
 need ps
 need lsof
 need "$TAILSCALE_BIN"
+need node
 
 server_pid="$(
   ps ax -o pid=,command= |
@@ -84,22 +86,28 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# Reclaim the canonical root route. This mutates Serve configuration only; it
-# deliberately does not terminate the process behind any stale prior target.
-if ! "$TAILSCALE_BIN" serve --bg "$backend" >/dev/null; then
-  fail "Tailscale rejected Serve recovery for ${backend}"
+# Reclaim only through the canonical cross-process lease and complete Serve
+# inventory. Packaged precedence is granted by this script only after it proves
+# the live packaged process and loopback listener above; the helper still
+# requires the fixed production port before replacing a healthy dev route.
+serve_result=""
+if ! serve_result="$(
+  node --experimental-strip-types "$ROOT/scripts/mobile-serve-ownership.ts" claim \
+    --backend "$backend" --channel packaged
+)"; then
+  fail "Serve recovery was refused; no route changed (${serve_result:-no result})"
 fi
-
-# A successful mutation is authoritative evidence that Tailscale accepted the
-# requested route. Status is diagnostic corroboration only because its JSON
-# schema has changed across Tailscale releases and must not veto an acknowledged
-# mutation.
-status_text="$($TAILSCALE_BIN serve status 2>&1 || true)"
-if printf '%s\n' "$status_text" | grep -Fq "$backend"; then
-  printf 'mobile-recovery: recovered and corroborated Serve -> %s\n' "$backend"
-else
-  printf 'mobile-recovery: recovered Serve -> %s (status parser/text did not corroborate; mutation succeeded)\n' "$backend"
-fi
+case "$serve_result" in
+  *'"kind":"owned"'*)
+    printf 'mobile-recovery: Serve already belongs to %s\n' "$backend"
+    ;;
+  *'"kind":"claimed"'*)
+    printf 'mobile-recovery: recovered and verified Serve -> %s\n' "$backend"
+    ;;
+  *)
+    fail "Serve recovery returned an unexpected result (${serve_result})"
+    ;;
+esac
 
 if [ -n "$magic_dns" ]; then
   printf 'mobile-recovery: endpoint=https://%s/\n' "$magic_dns"
