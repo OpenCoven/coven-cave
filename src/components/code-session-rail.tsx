@@ -171,6 +171,7 @@ export function CodeSessionRail({
                       onSelect(row.id);
                     }}
                     aria-current={selected ? "true" : undefined}
+                    data-code-session-id={row.id}
                     aria-label={open ? undefined : `Open ${title} in ${group.label}, ${ACTIVITY_A11Y[activity]}`}
                     title={open ? undefined : title}
                     className={

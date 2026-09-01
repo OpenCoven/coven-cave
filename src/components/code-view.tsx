@@ -311,14 +311,27 @@ export function CodeView({
     if (roomRef.current?.contains(node)) return true;
     return Boolean(document.querySelector("[data-code-picker-panel]")?.contains(node));
   }, []);
-  const visibleQueueRows = useCallback(() => {
-    return [...document.querySelectorAll<HTMLButtonElement>("[data-code-session-id]")]
+  const visibleQueueRows = useCallback((target: EventTarget | null) => {
+    const node = target instanceof Node ? target : null;
+    const pickerPanel = document.querySelector<HTMLElement>("[data-code-picker-panel]");
+    const scope =
+      node && pickerPanel?.contains(node)
+        ? pickerPanel
+        : roomRef.current;
+    if (!scope) return [];
+    const seenSessionIds = new Set<string>();
+    return [...scope.querySelectorAll<HTMLButtonElement>("[data-code-session-id]")]
       .filter((row) => {
-        if (!queueTargetBelongsToRoom(row)) return false;
         const style = window.getComputedStyle(row);
-        return style.display !== "none" && style.visibility !== "hidden" && row.getClientRects().length > 0;
+        if (style.display === "none" || style.visibility === "hidden" || row.getClientRects().length === 0) {
+          return false;
+        }
+        const sessionId = row.dataset.codeSessionId;
+        if (!sessionId || seenSessionIds.has(sessionId)) return false;
+        seenSessionIds.add(sessionId);
+        return true;
       });
-  }, [queueTargetBelongsToRoom]);
+  }, []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (topTab !== "sessions") return;
@@ -335,7 +348,7 @@ export function CodeView({
       }
       const key = event.key.toLowerCase();
       if ((key === "j" || key === "k") && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        const rows = visibleQueueRows();
+        const rows = visibleQueueRows(event.target);
         if (!rows.length) return;
         event.preventDefault();
         const active = document.activeElement as HTMLElement | null;

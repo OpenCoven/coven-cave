@@ -698,6 +698,11 @@ assert.doesNotMatch(
 );
 assert.match(
   rail,
+  /aria-current=\{selected \? "true" : undefined\}[\s\S]*data-code-session-id=\{row\.id\}/,
+  "visible rail row buttons expose the same stable session-id marker the queue shortcuts walk",
+);
+assert.match(
+  rail,
   /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{ACTIVITY_A11Y\[activity\]\}`\}/,
   "collapsed session buttons identify the session, project, and activity without relying on color",
 );

@@ -340,32 +340,29 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(inspector.getByText("⑂ feat-flux")).toBeVisible();
   });
 
-  test("queue keyboard flow navigates rows, opens search with slash, and keeps typing inside the picker query", async ({
+  test("visible rail keyboard flow navigates rows and Enter opens the focused session", async ({
     page,
     isMobile,
   }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
-    await base(page, [NEWEST, OLDER, ALL_LOCAL_ONLY]);
+    await base(page, [NEWEST, OLDER]);
     await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
 
-    const trigger = page.locator(".code-picker__trigger");
-    await expect(trigger).toBeVisible({ timeout: 30_000 });
-
-    await trigger.click();
-    const selectedRow = page.locator('[data-code-session-id="s-new"]');
-    const olderRow = page.locator('[data-code-session-id="s-old"]');
+    const rail = page.getByRole("navigation", { name: "Coding sessions" });
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+    const selectedRow = rail.locator('button[data-code-session-id="s-new"]');
+    const olderRow = rail.locator('button[data-code-session-id="s-old"]');
     await expect(selectedRow).toBeVisible();
     await expect(olderRow).toBeVisible();
 
-    await trigger.focus();
-    await page.keyboard.press("j");
-    await expect
-      .poll(() => activeCodeSessionId(page))
-      .toBe("s-new");
     await expect(
       page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
     ).toBeVisible();
 
+    await selectedRow.focus();
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-new");
     await page.keyboard.press("j");
     await expect
       .poll(() => activeCodeSessionId(page))
@@ -388,6 +385,18 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(
       page.getByTestId("code-workbench-header").getByRole("button", { name: /Fix login retry/ }),
     ).toBeVisible();
+  });
+
+  test("slash opens picker search and keeps typing inside the picker query", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, [NEWEST, OLDER, ALL_LOCAL_ONLY]);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const trigger = page.locator(".code-picker__trigger");
+    await expect(trigger).toBeVisible({ timeout: 30_000 });
 
     const scope = page
       .getByRole("navigation", { name: "Coding sessions" })
@@ -396,14 +405,12 @@ test.describe("code surface (Coding familiar's room)", () => {
     await trigger.focus();
     await page.keyboard.press("Shift+A");
     await expect(scope.getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
-
     await page.keyboard.press("/");
     const search = page.locator("[data-code-session-search]");
-    const pickerScope = page
-      .getByRole("dialog", { name: "Switch session" })
-      .getByRole("group", { name: "Session scope" });
+    const picker = page.getByRole("dialog", { name: "Switch session" });
+    const pickerScope = picker.getByRole("group", { name: "Session scope" });
     await expect(search).toBeFocused();
-    await expect(page.locator('[data-code-session-id="s-local"]')).toBeVisible();
+    await expect(picker.locator('[data-code-session-id="s-local"]')).toBeVisible();
     await page.keyboard.press("j");
     await page.keyboard.press("k");
     await page.keyboard.press("/");
@@ -439,7 +446,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(page.getByText("Terminal · this worktree")).toBeVisible();
 
     await page.locator(".code-picker__trigger").click();
-    await page.locator('[data-code-session-id="s-clean"]').click();
+    await page.getByRole("dialog", { name: "Switch session" }).locator('[data-code-session-id="s-clean"]').click();
     await expect(
       page.getByTestId("code-workbench-header").getByRole("button", { name: /Tidy the docs/ }),
     ).toBeVisible();
@@ -457,7 +464,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(page.getByText("Terminal · this worktree")).toBeVisible();
 
     await page.locator(".code-picker__trigger").click();
-    await page.locator('[data-code-session-id="s-new"]').click();
+    await page.getByRole("dialog", { name: "Switch session" }).locator('[data-code-session-id="s-new"]').click();
     await expect(
       page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
     ).toBeVisible();
@@ -469,7 +476,7 @@ test.describe("code surface (Coding familiar's room)", () => {
     );
 
     await page.locator(".code-picker__trigger").click();
-    await page.locator('[data-code-session-id="s-clean"]').click();
+    await page.getByRole("dialog", { name: "Switch session" }).locator('[data-code-session-id="s-clean"]').click();
     await expect(
       page.getByTestId("code-workbench-header").getByRole("button", { name: /Tidy the docs/ }),
     ).toBeVisible();
