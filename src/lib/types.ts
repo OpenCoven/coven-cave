@@ -139,6 +139,9 @@ export type SessionGitContext = {
   /** Main checkout that owns this linked worktree, derived from
    *  `git rev-parse --git-common-dir`. Present only for linked worktrees. */
   repositoryRoot?: string | null;
+  /** Canonical GitHub origin; absent for missing, malformed, credential-bearing,
+   *  or non-GitHub remotes. */
+  repositoryUrl?: string | null;
 };
 
 export type SessionPullRequestContext = {
