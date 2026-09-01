@@ -1,5 +1,5 @@
 // @ts-nocheck — react-test-renderer ships no types; this is a rendered production integration test.
-import { createElement } from "react";
+import { createElement, startTransition, Suspense } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -285,11 +285,14 @@ function textOf(node: unknown): string {
 function Harness({
   missionValue,
   selector = missionValue.id,
+  suspendAfterHook = false,
 }: {
   missionValue: ResearchMission;
   selector?: string;
+  suspendAfterHook?: boolean;
 }) {
   const gateway = useResearchRunGateway(selector, missionValue.familiarId, missionValue);
+  if (suspendAfterHook) throw NEVER_SETTLES;
   return createElement(
     LiveRegionProvider,
     null,
@@ -312,6 +315,8 @@ function Harness({
     }),
   );
 }
+
+const NEVER_SETTLES = new Promise<never>(() => {});
 
 async function mount(missionValue = mission(), selector = missionValue.id) {
   let renderer!: ReactTestRenderer;
@@ -860,9 +865,12 @@ describe("Research Desk canonical projection integration", () => {
     });
     const beforePoll = textOf(renderer.toJSON());
     expect(beforePoll).toContain("Canonical generation two completed");
-    expect(beforePoll).toContain("Lagging running mission");
-    expect(beforePoll).toContain("Lagging running claim");
-    expect(beforePoll).toContain("Cancel run");
+    expect(beforePoll).toContain("Historical run · completed");
+    expect(beforePoll).not.toContain("Lagging running mission");
+    expect(beforePoll).not.toContain("Lagging running claim");
+    expect(beforePoll).not.toContain("Cancel run");
+    expect(beforePoll).not.toContain("Continue");
+    expect(beforePoll).not.toContain("Archive");
 
     const completedMission = mission({
       ...laggingMission,
@@ -997,6 +1005,264 @@ describe("Research Desk canonical projection integration", () => {
     expect(mismatched).not.toContain("Future generation claim");
     expect(renderer.root.findAllByType("button")
       .some((button) => textOf(button) === "Archive")).toBe(false);
+
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
+  });
+
+  test.each([
+    {
+      runStatus: "completed",
+      eventType: "run.completed",
+      missionStatus: "completed",
+      expectedAction: "Archive",
+    },
+    {
+      runStatus: "failed",
+      eventType: "run.failed",
+      missionStatus: "failed",
+      expectedAction: "Retry",
+    },
+    {
+      runStatus: "cancelled",
+      eventType: "run.cancelled",
+      missionStatus: "cancelled",
+      expectedAction: "Archive",
+    },
+    {
+      runStatus: "expired",
+      eventType: null,
+      missionStatus: "cancelled",
+      expectedAction: "Archive",
+    },
+  ])(
+    "suppresses a stale running overlay until a $runStatus canonical run catches up",
+    async ({ runStatus, eventType, missionStatus, expectedAction }) => {
+      const staleMission = mission({
+        title: `Stale running detail for ${runStatus}`,
+        status: "running",
+        sources: [{
+          id: `stale-${runStatus}`,
+          title: "Stale terminal evidence",
+          sourceType: "web",
+          status: "used",
+          claim: `Stale ${runStatus} claim`,
+        }],
+      });
+      const eventCount = eventType ? 1 : 0;
+      const terminalRun = run(RUN_ID, {
+        status: runStatus,
+        nextEventSequence: eventCount + 1,
+      });
+      vi.stubGlobal("fetch", vi.fn(async () => ({
+        json: async () => ({
+          ok: true,
+          run: terminalRun,
+          lastEventSequence: eventCount,
+          nextEventSequence: eventCount + 1,
+        }),
+      })));
+      const renderer = await mount(staleMission);
+      const source = FakeEventSource.instances[0];
+      await act(async () => {
+        source.emit("snapshot", {
+          run: terminalRun,
+          lastEventSequence: eventCount,
+          nextEventSequence: eventCount + 1,
+          afterSeq: 0,
+        });
+        if (eventType) {
+          source.emit("run-event", event(1, eventType, {
+            status: runStatus,
+            activity: `Canonical ${runStatus} outcome`,
+          }));
+        }
+      });
+
+      const stale = textOf(renderer.toJSON());
+      expect(stale).toContain(`Historical run · ${runStatus}`);
+      expect(stale).not.toContain(`Stale running detail for ${runStatus}`);
+      expect(stale).not.toContain(`Stale ${runStatus} claim`);
+      for (const action of ["Cancel run", "Continue", "Archive"]) {
+        expect(renderer.root.findAllByType("button")
+          .some((button) => textOf(button) === action)).toBe(false);
+      }
+
+      const caughtUpMission = mission({
+        ...staleMission,
+        title: `Caught-up ${runStatus} detail`,
+        status: missionStatus,
+        finishedAt: "2026-08-31T18:40:00.000Z",
+        updatedAt: "2026-08-31T18:40:00.000Z",
+      });
+      await act(async () => {
+        renderer.update(createElement(Harness, {
+          missionValue: caughtUpMission,
+          selector: caughtUpMission.id,
+        }));
+        await Promise.resolve();
+      });
+      const caughtUp = textOf(renderer.toJSON());
+      expect(caughtUp).toContain(`Caught-up ${runStatus} detail`);
+      expect(renderer.root.findAllByType("button")
+        .some((button) => textOf(button) === expectedAction)).toBe(true);
+
+      await act(async () => renderer.unmount());
+      expect(source.closed).toBe(true);
+    },
+  );
+
+  test("event promotion reads only the last committed mission snapshot", async () => {
+    const committedMission = mission({
+      title: "Committed mission detail",
+      sources: [{
+        id: "committed-source",
+        title: "Committed evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Committed claim",
+      }],
+    });
+    const abandonedMission = mission({
+      ...committedMission,
+      title: "Abandoned mission detail",
+      updatedAt: "2026-08-31T18:30:00.000Z",
+      sources: [{
+        id: "abandoned-source",
+        title: "Abandoned evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Abandoned claim",
+      }],
+    });
+    const initialRun = run(RUN_ID, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        ok: true,
+        run: initialRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+      }),
+    })));
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        createElement(
+          Suspense,
+          { fallback: createElement("p", null, "Pending mission render") },
+          createElement(Harness, { missionValue: committedMission }),
+        ),
+        { unstable_isConcurrent: true },
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const source = FakeEventSource.instances[0];
+    await act(async () => {
+      source.emit("snapshot", {
+        run: initialRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Committed canonical prefix",
+      }));
+    });
+    expect(textOf(renderer.toJSON())).toContain("Committed mission detail");
+
+    act(() => {
+      startTransition(() => {
+        renderer.update(
+          createElement(
+            Suspense,
+            { fallback: createElement("p", null, "Pending mission render") },
+            createElement(Harness, {
+              missionValue: abandonedMission,
+              suspendAfterHook: true,
+            }),
+          ),
+        );
+      });
+    });
+    expect(textOf(renderer.toJSON())).toContain("Committed mission detail");
+    expect(textOf(renderer.toJSON())).not.toContain("Pending mission render");
+
+    const advancedRun = run(RUN_ID, {
+      status: "gathering",
+      nextEventSequence: 3,
+    });
+    await act(async () => {
+      source.onerror?.();
+      source.emit("snapshot", {
+        run: advancedRun,
+        lastEventSequence: 2,
+        nextEventSequence: 3,
+        afterSeq: 1,
+      });
+      source.emit("run-event", event(2, "phase.started", {
+        phase: "gather",
+        activity: "Committed callback advancement",
+      }));
+    });
+    const advanced = textOf(renderer.toJSON());
+    expect(advanced).toContain("Committed callback advancement");
+    expect(advanced).toContain("Committed mission detail");
+    expect(advanced).toContain("Committed claim");
+    expect(advanced).not.toContain("Abandoned mission detail");
+    expect(advanced).not.toContain("Abandoned claim");
+
+    const nextCommittedMission = mission({
+      ...committedMission,
+      title: "Next committed mission detail",
+      updatedAt: "2026-08-31T18:35:00.000Z",
+      sources: [{
+        id: "next-committed-source",
+        title: "Next committed evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Next committed claim",
+      }],
+    });
+    await act(async () => {
+      renderer.update(
+        createElement(
+          Suspense,
+          { fallback: createElement("p", null, "Pending mission render") },
+          createElement(Harness, { missionValue: nextCommittedMission }),
+        ),
+      );
+      await Promise.resolve();
+    });
+    expect(textOf(renderer.toJSON())).toContain("Next committed mission detail");
+
+    const nextRun = run(RUN_ID, {
+      status: "challenging",
+      nextEventSequence: 4,
+    });
+    await act(async () => {
+      source.onerror?.();
+      source.emit("snapshot", {
+        run: nextRun,
+        lastEventSequence: 3,
+        nextEventSequence: 4,
+        afterSeq: 2,
+      });
+      source.emit("run-event", event(3, "phase.started", {
+        phase: "challenge",
+        activity: "Next committed callback advancement",
+      }));
+    });
+    const nextAdvanced = textOf(renderer.toJSON());
+    expect(nextAdvanced).toContain("Next committed callback advancement");
+    expect(nextAdvanced).toContain("Next committed mission detail");
+    expect(nextAdvanced).toContain("Next committed claim");
+    expect(nextAdvanced).not.toContain("Committed mission detail");
+    expect(nextAdvanced).not.toContain("Abandoned mission detail");
 
     await act(async () => renderer.unmount());
     expect(source.closed).toBe(true);

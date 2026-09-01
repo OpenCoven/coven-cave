@@ -44,3 +44,16 @@ test("Research Desk subscribes to the canonical gateway and reduces only same-ru
   assert.match(detail, /data-research-run-projection="evidence"/);
   assert.match(detail, /data-research-run-projection="report"/);
 });
+
+test("gateway callbacks read mission detail committed after render", () => {
+  assert.doesNotMatch(
+    hook,
+    /const legacyMissionRef = useRef\(legacyMission\);\s*legacyMissionRef\.current = legacyMission;/,
+    "render must not publish an uncommitted mission snapshot to event callbacks",
+  );
+  assert.match(
+    hook,
+    /useLayoutEffect\(\(\) => \{\s*legacyMissionRef\.current = legacyMission;\s*\}, \[legacyMission\]\)/,
+    "the committed mission snapshot must update before browser events resume",
+  );
+});

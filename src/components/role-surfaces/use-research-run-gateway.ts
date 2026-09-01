@@ -110,26 +110,30 @@ function createCompleteView(
   eventState: ResearchRunEventState,
   missionDetail: ResearchMission | null,
 ): ResearchRunCompleteView {
+  const compatibleMissionDetail = missionDetail
+    && missionLifecycleMatchesRun(missionDetail, eventState.run)
+    ? missionDetail
+    : null;
   try {
     const hydrated = hydrateHybridResearchRunProjectionInput(
       eventState.run,
       eventState.appliedEvents,
-      missionDetail,
+      compatibleMissionDetail,
     );
     return {
       eventState,
-      missionDetail,
+      missionDetail: compatibleMissionDetail,
       projections: selectResearchRunProjections(hydrated),
       projectionSource: "canonical",
       projectionError: null,
     };
   } catch {
-    if (missionDetail) {
+    if (compatibleMissionDetail) {
       return {
         eventState,
-        missionDetail,
+        missionDetail: compatibleMissionDetail,
         projections: selectResearchRunProjections(
-          researchMissionToRunProjectionInput(missionDetail),
+          researchMissionToRunProjectionInput(compatibleMissionDetail),
         ),
         projectionSource: "legacy",
         projectionError: "Canonical Research Run history could not be projected",
@@ -153,6 +157,10 @@ function promoteCompleteView(
   if (
     previous?.eventState.run.id === eventState.run.id
     && previous.eventState.lastEventSequence >= eventState.lastEventSequence
+    && (
+      !previous.missionDetail
+      || missionLifecycleMatchesRun(previous.missionDetail, eventState.run)
+    )
   ) {
     return previous;
   }
@@ -168,7 +176,9 @@ export function useResearchRunGateway(
   const [retryGeneration, setRetryGeneration] = useState(0);
   const generation = useRef(0);
   const legacyMissionRef = useRef(legacyMission);
-  legacyMissionRef.current = legacyMission;
+  useLayoutEffect(() => {
+    legacyMissionRef.current = legacyMission;
+  }, [legacyMission]);
   const retryPending = useRef(false);
   const retry = useCallback(() => {
     if (!missionOrRunId || retryPending.current) return;
