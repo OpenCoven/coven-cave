@@ -334,8 +334,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /import\s*\{[\s\S]*isCodeShortcutTarget[\s\S]*\}\s*from "@\/lib\/code-shortcuts";/,
-  "CodeView reuses the shared shortcut-target guard rather than re-implementing typing detection",
+  /import\s*\{[\s\S]*codeComboFromEvent[\s\S]*isCodeShortcutTarget[\s\S]*\}\s*from "@\/lib\/code-shortcuts";/,
+  "CodeView reuses the shared combo normalizer and shortcut-target guard rather than re-implementing typing detection",
 );
 assert.match(
   codeView,
@@ -344,13 +344,13 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*\.code-picker__trigger[\s\S]*\[data-code-session-search\]/,
-  "the room keydown handler guards typing targets and slash-focuses the picker search",
+  /if \(event\.defaultPrevented\) return;[\s\S]*if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*const combo = codeComboFromEvent\(event\);[\s\S]*combo === "\/"[\s\S]*\.code-picker__trigger[\s\S]*\[data-code-session-search\]/,
+  "the room keydown handler honors earlier owners, normalizes combos once, and slash-focuses the picker search",
 );
 assert.match(
   codeView,
-  /querySelectorAll<HTMLButtonElement>\("\[data-code-session-id\]"\)[\s\S]*event\.key\.toLowerCase\(\)[\s\S]*rows\[nextIndex\]\?\.focus\(\)/,
-  "the room keydown handler walks visible session rows by their data-code-session-id markers",
+  /querySelectorAll<HTMLButtonElement>\("\[data-code-session-id\]"\)[\s\S]*combo === "J" \|\| combo === "K"[\s\S]*rows\[nextIndex\]\?\.focus\(\)[\s\S]*combo === "Shift\+A"/,
+  "the room keydown handler walks visible session rows and toggles scope from normalized fixed queue combos",
 );
 assert.match(
   codeView,
@@ -1006,6 +1006,21 @@ assert.match(
   workbench,
   /setStep\("source"\);/,
   "a routed file open drills into Source so the target is actually visible",
+);
+assert.match(
+  workbench,
+  /const initialTabNeedsMeasuredLayout = initialTab === "files" && measuredWidth === null && typeof ResizeObserver !== "undefined" && !isMobile;/,
+  "a file-tab deep link waits for a real narrow/wide layout decision before it is consumed",
+);
+assert.match(
+  workbench,
+  /if \(initialTabNeedsMeasuredLayout\) return;[\s\S]*if \(initialTab === "files" && !fitsSplit\) setStep\("files"\);/,
+  "a narrow file-tab deep link survives until layout is known, then drills into Files rather than leaving them hidden behind Source",
+);
+assert.match(
+  workbench,
+  /if \(event\.defaultPrevented\) return;[\s\S]*const action = codeShortcutForCombo\(keymap, codeComboFromEvent\(event\)\);/,
+  "the workbench shortcut handler honors fixed-key owners before consulting the rebindable keymap",
 );
 
 // A rail closed to its spine while the room was wide must not survive into the

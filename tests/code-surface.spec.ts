@@ -504,6 +504,76 @@ test.describe("code surface (Coding familiar's room)", () => {
       .not.toContain("session=");
   });
 
+  test("a narrow desktop ?wtab=files deep link drills into Files once layout is known", async ({ page, isMobile }) => {
+    test.skip(!!isMobile, "desktop-only narrow viewport; mobile drill-in lives in tests/mobile/");
+    await page.setViewportSize({ width: 760, height: 900 });
+    await base(page);
+    await page.goto("/?mode=code&session=s-old&wtab=files", { waitUntil: "domcontentloaded" });
+
+    const header = page.getByTestId("code-workbench-header");
+    await expect(header.getByRole("button", { name: /Fix login retry/ })).toBeVisible({ timeout: 30_000 });
+    const steps = page.getByRole("tablist", { name: "Workbench step" });
+    await expect(steps).toBeVisible();
+    await expect(steps.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("code-workbench-tree")).toBeVisible();
+    await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
+  });
+
+  test("fixed queue shortcuts ignore conflicting saved workbench bindings", async ({ page, isMobile }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await base(page, [NEWEST, OLDER, ALL_LOCAL_ONLY]);
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "cave.code.keymap",
+        JSON.stringify({
+          prompt: "/",
+          files: "J",
+          outline: "K",
+          terminal: "Shift+A",
+        }),
+      );
+    });
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const trigger = page.locator(".code-picker__trigger");
+    const terminalOpen = page.getByRole("button", { name: "Close the terminal drawer" });
+    const tree = page.getByTestId("code-workbench-tree");
+    const scope = page
+      .getByRole("navigation", { name: "Coding sessions" })
+      .getByRole("group", { name: "Session scope" });
+    const selectedRow = page
+      .getByRole("navigation", { name: "Coding sessions" })
+      .locator('button[data-code-session-id="s-new"]');
+
+    await expect(trigger).toBeVisible({ timeout: 30_000 });
+    await expect(terminalOpen).toHaveCount(0);
+    await expect(scope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+
+    await trigger.focus();
+    await page.keyboard.press("Shift+A");
+    await expect(scope.getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(terminalOpen).toHaveCount(0);
+
+    await page.keyboard.press("/");
+    const picker = page.getByRole("dialog", { name: "Switch session" });
+    const search = picker.locator("[data-code-session-search]");
+    await expect(search).toBeFocused();
+
+    await selectedRow.focus();
+    await page.keyboard.press("j");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-old");
+    await expect(tree).not.toBeFocused();
+
+    await page.keyboard.press("k");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-new");
+    await expect(tree).not.toBeFocused();
+  });
+
   test("legacy GitHub mode lands on Activity and preserves notifications", async ({ page }) => {
     await base(page);
     await mockGitHubActivity(page);

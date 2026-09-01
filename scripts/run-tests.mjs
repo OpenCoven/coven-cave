@@ -108,6 +108,7 @@ export const SUITES = {
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
+    "src/components/code-shortcuts-dialog.test.tsx",
     "src/components/workspace-canonical-memory-warmup.test.ts",
     "src/components/workspace-canonical-memory-navigation.test.ts",
     "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",

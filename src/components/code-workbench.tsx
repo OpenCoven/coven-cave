@@ -173,6 +173,7 @@ export function CodeWorkbench({
   // split, so viewport width systematically overstates what it actually got.
   // Three crushed columns is the failure this prevents.
   const fitsSplit = codeWorkbenchFitsSplit(measuredWidth, isMobile);
+  const initialTabNeedsMeasuredLayout = initialTab === "files" && measuredWidth === null && typeof ResizeObserver !== "undefined" && !isMobile;
   const [step, setStep] = useState<CodeWorkbenchStep>("source");
   const { announce } = useAnnouncer();
   const announcedStepRef = useRef<CodeWorkbenchStep | null>(null);
@@ -223,18 +224,20 @@ export function CodeWorkbench({
   // closed rail (and drills the narrow room to the right step) so the routed
   // target is actually visible rather than silently correct behind something.
   useEffect(() => {
+    if (initialTabNeedsMeasuredLayout) return;
     if (!initialTab) return;
     if (handledInitialTabRef.current === initialTab) return;
     handledInitialTabRef.current = initialTab;
     const nextRailTab = codeRailTabForWorkbenchTab(initialTab);
     if (initialTab === "terminal") onTerminalOpenChange(true);
+    if (initialTab === "files" && !fitsSplit) setStep("files");
     if (nextRailTab) {
       setRailTab(nextRailTab);
       onReviewOpenChange(true);
       setStep("review");
     }
     onInitialTabHandled?.();
-  }, [initialTab, onInitialTabHandled, onReviewOpenChange, onTerminalOpenChange]);
+  }, [fitsSplit, initialTab, initialTabNeedsMeasuredLayout, onInitialTabHandled, onReviewOpenChange, onTerminalOpenChange]);
 
   useEffect(() => {
     if (!openTarget) return;
@@ -274,6 +277,7 @@ export function CodeWorkbench({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       // Never steal a keystroke from a field — the composer, the picker's
       // filter, the editor — nor from a focused TERMINAL pane, where Ctrl+P
       // and Ctrl+C belong to the shell. Both exclusions live in one predicate

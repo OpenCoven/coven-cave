@@ -49,7 +49,7 @@ import {
   type CodeTopTab,
   type CodeWorkbenchTab,
 } from "@/lib/code-surface";
-import { isCodeShortcutTarget } from "@/lib/code-shortcuts";
+import { codeComboFromEvent, isCodeShortcutTarget } from "@/lib/code-shortcuts";
 import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
@@ -334,10 +334,12 @@ export function CodeView({
   }, []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (topTab !== "sessions") return;
       if (!queueTargetBelongsToRoom(event.target)) return;
       if (!isCodeShortcutTarget(event.target)) return;
-      if (event.key === "/" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      const combo = codeComboFromEvent(event);
+      if (combo === "/") {
         event.preventDefault();
         const picker = document.querySelector<HTMLElement>(".code-picker__trigger");
         if (!document.querySelector("[data-code-picker-panel]")) picker?.click();
@@ -346,8 +348,7 @@ export function CodeView({
         });
         return;
       }
-      const key = event.key.toLowerCase();
-      if ((key === "j" || key === "k") && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      if (combo === "J" || combo === "K") {
         const rows = visibleQueueRows(event.target);
         if (!rows.length) return;
         event.preventDefault();
@@ -361,18 +362,18 @@ export function CodeView({
         );
         const nextIndex =
           currentIndex >= 0
-            ? key === "j"
+            ? combo === "J"
               ? (currentIndex + 1) % rows.length
               : (currentIndex - 1 + rows.length) % rows.length
             : selectedIndex >= 0
               ? selectedIndex
-              : key === "j"
+              : combo === "J"
                 ? 0
                 : rows.length - 1;
         rows[nextIndex]?.focus();
         return;
       }
-      if (key === "a" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      if (combo === "Shift+A") {
         event.preventDefault();
         setQueueMode((current) => (current === "reviewable" ? "all" : "reviewable"));
       }
