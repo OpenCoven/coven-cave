@@ -536,6 +536,33 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(rail.locator('[data-code-session-id="s-generated"]')).toHaveCount(0);
   });
 
+  test("narrow reviewable empty landing keeps a single shared picker and shows the approved empty copy", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only narrow viewport; mobile drill-in lives in tests/mobile/");
+    await page.setViewportSize({ width: 760, height: 900 });
+    await base(page, REVIEW_FIRST_EXCLUDED_ONLY);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const scope = page.getByRole("group", { name: "Session scope" });
+    const pickerTrigger = page.locator(".code-picker__trigger");
+
+    await expect(page.getByRole("button", { name: "Search sessions" })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(scope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(pickerTrigger).toHaveCount(1);
+
+    await pickerTrigger.click();
+    const picker = page.getByRole("dialog", { name: "Switch session" });
+    await expect(picker).toBeVisible();
+    await expect(picker.locator(".code-picker__empty-text")).toHaveText(
+      "No GitHub repository sessions need review.",
+    );
+    await expect(picker.getByText("No reviewable sessions match this scope.")).toHaveCount(0);
+  });
+
   test("landing: rail groups sessions, newest auto-selected, attribution chips in the header", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);

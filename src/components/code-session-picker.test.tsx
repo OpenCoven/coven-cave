@@ -62,6 +62,14 @@ const QUEUE = {
 
 QUEUE.groups[0].sessions = QUEUE.sessions;
 
+const EMPTY_REVIEWABLE_QUEUE = {
+  reviewableCount: 0,
+  allLocalCount: 4,
+  outsideCurrentFilter: false,
+  sessions: [],
+  groups: [],
+};
+
 describe("CodeSessionPicker neutral landing trigger", () => {
   test("renders Search sessions with no selected session, keeps queue controls, and filters typed queries", async () => {
     const onCreate = vi.fn();
@@ -105,6 +113,38 @@ describe("CodeSessionPicker neutral landing trigger", () => {
     await act(async () => input.props.onKeyDown({ key: "Enter", preventDefault() {} }));
 
     expect(onCreate).toHaveBeenCalledWith("Brand new session");
+
+    await act(async () => renderer.unmount());
+  });
+
+  test("renders the approved reviewable empty copy after opening an empty picker", async () => {
+    let renderer;
+    await act(async () => {
+      renderer = create(
+        <CodeSessionPicker
+          queue={EMPTY_REVIEWABLE_QUEUE}
+          mode="reviewable"
+          selected={null}
+          onModeChange={() => {}}
+          onSelect={() => {}}
+        />,
+      );
+    });
+
+    const trigger = renderer.root.find(
+      (node) => node.type === "button" && node.props.className === "focus-ring code-picker__trigger",
+    );
+
+    await act(async () => trigger.props.onClick());
+
+    const empty = renderer.root.find(
+      (node) =>
+        node.type === "p" &&
+        node.props.className === "code-picker__empty-text" &&
+        textContent(node.children) === "No GitHub repository sessions need review.",
+    );
+    expect(textContent(empty.children)).toBe("No GitHub repository sessions need review.");
+    expect(textContent(renderer.toJSON())).not.toContain("No reviewable sessions match this scope.");
 
     await act(async () => renderer.unmount());
   });
