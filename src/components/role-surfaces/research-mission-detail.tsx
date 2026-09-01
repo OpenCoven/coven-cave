@@ -216,7 +216,9 @@ function HistoricalResearchRunDetail({
             />
           ) : runGatewayStatus === "loading" ? (
             <p className="research-desk-block__empty" role="status">
-              Loading historical run history. Current mission data is hidden to keep generations separate.
+              {runProjectionSource === "canonical"
+                ? "Loading historical run history. Showing the last complete generation-specific data."
+                : "Loading historical run history. Current mission data is hidden to keep generations separate."}
             </p>
           ) : runGatewayStatus === "reconnecting" ? (
             <p className="research-desk-block__empty" role="status">
@@ -602,6 +604,9 @@ export function ResearchMissionDetail({
   const isArchived = mission.status === "archived";
   const projectionFailed = runGatewayStatus === "error" || Boolean(runGatewayError);
   const projectionNotice = (() => {
+    if (runProjectionSource === "canonical" && runGatewayStatus === "loading") {
+      return "Loading canonical run history. Showing the last complete canonical history.";
+    }
     if (runProjectionSource === "canonical" && runGatewayStatus === "reconnecting") {
       return "Reconnecting to live updates. Showing the last complete canonical history.";
     }

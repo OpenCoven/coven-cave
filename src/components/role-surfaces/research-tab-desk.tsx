@@ -379,7 +379,7 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             </div>
           ) : null}
           <ResearchMissionDetail
-            mission={research.selected}
+            mission={canonicalRun.missionDetail}
             canonicalRun={canonicalRun.eventState}
             runProjections={canonicalRun.projections}
             runProjectionSource={canonicalRun.projectionSource}
@@ -397,14 +397,14 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             }}
             onOpenUrl={context.openUrl}
             onShowResources={() => onNavigate("resources")}
-            onAction={(input) => research.selected
-              ? research.act(research.selected.id, input)
+            onAction={(input) => canonicalRun.missionDetail
+              ? research.act(canonicalRun.missionDetail.id, input)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onSchedule={(rrule) => research.selected
-              ? research.schedule(research.selected.id, rrule)
+            onSchedule={(rrule) => canonicalRun.missionDetail
+              ? research.schedule(canonicalRun.missionDetail.id, rrule)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onAutomationAction={(automationId, action) => research.selected
-              ? research.controlAutomation(research.selected.id, automationId, action)
+            onAutomationAction={(automationId, action) => canonicalRun.missionDetail
+              ? research.controlAutomation(canonicalRun.missionDetail.id, automationId, action)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
           />
         </main>

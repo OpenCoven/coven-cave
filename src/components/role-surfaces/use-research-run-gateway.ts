@@ -27,6 +27,7 @@ import {
 export type ResearchRunGatewayViewState = {
   run: ResearchRunV1 | null;
   eventState: ResearchRunEventState | null;
+  missionDetail: ResearchMission | null;
   status: "idle" | "loading" | "connected" | "reconnecting" | "error";
   error: string | null;
   historyComplete: boolean;
@@ -37,19 +38,27 @@ export type ResearchRunGatewayViewState = {
   retry(): void;
 };
 
+type ResearchRunCompleteView = {
+  eventState: ResearchRunEventState;
+  missionDetail: ResearchMission | null;
+  projections: ResearchRunProjections | null;
+  projectionSource: "canonical" | "legacy" | null;
+  projectionError: string | null;
+};
+
 type ResearchRunGatewayTransportState = Pick<
   ResearchRunGatewayViewState,
   "run" | "eventState" | "status" | "error"
 > & {
   selector: string | null;
-  completeEventState: ResearchRunEventState | null;
+  completeView: ResearchRunCompleteView | null;
 };
 
 const IDLE: ResearchRunGatewayTransportState = {
   selector: null,
   run: null,
   eventState: null,
-  completeEventState: null,
+  completeView: null,
   status: "idle",
   error: null,
 };
@@ -63,6 +72,71 @@ function hasCompleteEventHistory(state: ResearchRunEventState | null): boolean {
       event.runId === state.run.id && event.sequence === index + 1);
 }
 
+function missionDetailForRun(
+  mission: ResearchMission | null | undefined,
+  selector: string,
+  runId: string,
+): ResearchMission | null {
+  return mission
+    && researchMissionMatchesRunSelector(mission, selector)
+    && researchMissionMatchesRunSelector(mission, runId)
+    ? mission
+    : null;
+}
+
+function createCompleteView(
+  eventState: ResearchRunEventState,
+  missionDetail: ResearchMission | null,
+): ResearchRunCompleteView {
+  try {
+    const hydrated = hydrateHybridResearchRunProjectionInput(
+      eventState.run,
+      eventState.appliedEvents,
+      missionDetail,
+    );
+    return {
+      eventState,
+      missionDetail,
+      projections: selectResearchRunProjections(hydrated),
+      projectionSource: "canonical",
+      projectionError: null,
+    };
+  } catch {
+    if (missionDetail) {
+      return {
+        eventState,
+        missionDetail,
+        projections: selectResearchRunProjections(
+          researchMissionToRunProjectionInput(missionDetail),
+        ),
+        projectionSource: "legacy",
+        projectionError: "Canonical Research Run history could not be projected",
+      };
+    }
+    return {
+      eventState,
+      missionDetail: null,
+      projections: null,
+      projectionSource: null,
+      projectionError: "Canonical Research Run history could not be projected",
+    };
+  }
+}
+
+function promoteCompleteView(
+  previous: ResearchRunCompleteView | null,
+  eventState: ResearchRunEventState,
+  missionDetail: ResearchMission | null,
+): ResearchRunCompleteView {
+  if (
+    previous?.eventState.run.id === eventState.run.id
+    && previous.eventState.lastEventSequence >= eventState.lastEventSequence
+  ) {
+    return previous;
+  }
+  return createCompleteView(eventState, missionDetail);
+}
+
 export function useResearchRunGateway(
   missionOrRunId: string | null,
   familiarId: string,
@@ -71,6 +145,8 @@ export function useResearchRunGateway(
   const [state, setState] = useState<ResearchRunGatewayTransportState>(IDLE);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const generation = useRef(0);
+  const legacyMissionRef = useRef(legacyMission);
+  legacyMissionRef.current = legacyMission;
   const retryPending = useRef(false);
   const retry = useCallback(() => {
     if (!missionOrRunId || retryPending.current) return;
@@ -112,7 +188,7 @@ export function useResearchRunGateway(
             selector: missionOrRunId,
             run: frame.run,
             eventState: createResearchRunEventState(frame.run),
-            completeEventState: null,
+            completeView: null,
             status: "loading",
             error: null,
           });
@@ -125,15 +201,20 @@ export function useResearchRunGateway(
             previousState: previous.eventState ?? undefined,
           });
           const historyComplete = hasCompleteEventHistory(eventState);
+          const completeView = historyComplete
+            ? promoteCompleteView(
+                previous.completeView,
+                eventState,
+                missionDetailForRun(legacyMissionRef.current, missionOrRunId, frame.run.id),
+              )
+            : previous.completeView?.eventState.run.id === frame.run.id
+              ? previous.completeView
+              : null;
           return {
             selector: missionOrRunId,
             run: frame.run,
             eventState,
-            completeEventState: historyComplete
-              ? eventState
-              : previous.completeEventState?.run.id === frame.run.id
-                ? previous.completeEventState
-                : null,
+            completeView,
             status: historyComplete
               ? "connected"
               : previous.status === "reconnecting" ? "reconnecting" : "loading",
@@ -155,18 +236,27 @@ export function useResearchRunGateway(
             error: "Research Run event stream requires a fresh snapshot",
           };
         }
+        const historyComplete = hasCompleteEventHistory(consumed.state);
         return {
           ...previous,
           run: consumed.state.run,
           eventState: consumed.state,
-          completeEventState: hasCompleteEventHistory(consumed.state)
-            ? consumed.state
-            : previous.completeEventState?.run.id === consumed.state.run.id
-              ? previous.completeEventState
+          completeView: historyComplete
+            ? promoteCompleteView(
+                previous.completeView,
+                consumed.state,
+                missionDetailForRun(
+                  legacyMissionRef.current,
+                  missionOrRunId,
+                  consumed.state.run.id,
+                ),
+              )
+            : previous.completeView?.eventState.run.id === consumed.state.run.id
+              ? previous.completeView
               : null,
           status: consumed.state.sync.status === "gap"
             ? "reconnecting"
-            : hasCompleteEventHistory(consumed.state)
+            : historyComplete
               ? "connected"
               : previous.status === "reconnecting" ? "reconnecting" : "loading",
           error: consumed.state.sync.status === "gap"
@@ -215,7 +305,7 @@ export function useResearchRunGateway(
           selector: missionOrRunId,
           run: null,
           eventState: null,
-          completeEventState: null,
+          completeView: null,
           status: "loading",
           error: null,
         });
@@ -223,14 +313,20 @@ export function useResearchRunGateway(
       if (!current()) return;
       retryPending.current = false;
       if (!snapshot.ok) {
-        setState({
-          selector: missionOrRunId,
-          run: null,
-          eventState: null,
-          completeEventState: null,
-          status: "error",
-          error: snapshot.error ?? "Research Run could not be loaded",
-        });
+        setState((previous) => previous.selector === missionOrRunId && previous.completeView
+          ? {
+              ...previous,
+              status: "error",
+              error: snapshot.error ?? "Research Run could not be loaded",
+            }
+          : {
+              selector: missionOrRunId,
+              run: null,
+              eventState: null,
+              completeView: null,
+              status: "error",
+              error: snapshot.error ?? "Research Run could not be loaded",
+            });
         return;
       }
       setState((previous) => {
@@ -239,8 +335,8 @@ export function useResearchRunGateway(
           selector: missionOrRunId,
           run: snapshot.run,
           eventState,
-          completeEventState: previous.completeEventState?.run.id === snapshot.run.id
-            ? previous.completeEventState
+          completeView: previous.completeView?.eventState.run.id === snapshot.run.id
+            ? previous.completeView
             : null,
           status: "loading",
           error: null,
@@ -252,14 +348,20 @@ export function useResearchRunGateway(
     void connect().catch((error) => {
       if (current() && (error as Error).name !== "AbortError") {
         retryPending.current = false;
-        setState({
-          selector: missionOrRunId,
-          run: null,
-          eventState: null,
-          completeEventState: null,
-          status: "error",
-          error: "Research Run gateway could not be loaded",
-        });
+        setState((previous) => previous.selector === missionOrRunId && previous.completeView
+          ? {
+              ...previous,
+              status: "error",
+              error: "Research Run gateway could not be loaded",
+            }
+          : {
+              selector: missionOrRunId,
+              run: null,
+              eventState: null,
+              completeView: null,
+              status: "error",
+              error: "Research Run gateway could not be loaded",
+            });
       }
     });
     return () => {
@@ -275,11 +377,11 @@ export function useResearchRunGateway(
       selector: missionOrRunId,
       run: null,
       eventState: null,
-      completeEventState: null,
+      completeView: null,
       status: missionOrRunId ? "loading" as const : "idle" as const,
       error: null,
     };
-  const missionDetailAvailable = Boolean(
+  const liveMissionDetailAvailable = Boolean(
     missionOrRunId
     && legacyMission
     && researchMissionMatchesRunSelector(legacyMission, missionOrRunId)
@@ -288,42 +390,18 @@ export function useResearchRunGateway(
       || researchMissionMatchesRunSelector(legacyMission, currentState.run.id)
     ),
   );
-  const projectionMission = missionDetailAvailable ? legacyMission : null;
-  const canonicalEventState = hasCompleteEventHistory(currentState.eventState)
-    ? currentState.eventState
-    : currentState.completeEventState?.run.id === currentState.eventState?.run.id
-      ? currentState.completeEventState
-      : null;
-  const historyComplete = Boolean(canonicalEventState);
+  const projectionMission = liveMissionDetailAvailable ? legacyMission ?? null : null;
+  const completeView = currentState.completeView?.eventState.run.id === currentState.eventState?.run.id
+    ? currentState.completeView
+    : null;
+  const historyComplete = Boolean(completeView);
   const projection = useMemo(() => {
-    if (canonicalEventState) {
-      try {
-        const hydrated = hydrateHybridResearchRunProjectionInput(
-          canonicalEventState.run,
-          canonicalEventState.appliedEvents,
-          projectionMission,
-        );
-        return {
-          projections: selectResearchRunProjections(hydrated),
-          projectionSource: "canonical" as const,
-          projectionError: null,
-        };
-      } catch {
-        if (projectionMission) {
-          return {
-            projections: selectResearchRunProjections(
-              researchMissionToRunProjectionInput(projectionMission),
-            ),
-            projectionSource: "legacy" as const,
-            projectionError: "Canonical Research Run history could not be projected",
-          };
-        }
-        return {
-          projections: null,
-          projectionSource: null,
-          projectionError: "Canonical Research Run history could not be projected",
-        };
-      }
+    if (completeView) {
+      return {
+        projections: completeView.projections,
+        projectionSource: completeView.projectionSource,
+        projectionError: completeView.projectionError,
+      };
     }
     if (projectionMission) {
       return {
@@ -339,11 +417,18 @@ export function useResearchRunGateway(
       projectionSource: null,
       projectionError: null,
     };
-  }, [canonicalEventState, projectionMission]);
+  }, [completeView, projectionMission]);
+  const missionDetail = completeView
+    ? completeView.missionDetail
+    : projectionMission;
+  const missionDetailAvailable = completeView
+    ? Boolean(completeView.missionDetail)
+    : liveMissionDetailAvailable;
 
   return {
-    run: canonicalEventState?.run ?? null,
-    eventState: canonicalEventState,
+    run: completeView?.eventState.run ?? null,
+    eventState: completeView?.eventState ?? null,
+    missionDetail,
     status: currentState.status,
     error: currentState.error,
     historyComplete,

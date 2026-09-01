@@ -294,7 +294,7 @@ function Harness({
     LiveRegionProvider,
     null,
     createElement(ResearchMissionDetail, {
-      mission: missionValue,
+      mission: gateway.missionDetail,
       canonicalRun: gateway.eventState,
       runProjections: gateway.projections,
       runProjectionSource: gateway.projectionSource,
@@ -568,6 +568,75 @@ describe("Research Desk canonical projection integration", () => {
 
   test("keeps the last complete same-generation projection visible until a missed suffix is complete", async () => {
     const generationTwoRunId = `${RUN_ID}_g2`;
+    const stableMission = mission({
+      runGeneration: 2,
+      title: "Stable generation two mission",
+      status: "running",
+      iterations: [{
+        number: 1,
+        status: "running",
+        startedAt: "2026-08-31T16:05:00.000Z",
+        steps: [{
+          id: "stable-scope",
+          type: "scope",
+          status: "running",
+          detail: "Stable generation two plan",
+        }],
+      }],
+      sources: [{
+        id: "stable-source",
+        title: "Stable generation two evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Stable generation two claim",
+      }],
+      artifacts: [{
+        key: "stable-report",
+        kind: "report",
+        title: "Stable generation two report",
+        relativePath: "artifacts/primary.md",
+        iteration: 1,
+        state: "working",
+        updatedAt: UPDATED_AT,
+      }],
+    });
+    const advancedMission = mission({
+      ...stableMission,
+      title: "Advanced terminal mission",
+      status: "completed",
+      updatedAt: "2026-08-31T18:10:00.000Z",
+      finishedAt: "2026-08-31T18:10:00.000Z",
+      iterations: [{
+        number: 1,
+        status: "completed",
+        startedAt: "2026-08-31T16:05:00.000Z",
+        finishedAt: "2026-08-31T18:10:00.000Z",
+        summary: "Advanced terminal report detail",
+        steps: [{
+          id: "advanced-scope",
+          type: "scope",
+          status: "succeeded",
+          detail: "Advanced terminal plan",
+        }],
+      }],
+      sources: [{
+        id: "advanced-source",
+        title: "Advanced terminal evidence",
+        sourceType: "web",
+        status: "used",
+        claim: "Advanced terminal claim",
+      }],
+      artifacts: [{
+        key: "advanced-report",
+        kind: "report",
+        title: "Advanced terminal report",
+        relativePath: "artifacts/primary.md",
+        iteration: 1,
+        state: "published",
+        knowledgeId: "knowledge-advanced-report",
+        updatedAt: "2026-08-31T18:10:00.000Z",
+      }],
+    });
     const generationTwoRun = run(generationTwoRunId, {
       status: "scoping",
       nextEventSequence: 2,
@@ -590,7 +659,7 @@ describe("Research Desk canonical projection integration", () => {
             nextEventSequence: 2,
           },
     })));
-    const renderer = await mount();
+    const renderer = await mount(stableMission);
     const source = FakeEventSource.instances[0];
 
     await act(async () => {
@@ -602,13 +671,50 @@ describe("Research Desk canonical projection integration", () => {
       });
       source.emit("run-event", event(1, "run.created", {
         activity: "Stable generation two launch",
-        plan: {
-          revision: 1,
-          stages: [{ id: "scope", label: "Stable generation two scope", status: "active" }],
-        },
       }, generationTwoRunId));
     });
-    expect(textOf(renderer.toJSON())).toContain("Stable generation two launch");
+    const stable = textOf(renderer.toJSON());
+    expect(stable).toContain("Stable generation two mission");
+    expect(stable).toContain("Stable generation two launch");
+    expect(stable).toContain("Stable generation two plan");
+    expect(stable).toContain("Stable generation two claim");
+    expect(stable).toContain("Stable generation two report");
+    expect(stable).toContain("Cancel run");
+
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: advancedMission,
+        selector: advancedMission.id,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const afterMissionPoll = textOf(renderer.toJSON());
+    expect(afterMissionPoll).toContain("Stable generation two mission");
+    expect(afterMissionPoll).toContain("Stable generation two plan");
+    expect(afterMissionPoll).toContain("Stable generation two claim");
+    expect(afterMissionPoll).toContain("Stable generation two report");
+    expect(afterMissionPoll).toContain("Cancel run");
+    expect(afterMissionPoll).not.toContain("Archive");
+    expect(afterMissionPoll).not.toContain("Advanced terminal mission");
+    expect(afterMissionPoll).not.toContain("Advanced terminal plan");
+    expect(afterMissionPoll).not.toContain("Advanced terminal claim");
+    expect(afterMissionPoll).not.toContain("Advanced terminal report");
+
+    await act(async () => {
+      source.onerror?.();
+      source.emit("snapshot", {
+        run: generationTwoRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 1,
+      });
+    });
+    const afterNoopReconnect = textOf(renderer.toJSON());
+    expect(afterNoopReconnect).toContain("Stable generation two mission");
+    expect(afterNoopReconnect).toContain("Stable generation two claim");
+    expect(afterNoopReconnect).not.toContain("Advanced terminal mission");
+    expect(afterNoopReconnect).not.toContain("Advanced terminal claim");
 
     const completedSnapshot = run(generationTwoRunId, {
       status: "completed",
@@ -628,11 +734,14 @@ describe("Research Desk canonical projection integration", () => {
     const catchingUp = textOf(renderer.toJSON());
     expect(catchingUp).toContain("Stable generation two launch");
     expect(catchingUp).toContain(
-      "Reconnecting to historical run history. Showing the last complete generation-specific data.",
+      "Reconnecting to live updates. Showing the last complete canonical history.",
     );
     expect(catchingUp).not.toContain("Persisted mission fallback");
     expect(catchingUp).not.toContain("Generation two completed");
-    expect(catchingUp).not.toContain("Historical run · completed");
+    expect(catchingUp).toContain("brief · running");
+    expect(catchingUp).not.toContain("brief · completed");
+    expect(catchingUp).not.toContain("Advanced terminal mission");
+    expect(catchingUp).not.toContain("Advanced terminal evidence");
 
     const completionEvent = event(2, "run.completed", {
       status: "completed",
@@ -649,7 +758,14 @@ describe("Research Desk canonical projection integration", () => {
     expect(caughtUp).toContain("Stable generation two launch");
     expect(caughtUp).toContain("Generation two completed");
     expect(caughtUp.match(/Generation two completed/g)).toHaveLength(1);
-    expect(caughtUp).toContain("Historical run · completed");
+    expect(caughtUp).toContain("brief · completed");
+    expect(caughtUp).toContain("Advanced terminal mission");
+    expect(caughtUp).toContain("Advanced terminal plan");
+    expect(caughtUp).toContain("Advanced terminal claim");
+    expect(caughtUp).toContain("Advanced terminal report");
+    expect(caughtUp).not.toContain("Stable generation two mission");
+    expect(caughtUp).not.toContain("Cancel run");
+    expect(caughtUp).toContain("Archive");
 
     const generationThreeRun = run(`${RUN_ID}_g3`, {
       status: "scoping",
@@ -690,6 +806,79 @@ describe("Research Desk canonical projection integration", () => {
     expect(source.closed).toBe(true);
     expect(generationThreeSource.closed).toBe(true);
     expect(selectedSource.closed).toBe(true);
+  });
+
+  test("retry visibly loads while retaining the last complete atomic view", async () => {
+    const cachedMission = mission({
+      title: "Cached mission detail",
+      sources: [{
+        id: "cached-source",
+        title: "Cached evidence detail",
+        sourceType: "web",
+        status: "used",
+        claim: "Cached evidence claim",
+      }],
+    });
+    const cachedRun = run(RUN_ID, {
+      status: "scoping",
+      nextEventSequence: 2,
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        json: async () => ({
+          ok: true,
+          run: cachedRun,
+          lastEventSequence: 1,
+          nextEventSequence: 2,
+        }),
+      })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const renderer = await mount(cachedMission);
+    const source = FakeEventSource.instances[0];
+
+    await act(async () => {
+      source.emit("snapshot", {
+        run: cachedRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Cached canonical launch",
+      }));
+    });
+    expect(textOf(renderer.toJSON())).toContain("Cached mission detail");
+    expect(textOf(renderer.toJSON())).toContain("Cached evidence claim");
+
+    await act(async () => {
+      source.emit("run-event", { invalid: true });
+    });
+    const failed = textOf(renderer.toJSON());
+    expect(failed).toContain("Couldn't load canonical run history");
+    expect(failed).toContain("Cached mission detail");
+    expect(failed).toContain("Cached canonical launch");
+    expect(failed).toContain("Cached evidence claim");
+    const retry = renderer.root.findAllByType("button")
+      .find((button) => textOf(button) === "Retry");
+    expect(retry).toBeDefined();
+
+    await act(async () => {
+      retry!.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const loading = textOf(renderer.toJSON());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(loading).toContain("Cached mission detail");
+    expect(loading).toContain("Cached canonical launch");
+    expect(loading).toContain("Cached evidence claim");
+    expect(loading).toContain(
+      "Loading canonical run history. Showing the last complete canonical history.",
+    );
+
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
   });
 
   test("selection change closes every prior generation stream and ignores stale callbacks", async () => {
