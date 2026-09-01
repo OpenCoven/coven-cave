@@ -23,6 +23,7 @@ import {
 } from "@/lib/research-run-event-reducer";
 import type { ResearchMission } from "@/lib/research-missions";
 import type { ResearchRunV1 } from "@/lib/research-protocol/research-run";
+import { researchMissionLifecycleMatchesRun } from "@/lib/research-run-lifecycle";
 import {
   hydrateHybridResearchRunProjectionInput,
   researchMissionMatchesRunSelector,
@@ -91,27 +92,12 @@ function missionDetailForRun(
     : null;
 }
 
-function missionLifecycleMatchesRun(
-  mission: ResearchMission,
-  run: ResearchRunV1,
-): boolean {
-  if (mission.status === "archived") {
-    return ["completed", "failed", "cancelled", "expired"].includes(run.status);
-  }
-  if (run.status === "completed") return mission.status === "completed";
-  if (run.status === "failed") return mission.status === "failed";
-  if (run.status === "cancelled" || run.status === "expired") {
-    return mission.status === "cancelled";
-  }
-  return !["completed", "failed", "cancelled"].includes(mission.status);
-}
-
 function createCompleteView(
   eventState: ResearchRunEventState,
   missionDetail: ResearchMission | null,
 ): ResearchRunCompleteView {
   const compatibleMissionDetail = missionDetail
-    && missionLifecycleMatchesRun(missionDetail, eventState.run)
+    && researchMissionLifecycleMatchesRun(missionDetail, eventState.run.status)
     ? missionDetail
     : null;
   try {
@@ -159,7 +145,10 @@ function promoteCompleteView(
     && previous.eventState.lastEventSequence >= eventState.lastEventSequence
     && (
       !previous.missionDetail
-      || missionLifecycleMatchesRun(previous.missionDetail, eventState.run)
+      || researchMissionLifecycleMatchesRun(
+        previous.missionDetail,
+        eventState.run.status,
+      )
     )
   ) {
     return previous;
@@ -454,9 +443,9 @@ export function useResearchRunGateway(
       && storedCompleteView.missionDetail !== matchingMission
       && currentState.status === "connected"
       && hasCompleteEventHistory(currentState.eventState)
-      && missionLifecycleMatchesRun(
+      && researchMissionLifecycleMatchesRun(
         matchingMission,
-        storedCompleteView.eventState.run,
+        storedCompleteView.eventState.run.status,
       )
     ) {
       return createCompleteView(storedCompleteView.eventState, matchingMission);
@@ -504,9 +493,9 @@ export function useResearchRunGateway(
         && completeView.missionDetail === matchingMission
         && previous.status === "connected"
         && hasCompleteEventHistory(previous.eventState)
-        && missionLifecycleMatchesRun(
+        && researchMissionLifecycleMatchesRun(
           completeView.missionDetail,
-          completeView.eventState.run,
+          completeView.eventState.run.status,
         )
       );
       if (!invalidatesMismatchedOverlay && !promotesMatchingOverlay) {

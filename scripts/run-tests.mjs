@@ -120,6 +120,7 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-run-event-reducer.test.ts",
+    "src/lib/research-run-lifecycle.test.ts",
     "src/lib/research-run-projections.test.ts",
     "src/lib/research-run-gateway-client.test.ts",
     "src/lib/research-chat-command.test.ts",

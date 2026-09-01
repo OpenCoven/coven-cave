@@ -930,6 +930,7 @@ describe("Research Desk canonical projection integration", () => {
       ...completedMission,
       title: "Archived mission truth",
       status: "archived",
+      archivedFrom: "completed",
       archivedAt: "2026-08-31T18:25:00.000Z",
       updatedAt: "2026-08-31T18:25:00.000Z",
       sources: [{
@@ -1106,6 +1107,163 @@ describe("Research Desk canonical projection integration", () => {
       expect(caughtUp).toContain(`Caught-up ${runStatus} detail`);
       expect(renderer.root.findAllByType("button")
         .some((button) => textOf(button) === expectedAction)).toBe(true);
+
+      await act(async () => renderer.unmount());
+      expect(source.closed).toBe(true);
+    },
+  );
+
+  test("an awaiting checkpoint run suppresses stale active controls until the mission poll catches up", async () => {
+    const staleMission = mission({
+      title: "Stale active mission",
+      status: "running",
+    });
+    const checkpointRun = run(RUN_ID, {
+      status: "awaiting_checkpoint",
+      nextEventSequence: 2,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        ok: true,
+        run: checkpointRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+      }),
+    })));
+    const renderer = await mount(staleMission);
+    const source = FakeEventSource.instances[0];
+    await act(async () => {
+      source.emit("snapshot", {
+        run: checkpointRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Canonical checkpoint activity",
+        plan: {
+          revision: 1,
+          label: "Canonical checkpoint plan",
+          stages: [{
+            id: "control",
+            label: "Review checkpoint",
+            status: "active",
+          }],
+        },
+      }));
+    });
+
+    const stale = textOf(renderer.toJSON());
+    expect(stale).toContain("Historical run · awaiting_checkpoint");
+    expect(stale).toContain("Canonical checkpoint activity");
+    expect(stale).toContain("Canonical checkpoint plan");
+    expect(stale).not.toContain("Stale active mission");
+    for (const action of ["Cancel run", "Continue", "Resume", "Finish now", "Archive"]) {
+      expect(renderer.root.findAllByType("button")
+        .some((button) => textOf(button) === action)).toBe(false);
+    }
+
+    const checkpointMission = mission({
+      ...staleMission,
+      title: "Matched checkpoint mission",
+      status: "checkpoint",
+      updatedAt: "2026-08-31T18:45:00.000Z",
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: checkpointMission,
+        selector: checkpointMission.id,
+      }));
+      await Promise.resolve();
+    });
+    const caughtUp = textOf(renderer.toJSON());
+    expect(caughtUp).toContain("Matched checkpoint mission");
+    expect(caughtUp).toContain("Canonical checkpoint activity");
+    expect(caughtUp).toContain("Canonical checkpoint plan");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button).startsWith("Continue"))).toBe(true);
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button) === "Finish now")).toBe(true);
+
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
+  });
+
+  test.each(["checkpoint", "paused"])(
+    "an active canonical run suppresses a stale %s overlay until the mission poll catches up",
+    async (staleStatus) => {
+      const staleMission = mission({
+        title: `Stale ${staleStatus} mission`,
+        status: staleStatus,
+      });
+      const activeRun = run(RUN_ID, {
+        status: "challenging",
+        nextEventSequence: 2,
+      });
+      vi.stubGlobal("fetch", vi.fn(async () => ({
+        json: async () => ({
+          ok: true,
+          run: activeRun,
+          lastEventSequence: 1,
+          nextEventSequence: 2,
+        }),
+      })));
+      const renderer = await mount(staleMission);
+      const source = FakeEventSource.instances[0];
+      await act(async () => {
+        source.emit("snapshot", {
+          run: activeRun,
+          lastEventSequence: 1,
+          nextEventSequence: 2,
+          afterSeq: 0,
+        });
+        source.emit("run-event", event(1, "run.created", {
+          activity: "Canonical active activity",
+          plan: {
+            revision: 1,
+            label: "Canonical active plan",
+            stages: [{
+              id: "challenge",
+              label: "Challenge evidence",
+              status: "active",
+            }],
+          },
+        }));
+      });
+
+      const stale = textOf(renderer.toJSON());
+      expect(stale).toContain("Historical run · challenging");
+      expect(stale).toContain("Canonical active activity");
+      expect(stale).toContain("Canonical active plan");
+      expect(stale).not.toContain(`Stale ${staleStatus} mission`);
+      for (const action of ["Cancel run", "Continue", "Resume", "Finish now", "Archive"]) {
+        expect(renderer.root.findAllByType("button")
+          .some((button) => textOf(button) === action)).toBe(false);
+      }
+
+      const activeMission = mission({
+        ...staleMission,
+        title: "Matched active mission",
+        status: "running",
+        updatedAt: "2026-08-31T18:50:00.000Z",
+      });
+      await act(async () => {
+        renderer.update(createElement(Harness, {
+          missionValue: activeMission,
+          selector: activeMission.id,
+        }));
+        await Promise.resolve();
+      });
+      const caughtUp = textOf(renderer.toJSON());
+      expect(caughtUp).toContain("Matched active mission");
+      expect(caughtUp).toContain("Canonical active activity");
+      expect(caughtUp).toContain("Canonical active plan");
+      expect(renderer.root.findAllByType("button")
+        .some((button) => textOf(button) === "Cancel run")).toBe(true);
+      for (const action of ["Continue", "Resume", "Finish now", "Archive"]) {
+        expect(renderer.root.findAllByType("button")
+          .some((button) => textOf(button) === action)).toBe(false);
+      }
 
       await act(async () => renderer.unmount());
       expect(source.closed).toBe(true);
