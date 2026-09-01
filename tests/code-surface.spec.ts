@@ -333,24 +333,32 @@ test.describe("code surface (Coding familiar's room)", () => {
     await expect(page.getByRole("heading", { name: "Release alert" })).toBeVisible({ timeout: 30_000 });
   });
 
-  test("GitHub deep links keep the GitHub primary tab active and select the matching filter", async ({ page }) => {
-    await base(page);
-    await mockGitHubActivity(page);
-    await page.goto("/?mode=code&ctab=issues", { waitUntil: "domcontentloaded" });
+  for (const { ctab, filter } of [
+    { ctab: "prs", filter: "PRs" },
+    { ctab: "issues", filter: "Issues" },
+    { ctab: "reviews", filter: "Reviews" },
+  ] as const) {
+    test(`GitHub deep link ctab=${ctab} keeps the GitHub primary tab active and selects ${filter}`, async ({
+      page,
+    }) => {
+      await base(page);
+      await mockGitHubActivity(page);
+      await page.goto(`/?mode=code&ctab=${ctab}`, { waitUntil: "domcontentloaded" });
 
-    const topTabs = page.getByRole("tablist", { name: "Code surface" });
-    await expect(topTabs).toBeVisible({ timeout: 30_000 });
-    await expect(topTabs.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
-    await expect(githubFilter).toBeVisible({ timeout: 30_000 });
-    await expect(githubFilter.getByRole("tab", { name: "Issues" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-  });
+      const topTabs = page.getByRole("tablist", { name: "Code surface" });
+      await expect(topTabs).toBeVisible({ timeout: 30_000 });
+      await expect(topTabs.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      const githubFilter = page.getByRole("tablist", { name: "GitHub filter" });
+      await expect(githubFilter).toBeVisible({ timeout: 30_000 });
+      await expect(githubFilter.getByRole("tab", { name: filter })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+  }
 
   test("a non-coding familiar sees the closed Coding Desk door", async ({ page }) => {
     await base(page, [NEWEST, OLDER], "general");
