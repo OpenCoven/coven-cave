@@ -286,10 +286,12 @@ function Harness({
   missionValue,
   selector = missionValue.id,
   suspendAfterHook = false,
+  showEvidence = false,
 }: {
   missionValue: ResearchMission;
   selector?: string;
   suspendAfterHook?: boolean;
+  showEvidence?: boolean;
 }) {
   const gateway = useResearchRunGateway(selector, missionValue.familiarId, missionValue);
   if (suspendAfterHook) throw NEVER_SETTLES;
@@ -305,7 +307,8 @@ function Harness({
       runGatewayError: gateway.error ?? gateway.projectionError,
       onRetryRunGateway: gateway.retry,
       missionDetailAvailable: gateway.missionDetailAvailable,
-      showEvidence: false,
+      missionActionsAvailable: gateway.missionActionsAvailable,
+      showEvidence,
       onOpenSession: () => {},
       onOpenUrl: () => {},
       onShowResources: () => {},
@@ -699,7 +702,7 @@ describe("Research Desk canonical projection integration", () => {
     expect(afterMissionPoll).toContain("Stable generation two plan");
     expect(afterMissionPoll).toContain("Stable generation two claim");
     expect(afterMissionPoll).toContain("Stable generation two report");
-    expect(afterMissionPoll).toContain("Cancel run");
+    expect(afterMissionPoll).not.toContain("Cancel run");
     expect(afterMissionPoll).not.toContain("Archive");
     expect(afterMissionPoll).not.toContain("Advanced terminal mission");
     expect(afterMissionPoll).not.toContain("Advanced terminal plan");
@@ -1184,6 +1187,103 @@ describe("Research Desk canonical projection integration", () => {
       .some((button) => textOf(button).startsWith("Continue"))).toBe(true);
     expect(renderer.root.findAllByType("button")
       .some((button) => textOf(button) === "Finish now")).toBe(true);
+
+    await act(async () => renderer.unmount());
+    expect(source.closed).toBe(true);
+  });
+
+  test("a poll-ahead active mission clears cached checkpoint controls until canonical history catches up", async () => {
+    const checkpointMission = mission({
+      title: "Cached checkpoint mission",
+      status: "checkpoint",
+      mode: "autoresearch",
+      automation: {
+        id: "automation-1",
+        rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+        status: "ACTIVE",
+        checkpointFingerprint: "checkpoint-1",
+      },
+      sources: [{
+        id: "candidate-1",
+        title: "Candidate evidence",
+        sourceType: "web",
+        status: "candidate",
+      }],
+    });
+    const checkpointRun = run(RUN_ID, {
+      status: "awaiting_checkpoint",
+      nextEventSequence: 2,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      json: async () => ({
+        ok: true,
+        run: checkpointRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+      }),
+    })));
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(Harness, {
+        missionValue: checkpointMission,
+        showEvidence: true,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const source = FakeEventSource.instances[0];
+    await act(async () => {
+      source.emit("snapshot", {
+        run: checkpointRun,
+        lastEventSequence: 1,
+        nextEventSequence: 2,
+        afterSeq: 0,
+      });
+      source.emit("run-event", event(1, "run.created", {
+        activity: "Canonical checkpoint remains authoritative",
+      }));
+    });
+    expect(textOf(renderer.toJSON())).toContain("Cached checkpoint mission");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button).startsWith("Continue"))).toBe(true);
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button) === "Finish now")).toBe(true);
+    expect(textOf(renderer.toJSON())).toContain("Run now");
+
+    const pollAheadMission = mission({
+      ...checkpointMission,
+      title: "Poll-ahead active mission",
+      status: "running",
+      updatedAt: "2026-08-31T18:50:00.000Z",
+      iterations: [{
+        number: 1,
+        status: "running",
+        startedAt: "2026-08-31T16:05:00.000Z",
+        steps: [{
+          id: "gather-step",
+          type: "gather",
+          status: "running",
+        }],
+      }],
+    });
+    await act(async () => {
+      renderer.update(createElement(Harness, {
+        missionValue: pollAheadMission,
+        selector: pollAheadMission.id,
+        showEvidence: true,
+      }));
+      await Promise.resolve();
+    });
+    const pollAhead = textOf(renderer.toJSON());
+    expect(pollAhead).toContain("Canonical checkpoint remains authoritative");
+    expect(pollAhead).toContain("Cached checkpoint mission");
+    expect(pollAhead).not.toContain("Poll-ahead active mission");
+    expect(renderer.root.findAllByType("button")
+      .some((button) => textOf(button).startsWith("Continue"))).toBe(false);
+    for (const action of ["Cancel run", "Resume", "Finish now", "Archive", "Run now", "Keep", "Reject"]) {
+      expect(renderer.root.findAllByType("button")
+        .some((button) => textOf(button) === action)).toBe(false);
+    }
 
     await act(async () => renderer.unmount());
     expect(source.closed).toBe(true);

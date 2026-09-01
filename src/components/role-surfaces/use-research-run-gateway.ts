@@ -43,6 +43,7 @@ export type ResearchRunGatewayViewState = {
   projectionSource: "canonical" | "legacy" | null;
   projectionError: string | null;
   missionDetailAvailable: boolean;
+  missionActionsAvailable: boolean;
   retry(): void;
 };
 
@@ -430,6 +431,14 @@ export function useResearchRunGateway(
     && legacyMission
     && !matchingMission,
   );
+  const overlayLifecycleMismatch = Boolean(
+    storedCompleteView
+    && matchingMission
+    && !researchMissionLifecycleMatchesRun(
+      matchingMission,
+      storedCompleteView.eventState.run.status,
+    ),
+  );
   const completeView = useMemo(() => {
     if (!storedCompleteView) return null;
     if (overlayGenerationMismatch) {
@@ -543,6 +552,13 @@ export function useResearchRunGateway(
   const missionDetailAvailable = completeView
     ? Boolean(completeView.missionDetail)
     : liveMissionDetailAvailable;
+  const missionActionsAvailable = completeView
+    ? Boolean(
+      completeView.missionDetail
+      && !overlayGenerationMismatch
+      && !overlayLifecycleMismatch,
+    )
+    : liveMissionDetailAvailable;
 
   return {
     run: completeView?.eventState.run ?? null,
@@ -552,6 +568,7 @@ export function useResearchRunGateway(
     error: currentState.error,
     historyComplete,
     missionDetailAvailable,
+    missionActionsAvailable,
     retry,
     ...projection,
   };

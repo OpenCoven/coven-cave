@@ -64,6 +64,7 @@ type Props = {
   runGatewayError?: string | null;
   onRetryRunGateway?(): void;
   missionDetailAvailable?: boolean;
+  missionActionsAvailable?: boolean;
   showEvidence: boolean;
   /** Collapse the evidence rail to its spine. Absent = not collapsible here
    *  (focus mode already hides the rail outright). */
@@ -394,6 +395,7 @@ export function ResearchMissionDetail({
   runGatewayError,
   onRetryRunGateway,
   missionDetailAvailable = true,
+  missionActionsAvailable = true,
   showEvidence,
   onCollapseEvidence,
   onOpenEvidence,
@@ -536,7 +538,7 @@ export function ResearchMissionDetail({
   const originSessionId = mission.origin?.surface === "chat"
     ? mission.origin.sessionId
     : undefined;
-  const actions = allowedResearchActions(mission);
+  const actions = missionActionsAvailable ? allowedResearchActions(mission) : [];
   const mainActions = actions.filter((action) => action !== "refine" && !END_ACTIONS.has(action));
   const endActions = actions.filter((action) => END_ACTIONS.has(action));
   const sourceCounts = researchSourceStatusCounts(mission.sources);
@@ -1506,7 +1508,7 @@ export function ResearchMissionDetail({
                   {mission.automation?.status ?? "not scheduled"}
                 </span>
               </div>
-              {mission.automation ? (
+              {mission.automation && missionActionsAvailable ? (
                 <>
                   <div className="research-automation__controls">
                     <Button
@@ -1541,7 +1543,7 @@ export function ResearchMissionDetail({
                   ) : null}
                   {mission.automation.stopReason ? <p className="research-automation__stop">Stopped: {mission.automation.stopReason}</p> : null}
                 </>
-              ) : (
+              ) : !mission.automation && missionActionsAvailable ? (
                 <Button
                   size="xs"
                   variant="ghost"
@@ -1550,7 +1552,7 @@ export function ResearchMissionDetail({
                 >
                   Create schedule
                 </Button>
-              )}
+              ) : null}
             </section>
           ) : null}
 
@@ -1615,6 +1617,7 @@ export function ResearchMissionDetail({
                 hint={railHint}
                 triage={isCheckpointLike}
                 highlightLatest={isLive}
+                readOnly={!missionActionsAvailable}
               />
             </div>
 

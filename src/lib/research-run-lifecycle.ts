@@ -1,7 +1,14 @@
 import type { ResearchMission } from "./research-missions.ts";
 import type { ResearchRunStatusV1 } from "./research-protocol/research-run.ts";
 
-const PHASES = ["scope", "challenge", "synthesize", "control"] as const;
+const PHASES = [
+  "scope",
+  "gather",
+  "challenge",
+  "synthesize",
+  "control",
+  "publish",
+] as const;
 type ResearchRunPhase = (typeof PHASES)[number];
 
 function activePhase(
@@ -24,8 +31,10 @@ export function canonicalResearchRunStatusForMission(
     case "running": {
       const phase = activePhase(mission);
       if (phase === "scope") return "scoping";
+      if (phase === "gather") return "gathering_public_sources";
       if (phase === "challenge") return "challenging";
       if (phase === "control") return "controlling";
+      if (phase === "publish") return "publishing";
       return "synthesizing";
     }
     case "checkpoint":

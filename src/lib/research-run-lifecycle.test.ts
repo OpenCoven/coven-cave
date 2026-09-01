@@ -153,8 +153,13 @@ test("the shared canonical mission mapping preserves gateway lifecycle semantics
   assert.equal(canonicalResearchRunStatusForMission(mission("planning")), "scoping");
   assert.equal(canonicalResearchRunStatusForMission(mission("running")), "synthesizing");
   assert.equal(canonicalResearchRunStatusForMission(runningMissionAt("scope")), "scoping");
+  assert.equal(
+    canonicalResearchRunStatusForMission(runningMissionAt("gather")),
+    "gathering_public_sources",
+  );
   assert.equal(canonicalResearchRunStatusForMission(runningMissionAt("challenge")), "challenging");
   assert.equal(canonicalResearchRunStatusForMission(runningMissionAt("control")), "controlling");
+  assert.equal(canonicalResearchRunStatusForMission(runningMissionAt("publish")), "publishing");
   assert.equal(canonicalResearchRunStatusForMission(mission("checkpoint")), "awaiting_checkpoint");
   assert.equal(canonicalResearchRunStatusForMission(mission("paused")), "awaiting_checkpoint");
   assert.equal(canonicalResearchRunStatusForMission(mission("completed")), "completed");
