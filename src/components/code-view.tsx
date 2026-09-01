@@ -32,7 +32,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
-import { codeReviewQueue, type CodeQueueMode } from "@/lib/code-review-queue";
+import {
+  codeReviewQueue,
+  resolvePendingCodeOpenSessionId,
+  type CodeQueueMode,
+} from "@/lib/code-review-queue";
 import {
   CODE_GITHUB_TABS,
   CODE_ROOM_RAIL_WIDTH_PX,
@@ -205,7 +209,11 @@ export function CodeView({
     setNarrowLanding(narrowLandingRef.current);
   }, [roomWidth, isMobile]);
 
-  const queueSelectedId = pendingOpen?.sessionId ?? (typeof selectedId === "string" ? selectedId : null);
+  const pendingQueueSelectedId = useMemo(
+    () => resolvePendingCodeOpenSessionId(sessions, pendingOpen),
+    [pendingOpen, sessions],
+  );
+  const queueSelectedId = pendingQueueSelectedId ?? (typeof selectedId === "string" ? selectedId : null);
   const queue = useMemo(
     () => codeReviewQueue(sessions, queueMode, queueSelectedId),
     [queueMode, queueSelectedId, sessions],
@@ -223,8 +231,8 @@ export function CodeView({
   useEffect(() => {
     if (!pendingOpen) return;
     const queueSessions = queue.sessions;
-    const byId = pendingOpen.sessionId
-      ? queueSessions.find((row) => row.id === pendingOpen.sessionId)
+    const byId = pendingQueueSelectedId
+      ? queueSessions.find((row) => row.id === pendingQueueSelectedId)
       : undefined;
     const root = pendingOpen.kind === "files" ? pendingOpen.root : undefined;
     const trim = (p: string) => p.replace(/\/+$/, "");
@@ -243,7 +251,7 @@ export function CodeView({
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
     onPendingOpenHandled?.();
-  }, [onPendingOpenHandled, pendingOpen, queue.sessions]);
+  }, [onPendingOpenHandled, pendingOpen, pendingQueueSelectedId, queue.sessions]);
 
   // Only opens raised from a conversation carry an origin; a file picked from
   // the tree shows nothing, because there is no conversation to point back to.

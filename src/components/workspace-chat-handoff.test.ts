@@ -182,8 +182,8 @@ assert.match(
 );
 assert.match(
   codeView,
-  /if \(!pendingOpen\) return;[\s\S]*pendingOpen\.sessionId[\s\S]*\.find\(\(row\) => row\.id === pendingOpen\.sessionId\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
-  "CodeView should consume pending opens by selecting the raising session's workbench",
+  /const pendingQueueSelectedId = useMemo\(\s*\(\) => resolvePendingCodeOpenSessionId\(sessions, pendingOpen\),[\s\S]*if \(!pendingOpen\) return;[\s\S]*const byId = pendingQueueSelectedId\s*\?\s*queueSessions\.find\(\(row\) => row\.id === pendingQueueSelectedId\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
+  "CodeView should consume pending opens by selecting the resolved queue-visible workbench session",
 );
 assert.match(
   codeView,

@@ -213,6 +213,16 @@ assert.match(
 );
 assert.match(
   codeView,
+  /const pendingQueueSelectedId = useMemo\(\s*\(\) => resolvePendingCodeOpenSessionId\(sessions, pendingOpen\),[\s\S]*const queueSelectedId = pendingQueueSelectedId \?\? \(typeof selectedId === "string" \? selectedId : null\);[\s\S]*const queue = useMemo\(\s*\(\) => codeReviewQueue\(sessions, queueMode, queueSelectedId\),/,
+  "CodeView resolves a root-only pending open into the selected queue override before reviewable filtering, with selectedId as the fallback",
+);
+assert.match(
+  codeView,
+  /if \(!pendingOpen\) return;[\s\S]*const byId = pendingQueueSelectedId\s*\?\s*queueSessions\.find\(\(row\) => row\.id === pendingQueueSelectedId\)/,
+  "the pending-open effect reuses the resolved queue override id so excluded sessions remain selectable from queue.sessions",
+);
+assert.match(
+  codeView,
   /if \(!pendingOpen\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\);/,
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
@@ -522,7 +532,7 @@ assert.match(
 );
 assert.match(
   codeView,
-  /const \[queueMode, setQueueMode\] = useState<CodeQueueMode>\("reviewable"\);[\s\S]*const queue = useMemo\(\s*\(\) => codeReviewQueue\(sessions, queueMode, queueSelectedId\),/,
+  /const \[queueMode, setQueueMode\] = useState<CodeQueueMode>\("reviewable"\);[\s\S]*const pendingQueueSelectedId = useMemo\(/,
   "CodeView owns the non-persisted reviewable/all mode and one shared precomputed queue",
 );
 assert.match(

@@ -1,7 +1,9 @@
 import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "./github-repo-link.ts";
+import type { PendingCodeOpen } from "./pending-code-open.ts";
 import {
   codeSessionActivity,
   codeSessionDiffstat,
+  codeSessionWorkRoot,
   isCodeRailSession,
 } from "./code-surface.ts";
 import type { SessionRow } from "./types.ts";
@@ -54,6 +56,10 @@ function projectLabel(root: string): string {
 function updatedAt(row: SessionRow): number {
   const parsed = Date.parse(row.updated_at);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function trimTrailingSlashes(path: string): string {
+  return path.replace(/\/+$/, "");
 }
 
 function reviewPriority(row: SessionRow): number {
@@ -149,6 +155,29 @@ export function codeSessionEligibility(row: SessionRow): CodeSessionEligibility 
   }
   if (row.familiarWorkspace) return { reviewable: false, reason: "familiar_workspace" };
   return { reviewable: true, reason: "eligible" };
+}
+
+export function resolvePendingCodeOpenSessionId(
+  rows: readonly SessionRow[],
+  pendingOpen: PendingCodeOpen | null | undefined,
+): string | null {
+  if (!pendingOpen) return null;
+  if (pendingOpen.sessionId) return pendingOpen.sessionId;
+  if (pendingOpen.kind !== "files" || !pendingOpen.root) return null;
+
+  const root = trimTrailingSlashes(pendingOpen.root);
+  let newestMatch: SessionRow | null = null;
+  let newestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    if (!isCodeRailSession(row)) continue;
+    if (trimTrailingSlashes(codeSessionWorkRoot(row)) !== root) continue;
+    const rowUpdatedAt = updatedAt(row);
+    if (!newestMatch || rowUpdatedAt > newestTimestamp) {
+      newestMatch = row;
+      newestTimestamp = rowUpdatedAt;
+    }
+  }
+  return newestMatch?.id ?? null;
 }
 
 export function codeReviewQueue(

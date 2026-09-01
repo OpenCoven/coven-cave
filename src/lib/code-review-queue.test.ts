@@ -4,9 +4,11 @@ import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import {
   codeReviewQueue,
   codeSessionEligibility,
+  resolvePendingCodeOpenSessionId,
   type CodeQueueMode,
   type CodeSessionEligibility,
 } from "./code-review-queue.ts";
+import type { PendingCodeOpen } from "./pending-code-open.ts";
 import type { SessionGitContext, SessionRow } from "./types.ts";
 
 const NOW = "2026-09-01T12:00:00.000Z";
@@ -524,4 +526,66 @@ test("codeReviewQueue includes one selected outside-filter row without changing 
   const alreadyIncluded = codeReviewQueue(rows, "reviewable", "eligible");
   assert.equal(alreadyIncluded.outsideCurrentFilter, false);
   assert.deepEqual(alreadyIncluded.sessions.map((row) => row.id), ["eligible"]);
+});
+
+test("root-only pending opens resolve an all-local session override before the reviewable queue", () => {
+  const root = "/Users/dev/code/repo-a/.worktrees/review-desk";
+  const rows = [
+    sessionFixture({
+      id: "eligible-pr",
+      project_root: root,
+      updated_at: "2026-09-01T12:01:00.000Z",
+      diff: { additions: 4, deletions: 1 },
+      pullRequest: { repo: "acme/repo-a", number: 9, state: "open", branch: "feat/pr" },
+      git: gitFixture({
+        branch: "feat/pr",
+        worktreeRoot: root,
+        repositoryRoot: "/Users/dev/code/repo-a",
+        repositoryUrl: "https://github.com/acme/repo-a",
+      }),
+      workBranch: "feat/pr",
+    }),
+    sessionFixture({
+      id: "familiar-newest",
+      project_root: root,
+      updated_at: "2026-09-01T12:04:00.000Z",
+      familiarWorkspace: true,
+      git: gitFixture({
+        worktreeRoot: root,
+        repositoryRoot: "/Users/dev/code/repo-a",
+        repositoryUrl: "https://github.com/acme/repo-a",
+      }),
+    }),
+    sessionFixture({
+      id: "generated-newer-still-hidden",
+      project_root: root,
+      updated_at: "2026-09-01T12:05:00.000Z",
+      generated: true,
+      git: gitFixture({
+        worktreeRoot: root,
+        repositoryRoot: "/Users/dev/code/repo-a",
+        repositoryUrl: "https://github.com/acme/repo-a",
+      }),
+    }),
+  ];
+  const pendingRootOpen = { kind: "files", root, nonce: 1 } satisfies PendingCodeOpen;
+  const overrideId = resolvePendingCodeOpenSessionId(rows, pendingRootOpen);
+
+  assert.equal(overrideId, "familiar-newest");
+  assert.equal(
+    resolvePendingCodeOpenSessionId(rows, {
+      kind: "changes",
+      path: "src/demo.ts",
+      sessionId: "eligible-pr",
+      nonce: 2,
+    }),
+    "eligible-pr",
+    "sessionId-driven pending opens keep their explicit target",
+  );
+
+  const queue = codeReviewQueue(rows, "reviewable", overrideId);
+  assert.equal(queue.outsideCurrentFilter, true);
+  assert.equal(queue.sessions.some((row) => row.id === "familiar-newest"), true);
+  assert.equal(queue.sessions.filter((row) => row.id === "familiar-newest").length, 1);
+  assert.equal(queue.sessions.some((row) => row.id === "generated-newer-still-hidden"), false);
 });
