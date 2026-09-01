@@ -437,6 +437,55 @@ try {
     "degraded local familiar-workspace chats keep trusted classification from their original runtime cwd",
   );
 
+  const degradedCollapsedUnregistered = await computeSessionsList(false, null, true, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(degradedCollapsedUnregistered.payload.ok, true);
+  assert.equal(degradedCollapsedUnregistered.payload.degraded, true);
+  assert.deepEqual(
+    degradedCollapsedUnregistered.payload.sessions.map((row) => row.id),
+    ["rootless", "normal-project", "stale-chat"],
+    "collapseFamiliarWorkspace also removes degraded local chats that only retain the trusted familiarWorkspace marker",
+  );
+  assert.equal(
+    degradedCollapsedUnregistered.payload.sessions.find(
+      (row) => row.id === "familiar-unregistered-local",
+    ),
+    undefined,
+    "collapseFamiliarWorkspace removes an unregistered degraded familiar-workspace chat instead of leaving it in the no-project bucket",
+  );
+
+  await reset();
+  await writeFile(
+    path.join(covenHome, "familiars.toml"),
+    `[[familiar]]
+id = "nova"
+workspace = "${relocatedProjectRoot}
+`,
+  );
+  clearCaveStoreReadCache();
+  const malformedClassificationUnknown = await computeSessionsList(false, null, false, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.equal(malformedClassificationUnknown.payload.ok, true);
+  assert.equal(malformedClassificationUnknown.payload.degraded, true);
+  assert.deepEqual(
+    malformedClassificationUnknown.payload.sessions.map((row) => row.id),
+    readOnlyIds,
+    "malformed familiar-workspace config keeps classification metadata-only so session membership stays unchanged",
+  );
+  for (const row of malformedClassificationUnknown.payload.sessions) {
+    assert.equal(
+      row.familiarWorkspace,
+      undefined,
+      "malformed familiar-workspace config leaves classification unavailable instead of stamping false onto rows",
+    );
+  }
+
   await reset();
   await rm(path.join(covenHome, "familiars.toml"), { force: true });
   await mkdir(path.join(covenHome, "familiars.toml"), { recursive: true });

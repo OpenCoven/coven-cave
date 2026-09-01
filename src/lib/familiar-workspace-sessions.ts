@@ -85,7 +85,9 @@ export function collapseFamiliarWorkspaceSessions(
   // Normalize the prefix list once, then test each row inline.
   const prefixes = normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots);
   return sessions.filter(
-    (session) => !matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
+    (session) =>
+      session.familiarWorkspace !== true &&
+      !matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
   );
 }
 

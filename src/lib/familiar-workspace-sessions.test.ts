@@ -83,6 +83,21 @@ describe("collapseFamiliarWorkspaceSessions", () => {
     const sessions = [row("a", "/repo/a"), row("b", "")];
     assert.equal(collapseFamiliarWorkspaceSessions(sessions, WS_ROOT).length, 2);
   });
+
+  it("drops trusted familiar-workspace rows even after project_root degrades to empty", () => {
+    const kept = collapseFamiliarWorkspaceSessions(
+      [
+        { ...row("degraded-local", ""), familiarWorkspace: true },
+        row("real-project", "/repo/a"),
+        row("rootless", ""),
+      ],
+      WS_ROOT,
+    );
+    assert.deepEqual(
+      kept.map((session) => session.id),
+      ["real-project", "rootless"],
+    );
+  });
 });
 
 describe("classifyFamiliarWorkspaceSessions", () => {

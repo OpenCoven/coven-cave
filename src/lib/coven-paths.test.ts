@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
@@ -147,6 +147,62 @@ try {
     Array.from((await readFamiliarWorkspaces()).entries()),
     [],
     "the forgiving familiar-workspace reader stays compatible for existing callers",
+  );
+
+  await rm(path.join(process.env.COVEN_HOME, "familiars.toml"), { recursive: true, force: true });
+
+  for (const malformed of [
+    {
+      name: "unterminated quoted workspace",
+      raw: `[[familiar]]
+id = "nova"
+workspace = "/Users/example/nova
+`,
+      error: /unterminated/i,
+    },
+    {
+      name: "invalid assignment syntax",
+      raw: `[[familiar]]
+id = "nova"
+workspace: "/Users/example/nova"
+`,
+      error: /invalid assignment/i,
+    },
+    {
+      name: "workspace assignment whose familiar id cannot be parsed",
+      raw: `[[familiar]]
+id = "nova
+workspace = "/Users/example/nova"
+`,
+      error: /id/i,
+    },
+  ]) {
+    await writeFile(path.join(process.env.COVEN_HOME, "familiars.toml"), malformed.raw);
+    await assert.rejects(
+      () => readFamiliarWorkspacesStrict(),
+      malformed.error,
+      `strict familiar-workspace reads reject ${malformed.name}`,
+    );
+  }
+
+  const partiallyMalformed = `[[familiar]]
+id = "ember"
+workspace = "~/coven/ember"
+
+[[familiar]]
+id = "nova"
+workspace = "/Users/example/nova
+`;
+  await writeFile(path.join(process.env.COVEN_HOME, "familiars.toml"), partiallyMalformed);
+  await assert.rejects(
+    () => readFamiliarWorkspacesStrict(),
+    /unterminated/i,
+    "strict familiar-workspace reads fail closed on partially written familiar blocks",
+  );
+  assert.deepEqual(
+    Array.from((await readFamiliarWorkspaces()).entries()),
+    Array.from(parseFamiliarWorkspaces(partiallyMalformed).entries()),
+    "forgiving familiar-workspace reads stay aligned with the legacy parser for existing callers",
   );
 } finally {
   await rm(strictScratch, { recursive: true, force: true });
