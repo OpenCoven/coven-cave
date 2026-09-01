@@ -377,6 +377,10 @@ function sameProcessIdentity(expected: ProcessInfo, actual: ProcessInfo) {
   );
 }
 
+function sameOwnerRecord(expected: ProcessOwner, actual: ProcessOwner) {
+  return JSON.stringify(expected) === JSON.stringify(actual);
+}
+
 function validatedAnchor(anchor: ProcessInfo, table: ProcessInfo[]) {
   const candidate = table.find((info) => info.pid === anchor.pid);
   if (!candidate || !sameProcessIdentity(anchor, candidate)) {
@@ -1014,7 +1018,11 @@ export async function stopOwnedProcessTree(
     return { kind: "identity-unavailable", error: "process owner state is malformed" };
   }
   let owner = initialOwner;
-  if (owner.status === "stopped") return { kind: "stopped", escalated: false };
+  if (owner.status === "stopped") {
+    return owner.backendRoot
+      ? { kind: "stopped", escalated: false }
+      : { kind: "identity-mismatch" };
+  }
   const getBootId = options.currentBootId ?? currentBootId;
   const scan = options.scanProcessTable ?? scanProcessTable;
   const signal = options.signalProcess ?? ((pid, name) => process.kill(pid, name));
@@ -1044,6 +1052,21 @@ export async function stopOwnedProcessTree(
     };
 
     if (!owner.backendRoot) {
+      const reconcileRootlessState = async (): Promise<StopOwnedProcessResult | null> => {
+        const current = readProcessOwner(ownerPath);
+        if (!current) {
+          return { kind: "identity-unavailable", error: "process owner state is malformed" };
+        }
+        if (current.backendRoot) {
+          return await stopOwnedProcessTree(ownerPath, options);
+        }
+        if (current.status === "stopped") {
+          return { kind: "identity-mismatch" };
+        }
+        return sameOwnerRecord(current, owner)
+          ? null
+          : { kind: "identity-mismatch" };
+      };
       const table = await scan();
       const supervisor = table.find((entry) => entry.pid === owner.supervisor.pid);
       if (supervisor && sameProcessIdentity(owner.supervisor, supervisor)) {
@@ -1055,10 +1078,12 @@ export async function stopOwnedProcessTree(
           options.termWaitMs ?? 3000,
         );
       }
-      const current = readProcessOwner(ownerPath);
-      if (current?.status === "stopped") return { kind: "stopped", escalated: false };
+      const afterSignal = await reconcileRootlessState();
+      if (afterSignal) return afterSignal;
       if (Date.now() < owner.launchDeadlineMs) {
         await sleep(Math.min(owner.launchDeadlineMs - Date.now(), options.termWaitMs ?? 3000));
+        const afterWait = await reconcileRootlessState();
+        if (afterWait) return afterWait;
       }
       const after = await scan();
       const stillSupervisor = after.find((entry) => entry.pid === owner.supervisor.pid);
@@ -1068,9 +1093,8 @@ export async function stopOwnedProcessTree(
       ) {
         return { kind: "still-running" };
       }
-      owner = { ...owner, status: "stopped" };
-      writeOwner(ownerPath, owner);
-      return { kind: "stopped", escalated: false };
+      const terminal = await reconcileRootlessState();
+      return terminal ?? { kind: "identity-mismatch" };
     }
 
     const backendRoot = owner.backendRoot;
@@ -1125,7 +1149,16 @@ export async function stopOwnedProcessTree(
       return { kind: "still-running" };
     }
     if (!await stopSupervisor()) return { kind: "identity-mismatch" };
-    owner = { ...(readProcessOwner(ownerPath) ?? owner), status: "stopped" };
+    const terminal = readProcessOwner(ownerPath);
+    if (
+      !terminal?.backendRoot
+      || !sameProcessIdentity(terminal.backendRoot, backendRoot)
+      || !sameProcessIdentity(terminal.supervisor, owner.supervisor)
+      || terminal.backendUrl !== owner.backendUrl
+    ) {
+      return { kind: "identity-mismatch" };
+    }
+    owner = { ...terminal, status: "stopped" };
     writeOwner(ownerPath, owner);
     return { kind: "stopped", escalated: true };
   } catch (error) {

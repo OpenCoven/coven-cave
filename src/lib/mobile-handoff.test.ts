@@ -776,6 +776,32 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     );
   }
   {
+    const commands: string[][] = [];
+    let statusReads = 0;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: "http://127.0.0.1:3000",
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (args[1] === "reset") return commandResult();
+        statusReads += 1;
+        return commandResult({
+          stdout: JSON.stringify(statusReads === 1 ? status : healthyDevStatus),
+        });
+      },
+    });
+    assert.equal(result.kind, "not-owned");
+    assert.deepEqual(
+      commands,
+      [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+      ],
+      "reset rechecks the complete owned snapshot immediately before mutation and preserves a reassignment",
+    );
+  }
+  {
     const events: string[] = [];
     let call = 0;
     const result = await resetTailscaleServeRoute({
@@ -793,16 +819,23 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       runTailscale: async (args: string[]) => {
         call += 1;
         events.push(args.join(" "));
-        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
-        if (call === 2) return commandResult();
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
         return commandResult({ stdout: "{}" });
       },
     });
     assert.equal(result.kind, "process-cleanup-failed");
-    assert.equal(call, 3, "process cleanup runs only after Serve reset is verified");
+    assert.equal(call, 4, "process cleanup runs only after Serve reset is verified");
     assert.deepEqual(
       events,
-      ["serve status --json", "serve reset", "serve status --json", "stop-process", "release"],
+      [
+        "serve status --json",
+        "serve status --json",
+        "serve reset",
+        "serve status --json",
+        "stop-process",
+        "release",
+      ],
       "route removal is verified before slow process cleanup while the machine lease is held",
     );
   }
@@ -828,6 +861,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     assert.deepEqual(
       events,
       [
+        "serve status --json",
         "serve status --json",
         "serve reset",
         "serve status --json",
@@ -916,6 +950,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     (await resetCase({
       results: [
         commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
         commandResult({ ok: false, status: 1, stderr: "reset failed" }),
         commandResult({ stdout: "{}" }),
       ],
@@ -926,6 +961,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(
     (await resetCase({
       results: [
+        commandResult({ stdout: JSON.stringify(status) }),
         commandResult({ stdout: JSON.stringify(status) }),
         commandResult(),
         commandResult({ stdout: JSON.stringify(status) }),
@@ -938,6 +974,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     (await resetCase({
       results: [
         commandResult({ stdout: JSON.stringify(status) }),
+        commandResult({ stdout: JSON.stringify(status) }),
         commandResult(),
         commandResult({ ok: false, status: 1, stderr: "postcheck failed" }),
       ],
@@ -948,6 +985,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(
     (await resetCase({
       results: [
+        commandResult({ stdout: JSON.stringify(status) }),
         commandResult({ stdout: JSON.stringify(status) }),
         commandResult(),
         commandResult({ stdout: "{}" }),
@@ -995,13 +1033,15 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
           call === 1
             ? "status"
             : call === 2
-              ? "reset"
+              ? "pre-reset-status"
               : call === 3
-                ? "postcheck"
-                : "final-status",
+                ? "reset"
+                : call === 4
+                  ? "postcheck"
+                  : "final-status",
         );
-        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
-        if (call === 2) return commandResult();
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
         return commandResult({ stdout: "{}" });
       },
       afterVerifiedRouteRemoval: async () => {
@@ -1016,6 +1056,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       events,
       [
         "status",
+        "pre-reset-status",
         "reset",
         "postcheck",
         "stop-process",
@@ -1034,8 +1075,8 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       probeBackend: async () => false,
       runTailscale: async () => {
         call += 1;
-        if (call === 1) return commandResult({ stdout: JSON.stringify(status) });
-        if (call === 2) return commandResult();
+        if (call <= 2) return commandResult({ stdout: JSON.stringify(status) });
+        if (call === 3) return commandResult();
         return commandResult({ stdout: "{}" });
       },
       afterVerifiedRemoval: async () => {

@@ -951,6 +951,16 @@ export async function resetTailscaleServeRoute({
       };
     }
 
+    const beforeReset = await readTailscaleServeStatus(runTailscale);
+    if (beforeReset.kind !== "status") return beforeReset;
+    if (
+      serveStatusFingerprint(beforeReset.status)
+      !== serveStatusFingerprint(current.status)
+      || !serveRouteOwnedByBackend(beforeReset.status, backendUrl)
+    ) {
+      return { kind: "not-owned", targets: serveTargets(beforeReset.status) };
+    }
+
     const reset = await runTailscale(["serve", "reset"]);
     if (reset.cleanupFailed) {
       return { kind: "cleanup-failed", stderr: reset.stderr };

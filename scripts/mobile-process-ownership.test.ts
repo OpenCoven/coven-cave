@@ -420,6 +420,104 @@ test("a rootless reused session and process group never authorizes signaling a f
   }
 });
 
+test("rootless stop switches to a concurrently promoted backend-root instead of stale-writing stopped", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-root-promotion-race-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  const supervisor = {
+    pid: 700,
+    parentPid: 1,
+    processGroupId: 700,
+    sessionId: 700,
+    processToken: "linux:boot-a:700:100",
+  };
+  const backendRoot = {
+    pid: 701,
+    parentPid: 1,
+    processGroupId: 701,
+    sessionId: 701,
+    processToken: "linux:boot-a:701:101",
+  };
+  const rootlessOwner: ProcessOwner = {
+    version: 4,
+    status: "launching",
+    bootId: "boot-a",
+    backendUrl: "http://127.0.0.1:3007",
+    launchDeadlineMs: Date.now() - 1,
+    supervisor,
+    backendRoot: null,
+  };
+  writeFileSync(ownerPath, JSON.stringify(rootlessOwner));
+  let supervisorAlive = true;
+  let rootAlive = false;
+  const signals: Array<[number, NodeJS.Signals]> = [];
+  const writePromoted = (status: ProcessOwner["status"]) => {
+    writeFileSync(ownerPath, JSON.stringify({
+      ...rootlessOwner,
+      status,
+      backendRoot,
+    }));
+  };
+  try {
+    const result = await stopOwnedProcessTree(ownerPath, {
+      currentBootId: async () => "boot-a",
+      scanProcessTable: async () => [
+        ...(supervisorAlive ? [supervisor] : []),
+        ...(rootAlive ? [backendRoot] : []),
+      ],
+      signalProcess: (pid, signal) => {
+        signals.push([pid, signal]);
+        if (pid === supervisor.pid) {
+          rootAlive = true;
+          writePromoted("running");
+          supervisorAlive = false;
+        } else if (pid === backendRoot.pid) {
+          rootAlive = false;
+          writePromoted("stopped");
+        }
+      },
+      sleep: async () => undefined,
+      termWaitMs: 0,
+      killWaitMs: 0,
+    });
+    assert.equal(result.kind, "stopped");
+    assert.deepEqual(signals, [
+      [supervisor.pid, "SIGTERM"],
+      [backendRoot.pid, "SIGTERM"],
+    ]);
+    const finalOwner = readProcessOwner(ownerPath);
+    assert.equal(finalOwner?.status, "stopped");
+    assert.deepEqual(finalOwner?.backendRoot, backendRoot);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("a rootless stopped record is retained because it cannot fence a late promotion", async () => {
+  const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-rootless-stopped-"));
+  const ownerPath = join(fixture, "next.owner.json");
+  writeFileSync(ownerPath, JSON.stringify({
+    version: 4,
+    status: "stopped",
+    bootId: "boot-a",
+    backendUrl: "http://127.0.0.1:3007",
+    launchDeadlineMs: Date.now() - 1,
+    supervisor: {
+      pid: 700,
+      parentPid: 1,
+      processGroupId: 700,
+      sessionId: 700,
+      processToken: "linux:boot-a:700:100",
+    },
+    backendRoot: null,
+  }));
+  try {
+    assert.equal((await stopOwnedProcessTree(ownerPath)).kind, "identity-mismatch");
+    assert.equal(readProcessOwner(ownerPath)?.status, "stopped");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("stubborn backend escalation waits for readiness and drains the supervised group", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-stubborn-"));
   const ownerPath = join(fixture, "next.owner.json");
