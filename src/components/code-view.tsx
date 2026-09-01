@@ -47,7 +47,9 @@ import {
   parseCodeDeepLink,
   type CodeGithubTab,
   type CodeTopTab,
+  type CodeWorkbenchTab,
 } from "@/lib/code-surface";
+import { isCodeShortcutTarget } from "@/lib/code-shortcuts";
 import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
@@ -245,6 +247,13 @@ export function CodeView({
     deepLink?.sessionId ?? undefined,
   );
   const [queueMode, setQueueMode] = useState<CodeQueueMode>("reviewable");
+  const reviewRailOpenBySessionRef = useRef(new Map<string, boolean>());
+  const terminalOpenBySessionRef = useRef(new Map<string, boolean>());
+  const [, setPanelStateVersion] = useState(0);
+  const [initialWorkbenchTab, setInitialWorkbenchTab] = useState<{
+    sessionId: string;
+    tab: CodeWorkbenchTab;
+  } | null>(deepLink?.sessionId ? { sessionId: deepLink.sessionId, tab: deepLink.workbenchTab } : null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   // The workbench picker offers "start a new session about <query>" when the
   // filter matches nothing. There is no title field to set — a session's title
@@ -284,6 +293,80 @@ export function CodeView({
     () => codeReviewQueue(sessions, queueMode, queueSelectedId),
     [queueMode, queueSelectedId, sessions],
   );
+  const setSessionReviewRailOpen = useCallback((sessionId: string, open: boolean) => {
+    const states = reviewRailOpenBySessionRef.current;
+    if (states.get(sessionId) === open) return;
+    states.set(sessionId, open);
+    setPanelStateVersion((value) => value + 1);
+  }, []);
+  const setSessionTerminalOpen = useCallback((sessionId: string, open: boolean) => {
+    const states = terminalOpenBySessionRef.current;
+    if (states.get(sessionId) === open) return;
+    states.set(sessionId, open);
+    setPanelStateVersion((value) => value + 1);
+  }, []);
+  const queueTargetBelongsToRoom = useCallback((target: EventTarget | null) => {
+    const node = target instanceof Node ? target : null;
+    if (!node) return false;
+    if (roomRef.current?.contains(node)) return true;
+    return Boolean(document.querySelector("[data-code-picker-panel]")?.contains(node));
+  }, []);
+  const visibleQueueRows = useCallback(() => {
+    return [...document.querySelectorAll<HTMLButtonElement>("[data-code-session-id]")]
+      .filter((row) => {
+        if (!queueTargetBelongsToRoom(row)) return false;
+        const style = window.getComputedStyle(row);
+        return style.display !== "none" && style.visibility !== "hidden" && row.getClientRects().length > 0;
+      });
+  }, [queueTargetBelongsToRoom]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (topTab !== "sessions") return;
+      if (!queueTargetBelongsToRoom(event.target)) return;
+      if (!isCodeShortcutTarget(event.target)) return;
+      if (event.key === "/" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        const picker = document.querySelector<HTMLElement>(".code-picker__trigger");
+        if (!document.querySelector("[data-code-picker-panel]")) picker?.click();
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLElement>("[data-code-session-search]")?.focus();
+        });
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if ((key === "j" || key === "k") && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const rows = visibleQueueRows();
+        if (!rows.length) return;
+        event.preventDefault();
+        const active = document.activeElement as HTMLElement | null;
+        const currentIndex = rows.findIndex((row) => row === active || row.contains(active));
+        const selectedIndex = rows.findIndex(
+          (row) =>
+            row.getAttribute("aria-selected") === "true" ||
+            row.getAttribute("aria-current") === "true" ||
+            row.dataset.selected === "true",
+        );
+        const nextIndex =
+          currentIndex >= 0
+            ? key === "j"
+              ? (currentIndex + 1) % rows.length
+              : (currentIndex - 1 + rows.length) % rows.length
+            : selectedIndex >= 0
+              ? selectedIndex
+              : key === "j"
+                ? 0
+                : rows.length - 1;
+        rows[nextIndex]?.focus();
+        return;
+      }
+      if (key === "a" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        setQueueMode((current) => (current === "reviewable" ? "all" : "reviewable"));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [queueTargetBelongsToRoom, topTab, visibleQueueRows]);
 
   // Consume a routed file/diff open (cave-ohcj): select the raising chat
   // session's workbench — or, for a Projects-hub root browse, the newest
@@ -310,6 +393,7 @@ export function CodeView({
     setTopTab("sessions");
     setInitialGithubTarget(null);
     if (target) setSelectedId(target.id);
+    if (target && pendingOpen.kind === "changes") setSessionReviewRailOpen(target.id, true);
     // Root browse with no matching session: there is no workbench to focus —
     // land on the surface and leave the rail/selection as-is.
     setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
@@ -317,7 +401,7 @@ export function CodeView({
     // last one — dismissing is "I've read this", not "never show me these".
     setOriginDismissed(false);
     onPendingOpenHandled?.();
-  }, [onPendingOpenHandled, pendingOpen, pendingQueueSelectedId, queue.sessions]);
+  }, [onPendingOpenHandled, pendingOpen, pendingQueueSelectedId, queue.sessions, setSessionReviewRailOpen]);
 
   // Only opens raised from a conversation carry an origin; a file picked from
   // the tree shows nothing, because there is no conversation to point back to.
@@ -572,7 +656,16 @@ export function CodeView({
                       setNewSessionSeed(seed);
                       setNewSessionOpen(true);
                     }}
-                    initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
+                    reviewOpen={reviewRailOpenBySessionRef.current.get(selected.id)}
+                    terminalOpen={terminalOpenBySessionRef.current.get(selected.id)}
+                    onReviewOpenChange={(open) => setSessionReviewRailOpen(selected.id, open)}
+                    onTerminalOpenChange={(open) => setSessionTerminalOpen(selected.id, open)}
+                    initialTab={initialWorkbenchTab?.sessionId === selected.id ? initialWorkbenchTab.tab : undefined}
+                    onInitialTabHandled={() => {
+                      setInitialWorkbenchTab((current) =>
+                        current?.sessionId === selected.id ? null : current,
+                      );
+                    }}
                     openTarget={
                       workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
                         ? workbenchTarget.open

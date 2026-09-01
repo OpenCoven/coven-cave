@@ -58,6 +58,38 @@ const OLDER = mkSession({
     isWorktree: true,
   },
 });
+const CLEAN = mkSession({
+  id: "s-clean",
+  title: "Tidy the docs",
+  status: "idle",
+  project_root: "/repo/alpha",
+  familiarWorkspace: false,
+  git: {
+    branch: "docs/tidy",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha/.worktrees/docs-tidy",
+    isWorktree: true,
+  },
+});
+const ALL_LOCAL_ONLY = mkSession({
+  id: "s-local",
+  title: "Scratchpad session",
+  status: "idle",
+  project_root: "/repo/alpha",
+  familiarWorkspace: true,
+  git: {
+    branch: "scratch/local",
+    repositoryUrl: "https://github.com/acme/alpha",
+    worktreeRoot: "/repo/alpha/.worktrees/scratch-local",
+    isWorktree: true,
+  },
+});
+
+async function activeCodeSessionId(page: Page) {
+  return page.evaluate(
+    () => document.activeElement?.getAttribute("data-code-session-id") ?? null,
+  );
+}
 
 async function base(
   page: Page,
@@ -306,6 +338,146 @@ test.describe("code surface (Coding familiar's room)", () => {
     // The worktree mark on the branch row (the Root env row also contains
     // "feat-flux" inside the worktree path, so match the ⑂-prefixed form).
     await expect(inspector.getByText("⑂ feat-flux")).toBeVisible();
+  });
+
+  test("queue keyboard flow navigates rows, opens search with slash, and keeps typing inside the picker query", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, [NEWEST, OLDER, ALL_LOCAL_ONLY]);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    const trigger = page.locator(".code-picker__trigger");
+    await expect(trigger).toBeVisible({ timeout: 30_000 });
+
+    await trigger.click();
+    const selectedRow = page.locator('[data-code-session-id="s-new"]');
+    const olderRow = page.locator('[data-code-session-id="s-old"]');
+    await expect(selectedRow).toBeVisible();
+    await expect(olderRow).toBeVisible();
+
+    await trigger.focus();
+    await page.keyboard.press("j");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-new");
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
+    ).toBeVisible();
+
+    await page.keyboard.press("j");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-old");
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
+    ).toBeVisible();
+
+    await page.keyboard.press("j");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-new");
+
+    await page.keyboard.press("k");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe("s-old");
+
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Fix login retry/ }),
+    ).toBeVisible();
+
+    const scope = page
+      .getByRole("navigation", { name: "Coding sessions" })
+      .getByRole("group", { name: "Session scope" });
+    await expect(scope.getByRole("button", { name: /Reviewable/ })).toHaveAttribute("aria-pressed", "true");
+    await trigger.focus();
+    await page.keyboard.press("Shift+A");
+    await expect(scope.getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
+
+    await page.keyboard.press("/");
+    const search = page.locator("[data-code-session-search]");
+    const pickerScope = page
+      .getByRole("dialog", { name: "Switch session" })
+      .getByRole("group", { name: "Session scope" });
+    await expect(search).toBeFocused();
+    await expect(page.locator('[data-code-session-id="s-local"]')).toBeVisible();
+    await page.keyboard.press("j");
+    await page.keyboard.press("k");
+    await page.keyboard.press("/");
+    await expect(search).toHaveValue("jk/");
+    await expect
+      .poll(() => activeCodeSessionId(page))
+      .toBe(null);
+
+    await page.keyboard.press("Shift+A");
+    await expect(pickerScope.getByRole("button", { name: /All local/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(search).toHaveValue("jk/A");
+  });
+
+  test("review rail and terminal panel state stays per-session with content-aware defaults", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
+    await base(page, [NEWEST, CLEAN]);
+    await page.goto("/?mode=code", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByTestId("code-review-rail")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Show the review rail" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Hide the review rail" }).click();
+    await expect(page.getByRole("button", { name: "Show the review rail" })).toBeVisible();
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(page.getByText("Terminal · this worktree")).toBeVisible();
+
+    await page.locator(".code-picker__trigger").click();
+    await page.locator('[data-code-session-id="s-clean"]').click();
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Tidy the docs/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show the review rail" })).toBeVisible();
+    await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Show the review rail" }).click();
+    await expect(page.getByTestId("code-review-rail")).toBeVisible();
+    await page.getByRole("button", { name: "Open the terminal drawer" }).click();
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(page.getByText("Terminal · this worktree")).toBeVisible();
+
+    await page.locator(".code-picker__trigger").click();
+    await page.locator('[data-code-session-id="s-new"]').click();
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Wire the flux capacitor/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show the review rail" })).toBeVisible();
+    await expect(page.getByTestId("code-review-rail")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+
+    await page.locator(".code-picker__trigger").click();
+    await page.locator('[data-code-session-id="s-clean"]').click();
+    await expect(
+      page.getByTestId("code-workbench-header").getByRole("button", { name: /Tidy the docs/ }),
+    ).toBeVisible();
+    await expect(page.getByTestId("code-review-rail")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close the terminal drawer" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   test("?mode=code&session=<id>&wtab=files deep link selects the session and tab", async ({ page, isMobile }) => {

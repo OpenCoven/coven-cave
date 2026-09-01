@@ -5,6 +5,7 @@
  * behavioral tests for pure logic, source pins for wiring).
  */
 
+import type { PendingCodeOpen } from "./pending-code-open.ts";
 import type { SessionRow } from "./types.ts";
 
 /** Workbench tabs within a selected session. Diff/Files/Terminal/PR land in
@@ -230,6 +231,46 @@ export function codeSessionDiffstat(row: SessionRow): string | null {
   if (!diff) return null;
   if (!diff.additions && !diff.deletions) return null;
   return `+${diff.additions} \u2212${diff.deletions}`;
+}
+
+export function codeSessionHasOpenPr(row: SessionRow): boolean {
+  if (!row.pullRequest) return false;
+  const state = row.pullRequest.state?.trim().toLowerCase();
+  return !state || state === "open";
+}
+
+export type CodeWorkbenchPanels = {
+  reviewOpen: boolean;
+  terminalOpen: boolean;
+};
+
+export function defaultCodeWorkbenchPanels(row: SessionRow): CodeWorkbenchPanels {
+  return {
+    reviewOpen: Boolean(codeSessionDiffstat(row) || codeSessionHasOpenPr(row)),
+    terminalOpen: false,
+  };
+}
+
+export function resolveCodeWorkbenchPanels({
+  row,
+  reviewOpen,
+  terminalOpen,
+  initialTab,
+  openTarget,
+}: {
+  row: SessionRow;
+  reviewOpen?: boolean | null;
+  terminalOpen?: boolean | null;
+  initialTab?: CodeWorkbenchTab | null;
+  openTarget?: PendingCodeOpen | null;
+}): CodeWorkbenchPanels {
+  const defaults = defaultCodeWorkbenchPanels(row);
+  const forceReviewOpen =
+    Boolean(codeRailTabForWorkbenchTab(initialTab)) || openTarget?.kind === "changes";
+  return {
+    reviewOpen: forceReviewOpen ? true : reviewOpen ?? defaults.reviewOpen,
+    terminalOpen: initialTab === "terminal" ? true : terminalOpen ?? defaults.terminalOpen,
+  };
 }
 
 /**

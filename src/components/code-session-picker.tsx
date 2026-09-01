@@ -53,6 +53,7 @@ function SessionRowButton({
       aria-selected={selected}
       className="focus-ring code-picker__row"
       data-selected={selected ? "true" : undefined}
+      data-code-session-id={row.id}
       onClick={onPick}
     >
       {/* Activity is carried by the word beside the dot, never the dot alone. */}

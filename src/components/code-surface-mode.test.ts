@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import {
+  codeSessionHasOpenPr,
+  resolveCodeWorkbenchPanels,
+} from "../lib/code-surface.ts";
 
 // Pin suite for the dedicated Code surface (cave-k0ua).
 //
@@ -30,6 +34,83 @@ const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "ut
 const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
 const pendingNavigation = await readFile(new URL("../lib/pending-code-navigation.ts", import.meta.url), "utf8");
+
+const reviewRow = (over = {}) => ({
+  diff: null,
+  pullRequest: null,
+  ...over,
+});
+
+assert.equal(codeSessionHasOpenPr(reviewRow()), false, "sessions without PR context do not count as open review work");
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha" } })),
+  true,
+  "PR context with no terminal state still counts as open by current queue semantics",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "open" } })),
+  true,
+  "explicitly open PRs count as open review work",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "closed" } })),
+  false,
+  "closed PRs do not auto-open the review rail",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "merged" } })),
+  false,
+  "merged PRs do not auto-open the review rail",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({ row: reviewRow() }),
+  { reviewOpen: false, terminalOpen: false },
+  "a clean session starts with the compact bottom bar and the review rail closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow({ diff: { additions: 3, deletions: 1 } }),
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "a changed session starts with the review rail open",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow({ pullRequest: { repo: "acme/alpha", state: "open" } }),
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "an open PR starts with the review rail open even when the diff is clean",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    initialTab: "pr",
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "routed PR navigation reopens the rail even when the stored state says closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    initialTab: "terminal",
+  }),
+  { reviewOpen: false, terminalOpen: true },
+  "routed terminal navigation reopens the drawer even when the stored state says closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    openTarget: { kind: "changes", path: "src/example.ts", nonce: 7 },
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "routed diff navigation reopens the rail even when the stored state says closed",
+);
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
@@ -253,6 +334,26 @@ assert.match(
 );
 assert.match(
   codeView,
+  /import\s*\{[\s\S]*isCodeShortcutTarget[\s\S]*\}\s*from "@\/lib\/code-shortcuts";/,
+  "CodeView reuses the shared shortcut-target guard rather than re-implementing typing detection",
+);
+assert.match(
+  codeView,
+  /useRef\(new Map<string, boolean>\(\)\)[\s\S]*useRef\(new Map<string, boolean>\(\)\)/,
+  "CodeView keeps review-rail and terminal open state in per-session ref Maps",
+);
+assert.match(
+  codeView,
+  /if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*\.code-picker__trigger[\s\S]*\[data-code-session-search\]/,
+  "the room keydown handler guards typing targets and slash-focuses the picker search",
+);
+assert.match(
+  codeView,
+  /querySelectorAll<HTMLButtonElement>\("\[data-code-session-id\]"\)[\s\S]*event\.key\.toLowerCase\(\)[\s\S]*rows\[nextIndex\]\?\.focus\(\)/,
+  "the room keydown handler walks visible session rows by their data-code-session-id markers",
+);
+assert.match(
+  codeView,
   /if \(!pendingOpen\) return;[\s\S]*const byId = pendingQueueSelectedId\s*\?\s*queueSessions\.find\(\(row\) => row\.id === pendingQueueSelectedId\)/,
   "the pending-open effect reuses the resolved queue override id so excluded sessions remain selectable from queue.sessions",
 );
@@ -284,6 +385,11 @@ assert.match(
   /const workRoot = codeSessionWorkRoot\(row\);/,
   "the workbench derives one work root for the tree, the viewer and the rail",
 );
+assert.match(
+  workbench,
+  /const panels = resolveCodeWorkbenchPanels\(\{[\s\S]*row,[\s\S]*initialTab,[\s\S]*openTarget[\s\S]*\}\);/,
+  "CodeWorkbench derives its panel defaults from the shared pure model so source tests can pin the content-aware opening rules",
+);
 
 // The three columns, in order.
 assert.match(
@@ -298,7 +404,7 @@ assert.match(
 // only its `visible` prop changes.
 assert.match(
   workbench,
-  /<CodeTerminalDrawer[\s\S]{0,240}open=\{termOpen\}/,
+  /<CodeTerminalDrawer[\s\S]{0,240}open=\{panels\.terminalOpen\}/,
   "the terminal drawer sits outside the column body, so no step can unmount it",
 );
 assert.doesNotMatch(
@@ -904,12 +1010,12 @@ assert.match(
 // in review on #4418 — every check was green.)
 assert.match(
   workbench,
-  /open=\{fitsSplit \? railOpen : true\}/,
+  /open=\{fitsSplit \? panels\.reviewOpen : true\}/,
   "the narrow Review step always renders an open rail, so it can never be a blank sliver",
 );
 assert.match(
   workbench,
-  /onOpenChange=\{fitsSplit \? setRailOpen : \(\) => setStep\("source"\)\}/,
+  /onOpenChange=\{fitsSplit \? onReviewOpenChange : \(\) => setStep\("source"\)\}/,
   "closing the rail on a narrow room steps back to the source rather than leaving nothing",
 );
 
