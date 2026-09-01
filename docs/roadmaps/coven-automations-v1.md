@@ -48,7 +48,7 @@ That foundation is not yet a certified automation protocol. The remaining releas
 | Priority | Outcome | GitHub | Bead | Current disposition |
 | --- | --- | --- | --- | --- |
 | P0 | Coven Automations v1 program and release rollup | `OpenCoven/coven#854` | `cave-hlv.9` | Open; canonical program/release-gate outcome (rollup only, not catch-all implementation) |
-| P0 | Native durable-routine foundation | `OpenCoven/coven#816` | `cave-stsf7` | **Verified-foundation** (closed): landed via PR #896, merge `0d8c2004c3557019e39e5e4db70ae34c9d49a65a` |
+| P0 | Native durable-routine foundation | `OpenCoven/coven#816` | `cave-stsf7` | **Verified-foundation** (closed): landed via `OpenCoven/coven#896` ("fix: settle automation runs from terminal evidence"), merge `0d8c2004c3557019e39e5e4db70ae34c9d49a65a` on `OpenCoven/coven` main. Fully qualified on purpose: `OpenCoven/coven-cave#896` is an unrelated change. |
 | P0 | Beads/GitHub operational graph and drift control | `OpenCoven/coven#859` | `cave-hlv.10` | Open; canonical Dolt graph seeded |
 
 ### P0 protocol and safety train
@@ -159,7 +159,7 @@ Program control / drift               -> coven#859   = cave-hlv.10  (task, paren
   └── Organization canaries                          -> .github#2             = cave-xqbs4
 ```
 
-The seed bootstrap task `coven-cave#5220` is tracked by Bead `cave-tmegk`. The
+The seed bootstrap task `coven-cave#5220` (Bead `cave-tmegk`) is **closed-verified**: the graph is seeded, dependency-verified, synchronized, and reconciled. The
 `coven#854` release rollup and `coven#859` program-control outcomes are provisioned
 as dedicated Beads under `cave-hlv`; every other public outcome maps to exactly one
 implementation Bead. Foundation `coven#816` is represented as verified-foundation
@@ -269,18 +269,50 @@ bd ready --json
 
 Record before/after Dolt remote OIDs when state is expected to advance. Do not hand-edit `.beads/issues.jsonl`; when an export is committed for review, ensure it is scrubbed of local emails, machine paths, secrets, private transcripts, and sensitive identity/authority data.
 
-**Seed run (2026-09-01).** All 15 beads (seed `cave-tmegk` plus 14 outcomes) are
-committed to the canonical local embedded Dolt database `cave`
-(pre-mutation Dolt commit `i5ltela5k233j55fks9abq612pidkkjl`,
-post-mutation `lnefjdsgcm7s44sqaut4dga082ca45sr`). Remote propagation via
-`pnpm beads:sync` is **deferred**: `bd dolt push` is rejected non-fast-forward
-because the shared remote `refs/dolt/data`
-(`04cb957bcda7c585a69af379cfb8ceb954987e21`) is ahead from concurrent sessions,
-and `bd dolt pull` to integrate did not complete under non-interactive execution.
-Per the Beads architecture the local Dolt database is the durable source of truth;
-the remote was **not** force-pushed (that would clobber concurrent sessions' beads).
-Re-run `pnpm beads:sync` from a session with an interactive-capable Dolt pull to
-propagate, then confirm `git ls-remote origin refs/dolt/data` advances.
+**Seed run (2026-09-01).** All 15 program beads (seed `cave-tmegk` plus 14
+outcomes) are committed to the canonical embedded Dolt database `cave` and carry
+30 in-program blocked-first edges. The `blocks` projections in the mapping file
+are the exact inverse of the live `bd dep list --direction down` output for all
+15 beads, every outcome's `dependsOn` equals its live down-edges, and `bd dep
+cycles` reports no cycles. The two `cave-hlv.9`/`cave-hlv.10` -> `cave-hlv`
+parent-child edges are pre-existing epic hierarchy outside the program set and
+are excluded from the 30.
+
+**Remote propagation is synchronized.** `pnpm beads:sync` — the documented
+wrapper — completed both its pull and push phases and exited 0:
+
+```text
+[beads:sync] pull  -> Pull complete.
+[beads:sync] push  -> Push complete.
+EXIT=0
+```
+
+After the run, local embedded Dolt `main` and `remotes/origin/main` are equal at
+`thpoaq91d1nmqaas4lk6hhcs217foge2`, `dolt diff --summary remotes/origin/main main` is empty,
+and `git ls-remote origin refs/dolt/data` reads
+`7855b5bcb436bf4ac062c1c24c966f1450971e95` before and after the run (the push was a fast-forward
+no-op — the shared history already carried these bead commits). The remote was
+**not** force-pushed and no concurrent Dolt commit was discarded. The graph was
+re-verified afterward: all 15 beads present, 30 in-program blocked-first edges,
+none missing.
+
+**Known tooling limitations (external, recorded rather than worked around).**
+The canonical embedded Dolt database is at schema v66, so every `bd` command
+requires a v66-capable client (`bd` 1.3.0-rc.1); Homebrew `bd` 1.2.2 (schema
+v53) cannot operate on it. `pnpm beads:doctor` (`bd doctor && bd lint`) exits 1:
+`bd doctor` is not yet supported in embedded mode, and `bd lint` reports a
+repository-wide template-convention backlog (57 issues / 63 warnings, e.g.
+missing `## Acceptance Criteria`) that also covers the Automations v1 outcome
+beads; it is an advisory convention, not a CI gate, and was recorded rather than
+weakened. `pnpm beads:surfaces` exits 1 on a repository-wide backlog of 245
+beads missing shared-ownership labels; none of the 15 Automations v1 beads
+appears in that list and each carries exactly one `surface:shared` label.
+
+**Task 1 is reconciled and closed.** The seed bead `cave-tmegk` is
+closed-verified and `OpenCoven/coven-cave#5220` is closed. The next action is to
+start the first ready outcomes — `OpenCoven/coven#855` (protocol, `cave-tm1y0`)
+and `OpenCoven/familiar-contract#17` (familiar embodiment, `cave-6jswi`) — not
+further Task 1 reconciliation.
 
 ## 6. Drift contract
 
