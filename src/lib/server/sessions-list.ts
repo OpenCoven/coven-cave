@@ -220,8 +220,8 @@ async function applyAutoArchiveSweep(
  */
 type FamiliarWorkspaceRoots = {
   root: string;
-  declaredRoots: string[];
-  classificationAvailable: boolean;
+  collapseDeclaredRoots: string[];
+  classificationDeclaredRoots: string[] | null;
 };
 
 async function loadFamiliarWorkspaceRoots(
@@ -233,21 +233,24 @@ async function loadFamiliarWorkspaceRoots(
   if (!classifyFamiliarWorkspace) {
     return {
       root,
-      declaredRoots: Array.from((await readFamiliarWorkspaces()).values()),
-      classificationAvailable: false,
+      collapseDeclaredRoots: Array.from((await readFamiliarWorkspaces()).values()),
+      classificationDeclaredRoots: null,
     };
   }
   try {
+    const declaredRoots = Array.from((await readFamiliarWorkspacesStrict()).values());
     return {
       root,
-      declaredRoots: Array.from((await readFamiliarWorkspacesStrict()).values()),
-      classificationAvailable: true,
+      collapseDeclaredRoots: declaredRoots,
+      classificationDeclaredRoots: declaredRoots,
     };
   } catch {
     return {
       root,
-      declaredRoots: [],
-      classificationAvailable: false,
+      collapseDeclaredRoots: collapseFamiliarWorkspace
+        ? Array.from((await readFamiliarWorkspaces()).values())
+        : [],
+      classificationDeclaredRoots: null,
     };
   }
 }
@@ -256,12 +259,15 @@ function familiarWorkspaceForCwd(
   familiarWorkspaceRoots: FamiliarWorkspaceRoots | null,
   classifyFamiliarWorkspace: boolean,
 ): ((cwd: string) => boolean | undefined) | undefined {
-  if (!classifyFamiliarWorkspace || !familiarWorkspaceRoots?.classificationAvailable) return undefined;
+  if (!classifyFamiliarWorkspace || !familiarWorkspaceRoots?.classificationDeclaredRoots) {
+    return undefined;
+  }
+  const classificationDeclaredRoots = familiarWorkspaceRoots.classificationDeclaredRoots;
   return (cwd: string) =>
     isFamiliarWorkspaceRoot(
       cwd,
       familiarWorkspaceRoots.root,
-      familiarWorkspaceRoots.declaredRoots,
+      classificationDeclaredRoots,
     );
 }
 
@@ -279,12 +285,13 @@ function applyFamiliarWorkspacePresentation(
 ): SessionRow[] {
   if (!collapseFamiliarWorkspace && !classifyFamiliarWorkspace) return sessions;
   if (!familiarWorkspaceRoots) return sessions;
-  const { root, declaredRoots } = familiarWorkspaceRoots;
+  const { root, collapseDeclaredRoots, classificationDeclaredRoots } =
+    familiarWorkspaceRoots;
   const visible = collapseFamiliarWorkspace
-    ? collapseFamiliarWorkspaceSessions(sessions, root, declaredRoots)
+    ? collapseFamiliarWorkspaceSessions(sessions, root, collapseDeclaredRoots)
     : sessions;
-  return classifyFamiliarWorkspace && familiarWorkspaceRoots.classificationAvailable
-    ? classifyFamiliarWorkspaceSessions(visible, root, declaredRoots)
+  return classifyFamiliarWorkspace && classificationDeclaredRoots
+    ? classifyFamiliarWorkspaceSessions(visible, root, classificationDeclaredRoots)
     : visible;
 }
 

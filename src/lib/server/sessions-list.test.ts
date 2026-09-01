@@ -485,6 +485,27 @@ workspace = "${relocatedProjectRoot}
       "malformed familiar-workspace config leaves classification unavailable instead of stamping false onto rows",
     );
   }
+  const malformedCollapsedBaseline = await computeSessionsList(false, null, true, {
+    sweepArchives: false,
+    enrichGit: false,
+  });
+  const malformedCollapsedClassified = await computeSessionsList(false, null, true, {
+    sweepArchives: false,
+    enrichGit: false,
+    classifyFamiliarWorkspace: true,
+  });
+  assert.deepEqual(
+    malformedCollapsedClassified.payload.sessions.map((row) => row.id),
+    malformedCollapsedBaseline.payload.sessions.map((row) => row.id),
+    "classification failure preserves the existing forgiving collapse view",
+  );
+  for (const row of malformedCollapsedClassified.payload.sessions) {
+    assert.equal(
+      row.familiarWorkspace,
+      undefined,
+      "collapsed rows still leave classification unavailable after malformed config",
+    );
+  }
 
   await reset();
   await rm(path.join(covenHome, "familiars.toml"), { force: true });
