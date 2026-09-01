@@ -826,14 +826,17 @@ describe("Research Desk canonical projection integration", () => {
       status: "completed",
       nextEventSequence: 3,
     });
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      json: async () => ({
-        ok: true,
-        run: terminalRun,
-        lastEventSequence: 2,
-        nextEventSequence: 3,
-      }),
-    })));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        json: async () => ({
+          ok: true,
+          run: terminalRun,
+          lastEventSequence: 2,
+          nextEventSequence: 3,
+        }),
+      })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
     const renderer = await mount(laggingMission);
     const source = FakeEventSource.instances[0];
 
@@ -899,6 +902,22 @@ describe("Research Desk canonical projection integration", () => {
     expect(renderer.root.findAllByType("button")
       .some((button) => textOf(button) === "Archive")).toBe(true);
 
+    await act(async () => {
+      source.onerror?.();
+    });
+    const reconnecting = textOf(renderer.toJSON());
+    expect(reconnecting).toContain("Polled completed mission");
+    expect(reconnecting).toContain("Polled completed claim");
+    expect(reconnecting).toContain(
+      "Reconnecting to live updates. Showing the last complete canonical history.",
+    );
+    expect(reconnecting).not.toContain("Lagging running mission");
+    expect(reconnecting).not.toContain("Cancel run");
+
+    await act(async () => {
+      source.onopen?.();
+    });
+
     const archivedMission = mission({
       ...completedMission,
       title: "Archived mission truth",
@@ -928,6 +947,27 @@ describe("Research Desk canonical projection integration", () => {
     expect(archived).not.toContain("Cancel run");
     expect(renderer.root.findAllByType("button")
       .some((button) => textOf(button) === "Archive")).toBe(false);
+
+    await act(async () => {
+      source.emit("run-event", { invalid: true });
+    });
+    const retry = renderer.root.findAllByType("button")
+      .find((button) => textOf(button) === "Retry");
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry!.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const loading = textOf(renderer.toJSON());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(loading).toContain("Archived mission truth");
+    expect(loading).toContain("Archived retained claim");
+    expect(loading).toContain(
+      "Loading canonical run history. Showing the last complete canonical history.",
+    );
+    expect(loading).not.toContain("Lagging running mission");
+    expect(loading).not.toContain("Cancel run");
 
     const futureMission = mission({
       ...archivedMission,

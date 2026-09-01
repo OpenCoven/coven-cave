@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   getResearchRunGateway,
@@ -409,29 +416,101 @@ export function useResearchRunGateway(
   const storedCompleteView = currentState.completeView?.eventState.run.id === currentState.eventState?.run.id
     ? currentState.completeView
     : null;
+  const matchingMission = useMemo(
+    () => storedCompleteView && missionOrRunId
+      ? missionDetailForRun(
+        legacyMission,
+        missionOrRunId,
+        storedCompleteView.eventState.run.id,
+      )
+      : null,
+    [legacyMission, missionOrRunId, storedCompleteView],
+  );
+  const overlayGenerationMismatch = Boolean(
+    storedCompleteView
+    && legacyMission
+    && !matchingMission,
+  );
   const completeView = useMemo(() => {
-    if (!storedCompleteView || !missionOrRunId) return storedCompleteView;
-    const matchingMission = missionDetailForRun(
-      legacyMission,
-      missionOrRunId,
-      storedCompleteView.eventState.run.id,
-    );
-    if (legacyMission && !matchingMission) {
+    if (!storedCompleteView) return null;
+    if (overlayGenerationMismatch) {
+      if (storedCompleteView.missionDetail === null) {
+        return storedCompleteView;
+      }
       return createCompleteView(storedCompleteView.eventState, null);
     }
     if (
       matchingMission
+      && storedCompleteView.missionDetail !== matchingMission
       && currentState.status === "connected"
       && hasCompleteEventHistory(currentState.eventState)
-      && missionLifecycleMatchesRun(matchingMission, currentState.eventState!.run)
+      && missionLifecycleMatchesRun(
+        matchingMission,
+        storedCompleteView.eventState.run,
+      )
     ) {
-      return createCompleteView(currentState.eventState!, matchingMission);
+      return createCompleteView(storedCompleteView.eventState, matchingMission);
     }
     return storedCompleteView;
   }, [
     currentState.eventState,
     currentState.status,
+    matchingMission,
+    overlayGenerationMismatch,
+    storedCompleteView,
+  ]);
+  useLayoutEffect(() => {
+    if (
+      !completeView
+      || !storedCompleteView
+      || completeView === storedCompleteView
+      || !missionOrRunId
+    ) {
+      return;
+    }
+    setState((previous) => {
+      if (
+        previous.selector !== missionOrRunId
+        || previous.completeView !== storedCompleteView
+        || previous.completeView.eventState.run.id
+          !== completeView.eventState.run.id
+        || previous.completeView.eventState.lastEventSequence
+          !== completeView.eventState.lastEventSequence
+      ) {
+        return previous;
+      }
+
+      const invalidatesMismatchedOverlay = (
+        completeView.missionDetail === null
+        && legacyMission !== null
+        && missionDetailForRun(
+          legacyMission,
+          missionOrRunId,
+          completeView.eventState.run.id,
+        ) === null
+      );
+      const promotesMatchingOverlay = (
+        completeView.missionDetail !== null
+        && completeView.missionDetail === matchingMission
+        && previous.status === "connected"
+        && hasCompleteEventHistory(previous.eventState)
+        && missionLifecycleMatchesRun(
+          completeView.missionDetail,
+          completeView.eventState.run,
+        )
+      );
+      if (!invalidatesMismatchedOverlay && !promotesMatchingOverlay) {
+        return previous;
+      }
+      return {
+        ...previous,
+        completeView,
+      };
+    });
+  }, [
+    completeView,
     legacyMission,
+    matchingMission,
     missionOrRunId,
     storedCompleteView,
   ]);
