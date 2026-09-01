@@ -1,10 +1,10 @@
-import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "./github-repo-link.ts";
 import {
   codeSessionActivity,
   codeSessionDiffstat,
   isCodeRailSession,
-} from "@/lib/code-surface";
-import type { SessionRow } from "@/lib/types";
+} from "./code-surface.ts";
+import type { SessionRow } from "./types.ts";
 
 export type CodeQueueMode = "reviewable" | "all";
 

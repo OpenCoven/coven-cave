@@ -5,7 +5,7 @@
  * behavioral tests for pure logic, source pins for wiring).
  */
 
-import type { SessionRow } from "@/lib/types";
+import type { SessionRow } from "./types.ts";
 
 /** Workbench tabs within a selected session. Diff/Files/Terminal/PR land in
  *  follow-up PRs; the vocabulary is fixed here so deep links stay stable. */
