@@ -1694,22 +1694,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 {rowFamiliarName}
                                 {project ? ` · ${project}` : ""}
                               </span>
-                              {/* Origin stays; the initiator chip beside it went.
-                                  session-list-merge defaults every Cave
-                                  conversation to {kind:"human", label:"Cave
-                                  user"}, so the initiator read "Cave user" on
-                                  every row — and "Unknown" wherever the field
-                                  was absent. A chip identical down the whole
-                                  column is horizontal budget spent to say
-                                  nothing, which is the critique this surface was
-                                  rebuilt around.
-
-                                  Origin does vary, though NOT across the whole
-                                  enum: CHAT_HIDDEN_ORIGINS drops cron,
-                                  heartbeat, canvas, journal and enhance from
-                                  this list entirely, so what a row can actually
-                                  show is chat / mention / board / call. Four
-                                  values is still four more than one. */}
+                              {/* Origin only. The initiator chip that sat here
+                                  was constant down the whole column, so it cost
+                                  row width to say nothing; see
+                                  chat-list-delete.test.ts for the why. */}
                               {s.origin ? <OriginChip origin={s.origin} /> : null}
                               {s.model ? (
                                 <span
