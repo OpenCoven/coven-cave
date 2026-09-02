@@ -787,12 +787,17 @@ of stdout, and exactly the documented four-key allow object. After the final
 allow-object validation, nothing except the worktree removal itself may
 intervene:
 
-If the exact source branch still exists or `HEAD` is an ancestor of an
-advertised branch/tag, leave `strict_guard_retention_args` empty and use the
-ordinary bounded proof. If GitHub squash-merged the exact candidate and
-auto-deleted its source branch, populate the array only after a fresh exact PR
-detail query has proved: one numeric PR, `state == closed`, `merged == true`, a
-valid `merged_at`, `head.sha == audited_worktree_head_oid`,
+When the audited candidate is retained by one exact remote branch, populate the
+array with `--retained-by-remote-branch`, the audited remote and full branch ref,
+and `--expected-remote-oid` with the freshly fetched exact branch OID. This mode
+queries, fetches, and rechecks only that branch, so a large unrelated remote
+namespace cannot turn exact retention into an unbounded scan. Otherwise, if the
+exact source branch still exists or `HEAD` is an ancestor of an advertised
+branch/tag, leave `strict_guard_retention_args` empty and use the ordinary
+bounded proof. If GitHub squash-merged the exact candidate and auto-deleted its
+source branch, populate the array only after a fresh exact PR detail query has
+proved: one numeric PR, `state == closed`, `merged == true`, a valid
+`merged_at`, `head.sha == audited_worktree_head_oid`,
 `base.ref == audited_remote_main_branch`, and
 `base.repo.full_name == audited_gh_repo`.
 The strict guard reauthenticates those facts and queries/fetches only the exact

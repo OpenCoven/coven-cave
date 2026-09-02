@@ -333,6 +333,8 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
     ),
   );
   assert.match(worktreeTransaction, /--retained-by-github-pr origin "\$audited_gh_repo"/);
+  assert.match(worktreeTransaction, /--retained-by-remote-branch/);
+  assert.match(worktreeTransaction, /--expected-remote-oid/);
   assert.match(worktreeTransaction, /"\$audited_merged_pr_number"/);
   assert.match(worktreeTransaction, /--expected-base "\$audited_remote_main_branch"/);
   assert.match(worktreeTransaction, /queries\/fetches only the exact|queries\/fetches only|queries\/fetches/);
