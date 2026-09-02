@@ -140,6 +140,8 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
   { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars/[id]/analytics", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars/[id]/contract", methods: ["GET"], kind: "json" },
   { route: "/client/v1/health", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
@@ -639,7 +641,9 @@ const contractRoutes = contracts.map((contract) => contract.route).sort();
 // endpoint to ask), the pairing exchange, and the admin routes that approve
 // and revoke credentials. Phase 2 adds the canonical reads the contract's
 // capability list has been advertising since Phase 0 — familiars, projects,
-// conversations, and a conversation's messages (cave-jfa9y). The gate is
+// conversations, and a conversation's messages (cave-jfa9y); the Familiars
+// integration's Stage 1 then promoted one familiar's contract and analytics
+// reads out of the Studio's private routes. The gate is
 // narrowed rather than dropped, because what it was really protecting against
 // is client-v1 surface appearing faster than it is reviewed — so each new route
 // has to be added here deliberately, not just by existing on disk.
@@ -655,6 +659,8 @@ assert.deepEqual(
     "/client/v1/conversations/[id]",
     "/client/v1/conversations/[id]/messages",
     "/client/v1/familiars",
+    "/client/v1/familiars/[id]/analytics",
+    "/client/v1/familiars/[id]/contract",
     "/client/v1/health",
     "/client/v1/pairing/requests",
     "/client/v1/pairing/requests/[id]",

@@ -268,7 +268,8 @@ const CLIENT_V1_PUBLIC_PATHS = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
  * cave-4841 emptied it; the five entries below are the first to earn their
  * place, and each arrives in the same change as the handler that serves it.
  *
- * All five are canonical reads (cave-jfa9y), and each calls requireScope for
+ * All seven are canonical reads (cave-jfa9y; the two familiar detail reads
+ * joined in the Familiars integration, Stage 1), and each calls requireScope for
  * `chat:read` AND re-checks the loopback stamp for itself, the way all three
  * pairing routes now do. That second check began as cover for #4854 — the
  * classifier below returns null for any pathname containing a percent sign, so
@@ -285,6 +286,8 @@ const CLIENT_V1_PUBLIC_PATHS = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
  */
 export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [
   "/api/client/v1/familiars",
+  "/api/client/v1/familiars/:id/contract",
+  "/api/client/v1/familiars/:id/analytics",
   "/api/client/v1/projects",
   "/api/client/v1/conversations",
   "/api/client/v1/conversations/:id",
