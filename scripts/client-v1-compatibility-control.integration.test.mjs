@@ -184,6 +184,7 @@ function isolatedEnvironment(root, port, selector) {
   env.TEMP = env.TMPDIR;
   env.XDG_CONFIG_HOME = path.join(root, "config");
   env.XDG_CACHE_HOME = path.join(root, "cache");
+  env.NODE_OPTIONS = "--max-old-space-size=6144";
   env.NODE_ENV = "production";
   env.COVEN_HOME = path.join(root, "coven");
   env.COVEN_CAVE_HOME = path.join(root, "coven", "cave");
