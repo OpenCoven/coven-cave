@@ -1440,6 +1440,7 @@ export const SUITES = {
     "scripts/dev-port-owner.test.mjs",
     "scripts/port-contract.test.mjs",
     "scripts/heap-limits.test.mjs",
+    "scripts/dev-server-supervisor.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",

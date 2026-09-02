@@ -29,6 +29,9 @@ function harness({ env = {} } = {}) {
   const state = {
     warns: [],
     snapshots: [],
+    exits: [],
+    serverCloseCalls: 0,
+    discoveryCleanupCalls: 0,
     tick: null,
     intervalMs: null,
     unrefd: false,
@@ -40,6 +43,7 @@ function harness({ env = {} } = {}) {
     memoryUsage: () => ({ rss: 500 * 1024 * 1024, external: 10 * 1024 * 1024 }),
     uptime: () => 3600,
     pid: 4242,
+    exit: (code) => { state.exits.push(code); },
   };
   const fakeConsole = {
     warn: (...args) => state.warns.push(args.join(" ")),
@@ -55,11 +59,21 @@ function harness({ env = {} } = {}) {
   };
   // The section references `sessions` (PTY session map) for log context.
   const sessions = new Map();
+  const server = {
+    close: (callback) => {
+      state.serverCloseCalls += 1;
+      callback();
+    },
+  };
+  const cleanupStandaloneClientV1Discovery = () => {
+    state.discoveryCleanupCalls += 1;
+  };
 
   const factory = new Function(
     "process", "console", "setInterval",
     "getHeapStatistics", "writeHeapSnapshot",
     "mkdirSync", "readdirSync", "unlinkSync", "join", "homedir", "sessions",
+    "server", "cleanupStandaloneClientV1Discovery",
     `${section}\nstartHeapMonitor();`,
   );
   factory(
@@ -71,6 +85,8 @@ function harness({ env = {} } = {}) {
     join,
     () => state.dir,
     sessions,
+    server,
+    cleanupStandaloneClientV1Discovery,
   );
   return state;
 }
@@ -114,6 +130,32 @@ function harness({ env = {} } = {}) {
   h.tick();
   assert.equal(h.snapshots.length, 2, "recovery below the watermark re-arms the snapshot latch");
 
+  rmSync(h.dir, { recursive: true, force: true });
+}
+
+// ── Supervised development recycles before V8 reaches the fatal limit ───────
+{
+  const h = harness({
+    env: {
+      NODE_ENV: "development",
+      COVEN_CAVE_DEV_SUPERVISED: "1",
+    },
+  });
+  h.heap = { used_heap_size: 900, heap_size_limit: 1000 };
+  h.tick();
+
+  assert.equal(h.discoveryCleanupCalls, 1, "a supervised recycle removes discovery first");
+  assert.equal(h.serverCloseCalls, 1, "a supervised recycle drains the HTTP server");
+  assert.deepEqual(h.exits, [75], "the child exits with the supervisor-only recycle code");
+  assert.match(
+    h.warns.join("\n"),
+    /requesting supervised development restart/,
+    "the recycle is explicit in server diagnostics",
+  );
+
+  h.tick();
+  assert.equal(h.serverCloseCalls, 1, "the recycle request is latched");
+  assert.deepEqual(h.exits, [75], "the recycle exit is requested only once");
   rmSync(h.dir, { recursive: true, force: true });
 }
 

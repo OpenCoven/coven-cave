@@ -15,7 +15,7 @@
     "url": "https://github.com/OpenCoven/coven-cave.git"
   },
   "scripts": {
-    "dev": "node --experimental-strip-types server.ts",
+    "dev": "node scripts/dev-server-supervisor.mjs",
     "dev:app": "bash scripts/dev-app.sh",
     "release:preview": "node scripts/stamp-release.mjs --dry-run",
     "release:prepare": "node scripts/stamp-release.mjs --prepare-only",

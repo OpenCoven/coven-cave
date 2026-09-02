@@ -2043,8 +2043,12 @@ const HEAP_MONITOR_INTERVAL_MS = (() => {
 })();
 /** Log a structured warning at ≥85% of the V8 heap limit. */
 const HEAP_WARN_RATIO = 0.85;
+/** Recycle a supervised dev server before V8 enters its terminal GC spiral. */
+const HEAP_DEV_RECYCLE_RATIO = 0.9;
 /** Write the per-episode heap snapshot at ≥95% — about to OOM, capture now. */
 const HEAP_SNAPSHOT_RATIO = 0.95;
+/** Reserved child exit code understood only by scripts/dev-server.mjs. */
+const DEV_RECYCLE_EXIT_CODE = 75;
 /** Snapshots kept in the diagnostics dir (oldest pruned first). */
 const HEAP_SNAPSHOT_KEEP = 2;
 /** Disambiguates snapshots written within the same millisecond. */
@@ -2078,6 +2082,7 @@ function startHeapMonitor(): void {
   // Latches once per high-heap episode; re-arms after usage recovers below
   // the warn watermark so a later, separate episode captures its own snapshot.
   let snapshotWritten = false;
+  let recycleRequested = false;
 
   const tick = (): void => {
     const heap = getHeapStatistics();
@@ -2093,6 +2098,20 @@ function startHeapMonitor(): void {
         `(${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ` +
         `ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`,
     );
+
+    if (
+      ratio >= HEAP_DEV_RECYCLE_RATIO &&
+      !recycleRequested &&
+      process.env.NODE_ENV !== "production" &&
+      process.env.COVEN_CAVE_DEV_SUPERVISED === "1" &&
+      sessions.size === 0
+    ) {
+      recycleRequested = true;
+      console.warn("[heap-monitor] requesting supervised development restart");
+      cleanupStandaloneClientV1Discovery();
+      server.close(() => process.exit(DEV_RECYCLE_EXIT_CODE));
+      return;
+    }
 
     if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
     // writeHeapSnapshot is synchronous and stop-the-world (seconds at GB

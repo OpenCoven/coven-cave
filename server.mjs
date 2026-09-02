@@ -1300,7 +1300,9 @@ const HEAP_MONITOR_INTERVAL_MS = (() => {
   return Number.isFinite(env) && env > 0 ? env : 3e5;
 })();
 const HEAP_WARN_RATIO = 0.85;
+const HEAP_DEV_RECYCLE_RATIO = 0.9;
 const HEAP_SNAPSHOT_RATIO = 0.95;
+const DEV_RECYCLE_EXIT_CODE = 75;
 const HEAP_SNAPSHOT_KEEP = 2;
 let heapSnapshotSeq = 0;
 function heapDiagnosticsDir() {
@@ -1322,6 +1324,7 @@ function pruneHeapSnapshots(dir) {
 function startHeapMonitor() {
   if (!HEAP_MONITOR_ENABLED) return;
   let snapshotWritten = false;
+  let recycleRequested = false;
   const tick = () => {
     const heap = getHeapStatistics();
     const ratio = heap.used_heap_size / heap.heap_size_limit;
@@ -1333,6 +1336,13 @@ function startHeapMonitor() {
     console.warn(
       `[heap-monitor] heapUsed=${mb(heap.used_heap_size)} heapLimit=${mb(heap.heap_size_limit)} (${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`
     );
+    if (ratio >= HEAP_DEV_RECYCLE_RATIO && !recycleRequested && process.env.NODE_ENV !== "production" && process.env.COVEN_CAVE_DEV_SUPERVISED === "1" && sessions.size === 0) {
+      recycleRequested = true;
+      console.warn("[heap-monitor] requesting supervised development restart");
+      cleanupStandaloneClientV1Discovery();
+      server.close(() => process.exit(DEV_RECYCLE_EXIT_CODE));
+      return;
+    }
     if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
     try {
       const dir = heapDiagnosticsDir();
