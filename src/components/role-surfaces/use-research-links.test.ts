@@ -12,6 +12,7 @@ const ARTICLE_URL = "https://x.com/OpenCoven/status/123456789";
 const ARTICLE_ALIAS_URL = "https://twitter.com/i/web/status/123456789?ref=home";
 const VALID_TIMESTAMP = "2026-08-18T12:34:56.000Z";
 const VALID_HASH = "a".repeat(64);
+const GITHUB_SHA = "b".repeat(40);
 
 function xArticle(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,6 +42,28 @@ function savedLink(overrides: Record<string, unknown> = {}) {
     addedAt: VALID_TIMESTAMP,
     source: "desk",
     ...overrides,
+  };
+}
+
+function githubRepo(includeDetail: boolean) {
+  return {
+    version: 1,
+    owner: "OpenCoven",
+    repo: "coven-cave",
+    visibility: "public",
+    stars: 42,
+    forks: 7,
+    defaultBranch: "main",
+    resolvedRef: "main",
+    commitSha: GITHUB_SHA,
+    fetchedAt: VALID_TIMESTAMP,
+    truncated: false,
+    ...(includeDetail
+      ? {
+          tree: [{ path: "README.md", type: "blob", sha: "c".repeat(40) }],
+          readme: { path: "README.md", markdown: "# Cave" },
+        }
+      : {}),
   };
 }
 
@@ -124,4 +147,31 @@ test("summary/detail accept X Article aliases that resolve to the same source po
   assert.ok(detail?.xArticle);
   assert.equal(detail.category, "article");
   assert.equal(detail.xArticle?.body, "Readable alias body");
+});
+
+test("summary/detail retain GitHub metadata and only detail accepts snapshot bodies", () => {
+  const base = {
+    url: "https://github.com/OpenCoven/coven-cave",
+    category: "github",
+    title: "OpenCoven/coven-cave",
+  };
+  const summary = parseSavedLinkSummaryForTests(savedLink({
+    ...base,
+    githubRepo: githubRepo(false),
+  }));
+  assert.equal(summary?.githubRepo?.commitSha, GITHUB_SHA);
+  assert.ok(summary?.githubRepo && !("tree" in summary.githubRepo));
+
+  const detail = parseSavedLinkForTests(savedLink({
+    ...base,
+    githubRepo: githubRepo(true),
+  }));
+  assert.equal(detail?.githubRepo?.readme?.markdown, "# Cave");
+  assert.equal(detail?.githubRepo?.tree[0]?.sha, "c".repeat(40));
+
+  const mismatch = parseSavedLinkForTests(savedLink({
+    ...base,
+    githubRepo: { ...githubRepo(true), repo: "other" },
+  }));
+  assert.equal(mismatch?.githubRepo, undefined);
 });

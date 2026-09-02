@@ -31,6 +31,18 @@ assert.match(
 
 assert.match(
   sanitizerSource,
+  /export function stripAutoloadingContent\(html: string\): string/,
+  "remote markdown should expose a post-sanitize autoloading-content filter",
+);
+
+assert.match(
+  sanitizerSource,
+  /img,picture,video,audio,source,track,svg image,svg use/,
+  "remote markdown should remove elements that fetch media automatically",
+);
+
+assert.match(
+  sanitizerSource,
   /replace\(\S*\\u0000-\\u001F\\u007F\\s/,
   "sanitizer should normalize whitespace/control characters before URL scheme checks",
 );
@@ -39,6 +51,18 @@ assert.match(
   messageBubbleSource,
   /import \{ sanitizeHtml \} from "@\/lib\/html-sanitize"/,
   "message markdown should use the shared sanitizer",
+);
+
+assert.match(
+  messageBubbleSource,
+  /suppressRemoteMedia\?: boolean/,
+  "MarkdownBlock should let untrusted document surfaces disable remote media",
+);
+
+assert.match(
+  messageBubbleSource,
+  /canUseCache\s*&&\s*!opts\?\.suppressRemoteMedia\s*&&\s*codeBlocks\.some\(isMermaidCodeBlock\)/,
+  "remote-safe markdown should not invoke Mermaid before media filtering",
 );
 
 assert.doesNotMatch(

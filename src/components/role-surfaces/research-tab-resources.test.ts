@@ -88,11 +88,11 @@ test("remove is a two-step inline confirm wired to durable resources with compat
   assert.match(source, /setConfirmingRemove\(true\)/);
   assert.match(source, /resource \? await local\.remove\(resource\.id\) : await remove\(openLink\.id\)/);
   // Opening a different resource never inherits a pending confirm — nor an
-  // already-expanded paper viewer, which would otherwise show paper A's
-  // document under paper B's title and start its fetch unasked.
+  // already-expanded paper or repository viewer, which would otherwise show
+  // resource A's detail under resource B's title.
   assert.match(
     source,
-    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setReaderExpanded\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
+    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setReaderExpanded\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*setGithubDetail\(null\);\s*setGithubLoading\(false\);\s*setGithubError\(null\);\s*\}, \[openId\]\)/,
   );
 });
 
@@ -432,8 +432,8 @@ test("X Article intake and reading keep the saved-link contract source-pinned", 
   assert.match(source, /parseXArticleCandidateUrl/, "the preview dedupes X aliases by source post");
   assert.match(
     source,
-    /article \? \(\s*<p className="research-res-card__excerpt">\{article\.excerpt\}<\/p>\s*\) : null/,
-    "Article cards render only the body-free saved summary",
+    /article \? \(\s*<p className="research-res-card__excerpt">\{article\.excerpt\}<\/p>\s*\) : link\.githubRepo\?\.description \? \(\s*<p className="research-res-card__excerpt">\{link\.githubRepo\.description\}<\/p>\s*\) : null/,
+    "Article and GitHub cards render only body-free saved summaries",
   );
   assert.match(source, /<ResearchXArticleReader\b/, "the detail mounts a dedicated text reader");
   assert.match(source, />\s*Read article\s*<\/Button>/);
@@ -530,10 +530,10 @@ test("article load states stay polite while loading and escalate to alert on fai
   assert.match(source, />\s*Retry\s*<\/Button>/);
 });
 
-test("a loaded X Article reader replaces the normal resource stats strip", () => {
+test("dedicated Article and GitHub readers replace the normal resource stats strip", () => {
   assert.match(
     source,
-    /\{!articleDetail\?\.xArticle \? \(\s*<div className="research-res-overlay__stats">[\s\S]*?<\/div>\s*\) : null\}/,
+    /\{!articleDetail\?\.xArticle && !openLink\.githubRepo \? \(\s*<div className="research-res-overlay__stats">[\s\S]*?<\/div>\s*\) : null\}/,
   );
 });
 
