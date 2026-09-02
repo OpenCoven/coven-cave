@@ -151,7 +151,11 @@ test("a paired credential reads the familiar's ward, identity, presence, and rep
     assert.equal(response.status, 200);
     const body = await response.json() as {
       capabilities: string[];
-      data: { contract: Record<string, unknown> & { report: { pass: boolean } } };
+      data: {
+        contract: Record<string, unknown> & {
+          report: { pass: boolean; violations: { file: string }[] };
+        };
+      };
     };
     assert.ok(body.capabilities.includes("familiar-contract"));
     const { contract } = body.data;
