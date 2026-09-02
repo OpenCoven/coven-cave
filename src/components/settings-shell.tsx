@@ -1,6 +1,9 @@
 "use client";
 
 import "@/styles/dashboard.css";
+// Left the globals facade in cave-dkdev: this root is dynamic(), so importing
+// the sheet here ships it with the settings chunk instead of with every route.
+import "@/styles/settings-familiars.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
