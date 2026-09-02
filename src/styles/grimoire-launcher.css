@@ -7,6 +7,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+  min-height: var(--space-10);
+  padding: 0 var(--space-3);
 }
 
 .grimoire-reader-header {
@@ -85,38 +87,15 @@
 }
 
 .grimoire-tabs {
-  display: inline-flex;
   justify-self: center;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
-
-.grimoire-tab {
-  padding: var(--space-1) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.grimoire-tab:hover {
-  color: var(--text-primary);
-}
-
-.grimoire-tab[aria-pressed="true"] {
-  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
-  color: var(--text-primary);
-}
+.grimoire-tabs::-webkit-scrollbar { display: none; }
 
 .grimoire-newstitch {
   display: inline-flex;
@@ -151,20 +130,8 @@
   }
 
   .grimoire-tabs {
-    max-width: 100%;
-    min-width: 0;
+    width: 100%;
     justify-self: start;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-  }
-
-  .grimoire-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .grimoire-tab {
-    flex: none;
   }
 
   .grimoire-header .surface-compact-actions {
@@ -621,8 +588,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .gl-stage__knot,
-  .gl-memory-row,
-  .grimoire-tab {
+  .gl-memory-row {
     transition: none;
   }
 }

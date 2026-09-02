@@ -347,7 +347,11 @@ assert.match(view, /liveMarkdown=\{selection\.kind === "knowledge"[\s\S]{0,180}k
 assert.match(view, /liveMarkdown \?\? knowledge\.find/, "persisted knowledge remains the outgoing-link fallback");
 assert.match(view, /@min-\[480px\]\/grimoire:inline/, "Reader keyboard guidance follows the Grimoire container instead of the viewport");
 assert.match(view, /!readerMode \? \(\s*<div className="grimoire-mobile-back/, "narrow persisted and new-document views retain an explicit way back to the document list");
-assert.match(grimoireCss, /@container grimoire \(max-width: 760px\)[\s\S]{0,700}grimoire-tabs[\s\S]{0,300}overflow-x: auto[\s\S]{0,700}@container grimoire \(max-width: 480px\)[\s\S]{0,160}grimoire-newstitch/, "narrow document chrome scrolls its tabs so primary and overflow actions remain reachable");
+assert.match(
+  grimoireCss,
+  /\.grimoire-tabs \{[^}]*overflow-x: auto;[\s\S]{0,1000}@container grimoire \(max-width: 760px\)[\s\S]{0,500}\.grimoire-tabs \{[^}]*width: 100%;[\s\S]{0,700}@container grimoire \(max-width: 480px\)[\s\S]{0,160}grimoire-newstitch/,
+  "narrow document chrome scrolls its tabs so primary and overflow actions remain reachable",
+);
 
 // ── cave-xr0 slice 2: outgoing [[wiki-link]] chips ──────────────────────────
 // The open doc's resolved wiki-links render as a chip row below the editor,
@@ -410,11 +414,15 @@ assert.match(view, /const localGraph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "
 assert.match(view, /markdown: k\.body/, "the fallback graph reads each knowledge body (already loaded)");
 assert.match(view, /const graph = scan\?\.graph \?\? localGraph/, "the server scan wins, the local graph stands in — never blank");
 assert.match(view, /if \(firstLoadDoneRef\.current\) refreshGraph\(\)/, "saves/deletes rescan the graph (mount already fetched)");
-assert.match(view, /aria-label="Memories view"/, "the Docs|Journal|Graph switch is a labelled control group");
 assert.match(
   view,
-  /aria-pressed=\{view === "docs"\}[\s\S]{0,900}aria-pressed=\{view === "journal"\}[\s\S]{0,900}aria-pressed=\{view === "graph"\}/,
-  "the three-way segmented control exposes pressed state for docs, journal, and graph",
+  /<Tabs<GrimoireViewKind>[\s\S]{0,320}ariaLabel="Memories view"[\s\S]{0,180}idPrefix="memories-view"/,
+  "the Library, Journal, and Relations destinations use the labelled shared tabs primitive",
+);
+assert.match(
+  view,
+  /role=\{readerMode \? undefined : "tabpanel"\}[\s\S]{0,180}aria-labelledby=\{readerMode \? undefined : `memories-view-tab-\$\{view\}`\}/,
+  "the active Memories view is labelled by its selected tab outside Reader mode",
 );
 assert.match(
   view,

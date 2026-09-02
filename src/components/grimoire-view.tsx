@@ -40,6 +40,7 @@ import {
 import { SearchInput } from "@/components/ui/search-input";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -727,6 +728,12 @@ function GrimoireDocLinks({
 // ── Surface ──────────────────────────────────────────────────────────────────
 
 export type GrimoireViewKind = "docs" | "graph" | "journal";
+
+const GRIMOIRE_VIEW_TABS: ReadonlyArray<TabItem<GrimoireViewKind>> = [
+  { id: "docs", label: "Library", controlsId: "memories-view-panel" },
+  { id: "journal", label: "Journal", controlsId: "memories-view-panel" },
+  { id: "graph", label: "Relations", controlsId: "memories-view-panel" },
+];
 
 function invalidateGrimoireLanding(): void {
   invalidateSurfaceResources("grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal");
@@ -1616,7 +1623,7 @@ export function GrimoireView({
   return (
     <div className={`grimoire-view flex h-full min-h-0 flex-col @container/grimoire${readerMode ? " grimoire-view--reader" : ""}`}>
       {/* Compact band: title left, the Library/Journal/
-          Relations segmented tabs centered, contextual verbs right (the dashed
+          Relations tabs centered, contextual verbs right (the dashed
           "New stitch" control only makes sense in Library). */}
       {readerMode && selection ? (
         <header className="grimoire-reader-header">
@@ -1639,32 +1646,16 @@ export function GrimoireView({
       ) : (
         <header className="surface-compact-header grimoire-header">
           <h1 className="surface-compact-title">Memories</h1>
-          <div role="group" aria-label="Memories view" className="grimoire-tabs">
-            <button
-              type="button"
-              aria-pressed={view === "docs"}
-              onClick={() => setView("docs")}
-              className="focus-ring grimoire-tab"
-            >
-              Library
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "journal"}
-              onClick={() => setView("journal")}
-              className="focus-ring grimoire-tab"
-            >
-              Journal
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "graph"}
-              onClick={() => setView("graph")}
-              className="focus-ring grimoire-tab"
-            >
-              Relations
-            </button>
-          </div>
+          <Tabs<GrimoireViewKind>
+            items={GRIMOIRE_VIEW_TABS}
+            value={view}
+            onChange={setView}
+            ariaLabel="Memories view"
+            idPrefix="memories-view"
+            size="sm"
+            bordered={false}
+            className="grimoire-tabs"
+          />
           <div className="surface-compact-actions">
             {/* The landing owns Recall search. Once a document is open, this
                 compact field edits the same Library query without rendering a
@@ -1738,7 +1729,12 @@ export function GrimoireView({
           </div>
         </header>
       )}
-      <div className={`grimoire-workspace flex min-h-0 flex-1${selection ? " grimoire-workspace--document" : ""}${readerMode ? " grimoire-workspace--reader" : ""}`}>
+      <div
+        role={readerMode ? undefined : "tabpanel"}
+        id={readerMode ? undefined : "memories-view-panel"}
+        aria-labelledby={readerMode ? undefined : `memories-view-tab-${view}`}
+        className={`grimoire-workspace flex min-h-0 flex-1${selection ? " grimoire-workspace--document" : ""}${readerMode ? " grimoire-workspace--reader" : ""}`}
+      >
         <aside
           className={`grimoire-navigator h-full min-h-0 w-full flex-col border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
             navigatorCollapsedForDisplay ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[264px]"

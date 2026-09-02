@@ -31,8 +31,16 @@ assert.match(
 
 // ── Header: Library / Journal / Relations with a bounded action budget ──────
 
-assert.match(view, /className="focus-ring grimoire-tab"[\s\S]{0,60}>\s*Library/, "the docs tab is labeled Library");
-assert.match(view, /className="focus-ring grimoire-tab"[\s\S]{0,60}>\s*Relations/, "the graph tab is labeled Relations");
+assert.match(
+  view,
+  /const GRIMOIRE_VIEW_TABS:[\s\S]{0,320}\{ id: "docs", label: "Library"[\s\S]{0,160}\{ id: "graph", label: "Relations"/,
+  "the shared Memories tabs keep the Library and Relations labels",
+);
+assert.match(
+  view,
+  /<Tabs<GrimoireViewKind>[\s\S]{0,360}ariaLabel="Memories view"[\s\S]{0,220}size="sm"[\s\S]{0,100}bordered=\{false\}/,
+  "Memories uses the same compact underline tabs as the Research Desk",
+);
 assert.match(
   view,
   /\{view === "docs" \? \(\s*<button[\s\S]{0,260}grimoire-newstitch/,
@@ -57,6 +65,21 @@ assert.doesNotMatch(
 const launcherCss = await readFile(
   new URL("../styles/grimoire-launcher.css", import.meta.url),
   "utf8",
+);
+assert.match(
+  launcherCss,
+  /\.grimoire-header \{[^}]*min-height: var\(--space-10\);[^}]*padding: 0 var\(--space-3\);/,
+  "Memories aligns its header content to the Research Desk's 40px command band",
+);
+assert.match(
+  launcherCss,
+  /\.grimoire-tabs \{[^}]*align-self: stretch;[^}]*overflow-x: auto;/,
+  "the tab underline sits on the header baseline and the tabs stay reachable in narrow panes",
+);
+assert.doesNotMatch(
+  launcherCss,
+  /\.grimoire-tabs \{[^}]*background:/,
+  "the Memories destinations are not enclosed in a competing pill surface",
 );
 assert.match(
   launcherCss,
