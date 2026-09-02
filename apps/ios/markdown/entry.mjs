@@ -136,6 +136,15 @@ async function renderMarkdown(md, { streaming = false } = {}) {
   return html;
 }
 
+function classifyInlineTokens(root) {
+  root.querySelectorAll("code:not(pre code)").forEach((element) => {
+    const text = (element.textContent || "").trim();
+    if (text && text.length <= 44 && !/\s/.test(text)) {
+      element.classList.add("inline-token");
+    }
+  });
+}
+
 // Reader theming: override the prose-level CSS variables (declared on :root in
 // markdown.css) so the same bundle can render dark / light / sepia. Code blocks
 // keep their dark card (we deliberately DON'T touch --code-bg / hljs colours) —
@@ -147,8 +156,8 @@ async function renderMarkdown(md, { streaming = false } = {}) {
 // it stays legible on a light bubble.
 const THEME_VARS = {
   dark: null,
-  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 13%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 14%)", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
-  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 15%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 22%)", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
+  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 9%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 18%)", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
+  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 10%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 20%)", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
 };
 const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline", "--code-inline-bg", "--code-inline-fg", "--th-bg"];
 function applyTheme(name) {
@@ -206,6 +215,7 @@ window.caveRender = async (md, opts = {}) => {
   applyStyle(opts);
   try {
     root.innerHTML = await renderMarkdown(md, { streaming: !!opts.streaming });
+    classifyInlineTokens(root);
   } catch (err) {
     root.textContent = String(md || "");
     window.webkit?.messageHandlers?.cave?.postMessage({ type: "error", message: String(err) });

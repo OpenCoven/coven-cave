@@ -97,6 +97,16 @@ assert.match(
   "inline code background should be color-mixed off var(--accent)",
 );
 assert.match(
+  entry,
+  /function classifyInlineTokens[\s\S]*code:not\(pre code\)[\s\S]*classList\.add\("inline-token"\)/,
+  "short metadata tokens should be classified after markdown rendering",
+);
+assert.match(
+  css,
+  /code\.inline-token\s*\{\s*white-space:\s*nowrap;/,
+  "classified metadata tokens should move as a unit instead of breaking mid-identifier",
+);
+assert.match(
   css,
   /--code-inline-fg: color-mix\(in srgb, var\(--accent\)/,
   "inline code text should be color-mixed off var(--accent)",

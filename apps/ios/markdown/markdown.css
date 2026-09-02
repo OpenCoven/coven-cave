@@ -12,11 +12,11 @@
   --hairline: rgba(255,255,255,0.10);
   /* Inline code + links follow --accent so they match the selected desktop
      theme (the renderer overrides --accent with the published accent). Derived
-     via color-mix off --accent: a translucent pill, with the text lifted toward
+     via color-mix off --accent: a quiet tint, with the text lifted toward
      white on the dark default for contrast. THEME_VARS re-points the text mix
      toward black on the light/sepia reader pages. */
-  --code-inline-bg: color-mix(in srgb, var(--accent) 18%, transparent);
-  --code-inline-fg: color-mix(in srgb, var(--accent), #ffffff 34%);
+  --code-inline-bg: color-mix(in srgb, var(--accent) 11%, transparent);
+  --code-inline-fg: color-mix(in srgb, var(--accent), #ffffff 22%);
   --th-bg: rgba(255,255,255,0.04);
 }
 
@@ -53,15 +53,16 @@ blockquote {
 
 hr { border: 0; border-top: 1px solid var(--hairline); margin: 1em 0; }
 
-/* inline code — lavender pill */
+/* Inline code stays distinct without turning every identifier into a badge. */
 code {
   font-family: "SF Mono", ui-monospace, Menlo, monospace;
-  font-size: 0.88em;
+  font-size: 0.86em;
   background: var(--code-inline-bg);
   color: var(--code-inline-fg);
-  padding: 0.12em 0.4em;
-  border-radius: 5px;
+  padding: 0.06em 0.24em;
+  border-radius: 4px;
 }
+code.inline-token { white-space: nowrap; }
 
 /* fenced code block — the .code-block container owns the frame (border/radius/
    background) so the header bar and <pre> share one rounded card. */

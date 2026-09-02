@@ -22,8 +22,18 @@ assert.match(lp, /Text\(m\.title \?\? url\.host/, "the card should show the titl
 const bubble = await read("MessageBubble.swift");
 assert.match(
   bubble,
-  /if !message\.streaming, let link = firstLink\(in: parsed\.visible\) \{\s*LinkPreviewCard\(url: link\)/,
-  "MessageBubble should show a LinkPreviewCard for the first link in a finished message",
+  /ForEach\(projection\.previewURLs, id: \\\.\absoluteString\) \{ link in\s*LinkPreviewCard\(url: link\)/,
+  "MessageBubble should render only the response projection's deliberate previews",
+);
+
+const projection = await readFile(
+  new URL("../apps/ios/CovenCave/CovenCave/Models/AssistantResponseProjection.swift", import.meta.url),
+  "utf8",
+);
+assert.match(
+  projection,
+  /AssistantResponseProjection[\s\S]*extractControls[\s\S]*renderCitations[\s\S]*bareLineURLs/,
+  "assistant response projection should strip controls and classify links before presentation",
 );
 
 console.log("ios-link-previews: ok");

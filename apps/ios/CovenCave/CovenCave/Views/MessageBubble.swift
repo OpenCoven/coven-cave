@@ -58,7 +58,7 @@ struct MessageBubble: View {
     @ViewBuilder private var messageActions: some View {
         if !message.text.isEmpty {
             Button {
-                UIPasteboard.general.string = message.text
+                UIPasteboard.general.string = parsed.visible
                 Haptics.tap()
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
@@ -100,23 +100,35 @@ struct MessageBubble: View {
         }
     }
 
-    /// Assistant text minus the `<coven:next-paths>` block (parsed into chips).
-    private var parsed: (visible: String, suggestions: [String]) {
-        isUser ? (message.text, []) : NextPaths.extract(message.text)
+    /// Assistant prose and native presentation metadata, with protocol controls
+    /// removed before rendering, copying, forwarding, or quoting.
+    private var parsed: AssistantResponseProjection {
+        if isUser {
+            return AssistantResponseProjection(
+                visible: message.text,
+                suggestions: [],
+                previewURLs: firstLink(in: message.text).map { [$0] } ?? []
+            )
+        }
+        return AssistantResponseProjection.parse(message.text)
     }
 
     /// Render the desktop-parity markdown WebView. Assistant replies always do —
     /// now including while streaming (the WebView renders live, throttled). A
     /// *user* message only renders markdown when it actually contains some, so
     /// plain chatter stays fast native Text. Error messages stay native Text.
-    private var rendersMarkdown: Bool {
-        guard !message.isError, !parsed.visible.isEmpty, !markdownFailed else { return false }
+    private func rendersMarkdown(_ projection: AssistantResponseProjection) -> Bool {
+        guard !message.isError, !projection.visible.isEmpty, !markdownFailed else { return false }
         if isUser { return MarkdownDetect.hasMarkdown(message.text) }
         return true
     }
 
     private var canOpenReader: Bool {
-        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && onOpenReader != nil
+        canOpenReader(parsed)
+    }
+
+    private func canOpenReader(_ projection: AssistantResponseProjection) -> Bool {
+        !isUser && !message.streaming && !message.isError && !projection.visible.isEmpty && onOpenReader != nil
     }
 
     private var canForward: Bool {
@@ -197,7 +209,8 @@ struct MessageBubble: View {
     }
 
     private var chatBubble: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        let projection = parsed
+        return HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 48) }
 
             if !isUser, isGroup {
@@ -233,8 +246,8 @@ struct MessageBubble: View {
                         .padding(.leading, 2)
                 }
                 // Hide the (empty) text bubble for image-only messages.
-                if !parsed.visible.isEmpty || message.attachmentDataUrls.isEmpty {
-                    bubble
+                if !projection.visible.isEmpty || message.attachmentDataUrls.isEmpty {
+                    bubble(projection)
                         .contextMenu { messageActions }
                 }
                 if !isUser {
@@ -242,9 +255,12 @@ struct MessageBubble: View {
                     responseControlStatus
                 }
 
-                // Rich preview card for the first link in a finished message.
-                if !message.streaming, let link = firstLink(in: parsed.visible) {
-                    LinkPreviewCard(url: link)
+                // Protocol cards and explicit bare-line links can unfurl. Inline
+                // citations remain compact links instead of duplicate cards.
+                if !message.streaming {
+                    ForEach(projection.previewURLs, id: \.absoluteString) { link in
+                        LinkPreviewCard(url: link)
+                    }
                 }
 
                 // A failed reply gets a visible Retry button, not just the
@@ -293,12 +309,12 @@ struct MessageBubble: View {
                 // Design's persistent action row under the latest settled
                 // reply — copy (flips to a check) and regenerate — so the two
                 // most common actions don't hide behind a long-press.
-                if !isUser, isLast, !message.streaming, !message.isError, !parsed.visible.isEmpty {
+                if !isUser, isLast, !message.streaming, !message.isError, !projection.visible.isEmpty {
                     actionRow
                 }
 
-                if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
-                    SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
+                if !isUser, isLast, !message.streaming, !projection.suggestions.isEmpty {
+                    SuggestionPills(suggestions: projection.suggestions, onTap: onSuggestion)
                 }
             }
 
@@ -437,7 +453,7 @@ struct MessageBubble: View {
         }
     }
 
-    @ViewBuilder private var bubble: some View {
+    @ViewBuilder private func bubble(_ projection: AssistantResponseProjection) -> some View {
         if message.text.isEmpty && message.streaming {
             VStack(alignment: .leading, spacing: 8) {
                 TypingIndicator()
@@ -449,8 +465,8 @@ struct MessageBubble: View {
                     GrimoireHintCard()
                 }
             }
-        } else if rendersMarkdown {
-            MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
+        } else if rendersMarkdown(projection) {
+            MarkdownWebView(markdown: projection.visible, height: $mdHeight,
                             streaming: message.streaming && !isUser,
                             theme: colorScheme == .light ? .light : .dark,
                             accentHex: chrome.accentHex,
@@ -459,9 +475,9 @@ struct MessageBubble: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .topTrailing) {
-                    if canOpenReader {
+                    if canOpenReader(projection) {
                         Button {
-                            onOpenReader?(parsed.visible)
+                            onOpenReader?(projection.visible)
                             Haptics.tap()
                         } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -479,7 +495,7 @@ struct MessageBubble: View {
                     if message.streaming && !isUser { StreamingDot().padding(6) }
                 }
         } else {
-            Text(parsed.visible.isEmpty ? " " : parsed.visible)
+            Text(projection.visible.isEmpty ? " " : projection.visible)
                 .textSelection(.enabled)
                 .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
