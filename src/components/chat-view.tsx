@@ -121,6 +121,10 @@ import {
 } from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
+import {
+  applyChatPromptEnhancement,
+  prepareChatPromptEnhancement,
+} from "@/lib/chat-prompt-enhance";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useSurfacePreference } from "@/lib/surface-preferences";
@@ -3797,11 +3801,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
   // rewrite from this thread's familiar (rule engine as offline fallback) and
   // owns the race-safe apply/suggest/revert lifecycle.
+  const preparedPromptEnhancement = prepareChatPromptEnhancement(
+    input,
+    Boolean(activeProjectRoot),
+  );
+  const promptEnhancementCommandPrefix = preparedPromptEnhancement.commandPrefix;
+  const setEnhancedPrompt = useCallback(
+    (enhanced: string) => setInput(applyChatPromptEnhancement(
+      { commandPrefix: promptEnhancementCommandPrefix },
+      enhanced,
+    )),
+    [promptEnhancementCommandPrefix],
+  );
   const promptEnhance = usePromptEnhance({
-    draft: input,
-    setDraft: setInput,
+    draft: preparedPromptEnhancement.draft,
+    setDraft: setEnhancedPrompt,
     familiarId: familiar.id,
-    mode: activeProjectRoot ? "code" : "chat",
+    mode: preparedPromptEnhancement.mode,
     context: {
       activeProject: activeProjectRoot
         ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
