@@ -99,10 +99,33 @@ assert.match(
   "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
 );
 
+// The timeline used to be a <details open={pending}> — a disclosure nested
+// inside RunActivityStrip's OWN expanded panel, so reaching the steps took two
+// opens, and its summary re-rendered the count chips already showing one row
+// above it (cave-dkdev). The strip's disclosure is the only one now: by the
+// time this renders the user has already asked for it, so it shows the steps
+// directly, with a bar and an "N of M" carrying the completion the chips used
+// to spell out.
 assert.match(
   source,
-  /function ProgressGroup[\s\S]*<details[\s\S]*open=\{pending \|\| undefined\}[\s\S]*Progress[\s\S]*progress\.map/,
-  "Progress events should render as a collapsible activity timeline that stays open while running",
+  /function ProgressGroup[\s\S]*cave-progress-bar[\s\S]*progress\.map/,
+  "Progress events should render as an activity timeline with a completion bar",
+);
+assert.match(
+  source,
+  /function ProgressGroup[\s\S]*const reached = pending \? settled : total;/,
+  "A settled run reports its full step count rather than freezing mid-progress",
+);
+// Bounded to ProgressGroup's own body: an unbounded [\s\S]* runs past the end
+// of the function and finds ToolGroup's legitimate <details>, which would make
+// this assertion pass for the wrong reason and then fail once it is restored.
+const progressGroupSource =
+  source.match(/function ProgressGroup\(\{[\s\S]*?\n\}\n/)?.[0] ?? "";
+assert.ok(progressGroupSource, "ProgressGroup body should be locatable");
+assert.doesNotMatch(
+  progressGroupSource,
+  /<details/,
+  "ProgressGroup must not reintroduce a disclosure nested inside the strip's own",
 );
 
 assert.match(
@@ -117,10 +140,18 @@ assert.match(
   "Progress and tool rows should render durations through a shared null-safe helper",
 );
 
+// The counts live in ONE place now (cave-dkdev): RunActivityStrip. ProgressGroup
+// used to render its own copy of the same chips one row below them, which is
+// why this pluralization previously had two call sites to keep in step.
 assert.match(
   source,
-  /errors === 1 \? "issue" : "issues"/,
-  "Progress issue counts should pluralize correctly",
+  /issues === 1 \? "issue" : "issues"/,
+  "Run activity issue counts should pluralize correctly",
+);
+assert.equal(
+  source.match(/=== 1 \? "issue" : "issues"/g)?.length,
+  1,
+  "the issue count should have exactly one renderer, not a duplicate a row apart",
 );
 
 assert.match(
