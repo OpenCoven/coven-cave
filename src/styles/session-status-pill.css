@@ -62,15 +62,16 @@
 
 /* Transport modifies the DOT, never the label. A session that is connecting is
  * still running; the wire condition is a property of how the bytes arrive, not
- * a state the session can finish in. Rendering it as a hollow ring keeps the
+ * a state the session can finish in. A hollow ring on a quicker beat keeps the
  * distinction visible without spending a second word on the row — and the
  * component puts the same fact in the accessible name, so the ring is not the
- * only channel. */
+ * only channel. It re-times the existing breathe rather than defining a second
+ * keyframe set: the extra @keyframes cost ~150 bytes of the home CSS budget
+ * and bought a motion nobody had asked for. */
 .ui-session-pill[data-transport] .ui-session-pill__dot {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px currentColor;
-  animation-name: ui-session-pill-reach;
-  animation-duration: 1.4s;
+  animation-duration: 1.3s;
 }
 
 @keyframes ui-session-pill-breathe {
@@ -80,21 +81,6 @@
   }
   50% {
     opacity: 0.45;
-  }
-}
-
-@keyframes ui-session-pill-reach {
-  0% {
-    opacity: 0.35;
-    transform: scale(0.72);
-  }
-  55% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0.35;
-    transform: scale(0.72);
   }
 }
 

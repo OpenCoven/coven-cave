@@ -1746,7 +1746,7 @@ function MetaLine({
           finish in. A brand-new chat with nothing to report shows nothing. */}
       {session || state !== "complete" ? (
         <SessionStatusPill
-          className="cave-chat-meta-line__status"
+          className="shrink-0"
           status={sessionState.key}
           transport={sessionState.transport}
         />
@@ -9709,11 +9709,18 @@ function ProgressGroup({
 
   return (
     <div className="cave-progress-group mt-3">
-      <div className="cave-progress-head">
-        <span className="cave-progress-head__label" title={current?.label}>
+      {/* Utilities, not new classes: this card is reachable from the startup
+          graph, so a bespoke selector here is paid for by every route, and the
+          home CSS budget sits near zero headroom. The count reuses the
+          .cave-tool-count chip the strip above already ships. */}
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span
+          className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]"
+          title={current?.label}
+        >
           {current?.label ?? (pending ? "Working…" : "Steps")}
         </span>
-        <span className="cave-progress-head__count">
+        <span className="cave-tool-count shrink-0 tabular-nums">
           {reached} of {total}
         </span>
       </div>

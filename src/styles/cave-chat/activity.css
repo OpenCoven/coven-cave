@@ -162,33 +162,12 @@
   padding: 10px var(--space-3);
 }
 
-/* Progress card head + bar (cave-dkdev) — replaces the nested "PROGRESS"
-   disclosure whose summary duplicated the count chips one row above it. */
-.cave-progress-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.cave-progress-head__label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-primary);
-  font-size: var(--text-xs);
-}
-
-.cave-progress-head__count {
-  flex: none;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-
+/* Progress completion bar (cave-dkdev) — replaces the nested "PROGRESS"
+   disclosure whose summary duplicated the count chips one row above it.
+   The head row beside it is plain utilities and the count reuses the existing
+   .cave-tool-count chip, so the whole card costs two rules rather than six:
+   the home CSS budget sits at ~0.5% headroom and this is a surface reachable
+   from the startup graph, so every selector here is paid for by every route. */
 .cave-progress-bar {
   display: block;
   height: 3px;
@@ -203,13 +182,6 @@
   height: 100%;
   border-radius: 2px;
   background: var(--accent-presence);
-  transition: width var(--duration-base) var(--ease-standard);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cave-progress-bar__fill {
-    transition: none;
-  }
 }
 
 .cave-reasoning-block[data-streaming] {
@@ -714,16 +686,6 @@ details[open] > .cave-tool-summary::before {
   gap: 6px;
   min-height: 22px;
   font-size: var(--text-sm);
-}
-
-/* The status pill sits between the title and the provenance run (cave-dkdev),
-   so the header reads avatar · title · STATE · provenance — subject, then
-   verdict, then detail. It never shrinks: the pill is the one fact on this row
-   that must survive a narrow window, whereas the provenance beside it is
-   already a reveal-on-hover cluster. */
-.cave-chat-meta-line__status {
-  flex: 0 0 auto;
-  margin-inline-start: 2px;
 }
 
 /* Chat-revamp 1b: the session's familiar leads the header — a 24px circle
