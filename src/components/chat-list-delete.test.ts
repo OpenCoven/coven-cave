@@ -295,10 +295,24 @@ assert.doesNotMatch(
   "The old 40% muted-ink mix (~3:1 on dark, ~2.5:1 on light) must not return",
 );
 
+// The initiator pill left the chat row (cave-dkdev follow-up): session-list-merge
+// defaults every Cave conversation to {kind:"human", label:"Cave user"}, so the
+// chip read "Cave user" on every row — and "Unknown" wherever the field was
+// absent. A chip identical down the whole column spends horizontal budget to say
+// nothing, which is the critique this surface was rebuilt around. Origin stays,
+// because it actually varies. Not across the whole enum — CHAT_HIDDEN_ORIGINS
+// drops cron/heartbeat/canvas/journal/enhance from this list — but chat,
+// mention, board and call all reach a row, which is four more values than the
+// initiator chip ever showed.
+assert.doesNotMatch(
+  source,
+  /<SessionInitiatorChip/,
+  "the chat row must not reintroduce the constant initiator pill",
+);
 assert.match(
   source,
-  /<SessionInitiatorChip initiator=\{s\.initiator\} \/>/,
-  "Chat rows should render the session initiator attribution pill",
+  /\{s\.origin \? <OriginChip origin=\{s\.origin\} \/> : null\}/,
+  "…while the origin pill, which does vary between rows, stays",
 );
 assert.doesNotMatch(
   globals,

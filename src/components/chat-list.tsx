@@ -10,7 +10,6 @@ import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
-import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
@@ -1695,8 +1694,23 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 {rowFamiliarName}
                                 {project ? ` · ${project}` : ""}
                               </span>
+                              {/* Origin stays; the initiator chip beside it went.
+                                  session-list-merge defaults every Cave
+                                  conversation to {kind:"human", label:"Cave
+                                  user"}, so the initiator read "Cave user" on
+                                  every row — and "Unknown" wherever the field
+                                  was absent. A chip identical down the whole
+                                  column is horizontal budget spent to say
+                                  nothing, which is the critique this surface was
+                                  rebuilt around.
+
+                                  Origin does vary, though NOT across the whole
+                                  enum: CHAT_HIDDEN_ORIGINS drops cron,
+                                  heartbeat, canvas, journal and enhance from
+                                  this list entirely, so what a row can actually
+                                  show is chat / mention / board / call. Four
+                                  values is still four more than one. */}
                               {s.origin ? <OriginChip origin={s.origin} /> : null}
-                              <SessionInitiatorChip initiator={s.initiator} />
                               {s.model ? (
                                 <span
                                   className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
