@@ -1,0 +1,105 @@
+/* Session status pill — the ONE badge that owns a session's state.
+ *
+ * Lives in its own sheet rather than `globals/primitives.css` because the
+ * root CSS bundle every route downloads runs at essentially zero headroom
+ * against BUNDLE_MAX_HOME_CSS_KB; the component imports this, so only routes
+ * that render a session pay for it (see CLAUDE.md, "New surface CSS goes in
+ * its own sheet").
+ *
+ * Moved here from `chat-list.css` when the chat detail header stopped
+ * narrating its own state in prose ("connecting… · 28 done · elapsed 1m 33s")
+ * and adopted the same pill the list row already showed. Two surfaces, one
+ * vocabulary — which was the whole point of the exercise.
+ *
+ * Every colour derives from one solid token through the tint recipe
+ * (docs/coven-design-language.md §3), so the pill survives all 24
+ * theme × mode combinations without a hardcoded value.
+ */
+
+.ui-session-pill[data-state="running"] {
+  --state-tint: var(--accent-presence);
+}
+.ui-session-pill[data-state="queued"] {
+  --state-tint: var(--color-warning);
+}
+.ui-session-pill[data-state="completed"] {
+  --state-tint: var(--color-success);
+}
+.ui-session-pill[data-state="failed"] {
+  --state-tint: var(--color-danger);
+}
+.ui-session-pill[data-state="paused"] {
+  --state-tint: var(--text-muted);
+}
+
+.ui-session-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--state-tint, var(--text-muted)) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--state-tint, var(--text-muted)) 14%, transparent);
+  color: var(--state-tint, var(--text-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-session-pill__dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: ui-session-pill-breathe 2.2s var(--ease-standard) infinite;
+}
+
+/* Transport modifies the DOT, never the label. A session that is connecting is
+ * still running; the wire condition is a property of how the bytes arrive, not
+ * a state the session can finish in. Rendering it as a hollow ring keeps the
+ * distinction visible without spending a second word on the row — and the
+ * component puts the same fact in the accessible name, so the ring is not the
+ * only channel. */
+.ui-session-pill[data-transport] .ui-session-pill__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  animation-name: ui-session-pill-reach;
+  animation-duration: 1.4s;
+}
+
+@keyframes ui-session-pill-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes ui-session-pill-reach {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-session-pill__dot {
+    animation: none;
+  }
+}

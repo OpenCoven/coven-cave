@@ -382,6 +382,41 @@ export const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> =
   "low-score": "low signal score",
 };
 
+/** Subject line per review kind — the DISCRIMINATOR, not the instruction.
+ *  Short enough that it survives truncation in a narrow list column. */
+const REVIEW_KIND_SUBJECT: Record<ThreadSignalReviewItem["kind"], string> = {
+  blocker: "Persistent blocker",
+  "skill-access": "Skill access gap",
+  "skill-clarity": "Skill clarity gap",
+  capability: "Capability gap",
+  "context-pressure": "Context pressure",
+  "low-score": "Low signal score",
+};
+
+/**
+ * Title for a thread-signal resolution session, decided HERE rather than
+ * derived from the seed prompt downstream (cave-dkdev).
+ *
+ * The prompt has to open with its instruction ("Resolve these N signals
+ * surfaced by your thread self-reports:") because that is what the familiar
+ * needs to read first. A list row needs the opposite: the words that differ
+ * between one row and the next, first, because a row is scanned rather than
+ * read. Deriving one from the other gave every launch the same first six
+ * words and truncated away the rest.
+ *
+ * So the shared prefix becomes the subject, and the count carries the scale:
+ * "Signal sweep · 5 signals" beside "Low signal score · 1 signal".
+ */
+export function threadSignalSessionTitle(items: readonly ThreadSignalReviewItem[]): string {
+  if (items.length === 0) return "Thread signals";
+  if (items.length === 1) return `${REVIEW_KIND_SUBJECT[items[0].kind]} · 1 signal`;
+  // A mixed batch has no single subject to name, so it takes the sweep label;
+  // a batch that happens to share one kind keeps that kind as its subject.
+  const kinds = new Set(items.map((item) => item.kind));
+  const subject = kinds.size === 1 ? REVIEW_KIND_SUBJECT[items[0].kind] : "Signal sweep";
+  return `${subject} · ${items.length} signals`;
+}
+
 /**
  * Seed prompt that launches a working thread to RESOLVE one review-queue item.
  * Selecting a signal in the Thread Signals review queue (or a table row) opens
@@ -391,6 +426,12 @@ export const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> =
  */
 export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem): string {
   return [
+    // Subject line first, then a blank line: the brief names itself, so the
+    // session lands in the list as "Low signal score · 1 signal" instead of
+    // the instruction below, which is identical on every launch from here
+    // (cave-dkdev, see promptSubjectLine in cave-chat-titles.ts).
+    threadSignalSessionTitle([item]),
+    "",
     `Resolve this ${REVIEW_KIND_LABEL[item.kind]} surfaced by your thread self-reports:`,
     "",
     `**${item.title}**`,
@@ -414,6 +455,10 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
 export function buildThreadSignalBatchResolutionPrompt(items: readonly ThreadSignalReviewItem[]): string {
   if (items.length === 1) return buildThreadSignalResolutionPrompt(items[0]);
   return [
+    // See the single-item builder above: subject line, blank line, then the
+    // instruction. "Signal sweep · 5 signals" is what the list row shows.
+    threadSignalSessionTitle(items),
+    "",
     `Resolve these ${items.length} signals surfaced by your thread self-reports:`,
     "",
     ...items.map((item, index) => `${index + 1}. **${item.title}** (${REVIEW_KIND_LABEL[item.kind]}) — ${item.detail}`),

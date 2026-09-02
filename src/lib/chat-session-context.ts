@@ -136,7 +136,7 @@ export function chatContextDetails(args: {
   });
   const done = completedTools.length > 0
     ? {
-        heading: "Done",
+        heading: "Steps",
         value: String(completedTools.length),
         rows: doneRows,
       }
@@ -170,7 +170,7 @@ export function chatContextDetails(args: {
   pushDuration("idle", "idle", idleDuration, "muted");
   const elapsedValue = formatContextDuration(totalDuration);
   const elapsed = elapsedValue
-    ? { heading: "Elapsed", value: elapsedValue, rows: elapsedRows }
+    ? { heading: "Active", value: elapsedValue, rows: elapsedRows }
     : null;
 
   const meter = computeContextMeter(args.usage, args.model ?? undefined);
@@ -215,9 +215,14 @@ export function chatContextStats(args: {
     : []);
   const details = chatContextDetails({ turns, usage: args.usage, model: args.model });
   if (details.done) {
+    // "28 steps", not "done 28" (cave-dkdev). The old label named a state the
+    // pill one row up already owns, so the band appeared to report status a
+    // second time and disagree with it — the header could read "connecting…"
+    // above "done 28" in the same breath. Naming the UNIT instead makes the
+    // band unambiguously a count of work, not a verdict on it.
     stats.push({
       id: "done",
-      label: "done",
+      label: "steps",
       value: details.done.value,
       tint: "success",
       title: `${details.done.value} completed tool calls`,
@@ -225,12 +230,17 @@ export function chatContextStats(args: {
     });
   }
   if (details.elapsed) {
+    // "active", not "elapsed" (cave-dkdev). This value is the SUM of assistant
+    // turn durations — time the run actually spent thinking and calling tools.
+    // "Elapsed" names wall-clock, which is a different and much larger number
+    // for any chat left open, so the old label promised a fact the value was
+    // not. The list row states wall-clock separately, and says "open".
     stats.push({
       id: "elapsed",
-      label: "elapsed",
+      label: "active",
       value: details.elapsed.value,
       tint: "accent",
-      title: `Elapsed ${details.elapsed.value}`,
+      title: `Active ${details.elapsed.value} — time spent working, not time since the chat opened`,
       detail: details.elapsed,
     });
   }

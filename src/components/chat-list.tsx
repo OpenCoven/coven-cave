@@ -11,6 +11,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
+import { SessionStatusPill } from "@/components/ui/session-status-pill";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -34,7 +35,6 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   createChatProjectIndex,
-  filterVisibleChatSessions,
   type ChatProjectGroup,
 } from "@/lib/chat-projects";
 import {
@@ -81,7 +81,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
-import { chatListCandidates, filterChatListRows } from "@/lib/chat-list-model";
+import { filterChatListRows, visibleChatSessions } from "@/lib/chat-list-model";
 import {
   CHAT_GROUP_BY_KEY,
   deriveChatDaySections,
@@ -92,7 +92,6 @@ import {
 import {
   CHAT_SESSION_STATUS,
   CHAT_SESSION_STATUS_ORDER,
-  chatSessionStatus,
   chatSessionStatusKey,
   chatStatusChipDisabled,
   countChatSessionStatuses,
@@ -326,8 +325,12 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
     // Hide chats whose bulk delete is pending in the undo window (still on the
     // server; restored if the user hits Undo).
     const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
-    const rows = chatListCandidates(sessions, archivedRows, showArchived, hidden);
-    return filterVisibleChatSessions(rows, familiar?.id ?? null, { includeArchived: showArchived });
+    // Shared with the workspace sidebar (cave-dkdev) — see visibleChatSessions.
+    return visibleChatSessions(sessions, familiar?.id ?? null, {
+      archivedRows,
+      showArchived,
+      pendingDeleteIds: hidden,
+    });
   }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
 
   // The siderail never shows archived chats: even while the list's "Show
@@ -1427,7 +1430,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                     // ── Handoff row facts (cave-n3jg2) ──────────────────
                     const band = bandsByIndex?.get(idx) ?? null;
                     const statusKey = chatSessionStatusKey(s.status);
-                    const statusPresentation = chatSessionStatus(s);
                     // The session's OWN branch, never the checkout's current
                     // one — a shared checkout churns branches under every row.
                     const workBranch = s.workBranch ?? s.git?.branch ?? null;
@@ -1643,20 +1645,30 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                             {/* Row 2: familiar · project · date, plus the
                                 origin/initiator/model chips */}
                             <span className="chat-list-row-tags flex min-w-0 items-center gap-1.5">
-                              {/* How the run is GOING: a labelled state, the
-                                  time it has been alive, and the working-tree
+                              {/* How the run is GOING: a labelled state, how
+                                  long it has been open, and the working-tree
                                   delta it produced. The pill carries a glyph as
-                                  well as a tint so state is never colour-only. */}
-                              <span className="chat-session-pill" data-state={statusKey}>
-                                {statusKey === "running" ? (
-                                  <span aria-hidden className="chat-session-pill__dot" />
-                                ) : statusPresentation.icon ? (
-                                  <Icon name={statusPresentation.icon} width={10} aria-hidden />
-                                ) : null}
-                                {statusPresentation.label}
-                              </span>
-                              <span className="chat-session-stat" data-live={statusKey === "running" ? "true" : undefined}>
-                                {elapsed}
+                                  well as a tint so state is never colour-only,
+                                  and it is the SAME component the detail header
+                                  renders — one status vocabulary across both
+                                  session surfaces. */}
+                              <SessionStatusPill status={statusKey} />
+                              {/* "open", not a bare duration. This value is
+                                  `updated_at − created_at` — the wall-clock
+                                  span the session has been alive, which is not
+                                  the time it spent working. Unlabelled beside
+                                  COMPLETED it read as run time, so a chat left
+                                  open overnight reported "12h 55m" and looked
+                                  like a bug. The header states real active time
+                                  ("ran"), because only it has the per-turn
+                                  durations to add up; the list says what it
+                                  actually knows. */}
+                              <span
+                                className="chat-session-stat"
+                                data-live={statusKey === "running" ? "true" : undefined}
+                                title={`Open ${elapsed} — time since this chat was created, not time spent working`}
+                              >
+                                open {elapsed}
                               </span>
                               {adds > 0 ? (
                                 <span className="chat-session-stat" data-kind="adds" title={`${adds} lines added`}>
@@ -1668,11 +1680,20 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                   −{dels}
                                 </span>
                               ) : null}
-                              <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                              {/* One time reference per row (cave-dkdev). This
+                                  span used to end in an absolute date, giving
+                                  the row a third timestamp beside the relative
+                                  tail and the duration — three numbers about
+                                  when, none of which agreed on what they were
+                                  measuring. The date is exact but never the
+                                  thing being scanned, so it moves to the hover
+                                  tooltip and the relative tail keeps the row. */}
+                              <span
+                                className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]"
+                                title={`Last active ${chatDate(s.updated_at, dtPrefs)}`}
+                              >
                                 {rowFamiliarName}
                                 {project ? ` · ${project}` : ""}
-                                {" · "}
-                                {chatDate(s.updated_at, dtPrefs)}
                               </span>
                               {s.origin ? <OriginChip origin={s.origin} /> : null}
                               <SessionInitiatorChip initiator={s.initiator} />

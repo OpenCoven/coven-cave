@@ -85,12 +85,70 @@ export function cleanPromptForTitle(prompt: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/**
+ * A prompt that NAMES ITSELF keeps its own name (cave-dkdev).
+ *
+ * A machine-composed brief — a signal-resolution launch, a board handoff, any
+ * generated seed prompt — opens with the instruction, because that is what the
+ * familiar has to read first. Every brief from the same launcher therefore
+ * opens with the SAME instruction, and a title derived from its opening words
+ * is identical across all of them: the Sessions list filled with rows reading
+ * "Resolve these 2 signals surfaced by…", "Resolve these 5 signals surfaced
+ * by…", truncated before the only words that differed.
+ *
+ * So a brief may state its subject on the first line, separated from the body
+ * by a blank line. That line becomes the title — the discriminator, decided at
+ * write time by the surface that knows what it launched, rather than salvaged
+ * at render time from prose written for someone else.
+ *
+ * Deliberately narrow, because a human's first line is very often NOT a title:
+ * "Hey", "fix the parser", "Do these:" are all real openings that a looser
+ * rule happily promoted to a session name. Length and punctuation checks alone
+ * did not separate the two populations, so the line must additionally carry a
+ * shape a person does not type by accident before a blank line — a markdown
+ * heading, or the middot-qualified subject grammar these briefs are written in
+ * ("Signal sweep · 5 signals"). Everything else falls through to the normal
+ * derivation, which is the safe default: a slightly long title beats a wrong
+ * one.
+ */
+const MAX_SUBJECT_LINE_LENGTH = 72;
+
+/** `# Heading` — unambiguous, and never the first line of a typed message. */
+const SUBJECT_HEADING_RE = /^#{1,6}\s+\S/;
+
+/** `Subject · qualifier` — the composed-brief grammar. Requires the middot
+ *  specifically: a hyphen or colon is ordinary typing, U+00B7 is not. */
+const SUBJECT_QUALIFIED_RE = /^[A-Z][^\n]*\s·\s\S/;
+
+export function promptSubjectLine(prompt: string | null | undefined): string | null {
+  if (typeof prompt !== "string") return null;
+  // A blank line is the separator, so a prompt without one names nothing.
+  const parts = prompt.replace(/\r\n/g, "\n").split("\n\n");
+  if (parts.length < 2) return null;
+  const first = parts[0].trim();
+  const body = parts.slice(1).join("\n\n").trim();
+  if (!first || !body) return null;
+  // One line only — a wrapped paragraph before the first blank line is prose.
+  if (first.includes("\n")) return null;
+  if (first.length > MAX_SUBJECT_LINE_LENGTH) return null;
+  // Sentence punctuation means it is a sentence, not a heading.
+  if (/[.!?]/.test(first)) return null;
+  if (!SUBJECT_HEADING_RE.test(first) && !SUBJECT_QUALIFIED_RE.test(first)) return null;
+  const heading = first.replace(/^#{1,6}\s+/, "").trim();
+  return heading.length >= 3 ? heading : null;
+}
+
 /** Default title for a chat session started from a user prompt: the prompt
  *  cleaned of conversational filler (see cleanPromptForTitle), whitespace-
  *  collapsed and truncated to a title-sized string. The cut backs up to the
  *  last word boundary (unless that would lose too much) so the title doesn't end
  *  mid-word — "…the changes we made" not "…the changes we ma". */
 export function chatTitleFromPrompt(prompt: string | null | undefined): string | null {
+  // A self-naming brief wins outright: it was written to be this title, and
+  // running it through the filler-stripper would only re-flatten it into the
+  // instruction that follows it.
+  const subject = promptSubjectLine(prompt);
+  if (subject) return subject;
   const normalized = normalizeChatTitle(prompt);
   if (!normalized) return null;
   const cleaned = cleanPromptForTitle(normalized);
@@ -498,6 +556,11 @@ export function chatSummaryTitle(input: {
   userText?: string | null;
   assistantText?: string | null;
 }): string | null {
+  // Same precedence as chatTitleFromPrompt: a brief that named itself already
+  // decided this, and the assistant's own heading must not overrule it — the
+  // launcher knows what it launched, the reply only knows what it answered.
+  const subject = promptSubjectLine(input.userText);
+  if (subject) return subject;
   const normalized = normalizeGeneratedTitleSource(input.userText);
   const prepared = normalized
     ? normalizeMarkdownInlineLinks(stripLineMarkdown(normalized))
