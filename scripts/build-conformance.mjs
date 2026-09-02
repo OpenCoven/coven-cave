@@ -11,8 +11,8 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const env = {
   ...process.env,
   COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL: "1",
-  // The worker-thread plugin runtime shares one V8 heap. The bounded macOS
-  // authority runner needs an explicit ceiling above Node's default 4 GiB.
+  // Packaged compatibility builds exceed the bounded macOS runner's
+  // host-derived default during Next's TypeScript phase.
   NODE_OPTIONS: "--max-old-space-size=6144",
 };
 

@@ -80,6 +80,10 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
     path.join(process.cwd(), "scripts/build-conformance.mjs"),
     "utf8",
   );
+  const compatibilityHarness = readFileSync(
+    path.join(process.cwd(), "scripts/client-v1-compatibility-control.integration.test.mjs"),
+    "utf8",
+  );
   const manifest = JSON.parse(
     readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
   ) as { scripts?: Record<string, string> };
@@ -90,6 +94,11 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
 
   assert.match(script, /\["pnpm@10\.34\.0", "build"\]/);
   assert.match(script, /NODE_OPTIONS:\s*"--max-old-space-size=6144"/);
+  assert.match(
+    compatibilityHarness,
+    /env\.NODE_OPTIONS = "--max-old-space-size=6144"/,
+    "both packaged compatibility builds need the macOS runner's proven V8 heap ceiling",
+  );
   assert.match(
     script,
     /rmSync\(path\.join\(repositoryRoot, "\.next"\), \{ recursive: true, force: true \}\)/,

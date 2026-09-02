@@ -101,13 +101,13 @@ async function runBuild(label, args, env) {
       if (timedOut) {
         reject(
           new Error(
-            `${label} timed out after ${buildTimeoutMs} ms\n${output().slice(-4_000)}`,
+            `${label} timed out after ${buildTimeoutMs} ms\n${output()}`,
           ),
         );
       } else if (code !== 0) {
-        reject(new Error(`${label} exited with ${code ?? signal}\n${output().slice(-4_000)}`));
+        reject(new Error(`${label} exited with ${code ?? signal}\n${output()}`));
       } else if (output().includes(broadTraceWarning)) {
-        reject(new Error(`${label} emitted a broad filesystem trace warning\n${output().slice(-4_000)}`));
+        reject(new Error(`${label} emitted a broad filesystem trace warning\n${output()}`));
       } else {
         resolve();
       }
@@ -184,6 +184,7 @@ function isolatedEnvironment(root, port, selector) {
   env.TEMP = env.TMPDIR;
   env.XDG_CONFIG_HOME = path.join(root, "config");
   env.XDG_CACHE_HOME = path.join(root, "cache");
+  env.NODE_OPTIONS = "--max-old-space-size=6144";
   env.NODE_ENV = "production";
   env.COVEN_HOME = path.join(root, "coven");
   env.COVEN_CAVE_HOME = path.join(root, "coven", "cave");
