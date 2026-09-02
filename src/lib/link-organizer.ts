@@ -11,6 +11,7 @@
 import type { IconName } from "./icon.tsx";
 import { parseXArticleCandidateUrl, type XArticleSnapshot } from "./x-articles.ts";
 import { extractLinks } from "./link-extractor.ts";
+import type { GithubRepoSnapshot, GithubRepoSummary } from "./research-github-repo.ts";
 
 export type LinkCategory =
   | "github"
@@ -61,10 +62,13 @@ export type SavedLink = {
   };
   /** Present only for persisted X Article snapshots. */
   xArticle?: XArticleSnapshot;
+  /** Present only for commit-pinned GitHub repository snapshots. */
+  githubRepo?: GithubRepoSnapshot;
 };
 
-export type SavedLinkSummary = Omit<SavedLink, "xArticle"> & {
+export type SavedLinkSummary = Omit<SavedLink, "xArticle" | "githubRepo"> & {
   xArticle?: Omit<XArticleSnapshot, "body">;
+  githubRepo?: GithubRepoSummary;
 };
 
 const VIDEO_HOSTS = new Set([

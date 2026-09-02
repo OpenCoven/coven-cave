@@ -1,20 +1,8 @@
 "use client";
 
-/**
- * ResearchGithubRepoViewer — browse a GitHub repository inside the Research
- * Desk Resources tab (cave-vy5vp).
- *
- * Input is a repository reference (bare `owner/name` or a github.com URL) plus
- * an optional branch; output is the repository's recursive file tree and its
- * README rendered as markdown. The fetch is deliberately opt-in: nothing
- * touches the network until the operator presses "Load repository", which is
- * the remote-content consent surface for this feature — the same explicit,
- * user-triggered pattern the paper reader ("Read paper") and X sources use.
- * The server route (`/api/research/github-repo`) is loopback-only and resolves
- * the configured GitHub credential itself; this component never sees a token.
- */
+import "@/styles/research-github-repo-viewer.css";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -22,21 +10,25 @@ import { Icon } from "@/lib/icon";
 import {
   buildGithubRepoTree,
   formatGithubBytes,
+  githubRepoFileEndpoint,
   githubRepoFileWebUrl,
+  githubRepoReadmeLinkUrl,
   githubRepoTreeWebUrl,
-  githubRepoViewEndpoint,
-  parseGithubRepoInput,
-  sanitizeGithubRef,
-  type GithubRepoView,
+  type GithubRepoFileView,
+  type GithubRepoSnapshot,
   type RepoTreeNode,
 } from "@/lib/research-github-repo";
 
 export type ResearchGithubRepoViewerProps = {
-  /** Open a URL in the Cave's in-app browser (from the surface context). */
+  snapshot: GithubRepoSnapshot;
   openUrl: (url: string) => void;
 };
 
-type ViewerStatus = "idle" | "loading" | "ready" | "error";
+type FileState =
+  | { kind: "idle" }
+  | { kind: "loading"; path: string }
+  | { kind: "ready"; path: string; file: GithubRepoFileView }
+  | { kind: "error"; path: string; message: string };
 
 function fileIconName(path: string): "ph:file-code" | "ph:file-text" {
   return /\.[cm]?[jt]sx?$|\.(?:json|md|mdx|yaml|yml|toml|css|html|rs|go|py|rb)$/i.test(path)
@@ -46,29 +38,30 @@ function fileIconName(path: string): "ph:file-code" | "ph:file-text" {
 
 function FileTreeNode({
   node,
-  owner,
-  repo,
-  ref,
-  openUrl,
+  selectedPath,
+  onSelect,
 }: {
   node: RepoTreeNode;
-  owner: string;
-  repo: string;
-  ref: string;
-  openUrl: (url: string) => void;
+  selectedPath: string | null;
+  onSelect: (node: RepoTreeNode) => void;
 }) {
   if (node.type === "tree") {
     return (
       <li className="research-gh__node">
         <details className="research-gh__dir">
           <summary className="research-gh__dir-summary focus-ring">
-            <Icon name="ph:folder" width={13} height={13} aria-hidden />
+            <Icon name="ph:folder" width={14} height={14} aria-hidden />
             <span>{node.name}</span>
             <span className="sr-only"> folder</span>
           </summary>
           <ul className="research-gh__children">
             {(node.children ?? []).map((child) => (
-              <FileTreeNode key={child.path} node={child} owner={owner} repo={repo} ref={ref} openUrl={openUrl} />
+              <FileTreeNode
+                key={child.path}
+                node={child}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+              />
             ))}
           </ul>
         </details>
@@ -82,201 +75,259 @@ function FileTreeNode({
       <button
         type="button"
         className="research-gh__file focus-ring"
-        onClick={() => openUrl(githubRepoFileWebUrl(owner, repo, ref, node.path))}
-        title={`Open ${node.path} on GitHub`}
+        aria-current={selectedPath === node.path ? "page" : undefined}
+        onClick={() => onSelect(node)}
+        title={`Read ${node.path}`}
       >
-        <Icon name={fileIconName(node.path)} width={13} height={13} aria-hidden />
+        <Icon name={fileIconName(node.path)} width={14} height={14} aria-hidden />
         <span className="research-gh__file-name">{node.name}</span>
         {size ? <span className="research-gh__file-size">{size}</span> : null}
-        <Icon name="ph:arrow-square-out" width={11} height={11} aria-hidden className="research-gh__file-open" />
       </button>
     </li>
   );
 }
 
-export function ResearchGithubRepoViewer({ openUrl }: ResearchGithubRepoViewerProps) {
+export function ResearchGithubRepoViewer({
+  snapshot,
+  openUrl,
+}: ResearchGithubRepoViewerProps) {
   const { announce } = useAnnouncer();
-  const [repoInput, setRepoInput] = useState("");
-  const [refInput, setRefInput] = useState("");
-  const [status, setStatus] = useState<ViewerStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<GithubRepoView | null>(null);
-  const requestIdRef = useRef(0);
+  const roots = useMemo(() => buildGithubRepoTree(snapshot.tree), [snapshot.tree]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    snapshot.readme?.path ?? null,
+  );
+  const [fileState, setFileState] = useState<FileState>({ kind: "idle" });
+  const requestGenerationRef = useRef(0);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
-  const loadRepository = async (event: FormEvent) => {
-    event.preventDefault();
-    if (status === "loading") return;
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setSelectedPath(snapshot.readme?.path ?? null);
+    setFileState({ kind: "idle" });
+  }, [snapshot.commitSha, snapshot.readme?.path]);
 
-    const parsed = parseGithubRepoInput(repoInput);
-    if (!parsed) {
-      setStatus("error");
-      setError("Enter a GitHub repository as owner/name or a github.com URL.");
-      announce("Enter a GitHub repository as owner/name or a github.com URL.", "assertive");
-      return;
-    }
-    const ref = sanitizeGithubRef(refInput || null);
-    if (refInput.trim() && !ref) {
-      setStatus("error");
-      setError("That branch name can't be used.");
-      announce("That branch name can't be used.", "assertive");
-      return;
-    }
+  useEffect(() => () => requestControllerRef.current?.abort(), []);
 
-    const requestId = ++requestIdRef.current;
-    setStatus("loading");
-    setError(null);
+  const selectReadme = useCallback(() => {
+    requestGenerationRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setSelectedPath(snapshot.readme?.path ?? null);
+    setFileState({ kind: "idle" });
+  }, [snapshot.readme?.path]);
+
+  const selectFile = useCallback(async (node: RepoTreeNode) => {
+    if (node.type !== "blob" || !node.sha) return;
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    const generation = ++requestGenerationRef.current;
+    setSelectedPath(node.path);
+    setFileState({ kind: "loading", path: node.path });
     try {
-      const response = await fetch(githubRepoViewEndpoint(`${parsed.owner}/${parsed.repo}`, ref));
+      const response = await fetch(
+        githubRepoFileEndpoint(`${snapshot.owner}/${snapshot.repo}`, node.sha),
+        { signal: controller.signal },
+      );
       const payload = (await response.json().catch(() => null)) as
-        | (GithubRepoView & { ok: true })
+        | ({ ok: true } & GithubRepoFileView)
         | { ok: false; error?: string }
         | null;
-      if (requestIdRef.current !== requestId) return;
+      if (requestGenerationRef.current !== generation) return;
       if (!response.ok || !payload || payload.ok !== true) {
-        setStatus("error");
-        setError((payload && "error" in payload && payload.error) || `GitHub couldn't load that repository (${response.status}).`);
-        announce("Couldn't load the GitHub repository.", "assertive");
+        const message =
+          (payload && "error" in payload && payload.error)
+          || `Cave couldn't preview this file (${response.status}).`;
+        setFileState({ kind: "error", path: node.path, message });
+        announce(`Couldn't preview ${node.name}.`, "assertive");
         return;
       }
-      setView(payload);
-      setStatus("ready");
-      announce(`Loaded ${payload.owner}/${payload.repo}.`);
-    } catch {
-      if (requestIdRef.current !== requestId) return;
-      setStatus("error");
-      setError("Couldn't reach GitHub. Check your connection and try again.");
-      announce("Couldn't reach GitHub.", "assertive");
+      setFileState({
+        kind: "ready",
+        path: node.path,
+        file: { sha: payload.sha, text: payload.text, bytes: payload.bytes },
+      });
+      announce(`Opened ${node.path}.`);
+    } catch (error) {
+      if (controller.signal.aborted || requestGenerationRef.current !== generation) return;
+      setFileState({
+        kind: "error",
+        path: node.path,
+        message: "Couldn't reach GitHub. Check your connection and try again.",
+      });
+      announce(`Couldn't preview ${node.name}.`, "assertive");
     }
-  };
+  }, [announce, snapshot.owner, snapshot.repo]);
 
-  const treeUrl = view ? githubRepoTreeWebUrl(view.owner, view.repo, view.resolvedRef) : null;
-  const roots = view ? buildGithubRepoTree(view.tree) : [];
+  const selectedFileEntry = snapshot.tree.find(
+    (entry) => entry.type === "blob" && entry.path === selectedPath,
+  );
+  const resolveReadmeUrl = useCallback((href: string) => (
+    snapshot.readme
+      ? githubRepoReadmeLinkUrl({
+          owner: snapshot.owner,
+          repo: snapshot.repo,
+          commitSha: snapshot.commitSha,
+          readmePath: snapshot.readme.path,
+        }, href)
+      : null
+  ), [snapshot.commitSha, snapshot.owner, snapshot.readme, snapshot.repo]);
+  const showingReadme = Boolean(snapshot.readme && selectedPath === snapshot.readme.path);
+  const treeUrl = githubRepoTreeWebUrl(snapshot.owner, snapshot.repo, snapshot.commitSha);
 
   return (
-    <section className="research-gh" aria-label="Browse GitHub repository">
-      <header className="research-gh__head">
-        <div>
-          <h3>GitHub repository</h3>
-          <p>Browse a repository's files and README. Loads remote content from GitHub on demand.</p>
+    <section className="research-gh" aria-label={`${snapshot.owner}/${snapshot.repo} repository`}>
+      <header className="research-gh__header">
+        <div className="research-gh__identity">
+          <span className="research-gh__glyph" aria-hidden>
+            <Icon name="ph:github-logo" width={20} height={20} />
+          </span>
+          <div>
+            <span className="research-gh__eyebrow">Saved GitHub repository</span>
+            <h4>{snapshot.owner}/{snapshot.repo}</h4>
+            {snapshot.description ? <p>{snapshot.description}</p> : null}
+          </div>
         </div>
+        <Button
+          size="xs"
+          variant="ghost"
+          trailingIcon="ph:arrow-square-out"
+          onClick={() => openUrl(treeUrl)}
+        >
+          Open captured tree
+        </Button>
       </header>
 
-      <form className="research-gh__form" onSubmit={loadRepository}>
-        <label className="research-gh__field">
-          <span>Repository</span>
-          <input
-            className="focus-ring"
-            value={repoInput}
-            onChange={(event) => {
-              setRepoInput(event.target.value);
-              if (status === "error") setStatus("idle");
-            }}
-            placeholder="owner/name or github.com URL"
-            inputMode="url"
-            autoComplete="url"
-            spellCheck={false}
-          />
-        </label>
-        <label className="research-gh__field research-gh__field--ref">
-          <span>Branch (optional)</span>
-          <input
-            className="focus-ring"
-            value={refInput}
-            onChange={(event) => setRefInput(event.target.value)}
-            placeholder="main"
-            spellCheck={false}
-          />
-        </label>
-        <Button
-          type="submit"
-          size="sm"
-          variant="primary"
-          leadingIcon="ph:github-logo"
-          loading={status === "loading"}
-          disabled={status === "loading" || !repoInput.trim()}
-        >
-          {status === "loading" ? "Loading…" : "Load repository"}
-        </Button>
-      </form>
+      <div className="research-gh__provenance" aria-label="Snapshot provenance">
+        <span className="research-gh__commit-marker" aria-hidden>
+          <Icon name="ph:git-commit" width={15} height={15} />
+        </span>
+        <span className="research-gh__provenance-line" aria-hidden />
+        <div>
+          <span>Captured commit</span>
+          <strong>{snapshot.commitSha.slice(0, 12)}</strong>
+        </div>
+        <div>
+          <span>Resolved from</span>
+          <strong>{snapshot.resolvedRef}</strong>
+        </div>
+        <div>
+          <span>Captured</span>
+          <strong>{new Date(snapshot.fetchedAt).toLocaleString()}</strong>
+        </div>
+        {snapshot.truncated ? (
+          <span className="research-gh__truncated">Tree listing truncated</span>
+        ) : null}
+      </div>
 
-      {status === "error" && error ? (
-        <p className="research-gh__error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <div className="research-gh__facts" aria-label="Repository metadata">
+        {snapshot.primaryLanguage ? <span>{snapshot.primaryLanguage}</span> : null}
+        {snapshot.licenseSpdx ? <span>{snapshot.licenseSpdx}</span> : null}
+        <span>{snapshot.visibility}</span>
+        <span>{snapshot.stars.toLocaleString()} stars</span>
+        <span>{snapshot.forks.toLocaleString()} forks</span>
+      </div>
 
-      {view ? (
-        <div className="research-gh__result">
-          <header className="research-gh__meta">
-            <span className="research-gh__meta-glyph" aria-hidden>
-              <Icon name="ph:github-logo" width={16} height={16} />
-            </span>
-            <div className="research-gh__meta-copy">
-              <strong className="research-gh__meta-title">
-                {view.owner}/{view.repo}
-              </strong>
-              <span className="research-gh__meta-branch">
-                {view.resolvedRef}
-                {view.resolvedRef === view.defaultBranch ? " (default)" : ""}
-                {view.truncated ? " · listing truncated" : ""}
-              </span>
+      <div className="research-gh__workspace">
+        <nav className="research-gh__rail" aria-label="Repository files">
+          <header>
+            <strong>Files</strong>
+            <span>{snapshot.tree.length} entries</span>
+          </header>
+          {snapshot.readme ? (
+            <button
+              type="button"
+              className="research-gh__readme-link focus-ring"
+              aria-current={showingReadme ? "page" : undefined}
+              onClick={selectReadme}
+            >
+              <Icon name="ph:book-open" width={14} height={14} aria-hidden />
+              {snapshot.readme.path}
+            </button>
+          ) : null}
+          {roots.length > 0 ? (
+            <ul className="research-gh__tree">
+              {roots.map((node) => (
+                <FileTreeNode
+                  key={node.path}
+                  node={node}
+                  selectedPath={selectedPath}
+                  onSelect={(selected) => void selectFile(selected)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <p className="research-gh__empty">No saved tree entries.</p>
+          )}
+        </nav>
+
+        <article className="research-gh__reader" aria-live="polite">
+          <header className="research-gh__reader-head">
+            <div>
+              <span>{showingReadme ? "README" : selectedPath ? "Source file" : "Repository snapshot"}</span>
+              <strong>{selectedPath ?? "Select a file to read it in Cave"}</strong>
             </div>
-            {treeUrl ? (
+            {selectedFileEntry ? (
               <Button
                 size="xs"
                 variant="ghost"
                 trailingIcon="ph:arrow-square-out"
-                onClick={() => openUrl(treeUrl)}
+                onClick={() => openUrl(githubRepoFileWebUrl(
+                  snapshot.owner,
+                  snapshot.repo,
+                  snapshot.commitSha,
+                  selectedFileEntry.path,
+                ))}
               >
                 Open on GitHub
               </Button>
             ) : null}
           </header>
 
-          <section className="research-gh__readme" aria-label="README">
-            <header className="research-gh__section-head">
-              <h4>README</h4>
-              <span className="research-gh__section-sub">
-                {view.readme ? view.readme.path : "None"}
-              </span>
-            </header>
-            {view.readme ? (
-              <MarkdownBlock
-                text={view.readme.markdown}
-                className="cave-md--expanded cave-md--reader"
-              />
-            ) : (
-              <p className="research-gh__empty">This repository has no README.</p>
-            )}
-          </section>
-
-          <section className="research-gh__files" aria-label="Files">
-            <header className="research-gh__section-head">
-              <h4>Files</h4>
-              <span className="research-gh__section-sub">
-                {view.tree.length} {view.tree.length === 1 ? "entry" : "entries"}
-                {view.truncated ? " (truncated)" : ""}
-              </span>
-            </header>
-            {roots.length === 0 ? (
-              <p className="research-gh__empty">This repository has no files at this branch.</p>
-            ) : (
-              <ul className="research-gh__tree" role="tree" aria-label="Repository files">
-                {roots.map((node) => (
-                  <FileTreeNode
-                    key={node.path}
-                    node={node}
-                    owner={view.owner}
-                    repo={view.repo}
-                    ref={view.resolvedRef}
-                    openUrl={openUrl}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
-      ) : null}
+          {showingReadme && snapshot.readme ? (
+            <MarkdownBlock
+              text={snapshot.readme.markdown}
+              className="research-gh__markdown cave-md--expanded cave-md--reader"
+              onOpenUrl={openUrl}
+              resolveOpenUrl={resolveReadmeUrl}
+              suppressRemoteMedia
+            />
+          ) : fileState.kind === "loading" && fileState.path === selectedPath ? (
+            <p className="research-gh__state" role="status">Loading file…</p>
+          ) : fileState.kind === "error" && fileState.path === selectedPath ? (
+            <div className="research-gh__state research-gh__state--error" role="alert">
+              <p>{fileState.message}</p>
+              {selectedFileEntry ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => void selectFile({
+                    name: selectedFileEntry.path.split("/").at(-1) ?? selectedFileEntry.path,
+                    path: selectedFileEntry.path,
+                    type: "blob",
+                    sha: selectedFileEntry.sha,
+                    size: selectedFileEntry.size,
+                  })}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </div>
+          ) : fileState.kind === "ready" && fileState.path === selectedPath ? (
+            <pre className="research-gh__source" tabIndex={0}>
+              <code>{fileState.file.text}</code>
+            </pre>
+          ) : (
+            <p className="research-gh__state">
+              {snapshot.readme
+                ? "Choose the README or a source file from the saved tree."
+                : "Choose a text file from the saved tree to read its captured blob."}
+            </p>
+          )}
+        </article>
+      </div>
     </section>
   );
 }

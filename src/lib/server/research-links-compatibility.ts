@@ -339,13 +339,26 @@ function xArticleFromManifest(manifest: ResourceManifestV1): SavedLink["xArticle
   return validateAndDetachSavedLink({ ...summary, xArticle: legacy.caveXArticleV1 }).xArticle;
 }
 
+function githubRepoFromManifest(manifest: ResourceManifestV1): SavedLink["githubRepo"] {
+  const legacy = manifest.legacySavedLink as Record<string, unknown> | undefined;
+  if (!legacy || legacy.caveGithubRepoV1 === undefined) return undefined;
+  const summary = resourceManifestToSavedLinkSummary(manifest);
+  if (!summary) return undefined;
+  return validateAndDetachSavedLink({
+    ...summary,
+    githubRepo: legacy.caveGithubRepoV1,
+  }).githubRepo;
+}
+
 function manifestToLink(manifest: ResourceManifestV1): SavedLink | null {
   const summary = resourceManifestToSavedLinkSummary(manifest);
   if (!summary) return null;
   const xArticle = xArticleFromManifest(manifest);
+  const githubRepo = githubRepoFromManifest(manifest);
   return validateAndDetachSavedLink({
     ...summary,
     ...(xArticle ? { xArticle } : {}),
+    ...(githubRepo ? { githubRepo } : {}),
   });
 }
 
@@ -376,6 +389,7 @@ function manifestForLink(
     addedAt: link.addedAt,
     source: link.source,
     ...(link.xArticle ? { caveXArticleV1: link.xArticle } : {}),
+    ...(link.githubRepo ? { caveGithubRepoV1: link.githubRepo } : {}),
   });
   const revision = existing ? existing.revision + 1 : 1;
   const createdAt = immutableChanged ? link.addedAt : existing?.createdAt ?? link.addedAt;
@@ -401,6 +415,7 @@ function manifestForLink(
       addedAt: link.addedAt,
       source: link.source,
       ...(link.xArticle ? { caveXArticleV1: link.xArticle } : {}),
+      ...(link.githubRepo ? { caveGithubRepoV1: link.githubRepo } : {}),
     },
     ...(link.paper
       ? {

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { resolveGitHubToken } from "@/lib/github-token";
+import {
+  resolveGitHubToken,
+  resolveGitHubTokenForRead,
+} from "@/lib/github-token";
 import {
   parseGithubRepoInput,
   sanitizeGithubRef,
@@ -59,7 +62,7 @@ export function createGithubRepoRouteHandlers(dependencies: GithubRepoRouteDepen
         owner: parsed.owner,
         repo: parsed.repo,
         ...(ref ? { ref } : {}),
-        token: resolveToken(),
+        token: resolveGitHubTokenForRead(resolveToken),
       });
 
       if (!result.ok) {

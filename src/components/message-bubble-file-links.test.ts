@@ -86,10 +86,14 @@ assert.match(wiring, /code\.title = fileRefLinkTitle\(ref!\);/, "the tooltip nam
 assert.match(wiring, /const want = Boolean\(ref && resolve\?\.\(ref\)\)/, "linkify is gated on the resolver approving the ref");
 assert.match(wiring, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListener\("click", open\)[\s\S]*?classList\.remove\("cave-file-link"\)/, "wiring keeps a cleanup so a rejected ref is un-linkified in place");
 // Chat prose supplies the resolver via context; the shared MarkdownBlock must
-// not enable file-link resolution, but can open ordinary web links through its
-// owning surface.
+// not enable file-link resolution, but can resolve and open ordinary web links
+// through its owning surface.
 assert.match(bubble, /const fileLinkResolver = useContext\(FileLinkResolverContext\)/, "MarkdownContent reads the resolver from FileLinkResolverContext");
-assert.match(bubble, /const containerRef = useWireCopyButtons\(html, onOpenUrl\);/, "MarkdownBlock keeps file-linkify off while forwarding web links");
+assert.match(
+  bubble,
+  /const containerRef = useWireCopyButtons\(html, onOpenUrl, null, null, resolveOpenUrl\);/,
+  "MarkdownBlock keeps file-linkify off while forwarding commit-aware web links",
+);
 // ChatView provides the resolver over its transcript, backed by the project
 // file index, so links only render for files that exist under the session root.
 assert.match(chatView, /<FileLinkResolverContext\.Provider value=\{fileLinkResolver\}>/, "chat transcript provides the file-link resolver");

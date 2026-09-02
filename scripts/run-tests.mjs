@@ -1442,6 +1442,7 @@ export const SUITES = {
     "src/app/api/research/links/ingest-urls.test.ts",
     "src/app/api/research/links/route.test.ts",
     "src/app/api/research/github-repo/route.test.ts",
+    "src/app/api/research/github-repo/file/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
     "src/app/api/research/resources/route.test.ts",
     "src/app/api/research/resources/[id]/route.test.ts",
@@ -2137,6 +2138,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/research/links/route.test.ts",
   // the github-repo route resolves "@/lib/server/..." and "@/lib/github-token".
   "src/app/api/research/github-repo/route.test.ts",
+  "src/app/api/research/github-repo/file/route.test.ts",
   // the mission-file route resolves the validated store and shared source
   // parser through "@/lib/..." runtime imports.
   "src/app/api/research/missions/[id]/files/[key]/route.test.ts",
