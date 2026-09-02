@@ -2,7 +2,7 @@
 
 Status: **canonical active direction**
 
-Last reconciled: 2026-08-19
+Last reconciled: 2026-08-27
 
 This page is the only iOS priority queue. Dated specifications, implementation
 plans, audits, handoff exports, and rebuild notes remain useful historical
@@ -16,7 +16,10 @@ Current authorities or Current priorities.
 2. This document — current native iOS product shape and priority order.
 3. [`superpowers/specs/2026-08-03-ios-chat-familiars-first-design.md`](superpowers/specs/2026-08-03-ios-chat-familiars-first-design.md)
    — the supporting Chats information-architecture rationale.
-4. [`design-handoff/IMPLEMENTATION-STATUS.md`](design-handoff/IMPLEMENTATION-STATUS.md)
+4. [`superpowers/specs/2026-08-26-ios-chatgpt-performance-design.md`](superpowers/specs/2026-08-26-ios-chatgpt-performance-design.md)
+   — the approved instant-resume, durable-outbox, and native-rendering
+   architecture for chat.
+5. [`design-handoff/IMPLEMENTATION-STATUS.md`](design-handoff/IMPLEMENTATION-STATUS.md)
    — evidence of what actually landed and what was deliberately not adopted.
 
 When these disagree with an older iOS note or plan, the order above wins.
@@ -24,9 +27,13 @@ When these disagree with an older iOS note or plan, the order above wins.
 ## Current product shape
 
 - Chats is familiars-first: one familiar row leads to its conversations.
+- When App Lock permits disclosure, launch resumes the last active local
+  conversation without waiting for remote bootstrap. Opening Chats from the
+  drawer still returns to the familiars-first home.
 - The drawer is the sole primary navigation surface. Its primary destinations
-  are Chats, Tasks, and Settings; Projects and Familiars remain first-class
-  drawer actions.
+  are Chats and Tasks; Projects and Familiars are grouped as contextual
+  workspace resources, while the profile avatar is the sole drawer entry to
+  Settings.
 - The native iOS Terminal, PTY transport, xterm WebView, terminal composer,
   slash-command route, generated bundle, and tests are retired. Desktop and web
   terminal surfaces are unaffected.
@@ -47,11 +54,14 @@ When these disagree with an older iOS note or plan, the order above wins.
 
 1. Preserve reliability, pairing, honest failure states, draft durability, and
    existing task/chat/project contracts.
-2. Finish visual cohesion across the three primary destinations without
+2. Implement the approved instant native chat architecture: durable offline
+   outbox, incremental native response blocks, viewport-bounded transcript
+   work, and physical-device performance evidence.
+3. Finish visual cohesion across the three primary destinations without
    restoring a bottom tab bar or recents-first Chats home.
-3. Improve information density only when it adds real operator context; do not
+4. Improve information density only when it adds real operator context; do not
    invent activity, status, progress, or backend capabilities.
-4. Keep source contracts and native simulator coverage aligned with every
+5. Keep source contracts and native simulator coverage aligned with every
    intentional behavior change.
 
 ## Next visual improvements
