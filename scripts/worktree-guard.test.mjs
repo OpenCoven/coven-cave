@@ -166,6 +166,17 @@ function strictGithubPrArgs(wt, head, number = "4214") {
   ];
 }
 
+function strictRemoteBranchArgs(wt, head, ref, oid) {
+  return [
+    ...strictArgs(wt, head),
+    "--retained-by-remote-branch",
+    "origin",
+    ref,
+    "--expected-remote-oid",
+    oid,
+  ];
+}
+
 function strictEnv(executable = lsofStub()) {
   return { WT_GUARD_TEST_MODE: "1", WT_GUARD_TEST_LSOF_BIN: executable };
 }
@@ -834,6 +845,72 @@ await test("strict retention has a hard aggregate candidate bound", () => {
   assert.equal(result.status, 2, "more than 256 advertised candidate sources is refused before fetch");
   assert.equal(result.stdout, "");
   assert.deepEqual(gitMetadataSnapshot(excessive.dir), metadataBefore, "candidate overflow changes no refs or FETCH_HEAD");
+});
+
+await test("strict exact remote-branch proof avoids a large remote namespace", () => {
+  const fixture = repoWithMergedWorktreeAndAdvancedMain();
+  const remoteMain = sh("git", ["--git-dir", fixture.bare, "rev-parse", "refs/heads/main"], fixture.dir).trim();
+  for (let index = 0; index < 257; index += 1) {
+    sh(
+      "git",
+      ["--git-dir", fixture.bare, "update-ref", `refs/heads/generated-${String(index).padStart(3, "0")}`, remoteMain],
+      fixture.dir,
+    );
+  }
+
+  const logs = mkdtempSync(path.join(tmpdir(), "wt-guard-branch-proof-"));
+  const callLog = path.join(logs, "git.jsonl");
+  const fetchLog = path.join(logs, "fetch.jsonl");
+  writeFileSync(callLog, "");
+  writeFileSync(fetchLog, "");
+  const metadataBefore = gitMetadataSnapshot(fixture.dir);
+  const result = runStrict(
+    strictRemoteBranchArgs(fixture.wt, fixture.featureHead, "refs/heads/main", remoteMain),
+    fixture.dir,
+    {
+      ...strictEnv(),
+      PATH: gitWrapper({ callLog, fetchLog }),
+    },
+  );
+
+  assert.equal(result.status, 0, `exact remote branch retention succeeds without scanning 257 refs: ${result.stderr}`);
+  const calls = readFileSync(callLog, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+  const lsRemoteCalls = calls.filter((args) => args.includes("ls-remote"));
+  assert.equal(lsRemoteCalls.length, 2, "the exact remote branch is advertised and rechecked once");
+  for (const args of lsRemoteCalls) {
+    assert.equal(args.includes("--heads"), false, "exact branch proof never enumerates remote branches");
+    assert.equal(args.includes("--tags"), false, "exact branch proof never enumerates remote tags");
+    assert.deepEqual(args.slice(-3), ["--", "origin", "refs/heads/main"], "only the exact branch is queried");
+  }
+  const fetches = fetchCalls(fetchLog);
+  assert.equal(fetches.length, 1, "exact branch proof performs one source-only fetch");
+  assert.deepEqual(fetches[0].slice(-3), ["--", "origin", "refs/heads/main:"], "only the exact branch is fetched");
+  assert.deepEqual(gitMetadataSnapshot(fixture.dir), metadataBefore, "exact branch proof changes no refs or FETCH_HEAD");
+});
+
+await test("strict exact remote-branch proof fails closed on OID and ancestry drift", () => {
+  const fixture = repoWithWorktree({ push: true });
+  const head = sh("git", ["-C", fixture.wt, "rev-parse", "HEAD"], fixture.dir).trim();
+  const remoteMain = sh("git", ["--git-dir", fixture.bare, "rev-parse", "refs/heads/main"], fixture.dir).trim();
+  const wrongOid = "a".repeat(head.length);
+
+  let result = runStrict(
+    strictRemoteBranchArgs(fixture.wt, head, "refs/heads/main", wrongOid),
+    fixture.dir,
+    strictEnv(),
+  );
+  assert.equal(result.status, 2, "an unexpected advertised branch OID is refused");
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /does not match expected OID/);
+
+  result = runStrict(
+    strictRemoteBranchArgs(fixture.wt, head, "refs/heads/main", remoteMain),
+    fixture.dir,
+    strictEnv(),
+  );
+  assert.equal(result.status, 2, "a remote branch that does not retain HEAD is refused");
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /not retained by the exact remote branch/);
 });
 
 await test("strict retention fails closed when its aggregate deadline is exhausted", () => {
