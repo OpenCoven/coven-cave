@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PINNED_SESSIONS_KEY } from "@/lib/chat-session-prefs";
 import { sessionRailTitle } from "@/lib/session-rail-title";
+import { LiveRegionProvider } from "@/components/ui/live-region";
 
 const dragSignals = vi.hoisted(() => ({
   start: vi.fn(),
@@ -74,6 +75,21 @@ vi.mock("@/components/ui/tabs", async () => {
     Tabs: () => createElement("div", { "data-testid": "tabs" }),
   };
 });
+vi.mock("@/components/ui/modal", async () => {
+  const { createElement } = await import("react");
+  return {
+    Modal: ({ children, footerActions, ariaLabel, breadcrumb }) =>
+      createElement(
+        "div",
+        {
+          role: "dialog",
+          "aria-label": ariaLabel ?? breadcrumb?.map((part) => textContent(part)).join(" › "),
+        },
+        children,
+        footerActions,
+      ),
+  };
+});
 vi.mock("@/lib/chat-split", () => ({
   CHAT_SESSION_DRAG_MIME: "application/x-cave-chat-session",
   emitChatSessionDragStart: dragSignals.start,
@@ -137,6 +153,12 @@ function rowContainerFor(scope: ReturnType<typeof sectionByLabel>, title: string
 function timeNode(renderer: ReactTestRenderer) {
   return renderer.root.find(
     (node) => typeof node.type === "string" && node.props.className === "cnav__time",
+  );
+}
+
+function buttonByText(renderer: ReactTestRenderer, label: string) {
+  return renderer.root.find(
+    (node) => node.type === "button" && textContent(node.children) === label,
   );
 }
 
@@ -210,6 +232,167 @@ test("workspace sidebar row timestamps update when the shared minute tick fires"
 
   await act(async () => renderer.unmount());
 });
+
+  test("chat rail header exposes independent New chat and collapse controls", async () => {
+    const onNewChat = vi.fn();
+    const onCollapse = vi.fn();
+    let renderer!: ReactTestRenderer;
+
+    await act(async () => {
+      renderer = create(
+        createElement(SidebarChatsSection, {
+          sessions: [makeSession()],
+          onOpenSession: () => undefined,
+          onNewChat,
+          canStartChat: true,
+          onCollapse,
+          onDeleteSession: async () => undefined,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    const newChat = renderer.root.find(
+      (node) => node.type === "button" && node.props["aria-label"] === "New chat",
+    );
+    const collapse = renderer.root.find(
+      (node) => node.type === "button" && node.props["aria-label"] === "Collapse chat list",
+    );
+
+    await act(async () => {
+      newChat.props.onClick();
+      await Promise.resolve();
+    });
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+    expect(onCollapse).not.toHaveBeenCalled();
+
+    await act(async () => {
+      collapse.props.onClick();
+      await Promise.resolve();
+    });
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+
+    await act(async () => renderer.unmount());
+  });
+
+  test("New chat is disabled when the current chat context cannot start one", async () => {
+    let renderer!: ReactTestRenderer;
+
+    await act(async () => {
+      renderer = create(
+        createElement(SidebarChatsSection, {
+          sessions: [makeSession()],
+          onOpenSession: () => undefined,
+          onNewChat: () => undefined,
+          canStartChat: false,
+          newChatDisabledReason: "Start the daemon to create a chat",
+          onDeleteSession: async () => undefined,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    const newChat = renderer.root.find(
+      (node) => node.type === "button" && node.props["aria-label"] === "New chat",
+    );
+    expect(newChat.props.disabled).toBe(true);
+    expect(newChat.props.title).toBe("Start the daemon to create a chat");
+
+    await act(async () => renderer.unmount());
+  });
+
+  test("compact chat selection makes Broadcast primary and retries only failed chats", async () => {
+    const sessions = [
+      makeSession(),
+      { ...makeSession(), id: "session-two", title: "Second chat" },
+    ];
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: false,
+        results: [
+          { sessionId: "session-time", ok: true, runId: "run-one" },
+          { sessionId: "session-two", ok: false, error: "send failed", code: "send_failed" },
+        ],
+      }),
+    } as Response);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        createElement(
+          LiveRegionProvider,
+          null,
+          createElement(SidebarChatsSection, {
+            sessions,
+            onOpenSession: () => undefined,
+            onNewChat: () => undefined,
+            canStartChat: true,
+            onDeleteSession: async () => undefined,
+          }),
+        ),
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      buttonByText(renderer, "Select").props.onClick();
+      await Promise.resolve();
+    });
+
+    const toolbar = renderer.root.find(
+      (node) => node.props.role === "toolbar" && node.props["aria-label"] === "Bulk actions",
+    );
+    expect(toolbar.props.className).toContain("ui-selection-toolbar--compact");
+    expect(textContent(toolbar.children)).toContain("0 chats selected");
+
+    await act(async () => {
+      buttonByText(renderer, "Select all 2 visible chats").props.onClick();
+      await Promise.resolve();
+    });
+    expect(textContent(toolbar.children)).toContain("2 chats selected");
+
+    await act(async () => {
+      buttonByText(renderer, "Broadcast to 2 chats").props.onClick();
+      await Promise.resolve();
+    });
+    const textarea = renderer.root.findByType("textarea");
+    await act(async () => {
+      textarea.props.onChange({ target: { value: "Release update" } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonByText(renderer, "Send to 2 chats").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/chat/broadcast", expect.objectContaining({
+      method: "POST",
+    }));
+    const [, request] = vi.mocked(fetch).mock.calls[0];
+    const body = JSON.parse(String(request?.body));
+    expect(body.text).toBe("Release update");
+    expect(new Set(body.targets.map((target) => target.sessionId))).toEqual(
+      new Set(["session-time", "session-two"]),
+    );
+    expect(buttonByText(renderer, "Retry 1 failed chat")).toBeTruthy();
+
+    const selectedRows = renderer.root.findAll(
+      (node) => node.type === "button" && node.props.role === "checkbox" && node.props["aria-checked"] === true,
+    );
+    expect(selectedRows).toHaveLength(1);
+    expect(textContent(selectedRows[0].children)).toContain("Second chat");
+
+    const alert = renderer.root.find(
+      (node) => node.props.role === "alert" && textContent(node.children).includes("remains selected for retry"),
+    );
+    expect(textContent(alert.children)).toBe(
+      "Sent to 1 chat. 1 chat failed and remains selected for retry.",
+    );
+
+    await act(async () => renderer.unmount());
+  });
 
 // cave-zs85n Task 6 gap-fix: recentBuckets (day-bucketed) and each row's bare
 // time/attention description all read the SAME memoized `now` snapshot

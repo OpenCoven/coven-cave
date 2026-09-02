@@ -31,11 +31,32 @@ assert.match(
 );
 
 // The redundant "+ New" action was removed from the scope-tab strip — the
-// chat list rail's "New Session" button is the single new-chat launch point.
+// chat list rail's "New chat" button is the single new-chat launch point.
 assert.doesNotMatch(
   chatSurface,
   /className="chat-scope-tabs__new/,
   "ChatSurface should not render a redundant New action in the scope-tab strip",
+);
+
+assert.match(
+  chatSurface,
+  /const startRailChat = useCallback\([\s\S]{0,900}?onRequestNewChat\(\{ familiarId: activeFamiliarId \?\? undefined \}\)/,
+  "the thread rail's New chat action should use the same active-familiar request path as the rest of Chat",
+);
+assert.equal(
+  (chatSurface.match(/onNewChat=\{startRailChat\}/g) ?? []).length,
+  2,
+  "desktop and mobile thread lists should both receive the New chat action",
+);
+assert.equal(
+  (chatSurface.match(/canStartChat=\{daemonRunning && familiars\.length > 0\}/g) ?? []).length,
+  2,
+  "desktop and mobile New chat stay available in All-familiars scope when the daemon and roster are ready",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /canStartChat=\{daemonRunning && Boolean\(activeFamiliarId\)\}/,
+  "New chat must not require a single active familiar because the launch flow owns familiar selection",
 );
 
 assert.doesNotMatch(

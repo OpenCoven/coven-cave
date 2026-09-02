@@ -4,7 +4,9 @@ import { useId, useMemo, useState } from "react";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
-import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { broadcastActionLabel, failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
 import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import { Icon, type IconName } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -47,6 +49,9 @@ type Props = {
   activeFamiliarId?: string | null;
   activeSessionId?: string | null;
   onOpenSession: (session: SessionRow) => void;
+  onNewChat: () => void;
+  canStartChat?: boolean;
+  newChatDisabledReason?: string;
   /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
    *  current chat (the chat surface falls back to a plain open on mobile). */
   onOpenSessionInSplit?: (session: SessionRow) => void;
@@ -482,6 +487,9 @@ export function SidebarChatsSection({
   activeFamiliarId = null,
   activeSessionId,
   onOpenSession,
+  onNewChat,
+  canStartChat = true,
+  newChatDisabledReason,
   onOpenSessionInSplit,
   onDeleteSession,
   onSessionsChanged,
@@ -610,6 +618,9 @@ export function SidebarChatsSection({
   const select = useMultiSelect(visibleThreads, (session) => session.id);
   const [composerOpen, setComposerOpen] = useState(false);
   const [broadcastState, setBroadcastState] = useState<Record<string, "sent" | "failed">>({});
+  const selectedFailures = select.selectedFrom(visibleThreads)
+    .filter((session) => broadcastState[session.id] === "failed").length;
+  const broadcastRetryOnly = select.selectedCount > 0 && selectedFailures === select.selectedCount;
 
   // A broadcast's outcome is per row, and it clears itself: the markers say
   // "this just happened", not "this is what this chat is". Failures are why the
@@ -677,27 +688,30 @@ export function SidebarChatsSection({
     // which every e2e run depends on — so dropping these class names would
     // break the suite far outside this component (cave-fh9so).
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
-        {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
-            else. It replaces the old search row, which also carried the
-            Organize menu. Search and the archived-visibility toggle went with
-            it — the list below is already grouped by attention and recency,
-            and the row is the rail's header, not a toolbar. */}
-        {/* The whole row is the control, mirroring the collapsed spine — the
-            icon is decoration inside it, not a nested <button> (which would be
-            invalid HTML and would swallow clicks aimed at the row). */}
-        <button
-          type="button"
-          className="cnav__title-row focus-ring"
-          aria-label={collapseLabel}
-          aria-expanded
-          title={collapseLabel}
-          onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
-        >
-          <span className="cnav__title">Sessions</span>
-          <span className="cnav__title-toggle" aria-hidden>
-            <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
-          </span>
-        </button>
+        <header className="cnav__title-row">
+          <span className="cnav__title">Chats</span>
+          <Button
+            variant={select.selectMode ? "secondary" : "primary"}
+            size="xs"
+            leadingIcon="ph:plus-bold"
+            aria-label="New chat"
+            title={canStartChat ? "New chat" : newChatDisabledReason}
+            disabled={!canStartChat}
+            onClick={onNewChat}
+            className="cnav__new-chat"
+          >
+            New chat
+          </Button>
+          <IconButton
+            icon="ph:sidebar-simple-fill"
+            size="sm"
+            aria-label={collapseLabel}
+            aria-expanded
+            title={collapseLabel}
+            onClick={() => (onCollapse ? onCollapse() : requestChatRailToggle())}
+            className="cnav__title-toggle focus-ring"
+          />
+        </header>
         {/* Entering select mode is its own control rather than a row gesture:
             the rows are already overloaded (⌥-click splits, drag splits), and
             a long-press or modifier would be a fourth meaning on one target. */}
@@ -706,7 +720,10 @@ export function SidebarChatsSection({
             type="button"
             className="cnav__select-enter focus-ring"
             title="Select chats to broadcast a message to"
-            onClick={() => select.setSelectMode(true)}
+            onClick={() => {
+              setBroadcastState({});
+              select.setSelectMode(true);
+            }}
           >
             <Icon name="ph:list-checks-bold" width={13} aria-hidden />
             <span>Select</span>
@@ -715,19 +732,28 @@ export function SidebarChatsSection({
         {select.selectMode ? (
           <div className="cnav__select-bar">
             <SelectionToolbar
+              compact
               allSelected={select.allSelected(visibleThreads)}
               count={select.selectedCount}
+              countLabel={`${select.selectedCount} ${broadcastRetryOnly ? "failed " : ""}chat${select.selectedCount === 1 ? "" : "s"} selected`}
+              selectAllLabel={`Select all ${visibleThreads.length} visible chats`}
+              clearLabel="Clear selection"
               onToggleSelectAll={() => select.toggleSelectAll(visibleThreads)}
-              onCancel={select.exit}
+              onCancel={() => {
+                setBroadcastState({});
+                select.exit();
+              }}
             >
-              <button
-                type="button"
-                className="focus-ring cnav__broadcast-open"
+              <Button
+                variant="primary"
+                size="xs"
+                leadingIcon="ph:broadcast"
+                className="cnav__broadcast-open"
                 disabled={select.selectedCount === 0}
                 onClick={() => setComposerOpen(true)}
               >
-                Broadcast
-              </button>
+                {broadcastActionLabel(select.selectedCount, broadcastRetryOnly)}
+              </Button>
             </SelectionToolbar>
           </div>
         ) : null}
@@ -904,7 +930,6 @@ export function SidebarChatsSection({
         </div>
         {composerOpen ? (
           <ChatBroadcastComposer
-            count={select.selectedCount}
             targets={[...select.selectedIds]}
             onClose={() => setComposerOpen(false)}
             onSent={applyBroadcastResults}

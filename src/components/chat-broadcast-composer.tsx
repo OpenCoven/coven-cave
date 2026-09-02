@@ -14,36 +14,43 @@
  * per-familiar resolution all live on the server — see that route.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import type { BroadcastResult } from "@/lib/chat-broadcast";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { useAnnouncer } from "@/components/ui/live-region";
+import {
+  broadcastResultAnnouncement,
+  chatTargetLabel,
+  type BroadcastResult,
+} from "@/lib/chat-broadcast";
 
 export function ChatBroadcastComposer({
-  count,
   targets,
   onClose,
   onSent,
 }: {
-  /** How many chats this will reach — named in the heading and the verb. */
-  count: number;
   targets: readonly string[];
   onClose: () => void;
   onSent: (results: BroadcastResult[]) => void;
 }) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const descriptionId = useId();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useFocusTrap(true, panelRef, { onEscape: () => (busy ? undefined : onClose()) });
+  const { announce } = useAnnouncer();
+
+  const trimmed = text.trim();
+  const targetCount = targets.length;
+  const requestClose = () => {
+    if (!busy) onClose();
+  };
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
-
-  const trimmed = text.trim();
 
   async function send() {
     if (!trimmed || busy || targets.length === 0) return;
@@ -59,45 +66,71 @@ export function ChatBroadcastComposer({
         .json()
         .catch(() => ({}));
       if (!res.ok || !Array.isArray(data.results)) {
-        setError(data.error ?? `broadcast failed with ${res.status}`);
+        const detail = data.error ?? `broadcast failed with ${res.status}`;
+        const message = `Couldn't send this broadcast. ${detail}`;
+        setError(message);
+        announce(message, "assertive");
         return;
       }
       // Partial failure is NOT an error state here — the caller renders the
       // per-row outcome, so a mixed result still closes the composer with the
       // failures visible in the list behind it.
+      const completion = broadcastResultAnnouncement(data.results);
+      announce(completion.message, completion.level);
       onSent(data.results);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "broadcast failed");
+      const detail = err instanceof Error ? err.message : "broadcast failed";
+      const message = `Couldn't send this broadcast. ${detail}`;
+      setError(message);
+      announce(message, "assertive");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="chat-broadcast fixed inset-0 z-[220] flex items-center justify-center" role="presentation">
-      <button
-        type="button"
-        aria-label="Cancel broadcast"
-        className="absolute inset-0 bg-[var(--backdrop-scrim)]"
-        onClick={() => (busy ? undefined : onClose())}
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Broadcast to ${count} chat${count === 1 ? "" : "s"}`}
-        tabIndex={-1}
-        className="chat-broadcast__panel relative flex w-[min(92vw,520px)] flex-col gap-3 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.28)]"
-      >
-        <h2 className="chat-broadcast__title">
-          Broadcast to {count} chat{count === 1 ? "" : "s"}
-        </h2>
-        <p className="chat-broadcast__note">
-          Each chat answers on its own. Replies land in their own threads, not here.
-        </p>
+    <Modal
+      open
+      onClose={requestClose}
+      breadcrumb={["Chats", "Broadcast message"]}
+      ariaDescribedBy={descriptionId}
+      dismissOnBackdrop={!busy}
+      dismissOnEscape={!busy}
+      focusFirst={false}
+      footerActions={
+        <>
+          <Button variant="ghost" size="sm" onClick={requestClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:broadcast"
+            onClick={() => void send()}
+            disabled={!trimmed || targetCount === 0}
+            loading={busy}
+          >
+            {busy ? `Sending to ${chatTargetLabel(targetCount)}…` : `Send to ${chatTargetLabel(targetCount)}`}
+          </Button>
+        </>
+      }
+    >
+      <div className="chat-broadcast">
+        <div className="chat-broadcast__scope">
+          <span className="chat-broadcast__scope-icon" aria-hidden>
+            <Icon name="ph:broadcast" width={16} aria-hidden />
+          </span>
+          <p id={descriptionId} className="chat-broadcast__note">
+            One message is sent separately to {chatTargetLabel(targetCount)}. Replies stay in each chat.
+          </p>
+        </div>
+        <label className="chat-broadcast__label" htmlFor={`${descriptionId}-message`}>
+          Message
+        </label>
         <textarea
           ref={textareaRef}
+          id={`${descriptionId}-message`}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -107,29 +140,19 @@ export function ChatBroadcastComposer({
             }
           }}
           rows={5}
-          placeholder="Message to send to every selected chat…"
+          placeholder="Message selected chats…"
           className="chat-broadcast__input focus-ring"
           disabled={busy}
         />
+        <p className="chat-broadcast__shortcut">
+          <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send
+        </p>
         {error ? (
           <p role="alert" className="chat-broadcast__error">
             <Icon name="ph:warning-circle" width={13} aria-hidden /> {error}
           </p>
         ) : null}
-        <div className="chat-broadcast__actions">
-          <button type="button" className="focus-ring chat-broadcast__cancel" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="focus-ring chat-broadcast__send"
-            onClick={() => void send()}
-            disabled={!trimmed || busy}
-          >
-            {busy ? "Sending…" : `Send to ${count}`}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

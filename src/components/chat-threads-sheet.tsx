@@ -25,6 +25,9 @@ export function ChatThreadsSheet({
   activeFamiliarId,
   activeSessionId,
   onOpenSession,
+  onNewChat,
+  canStartChat,
+  newChatDisabledReason,
   onDeleteSession,
   onSessionsChanged,
   onOpenUrl,
@@ -35,6 +38,9 @@ export function ChatThreadsSheet({
   activeFamiliarId: string | null;
   activeSessionId: string | null;
   onOpenSession: (session: SessionRow) => void;
+  onNewChat: () => void;
+  canStartChat: boolean;
+  newChatDisabledReason?: string;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   onSessionsChanged?: () => void;
   onOpenUrl?: (url: string) => void;
@@ -66,6 +72,12 @@ export function ChatThreadsSheet({
             onOpenSession(session);
             onClose();
           }}
+          onNewChat={() => {
+            onNewChat();
+            onClose();
+          }}
+          canStartChat={canStartChat}
+          newChatDisabledReason={newChatDisabledReason}
           onDeleteSession={onDeleteSession}
           onSessionsChanged={onSessionsChanged}
           onOpenUrl={onOpenUrl}

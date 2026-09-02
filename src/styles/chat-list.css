@@ -24,6 +24,53 @@
 
 /* Full chat list rows use the same persisted drag intent as the thread rail,
    but keep their larger row surface as the open target. */
+.chat-list-surface {
+  container-name: chat-list;
+  container-type: inline-size;
+}
+
+.chat-list-selection-bar {
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+}
+
+.chat-list-selection-bar .ui-selection-toolbar {
+  flex-wrap: wrap;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-2) var(--space-4);
+}
+
+.chat-list-selection-bar .ui-selection-toolbar__actions {
+  min-width: 0;
+}
+
+@container chat-list (max-width: 520px) {
+  .chat-list-selection-bar .ui-selection-toolbar {
+    align-items: stretch;
+  }
+
+  .chat-list-selection-bar .ui-selection-toolbar__summary {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .chat-list-selection-bar .ui-selection-toolbar__count {
+    order: -1;
+  }
+
+  .chat-list-selection-bar .ui-selection-toolbar__actions {
+    width: 100%;
+  }
+
+  .chat-list-selection-bar .ui-selection-toolbar__actions > .ui-btn:first-child {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 .chat-list-sortable-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 72px;

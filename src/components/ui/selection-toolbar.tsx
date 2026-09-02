@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 /**
  * Toolbar shown above a list when it's in multi-select mode: a Select all /
@@ -12,6 +13,9 @@ export function SelectionToolbar({
   onToggleSelectAll,
   onCancel,
   selectAllLabel = "Select all",
+  clearLabel = "Clear",
+  compact = false,
+  countLabel,
   children,
 }: {
   allSelected: boolean;
@@ -20,6 +24,12 @@ export function SelectionToolbar({
   onCancel: () => void;
   /** Custom select-all copy (e.g. "Select all 12 matches" under a search). */
   selectAllLabel?: string;
+  /** Copy shown when every visible item is selected. */
+  clearLabel?: string;
+  /** Stacks selection status above actions in constrained containers. */
+  compact?: boolean;
+  /** Contextual count copy (e.g. "2 failed chats selected"). */
+  countLabel?: ReactNode;
   /** Bulk-action buttons (e.g. Pause, Resume, Delete) shown before Cancel. */
   children?: ReactNode;
 }) {
@@ -27,27 +37,35 @@ export function SelectionToolbar({
     <div
       role="toolbar"
       aria-label="Bulk actions"
-      className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5"
+      className={[
+        "ui-selection-toolbar mb-3 flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5",
+        compact ? "ui-selection-toolbar--compact" : "",
+      ].filter(Boolean).join(" ")}
     >
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
+      <div className="ui-selection-toolbar__summary flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={onToggleSelectAll}
-          className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
-          {allSelected ? "Clear" : selectAllLabel}
-        </button>
-        <span aria-live="polite" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{count} selected</span>
+          {allSelected ? clearLabel : selectAllLabel}
+        </Button>
+        <span
+          aria-live="polite"
+          className="ui-selection-toolbar__count text-[length:var(--text-xs)] text-[var(--text-muted)]"
+        >
+          {countLabel ?? `${count} selected`}
+        </span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="ui-selection-toolbar__actions flex items-center gap-1">
         {children}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={onCancel}
-          className="focus-ring rounded px-1.5 py-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

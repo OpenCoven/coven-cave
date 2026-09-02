@@ -429,6 +429,8 @@ export const SUITES = {
     "src/components/chat-split-host.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/chat-sidebar-wiring.behavior.test.ts",
+    "src/components/chat-broadcast-composer.behavior.test.tsx",
+    "src/components/chat-selection-ux.test.ts",
     "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-session-delete.test.ts",
     "src/components/workspace-sidebar-attention.test.ts",
@@ -2493,6 +2495,7 @@ const VITEST_TESTS = new Set([
   "src/components/use-openai-voice-preview.test.tsx",
   "src/components/workspace-sidebar-attention.test.ts",
   "src/components/chat-sidebar-wiring.behavior.test.ts",
+  "src/components/chat-broadcast-composer.behavior.test.tsx",
   // renders streaming turns through the Vite transform (JSX)
   "src/components/streaming-turn-response.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",

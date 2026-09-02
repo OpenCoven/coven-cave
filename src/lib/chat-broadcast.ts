@@ -114,3 +114,34 @@ export function normalizeBroadcastTargets(raw: unknown): BroadcastTarget[] {
 export function failedTargets(results: readonly BroadcastResult[]): BroadcastTarget[] {
   return results.filter((r) => !r.ok).map((r) => ({ sessionId: r.sessionId }));
 }
+
+export function chatTargetLabel(count: number): string {
+  return `${count} chat${count === 1 ? "" : "s"}`;
+}
+
+export function broadcastActionLabel(count: number, retry = false): string {
+  if (count === 0) return "Broadcast";
+  return retry
+    ? `Retry ${count} failed chat${count === 1 ? "" : "s"}`
+    : `Broadcast to ${chatTargetLabel(count)}`;
+}
+
+export function broadcastResultAnnouncement(
+  results: readonly BroadcastResult[],
+): { message: string; level: "polite" | "assertive" } {
+  const successCount = results.filter((result) => result.ok).length;
+  const failureCount = results.length - successCount;
+  if (failureCount === 0) {
+    return { message: `Sent to ${chatTargetLabel(successCount)}.`, level: "polite" };
+  }
+  if (successCount === 0) {
+    return {
+      message: `Couldn't send to ${chatTargetLabel(failureCount)}. ${failureCount === 1 ? "It remains" : "They remain"} selected for retry.`,
+      level: "assertive",
+    };
+  }
+  return {
+    message: `Sent to ${chatTargetLabel(successCount)}. ${chatTargetLabel(failureCount)} failed and ${failureCount === 1 ? "remains" : "remain"} selected for retry.`,
+    level: "assertive",
+  };
+}

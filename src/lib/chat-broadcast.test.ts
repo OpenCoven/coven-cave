@@ -16,6 +16,7 @@ import {
   normalizeBroadcastTargets,
   runBounded,
 } from "./chat-broadcast.ts";
+import * as broadcastModule from "./chat-broadcast.ts";
 
 test("runBounded never exceeds its limit, and observes the real peak", async () => {
   let inFlight = 0;
@@ -85,6 +86,50 @@ test("a retry targets the failures and nothing else", () => {
     { sessionId: "d", ok: false, error: "send refused with 403", code: "send_rejected" },
   ];
   assert.deepEqual(failedTargets(results), [{ sessionId: "b" }, { sessionId: "d" }]);
+});
+
+test("broadcast copy names the selected chats and makes retry scope explicit", () => {
+  assert.equal(typeof broadcastModule.chatTargetLabel, "function");
+  assert.equal(typeof broadcastModule.broadcastActionLabel, "function");
+  const { chatTargetLabel, broadcastActionLabel } = broadcastModule;
+  assert.equal(chatTargetLabel(1), "1 chat");
+  assert.equal(chatTargetLabel(3), "3 chats");
+  assert.equal(broadcastActionLabel(0), "Broadcast");
+  assert.equal(broadcastActionLabel(2), "Broadcast to 2 chats");
+  assert.equal(broadcastActionLabel(1, true), "Retry 1 failed chat");
+  assert.equal(broadcastActionLabel(3, true), "Retry 3 failed chats");
+});
+
+test("broadcast completion announcements distinguish success, partial failure, and total failure", () => {
+  assert.equal(typeof broadcastModule.broadcastResultAnnouncement, "function");
+  const { broadcastResultAnnouncement } = broadcastModule;
+  assert.deepEqual(
+    broadcastResultAnnouncement([
+      { sessionId: "a", ok: true },
+      { sessionId: "b", ok: true },
+    ]),
+    { message: "Sent to 2 chats.", level: "polite" },
+  );
+  assert.deepEqual(
+    broadcastResultAnnouncement([
+      { sessionId: "a", ok: true },
+      { sessionId: "b", ok: false },
+    ]),
+    {
+      message: "Sent to 1 chat. 1 chat failed and remains selected for retry.",
+      level: "assertive",
+    },
+  );
+  assert.deepEqual(
+    broadcastResultAnnouncement([
+      { sessionId: "a", ok: false },
+      { sessionId: "b", ok: false },
+    ]),
+    {
+      message: "Couldn't send to 2 chats. They remain selected for retry.",
+      level: "assertive",
+    },
+  );
 });
 
 console.log("chat-broadcast.test.ts: ok");

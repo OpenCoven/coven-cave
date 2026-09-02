@@ -252,6 +252,17 @@ export function ChatSurface({
   // toggle, or it would linger in the title bar controlling nothing.
   useEffect(() => () => emitChatRailVisibility({ available: false, open: false }), []);
   const setScope = showScope;
+  const startRailChat = useCallback(() => {
+    setScope("conversation");
+    if (onRequestNewChat) {
+      onRequestNewChat({ familiarId: activeFamiliarId ?? undefined });
+      return;
+    }
+    window.setTimeout(
+      () => routerRef.current?.newChat(undefined, undefined, activeFamiliarId ?? undefined),
+      0,
+    );
+  }, [activeFamiliarId, onRequestNewChat, routerRef, setScope]);
   // The Workspace traverses its chat-session stack before any registered level.
   // That ordering is right on the Sessions tab, where the session is what the
   // user sees, and wrong everywhere else: from Projects or Familiar the Back
@@ -533,6 +544,11 @@ export function ChatSurface({
             activeFamiliarId={activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
+            onNewChat={startRailChat}
+            canStartChat={daemonRunning && familiars.length > 0}
+            newChatDisabledReason={
+              daemonRunning ? "Add a familiar to create a chat" : "Start the daemon to create a chat"
+            }
             onOpenSessionInSplit={(session: SessionRow) => routerRef.current?.openSessionInSplit(session.id)}
             onDeleteSession={deleteThreadFromRail}
             onSessionsChanged={onSessionsChanged}
@@ -781,6 +797,11 @@ export function ChatSurface({
         activeFamiliarId={activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
+        onNewChat={startRailChat}
+        canStartChat={daemonRunning && familiars.length > 0}
+        newChatDisabledReason={
+          daemonRunning ? "Add a familiar to create a chat" : "Start the daemon to create a chat"
+        }
         onDeleteSession={deleteThreadFromRail}
         onSessionsChanged={onSessionsChanged}
         onOpenUrl={onOpenUrl}

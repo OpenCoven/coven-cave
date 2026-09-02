@@ -72,14 +72,14 @@ assert.match(
 // Placement guard, not a familiar-selection one: the CTA moved OUT of the
 // `{familiar && …}` branch in cave-n3jg2 — the handoff gives the surface one
 // title row (serif heading · session count · one primary action), so a single
-// unconditional "New session" button replaces the two conditional CTAs that
+// unconditional "New chat" button replaces the two conditional CTAs that
 // used to live in the identity row and the filter row. The argument is named
 // only to anchor the match — it was renamed fallbackFamiliarId →
 // scopedFamiliarId when the silent familiars[0] default was retired.
 assert.match(
   source,
-  /<h1 className="chat-sessions-title[\s\S]{0,2200}?<Button[\s\S]{0,240}?variant="primary"[\s\S]{0,160}?size="sm"[\s\S]{0,240}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,400}?New session\s*\n\s*<\/Button>/,
-  "The surface title row carries the one New session CTA",
+  /<h1 className="chat-sessions-title[\s\S]{0,2200}?<Button[\s\S]{0,320}?variant=\{selectMode \? "secondary" : "primary"\}[\s\S]{0,160}?size="sm"[\s\S]{0,240}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,400}?New chat\s*\n\s*<\/Button>/,
+  "The surface title row carries the one New chat CTA and demotes it while selection tools are active",
 );
 // The grouping control sits on the SAME title row, between the flex-1 spacer
 // and the primary CTA — a view control, not a second action (cave-zdbij). It
@@ -87,8 +87,8 @@ assert.match(
 // toolbar (which keeps its one-line contract).
 assert.match(
   source,
-  /<span className="flex-1" \/>[\s\S]{0,650}?role="group"[\s\S]{0,120}?aria-label="Group sessions by"[\s\S]{0,1400}?<Button[\s\S]{0,200}?variant="primary"/,
-  "the grouping control sits on the title row beside the one New session CTA",
+  /<span className="flex-1" \/>[\s\S]{0,650}?role="group"[\s\S]{0,120}?aria-label="Group sessions by"[\s\S]{0,1400}?<Button[\s\S]{0,260}?variant=\{selectMode \? "secondary" : "primary"\}/,
+  "the grouping control sits on the title row beside the one New chat CTA",
 );
 assert.doesNotMatch(
   source,
@@ -112,6 +112,6 @@ assert.match(
 );
 assert.match(
   source,
-  /<IconButton[\s\S]{0,160}?icon="ph:plus-bold"[\s\S]{0,160}?variant="primary"[\s\S]{0,240}?aria-label="New session"/,
-  "compact layouts should use the shared primary IconButton",
+  /<IconButton[\s\S]{0,160}?icon="ph:plus-bold"[\s\S]{0,240}?variant=\{selectMode \? "secondary" : "primary"\}[\s\S]{0,240}?aria-label="New chat"/,
+  "compact layouts should use the shared IconButton and demote it during selection",
 );

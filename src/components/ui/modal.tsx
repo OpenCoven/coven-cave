@@ -28,6 +28,9 @@ type ModalProps = {
    *  flight so Esc can't close the dialog mid-mutation — the focus trap
    *  itself stays active either way; only dismissal is gated. */
   dismissOnEscape?: boolean;
+  /** Focus the first focusable descendant on open (default true). Disable when
+   *  the caller owns a more meaningful initial-focus target. */
+  focusFirst?: boolean;
   /** Accessible label when there is no breadcrumb. */
   ariaLabel?: string;
   /** Description element inside the modal body. */
@@ -48,6 +51,7 @@ export function Modal({
   wide,
   dismissOnBackdrop = true,
   dismissOnEscape = true,
+  focusFirst = true,
   ariaLabel,
   ariaDescribedBy,
   onLayerElement,
@@ -90,6 +94,7 @@ export function Modal({
   // makes Esc a no-op without releasing Tab cycling or focus return.
   useFocusTrap(open, dialogRef, {
     onEscape: dismissOnEscape ? onClose : undefined,
+    focusFirst,
     portalLayers,
     portalRootId: portalLayerRootId,
   });

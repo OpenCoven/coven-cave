@@ -16,6 +16,7 @@ import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { requestGlobalSearch } from "@/lib/global-search-request";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -100,7 +101,7 @@ import {
   type ChatSessionStatusFilter,
 } from "@/lib/chat-session-status";
 import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
-import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
+import { broadcastActionLabel, failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
 import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import {
   CHAT_SESSION_KIND,
@@ -778,6 +779,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
       return next;
     });
   const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const selectedVisibleIds = visibleIds.filter((id) => selectedIds.has(id));
+  const selectedFailureCount = selectedVisibleIds.filter((id) => broadcastState[id] === "failed").length;
+  const broadcastRetryOnly = selectedVisibleCount > 0 && selectedFailureCount === selectedVisibleCount;
 
   // Deferred + undoable: hide the selected chats now, fire the DELETEs only
   // after the undo window, then report confirmed ids. Undo restores the batch.
@@ -938,14 +942,14 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
             })}
           </div>
           <Button
-            variant="primary"
+            variant={selectMode ? "secondary" : "primary"}
             size="sm"
             leadingIcon="ph:plus-bold"
             onClick={() => onNewChat(undefined, scopedFamiliarId)}
             disabled={!canStartChat}
             className="chat-list-new-button shrink-0"
           >
-            New session
+            New chat
           </Button>
         </div>
         )}
@@ -1180,12 +1184,12 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
           {compact && (
             <IconButton
               icon="ph:plus-bold"
-              variant="primary"
+              variant={selectMode ? "secondary" : "primary"}
               size="sm"
               onClick={() => onNewChat(undefined, scopedFamiliarId)}
               disabled={!canStartChat}
-              aria-label="New session"
-              title="New session"
+              aria-label="New chat"
+              title="New chat"
               className="chat-list-new-button"
             />
           )}
@@ -1298,57 +1302,41 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
         ) : (
           <>
           {selectMode && (
-            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-4 py-2">
-              <div className="flex items-center gap-2">
+            <div className="chat-list-selection-bar">
+              <SelectionToolbar
+                allSelected={allVisibleSelected}
+                count={selectedVisibleCount}
+                countLabel={`${selectedVisibleCount} ${broadcastRetryOnly ? "failed " : ""}chat${selectedVisibleCount === 1 ? "" : "s"} selected`}
+                onToggleSelectAll={toggleSelectAllVisible}
+                onCancel={exitSelect}
+                clearLabel="Clear selection"
+              >
                 <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={toggleSelectAllVisible}
-                >
-                  {allVisibleSelected ? "Clear" : "Select all"}
-                </Button>
-                <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
-              </div>
-              <div className="flex items-center gap-1">
-                {/* Broadcast (cave-g7yg6) leads the cluster: it is the only
-                    action here that writes into the selected chats rather
-                    than filing them, so it does not belong beside Archive and
-                    Delete as if it were another disposition. */}
-                <Button
-                  variant="secondary"
+                  variant="primary"
                   size="xs"
                   leadingIcon="ph:broadcast"
                   disabled={bulkBusy || selectedVisibleCount === 0}
                   onClick={() => setBroadcastOpen(true)}
                 >
-                  Broadcast
+                  {broadcastActionLabel(selectedVisibleCount, broadcastRetryOnly)}
                 </Button>
-                <Button
-                  variant="secondary"
+                <OverflowMenu
+                  ariaLabel="More actions for selected chats"
                   size="xs"
-                  leadingIcon={showArchived ? "ph:tray" : "ph:archive"}
                   disabled={bulkBusy || selectedVisibleCount === 0}
-                  onClick={() => void bulkArchive(!showArchived)}
                 >
-                  {showArchived ? "Unarchive" : "Archive"}
-                </Button>
-                <Button
-                  variant="danger-ghost"
-                  size="xs"
-                  leadingIcon="ph:trash"
-                  disabled={bulkBusy || selectedVisibleCount === 0}
-                  onClick={() => void bulkDelete()}
-                >
-                  {bulkBusy ? "…" : `Delete${selectedVisibleCount ? ` ${selectedVisibleCount}` : ""}`}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={exitSelect}
-                >
-                  Cancel
-                </Button>
-              </div>
+                  <PopoverItem
+                    icon={showArchived ? "ph:tray" : "ph:archive"}
+                    onSelect={() => void bulkArchive(!showArchived)}
+                  >
+                    {showArchived ? "Unarchive" : "Archive"} {selectedVisibleCount}
+                  </PopoverItem>
+                  <PopoverSeparator />
+                  <PopoverItem icon="ph:trash" danger onSelect={() => void bulkDelete()}>
+                    Delete {selectedVisibleCount}
+                  </PopoverItem>
+                </OverflowMenu>
+              </SelectionToolbar>
             </div>
           )}
           {visibleRows > 0 && (
@@ -1974,11 +1962,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
       ) : null}
       {broadcastOpen ? (
         <ChatBroadcastComposer
-          count={selectedVisibleCount}
           // The VISIBLE selection, matching every other bulk action here: a row
           // hidden behind a collapsed section must not receive a broadcast it
           // was never shown to be selected for (chat-list-collapse.test.ts).
-          targets={visibleIds.filter((id) => selectedIds.has(id))}
+          targets={selectedVisibleIds}
           onClose={() => setBroadcastOpen(false)}
           onSent={(results: BroadcastResult[]) => {
             const next: Record<string, "sent" | "failed"> = {};
