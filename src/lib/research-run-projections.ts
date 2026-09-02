@@ -1330,14 +1330,24 @@ export function selectResearchRunProjections(input: ResearchRunProjectionInput):
 function runStatusForMission(mission: ResearchMission): ResearchRunStatusV1 {
   if (mission.status === "queued") return "queued";
   if (mission.status === "planning") return "scoping";
-  if (mission.status === "running") return "gathering_public_sources";
+  if (mission.status === "running") {
+    const steps = mission.iterations.at(-1)?.steps ?? [];
+    const active = steps.find((step) => step.status === "running");
+    const candidate = `${active?.type ?? ""} ${active?.id ?? ""}`.toLowerCase();
+    if (candidate.includes("scope")) return "scoping";
+    if (candidate.includes("gather")) return "gathering_public_sources";
+    if (candidate.includes("challenge")) return "challenging";
+    if (candidate.includes("control")) return "controlling";
+    if (candidate.includes("publish")) return "publishing";
+    return "synthesizing";
+  }
   if (mission.status === "checkpoint" || mission.status === "paused") return "awaiting_checkpoint";
   if (mission.status === "completed") return "completed";
   if (mission.status === "failed") return "failed";
   if (mission.status === "cancelled") return "cancelled";
   if (mission.archivedFrom === "completed") return "completed";
   if (mission.archivedFrom === "failed") return "failed";
-  return "cancelled";
+  return "cancelled"; 
 }
 
 /**
