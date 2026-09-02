@@ -1,16 +1,45 @@
 {
   "schemaVersion": "opencoven.automation-program-map/v1",
   "programId": "coven-automations-v1",
-  "generatedAt": "2026-08-30T14:08:00Z",
-  "status": "awaiting-live-beads-seed",
+  "generatedAt": "2026-09-01T20:56:00Z",
+  "status": "live-beads-seeded; remote-synchronized; verified",
   "program": {
     "github": "OpenCoven/coven#854",
-    "beadId": null,
+    "beadId": "cave-hlv.9",
     "canonicalBeadsParent": "cave-hlv",
     "roadmap": "docs/roadmaps/coven-automations-v1.md",
     "trackerControl": "OpenCoven/coven#859",
     "seedTask": "OpenCoven/coven-cave#5220",
+    "seedBead": "cave-tmegk",
     "roadmapPullRequest": "OpenCoven/coven-cave#5219"
+  },
+  "seed": {
+    "github": "OpenCoven/coven-cave#5220",
+    "beadId": "cave-tmegk",
+    "externalRef": "https://github.com/OpenCoven/coven-cave/issues/5220",
+    "state": "closed-verified",
+    "note": "Bootstrap seed for the Coven Automations v1 execution graph, provisioned through pnpm beads:create. Terminal: the 15 program beads and their 30 in-program blocked-first edges are seeded, dependency-verified, acyclic, and durable on the shared Dolt remote refs/dolt/data. The seed bead cave-tmegk is closed-verified and GitHub issue OpenCoven/coven-cave#5220 is closed.",
+    "history": "Seeded 2026-09-01. The execution graph was seeded and dependency-verified in Cave's canonical embedded Dolt database `cave`, its blocks/dependsOn projections reconciled to the exact inverse of the live `bd dep` edges, and the graph synchronized to the shared remote refs/dolt/data (pnpm beads:sync pull+push exit 0; local embedded Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; empty `dolt diff --summary`; refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95; no force-push). Reconciled and closed-verified once the reconciliation PR referencing OpenCoven/coven-cave#5220 merged; the exact PR URL and merge SHA are recorded in the cave-tmegk bead close reason and on OpenCoven/coven-cave#5220."
+  },
+  "sync": {
+    "beadsTool": "bd 1.3.0-rc.1 (schema v66 capable)",
+    "beadSchemaVersion": 1,
+    "doltSchemaVersion": 66,
+    "database": "cave (embedded Dolt)",
+    "syncCommand": "pnpm beads:sync",
+    "doltOidPreMutation": "i5ltela5k233j55fks9abq612pidkkjl",
+    "doltOidPostMutation": "lnefjdsgcm7s44sqaut4dga082ca45sr",
+    "localDoltCommit": "thpoaq91d1nmqaas4lk6hhcs217foge2",
+    "localDurability": "verified: 15 program beads (seed + 14 outcomes) and 30 in-program blocked-first edges committed to the canonical embedded Dolt database `cave`; local `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2.",
+    "remoteRef": "refs/dolt/data",
+    "remoteOid": "7855b5bcb436bf4ac062c1c24c966f1450971e95",
+    "remoteSyncStatus": "synchronized: the documented wrapper `pnpm beads:sync` completed pull+push (exit 0) on 2026-09-01. Local embedded Dolt `main` and `remotes/origin/main` are equal at thpoaq91d1nmqaas4lk6hhcs217foge2, `dolt diff --summary remotes/origin/main main` is empty, and the shared remote `refs/dolt/data` is at 7855b5bcb436bf4ac062c1c24c966f1450971e95 (identical before and after the run; the push was a fast-forward no-op because the shared history already carried these bead commits). No force-push occurred and no concurrent Dolt commit was discarded.",
+    "remoteSyncEvidence": "git ls-remote origin refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95 before and after a successful `pnpm beads:sync` (exit 0, 2026-09-01); local Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; `dolt diff --summary remotes/origin/main main` empty; graph re-verified (15 beads, 30 in-program blocked-first edges, none missing).",
+    "knownToolingLimitations": [
+      "The canonical embedded Dolt database is at schema v66, so every `bd` command requires a v66-capable client (bd 1.3.0-rc.1). Homebrew `bd` 1.2.2 (schema v53) cannot operate on it and must not be used.",
+      "`pnpm beads:doctor` (`bd doctor && bd lint`) exits 1: `bd doctor` is not yet supported in embedded mode, and `bd lint` reports a repository-wide template-convention backlog (57 issues / 63 warnings, e.g. missing '## Acceptance Criteria') that also covers the Automations v1 outcome beads. It is an advisory convention, not a CI gate, and was recorded rather than weakened.",
+      "`pnpm beads:surfaces` exits 1 on a repository-wide backlog of 245 beads missing shared-ownership labels. None of the 15 Automations v1 beads appears in that list; each carries exactly one `surface:shared` label. Recorded, not weakened."
+    ]
   },
   "canonicalBeads": {
     "repository": "OpenCoven/coven-cave",
@@ -31,8 +60,8 @@
     "Each new Bead has exactly one surface:shared ownership label.",
     "Beads owns implementation execution state; GitHub owns public outcome, review, and CI state.",
     "Coven owns production automation definitions, occurrences, runs, attempts, leases, approvals, artifacts, events, and receipts.",
-    "No Bead ID is populated here until confirmed from live Dolt state.",
-    "Dependency direction must be proven with bd dep list and bd ready --json.",
+    "Every Bead ID here is confirmed from live Dolt state (bd show / bd list).",
+    "Dependency direction is proven with bd dep list and bd ready --json.",
     "P2 expansion cannot block the v1 critical path.",
     "Broad unattended external side effects remain gated until coven#857 and coven#858 pass."
   ],
@@ -41,124 +70,201 @@
       "key": "program-control",
       "priority": "P0",
       "github": "OpenCoven/coven#859",
-      "beadId": null,
+      "beadId": "cave-hlv.10",
       "state": "open",
       "dependsOn": [],
-      "blocks": ["release-go-no-go"]
+      "blocks": [
+        "release-go-no-go",
+        "organization-canaries"
+      ]
     },
     {
       "key": "foundation",
       "priority": "P0",
       "github": "OpenCoven/coven#816",
-      "beadId": null,
-      "state": "implemented-evidence-pending",
+      "beadId": "cave-stsf7",
+      "state": "closed-verified",
+      "evidence": [
+        "OpenCoven/coven#816 (CLOSED)",
+        "OpenCoven/coven#896 — 'fix: settle automation runs from terminal evidence', MERGED 2026-09-01 in the OpenCoven/coven repository (NOT OpenCoven/coven-cave#896, which is an unrelated change)",
+        "merge commit 0d8c2004c3557019e39e5e4db70ae34c9d49a65a on OpenCoven/coven main"
+      ],
+      "disposition": "verified-foundation",
       "dependsOn": [],
-      "blocks": ["protocol", "scheduler-reliability", "familiar-embodiment"]
+      "blocks": [
+        "protocol",
+        "scheduler-reliability",
+        "familiar-embodiment",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "protocol",
       "priority": "P0",
       "github": "OpenCoven/coven#855",
-      "beadId": null,
+      "beadId": "cave-tm1y0",
       "state": "open",
-      "dependsOn": ["foundation"],
-      "blocks": ["scheduler-reliability", "trust-integration", "conformance"]
+      "dependsOn": [
+        "foundation"
+      ],
+      "blocks": [
+        "scheduler-reliability",
+        "trust-integration",
+        "conformance",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "scheduler-reliability",
       "priority": "P0",
       "github": "OpenCoven/coven#856",
-      "beadId": null,
+      "beadId": "cave-1sh6p",
       "state": "open",
-      "dependsOn": ["foundation", "protocol"],
-      "blocks": ["conformance"]
+      "dependsOn": [
+        "foundation",
+        "protocol"
+      ],
+      "blocks": [
+        "conformance",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "familiar-embodiment",
       "priority": "P0",
       "github": "OpenCoven/familiar-contract#17",
-      "beadId": null,
+      "beadId": "cave-6jswi",
       "state": "open",
-      "dependsOn": ["foundation"],
-      "blocks": ["automation-authority", "trust-integration"]
+      "dependsOn": [
+        "foundation"
+      ],
+      "blocks": [
+        "automation-authority",
+        "trust-integration",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "automation-authority",
       "priority": "P0",
       "github": "OpenCoven/coven-threads#29",
-      "beadId": null,
+      "beadId": "cave-m9tw3",
       "state": "open",
-      "dependsOn": ["familiar-embodiment"],
-      "blocks": ["trust-integration"]
+      "dependsOn": [
+        "familiar-embodiment"
+      ],
+      "blocks": [
+        "trust-integration",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "trust-integration",
       "priority": "P0",
       "github": "OpenCoven/coven#857",
-      "beadId": null,
+      "beadId": "cave-dbkng",
       "state": "open",
-      "dependsOn": ["protocol", "familiar-embodiment", "automation-authority"],
-      "blocks": ["conformance"]
+      "dependsOn": [
+        "protocol",
+        "familiar-embodiment",
+        "automation-authority"
+      ],
+      "blocks": [
+        "conformance",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "conformance",
       "priority": "P0",
       "github": "OpenCoven/coven#858",
-      "beadId": null,
+      "beadId": "cave-x28j6",
       "state": "open",
-      "dependsOn": ["protocol", "scheduler-reliability", "trust-integration"],
-      "blocks": ["sdk", "cave-oversight", "psyche-adapter", "documentation", "organization-canaries", "release-go-no-go"]
+      "dependsOn": [
+        "protocol",
+        "scheduler-reliability",
+        "trust-integration"
+      ],
+      "blocks": [
+        "sdk",
+        "cave-oversight",
+        "psyche-adapter",
+        "documentation",
+        "organization-canaries",
+        "release-go-no-go"
+      ]
     },
     {
       "key": "sdk",
       "priority": "P1",
       "github": "OpenCoven/sdk#80",
-      "beadId": null,
+      "beadId": "cave-90hwl",
       "state": "open",
-      "dependsOn": ["conformance"],
-      "blocks": ["release-go-no-go"]
+      "dependsOn": [
+        "conformance"
+      ],
+      "blocks": [
+        "release-go-no-go"
+      ]
     },
     {
       "key": "cave-oversight",
       "priority": "P1",
       "github": "OpenCoven/coven-cave#5217",
-      "beadId": null,
+      "beadId": "cave-e52qp",
       "state": "open",
-      "dependsOn": ["conformance"],
-      "blocks": ["release-go-no-go"]
+      "dependsOn": [
+        "conformance"
+      ],
+      "blocks": [
+        "release-go-no-go"
+      ]
     },
     {
       "key": "psyche-adapter",
       "priority": "P1",
       "github": "OpenCoven/psyche#18",
-      "beadId": null,
+      "beadId": "cave-yaul2",
       "state": "open",
-      "dependsOn": ["conformance"],
-      "blocks": ["release-go-no-go"]
+      "dependsOn": [
+        "conformance"
+      ],
+      "blocks": [
+        "release-go-no-go"
+      ]
     },
     {
       "key": "documentation",
       "priority": "P1",
       "github": "OpenCoven/coven-docs#76",
-      "beadId": null,
+      "beadId": "cave-qwnxq",
       "state": "open",
-      "dependsOn": ["conformance"],
-      "blocks": ["release-go-no-go"]
+      "dependsOn": [
+        "conformance"
+      ],
+      "blocks": [
+        "release-go-no-go"
+      ]
     },
     {
       "key": "organization-canaries",
       "priority": "P1",
       "github": "OpenCoven/.github#2",
-      "beadId": null,
+      "beadId": "cave-xqbs4",
       "state": "open",
-      "dependsOn": ["program-control", "conformance"],
-      "blocks": ["release-go-no-go"]
+      "dependsOn": [
+        "program-control",
+        "conformance"
+      ],
+      "blocks": [
+        "release-go-no-go"
+      ]
     },
     {
       "key": "release-go-no-go",
       "priority": "P0",
       "github": "OpenCoven/coven#854",
-      "beadId": null,
+      "beadId": "cave-hlv.9",
       "state": "blocked",
       "dependsOn": [
         "program-control",
@@ -178,6 +284,13 @@
       "blocks": []
     }
   ],
+  "graphProof": {
+    "edgeCount": 30,
+    "method": "bd dep list <id> --direction down --json across all 15 program beads; the blocks projections in this file are the exact inverse of those live edges, and every outcome's dependsOn equals its live down-edges.",
+    "cycles": "none (bd dep cycles -> 'No dependency cycles detected')",
+    "parentEpicEdges": "cave-hlv.9 and cave-hlv.10 additionally carry a parent-child edge to cave-hlv, the pre-existing familiar-issue-tracking epic they are children of. That hierarchy edge is outside the Automations v1 program set and is not a v1 release blocker, so it is excluded from the 30 in-program blocked-first edges.",
+    "verifiedAt": "2026-09-01T20:56:00Z"
+  },
   "releaseGates": {
     "A": "durable-local-scheduler",
     "B": "identity-and-authority",
@@ -185,7 +298,10 @@
     "D": "operations-and-exact-release-evidence"
   },
   "nextAction": {
-    "github": "OpenCoven/coven-cave#5220",
-    "description": "Use the supported local bd/Dolt workflow to create or reuse the program and child Beads, verify dependencies and readiness, sync through pnpm beads:sync, then replace null beadId values with exact live IDs through review."
+    "github": [
+      "OpenCoven/coven#855",
+      "OpenCoven/familiar-contract#17"
+    ],
+    "description": "Task 1 reconciliation is complete: the 15 canonical program beads and their 30 in-program blocked-first edges are seeded, dependency-verified (both directions), acyclic, and synchronized to the shared Dolt remote refs/dolt/data; the seed bead cave-tmegk is closed-verified and OpenCoven/coven-cave#5220 is closed. Begin the first ready outcomes: OpenCoven/coven#855 (protocol, bead cave-tm1y0) and OpenCoven/familiar-contract#17 (familiar embodiment, bead cave-6jswi), both reported ready by `bd ready`. Coven-side tracker mapping is reconciled under OpenCoven/coven#859 (PRs OpenCoven/coven#900 and #901)."
   }
 }

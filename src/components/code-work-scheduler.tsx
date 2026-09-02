@@ -173,7 +173,10 @@ export function CodeWorkScheduler({
         readJson(`/api/beads?mode=ready&${query}`, signal),
         readJson(`/api/beads?mode=blocked&${query}`, signal),
         readJson("/api/familiars", signal),
-        readJson("/api/sessions/list?collapseFamiliarWorkspace=1", signal),
+        readJson(
+          "/api/sessions/list?collapseFamiliarWorkspace=1&classifyFamiliarWorkspace=1",
+          signal,
+        ),
       ]);
       if (seq !== seqRef.current) return;
 

@@ -461,7 +461,9 @@ test "$archives_safe" -eq 1 ||
 
 Use the repository's object format, a numeric cutoff, and raw reflog records.
 The raw parser must prove both old and new nonzero OIDs, including the old OID
-of the oldest retained record:
+of the oldest retained record. Git may omit the tab-delimited message only from
+the first canonical creation record, whose old OID is all zeroes; every other
+message-less or malformed record fails closed:
 
 ```bash
 now_epoch=$(date +%s) ||
@@ -500,12 +502,14 @@ emit_reflog_records() {
     function valid(o) { return length(o) == width && o ~ /^[0-9a-f]+$/ }
     function zero(o) { return o ~ /^0+$/ }
     {
-      tab=index($0, "\t"); if (!tab) { bad=1; next }
-      n=split(substr($0, 1, tab-1), parts, " ")
+      tab=index($0, "\t")
+      prefix=tab ? substr($0, 1, tab-1) : $0
+      n=split(prefix, parts, " ")
       if (n < 6 || !valid(parts[1]) || !valid(parts[2]) ||
           parts[n-2] !~ /^<[^<>[:space:]]+>$/ ||
           parts[n-1] !~ /^[0-9]+$/ ||
           parts[n] !~ /^[+-][0-9][0-9][0-9][0-9]$/) { bad=1; next }
+      if (!tab && !(NR == 1 && zero(parts[1]))) { bad=1; next }
       if (!zero(parts[1])) print parts[n-1], parts[1]
       if (!zero(parts[2])) print parts[n-1], parts[2]
     }
@@ -783,12 +787,17 @@ of stdout, and exactly the documented four-key allow object. After the final
 allow-object validation, nothing except the worktree removal itself may
 intervene:
 
-If the exact source branch still exists or `HEAD` is an ancestor of an
-advertised branch/tag, leave `strict_guard_retention_args` empty and use the
-ordinary bounded proof. If GitHub squash-merged the exact candidate and
-auto-deleted its source branch, populate the array only after a fresh exact PR
-detail query has proved: one numeric PR, `state == closed`, `merged == true`, a
-valid `merged_at`, `head.sha == audited_worktree_head_oid`,
+When the audited candidate is retained by one exact remote branch, populate the
+array with `--retained-by-remote-branch`, the audited remote and full branch ref,
+and `--expected-remote-oid` with the freshly fetched exact branch OID. This mode
+queries, fetches, and rechecks only that branch, so a large unrelated remote
+namespace cannot turn exact retention into an unbounded scan. Otherwise, if the
+exact source branch still exists or `HEAD` is an ancestor of an advertised
+branch/tag, leave `strict_guard_retention_args` empty and use the ordinary
+bounded proof. If GitHub squash-merged the exact candidate and auto-deleted its
+source branch, populate the array only after a fresh exact PR detail query has
+proved: one numeric PR, `state == closed`, `merged == true`, a valid
+`merged_at`, `head.sha == audited_worktree_head_oid`,
 `base.ref == audited_remote_main_branch`, and
 `base.repo.full_name == audited_gh_repo`.
 The strict guard reauthenticates those facts and queries/fetches only the exact

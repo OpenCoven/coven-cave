@@ -1178,11 +1178,9 @@
   color: var(--text-muted);
 }
 
-/* ── Familiar context row (cave-3pnnq) ─────────────────────────────────────
- *   The shared familiar selector sits directly above the Chat section tabs so
- *   a familiar is established before a scope is chosen. Its bottom border is
- *   the single divider between the selector and the tab row; the tab row keeps
- *   its own bottom border for the content boundary below. */
+/* ── Mobile familiar context row ───────────────────────────────────────────
+ *   Desktop uses the shell titlebar selector. Keep this route above the Chat
+ *   tabs only where the titlebar is unavailable. */
 .chat-familiar-context {
   display: flex;
   align-items: center;
@@ -1195,4 +1193,9 @@
 .chat-familiar-context .familiar-switcher__trigger--labeled {
   width: 100%;
   max-width: none;
+}
+@media (min-width: 1024px) {
+  .chat-familiar-context {
+    display: none;
+  }
 }

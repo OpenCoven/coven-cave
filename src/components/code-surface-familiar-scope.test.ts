@@ -45,7 +45,7 @@ assert.match(
 //    even a directly-mounted list can't show another familiar's threads.
 assert.match(
   chatList,
-  /return filterVisibleChatSessions\(rows, familiar\?\.id \?\? null, \{ includeArchived: showArchived \}\);/,
+  /return visibleChatSessions\(sessions, familiar\?\.id \?\? null, \{/,
   "ChatList must filter its visible rows by the familiar",
 );
 
@@ -66,7 +66,7 @@ assert.match(
 //    the sidebar no longer renders a duplicate per-project branch.
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\)/,
+  /visibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\)/,
   "WorkspaceSidebar must derive visibleSessions from the active familiar, archive-free by default",
 );
 assert.match(

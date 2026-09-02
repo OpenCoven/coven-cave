@@ -59,7 +59,7 @@ assert.match(
 assert.doesNotMatch(source, /fetch\s*\(/, "Recent Activity performs no mount-time session request");
 assert.doesNotMatch(source, /usePausablePoll|setInterval|POLL_MS/, "Recent Activity owns no refresh interval");
 assert.equal(
-  [...workspace.matchAll(/fetch\(`\/api\/sessions\/list\$\{scope\}`/g)].length,
+  [...workspace.matchAll(/fetch\(`\/api\/sessions\/list\?\$\{params\.toString\(\)\}`/g)].length,
   1,
   "the mounted Workspace/sidebar path has one session-list request per refresh",
 );

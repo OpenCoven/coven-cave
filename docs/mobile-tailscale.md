@@ -34,8 +34,11 @@ Useful commands:
 pnpm mobile:tailscale          # start the persistent loopback server and create an invite
 pnpm mobile:tailscale:invite   # create a fresh invite for the running server
 pnpm mobile:tailscale:status   # show process/state info with host/token redacted
-pnpm mobile:tailscale:stop     # stop the dev server and reset Tailscale Serve
+pnpm mobile:tailscale:stop     # reset this server's owned route, then stop it
 ```
+
+App/start, stop, and packaged recovery share one machine-wide ownership lease.
+They preserve healthy competing backends and any unrelated TCP or service configuration.
 
 For a local simulator/emulator workflow, use the checked-in wrappers:
 

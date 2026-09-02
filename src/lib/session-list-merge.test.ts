@@ -1612,6 +1612,39 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
     "mergeSessionRows threads the resolver through to local-only rows",
   );
 
+  const familiarWorkspaceRuntime = "local:/Users/example/.coven/workspaces/familiars/nova";
+  const familiarWorkspaceRows = localConversationSessionRows(
+    [conv("workspace-classified", familiarWorkspaceRuntime)],
+    bareState,
+    false,
+    projectRootForCwd,
+    (cwd) => cwd === "/Users/example/.coven/workspaces/familiars/nova",
+  );
+  assert.equal(
+    familiarWorkspaceRows[0]?.project_root,
+    "",
+    "trusted familiar workspace classification must not change no-project grouping",
+  );
+  assert.equal(
+    familiarWorkspaceRows[0]?.familiarWorkspace,
+    true,
+    "local familiar-workspace runtimes can still carry trusted classification after project_root backfill drops the cwd",
+  );
+
+  const mergedFamiliarWorkspace = mergeSessionRows({
+    daemonSessions: [],
+    localConversations: [conv("workspace-classified", familiarWorkspaceRuntime)],
+    state: bareState,
+    includeArchived: false,
+    projectRootForCwd,
+    familiarWorkspaceForCwd: (cwd) => cwd === "/Users/example/.coven/workspaces/familiars/nova",
+  });
+  assert.equal(
+    mergedFamiliarWorkspace[0]?.familiarWorkspace,
+    true,
+    "mergeSessionRows threads trusted familiar-workspace classification into local-only rows",
+  );
+
   const runtimeTransitions = [
     {
       id: "runtime-local-to-ssh",

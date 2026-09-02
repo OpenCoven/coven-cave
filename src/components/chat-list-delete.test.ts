@@ -295,28 +295,45 @@ assert.doesNotMatch(
   "The old 40% muted-ink mix (~3:1 on dark, ~2.5:1 on light) must not return",
 );
 
+// The initiator pill left the chat row (cave-dkdev follow-up): session-list-merge
+// defaults every Cave conversation to {kind:"human", label:"Cave user"}, so the
+// chip read "Cave user" on every row — and "Unknown" wherever the field was
+// absent. A chip identical down the whole column spends horizontal budget to say
+// nothing, which is the critique this surface was rebuilt around. Origin stays,
+// because it actually varies. Not across the whole enum — CHAT_HIDDEN_ORIGINS
+// drops cron/heartbeat/canvas/journal/enhance from this list — but chat,
+// mention, board and call all reach a row, which is four more values than the
+// initiator chip ever showed.
+assert.doesNotMatch(
+  source,
+  /<SessionInitiatorChip/,
+  "the chat row must not reintroduce the constant initiator pill",
+);
 assert.match(
   source,
-  /<SessionInitiatorChip initiator=\{s\.initiator\} \/>/,
-  "Chat rows should render the session initiator attribution pill",
+  /\{s\.origin \? <OriginChip origin=\{s\.origin\} \/> : null\}/,
+  "…while the origin pill, which does vary between rows, stays",
 );
+// The two assertions that used to sit here guarded the initiator pill's
+// contrast (familiar attribution must not use the low-contrast --accent). The
+// pill is gone and so is its CSS (cave-matid), so guarding its colour would
+// pin a rule that no longer exists. What replaces them is the fact that
+// matters now: none of it may come back into primitives.css, which is the root
+// bundle every route downloads.
 assert.doesNotMatch(
   globals,
-  /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--accent\);/,
-  "Familiar initiator attribution text must not use the low-contrast accent token",
-);
-assert.match(
-  globals,
-  /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--text-secondary\);/,
-  "Familiar initiator attribution text should use a readable text token",
+  /\.ui-initiator-chip/,
+  "the removed initiator pill's CSS must not return to the root bundle",
 );
 
-// ── Row chrome consistency (origin + initiator pills, action buttons) ─────────
-// Both pills must share one base rule so adjacent pills read as siblings.
+// ── Row chrome consistency (origin pill, action buttons) ─────────────────────
+// This used to require origin and initiator to SHARE one base rule, so adjacent
+// pills read as siblings. With the initiator pill gone there is no sibling left
+// to match, so what survives is the pill shape itself.
 assert.match(
   globals,
-  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
-  "Origin and initiator pills must share a single base chrome rule",
+  /\.ui-origin-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
+  "The origin pill keeps the signature pill radius",
 );
 // The three row action buttons (pin/archive/delete) must be uniform squares.
 {

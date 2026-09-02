@@ -84,7 +84,7 @@ export async function resolveRuntimeSkillRoots(
   const roots: string[] = [];
   for (const candidate of candidates) {
     try {
-      const resolved = await realpath(candidate);
+      const resolved = await realpath(/* turbopackIgnore: true */ candidate);
       if (!(await stat(resolved)).isDirectory()) continue;
       if (covered.some((root) => isWithinRoot(resolved, root))) continue;
       if (!roots.includes(resolved)) roots.push(resolved);
@@ -118,7 +118,7 @@ export async function resolveRuntimeResourceRoots(
   );
   for (const candidate of candidates) {
     try {
-      const resolved = await realpath(candidate);
+      const resolved = await realpath(/* turbopackIgnore: true */ candidate);
       if (!(await stat(resolved)).isDirectory()) continue;
       if (covered.some((root) => isWithinRoot(resolved, root))) continue;
       if (!roots.includes(resolved)) roots.push(resolved);

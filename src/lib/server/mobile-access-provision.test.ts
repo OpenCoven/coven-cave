@@ -427,10 +427,61 @@ test("retire disarms and removes the persisted secret", async () => {
   assert.ok(secret);
   armMobileAccessSecret(secret, env);
 
-  retireMobileAccessSecret(env);
+  assert.deepEqual(retireMobileAccessSecret(env), { kind: "retired" });
   assert.equal(env.COVEN_CAVE_ACCESS_TOKEN, undefined);
   assert.equal(existsSync(mobileAccessSecretFile(env)), false);
   assert.equal(rearmPersistedMobileAccessSecret(env), null, "next boot stays tokenless");
+});
+
+test("retire preserves the armed and persisted credential when removal fails", async () => {
+  const env = devEnv();
+  const secret = await provisionMobileAccessSecret(env);
+  assert.ok(secret);
+  armMobileAccessSecret(secret, env);
+
+  const result = retireMobileAccessSecret(env, {
+    removeFile: () => {
+      throw new Error("read-only filesystem");
+    },
+  });
+
+  assert.deepEqual(result, {
+    kind: "retained",
+    error: "read-only filesystem",
+  });
+  assert.equal(env.COVEN_CAVE_ACCESS_TOKEN, secret);
+  assert.equal(loadPersistedMobileAccessSecret(env), secret);
+});
+
+test("retiring one dev port preserves competing and packaged credentials", async () => {
+  const shared = devEnv();
+  const stateRoot = shared.COVEN_CAVE_MOBILE_STATE_ROOT;
+  const dev3007 = devEnv({ COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot, PORT: "3007" });
+  const dev3008 = devEnv({ COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot, PORT: "3008" });
+  const packaged3020 = devEnv({
+    COVEN_CAVE_MOBILE_STATE_ROOT: stateRoot,
+    COVEN_CAVE_BUNDLE: "1",
+    COVEN_CAVE_ACCESS_TOKEN: "packaged-credential",
+    PORT: "3020",
+  });
+  const secret3007 = await provisionMobileAccessSecret(dev3007);
+  const secret3008 = await provisionMobileAccessSecret(dev3008);
+  assert.ok(secret3007);
+  assert.ok(secret3008);
+  armMobileAccessSecret(secret3007, dev3007);
+  armMobileAccessSecret(secret3008, dev3008);
+
+  retireMobileAccessSecret(dev3007);
+  retireMobileAccessSecret(packaged3020);
+
+  assert.equal(existsSync(mobileAccessSecretFile(dev3007)), false);
+  assert.equal(loadPersistedMobileAccessSecret(dev3008), secret3008);
+  assert.equal(dev3008.COVEN_CAVE_ACCESS_TOKEN, secret3008);
+  assert.equal(
+    packaged3020.COVEN_CAVE_ACCESS_TOKEN,
+    "packaged-credential",
+    "app-stop never retires the packaged sidecar credential",
+  );
 });
 
 // ── Wiring pins ──────────────────────────────────────────────────────────────
@@ -448,8 +499,8 @@ test("mobile-handoff route provisions, arms, cookies the session, and retires on
   assert.match(route, /ACCESS_TOKEN_COOKIE/, "cookie uses the canonical access-cookie name");
   assert.match(
     route,
-    /app-stop[\s\S]{0,400}retireMobileAccessSecret\(\)/,
-    "Mobile mode Off retires the self-provisioned secret",
+    /resetOwnedServeRoute\(\s*nativeAppBackendUrl\(\),\s*retireMobileAccessSecret,\s*\)/,
+    "Mobile mode Off passes retirement as the verified-removal callback instead of retiring on reset failure",
   );
 });
 

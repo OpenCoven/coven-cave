@@ -126,8 +126,15 @@
 .cave-composer-tools-tab:hover:not(:disabled),
 .cave-composer-task-tab:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-primary);
+}
+
+.cave-composer-tools-tab:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--bg-panel) 94%, var(--bg-base));
+}
+
+.cave-composer-task-tab:hover {
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
 }
 
 .cave-composer-tools-tab[aria-expanded="true"] {

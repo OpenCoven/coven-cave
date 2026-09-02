@@ -3,9 +3,10 @@
  *
  * The `Cody Code Reading v2` frame replaces the always-on session rail with a
  * header picker: one button carrying the current session, opening a filterable,
- * project-grouped list. This module is the whole decision layer — filtering,
- * chip counts, grouping and the empty-state affordance — so the popover itself
- * stays presentational and the rules stay behaviourally testable.
+ * queue-grouped list. This module is the whole decision layer — filtering,
+ * chip counts and the empty-state affordance on top of the shared queue — so
+ * the popover itself stays presentational and the rules stay behaviourally
+ * testable.
  *
  * Two rules the frame is explicit about and this encodes:
  *
@@ -20,27 +21,28 @@
 import {
   codeSessionActivity,
   codeSessionBranch,
-  isCodeRailSession,
   type CodeSessionActivity,
-} from "@/lib/code-surface";
-import type { SessionRow } from "@/lib/types";
+} from "./code-surface.ts";
+import type { CodeReviewQueue } from "./code-review-queue.ts";
+import { gitHubRepoSlug } from "./github-repo-link.ts";
+import type { SessionRow } from "./types.ts";
 
-/** A project bucket in the open picker: one repo root, newest session first. */
+/** A queue bucket in the open picker: one shared rail group, in queue order. */
 export type CodeSessionPickerGroup = {
-  /** Absolute project root shared by the group's sessions. */
-  root: string;
-  /** Short display label (basename of the root). */
+  /** Shared queue-group key (canonical repo in reviewable mode, root in all). */
+  key: string;
+  /** Short display label from the precomputed queue. */
   label: string;
   sessions: SessionRow[];
 };
 
-/** A filter chip above the list: "all", then one per project in the result. */
+/** A filter chip above the list: "All", then one per visible queue group. */
 export type CodeSessionPickerChip = {
   id: string;
   label: string;
   count: number;
-  /** null on the "All" chip — it clears the project filter rather than setting one. */
-  root: string | null;
+  /** null on the "All" chip — it clears the group filter rather than setting one. */
+  key: string | null;
 };
 
 export type CodeSessionPickerResult = {
@@ -62,14 +64,10 @@ function projectLabel(root: string): string {
   return trimmed.slice(idx + 1) || trimmed || "(unknown)";
 }
 
-function updatedAt(row: SessionRow): number {
-  const t = Date.parse(row.updated_at);
-  return Number.isFinite(t) ? t : 0;
-}
-
 /**
- * Does this session match the typed filter? Title, project label and branch,
- * case-insensitively. A blank query matches everything.
+ * Does this session match the typed filter? Title, local project basename,
+ * canonical GitHub owner/repo slug and branch, case-insensitively. A blank
+ * query matches everything.
  */
 export function codeSessionMatchesQuery(row: SessionRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -78,52 +76,44 @@ export function codeSessionMatchesQuery(row: SessionRow, query: string): boolean
     row.title ?? "",
     row.id,
     row.project_root ? projectLabel(row.project_root) : "",
+    gitHubRepoSlug(row.git?.repositoryUrl) ?? "",
     codeSessionBranch(row) ?? "",
   ];
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
 /**
- * Everything the open picker renders, for one (query, project) pair.
+ * Everything the open picker renders, for one (query, queue-group) pair.
  *
- * Chips count against the QUERY-filtered set but ignore the project filter, so
- * the counts stay stable while you click between projects — a chip whose count
+ * Chips count against the QUERY-filtered set but ignore the group filter, so
+ * the counts stay stable while you click between groups — a chip whose count
  * changed because you selected it would read as the filter having deleted work.
  */
 export function codeSessionPickerResult(
-  rows: readonly SessionRow[],
+  queue: Pick<CodeReviewQueue, "groups" | "sessions">,
   query: string,
-  projectRoot: string | null,
+  groupKey: string | null,
 ): CodeSessionPickerResult {
-  const visible = rows.filter((row) => isCodeRailSession(row) && codeSessionMatchesQuery(row, query));
-
-  const byRoot = new Map<string, SessionRow[]>();
-  for (const row of visible) {
-    const root = row.project_root || "";
-    const list = byRoot.get(root);
-    if (list) list.push(row);
-    else byRoot.set(root, [row]);
-  }
+  const visible = queue.sessions.filter((row) => codeSessionMatchesQuery(row, query));
+  const visibleIds = new Set(visible.map((row) => row.id));
 
   const chips: CodeSessionPickerChip[] = [
-    { id: "all", label: "All", count: visible.length, root: null },
+    { id: "all", label: "All", count: visible.length, key: null },
   ];
   const groups: CodeSessionPickerGroup[] = [];
-  for (const [root, sessions] of byRoot) {
-    sessions.sort((a, b) => updatedAt(b) - updatedAt(a));
-    const label = root ? projectLabel(root) : "(unknown)";
-    chips.push({ id: root || "unknown", label, count: sessions.length, root });
-    if (projectRoot === null || projectRoot === root) {
-      groups.push({ root, label, sessions });
+  for (const group of queue.groups) {
+    const sessions = group.sessions.filter((row) => visibleIds.has(row.id));
+    if (sessions.length === 0) continue;
+    chips.push({
+      id: group.key ? `group:${group.key}` : `group:${group.label}`,
+      label: group.label,
+      count: sessions.length,
+      key: group.key,
+    });
+    if (groupKey === null || groupKey === group.key) {
+      groups.push({ key: group.key, label: group.label, sessions });
     }
   }
-
-  groups.sort((a, b) => {
-    if (!a.root && b.root) return 1;
-    if (a.root && !b.root) return -1;
-    return updatedAt(b.sessions[0]) - updatedAt(a.sessions[0]);
-  });
-  chips.sort((a, b) => (a.root === null ? -1 : b.root === null ? 1 : b.count - a.count));
 
   const count = groups.reduce((total, group) => total + group.sessions.length, 0);
   return { groups, chips, count, offersCreate: count === 0 && query.trim().length > 0 };
