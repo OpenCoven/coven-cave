@@ -9740,7 +9740,16 @@ function ProgressGroup({
        numbers beside it are the accessible version, and announcing both would
        read the same fact twice — the failure this card is being repaired for. */
     <span className="cave-progress-bar" aria-hidden>
-      <span className="cave-progress-bar__fill" style={{ width: `${Math.max(2, percent)}%` }} />
+      {/* The 2% floor keeps a just-started run's fill visible instead of
+          collapsing it to an invisible sliver — but it applies only once
+          something HAS settled. Clamping unconditionally drew a bar at
+          "0 of 4", the card asserting progress that had not happened: the
+          same self-contradiction this rebuild removed from the counts,
+          reintroduced in the graphic beside them. */}
+      <span
+        className="cave-progress-bar__fill"
+        style={{ width: percent > 0 ? `${Math.max(2, percent)}%` : "0%" }}
+      />
     </span>
   );
 
