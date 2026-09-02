@@ -42,9 +42,13 @@ assert.match(
 );
 
 // 2. chat-list: the list's toggle opts in explicitly…
+//    …now through visibleChatSessions (cave-dkdev), the shared selector the
+//    workspace sidebar also calls. The archive opt-in is still the caller's and
+//    still explicit; only the composition moved behind one name, so the two
+//    surfaces can no longer disagree about which chats exist.
 assert.match(
   chatList,
-  /filterVisibleChatSessions\(rows, familiar\?\.id \?\? null, \{ includeArchived: showArchived \}\)/,
+  /visibleChatSessions\(sessions, familiar\?\.id \?\? null, \{[\s\S]*?showArchived,/,
   "the main chat list passes its Show-archived toggle through the opt-in",
 );
 
@@ -99,7 +103,7 @@ assert.doesNotMatch(
 );
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\)/,
+  /visibleChatSessions\(normalizedSessions, activeFamiliarId \?\? null\)/,
   "the Chat side rail derives its rows through the shared filter's archive-free default",
 );
 

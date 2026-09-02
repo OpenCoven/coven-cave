@@ -1,4 +1,4 @@
-import { filterVisibleChatSessions } from "./chat-projects";
+import { filterVisibleChatSessions } from "./chat-projects.ts";
 import type { SessionRow } from "./types";
 
 /**

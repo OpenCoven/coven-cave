@@ -29,10 +29,21 @@ assert.doesNotMatch(
 // Search went with the old search row (cave-fh9so). The recency grouping it
 // used to bypass is now the only view, and it still filters directly rather
 // than through a second store.
+//
+// The selector it calls was renamed in cave-dkdev: the sidebar used to compose
+// its own answer to "which chats exist?" from filterVisibleChatSessions alone
+// while the Sessions list ran chatListCandidates first, so the two surfaces
+// could disagree about which chats a workspace had. visibleChatSessions is that
+// agreement, and both call it.
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(/,
+  /visibleChatSessions\(/,
   "the recency list keeps direct chat filtering",
+)
+assert.doesNotMatch(
+  workspaceSidebar,
+  /filterVisibleChatSessions\(/,
+  "the sidebar must not go back to composing its own visibility rule",
 )
 assert.doesNotMatch(workspaceSidebar, /function bareTime\(/, "sidebar should remove the dead bareTime compatibility helper");
 assert.match(workspaceSidebar, /const minuteTick = useMinuteTick\(\);/, "sidebar should subscribe to the shared minute tick");
