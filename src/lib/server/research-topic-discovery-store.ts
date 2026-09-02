@@ -448,7 +448,7 @@ export function createTopicDiscoveryStore(options: { root?: string } = {}): Topi
       const layout = await openLayout(root);
       let entries: string[];
       try {
-        entries = await readdir(layout.jobsDir);
+        entries = await readdir(/* turbopackIgnore: true */ layout.jobsDir);
       } catch {
         return [];
       }
@@ -556,7 +556,7 @@ export function createTopicDiscoveryStore(options: { root?: string } = {}): Topi
       const layout = await openLayout(root);
       let entries: string[];
       try {
-        entries = await readdir(layout.proposalsDir);
+        entries = await readdir(/* turbopackIgnore: true */ layout.proposalsDir);
       } catch {
         return [];
       }
@@ -581,7 +581,7 @@ export function createTopicDiscoveryStore(options: { root?: string } = {}): Topi
       const layout = await openLayout(root);
       let entries: string[];
       try {
-        entries = await readdir(layout.jobsDir);
+        entries = await readdir(/* turbopackIgnore: true */ layout.jobsDir);
       } catch {
         return [];
       }
