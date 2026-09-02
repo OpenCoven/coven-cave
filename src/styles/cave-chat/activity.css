@@ -172,7 +172,10 @@
   display: block;
   height: 3px;
   margin-top: 7px;
-  border-radius: 2px;
+  /* --radius-pill, matching .cave-chat-context-stat__meter one strip above:
+     at 3px tall a pill radius IS the rounded end, so the literal 2px this
+     started with bought nothing and cost a token-drift ratchet. */
+  border-radius: var(--radius-pill);
   background: var(--border-hairline);
   overflow: hidden;
 }
@@ -180,7 +183,7 @@
 .cave-progress-bar__fill {
   display: block;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   background: var(--accent-presence);
 }
 
