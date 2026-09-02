@@ -4,6 +4,7 @@ import {
   type SavedLinkSummary,
 } from "./link-organizer.ts";
 import type { ResourceManifestV1 } from "./research-resource-contracts.ts";
+import { normalizeGithubRepoSnapshot } from "./research-github-repo.ts";
 
 /**
  * Project one catalog manifest into the legacy Resources list shape.
@@ -18,6 +19,7 @@ export function resourceManifestToSavedLinkSummary(
   if (!manifest.legacySavedLink) return null;
 
   const paper = legacyPaper(manifest);
+  const githubRepo = legacyGithubRepo(manifest);
   return {
     id: manifest.legacySavedLink.id,
     url: manifest.legacySavedLink.url,
@@ -26,7 +28,17 @@ export function resourceManifestToSavedLinkSummary(
     addedAt: manifest.legacySavedLink.addedAt,
     source: manifest.legacySavedLink.source,
     ...(paper ? { paper } : {}),
+    ...(githubRepo ? { githubRepo } : {}),
   };
+}
+
+function legacyGithubRepo(manifest: ResourceManifestV1): SavedLinkSummary["githubRepo"] {
+  const snapshot = normalizeGithubRepoSnapshot(
+    (manifest.legacySavedLink as Record<string, unknown> | undefined)?.caveGithubRepoV1,
+  );
+  if (!snapshot) return undefined;
+  const { tree: _tree, readme: _readme, ...summary } = snapshot;
+  return summary;
 }
 
 /** Newest legacy saves first, with an id tie-breaker for stable output. */

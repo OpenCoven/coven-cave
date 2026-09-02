@@ -110,7 +110,11 @@ function wireCopyButtons(container: HTMLElement) {
   }
 }
 
-function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
+function wireMarkdownLinks(
+  container: HTMLElement,
+  onOpenUrl?: (url: string) => void,
+  resolveOpenUrl?: (url: string) => string | null,
+) {
   if (!onOpenUrl) return;
   for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
     if (
@@ -118,7 +122,9 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
       link.classList.contains("cave-citation-chip")
     ) continue;
     if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
-    const href = link.href;
+    const rawHref = link.getAttribute("href") ?? "";
+    const href = resolveOpenUrl ? resolveOpenUrl(rawHref) : link.href;
+    if (!href) continue;
     let parsed: URL;
     try { parsed = new URL(href); } catch { continue; }
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
@@ -382,6 +388,7 @@ export function useWireCopyButtons(
   onOpenUrl?: (url: string) => void,
   fileLinkResolver: FileLinkResolver | null = null,
   reading: CodeReading | null = null,
+  resolveOpenUrl?: (url: string) => string | null,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -389,7 +396,7 @@ export function useWireCopyButtons(
     if (!html || !el) return;
     const wireAll = () => {
       wireCopyButtons(el);
-      wireMarkdownLinks(el, onOpenUrl);
+      wireMarkdownLinks(el, onOpenUrl, resolveOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
       wireFilePathLinks(el, fileLinkResolver);
@@ -399,6 +406,6 @@ export function useWireCopyButtons(
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, fileLinkResolver, reading]);
+  }, [html, onOpenUrl, fileLinkResolver, reading, resolveOpenUrl]);
   return containerRef;
 }

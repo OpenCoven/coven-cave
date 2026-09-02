@@ -19,6 +19,10 @@ import {
   type SavedLinkSummary,
 } from "@/lib/link-organizer";
 import {
+  normalizeGithubRepoSnapshot,
+  parseGithubRepoInput,
+} from "@/lib/research-github-repo";
+import {
   isValidXArticleAuthorDisplayName,
   isValidXArticleAuthorId,
   isValidXArticleContentSha256,
@@ -156,6 +160,7 @@ function parseXArticleSummary(rawUrl: string, value: unknown): SavedLinkSummary[
   ) {
     return undefined;
   }
+
   return {
     version: 1,
     provider: "sorsa",
@@ -174,23 +179,57 @@ function parseXArticleSummary(rawUrl: string, value: unknown): SavedLinkSummary[
   };
 }
 
+function parseGithubRepoSummary(
+  rawUrl: string,
+  value: unknown,
+): SavedLinkSummary["githubRepo"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const snapshot = normalizeGithubRepoSnapshot({
+    ...value,
+    tree: [],
+    readme: null,
+  });
+  const candidate = parseGithubRepoInput(rawUrl);
+  if (
+    !snapshot
+    || !candidate
+    || snapshot.owner.toLowerCase() !== candidate.owner.toLowerCase()
+    || snapshot.repo.toLowerCase() !== candidate.repo.toLowerCase()
+  ) {
+    return undefined;
+  }
+  const { tree: _tree, readme: _readme, ...summary } = snapshot;
+  return summary;
+}
+
 function parseSavedLinkSummary(value: unknown): SavedLinkSummary | null {
   const base = parseLinkBase(value);
   if (!base || !isRecord(value)) return null;
   const paper = parsePaper(value.paper);
   const xArticle = parseXArticleSummary(base.url, value.xArticle);
+  const githubRepo = parseGithubRepoSummary(base.url, value.githubRepo);
   if (paper === null) return null;
   return {
     ...base,
     category: normalizeSavedLinkCategory(base.url, base.category, Boolean(xArticle)),
     ...(paper ? { paper } : {}),
     ...(xArticle ? { xArticle } : {}),
+    ...(githubRepo ? { githubRepo } : {}),
   };
 }
 
 function parseSavedLink(value: unknown): SavedLink | null {
   const summary = parseSavedLinkSummary(value);
   if (!summary || !isRecord(value)) return null;
+  const githubRepo = normalizeGithubRepoSnapshot(value.githubRepo);
+  const githubCandidate = parseGithubRepoInput(summary.url);
+  const validGithubRepo =
+    githubRepo
+    && githubCandidate
+    && githubRepo.owner.toLowerCase() === githubCandidate.owner.toLowerCase()
+    && githubRepo.repo.toLowerCase() === githubCandidate.repo.toLowerCase()
+      ? githubRepo
+      : undefined;
   const base: SavedLink = {
     id: summary.id,
     url: summary.url,
@@ -199,6 +238,7 @@ function parseSavedLink(value: unknown): SavedLink | null {
     addedAt: summary.addedAt,
     source: summary.source,
     ...(summary.paper ? { paper: summary.paper } : {}),
+    ...(validGithubRepo ? { githubRepo: validGithubRepo } : {}),
   };
   if (!summary.xArticle) {
     return base;

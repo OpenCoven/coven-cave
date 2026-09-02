@@ -103,6 +103,12 @@ function linkSearchText(link: SavedLinkSummary): string {
     link.xArticle?.author.displayName,
     link.xArticle?.excerpt,
     link.xArticle?.publishedAt,
+    link.githubRepo?.owner,
+    link.githubRepo?.repo,
+    link.githubRepo?.description,
+    link.githubRepo?.primaryLanguage,
+    link.githubRepo?.licenseSpdx,
+    link.githubRepo?.commitSha,
   ].filter((value): value is string => typeof value === "string" && value.length > 0)
     .join(" ")
     .toLowerCase();
@@ -139,6 +145,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [articleDetail, setArticleDetail] = useState<Awaited<ReturnType<typeof loadDetail>>>(null);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
+  const [githubDetail, setGithubDetail] = useState<Awaited<ReturnType<typeof loadDetail>>>(null);
+  const [githubLoading, setGithubLoading] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -151,6 +160,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [browserPreview, setBrowserPreview] = useState<{ title: string; url: string | null } | null>(null);
   const resourceSearchRef = useRef<HTMLInputElement | null>(null);
   const articleRequestRef = useRef(0);
+  const githubRequestRef = useRef(0);
   const activeArticleIdRef = useRef<string | null>(null);
   const articleReaderRef = useRef<HTMLElement | null>(null);
   const pendingArticleFocusRef = useRef(false);
@@ -409,6 +419,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeOverlay = useCallback(() => {
     articleRequestRef.current += 1;
+    githubRequestRef.current += 1;
     setOpenId(null);
   }, []);
   const handleOverlayEscape = useCallback(() => {
@@ -438,7 +449,27 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     setArticleDetail(null);
     setArticleLoading(false);
     setArticleError(null);
+    setGithubDetail(null);
+    setGithubLoading(false);
+    setGithubError(null);
   }, [openId]);
+
+  useEffect(() => {
+    const requestedId = openLink?.githubRepo ? openLink.id : null;
+    const request = ++githubRequestRef.current;
+    if (!requestedId) return;
+    setGithubLoading(true);
+    setGithubError(null);
+    void loadDetail(requestedId).then((detail) => {
+      if (githubRequestRef.current !== request) return;
+      setGithubLoading(false);
+      if (!detail || detail.id !== requestedId || !detail.githubRepo) {
+        setGithubError("Couldn’t load the saved repository snapshot. Try again.");
+        return;
+      }
+      setGithubDetail(detail);
+    });
+  }, [loadDetail, openLink]);
 
   useLayoutEffect(() => {
     if (!articleDetail?.xArticle || !pendingArticleFocusRef.current) return;
@@ -551,11 +582,6 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           {links.length} saved · from pastes, /save, and run citations
         </span>
       </header>
-
-      {/* cave-vy5vp: browse a GitHub repository's files and README. The fetch
-          is opt-in (no network until "Load repository"), which is the remote-
-          content consent surface for the Research Desk. */}
-      <ResearchGithubRepoViewer openUrl={context.openUrl} />
 
       {/* cave-lsj8u: src/app/api/x/ never landed, so this section's every
           fetch (/api/x/sources, /posts/search, /posts/lookup) 404s and it
@@ -976,6 +1002,8 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                     </button>
                     {article ? (
                       <p className="research-res-card__excerpt">{article.excerpt}</p>
+                    ) : link.githubRepo?.description ? (
+                      <p className="research-res-card__excerpt">{link.githubRepo.description}</p>
                     ) : null}
                     <span className="research-res-card__sub">{linkDomain(link.url)}</span>
                     <div className="research-res-card__footer">
@@ -1059,6 +1087,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             className="research-res-overlay__dialog"
             data-expanded={readerExpanded || undefined}
             data-reader={reading && readerExpanded || undefined}
+            data-github={openLink.githubRepo ? true : undefined}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
@@ -1090,7 +1119,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 </div>
                 <h3
                   id="research-res-overlay-title"
-                  className={openLink.category === "github" ? "research-res-overlay__title--mono" : undefined}
+                  className={
+                    openLink.category === "github" && !openLink.githubRepo
+                      ? "research-res-overlay__title--mono"
+                      : undefined
+                  }
                 >
                   {openLink.title}
                 </h3>
@@ -1245,9 +1278,45 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 )
               ) : null}
 
+              {openLink.githubRepo ? (
+                githubLoading ? (
+                  <p className="research-res__empty" role="status">Loading repository snapshot…</p>
+                ) : githubError ? (
+                  <p className="research-res__error" role="alert">
+                    {githubError}{" "}
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        const requestedId = openLink.id;
+                        const request = ++githubRequestRef.current;
+                        setGithubLoading(true);
+                        setGithubError(null);
+                        void loadDetail(requestedId).then((detail) => {
+                          if (githubRequestRef.current !== request) return;
+                          setGithubLoading(false);
+                          if (!detail?.githubRepo) {
+                            setGithubError("Couldn’t load the saved repository snapshot. Try again.");
+                            return;
+                          }
+                          setGithubDetail(detail);
+                        });
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  </p>
+                ) : githubDetail?.githubRepo ? (
+                  <ResearchGithubRepoViewer
+                    snapshot={githubDetail.githubRepo}
+                    openUrl={context.openUrl}
+                  />
+                ) : null
+              ) : null}
+
               {/* A loaded Article reader replaces the normal resource stats
                   rather than stacking the generic metadata beneath the text. */}
-              {!articleDetail?.xArticle ? (
+              {!articleDetail?.xArticle && !openLink.githubRepo ? (
                 <div className="research-res-overlay__stats">
                   <div>
                     <strong>{linkCategoryMeta(openLink.category).label}</strong>

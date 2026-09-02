@@ -369,6 +369,71 @@ test("listSavedLinkSummaries and toSavedLinkSummary omit xArticle bodies without
   assert.equal(full.xArticle.body, BODY_SENTINEL, "projection must not mutate the full record");
 });
 
+test("saved-link summaries omit GitHub trees and README bodies without mutating detail", () => {
+  const full = {
+    ...storedLink({
+      url: "https://github.com/OpenCoven/coven-cave",
+      category: "github",
+    }),
+    githubRepo: {
+      version: 1 as const,
+      owner: "OpenCoven",
+      repo: "coven-cave",
+      visibility: "public" as const,
+      stars: 42,
+      forks: 7,
+      defaultBranch: "main",
+      resolvedRef: "main",
+      commitSha: "a".repeat(40),
+      fetchedAt: VALID_TIMESTAMP,
+      truncated: false,
+      tree: [{ path: "README.md", type: "blob" as const, sha: "b".repeat(40) }],
+      readme: { path: "README.md", markdown: "PRIVATE_README_SENTINEL" },
+    },
+  } as SavedLink;
+
+  const summary = toSavedLinkSummary(full);
+  assert.ok(summary.githubRepo);
+  assert.ok(!("tree" in summary.githubRepo));
+  assert.ok(!("readme" in summary.githubRepo));
+  assert.ok(!JSON.stringify(summary).includes("PRIVATE_README_SENTINEL"));
+  assert.equal(full.githubRepo?.readme?.markdown, "PRIVATE_README_SENTINEL");
+});
+
+test("oversized GitHub snapshots degrade to a generic saved link before manifest publication", async () => {
+  const url = "https://github.com/OpenCoven/oversized";
+  const snapshot = {
+    version: 1 as const,
+    owner: "OpenCoven",
+    repo: "oversized",
+    visibility: "public" as const,
+    stars: 1,
+    forks: 0,
+    defaultBranch: "main",
+    resolvedRef: "main",
+    commitSha: "a".repeat(40),
+    fetchedAt: VALID_TIMESTAMP,
+    truncated: false,
+    tree: Array.from({ length: 400 }, (_, index) => ({
+      path: `file-${index}-${"x".repeat(2_500)}`,
+      type: "blob" as const,
+      sha: "b".repeat(40),
+    })),
+    readme: { path: "README.md", markdown: "r".repeat(256 * 1024) },
+  };
+
+  const { added } = await saveResearchLinks(
+    [url],
+    "desk",
+    new Map([[url, { githubRepo: snapshot }]]),
+  );
+
+  assert.equal(added.length, 1);
+  assert.equal(added[0].category, "github");
+  assert.equal(added[0].githubRepo, undefined);
+  assert.equal((await listSavedLinks())[0]?.githubRepo, undefined);
+});
+
 test("getSavedLinkById returns full Article bodies and null for unknown or invalid ids", async () => {
   const { added } = await saveResearchLinks(
     [ARTICLE_URL],
