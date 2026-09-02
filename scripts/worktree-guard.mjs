@@ -398,6 +398,19 @@ function strictSingleExactBranch(output, remote, expectedRef, expectedOidWidth) 
   return { oid: match[1], ref: match[2], kind: "heads", name: match[3], peeled: false };
 }
 
+function strictExactBranchAdvertisement(target, remote, ref, expectedOidWidth, deadline) {
+  const probe = strictGitProbe(
+    ["-C", target, "ls-remote", "--exit-code", "--", remote, ref],
+    target,
+    deadline,
+  );
+  if (probe.status === 2 && probe.stdout === "") {
+    throw new Error(`remote ${remote} does not advertise exact branch ${ref}`);
+  }
+  if (probe.status !== 0) throw new Error(`exact branch advertisement probe exited ${probe.status}`);
+  return strictSingleExactBranch(probe.stdout, remote, ref, expectedOidWidth);
+}
+
 function strictValidateMergedGithubPr(pr, proof, head) {
   if (pr.number !== proof.number) throw new Error("GitHub PR number does not match requested proof");
   if (pr.state !== "closed" || pr.merged !== true || typeof pr.merged_at !== "string" || !Number.isFinite(Date.parse(pr.merged_at))) {
@@ -487,22 +500,24 @@ function strictRetainedByRemoteBranch(target, head, proof) {
   if (!remotes.includes(proof.remote)) throw new Error("remote-branch proof remote is not configured");
   strictGit(["-C", target, "check-ref-format", proof.ref], target, deadline);
 
-  const advertised = strictSingleExactBranch(
-    strictGit(["-C", target, "ls-remote", "--", proof.remote, proof.ref], target, deadline),
+  const advertised = strictExactBranchAdvertisement(
+    target,
     proof.remote,
     proof.ref,
     head.length,
+    deadline,
   );
   if (advertised.oid !== proof.oid) {
     throw new Error("advertised remote branch does not match expected OID");
   }
 
   strictFetchAdvertisedRefs(target, proof.remote, [proof.ref], deadline);
-  const refreshed = strictSingleExactBranch(
-    strictGit(["-C", target, "ls-remote", "--", proof.remote, proof.ref], target, deadline),
+  const refreshed = strictExactBranchAdvertisement(
+    target,
     proof.remote,
     proof.ref,
     head.length,
+    deadline,
   );
   if (refreshed.oid !== advertised.oid) {
     throw new Error(`remote ${proof.remote} changed ${proof.ref} during retention proof`);

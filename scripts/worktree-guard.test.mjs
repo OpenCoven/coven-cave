@@ -904,6 +904,15 @@ await test("strict exact remote-branch proof fails closed on OID and ancestry dr
   assert.match(result.stderr, /does not match expected OID/);
 
   result = runStrict(
+    strictRemoteBranchArgs(fixture.wt, head, "refs/heads/missing", remoteMain),
+    fixture.dir,
+    strictEnv(),
+  );
+  assert.equal(result.status, 2, "a missing exact remote branch is refused");
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /does not advertise exact branch refs\/heads\/missing/);
+
+  result = runStrict(
     strictRemoteBranchArgs(fixture.wt, head, "refs/heads/main", remoteMain),
     fixture.dir,
     strictEnv(),
