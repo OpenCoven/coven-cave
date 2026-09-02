@@ -111,21 +111,46 @@ assert.match(
   /function ProgressGroup[\s\S]*cave-progress-bar[\s\S]*progress\.map/,
   "Progress events should render as an activity timeline with a completion bar",
 );
+const progressGroupSource =
+  source.match(/function ProgressGroup\(\{[\s\S]*?\n\}\n/)?.[0] ?? "";
+assert.ok(progressGroupSource, "ProgressGroup body should be locatable");
+
+// A finished run can still carry a step marked running (the stream ends without
+// a final event for it). Counting `total` there printed "4 of 4" beside a row
+// that was visibly still spinning — the card contradicting itself, which is the
+// exact failure it was restructured to remove. Caught by driving the real app.
 assert.match(
   source,
-  /function ProgressGroup[\s\S]*const reached = pending \? settled : total;/,
-  "A settled run reports its full step count rather than freezing mid-progress",
+  /function ProgressGroup[\s\S]*const settled = progress\.filter\(\(event\) => event\.status !== "running"\)\.length;/,
+  "the count reports steps that actually settled, never the total",
+);
+assert.doesNotMatch(
+  progressGroupSource,
+  /pending \? settled : total/,
+  "a settled run must not round its step count up past what settled",
+);
+// The card renders in two places and only one of them was asked for: the strip
+// opens it on request, the transcript shows it under every assistant turn. The
+// transcript keeps a disclosure so a long thread is not buried in step lists.
+assert.match(
+  source,
+  /<ProgressGroup progress=\{turn\.progress\} pending=\{pending\} collapsible \/>/,
+  "the in-transcript copy stays collapsible",
 );
 // Bounded to ProgressGroup's own body: an unbounded [\s\S]* runs past the end
 // of the function and finds ToolGroup's legitimate <details>, which would make
 // this assertion pass for the wrong reason and then fail once it is restored.
-const progressGroupSource =
-  source.match(/function ProgressGroup\(\{[\s\S]*?\n\}\n/)?.[0] ?? "";
-assert.ok(progressGroupSource, "ProgressGroup body should be locatable");
-assert.doesNotMatch(
+// The strip's own call site passes no `collapsible`, so the copy inside its
+// already-expanded panel renders flat — no disclosure inside a disclosure.
+assert.match(
+  source,
+  /<ProgressGroup progress=\{progress\} pending=\{live\} \/>/,
+  "the strip's copy stays flat inside the panel the reader already opened",
+);
+assert.match(
   progressGroupSource,
-  /<details/,
-  "ProgressGroup must not reintroduce a disclosure nested inside the strip's own",
+  /if \(!collapsible\) \{/,
+  "the flat variant is the default, and the disclosure is opt-in",
 );
 
 assert.match(

@@ -9361,7 +9361,7 @@ function TurnRowImpl({
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : null}
             {turn.progress?.length ? (
-              <ProgressGroup progress={turn.progress} pending={pending} />
+              <ProgressGroup progress={turn.progress} pending={pending} collapsible />
             ) : null}
             {pending
               ? bubbleSegments?.map((segment) =>
@@ -9680,63 +9680,96 @@ function currentProgress(progress: ProgressEvent[]): ProgressEvent | undefined {
 /**
  * The step list for a run, with a bar instead of a second set of counts.
  *
- * This used to be a <details> nested inside RunActivityStrip's own expanded
- * panel — a disclosure you could only reach by opening a disclosure — whose
+ * Inside RunActivityStrip this used to be a <details> nested in the strip's OWN
+ * expanded panel — a disclosure reachable only by opening a disclosure — whose
  * summary re-rendered the exact chips ("2 running", "4 done") already showing
- * one row above it, under a shouted "PROGRESS" label that named the card
- * rather than saying anything about the run. Three lines of chrome to reach
- * the list you had already asked for.
+ * one row above it, under a shouted "PROGRESS" label that named the card rather
+ * than saying anything about the run.
  *
  * A bar and "3 of 4" carry the same fact in one line, and carry it better:
  * counts make you do the division, a bar does not. The counts are not lost —
  * they are still one row up, where they were first.
+ *
+ * `collapsible` is why this is a prop rather than one shape. The card renders in
+ * TWO places, and they are not the same situation: in the strip the reader has
+ * already opened a panel to ask for it, so a second disclosure is pure friction;
+ * in the transcript nobody asked, and expanding every assistant turn's full step
+ * list by default buries the reply it belongs to. So the transcript keeps a
+ * disclosure — it just gets the bar in its summary instead of duplicate chips.
  */
 function ProgressGroup({
   progress,
   pending,
+  collapsible = false,
 }: {
   progress: ProgressEvent[];
-  /** Whether the run is still in flight; a settled run reads as fully done. */
+  /** Whether the run is still in flight; drives the disclosure's default state. */
   pending: boolean;
+  /** Render as a <details>. True in the transcript, false inside the strip. */
+  collapsible?: boolean;
 }) {
   const settled = progress.filter((event) => event.status !== "running").length;
   const total = progress.length;
   const current = currentProgress(progress);
-  // A settled run has nothing running by definition, so it reports its full
-  // count rather than "3 of 4" frozen at whatever the last tick observed.
-  const reached = pending ? settled : total;
-  const percent = total > 0 ? Math.round((reached / total) * 100) : 0;
+  // Deliberately NOT "total when settled". A finished run can still carry a
+  // step marked running — the stream ends without a final event for it — and
+  // reporting "4 of 4" beside a row that is visibly still spinning is the exact
+  // self-contradiction this card is being repaired for. Counting what actually
+  // settled says "3 of 4", which is both honest and the more useful fact: the
+  // run ended without finishing that step.
+  const percent = total > 0 ? Math.round((settled / total) * 100) : 0;
+  const label = current?.label ?? (pending ? "Working…" : "Steps");
+
+  const head = (
+    /* Utilities, not new classes: this card is reachable from the startup
+       graph, so a bespoke selector here is paid for by every route, and the
+       home CSS budget sits near zero headroom. The count reuses the
+       .cave-tool-count chip the strip above already ships. */
+    <>
+      <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]" title={label}>
+        {label}
+      </span>
+      <span className="cave-tool-count shrink-0 tabular-nums">
+        {settled} of {total}
+      </span>
+    </>
+  );
+
+  const bar = (
+    /* The bar restates the count for scanning, so it is aria-hidden: the
+       numbers beside it are the accessible version, and announcing both would
+       read the same fact twice — the failure this card is being repaired for. */
+    <span className="cave-progress-bar" aria-hidden>
+      <span className="cave-progress-bar__fill" style={{ width: `${Math.max(2, percent)}%` }} />
+    </span>
+  );
+
+  const list = (
+    <div className="cave-progress-list">
+      {progress.map((event) => (
+        <ProgressRow key={event.id} event={event} />
+      ))}
+    </div>
+  );
+
+  if (!collapsible) {
+    return (
+      <div className="cave-progress-group mt-3">
+        <div className="flex min-w-0 items-baseline gap-2">{head}</div>
+        {bar}
+        {list}
+      </div>
+    );
+  }
 
   return (
-    <div className="cave-progress-group mt-3">
-      {/* Utilities, not new classes: this card is reachable from the startup
-          graph, so a bespoke selector here is paid for by every route, and the
-          home CSS budget sits near zero headroom. The count reuses the
-          .cave-tool-count chip the strip above already ships. */}
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span
-          className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]"
-          title={current?.label}
-        >
-          {current?.label ?? (pending ? "Working…" : "Steps")}
-        </span>
-        <span className="cave-tool-count shrink-0 tabular-nums">
-          {reached} of {total}
-        </span>
-      </div>
-      {/* The bar restates the count for scanning, so it is aria-hidden: the
-          numbers beside it are the accessible version, and announcing both
-          would read the same fact twice — the failure this card is being
-          repaired for. */}
-      <span className="cave-progress-bar" aria-hidden>
-        <span className="cave-progress-bar__fill" style={{ width: `${Math.max(2, percent)}%` }} />
-      </span>
-      <div className="cave-progress-list">
-        {progress.map((event) => (
-          <ProgressRow key={event.id} event={event} />
-        ))}
-      </div>
-    </div>
+    <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
+      <summary className="cave-tool-summary">
+        <span className="flex min-w-0 flex-1 items-baseline gap-2 normal-case tracking-normal">{head}</span>
+      </summary>
+      {bar}
+      {list}
+    </details>
   );
 }
 
