@@ -1906,10 +1906,11 @@ export function Workspace() {
         // contradictory versus the clean project-scoped familiar homes. Scoped
         // views already drop them via project-grant scoping, so collapse is only
         // applied to the unscoped view.
-        const scope = capturedActiveId
-          ? `?familiarId=${encodeURIComponent(capturedActiveId)}`
-          : "?collapseFamiliarWorkspace=1";
-        const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
+        const params = new URLSearchParams();
+        params.set("classifyFamiliarWorkspace", "1");
+        if (capturedActiveId) params.set("familiarId", capturedActiveId);
+        else params.set("collapseFamiliarWorkspace", "1");
+        const sessionsResult = await fetch(`/api/sessions/list?${params.toString()}`, { cache: "no-store" });
         const json = await sessionsResult.json();
         if (!isCurrent()) return; // superseded by a newer load / scope change
         if (!json.ok) {

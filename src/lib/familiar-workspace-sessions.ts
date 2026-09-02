@@ -85,6 +85,27 @@ export function collapseFamiliarWorkspaceSessions(
   // Normalize the prefix list once, then test each row inline.
   const prefixes = normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots);
   return sessions.filter(
-    (session) => !matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
+    (session) =>
+      session.familiarWorkspace !== true &&
+      !matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
   );
+}
+
+/**
+ * Annotate each row with trusted familiar-workspace membership from configured
+ * roots. False means the server checked the path against known familiar
+ * workspace roots and it did not match; callers use this as metadata only.
+ */
+export function classifyFamiliarWorkspaceSessions(
+  sessions: SessionRow[],
+  familiarWorkspacesRoot: string,
+  declaredWorkspaceRoots: readonly string[] = [],
+): SessionRow[] {
+  const prefixes = normalizeFamiliarWorkspacePrefixes(familiarWorkspacesRoot, declaredWorkspaceRoots);
+  return sessions.map((session) => ({
+    ...session,
+    familiarWorkspace:
+      session.familiarWorkspace === true ||
+      matchesFamiliarWorkspacePrefix(session.project_root, prefixes),
+  }));
 }

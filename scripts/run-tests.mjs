@@ -32,6 +32,7 @@ export const SUITES = {
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
+    "src/components/code-work-scheduler.test.ts",
     "src/lib/session-list-deletes.test.ts",
     "src/lib/use-undo-delete-deferred.test.ts",
     "src/lib/tool-edit-stat.test.ts",
@@ -107,6 +108,7 @@ export const SUITES = {
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
+    "src/components/code-shortcuts-dialog.test.tsx",
     "src/components/workspace-canonical-memory-warmup.test.ts",
     "src/components/workspace-canonical-memory-navigation.test.ts",
     "src/components/workspace-canonical-memory-navigation-behavior.test.tsx",
@@ -915,7 +917,10 @@ export const SUITES = {
     "src/components/session-changes-inner.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-surface-mode.test.ts",
+    "src/components/code-review-queue-controls.test.tsx",
+    "src/components/code-session-picker.test.tsx",
     "src/lib/code-surface.test.ts",
+    "src/lib/code-review-queue.test.ts",
     "src/lib/code-session-picker.test.ts",
     "src/lib/code-outline.test.ts",
     "src/lib/code-side-rail.test.ts",
@@ -2146,9 +2151,6 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-retention.test.ts",
   // same reason: the idempotence suite loads cave-board.ts directly.
   "src/lib/cave-board-backfill-idempotence.test.ts",
-  // the picker imports the module under test, which resolves
-  // "@/lib/code-surface" for the shared session-visibility rule.
-  "src/lib/code-session-picker.test.ts",
   // the session-finished emit test loads session-finished-inbox-emit.ts,
   // which resolves "@/lib/cave-inbox", "@/lib/cave-config" and friends as
   // runtime values; the suite cannot load without the alias resolver.
@@ -2457,6 +2459,10 @@ const VITEST_TESTS = new Set([
   "src/components/auto-status-card.test.tsx",
   "src/components/project-picker-focus.test.tsx",
   "src/components/project-root-workspace-notice.behavior.test.tsx",
+  "src/components/code-session-picker.test.tsx",
+  "src/components/code-shortcuts-dialog.test.tsx",
+  // rendered JSX for the shared reviewable/all queue scope control
+  "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",

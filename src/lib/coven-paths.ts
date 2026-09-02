@@ -142,6 +142,122 @@ function readTomlString(block: string, key: string): string | null {
   return bare?.[1] ?? null;
 }
 
+function parseStrictTomlAssignment(line: string, key: "id" | "workspace"): string | null {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) return null;
+  if (!trimmed.startsWith(key)) return null;
+  const next = trimmed[key.length];
+  if (next && /[A-Za-z0-9_]/.test(next)) return null;
+  let cursor = key.length;
+  while (cursor < trimmed.length && /\s/.test(trimmed[cursor]!)) cursor++;
+  if (trimmed[cursor] !== "=") {
+    throw new Error(`invalid assignment syntax for familiar ${key}`);
+  }
+  cursor++;
+  while (cursor < trimmed.length && /\s/.test(trimmed[cursor]!)) cursor++;
+  if (cursor >= trimmed.length) {
+    throw new Error(`missing familiar ${key} value`);
+  }
+
+  const start = trimmed[cursor]!;
+  if (start === '"' || start === "'") {
+    const quote = start;
+    cursor++;
+    let value = "";
+    while (cursor < trimmed.length) {
+      const char = trimmed[cursor]!;
+      if (quote === '"' && char === "\\" && cursor + 1 < trimmed.length) {
+        value += char + trimmed[cursor + 1]!;
+        cursor += 2;
+        continue;
+      }
+      if (char === quote) {
+        cursor++;
+        while (cursor < trimmed.length && /\s/.test(trimmed[cursor]!)) cursor++;
+        if (cursor < trimmed.length && trimmed[cursor] !== "#") {
+          throw new Error(`invalid assignment syntax for familiar ${key}`);
+        }
+        return value;
+      }
+      value += char;
+      cursor++;
+    }
+    throw new Error(`unterminated quoted familiar ${key}`);
+  }
+
+  const valueStart = cursor;
+  while (cursor < trimmed.length && !/\s|#/.test(trimmed[cursor]!)) cursor++;
+  const value = trimmed.slice(valueStart, cursor);
+  while (cursor < trimmed.length && /\s/.test(trimmed[cursor]!)) cursor++;
+  if (cursor < trimmed.length && trimmed[cursor] !== "#") {
+    throw new Error(`invalid assignment syntax for familiar ${key}`);
+  }
+  return value;
+}
+
+function parseFamiliarWorkspacesStrict(raw: string): Map<string, string> {
+  const workspaces = new Map<string, string>();
+  let inFamiliar = false;
+  let familiarId: string | null = null;
+  let workspace: string | null = null;
+  let workspaceLine = 0;
+
+  const flush = () => {
+    if (!inFamiliar) return;
+    if (workspace !== null) {
+      if (!familiarId) {
+        throw new Error(
+          `workspace assignment in familiar block whose id cannot be parsed (line ${workspaceLine})`,
+        );
+      }
+      workspaces.set(
+        familiarId,
+        path.resolve(/* turbopackIgnore: true */ expandHome(workspace)),
+      );
+    }
+    inFamiliar = false;
+    familiarId = null;
+    workspace = null;
+    workspaceLine = 0;
+  };
+
+  for (const [index, rawLine] of raw.split(/\r?\n/).entries()) {
+    const lineNumber = index + 1;
+    const line = rawLine.trim();
+    if (line === "[[familiar]]") {
+      flush();
+      inFamiliar = true;
+      continue;
+    }
+    if (line.startsWith("[")) {
+      flush();
+      continue;
+    }
+    if (!inFamiliar) continue;
+    try {
+      const parsedId = parseStrictTomlAssignment(rawLine, "id");
+      if (parsedId !== null && familiarId === null) {
+        familiarId = parsedId;
+      }
+      const parsedWorkspace = parseStrictTomlAssignment(rawLine, "workspace");
+      if (parsedWorkspace !== null && workspace === null) {
+        workspace = parsedWorkspace;
+        workspaceLine = lineNumber;
+      }
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : "invalid familiar workspace assignment";
+      throw new Error(`Malformed familiars.toml at line ${lineNumber}: ${reason}`);
+    }
+  }
+  flush();
+  return workspaces;
+}
+
+function familiarWorkspacesFile(): string {
+  return path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml");
+}
+
 export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
   const workspaces = new Map<string, string>();
   const blocks = raw.split(/^\s*\[\[familiar\]\]\s*$/m).slice(1);
@@ -154,9 +270,19 @@ export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
   return workspaces;
 }
 
+export async function readFamiliarWorkspacesStrict(): Promise<Map<string, string>> {
+  try {
+    const raw = await readFile(familiarWorkspacesFile(), "utf8");
+    return parseFamiliarWorkspacesStrict(raw);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return new Map();
+    throw error;
+  }
+}
+
 export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
   try {
-    const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
+    const raw = await readFile(familiarWorkspacesFile(), "utf8");
     return parseFamiliarWorkspaces(raw);
   } catch {
     return new Map();
