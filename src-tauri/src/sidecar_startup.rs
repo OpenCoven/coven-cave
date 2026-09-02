@@ -1559,7 +1559,7 @@ pub(super) fn spawn_sidecar_startup(
                     }
                 }
                 let status = SidecarStartupStatus::failed(
-                    "Sidecar startup worker terminated unexpectedly. Please retry.",
+                    "Sidecar startup worker terminated unexpectedly. Please retry.".to_string(),
                 );
                 if let Err(error) = publish_sidecar_startup_status(
                     &app,

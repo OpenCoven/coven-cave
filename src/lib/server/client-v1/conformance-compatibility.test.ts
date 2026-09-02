@@ -75,7 +75,7 @@ test("normal builds compile the compatibility control disabled", () => {
   );
 });
 
-test("conformance builds keep Turbopack while avoiding plugin process IPC", () => {
+test("conformance builds keep Turbopack and start from a clean plugin runtime", () => {
   const script = readFileSync(
     path.join(process.cwd(), "scripts/build-conformance.mjs"),
     "utf8",
@@ -90,11 +90,17 @@ test("conformance builds keep Turbopack while avoiding plugin process IPC", () =
 
   assert.match(script, /\["pnpm@10\.34\.0", "build"\]/);
   assert.match(script, /NODE_OPTIONS:\s*"--max-old-space-size=6144"/);
+  assert.match(
+    script,
+    /rmSync\(path\.join\(repositoryRoot, "\.next"\), \{ recursive: true, force: true \}\)/,
+    "the compatibility-mode build must not reuse the normal build's Turbopack state",
+  );
   assert.equal(manifest.scripts?.["build:conformance"], "node scripts/build-conformance.mjs");
   assert.match(manifest.scripts?.build ?? "", /^next build(?:\s|$)/);
   assert.doesNotMatch(manifest.scripts?.build ?? "", /--webpack/);
-  assert.match(
+  assert.doesNotMatch(
     config,
-    /COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1"[\s\S]*?turbopackPluginRuntimeStrategy:\s*conformanceBuild\s*\?\s*"workerThreads"\s*:\s*undefined/,
+    /turbopackPluginRuntimeStrategy/,
+    "the worker-thread PostCSS runtime corrupts concurrent stylesheet transforms",
   );
 });

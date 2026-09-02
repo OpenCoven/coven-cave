@@ -403,7 +403,7 @@ function runTailscaleCommandOnce(
 ): Promise<TailscaleServeCommandResult> {
   return new Promise((resolve) => {
     const bin = tailscaleBin();
-    const child = spawn(bin, args, {
+    const child = spawn(/* turbopackIgnore: true */ bin, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: tailscaleSpawnEnv(),

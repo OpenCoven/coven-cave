@@ -18,12 +18,15 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { resolveCorepackLaunch } from "./corepack-launch.mjs";
+
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const buildTimeoutMs = 10 * 60_000;
+const buildTimeoutMs = 20 * 60_000;
 const startupTimeoutMs = 45_000;
 const requestTimeoutMs = 3_000;
 const shutdownTimeoutMs = 8_000;
 const maxOutputBytes = 32_000;
+const broadTraceWarning = "Dynamic filesystem access causes tracing of the whole project";
 const healthPath = "/api/client/v1/health";
 const successMetadata = {
   apiVersion: "1.0",
@@ -59,8 +62,10 @@ async function stopChild(child) {
 function collectOutput(child) {
   let output = "";
   const append = (chunk) => {
-    if (output.length >= maxOutputBytes) return;
-    output += chunk.toString("utf8").slice(0, maxOutputBytes - output.length);
+    output += chunk.toString("utf8");
+    if (output.length > maxOutputBytes) {
+      output = output.slice(-maxOutputBytes);
+    }
   };
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
@@ -68,7 +73,13 @@ function collectOutput(child) {
 }
 
 async function runBuild(label, args, env) {
-  const child = spawn("corepack", ["pnpm@10.34.0", ...args], {
+  let launch;
+  try {
+    launch = resolveCorepackLaunch(["pnpm@10.34.0", ...args], { env });
+  } catch (error) {
+    throw new Error(`${label} failed to start: ${error.message}`, { cause: error });
+  }
+  const child = spawn(launch.command, launch.args, {
     cwd: repositoryRoot,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -88,9 +99,15 @@ async function runBuild(label, args, env) {
     child.once("close", (code, signal) => {
       clearTimeout(timer);
       if (timedOut) {
-        reject(new Error(`${label} timed out after ${buildTimeoutMs} ms`));
+        reject(
+          new Error(
+            `${label} timed out after ${buildTimeoutMs} ms\n${output().slice(-4_000)}`,
+          ),
+        );
       } else if (code !== 0) {
         reject(new Error(`${label} exited with ${code ?? signal}\n${output().slice(-4_000)}`));
+      } else if (output().includes(broadTraceWarning)) {
+        reject(new Error(`${label} emitted a broad filesystem trace warning\n${output().slice(-4_000)}`));
       } else {
         resolve();
       }
