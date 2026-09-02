@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { resolveGitHubToken } from "@/lib/github-token";
+import {
+  resolveGitHubToken,
+  resolveGitHubTokenForRead,
+} from "@/lib/github-token";
 import {
   parseGithubRepoInput,
   sanitizeGithubObjectSha,
@@ -41,7 +44,7 @@ export function createGithubRepoFileRouteHandlers(dependencies: Dependencies = {
       const result: GithubRepoFileResult = await fetchFile({
         ...parsed,
         sha,
-        token: resolveToken(),
+        token: resolveGitHubTokenForRead(resolveToken),
       });
       if (!result.ok) {
         const { error } = result;

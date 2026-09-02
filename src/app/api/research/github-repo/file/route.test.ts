@@ -67,6 +67,28 @@ test("forwards only the exact repository, blob SHA, and server token", async () 
   }]);
 });
 
+test("continues public blob reads when credential resolution fails", async () => {
+  const calls: unknown[] = [];
+  const handler = route({
+    resolveToken: () => {
+      throw new Error("encrypted vault unavailable");
+    },
+    fetchFile: async (args) => {
+      calls.push(args);
+      return { ok: true, file: { sha: SHA, text: "public", bytes: 6 } };
+    },
+  });
+
+  const response = await handler(localRequest(`?repo=OpenCoven%2Fcoven-cave&sha=${SHA}`));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    owner: "OpenCoven",
+    repo: "coven-cave",
+    sha: SHA,
+    token: null,
+  }]);
+});
+
 test("maps non-previewable and upstream states to stable responses", async () => {
   const cases = [
     [{ kind: "not-found", message: "missing" }, 404],

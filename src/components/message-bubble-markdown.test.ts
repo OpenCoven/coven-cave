@@ -303,8 +303,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const cacheKey = `\$\{opts\?\.decorateResponse \? "response" : "document"\}:\$\{markdown\}`;/,
-  "response decoration has a distinct final-render cache namespace",
+  /const cacheKey = `\$\{[\s\S]*?opts\?\.decorateResponse[\s\S]*?"response"[\s\S]*?opts\?\.suppressRemoteMedia[\s\S]*?"remote-document"[\s\S]*?"document"[\s\S]*?\}:\$\{markdown\}`;/,
+  "response decoration and remote-media suppression have distinct final-render cache namespaces",
 );
 
 // ── Stable first paint: structure before syntax color ───────────────────────
@@ -346,8 +346,18 @@ assert.match(
 );
 assert.match(
   domWiring,
-  /wireMarkdownLinks\(el, onOpenUrl\)/,
-  "The markdown DOM boundary should wire rendered links through the chat link-open callback",
+  /wireMarkdownLinks\(el, onOpenUrl, resolveOpenUrl\)/,
+  "The markdown DOM boundary should wire rendered links through the current URL resolver and opener",
+);
+assert.match(
+  domWiring,
+  /current\?\.href === href && current\.onOpenUrl === onOpenUrl[\s\S]*?clearMarkdownLinkWiring\(link\)/,
+  "Markdown links should replace stale commit-aware URLs or opener closures instead of keeping first-render wiring",
+);
+assert.match(
+  domWiring,
+  /observer\.disconnect\(\)[\s\S]*?cleanupMarkdownLinks\(el\)/,
+  "Markdown link listeners should be removed with the DOM observer when wiring dependencies change",
 );
 assert.match(
   domWiring,
@@ -478,8 +488,8 @@ assert.match(
 // Only on settled snapshots — mid-stream the fence is usually incomplete.
 assert.match(
   source,
-  /canUseCache && codeBlocks\.some\(isMermaidCodeBlock\)/,
-  "diagrams render only on settled, final-highlight snapshots",
+  /canUseCache && !opts\?\.suppressRemoteMedia && codeBlocks\.some\(isMermaidCodeBlock\)/,
+  "diagrams render only on settled, final-highlight snapshots that permit remote content",
 );
 assert.match(
   css,

@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 
 import { arxivIdFromUrl } from "@/lib/hf-papers";
 import { savedLinkDedupeKey } from "@/lib/link-organizer";
-import { resolveGitHubToken } from "@/lib/github-token";
+import {
+  resolveGitHubToken,
+  resolveGitHubTokenForRead,
+} from "@/lib/github-token";
 import {
   githubRepoCandidates,
   MAX_GITHUB_REPOSITORIES_PER_INGEST,
@@ -142,12 +145,7 @@ export function createResearchLinksRouteHandlers(
           MAX_GITHUB_REPOSITORIES_PER_INGEST,
         );
         if (repositories.length > 0) {
-          let token: string | null;
-          try {
-            token = resolveGithubToken();
-          } catch {
-            return enrichment;
-          }
+          const token = resolveGitHubTokenForRead(resolveGithubToken);
           for (const candidate of repositories) {
             try {
               const result = await fetchRepoView({

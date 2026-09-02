@@ -978,16 +978,18 @@ test("GitHub enrichment failures preserve the generic saved link", async () => {
   assert.equal((await response.json()).added[0].category, "github");
 });
 
-test("GitHub credential resolution failures preserve the generic saved link", async () => {
+test("GitHub credential resolution failures retry public ingestion anonymously", async () => {
   const url = "https://github.com/OpenCoven/coven-cave";
   let fetches = 0;
+  let fetchedToken: string | null | undefined;
   let captured: Map<string, ResearchLinkEnrichment> | undefined;
   const route = createResearchLinksRouteHandlers({
     resolveGitHubToken: () => {
       throw new Error("encrypted vault unavailable");
     },
-    fetchGithubRepoView: async () => {
+    fetchGithubRepoView: async ({ token }) => {
       fetches++;
+      fetchedToken = token;
       return { ok: true, view: githubSnapshot("OpenCoven", "coven-cave") };
     },
     saveResearchLinks: async (submitted, _source, enrichment) => {
@@ -1002,7 +1004,8 @@ test("GitHub credential resolution failures preserve the generic saved link", as
 
   const response = await route.POST(post({ urls: [url] }));
   assert.equal(response.status, 200);
-  assert.equal(fetches, 0);
-  assert.equal(captured?.get(url)?.githubRepo, undefined);
+  assert.equal(fetches, 1);
+  assert.equal(fetchedToken, null);
+  assert.ok(captured?.get(url)?.githubRepo);
   assert.equal((await response.json()).added[0].category, "github");
 });

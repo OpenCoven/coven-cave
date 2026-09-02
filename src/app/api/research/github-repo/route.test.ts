@@ -120,6 +120,23 @@ test("omits the ref key when none is supplied", async () => {
   assert.deepEqual(calls, [{ owner: "o", repo: "r", token: null }]);
 });
 
+test("continues public repository reads when credential resolution fails", async () => {
+  const calls: unknown[] = [];
+  const handler = route({
+    resolveToken: () => {
+      throw new Error("encrypted vault unavailable");
+    },
+    fetchView: async (args) => {
+      calls.push(args);
+      return { ok: true, view: VIEW };
+    },
+  });
+
+  const response = await handler(localRequest("/api/research/github-repo?repo=o%2Fr"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ owner: "o", repo: "r", token: null }]);
+});
+
 test("maps fetch errors to stable status codes and safe messages", async () => {
   const cases: Array<{ error: NonNullable<Extract<GithubRepoViewResult, { ok: false }>["error"]>; status: number }> = [
     { error: { kind: "not-found", message: "GitHub couldn't find that repository." }, status: 404 },
