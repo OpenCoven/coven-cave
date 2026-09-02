@@ -101,13 +101,13 @@ async function runBuild(label, args, env) {
       if (timedOut) {
         reject(
           new Error(
-            `${label} timed out after ${buildTimeoutMs} ms\n${output().slice(-4_000)}`,
+            `${label} timed out after ${buildTimeoutMs} ms\n${output()}`,
           ),
         );
       } else if (code !== 0) {
-        reject(new Error(`${label} exited with ${code ?? signal}\n${output().slice(-4_000)}`));
+        reject(new Error(`${label} exited with ${code ?? signal}\n${output()}`));
       } else if (output().includes(broadTraceWarning)) {
-        reject(new Error(`${label} emitted a broad filesystem trace warning\n${output().slice(-4_000)}`));
+        reject(new Error(`${label} emitted a broad filesystem trace warning\n${output()}`));
       } else {
         resolve();
       }
