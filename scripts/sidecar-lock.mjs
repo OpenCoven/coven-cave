@@ -1,5 +1,5 @@
 // cave-sidecar.lock.json reader: load, validate, and digest the pinned
-// sidecar runtime components (spec: docs/specs/2026-08-20-cave-sidecar-lock-spec.md).
+// sidecar runtime components (spec: docs/superpowers/specs/2026-08-20-cave-sidecar-lock-spec.md).
 //
 // Why this is a standalone pure module: the same lockfile has to be consumed
 // from places that can't share bash — sidecar-bundle.sh / whisper-runtime-

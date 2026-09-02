@@ -2,10 +2,11 @@
 
 Thank you for your interest in Coven Cave. **We welcome external contributions.**
 
-Coven Cave is MIT licensed and community-driven. Bug fixes, docs, new skills and
-integrations, performance work, and community-requested features are all fair
-game. The full flow — DCO sign-off, what we're looking for, and getting started
-— is below.
+Coven Cave is community-driven and dual-licensed under your choice of
+**MIT OR AGPL-3.0-only**. Contributions are accepted under the same dual offer;
+see [LICENSE](./LICENSE). Bug fixes, docs, new skills and integrations,
+performance work, and community-requested features are all fair game. The full
+flow — DCO sign-off, what we're looking for, and getting started — is below.
 
 ## Before you open a PR
 
@@ -47,7 +48,9 @@ So:
 
 ## OpenCoven DCO and Patent Terms
 
-Thank you for your interest in contributing. OpenCoven is MIT licensed and community-driven. We want contributing to be easy, open, and safe for everyone.
+Thank you for your interest in contributing. Coven Cave is dual-licensed under
+**MIT OR AGPL-3.0-only** and community-driven. We want contributing to be easy,
+open, and safe for everyone.
 
 ## Developer Certificate of Origin (DCO)
 
@@ -97,10 +100,17 @@ OpenCoven is not a contribution vehicle for proprietary forks. If you are buildi
 
 ## Getting Started
 
+### External contributors
+
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make your changes with signed-off commits: `git commit -s`
 4. Open a pull request with a clear description
+
+External contributors are not expected to create a Bead or a managed worktree.
+OpenCoven maintainers and coding agents with direct repository access use the
+managed Beads worktree workflow documented in [README.md](./README.md#contributing)
+instead of the fork workflow above.
 
 ## Questions?
 

@@ -2,65 +2,62 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Security fixes are released for the latest published version of Coven Cave.
+Upgrade to the [latest release](https://github.com/OpenCoven/coven-cave/releases/latest)
+before requesting a backport.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Release | Security support |
+| --- | --- |
+| Latest published release | Supported |
+| Earlier releases | Not supported |
+| Unreleased `main` branch | Reports accepted; no distribution support |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Report suspected vulnerabilities through
+[GitHub private vulnerability reporting](https://github.com/OpenCoven/coven-cave/security/advisories/new).
+Do not open a public issue, pull request, or Discord thread.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Include the affected version, platform, impact, reproduction steps, and any
+suggested mitigation. Do not include credentials, private user data, or other
+people's production data in a report.
 
----
+We will acknowledge a report within 48 hours, provide an initial assessment
+within five business days, and send updates at least every seven days while an
+accepted report remains open. We aim to fix confirmed vulnerabilities within
+14 days; complex or coordinated fixes may take longer, and we will communicate
+the revised timeline.
 
-## OpenCoven Security Disclosure Addendum
+We will coordinate disclosure after a fix is available. We credit researchers
+who responsibly disclose vulnerabilities when they want to be named.
 
-## Security Policy
-
-### Reporting a Vulnerability
-
-If you discover a security vulnerability in OpenCoven, please report it responsibly.
-
-**Do not open a public GitHub issue for security vulnerabilities.**
-
-Contact the maintainers directly:
-- Discord: https://discord.gg/OpenCoven (DM @BunsDev)
-- Or open a GitHub Security Advisory on the repository
-
-We will acknowledge receipt within 48 hours and aim to address confirmed vulnerabilities within 14 days.
-
-### Scope
+## Scope
 
 Security reports are welcome for:
-- OpenCoven core harness and routing logic
-- OpenTrust memory and session substrate
+- Coven Cave desktop, web, sidecar, and iOS surfaces
+- Local agent routing, memory, and session isolation
 - Authentication and identity handling
 - Agent sandbox and execution boundaries
+- Update, release, and dependency behavior that creates an exploitable Coven
+  Cave vulnerability
 - Any mechanism that could allow one agent or user to access another's context
 
-### Out of Scope
+## Out of Scope
 
-- Issues in third-party dependencies (report to the dependency maintainer)
-- Issues in model provider APIs (report to the provider)
+- Vulnerabilities in an unmodified third-party service or dependency that do
+  not create an exploitable issue in Coven Cave
+- Vulnerabilities in model-provider APIs that do not result from Coven Cave's
+  integration
+- Social engineering, denial-of-service testing, or testing against systems
+  and data you do not own or have permission to use
 
-### Our Commitment
-
-We take security seriously because OpenCoven handles personal context and agent execution on behalf of users. We will credit researchers who responsibly disclose vulnerabilities (with their permission).
-
----
+If you are unsure whether a finding is in scope, report it privately and we
+will triage it.
 
 ## Architectural Security Properties
 
-The following properties are design goals of OpenCoven. If you find a way to violate them, that's a security report:
+The following properties are design goals of Coven Cave. A way to violate one
+of them is a security report:
 
 1. **Session isolation** — one user's agent context must not be accessible to another user or agent without explicit permission
 2. **Memory ownership** — a user's stored memory and context must remain under their control
@@ -87,4 +84,4 @@ synthetic status-only data.
 
 ---
 
-*Last updated: 2026-07-04*
+*Last updated: 2026-09-01*
