@@ -9,19 +9,23 @@ breaking config changes; patch releases stay additive.
 
 ## [0.3.13] - 2026-09-01
 
-> Makes native iOS chat recovery more durable, keeps task conversations stable
-> through navigation, and strengthens mobile handoff, Research, and release
-> reliability.
+> Makes native iOS chat recovery more durable, introduces a review-first
+> Coding Desk, and strengthens automation supervision, Research, mobile
+> handoff, and release reliability.
 
 Patch release on top of v0.3.12. Native iOS now retries safe mutations
 idempotently, preserves authoritative task chat during navigation hydration,
 reconciles archived and pinned state from the server, and carries improved
 group-message recovery plus WebRTC symbol coverage. The release also adds the
-canonical Research run gateway, workspace-scoped automation supervision, and
-focused reliability fixes across mobile handoff, Chat, the sidecar, CI, and
+canonical Research run gateway, a fail-closed GitHub repository review queue,
+and workspace-scoped automation supervision with an explicit execution graph.
+Focused reliability fixes span mobile handoff, Chat, the sidecar, CI, and
 authenticated clients.
 
 ### Changes
+- feat(code): add review-first Coding Desk (#5276)
+- docs(roadmaps): reconcile Automations v1 tracker mapping to terminal state (#5278)
+- chore: seed the Automations v1 execution graph (#5277)
 - Update interactions.jsonl
 - Keep composer Tools opaque on hover
 - Update interactions.jsonl
