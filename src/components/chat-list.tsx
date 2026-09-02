@@ -10,7 +10,6 @@ import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
-import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
@@ -1695,8 +1694,11 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 {rowFamiliarName}
                                 {project ? ` · ${project}` : ""}
                               </span>
+                              {/* Origin only. The initiator chip that sat here
+                                  was constant down the whole column, so it cost
+                                  row width to say nothing; see
+                                  chat-list-delete.test.ts for the why. */}
                               {s.origin ? <OriginChip origin={s.origin} /> : null}
-                              <SessionInitiatorChip initiator={s.initiator} />
                               {s.model ? (
                                 <span
                                   className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
