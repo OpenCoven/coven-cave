@@ -65,9 +65,10 @@ function trimTrailingSlashes(path: string): string {
 function reviewPriority(row: SessionRow): number {
   const activity = codeSessionActivity(row);
   if (activity === "error") return 0;
+  const pullRequestState = row.pullRequest?.state?.trim().toLowerCase();
   if (
     row.pullRequest &&
-    (row.pullRequest.state ?? "open").toLowerCase() === "open" &&
+    (!pullRequestState || pullRequestState === "open") &&
     codeSessionDiffstat(row)
   ) {
     return 1;

@@ -288,6 +288,28 @@ test("codeReviewQueue groups reviewable sessions by canonical GitHub repo and pr
   ]);
 });
 
+test("codeReviewQueue treats blank pull request state as open when prioritizing review work", () => {
+  const queue = codeReviewQueue(
+    [
+      sessionFixture({
+        id: "running",
+        status: "running",
+        updated_at: "2026-09-01T12:01:00.000Z",
+      }),
+      sessionFixture({
+        id: "blank-pr-state",
+        diff: { additions: 2, deletions: 1 },
+        pullRequest: { repo: "acme/alpha", number: 7, state: "   ", branch: "feat/review" },
+        updated_at: "2026-09-01T12:00:00.000Z",
+      }),
+    ],
+    "reviewable",
+    null,
+  );
+
+  assert.deepEqual(queue.sessions.map((row) => row.id), ["blank-pr-state", "running"]);
+});
+
 test("codeReviewQueue keeps all local Code-visible rows and root labels in all mode", () => {
   const queue = codeReviewQueue(
     [
