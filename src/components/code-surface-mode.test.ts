@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import {
+  codeSessionHasOpenPr,
+  resolveCodeWorkbenchPanels,
+} from "../lib/code-surface.ts";
 
 // Pin suite for the dedicated Code surface (cave-k0ua).
 //
@@ -30,6 +34,83 @@ const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "ut
 const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
 const pendingNavigation = await readFile(new URL("../lib/pending-code-navigation.ts", import.meta.url), "utf8");
+
+const reviewRow = (over = {}) => ({
+  diff: null,
+  pullRequest: null,
+  ...over,
+});
+
+assert.equal(codeSessionHasOpenPr(reviewRow()), false, "sessions without PR context do not count as open review work");
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha" } })),
+  true,
+  "PR context with no terminal state still counts as open by current queue semantics",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "open" } })),
+  true,
+  "explicitly open PRs count as open review work",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "closed" } })),
+  false,
+  "closed PRs do not auto-open the review rail",
+);
+assert.equal(
+  codeSessionHasOpenPr(reviewRow({ pullRequest: { repo: "acme/alpha", state: "merged" } })),
+  false,
+  "merged PRs do not auto-open the review rail",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({ row: reviewRow() }),
+  { reviewOpen: false, terminalOpen: false },
+  "a clean session starts with the compact bottom bar and the review rail closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow({ diff: { additions: 3, deletions: 1 } }),
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "a changed session starts with the review rail open",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow({ pullRequest: { repo: "acme/alpha", state: "open" } }),
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "an open PR starts with the review rail open even when the diff is clean",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    initialTab: "pr",
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "routed PR navigation reopens the rail even when the stored state says closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    initialTab: "terminal",
+  }),
+  { reviewOpen: false, terminalOpen: true },
+  "routed terminal navigation reopens the drawer even when the stored state says closed",
+);
+assert.deepEqual(
+  resolveCodeWorkbenchPanels({
+    row: reviewRow(),
+    reviewOpen: false,
+    terminalOpen: false,
+    openTarget: { kind: "changes", path: "src/example.ts", nonce: 7 },
+  }),
+  { reviewOpen: true, terminalOpen: false },
+  "routed diff navigation reopens the rail even when the stored state says closed",
+);
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
@@ -173,6 +254,41 @@ assert.match(
 );
 assert.match(
   codeView,
+  /role="tablist"[\s\S]*aria-label="Code surface"[\s\S]*Review[\s\S]*Work[\s\S]*GitHub/,
+  "the primary Coding Desk tablist is simplified to Review, Work, and GitHub",
+);
+assert.match(
+  codeView,
+  /const githubTab: CodeGithubTab \| null = isCodeGithubTab\(topTab\) \? topTab : null;/,
+  "the simplified GitHub primary selection is still driven by the existing CodeTopTab GitHub values",
+);
+assert.match(
+  codeView,
+  /const \[lastGithubTab, setLastGithubTab\] = useState<CodeGithubTab>\([\s\S]*?\?\? "activity",\s*\);[\s\S]*const lastGithubTabRef = useRef\(lastGithubTab\);/,
+  "CodeView keeps a remembered GitHub subtab in state and a ref so leaving GitHub does not reset the secondary filter",
+);
+assert.match(
+  codeView,
+  /aria-selected=\{githubTab !== null\}[\s\S]*onClick=\{\(\) => setTopTab\(lastGithubTabRef\.current\)\}/,
+  "activating the GitHub primary tab re-enters the last remembered GitHub subtab instead of always resetting to Activity",
+);
+assert.match(
+  codeView,
+  /githubTab \? \(\s*<div[\s\S]*role="tablist"[\s\S]*aria-label="GitHub filter"[\s\S]*CODE_GITHUB_TABS\.map\(\(id\) =>/,
+  "an active GitHub tab renders the secondary GitHub filter tablist from the existing tab metadata",
+);
+assert.match(
+  codeView,
+  /role="tablist"[\s\S]*aria-label="GitHub filter"[\s\S]*aria-orientation="horizontal"[\s\S]*CODE_GITHUB_TABS\.map\(\(id\) =>[\s\S]*id=\{githubFilterTabId\(id\)\}[\s\S]*aria-controls=\{githubFilterPanelId\(id\)\}[\s\S]*tabIndex=\{githubTab === id \? 0 : -1\}[\s\S]*onKeyDown=\{\(event\) => handleGithubFilterKeyDown\(event, id\)\}/,
+  "the secondary GitHub filter is a keyboard-operable tablist with roving tabindex and stable aria wiring",
+);
+assert.match(
+  codeView,
+  /role="tabpanel"[\s\S]*id=\{githubFilterPanelId\(githubTab\)\}[\s\S]*aria-labelledby=\{githubFilterTabId\(githubTab\)\}/,
+  "the visible GitHub surface is exposed as the tabpanel controlled by the selected GitHub filter tab",
+);
+assert.match(
+  codeView,
   /activity: "all"[\s\S]*prs: "pr"[\s\S]*issues: "issue"[\s\S]*reviews: "review_request"/,
   "Coding Desk preserves the former all feed and each specialized filter",
 );
@@ -213,6 +329,41 @@ assert.match(
 );
 assert.match(
   codeView,
+  /const pendingQueueSelectedId = useMemo\(\s*\(\) => resolvePendingCodeOpenSessionId\(sessions, pendingOpen\),[\s\S]*const queueSelectedId = pendingQueueSelectedId \?\? \(typeof selectedId === "string" \? selectedId : null\);[\s\S]*const queue = useMemo\(\s*\(\) => codeReviewQueue\(sessions, queueMode, queueSelectedId\),/,
+  "CodeView resolves a root-only pending open into the selected queue override before reviewable filtering, with selectedId as the fallback",
+);
+assert.match(
+  codeView,
+  /import\s*\{[\s\S]*codeComboFromEvent[\s\S]*isCodeShortcutTarget[\s\S]*\}\s*from "@\/lib\/code-shortcuts";/,
+  "CodeView reuses the shared combo normalizer and shortcut-target guard rather than re-implementing typing detection",
+);
+assert.match(
+  codeView,
+  /useRef\(new Map<string, boolean>\(\)\)[\s\S]*useRef\(new Map<string, boolean>\(\)\)/,
+  "CodeView keeps review-rail and terminal open state in per-session ref Maps",
+);
+assert.match(
+  codeView,
+  /if \(event\.defaultPrevented\) return;[\s\S]*if \(!isCodeShortcutTarget\(event\.target\)\) return;[\s\S]*const combo = codeComboFromEvent\(event\);[\s\S]*combo === "\/"[\s\S]*stopImmediatePropagation\(\)[\s\S]*activeQueuePickerTrigger\(\)[\s\S]*\[data-code-picker-panel\] \[data-code-session-search\]/,
+  "the room keydown handler normalizes combos once, claims slash before broader listeners can steal it, and focuses the active picker search",
+);
+assert.match(
+  codeView,
+  /querySelectorAll<HTMLButtonElement>\("\[data-code-session-id\]"\)[\s\S]*combo === "J" \|\| combo === "K"[\s\S]*rows\[nextIndex\]\?\.focus\(\)[\s\S]*combo === "Shift\+A"/,
+  "the room keydown handler walks visible session rows and toggles scope from normalized fixed queue combos",
+);
+assert.match(
+  codeView,
+  /window\.addEventListener\("keydown", onKeyDown, true\)/,
+  "queue shortcuts listen in capture phase so the narrow landing's slash reaches the Code surface before broader slash search handlers",
+);
+assert.match(
+  codeView,
+  /if \(!pendingOpen\) return;[\s\S]*const byId = pendingQueueSelectedId\s*\?\s*queueSessions\.find\(\(row\) => row\.id === pendingQueueSelectedId\)/,
+  "the pending-open effect reuses the resolved queue override id so excluded sessions remain selectable from queue.sessions",
+);
+assert.match(
+  codeView,
   /if \(!pendingOpen\) return;[\s\S]*setTopTab\("sessions"\);\s*setInitialGithubTarget\(null\);\s*if \(target\) setSelectedId\(target\.id\);[\s\S]*setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\);/,
   "file/diff navigation supersedes a pending GitHub detail so it cannot replay: the pending-open effect must switch to Sessions, clear the latched GitHub target, then keep the existing session/workbench selection flow",
 );
@@ -239,6 +390,11 @@ assert.match(
   /const workRoot = codeSessionWorkRoot\(row\);/,
   "the workbench derives one work root for the tree, the viewer and the rail",
 );
+assert.match(
+  workbench,
+  /const panels = resolveCodeWorkbenchPanels\(\{[\s\S]*row,[\s\S]*initialTab,[\s\S]*openTarget[\s\S]*\}\);/,
+  "CodeWorkbench derives its panel defaults from the shared pure model so source tests can pin the content-aware opening rules",
+);
 
 // The three columns, in order.
 assert.match(
@@ -253,7 +409,7 @@ assert.match(
 // only its `visible` prop changes.
 assert.match(
   workbench,
-  /<CodeTerminalDrawer[\s\S]{0,240}open=\{termOpen\}/,
+  /<CodeTerminalDrawer[\s\S]{0,240}open=\{panels\.terminalOpen\}/,
   "the terminal drawer sits outside the column body, so no step can unmount it",
 );
 assert.doesNotMatch(
@@ -521,9 +677,49 @@ assert.match(
   "the measured layout uses the collapsible rail only when it fits and preserves narrow list-first drill-in",
 );
 assert.match(
+  codeView,
+  /\{!selected \? \(\s*<div className="px-2 pt-2">[\s\S]*<CodeSessionPicker[\s\S]*selected=\{null\}/,
+  "the narrow list-first landing mounts the shared picker with no selected session so slash search still has an owner after Back",
+);
+assert.match(
+  codeView,
+  /const \[queueMode, setQueueMode\] = useState<CodeQueueMode>\("reviewable"\);[\s\S]*const pendingQueueSelectedId = useMemo\(/,
+  "CodeView owns the non-persisted reviewable/all mode and one shared precomputed queue",
+);
+assert.match(
+  codeView,
+  /<CodeSessionRail[\s\S]*queue=\{queue\}[\s\S]*mode=\{queueMode\}[\s\S]*onModeChange=\{setQueueMode\}/,
+  "the rail renders from the shared queue and the room-owned scope toggle",
+);
+assert.match(
+  codeView,
+  /<CodeWorkbench[\s\S]*queue=\{queue\}[\s\S]*queueMode=\{queueMode\}[\s\S]*onQueueModeChange=\{setQueueMode\}/,
+  "the selected workbench receives the same queue and scope control the rail uses",
+);
+assert.match(
   rail,
-  /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{activity\}`\}/,
+  /const groups = queue\.groups;/,
+  "the rail renders the precomputed queue groups instead of regrouping sessions locally",
+);
+assert.doesNotMatch(
+  rail,
+  /groupCodeRailSessions/,
+  "the rail never re-runs session grouping — queue ownership stays in CodeView",
+);
+assert.match(
+  rail,
+  /aria-current=\{selected \? "true" : undefined\}[\s\S]*data-code-session-id=\{row\.id\}/,
+  "visible rail row buttons expose the same stable session-id marker the queue shortcuts walk",
+);
+assert.match(
+  rail,
+  /aria-label=\{open \? undefined : `Open \$\{title\} in \$\{group\.label\}, \$\{ACTIVITY_A11Y\[activity\]\}`\}/,
   "collapsed session buttons identify the session, project, and activity without relying on color",
+);
+assert.match(
+  rail,
+  /<CodeReviewQueueControls[\s\S]*outsideCurrentFilter=\{queue\.outsideCurrentFilter\}/,
+  "open rail scope controls surface the outside-filter notice in the shared queue chrome",
 );
 assert.match(
   rail,
@@ -821,6 +1017,21 @@ assert.match(
   /setStep\("source"\);/,
   "a routed file open drills into Source so the target is actually visible",
 );
+assert.match(
+  workbench,
+  /const initialTabNeedsMeasuredLayout = initialTab === "files" && measuredWidth === null && typeof ResizeObserver !== "undefined" && !isMobile;/,
+  "a file-tab deep link waits for a real narrow/wide layout decision before it is consumed",
+);
+assert.match(
+  workbench,
+  /if \(initialTabNeedsMeasuredLayout\) return;[\s\S]*if \(initialTab === "files" && !fitsSplit\) setStep\("files"\);/,
+  "a narrow file-tab deep link survives until layout is known, then drills into Files rather than leaving them hidden behind Source",
+);
+assert.match(
+  workbench,
+  /if \(event\.defaultPrevented\) return;[\s\S]*const action = codeShortcutForCombo\(keymap, codeComboFromEvent\(event\)\);/,
+  "the workbench shortcut handler honors fixed-key owners before consulting the rebindable keymap",
+);
 
 // A rail closed to its spine while the room was wide must not survive into the
 // narrow Review step: that step would render a 28px sliver with no control to
@@ -829,12 +1040,12 @@ assert.match(
 // in review on #4418 — every check was green.)
 assert.match(
   workbench,
-  /open=\{fitsSplit \? railOpen : true\}/,
+  /open=\{fitsSplit \? panels\.reviewOpen : true\}/,
   "the narrow Review step always renders an open rail, so it can never be a blank sliver",
 );
 assert.match(
   workbench,
-  /onOpenChange=\{fitsSplit \? setRailOpen : \(\) => setStep\("source"\)\}/,
+  /onOpenChange=\{fitsSplit \? onReviewOpenChange : \(\) => setStep\("source"\)\}/,
   "closing the rail on a narrow room steps back to the source rather than leaving nothing",
 );
 

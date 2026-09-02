@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import { branchPrCache, prUrlCache, type BranchPrCache, type PrUrlCache } from "./branch-pr-context.ts";
+import { normalizeGitHubRepoUrl } from "./github-repo-link.ts";
 import type { SessionGitContext, SessionRow } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -83,11 +84,12 @@ async function readGitContext(git: GitRunner, projectRoot: string): Promise<Sess
   if ((await git(trimmed, ["rev-parse", "--is-inside-work-tree"])) !== "true") return null;
 
   // Independent probes — run together instead of serially.
-  const [currentBranch, worktreeRoot, gitDirRaw, commonDirRaw] = await Promise.all([
+  const [currentBranch, worktreeRoot, gitDirRaw, commonDirRaw, originRemote] = await Promise.all([
     git(trimmed, ["branch", "--show-current"]),
     git(trimmed, ["rev-parse", "--show-toplevel"]),
     git(trimmed, ["rev-parse", "--git-dir"]),
     git(trimmed, ["rev-parse", "--git-common-dir"]),
+    git(trimmed, ["config", "--get", "remote.origin.url"]),
   ]);
   const branch = currentBranch ?? (await git(trimmed, ["rev-parse", "--short", "HEAD"]));
   const gitDir = resolveGitPath(trimmed, gitDirRaw);
@@ -97,6 +99,7 @@ async function readGitContext(git: GitRunner, projectRoot: string): Promise<Sess
     isWorktree && commonDir && path.basename(commonDir) === ".git"
       ? path.dirname(commonDir)
       : null;
+  const repositoryUrl = normalizeGitHubRepoUrl(originRemote);
 
   if (!branch && !worktreeRoot && !isWorktree) return null;
   return {
@@ -104,6 +107,7 @@ async function readGitContext(git: GitRunner, projectRoot: string): Promise<Sess
     worktreeRoot,
     isWorktree,
     ...(repositoryRoot ? { repositoryRoot } : {}),
+    ...(repositoryUrl ? { repositoryUrl } : {}),
   };
 }
 
