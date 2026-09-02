@@ -240,8 +240,8 @@ assert.match(
 );
 assert.match(
   panelStylesSource,
-  /@keyframes vault-paste-mask\s*\{[\s\S]*?color:\s*transparent;[\s\S]*?-webkit-text-security:\s*disc;/,
-  "the mask swaps the discrete text-security mode while the glyphs are transparent",
+  /@keyframes vault-paste-mask\s*\{\s*0%\s*\{\s*color:\s*transparent;\s*-webkit-text-security:\s*disc;/,
+  "the mask starts transparent and fail-closed when it interrupts reveal",
 );
 assert.match(
   panelStylesSource,

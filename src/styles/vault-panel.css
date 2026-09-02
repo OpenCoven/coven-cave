@@ -95,16 +95,6 @@
 
 @keyframes vault-paste-mask {
   0% {
-    color: var(--text-primary);
-    -webkit-text-security: none;
-  }
-
-  45% {
-    color: transparent;
-    -webkit-text-security: none;
-  }
-
-  55% {
     color: transparent;
     -webkit-text-security: disc;
   }
