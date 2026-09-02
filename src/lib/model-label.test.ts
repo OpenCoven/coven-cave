@@ -9,6 +9,7 @@ assert.equal(modelLabel("claude-opus-4-8[1m]"), "Opus 4.8", "bracket suffix is i
 assert.equal(modelLabel("claude-sonnet-4-6"), "Sonnet 4.6", "Sonnet family");
 assert.equal(modelLabel("claude-haiku-4-5-20251001"), "Haiku 4.5", "build date is ignored");
 assert.equal(modelLabel("claude-fable-5"), "Fable 5", "Fable family");
+assert.equal(modelLabel("claude-fable-5-1"), "Fable 5.1", "Fable minor version");
 assert.equal(modelLabel("gpt-5-codex"), "Codex", "codex wins over gpt");
 assert.equal(modelLabel("gpt-5"), "GPT-5", "GPT family + version");
 assert.equal(modelLabel("anthropic/some-future-model"), "some-future-model", "provider prefix dropped");

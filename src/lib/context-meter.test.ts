@@ -18,6 +18,14 @@ test("contextWindowForModel resolves catalogued ids as known", () => {
     tokens: 1_000_000,
     known: true,
   });
+  assert.deepEqual(contextWindowForModel("anthropic/claude-fable-5-1"), {
+    tokens: 1_000_000,
+    known: true,
+  });
+  assert.deepEqual(contextWindowForModel("github/claude-fable-5-1"), {
+    tokens: 1_000_000,
+    known: true,
+  });
 });
 
 test("contextWindowForModel tolerates a bare model id (no provider prefix)", () => {
