@@ -60,6 +60,8 @@ function sources(overrides: Partial<ClientV1ReadSources> = {}): ClientV1ReadSour
     listProjects: unsupported,
     listConversations: unsupported,
     loadConversation: async (id) => (id === "conversation-1" ? BRANCHED : null),
+    loadFamiliarContract: unsupported,
+    readFamiliarAnalytics: unsupported,
     ...overrides,
   };
 }

@@ -43,6 +43,8 @@ test("declares exactly the reviewed operation inventory, in order", () => {
     "credentials.admin.revoke",
     "status.admin.read",
     "familiars.list",
+    "familiars.contract.read",
+    "familiars.analytics.read",
     "projects.list",
     "conversations.list",
     "conversations.read",
@@ -140,6 +142,11 @@ test("keeps cursors a cross-cutting family rather than a route of its own", () =
     "messages.list",
   ]);
   assert.equal(clientV1Operation("conversations.read")?.families.includes("cursors"), false);
+  // The two familiar detail reads are single records narrowed by query, not
+  // paged: `familiars.analytics.read` takes `window` and `recent` and still
+  // answers one record, so neither claims paging either.
+  assert.equal(clientV1Operation("familiars.contract.read")?.families.includes("cursors"), false);
+  assert.equal(clientV1Operation("familiars.analytics.read")?.families.includes("cursors"), false);
 });
 
 test("binds every operation's authority class to its id and its scope", () => {
@@ -208,6 +215,14 @@ test("pins every operation's credential and authority binding", () => {
       "credentials.admin.revoke": { credential: "admin", binding: "none" },
       "status.admin.read": { credential: "admin", binding: "none" },
       "familiars.list": { credential: "bearer", binding: "hpke-bound-v1" },
+      "familiars.contract.read": {
+        credential: "bearer",
+        binding: "hpke-bound-v1",
+      },
+      "familiars.analytics.read": {
+        credential: "bearer",
+        binding: "hpke-bound-v1",
+      },
       "projects.list": { credential: "bearer", binding: "hpke-bound-v1" },
       "conversations.list": {
         credential: "bearer",

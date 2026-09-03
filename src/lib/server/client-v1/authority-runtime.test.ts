@@ -130,6 +130,16 @@ function operationRequestDetails(operation: ClientV1Operation): {
         method: "GET",
         url: "http://127.0.0.1:3020/api/client/v1/familiars",
       };
+    case "familiars.contract.read":
+      return {
+        method: "GET",
+        url: "http://127.0.0.1:3020/api/client/v1/familiars/scribe/contract",
+      };
+    case "familiars.analytics.read":
+      return {
+        method: "GET",
+        url: "http://127.0.0.1:3020/api/client/v1/familiars/scribe/analytics",
+      };
     case "projects.list":
       return {
         method: "GET",

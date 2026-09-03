@@ -55,6 +55,8 @@ function sources(overrides: Partial<ClientV1ReadSources> = {}): ClientV1ReadSour
     listProjects: unsupported,
     listConversations: async () => LEDGER,
     loadConversation: unsupported,
+    loadFamiliarContract: unsupported,
+    readFamiliarAnalytics: unsupported,
     ...overrides,
   };
 }
