@@ -1,5 +1,18 @@
 # Chat v1 Phase 1 Gate — Working Record Re-Verification (2026-08-30)
 
+> **Current refresh — 2026-09-04:** Phase 1 is closed in canonical Beads:
+> `cave-23nmv` closed on 2026-08-29 with OpenCoven/chat#31,
+> OpenCoven/chat#30, and 15/15
+> real-authority assertions recorded as evidence. GitHub #4833 remains an
+> unrefreshed open mirror; #4780 and #4830 are closed. Actions run
+> `33250233035` succeeded and its secret-scanned report artifact is retained
+> through 2026-09-12. A newer OpenCoven/chat `main` CI run,
+> `33853544991` at `1e8597d3a6195fcce2fa8f76b28dc9bdd9bec985`, also passed
+> the Phase 1 real-authority job and retains its report through 2026-09-18.
+> Chat `main` has advanced again and its newest run is still in progress, so
+> neither result is represented as verification of the current tip. The dated
+> body below is retained as the 2026-08-30 audit record.
+
 Bead `cave-23nmv` · Phase 1 gate · owner Cross-repo ·
 [#4833](https://github.com/OpenCoven/coven-cave/issues/4833).
 
