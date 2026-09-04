@@ -80,6 +80,20 @@ final class FamiliarDashboardStore {
         entries[familiarId]?.snapshot
     }
 
+    #if DEBUG
+    func seedPreview(_ snapshot: FamiliarDashboardSnapshot) {
+        entries[snapshot.familiarId] = FamiliarDashboardEntry(
+            phase: .ready,
+            snapshot: snapshot,
+            error: nil,
+            lastLoadedAt: now(),
+            lastAttemptedAt: nil
+        )
+        touch(snapshot.familiarId)
+        evictIfNeeded()
+    }
+    #endif
+
     /// Test/inspection seam: how many Familiars are currently cached.
     var cachedFamiliarCount: Int { entries.count }
 

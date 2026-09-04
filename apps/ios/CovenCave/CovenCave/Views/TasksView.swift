@@ -106,6 +106,22 @@ struct TasksView: View {
         app.projectTasks.map(\.id)
     }
 
+    private var compactDetail: Binding<BoardCard?> {
+        Binding(
+            get: {
+                if let boardDetail { return boardDetail }
+                guard horizontalSizeClass != .regular, app.tasksLoaded else { return nil }
+                return Self.requestedCardToOpen(app.cardToOpen, in: app.projectTasks)
+            },
+            set: { card in
+                boardDetail = card
+                if card == nil, horizontalSizeClass != .regular {
+                    app.cardToOpen = nil
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
             content
@@ -147,11 +163,11 @@ struct TasksView: View {
                     if !app.projectsLoaded { await app.loadProjects() }
                 }
                 .safeAreaInset(edge: .top) { groupBar }
-                .onAppear(perform: openRequestedCard)
+                .onAppear(perform: deferRequestedCardOpen)
                 // A chat asked to open one of its linked tasks.
-                .onChange(of: app.cardToOpen) { _, _ in openRequestedCard() }
+                .onChange(of: app.cardToOpen) { _, _ in deferRequestedCardOpen() }
                 .onChange(of: visibleTaskIds) { _, _ in
-                    openRequestedCard()
+                    deferRequestedCardOpen()
                     reconcileScopedSelection()
                 }
                 .confirmationDialog("Delete this task?",
@@ -161,9 +177,6 @@ struct TasksView: View {
                     Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
-                .sheet(item: $boardDetail) { card in
-                    NavigationStack { TaskDetailView(card: card) }
-                }
                 .sidebarColumn()
         } detail: {
             if let selection {
@@ -179,6 +192,9 @@ struct TasksView: View {
         // Keep the task list visible beside the detail on iPad rather than letting
         // the detail take over; on iPhone the split view still collapses to a stack.
         .navigationSplitViewStyle(.balanced)
+        .sheet(item: compactDetail) { card in
+            NavigationStack { TaskDetailView(card: card) }
+        }
     }
 
     private var deleteDialogBinding: Binding<Bool> {
@@ -281,19 +297,25 @@ struct TasksView: View {
         }
     }
 
+    private func deferRequestedCardOpen() {
+        Task { @MainActor in
+            await Task.yield()
+            openRequestedCard()
+        }
+    }
+
     /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard app.tasksLoaded else { return }
         guard let card = Self.requestedCardToOpen(app.cardToOpen, in: app.projectTasks) else {
-            app.cardToOpen = nil
             return
         }
         if horizontalSizeClass == .regular {
             if selection?.id != card.id { selection = card }
+            app.cardToOpen = nil
         } else {
-            boardDetail = card
+            return
         }
-        app.cardToOpen = nil
     }
 
 

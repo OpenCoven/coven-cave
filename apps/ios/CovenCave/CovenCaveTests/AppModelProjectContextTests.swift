@@ -4063,6 +4063,8 @@ final class AppModelProjectContextTests: XCTestCase {
         let opened = await app.openChat(for: task)
         let unwrapped = try XCTUnwrap(opened)
 
+        await waitFor { app.threadToOpen === unwrapped }
+
         XCTAssertEqual(unwrapped.title, "missing-session")
         XCTAssertEqual(unwrapped.familiarIds, ["nova"])
         XCTAssertEqual(unwrapped.sessionIds, ["nova": "missing-session"])
@@ -4247,6 +4249,8 @@ final class AppModelProjectContextTests: XCTestCase {
         let opened = await app.openChat(for: task)
         let unwrapped = try XCTUnwrap(opened)
 
+        await waitFor { app.threadToOpen === existing }
+
         XCTAssertTrue(unwrapped === existing)
         XCTAssertEqual(existing.familiarIds, ["nova", "sage"])
         XCTAssertEqual(existing.sessionIds, ["nova": "session-1"])
@@ -4310,6 +4314,8 @@ final class AppModelProjectContextTests: XCTestCase {
         let opened = await app.openChat(for: task)
         let unwrapped = try XCTUnwrap(opened)
 
+        await waitFor { app.threadToOpen === existing }
+
         XCTAssertTrue(unwrapped === existing)
         XCTAssertEqual(existing.familiarIds, ["nova", "sage", "ember"])
         XCTAssertEqual(existing.sessionIds, [
@@ -4368,6 +4374,8 @@ final class AppModelProjectContextTests: XCTestCase {
         )
         let opened = await app.openChat(for: task)
         let unwrapped = try XCTUnwrap(opened)
+
+        await waitFor { app.threadToOpen === existing }
 
         XCTAssertTrue(unwrapped === existing)
         XCTAssertEqual(existing.familiarIds, ["sage"])
