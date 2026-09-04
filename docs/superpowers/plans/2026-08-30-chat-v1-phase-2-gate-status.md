@@ -1,5 +1,11 @@
 # Chat v1 Phase 2 gate — canonical reads: re-verified working record (2026-08-30)
 
+> **Current refresh — 2026-09-04:** The Phase 2 gate remains blocked by the
+> Chat shell and the missing accepted three-platform real-authority aggregate.
+> Canonical Beads `cave-ff3j6`, `cave-hjy2f`, and `cave-8ywi2` are blocked;
+> GitHub #4837, #4838, and #4839 remain open mirrors. Phase 1 is closed in
+> Beads even though GitHub #4833 remains unrefreshed and open.
+
 Gate issue: [#4839](https://github.com/OpenCoven/coven-cave/issues/4839) · bead `cave-8ywi2` ·
 Phase 2 · owner Cross-repo (mirrored as [#4906](https://github.com/OpenCoven/coven-cave/issues/4906),
 closed 2026-08-24 as a duplicate visibility mirror — evidence stays on #4839).

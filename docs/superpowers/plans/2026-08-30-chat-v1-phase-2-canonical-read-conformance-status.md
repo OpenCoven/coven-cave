@@ -1,5 +1,12 @@
 # Chat v1 Phase 2 — real-authority canonical read conformance: re-verified working record
 
+> **Current refresh — 2026-09-04:** The operative conclusion is unchanged.
+> GitHub #4838 remains open and canonical Bead `cave-hjy2f` is blocked. The SDK
+> results directory still states that no passing three-platform aggregate
+> exists, and the Chat canonical-read journey remains dependent on the blocked
+> shell lane. The dated body below should not be read as saying the Bead is
+> currently ready.
+
 > Issue [#4838](https://github.com/OpenCoven/coven-cave/issues/4838) · bead `cave-hjy2f` · Phase 2 · owner **Cross-repo** ·
 > Re-verified **2026-08-30**, read-only (GitHub API over `OpenCoven/coven-cave`, `OpenCoven/sdk`, `OpenCoven/chat`, `OpenCoven/coven`, plus a fresh clone of `OpenCoven/coven-cave` at `origin/main`) ·
 > Supersedes the **Blocked** state recorded on 2026-08-22 in the issue body ·

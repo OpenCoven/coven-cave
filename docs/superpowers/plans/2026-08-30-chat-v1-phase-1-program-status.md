@@ -1,5 +1,12 @@
 # Chat v1 Phase 1 — Verified Program Status (Discovery, Pairing, Health, Revocation)
 
+> **Current refresh — 2026-09-04:** Phase 1 is complete in canonical Beads:
+> the implementation beads, `cave-23nmv` gate, and `cave-fz01p` epic are
+> closed with named successful gate evidence. GitHub #4818 and #4833 remain
+> stale open mirrors even though #4780 and #4830 are closed. Remaining work is
+> evidence preservation and mirror reconciliation, not Phase 1 implementation.
+> The 2026-08-30 body below remains the dated audit trail.
+
 **Date of verification:** 2026-08-30 (read-only, all checks against `main` heads and issue state at that date)
 **Refresh:** second pass appended below (2026-08-30T15:00Z) — `cave-tsvfj`/#4830 closed without on-issue evidence; this record set synced upstream via #5211. Verdict unchanged: still NOT MET.
 **Tracker issue:** OpenCoven/coven-cave#4818 · Bead `cave-fz01p` · Phase 1 epic · lane `program-coordination`
