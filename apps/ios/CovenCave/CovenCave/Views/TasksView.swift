@@ -114,8 +114,12 @@ struct TasksView: View {
                 return Self.requestedCardToOpen(app.cardToOpen, in: app.projectTasks)
             },
             set: { card in
+                let wasPresentingBoardDetail = boardDetail != nil
+                let consumesRequestedCard = card == nil
+                    && horizontalSizeClass != .regular
+                    && !wasPresentingBoardDetail
                 boardDetail = card
-                if card == nil, horizontalSizeClass != .regular {
+                if consumesRequestedCard {
                     app.cardToOpen = nil
                 }
             }
