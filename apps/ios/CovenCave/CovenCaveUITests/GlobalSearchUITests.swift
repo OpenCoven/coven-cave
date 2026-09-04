@@ -203,10 +203,12 @@ final class GlobalSearchUITests: XCTestCase {
                       "Everywhere search should reveal deleted or unknown-project recovery tasks")
         taskResult.tap()
 
-        XCTAssertTrue(app.navigationBars["Task"].waitForExistence(timeout: 10),
+        let taskDetail = app.navigationBars["Task"]
+        XCTAssertTrue(taskDetail.waitForExistence(timeout: 10),
                       "tapping the result opens Task detail instead of rejecting the task")
-        XCTAssertTrue(app.staticTexts["scope anchor unassigned"].exists,
+        XCTAssertTrue(app.staticTexts["scope anchor unassigned"].waitForExistence(timeout: 5),
                       "the opened detail matches the recovery task result")
+        taskDetail.swipeDown()
 
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
