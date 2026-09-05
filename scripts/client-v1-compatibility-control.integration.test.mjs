@@ -22,7 +22,7 @@ import { resolveCorepackLaunch } from "./corepack-launch.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const buildTimeoutMs = 20 * 60_000;
-const startupTimeoutMs = 45_000;
+const startupTimeoutMs = process.platform === "win32" ? 90_000 : 45_000;
 const requestTimeoutMs = 3_000;
 const shutdownTimeoutMs = 8_000;
 const maxOutputBytes = 32_000;
