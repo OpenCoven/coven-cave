@@ -1,5 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  MODEL_CATALOG_OUTPUT_PATH,
+  MODEL_CATALOG_SOURCE_PATH,
+  compileModelCatalog,
+  renderModelCatalog,
+} from "../../scripts/sync-model-catalog.mjs";
+import { modelLabel } from "./model-label.ts";
 import {
   RUNTIME_MODEL_CATALOG,
   catalogForRuntime,
@@ -14,6 +22,118 @@ import {
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
+
+const catalogSourceRaw = readFileSync(MODEL_CATALOG_SOURCE_PATH, "utf8");
+const catalogSource = JSON.parse(catalogSourceRaw);
+assert.equal(
+  readFileSync(MODEL_CATALOG_OUTPUT_PATH, "utf8"),
+  renderModelCatalog(catalogSource, catalogSourceRaw),
+  "the generated model catalog must match config/runtime-model-catalog.json",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {},
+    harnesses: {
+      claude: {
+        provider: "anthropic",
+        models: ["missing-model"],
+        allowCustom: true,
+        defaultOwner: "cave",
+      },
+    },
+    contextAliases: {},
+  }),
+  /unknown model missing-model/,
+  "the pipeline rejects harness references that are absent from the model registry",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {
+      first: { label: "First", ids: { anthropic: "duplicate" } },
+      second: { label: "Second", ids: { anthropic: "duplicate" } },
+    },
+    harnesses: {},
+    contextAliases: {},
+  }),
+  /assigned to both first and second/,
+  "the pipeline rejects ambiguous provider model ids",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {
+      typo: {
+        label: "Typo",
+        ids: { anthropic: "typo" },
+        contextWindows: 1_000_000,
+      },
+    },
+    harnesses: {},
+    contextAliases: {},
+  }),
+  /unknown field\(s\): contextWindows/,
+  "the pipeline rejects misspelled model metadata instead of dropping it",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {},
+    harnesses: {
+      future: {
+        provider: "unsupported",
+        models: [],
+        allowCustom: true,
+        defaultOwner: "runtime",
+      },
+    },
+    contextAliases: {},
+  }),
+  /provider "unsupported" is not supported/,
+  "the pipeline fails before generating a provider outside its type contract",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {},
+    harnesses: {
+      unsafe: {
+        provider: "xai",
+        models: [],
+        defaultModel: "--model",
+        allowCustom: true,
+        defaultOwner: "runtime",
+      },
+    },
+    contextAliases: {},
+  }),
+  /defaultModel is not a safe model id/,
+  "the pipeline rejects flag-shaped default model values",
+);
+assert.throws(
+  () => compileModelCatalog({
+    schemaVersion: 1,
+    models: {
+      gated: {
+        label: "Gated",
+        ids: { anthropic: "gated" },
+        capabilityGated: true,
+      },
+    },
+    harnesses: {
+      claude: {
+        provider: "anthropic",
+        models: ["gated"],
+        allowCustom: true,
+        defaultOwner: "cave",
+      },
+    },
+    contextAliases: {},
+  }),
+  /cannot publish capability-gated model gated/,
+  "the static pipeline cannot bypass a runtime capability gate",
+);
 
 // Every bundled chat runtime has a catalog entry.
 for (const runtime of ["codex", "claude", "copilot", "hermes", "opencode", "openclaw"]) {
@@ -61,6 +181,10 @@ assert.ok(
   "claude catalog should seed Claude Sonnet 5",
 );
 assert.ok(
+  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5-1"),
+  "claude catalog should offer Claude Fable 5.1",
+);
+assert.ok(
   catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
   "claude catalog should offer Claude Fable 5 (re-enabled: Coven Code ships full Fable support)",
 );
@@ -74,6 +198,7 @@ assert.deepEqual(
   catalogForRuntime("codex").models.map((model) => model.id),
   [
     "openai/gpt-5.6-sol",
+    "openai/gpt-6-astra",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
     "openai/gpt-5.5",
@@ -118,6 +243,10 @@ assert.ok(
   "copilot catalog should seed GPT-5.6 Sol",
 );
 assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-6-astra"),
+  "copilot catalog should seed GPT-6 Astra",
+);
+assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.6-terra"),
   "copilot catalog should seed GPT-5.6 Terra",
 );
@@ -128,6 +257,10 @@ assert.ok(
 assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.5"),
   "copilot catalog should seed GPT-5.5",
+);
+assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-fable-5.1"),
+  "copilot catalog should seed Claude Fable 5.1 (parity with the claude catalog)",
 );
 assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-fable-5"),
@@ -144,6 +277,67 @@ assert.ok(
   "the static Copilot seed must not bypass account rollout or administrator policy",
 );
 
+assert.equal(
+  runtimeModelIdForLaunch("claude", "anthropic/claude-fable-5-1"),
+  "claude-fable-5-1",
+  "Claude Fable 5.1 uses the harness registry's provider-stripping launch contract",
+);
+assert.equal(
+  runtimeModelIdForLaunch("copilot", "github/claude-fable-5.1"),
+  "claude-fable-5.1",
+  "Copilot receives its account-scoped Fable 5.1 model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("codex", "openai/gpt-6-astra"),
+  "gpt-6-astra",
+  "Codex receives GPT-6 Astra's bare OpenAI model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("copilot", "github/gpt-6-astra"),
+  "gpt-6-astra",
+  "Copilot receives GPT-6 Astra's account-scoped model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("hermes", "openai/gpt-6-astra"),
+  "openai/gpt-6-astra",
+  "Hermes preserves GPT-6 Astra's provider-qualified model id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "codex",
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
+  ),
+  "openai/gpt-6-astra",
+  "Codex's native GPT-6 Astra echo maps back to Cave's stable id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "copilot",
+    "github/gpt-6-astra",
+    "gpt-6-astra",
+  ),
+  "github/gpt-6-astra",
+  "Copilot's native GPT-6 Astra echo maps back to Cave's stable id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "hermes",
+    "openai/gpt-6-astra",
+    "openai/gpt-6-astra",
+  ),
+  "openai/gpt-6-astra",
+  "Hermes' preserved GPT-6 Astra echo maps back to Cave's stable id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "claude",
+    "anthropic/claude-fable-5-1",
+    "claude-fable-5-1",
+  ),
+  "anthropic/claude-fable-5-1",
+  "Claude's native Fable 5.1 echo maps back to Cave's stable id",
+);
 assert.equal(
   modelForRuntimeLaunch("claude", "anthropic/claude-opus-5"),
   "anthropic/opus",
@@ -190,8 +384,19 @@ assert.equal(
 // Namespaced model id convention (`provider/model`) holds across the seed.
 for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {
   for (const model of catalog.models) {
-    assert.match(model.id, /^[a-z0-9]+\/[A-Za-z0-9._-]+$/, `${model.id} should be provider/model`);
+    assert.match(
+      model.id,
+      /^[a-z0-9]+\/[A-Za-z0-9._:@+-]+$/,
+      `${model.id} should be one safe provider/model segment`,
+    );
     assert.ok(model.label && typeof model.label === "string", "every option needs a label");
+    if (model.id.includes("/claude-")) {
+      assert.notEqual(
+        modelLabel(model.id),
+        model.id.slice(model.id.indexOf("/") + 1),
+        `${model.id} should have a recognized Claude family label`,
+      );
+    }
   }
 }
 
@@ -203,6 +408,7 @@ assert.deepEqual(
   hermes.models.map((model) => model.id),
   [
     "openai/gpt-5.6-sol",
+    "openai/gpt-6-astra",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
     "openai/gpt-5.5",

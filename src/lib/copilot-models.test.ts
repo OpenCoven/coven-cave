@@ -9,6 +9,7 @@ const models = normalizeCopilotModels({
       policy: { state: "enabled" },
       capabilities: { limits: { max_context_window_tokens: 1_000_000 } },
     },
+    { id: "gpt-6-astra", policy: { state: "enabled" } },
     { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
     { id: "claude-opus-5", name: "duplicate", policy: { state: "enabled" } },
     { id: "disabled-model", name: "Disabled", policy: { state: "disabled" } },
@@ -22,6 +23,7 @@ const models = normalizeCopilotModels({
 assert.deepEqual(models, [
   { id: "github/auto", label: "Auto (Copilot picks)" },
   { id: "github/claude-opus-5", label: "Claude Opus 5" },
+  { id: "github/gpt-6-astra", label: "GPT-6 Astra" },
   { id: "github/gpt-5.6-sol", label: "GPT-5.6 Sol" },
   { id: "github/claude-sonnet-5", label: "Sonnet 5" },
 ]);

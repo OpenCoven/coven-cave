@@ -22,6 +22,12 @@ import {
 } from "../../cave-conversations.ts";
 import { loadProjects } from "../../cave-projects.ts";
 import type { CaveProject } from "../../cave-projects-types.ts";
+import type { FamiliarExecutionAnalytics } from "../../familiar-execution-analytics.ts";
+import {
+  readFamiliarContractFiles,
+  type LoadedContractFiles,
+} from "../familiar-contract-files.ts";
+import { readFamiliarExecutionAnalytics } from "../familiar-execution-analytics-source.ts";
 import {
   loadVisibleFamiliarRoster,
   type VisibleFamiliarRosterResult,
@@ -47,6 +53,20 @@ export interface ClientV1ReadSources {
    * absent rather than an error, and the route answers `not_found` for both.
    */
   loadConversation(id: string): Promise<ConversationFile | null>;
+  /**
+   * One familiar's contract files, read from its workspace.
+   *
+   * A missing file is `null` in the result rather than an error, so a familiar
+   * that has not authored every file still gets a report — one that names what
+   * is missing. The loader re-asserts the id slug barrier; the route checks it
+   * first and never calls this for an id the roster does not list.
+   */
+  loadFamiliarContract(id: string): Promise<LoadedContractFiles>;
+  /** One familiar's execution analytics, every window, `recentLimit` attempts. */
+  readFamiliarAnalytics(args: {
+    familiarId: string;
+    recentLimit: number;
+  }): Promise<FamiliarExecutionAnalytics>;
 }
 
 export function clientV1ReadSources(): ClientV1ReadSources {
@@ -55,5 +75,8 @@ export function clientV1ReadSources(): ClientV1ReadSources {
     listProjects: loadProjects,
     listConversations,
     loadConversation,
+    loadFamiliarContract: readFamiliarContractFiles,
+    readFamiliarAnalytics: (args: { familiarId: string; recentLimit: number }) =>
+      readFamiliarExecutionAnalytics(args),
   });
 }

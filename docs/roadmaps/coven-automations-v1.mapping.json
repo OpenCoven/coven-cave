@@ -1,8 +1,9 @@
 {
   "schemaVersion": "opencoven.automation-program-map/v1",
   "programId": "coven-automations-v1",
-  "generatedAt": "2026-09-01T20:56:00Z",
-  "status": "live-beads-seeded; remote-synchronized; verified",
+  "generatedAt": "2026-09-04T04:39:00Z",
+  "status": "live-state-audited; seed-sync-evidence-historical",
+  "lastLiveAudit": "2026-09-04T04:39:00Z",
   "program": {
     "github": "OpenCoven/coven#854",
     "beadId": "cave-hlv.9",
@@ -22,6 +23,7 @@
     "history": "Seeded 2026-09-01. The execution graph was seeded and dependency-verified in Cave's canonical embedded Dolt database `cave`, its blocks/dependsOn projections reconciled to the exact inverse of the live `bd dep` edges, and the graph synchronized to the shared remote refs/dolt/data (pnpm beads:sync pull+push exit 0; local embedded Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; empty `dolt diff --summary`; refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95; no force-push). Reconciled and closed-verified once the reconciliation PR referencing OpenCoven/coven-cave#5220 merged; the exact PR URL and merge SHA are recorded in the cave-tmegk bead close reason and on OpenCoven/coven-cave#5220."
   },
   "sync": {
+    "snapshotAt": "2026-09-01T20:56:00Z",
     "beadsTool": "bd 1.3.0-rc.1 (schema v66 capable)",
     "beadSchemaVersion": 1,
     "doltSchemaVersion": 66,
@@ -33,8 +35,9 @@
     "localDurability": "verified: 15 program beads (seed + 14 outcomes) and 30 in-program blocked-first edges committed to the canonical embedded Dolt database `cave`; local `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2.",
     "remoteRef": "refs/dolt/data",
     "remoteOid": "7855b5bcb436bf4ac062c1c24c966f1450971e95",
-    "remoteSyncStatus": "synchronized: the documented wrapper `pnpm beads:sync` completed pull+push (exit 0) on 2026-09-01. Local embedded Dolt `main` and `remotes/origin/main` are equal at thpoaq91d1nmqaas4lk6hhcs217foge2, `dolt diff --summary remotes/origin/main main` is empty, and the shared remote `refs/dolt/data` is at 7855b5bcb436bf4ac062c1c24c966f1450971e95 (identical before and after the run; the push was a fast-forward no-op because the shared history already carried these bead commits). No force-push occurred and no concurrent Dolt commit was discarded.",
-    "remoteSyncEvidence": "git ls-remote origin refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95 before and after a successful `pnpm beads:sync` (exit 0, 2026-09-01); local Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; `dolt diff --summary remotes/origin/main main` empty; graph re-verified (15 beads, 30 in-program blocked-first edges, none missing).",
+    "remoteSyncStatus": "historical snapshot: the documented wrapper `pnpm beads:sync` completed pull+push (exit 0) on 2026-09-01. Local embedded Dolt `main` and `remotes/origin/main` were equal at thpoaq91d1nmqaas4lk6hhcs217foge2, `dolt diff --summary remotes/origin/main main` was empty, and the shared remote `refs/dolt/data` was at 7855b5bcb436bf4ac062c1c24c966f1450971e95. No force-push occurred and no concurrent Dolt commit was discarded.",
+    "remoteSyncEvidence": "Historical 2026-09-01 evidence: git ls-remote origin refs/dolt/data == 7855b5bcb436bf4ac062c1c24c966f1450971e95 before and after a successful `pnpm beads:sync` (exit 0); local Dolt `main` == `remotes/origin/main` == thpoaq91d1nmqaas4lk6hhcs217foge2; `dolt diff --summary remotes/origin/main main` empty; graph re-verified (15 beads, 30 in-program blocked-first edges, none missing).",
+    "currentRemoteObservation": "Read-only audit on 2026-09-04 observed refs/dolt/data at 11c53114f4e6b79029f806ea88e57db01a13585b. No sync or current local/remote equality check was performed.",
     "knownToolingLimitations": [
       "The canonical embedded Dolt database is at schema v66, so every `bd` command requires a v66-capable client (bd 1.3.0-rc.1). Homebrew `bd` 1.2.2 (schema v53) cannot operate on it and must not be used.",
       "`pnpm beads:doctor` (`bd doctor && bd lint`) exits 1: `bd doctor` is not yet supported in embedded mode, and `bd lint` reports a repository-wide template-convention backlog (57 issues / 63 warnings, e.g. missing '## Acceptance Criteria') that also covers the Automations v1 outcome beads. It is an advisory convention, not a CI gate, and was recorded rather than weakened.",
@@ -71,7 +74,12 @@
       "priority": "P0",
       "github": "OpenCoven/coven#859",
       "beadId": "cave-hlv.10",
-      "state": "open",
+      "state": "closed-verified",
+      "evidence": [
+        "OpenCoven/coven#859 closed 2026-09-03",
+        "Bead cave-hlv.10 closed after program-control acceptance",
+        "OpenCoven/coven#910 merged as 329717d8d9edcfca4ea98800392fbf683613ec92"
+      ],
       "dependsOn": [],
       "blocks": [
         "release-go-no-go",
@@ -103,7 +111,7 @@
       "priority": "P0",
       "github": "OpenCoven/coven#855",
       "beadId": "cave-tm1y0",
-      "state": "open",
+      "state": "in_progress",
       "dependsOn": [
         "foundation"
       ],
@@ -134,7 +142,12 @@
       "priority": "P0",
       "github": "OpenCoven/familiar-contract#17",
       "beadId": "cave-6jswi",
-      "state": "open",
+      "state": "closed-verified",
+      "evidence": [
+        "OpenCoven/familiar-contract#17 closed 2026-09-03",
+        "OpenCoven/familiar-contract#19 merged as 13d150a32a817da19bb4e5053f2205b15db0bb0a",
+        "Bead cave-6jswi closed with immutable merge evidence"
+      ],
       "dependsOn": [
         "foundation"
       ],
@@ -149,7 +162,12 @@
       "priority": "P0",
       "github": "OpenCoven/coven-threads#29",
       "beadId": "cave-m9tw3",
-      "state": "open",
+      "state": "closed-verified",
+      "evidence": [
+        "OpenCoven/coven-threads#29 closed 2026-09-03",
+        "OpenCoven/coven-threads#35 merged as c3bd46bcadb6396db8436c47411a4d0eac17192b",
+        "Bead cave-m9tw3 closed after authority-profile conformance"
+      ],
       "dependsOn": [
         "familiar-embodiment"
       ],
@@ -265,7 +283,8 @@
       "priority": "P0",
       "github": "OpenCoven/coven#854",
       "beadId": "cave-hlv.9",
-      "state": "blocked",
+      "state": "open",
+      "disposition": "blocked-by-open-dependencies",
       "dependsOn": [
         "program-control",
         "foundation",
@@ -289,7 +308,7 @@
     "method": "bd dep list <id> --direction down --json across all 15 program beads; the blocks projections in this file are the exact inverse of those live edges, and every outcome's dependsOn equals its live down-edges.",
     "cycles": "none (bd dep cycles -> 'No dependency cycles detected')",
     "parentEpicEdges": "cave-hlv.9 and cave-hlv.10 additionally carry a parent-child edge to cave-hlv, the pre-existing familiar-issue-tracking epic they are children of. That hierarchy edge is outside the Automations v1 program set and is not a v1 release blocker, so it is excluded from the 30 in-program blocked-first edges.",
-    "verifiedAt": "2026-09-01T20:56:00Z"
+    "verifiedAt": "2026-09-04T04:39:00Z"
   },
   "releaseGates": {
     "A": "durable-local-scheduler",
@@ -299,9 +318,8 @@
   },
   "nextAction": {
     "github": [
-      "OpenCoven/coven#855",
-      "OpenCoven/familiar-contract#17"
+      "OpenCoven/coven#855"
     ],
-    "description": "Task 1 reconciliation is complete: the 15 canonical program beads and their 30 in-program blocked-first edges are seeded, dependency-verified (both directions), acyclic, and synchronized to the shared Dolt remote refs/dolt/data; the seed bead cave-tmegk is closed-verified and OpenCoven/coven-cave#5220 is closed. Begin the first ready outcomes: OpenCoven/coven#855 (protocol, bead cave-tm1y0) and OpenCoven/familiar-contract#17 (familiar embodiment, bead cave-6jswi), both reported ready by `bd ready`. Coven-side tracker mapping is reconciled under OpenCoven/coven#859 (PRs OpenCoven/coven#900 and #901)."
+    "description": "Task 1 and program control are closed. Continue OpenCoven/coven#855 (Bead cave-tm1y0), currently in progress. Familiar embodiment OpenCoven/familiar-contract#17 / cave-6jswi and automation authority OpenCoven/coven-threads#29 / cave-m9tw3 are closed-verified. OpenCoven/coven#856 remains open and dependency-blocked while protocol work continues; OpenCoven/coven#922 is active work, not terminal evidence."
   }
 }

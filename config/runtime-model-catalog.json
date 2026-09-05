@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "models": {
+    "copilot-auto": {
+      "label": "Auto (Copilot picks)",
+      "ids": {
+        "github": "auto"
+      },
+      "contextWindow": 200000
+    },
+    "gpt-5.6-sol": {
+      "label": "GPT-5.6 Sol",
+      "ids": {
+        "openai": "gpt-5.6-sol",
+        "github": "gpt-5.6-sol"
+      },
+      "contextWindow": 1000000
+    },
+    "gpt-6-astra": {
+      "label": "GPT-6 Astra",
+      "ids": {
+        "openai": "gpt-6-astra",
+        "github": "gpt-6-astra"
+      },
+      "contextWindow": 1000000
+    },
+    "gpt-5.6-terra": {
+      "label": "GPT-5.6 Terra",
+      "ids": {
+        "openai": "gpt-5.6-terra",
+        "github": "gpt-5.6-terra"
+      },
+      "contextWindow": 1000000
+    },
+    "gpt-5.6-luna": {
+      "label": "GPT-5.6 Luna",
+      "ids": {
+        "openai": "gpt-5.6-luna",
+        "github": "gpt-5.6-luna"
+      },
+      "contextWindow": 1000000
+    },
+    "gpt-5.5": {
+      "label": "GPT-5.5",
+      "ids": {
+        "openai": "gpt-5.5",
+        "github": "gpt-5.5"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.4": {
+      "label": "GPT-5.4",
+      "ids": {
+        "openai": "gpt-5.4"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.4-mini": {
+      "label": "GPT-5.4 Mini",
+      "ids": {
+        "openai": "gpt-5.4-mini"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.3-codex-spark": {
+      "label": "GPT-5.3 Codex Spark",
+      "ids": {
+        "openai": "gpt-5.3-codex-spark"
+      },
+      "contextWindow": 400000
+    },
+    "codex-auto-review": {
+      "label": "Codex Auto Review",
+      "ids": {
+        "openai": "codex-auto-review"
+      }
+    },
+    "gpt-5.1-codex-max": {
+      "label": "GPT-5.1 Codex Max",
+      "ids": {
+        "openai": "gpt-5.1-codex-max"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.1-codex": {
+      "label": "GPT-5.1 Codex",
+      "ids": {
+        "openai": "gpt-5.1-codex"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.1-codex-mini": {
+      "label": "GPT-5.1 Codex Mini",
+      "ids": {
+        "openai": "gpt-5.1-codex-mini"
+      },
+      "contextWindow": 400000
+    },
+    "gpt-5.1": {
+      "label": "GPT-5.1",
+      "ids": {
+        "openai": "gpt-5.1"
+      },
+      "contextWindow": 400000
+    },
+    "claude-opus-5": {
+      "label": "Claude Opus 5",
+      "ids": {
+        "anthropic": "claude-opus-5",
+        "github": "claude-opus-5"
+      },
+      "contextWindow": 1000000,
+      "capabilityGated": true
+    },
+    "claude-opus-4-8": {
+      "label": "Claude Opus 4.8",
+      "ids": {
+        "anthropic": "claude-opus-4-8",
+        "github": "claude-opus-4-8"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-fable-5-1": {
+      "label": "Claude Fable 5.1",
+      "ids": {
+        "anthropic": "claude-fable-5-1",
+        "github": "claude-fable-5.1"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-fable-5": {
+      "label": "Claude Fable 5",
+      "ids": {
+        "anthropic": "claude-fable-5",
+        "github": "claude-fable-5"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-opus-4-7": {
+      "label": "Claude Opus 4.7",
+      "ids": {
+        "anthropic": "claude-opus-4-7"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-opus-4-6": {
+      "label": "Claude Opus 4.6",
+      "ids": {
+        "anthropic": "claude-opus-4-6"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-sonnet-5": {
+      "label": "Claude Sonnet 5",
+      "ids": {
+        "anthropic": "claude-sonnet-5",
+        "github": "claude-sonnet-5"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-sonnet-4-6": {
+      "label": "Claude Sonnet 4.6",
+      "ids": {
+        "anthropic": "claude-sonnet-4-6"
+      },
+      "contextWindow": 1000000
+    },
+    "claude-haiku-4-5": {
+      "label": "Claude Haiku 4.5",
+      "ids": {
+        "anthropic": "claude-haiku-4-5",
+        "github": "claude-haiku-4-5"
+      },
+      "contextWindow": 200000
+    },
+    "gemini-3.1-pro": {
+      "label": "Gemini 3.1 Pro",
+      "ids": {
+        "github": "gemini-3.1-pro"
+      },
+      "contextWindow": 1000000
+    },
+    "hermes-4": {
+      "label": "Hermes 4",
+      "ids": {
+        "nous": "hermes-4"
+      },
+      "contextWindow": 128000
+    }
+  },
+  "harnesses": {
+    "codex": {
+      "provider": "openai",
+      "models": [
+        "gpt-5.6-sol",
+        "gpt-6-astra",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark"
+      ],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "claude": {
+      "provider": "anthropic",
+      "models": [
+        "claude-opus-4-8",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-4-7",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5"
+      ],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "copilot": {
+      "provider": "github",
+      "models": [
+        "copilot-auto",
+        "gpt-6-astra",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "claude-opus-4-8",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-sonnet-5",
+        "claude-haiku-4-5",
+        "gemini-3.1-pro"
+      ],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "hermes": {
+      "provider": "openai",
+      "models": [
+        "gpt-5.6-sol",
+        "gpt-6-astra",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
+        "codex-auto-review"
+      ],
+      "allowCustom": true,
+      "defaultOwner": "runtime"
+    },
+    "grok": {
+      "provider": "xai",
+      "models": [],
+      "defaultModel": "grok-4.5",
+      "allowCustom": true,
+      "defaultOwner": "runtime"
+    },
+    "opencode": {
+      "provider": null,
+      "models": [],
+      "defaultModel": "",
+      "allowCustom": true,
+      "defaultOwner": "runtime"
+    },
+    "openclaw": {
+      "provider": null,
+      "models": [],
+      "allowCustom": true,
+      "defaultOwner": "runtime"
+    }
+  },
+  "contextAliases": {
+    "anthropic/opus": 1000000
+  }
+}

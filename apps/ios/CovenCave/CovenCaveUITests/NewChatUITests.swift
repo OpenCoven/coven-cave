@@ -51,8 +51,12 @@ final class NewChatUITests: XCTestCase {
             app.navigationBars["New chat"].waitForExistence(timeout: 3),
             "Unassigned recovery mode must not open the New Chat sheet"
         )
+        let openNavigation = app.buttons["Open navigation"]
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
+        openNavigation.tap()
+        let projectContext = app.descendants(matching: .any)["Project context button"].firstMatch
         XCTAssertTrue(
-            app.buttons["Project context button"].waitForExistence(timeout: 10)
+            projectContext.waitForExistence(timeout: 10) && projectContext.isHittable
         )
     }
 }

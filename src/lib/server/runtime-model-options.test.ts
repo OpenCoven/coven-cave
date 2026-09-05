@@ -96,6 +96,18 @@ assert.ok(
   ),
   "static runtimes retain their existing catalog",
 );
+assert.ok(
+  (await listRuntimeModelOptions("codex", null)).some(
+    (model) => model.id === "openai/gpt-6-astra",
+  ),
+  "Codex fallback inventory includes GPT-6 Astra",
+);
+assert.ok(
+  (await listRuntimeModelOptions("copilot", "sage", {
+    listCopilot: async () => [],
+  })).some((model) => model.id === "github/gpt-6-astra"),
+  "Copilot fallback inventory includes GPT-6 Astra when discovery is unavailable",
+);
 assert.deepEqual(await listRuntimeModelOptions("not-a-runtime", null), []);
 assert.ok(
   (await listRuntimeModelOptions("claude", "sage", {

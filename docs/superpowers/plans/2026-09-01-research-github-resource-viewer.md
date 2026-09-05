@@ -1,5 +1,9 @@
 # Saved GitHub resource viewer implementation plan
 
+> **Status: Shipped.** Merged in [#5287](https://github.com/OpenCoven/coven-cave/pull/5287)
+> on 2026-09-02 as `6a457a82fb3832224b11f16c5531ac413ae38fa6`.
+> Checkbox state is not used; the completion evidence below is authoritative.
+
 **Goal:** Make a saved GitHub repository URL ingest and open like a
 source-native Research Desk resource.
 
@@ -43,3 +47,21 @@ source-native Research Desk resource.
 - Exercise a production-path save/detail/blob/view flow with mocked GitHub
   transport and persisted snapshot evidence.
 - Inspect the final diff and classify every requested deliverable.
+
+## Completion evidence
+
+- Bead `cave-zl52y` is closed with the PR head
+  `d09c893748b2b9f4c8847c1d9199490ae77fac07` and merge commit above recorded
+  in its closure evidence.
+- The shipped flow persists exact commit and blob provenance, projects a
+  list-safe summary, enriches at most five repositories serially, preserves the
+  compatibility extension channel, and opens the saved resource directly in
+  the two-pane viewer.
+- Focused evidence lives in
+  `src/lib/research-github-repo.test.ts`,
+  `src/lib/server/research-github-repo.test.ts`,
+  `src/components/role-surfaces/research-github-repo-viewer.test.tsx`, and
+  `tests/research-github-resource-viewer.spec.ts`.
+- Review hardening added anonymous fallback for public GitHub reads when
+  credential resolution fails and fixed commit-aware markdown-link handling;
+  neither changed the plan's product scope.

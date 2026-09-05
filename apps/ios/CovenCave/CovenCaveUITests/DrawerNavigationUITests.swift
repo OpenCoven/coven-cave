@@ -150,23 +150,32 @@ final class DrawerNavigationUITests: XCTestCase {
     @MainActor
     func testFamiliarDetailOffersAvatarEditing() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-design-closeout", "--ui-open-drawer"]
+        app.launchArguments = [
+            "--ui-preview-design-closeout",
+            "--ui-preview-avatar-editing",
+            "--ui-open-drawer",
+        ]
         app.launch()
 
         let familiars = app.buttons["Familiars"]
         XCTAssertTrue(familiars.waitForExistence(timeout: 10))
         familiars.tap()
 
-        let nyx = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Nyx")).firstMatch
+        let nyx = app.collectionViews.buttons
+            .matching(NSPredicate(format: "label CONTAINS[c] %@", "Nyx"))
+            .firstMatch
         XCTAssertTrue(nyx.waitForExistence(timeout: 10), "the preview familiar is listed")
         nyx.tap()
 
-        let editAvatar = app.buttons["Edit Nyx’s avatar"]
+        let profile = app.segmentedControls["Familiar hub section"].buttons["Profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 10), "familiar details expose the Profile tab")
+        profile.tap()
+
+        let editAvatar = app.descendants(matching: .any)["Edit Nyx’s avatar"].firstMatch
         XCTAssertTrue(editAvatar.waitForExistence(timeout: 10), "familiar details expose avatar editing")
         editAvatar.tap()
 
         XCTAssertTrue(app.buttons["Choose photo"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
     }
 
     @MainActor

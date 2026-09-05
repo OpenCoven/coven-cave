@@ -1,5 +1,10 @@
 # Review-First Coding Desk Implementation Plan
 
+> **Status: Shipped.** Merged in [#5276](https://github.com/OpenCoven/coven-cave/pull/5276)
+> on 2026-09-02 as `ecd8b1a5efac82d133745a403856ce202bb91d68`.
+> The historical checkboxes remain unchanged; completion is established by the
+> merge and evidence appendix below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Make the Coding Desk default to a minimal, actionable queue of human-created sessions in verified GitHub repositories outside familiar workspaces, while preserving explicit access to every other local session.
@@ -1026,3 +1031,24 @@ git commit -m "test(code): verify review-first Coding Desk"
 - Empty panels do not consume full-width space by default.
 - Queue shortcuts never capture text-entry or terminal keystrokes.
 - Focused unit, E2E, lint, typecheck, and build gates pass.
+
+## Completion evidence
+
+- PR #5276 shipped from head
+  `d34b11df7b9dad419175309d10d44f6ea0b40f7c` and merged as
+  `ecd8b1a5efac82d133745a403856ce202bb91d68`.
+- `src/lib/code-review-queue.ts` is the shared eligibility, ordering, grouping,
+  count, and selected-session-override authority consumed by the rail and
+  picker.
+- `src/lib/session-git-enrich.ts` and
+  `src/lib/familiar-workspace-sessions.ts` provide the trusted GitHub-origin
+  and familiar-workspace classifications. The final implementation fails
+  closed when workspace trust cannot be established.
+- Focused evidence lives in `src/lib/code-review-queue.test.ts`,
+  `src/components/code-review-queue-controls.test.tsx`,
+  `tests/code-surface.spec.ts`, and
+  `tests/mobile/code-surface-drill-in.spec.ts`.
+- Review hardening normalized whitespace-only pull-request state and expanded
+  supporting strict configuration, session-merge, shortcut, and mobile
+  coverage. Those changes refined the implementation without changing the
+  completion criteria.

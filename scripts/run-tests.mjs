@@ -1559,7 +1559,10 @@ export const SUITES = {
     "src/lib/server/client-v1/pagination.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
     "src/lib/server/client-v1/read-guard.test.ts",
+    "src/lib/server/client-v1/familiar-reads.test.ts",
     "src/app/api/client/v1/familiars/route.test.ts",
+    "src/app/api/client/v1/familiars/[id]/contract/route.test.ts",
+    "src/app/api/client/v1/familiars/[id]/analytics/route.test.ts",
     "src/app/api/client/v1/projects/route.test.ts",
     "src/app/api/client/v1/conversations/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/route.test.ts",
@@ -2105,6 +2108,8 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/projects/route.test.ts",
   "src/app/api/client/v1/conversations/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/route.test.ts",
+  "src/app/api/client/v1/familiars/[id]/contract/route.test.ts",
+  "src/app/api/client/v1/familiars/[id]/analytics/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
   // The refusal gate imports "@/proxy-helpers" and the client-v1 runtime, and
   // dynamically imports every pre-authorized route module — each of which
