@@ -627,15 +627,6 @@ jobs:
           IOS_RESULT: ${{ needs.ios.result }}
         run: |
           set -euo pipefail
-          if [ "$PATHS_RESULT" = "cancelled" ] \
-            && [ "$FRONTEND_VALIDATION_RESULT" = "cancelled" ] \
-            && [ "$FRONTEND_BUNDLE_RESULT" = "cancelled" ] \
-            && [ "$FRONTEND_E2E_RESULT" = "cancelled" ] \
-            && [ "$FRONTEND_E2E_AGENTIC_RESULT" = "cancelled" ] \
-            && [ "$IOS_RESULT" = "cancelled" ]; then
-            echo "Selected validation lanes were cancelled upstream; skipping aggregate assertions."
-            exit 0
-          fi
           test "$PATHS_RESULT" = "success"
           if [ "$FRONTEND_ENABLED" = "true" ]; then
             test "$FRONTEND_VALIDATION_RESULT" = "success"
