@@ -384,7 +384,11 @@ assert.equal(
 // Namespaced model id convention (`provider/model`) holds across the seed.
 for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {
   for (const model of catalog.models) {
-    assert.match(model.id, /^[a-z0-9]+\/[A-Za-z0-9._-]+$/, `${model.id} should be provider/model`);
+    assert.match(
+      model.id,
+      /^[a-z0-9]+\/[A-Za-z0-9._:@+-]+$/,
+      `${model.id} should be one safe provider/model segment`,
+    );
     assert.ok(model.label && typeof model.label === "string", "every option needs a label");
     if (model.id.includes("/claude-")) {
       assert.notEqual(

@@ -6,13 +6,18 @@ import {
   formatModelList,
   isRuntimeDefaultModelArg,
 } from "./slash-model.ts";
+import { catalogForRuntime } from "./runtime-models.ts";
 
 // --- modelSlashOptions: only active in /model arg position -------------------
 assert.equal(modelSlashOptions("/mod", "claude"), null, "not /model arg position until a space is typed");
 assert.equal(modelSlashOptions("/familiar researcher", "claude"), null, "ignores other commands");
 
 const all = modelSlashOptions("/model ", "claude");
-assert.ok(Array.isArray(all) && all.length === 7, "‘/model ’ lists every claude model");
+assert.deepEqual(
+  all,
+  catalogForRuntime("claude")?.models,
+  "‘/model ’ lists the complete generated Claude catalog",
+);
 assert.ok(
   all.some((model) => model.id === "anthropic/claude-fable-5-1"),
   "‘/model ’ includes Claude Fable 5.1",
