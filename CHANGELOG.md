@@ -10,8 +10,9 @@ breaking config changes; patch releases stay additive.
 ## [0.3.13] - 2026-09-01
 
 > Makes native iOS chat recovery more durable, introduces a review-first
-> Coding Desk, and strengthens automation supervision, Research, mobile
-> handoff, and release reliability.
+> Coding Desk, adds generated model catalogs with Claude Fable 5.1 and GPT-6
+> Astra, and strengthens automation supervision, Research, mobile handoff, and
+> release reliability.
 
 Patch release on top of v0.3.12. Native iOS now retries safe mutations
 idempotently, preserves authoritative task chat during navigation hydration,
@@ -20,9 +21,23 @@ group-message recovery plus WebRTC symbol coverage. The release also adds the
 canonical Research run gateway, a fail-closed GitHub repository review queue,
 and workspace-scoped automation supervision with an explicit execution graph.
 Focused reliability fixes span mobile handoff, Chat, the sidecar, CI, and
-authenticated clients.
+authenticated clients. Post-candidate work also adds familiar contract
+analytics, commit-pinned Research resources, safer findings parsing, and
+stable Windows candidate validation.
 
 ### Changes
+- fix(release): stabilize Windows candidate validation (#5306)
+- Add Fable 5.1, GPT-6 Astra, and generated model catalogs (#5304)
+- docs(ios): ratify project workspace direction
+- Fix active chat archive and iPhone navigation
+- docs(plans): reconcile live program status
+- Prevent exponential findings prefix parsing
+- feat(client-v1): serve familiar contract and analytics (#5288)
+- Add commit-pinned GitHub Research resource viewer
+- Delete the orphaned initiator chip; correct the CodeQL note
+- Drop the session initiator chip from chat rows
+- Bank four stale design-token ratchet baselines
+- Chat session header and list row: one status, one truth
 - feat(code): add review-first Coding Desk (#5276)
 - docs(roadmaps): reconcile Automations v1 tracker mapping to terminal state (#5278)
 - chore: seed the Automations v1 execution graph (#5277)
