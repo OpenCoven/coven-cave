@@ -184,7 +184,9 @@ function isolatedEnvironment(root, port, selector) {
   env.TEMP = env.TMPDIR;
   env.XDG_CONFIG_HOME = path.join(root, "config");
   env.XDG_CACHE_HOME = path.join(root, "cache");
-  env.NODE_OPTIONS = "--max-old-space-size=6144";
+  if (process.platform === "darwin") {
+    env.NODE_OPTIONS = "--max-old-space-size=6144";
+  }
   env.NODE_ENV = "production";
   env.COVEN_HOME = path.join(root, "coven");
   env.COVEN_CAVE_HOME = path.join(root, "coven", "cave");
@@ -290,8 +292,18 @@ function assertSafeError(response, body) {
 
 async function removeTestBuildOutputs(root) {
   const removals = await Promise.allSettled([
-    rm(root, { recursive: true, force: true }),
-    rm(path.join(repositoryRoot, ".next"), { recursive: true, force: true }),
+    rm(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    }),
+    rm(path.join(repositoryRoot, ".next"), {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    }),
   ]);
   const failures = removals
     .filter((result) => result.status === "rejected")
