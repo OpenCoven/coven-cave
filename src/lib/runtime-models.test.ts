@@ -259,7 +259,7 @@ assert.ok(
   "copilot catalog should seed GPT-5.5",
 );
 assert.ok(
-  catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-fable-5-1"),
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-fable-5.1"),
   "copilot catalog should seed Claude Fable 5.1 (parity with the claude catalog)",
 );
 assert.ok(
@@ -283,8 +283,8 @@ assert.equal(
   "Claude Fable 5.1 uses the harness registry's provider-stripping launch contract",
 );
 assert.equal(
-  runtimeModelIdForLaunch("copilot", "github/claude-fable-5-1"),
-  "claude-fable-5-1",
+  runtimeModelIdForLaunch("copilot", "github/claude-fable-5.1"),
+  "claude-fable-5.1",
   "Copilot receives its account-scoped Fable 5.1 model id",
 );
 assert.equal(

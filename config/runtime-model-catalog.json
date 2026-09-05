@@ -124,7 +124,7 @@
       "label": "Claude Fable 5.1",
       "ids": {
         "anthropic": "claude-fable-5-1",
-        "github": "claude-fable-5-1"
+        "github": "claude-fable-5.1"
       },
       "contextWindow": 1000000
     },

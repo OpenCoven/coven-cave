@@ -22,7 +22,7 @@ test("contextWindowForModel resolves catalogued ids as known", () => {
     tokens: 1_000_000,
     known: true,
   });
-  assert.deepEqual(contextWindowForModel("github/claude-fable-5-1"), {
+  assert.deepEqual(contextWindowForModel("github/claude-fable-5.1"), {
     tokens: 1_000_000,
     known: true,
   });

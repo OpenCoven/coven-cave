@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: bc98df0212b96b69bcfe8b54828768e1174b725ffdd9b78e018b1d8d4e837806
+// sha256: efafe579b86ccbb4c7fcc4793235f9d68b8e9e34e2b47ec4f9058be53e137643
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "bc98df0212b96b69bcfe8b54828768e1174b725ffdd9b78e018b1d8d4e837806",
+  sha256: "efafe579b86ccbb4c7fcc4793235f9d68b8e9e34e2b47ec4f9058be53e137643",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -139,7 +139,7 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
         "label": "Claude Opus 4.8"
       },
       {
-        "id": "github/claude-fable-5-1",
+        "id": "github/claude-fable-5.1",
         "label": "Claude Fable 5.1"
       },
       {
@@ -256,7 +256,7 @@ export const GENERATED_MODEL_CONTEXT_WINDOWS: Record<string, number> =
   "anthropic/claude-opus-4-8": 1000000,
   "github/claude-opus-4-8": 1000000,
   "anthropic/claude-fable-5-1": 1000000,
-  "github/claude-fable-5-1": 1000000,
+  "github/claude-fable-5.1": 1000000,
   "anthropic/claude-fable-5": 1000000,
   "github/claude-fable-5": 1000000,
   "anthropic/claude-opus-4-7": 1000000,
