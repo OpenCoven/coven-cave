@@ -106,7 +106,7 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
   );
   assert.match(
     compatibilityHarness,
-    /process\.platform === "win32" \? 90_000 : 45_000/,
+    /process\.platform\s*===\s*["']win32["']\s*\?\s*90_000\s*:\s*45_000/,
     "Windows packaged startup must use the production sidecar's 90-second readiness budget",
   );
   assert.match(
