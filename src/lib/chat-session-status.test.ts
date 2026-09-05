@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   CHAT_SESSION_STATUS,
   CHAT_SESSION_STATUS_ORDER,
+  chatSessionStateFromLifecycle,
   chatSessionStatusKey,
   chatStatusChipDisabled,
   countChatSessionStatuses,
@@ -76,4 +77,88 @@ test("an empty chip stays pressable while it is the active filter", () => {
   assert.equal(chatStatusChipDisabled(0, false), true, "empty and inactive → unavailable");
   assert.equal(chatStatusChipDisabled(0, true), false, "empty but active → still pressable");
   assert.equal(chatStatusChipDisabled(3, false), false, "populated → available");
+});
+
+
+// ── chatSessionStateFromLifecycle ──────────────────────────────────────────
+// The bridge cave-dkdev added between the turn lifecycle and the ONE status
+// vocabulary both session surfaces speak. It landed untested (flagged in review
+// on #5283); these pin the decisions that are easy to get wrong later, because
+// every one is a case where the old header said something the list did not.
+
+const st = (over: Partial<Parameters<typeof chatSessionStateFromLifecycle>[0]> = {}) =>
+  chatSessionStateFromLifecycle({
+    lifecycle: null,
+    busy: false,
+    error: false,
+    daemonRunning: true,
+    ...over,
+  });
+
+test("a missing daemon reads paused-and-reconnecting, outranking everything else", () => {
+  // No daemon means there is no run to report on, so this must win even with a
+  // lifecycle in flight — otherwise the header claims a session is running
+  // against a backend that is gone.
+  assert.deepEqual(st({ daemonRunning: false }), { key: "paused", transport: "reconnecting" });
+  assert.deepEqual(st({ daemonRunning: false, lifecycle: "streaming", busy: true }), {
+    key: "paused",
+    transport: "reconnecting",
+  });
+  assert.deepEqual(st({ daemonRunning: false, lifecycle: "failed", error: true }), {
+    key: "paused",
+    transport: "reconnecting",
+  });
+});
+
+test("failure comes from either the lifecycle or the error flag, and outranks live work", () => {
+  assert.deepEqual(st({ lifecycle: "failed" }), { key: "failed", transport: null });
+  assert.deepEqual(st({ error: true }), { key: "failed", transport: null });
+  assert.deepEqual(st({ error: true, busy: true, lifecycle: "streaming" }), {
+    key: "failed",
+    transport: null,
+  });
+});
+
+test("transport modifies live work; it is never a status of its own", () => {
+  // The whole point of the change: `connecting` describes the wire. A
+  // connecting session is RUNNING, and the pill must still say so.
+  assert.deepEqual(st({ lifecycle: "connecting", busy: true }), {
+    key: "running",
+    transport: "connecting",
+  });
+  assert.deepEqual(st({ lifecycle: "queued" }), { key: "queued", transport: "connecting" });
+  // Once bytes flow there is no wire condition left to report.
+  assert.deepEqual(st({ lifecycle: "streaming", busy: true }), { key: "running", transport: null });
+  assert.deepEqual(st({ lifecycle: "tooling", busy: true }), { key: "running", transport: null });
+});
+
+test("cancellation reads paused, a settled turn reads completed, and busy alone reads running", () => {
+  assert.deepEqual(st({ lifecycle: "cancelled" }), { key: "paused", transport: null });
+  assert.deepEqual(st({ lifecycle: "complete" }), { key: "completed", transport: null });
+  assert.deepEqual(st(), { key: "completed", transport: null });
+  // The first tick of a send arrives before any lifecycle event does.
+  assert.deepEqual(st({ busy: true }), { key: "running", transport: null });
+});
+
+test("every mapping names a state the list vocabulary already has", () => {
+  const cases: Parameters<typeof chatSessionStateFromLifecycle>[0][] = [
+    { lifecycle: null, busy: false, error: false, daemonRunning: true },
+    { lifecycle: "queued", busy: false, error: false, daemonRunning: true },
+    { lifecycle: "connecting", busy: true, error: false, daemonRunning: true },
+    { lifecycle: "streaming", busy: true, error: false, daemonRunning: true },
+    { lifecycle: "tooling", busy: true, error: false, daemonRunning: true },
+    { lifecycle: "cancelled", busy: false, error: false, daemonRunning: true },
+    { lifecycle: "failed", busy: false, error: false, daemonRunning: true },
+    { lifecycle: "complete", busy: false, error: false, daemonRunning: true },
+    { lifecycle: null, busy: false, error: false, daemonRunning: false },
+  ];
+  for (const input of cases) {
+    const result = chatSessionStateFromLifecycle(input);
+    assert.ok(
+      CHAT_SESSION_STATUS_ORDER.includes(result.key),
+      `${result.key} must be one of the list's five states`,
+    );
+    // A pill can only render a presentation that exists.
+    assert.ok(CHAT_SESSION_STATUS[result.key], `${result.key} has a presentation`);
+  }
 });

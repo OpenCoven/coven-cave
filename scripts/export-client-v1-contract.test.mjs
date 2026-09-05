@@ -194,6 +194,8 @@ test("ratchets the complete authority contract and protected operation inventory
     "pairing.poll",
     "pairing.exchange",
     "familiars.list",
+    "familiars.contract.read",
+    "familiars.analytics.read",
     "projects.list",
     "conversations.list",
     "conversations.read",

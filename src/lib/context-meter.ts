@@ -12,54 +12,18 @@
  */
 
 import { formatTokens, type TurnUsage } from "./usage-format.ts";
+import { GENERATED_MODEL_CONTEXT_WINDOWS } from "./runtime-model-catalog.gen.ts";
 
 /** Fallback window when a model's size isn't catalogued — conservative so the
  *  meter never over-reports headroom for an unknown model. */
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 
 /**
- * Per-model context-window sizes (the full input budget), keyed by Cave's
- * namespaced model id. A one-line edit as providers ship new models; unknown
- * ids fall back to DEFAULT_CONTEXT_WINDOW_TOKENS via contextWindowForModel.
- *
- * Anthropic values are authoritative (Claude models catalog). OpenAI/Nous
- * values are best-effort estimates — flagged `known: false`-style via the
- * `known` flag only for ids absent from this map, so update these in place
- * rather than relying on the fallback.
+ * Per-model context-window sizes generated from the same support matrix as the
+ * harness catalogs. Unknown ids fall back via contextWindowForModel.
  */
-export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  "openai/gpt-5.6-sol": 1_000_000,
-  "openai/gpt-5.6-terra": 1_000_000,
-  "openai/gpt-5.6-luna": 1_000_000,
-  // OpenAI (codex runtime) — estimate; adjust when authoritative. The retired
-  // GPT-5.1 ids stay listed so the meter keeps working for older sessions and
-  // custom configs that still name them.
-  "openai/gpt-5.5": 400_000,
-  "openai/gpt-5.4": 400_000,
-  "openai/gpt-5.4-mini": 400_000,
-  "openai/gpt-5.3-codex-spark": 400_000,
-  "openai/gpt-5.1-codex-max": 400_000,
-  "openai/gpt-5.1-codex": 400_000,
-  "openai/gpt-5.1-codex-mini": 400_000,
-  "openai/gpt-5.1": 400_000,
-  // Anthropic (claude runtime) — from the Claude models catalog.
-  "anthropic/claude-opus-5": 1_000_000,
-  // Claude Code's native Opus alias is what the canonical id maps to at launch.
-  "anthropic/opus": 1_000_000,
-  "anthropic/claude-fable-5": 1_000_000,
-  "anthropic/claude-opus-4-8": 1_000_000,
-  "anthropic/claude-opus-4-7": 1_000_000,
-  "anthropic/claude-opus-4-6": 1_000_000,
-  "anthropic/claude-sonnet-5": 1_000_000,
-  "anthropic/claude-sonnet-4-6": 1_000_000,
-  "anthropic/claude-haiku-4-5": 200_000,
-  // GitHub Copilot (copilot runtime) — cross-provider ids resolve through the
-  // bare-name fallback (gpt-5.5, claude-*); the Copilot-only ids live here.
-  "github/auto": 200_000,
-  "github/gemini-3.1-pro": 1_000_000,
-  // Nous (hermes runtime) — estimate.
-  "nous/hermes-4": 128_000,
-};
+export const MODEL_CONTEXT_WINDOWS: Readonly<Record<string, number>> =
+  GENERATED_MODEL_CONTEXT_WINDOWS;
 
 /** Resolve a model id to its context-window size. Tolerates a bare model id
  *  (no `provider/` prefix). `known` is false when we fell back to the default,

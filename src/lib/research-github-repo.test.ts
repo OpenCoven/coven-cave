@@ -5,12 +5,16 @@ import {
   buildGithubRepoTree,
   formatGithubBytes,
   githubRepoFileWebUrl,
+  githubRepoReadmeLinkUrl,
   githubRepoTreeWebUrl,
   githubRepoViewEndpoint,
+  normalizeGithubRepoSnapshot,
   parseGithubRepoInput,
   sanitizeGithubRef,
   type GithubRepoTreeEntry,
 } from "./research-github-repo.ts";
+
+const SHA = "a".repeat(40);
 
 test("parseGithubRepoInput accepts bare slugs and github.com URLs, rejects others", () => {
   assert.deepEqual(parseGithubRepoInput("OpenCoven/coven-cave"), { owner: "OpenCoven", repo: "coven-cave" });
@@ -61,6 +65,33 @@ test("githubRepo*Url helpers compose canonical github.com URLs with encoding", (
     "https://github.com/o/r/blob/feat%2Fx/docs/a%20b.md",
   );
   assert.equal(githubRepoTreeWebUrl("o", "r", "main"), "https://github.com/o/r/tree/main");
+  assert.equal(
+    githubRepoReadmeLinkUrl({
+      owner: "o",
+      repo: "r",
+      commitSha: SHA,
+      readmePath: "README.md",
+    }, "docs/guide.md"),
+    `https://github.com/o/r/blob/${SHA}/docs/guide.md`,
+  );
+  assert.equal(
+    githubRepoReadmeLinkUrl({
+      owner: "o",
+      repo: "r",
+      commitSha: SHA,
+      readmePath: "docs/README.md",
+    }, "../LICENSE"),
+    `https://github.com/o/r/blob/${SHA}/LICENSE`,
+  );
+  assert.equal(
+    githubRepoReadmeLinkUrl({
+      owner: "o",
+      repo: "r",
+      commitSha: SHA,
+      readmePath: "README.md",
+    }, "javascript:alert(1)"),
+    null,
+  );
 });
 
 test("githubRepoViewEndpoint encodes repo and drops a blank/unsafe ref", () => {
@@ -84,12 +115,12 @@ test("githubRepoViewEndpoint encodes repo and drops a blank/unsafe ref", () => {
 
 test("buildGithubRepoTree folds flat listings into a nested tree", () => {
   const entries: GithubRepoTreeEntry[] = [
-    { path: "README.md", type: "blob", size: 100 },
-    { path: "src", type: "tree" },
-    { path: "src/index.ts", type: "blob", size: 20 },
-    { path: "src/lib", type: "tree" },
-    { path: "src/lib/util.ts", type: "blob", size: 40 },
-    { path: "docs/guide.md", type: "blob", size: 60 },
+    { path: "README.md", type: "blob", sha: SHA, size: 100 },
+    { path: "src", type: "tree", sha: SHA },
+    { path: "src/index.ts", type: "blob", sha: SHA, size: 20 },
+    { path: "src/lib", type: "tree", sha: SHA },
+    { path: "src/lib/util.ts", type: "blob", sha: SHA, size: 40 },
+    { path: "docs/guide.md", type: "blob", sha: SHA, size: 60 },
   ];
   const tree = buildGithubRepoTree(entries);
   assert.equal(tree.length, 3);
@@ -112,12 +143,46 @@ test("buildGithubRepoTree folds flat listings into a nested tree", () => {
 });
 
 test("buildGithubRepoTree materializes intermediate dirs for deep blobs", () => {
-  const tree = buildGithubRepoTree([{ path: "a/b/c.txt", type: "blob", size: 1 }]);
+  const tree = buildGithubRepoTree([{ path: "a/b/c.txt", type: "blob", sha: SHA, size: 1 }]);
   assert.equal(tree.length, 1);
   assert.equal(tree[0].type, "tree");
   assert.equal(tree[0].name, "a");
   assert.equal(tree[0].children?.[0].name, "b");
   assert.equal(tree[0].children?.[0].children?.[0].type, "blob");
+});
+
+test("normalizeGithubRepoSnapshot rejects invalid tree and README paths", () => {
+  const snapshot = (
+    tree: GithubRepoTreeEntry[],
+    readme: { path: string; markdown: string } | null = null,
+  ) => ({
+    version: 1,
+    owner: "OpenCoven",
+    repo: "coven-cave",
+    visibility: "public",
+    stars: 1,
+    forks: 0,
+    defaultBranch: "main",
+    resolvedRef: "main",
+    commitSha: SHA,
+    fetchedAt: "2026-09-01T12:00:00.000Z",
+    truncated: false,
+    tree,
+    readme,
+  });
+
+  assert.equal(normalizeGithubRepoSnapshot(snapshot([
+    { path: "src", type: "tree", sha: SHA },
+    { path: "src", type: "tree", sha: SHA },
+  ])), null);
+  assert.equal(normalizeGithubRepoSnapshot(snapshot([
+    { path: "src", type: "blob", sha: SHA },
+    { path: "src/index.ts", type: "blob", sha: SHA },
+  ])), null);
+  assert.equal(normalizeGithubRepoSnapshot(snapshot([], {
+    path: "../../README.md",
+    markdown: "# Escaped",
+  })), null);
 });
 
 test("formatGithubBytes returns human-readable sizes or null", () => {

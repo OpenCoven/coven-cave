@@ -21,7 +21,6 @@ const FACADES: Record<string, string[]> = {
     "../styles/globals/themes.css",
     "../styles/globals/desktop-chrome.css",
     "../styles/globals/shell-responsive.css",
-    "../styles/settings-familiars.css",
     "../styles/globals/calendar-agenda.css",
     "../styles/globals/surface-compact-calendar.css",
     "../styles/globals/shell-cards-and-controls.css",

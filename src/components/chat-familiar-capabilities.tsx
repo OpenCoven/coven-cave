@@ -16,6 +16,11 @@
  * (deriveFamiliarTabState) is unchanged.
  */
 
+// The familiar Settings tab mounts FamiliarStudio{Identity,Memory}Tab, whose
+// rules left the globals facade in cave-dkdev. This root is dynamic(), so the
+// sheet ships with this chunk rather than with every route.
+import "@/styles/settings-familiars.css";
+
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";

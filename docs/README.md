@@ -38,6 +38,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
 - [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness
+- [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
 - [`windows-runtime-cache.md`](windows-runtime-cache.md) — the content-addressed archive layer and its two digests

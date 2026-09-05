@@ -380,6 +380,37 @@ function strictSingleExactRef(output, remote, expectedRef, expectedOidWidth) {
   return { oid: match[1], ref: match[2], kind: "pull", name: match[3], peeled: false };
 }
 
+function strictSingleExactBranch(output, remote, expectedRef, expectedOidWidth) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "") {
+    throw new Error(`remote ${remote} returned malformed exact-branch output`);
+  }
+  const match = /^([0-9a-f]+)\t(refs\/heads\/(.+))$/.exec(lines[0]);
+  if (
+    !match ||
+    !FULL_OID.test(match[1]) ||
+    match[1].length !== expectedOidWidth ||
+    match[2] !== expectedRef ||
+    Buffer.byteLength(match[2], "utf8") > STRICT_MAX_REF_BYTES
+  ) {
+    throw new Error(`remote ${remote} returned a malformed exact branch`);
+  }
+  return { oid: match[1], ref: match[2], kind: "heads", name: match[3], peeled: false };
+}
+
+function strictExactBranchAdvertisement(target, remote, ref, expectedOidWidth, deadline) {
+  const probe = strictGitProbe(
+    ["-C", target, "ls-remote", "--exit-code", "--", remote, ref],
+    target,
+    deadline,
+  );
+  if (probe.status === 2 && probe.stdout === "") {
+    throw new Error(`remote ${remote} does not advertise exact branch ${ref}`);
+  }
+  if (probe.status !== 0) throw new Error(`exact branch advertisement probe exited ${probe.status}`);
+  return strictSingleExactBranch(probe.stdout, remote, ref, expectedOidWidth);
+}
+
 function strictValidateMergedGithubPr(pr, proof, head) {
   if (pr.number !== proof.number) throw new Error("GitHub PR number does not match requested proof");
   if (pr.state !== "closed" || pr.merged !== true || typeof pr.merged_at !== "string" || !Number.isFinite(Date.parse(pr.merged_at))) {
@@ -461,6 +492,51 @@ function strictRetainedByMergedGithubPr(target, head, proof) {
     deadline,
   );
   if (advertisedCommit !== head) throw new Error("fetched GitHub PR head does not match expected HEAD");
+}
+
+function strictRetainedByRemoteBranch(target, head, proof) {
+  const deadline = strictRetentionDeadline();
+  const remotes = strictRemoteNames(target, deadline);
+  if (!remotes.includes(proof.remote)) throw new Error("remote-branch proof remote is not configured");
+  strictGit(["-C", target, "check-ref-format", proof.ref], target, deadline);
+
+  const advertised = strictExactBranchAdvertisement(
+    target,
+    proof.remote,
+    proof.ref,
+    head.length,
+    deadline,
+  );
+  if (advertised.oid !== proof.oid) {
+    throw new Error("advertised remote branch does not match expected OID");
+  }
+
+  strictFetchAdvertisedRefs(target, proof.remote, [proof.ref], deadline);
+  const refreshed = strictExactBranchAdvertisement(
+    target,
+    proof.remote,
+    proof.ref,
+    head.length,
+    deadline,
+  );
+  if (refreshed.oid !== advertised.oid) {
+    throw new Error(`remote ${proof.remote} changed ${proof.ref} during retention proof`);
+  }
+  const advertisedCommit = strictResolveAdvertisedCommit(
+    target,
+    proof.remote,
+    advertised,
+    null,
+    deadline,
+  );
+  const ancestry = strictGitProbe(
+    ["-C", target, "merge-base", "--is-ancestor", head, advertisedCommit],
+    target,
+    deadline,
+  );
+  if (ancestry.stdout !== "") throw new Error("git ancestry probe returned unexpected output");
+  if (ancestry.status === 1) throw new Error("HEAD is not retained by the exact remote branch");
+  if (ancestry.status !== 0) throw new Error(`git ancestry probe exited ${ancestry.status}`);
 }
 
 function strictRetainedOnRemote(target, head) {
@@ -646,10 +722,17 @@ function runStrictWorktreeRemove(args) {
     args[2] === "--expected-head" &&
     args[4] === "--retained-by-github-pr" &&
     args[8] === "--expected-base";
-  if (!basicArgs && !githubPrArgs) {
+  const remoteBranchArgs =
+    args.length === 9 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head" &&
+    args[4] === "--retained-by-remote-branch" &&
+    args[7] === "--expected-remote-oid";
+  if (!basicArgs && !githubPrArgs && !remoteBranchArgs) {
     throw new Error(
       "expected --strict-worktree-remove <absolute-path> --expected-head <full-oid> " +
-        "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch>]",
+        "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch> | " +
+        "--retained-by-remote-branch <remote> <refs/heads/name> --expected-remote-oid <full-oid>]",
     );
   }
   const requestedPath = args[1];
@@ -657,6 +740,7 @@ function runStrictWorktreeRemove(args) {
   if (!path.isAbsolute(requestedPath)) throw new Error("target path must be absolute");
   if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
   let githubProof = null;
+  let remoteBranchProof = null;
   if (githubPrArgs) {
     const remote = args[5];
     const repo = args[6];
@@ -675,6 +759,18 @@ function runStrictWorktreeRemove(args) {
     const number = Number(numberText);
     if (!Number.isSafeInteger(number)) throw new Error("GitHub PR proof number is out of range");
     githubProof = { remote, repo, number, base };
+  } else if (remoteBranchArgs) {
+    const remote = args[5];
+    const ref = args[6];
+    const oid = args[8];
+    if (!remote || /\s/.test(remote)) throw new Error("remote-branch proof remote is malformed");
+    if (!ref.startsWith("refs/heads/") || Buffer.byteLength(ref, "utf8") > STRICT_MAX_REF_BYTES) {
+      throw new Error("remote-branch proof ref is malformed");
+    }
+    if (!FULL_OID.test(oid) || oid.length !== expectedHead.length) {
+      throw new Error("remote-branch proof OID is malformed");
+    }
+    remoteBranchProof = { remote, ref, oid };
   }
 
   let target;
@@ -708,6 +804,7 @@ function runStrictWorktreeRemove(args) {
   if (status !== "") throw new Error("target worktree is not clean");
 
   if (githubProof) strictRetainedByMergedGithubPr(target, actualHead, githubProof);
+  else if (remoteBranchProof) strictRetainedByRemoteBranch(target, actualHead, remoteBranchProof);
   else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
   process.stdout.write(`${JSON.stringify({

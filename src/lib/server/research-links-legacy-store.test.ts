@@ -61,6 +61,33 @@ function xLink(): SavedLink {
   });
 }
 
+function githubLink(): SavedLink {
+  return regularLink({
+    id: "github-1",
+    url: "https://github.com/OpenCoven/coven-cave",
+    category: "github",
+    title: "OpenCoven/coven-cave",
+    githubRepo: {
+      version: 1,
+      owner: "OpenCoven",
+      repo: "coven-cave",
+      description: "Desktop control room",
+      primaryLanguage: "TypeScript",
+      licenseSpdx: "MIT",
+      visibility: "public",
+      stars: 42,
+      forks: 7,
+      defaultBranch: "main",
+      resolvedRef: "main",
+      commitSha: "a".repeat(40),
+      fetchedAt: "2026-09-01T12:00:00.000Z",
+      truncated: false,
+      tree: [{ path: "README.md", type: "blob", sha: "b".repeat(40), size: 5 }],
+      readme: { path: "README.md", markdown: "# Cave" },
+    },
+  });
+}
+
 function bytes(value: unknown): Buffer {
   return Buffer.from(JSON.stringify(value), "utf8");
 }
@@ -86,6 +113,7 @@ test("strict parser accepts and deeply detaches complete saved-link rows", () =>
         },
       }),
       xLink(),
+      githubLink(),
     ],
   };
   const parsed = parseResearchLinksBytes(bytes(source));
@@ -93,9 +121,13 @@ test("strict parser accepts and deeply detaches complete saved-link rows", () =>
   source.links[0]!.title = "mutated";
   source.links[0]!.paper!.authors[0] = "mutated";
   source.links[1]!.xArticle!.author.username = "mutated";
+  source.links[2]!.githubRepo!.tree[0]!.path = "mutated";
+  source.links[2]!.githubRepo!.readme!.markdown = "mutated";
   assert.equal(parsed.links[0]!.title, "Example article");
   assert.equal(parsed.links[0]!.paper!.authors[0], "Ada Lovelace");
   assert.equal(parsed.links[1]!.xArticle!.author.username, "OpenCoven");
+  assert.equal(parsed.links[2]!.githubRepo!.tree[0]!.path, "README.md");
+  assert.equal(parsed.links[2]!.githubRepo!.readme!.markdown, "# Cave");
 });
 
 test("serializer is deterministic, pretty-printed, newline-free, and hashes exact bytes", () => {
@@ -219,6 +251,30 @@ test("X Article validation applies the existing canonical normalizers exactly on
   assert.equal(validated.xArticle!.coverImageUrl, "https://example.com/");
   assert.equal(validated.xArticle!.publishedAt, "2026-08-26T12:00:00.000Z");
   assert.equal(validated.xArticle!.fetchedAt, "2026-08-27T12:00:00.000Z");
+});
+
+test("GitHub snapshot validation rejects malformed, extra, and unbounded fields", () => {
+  const missingSha = structuredClone(githubLink());
+  delete (missingSha.githubRepo!.tree[0] as { sha?: string }).sha;
+  assert.throws(() => validateAndDetachSavedLink(missingSha), invalidFile(/githubRepo/));
+
+  const extraField = structuredClone(githubLink()) as SavedLink & {
+    githubRepo: NonNullable<SavedLink["githubRepo"]> & { token: string };
+  };
+  extraField.githubRepo.token = "must-not-persist";
+  assert.throws(() => validateAndDetachSavedLink(extraField), invalidFile(/githubRepo/));
+
+  const wrongRepository = structuredClone(githubLink());
+  wrongRepository.githubRepo!.repo = "other";
+  assert.throws(() => validateAndDetachSavedLink(wrongRepository), invalidFile(/githubRepo/));
+
+  const oversizedTree = structuredClone(githubLink());
+  oversizedTree.githubRepo!.tree = Array.from({ length: 401 }, (_, index) => ({
+    path: `file-${index}.txt`,
+    type: "blob" as const,
+    sha: "b".repeat(40),
+  }));
+  assert.throws(() => validateAndDetachSavedLink(oversizedTree), invalidFile(/githubRepo/));
 });
 
 test("missing reads are empty and atomic writes verify exact projected bytes", async () => {

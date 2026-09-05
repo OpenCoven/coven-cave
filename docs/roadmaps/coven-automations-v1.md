@@ -1,10 +1,14 @@
 # Coven Automations v1 operational roadmap
 
 **Status:** Approved for execution  
-**Last reconciled:** 2026-08-30  
-**Program outcome:** `OpenCoven/coven#854`  
-**Execution queue:** Cave's existing embedded-Dolt Beads graph  
-**Review and CI:** GitHub issues, pull requests, and checks
+**Last live-state audit:** 2026-09-04
+
+**Seed reconciliation:** 2026-09-01
+**Program outcome:** `OpenCoven/coven#854` (Bead `cave-hlv.9`)  
+**Seed task:** `OpenCoven/coven-cave#5220` (Bead `cave-tmegk`)  
+**Execution queue:** Cave's embedded-Dolt Beads graph — seeded and dependency-verified (15 beads)  
+**Review and CI:** GitHub issues, pull requests, and checks  
+**Machine-readable mapping:** [`coven-automations-v1.mapping.json`](coven-automations-v1.mapping.json)
 
 > This document records stable ownership, sequencing, release gates, and tracker conventions. Live implementation status belongs in Beads and GitHub; production automation definitions, occurrences, runs, attempts, approvals, artifacts, and receipts belong only to Coven.
 
@@ -43,32 +47,32 @@ That foundation is not yet a certified automation protocol. The remaining releas
 
 ### Foundation and control
 
-| Priority | Outcome | GitHub | Current disposition |
-| --- | --- | --- | --- |
-| P0 | Coven Automations v1 program and release rollup | `OpenCoven/coven#854` | Open; canonical program outcome |
-| P0 | Native durable-routine foundation | `OpenCoven/coven#816` | Materially implemented; close only after exact evidence reconciliation |
-| P0 | Beads/GitHub operational graph and drift control | `OpenCoven/coven#859` | Open; seed through Cave's canonical Dolt graph |
+| Priority | Outcome | GitHub | Bead | Current disposition |
+| --- | --- | --- | --- | --- |
+| P0 | Coven Automations v1 program and release rollup | `OpenCoven/coven#854` | `cave-hlv.9` | Open and dependency-blocked by remaining outcomes; canonical program/release-gate rollup (not catch-all implementation) |
+| P0 | Native durable-routine foundation | `OpenCoven/coven#816` | `cave-stsf7` | **Verified-foundation** (closed): landed via `OpenCoven/coven#896` ("fix: settle automation runs from terminal evidence"), merge `0d8c2004c3557019e39e5e4db70ae34c9d49a65a` on `OpenCoven/coven` main. Fully qualified on purpose: `OpenCoven/coven-cave#896` is an unrelated change. |
+| P0 | Beads/GitHub operational graph and drift control | `OpenCoven/coven#859` | `cave-hlv.10` | **Closed-verified** 2026-09-03; program-control acceptance complete |
 
 ### P0 protocol and safety train
 
-| Priority | Outcome | GitHub | Dependencies |
-| --- | --- | --- | --- |
-| P0 | `coven.automations.v1` schemas, state machines, command adoption/idempotency, typed errors, and changefeed | `OpenCoven/coven#855` | Foundation |
-| P0 | Deterministic time, IANA timezone/DST, retries, cancellation, scheduler leadership/fencing, crash recovery, backpressure | `OpenCoven/coven#856` | Foundation; protocol states/errors where required |
-| P0 | Universal familiar embodiment binding | `OpenCoven/familiar-contract#17` | Familiar identity/continuity canon |
-| P0 | Automation authority, approval, risk/capability, and degrade-to-proposal profile | `OpenCoven/coven-threads#29` | Familiar embodiment profile for exact binding |
-| P0 | Dispatch-time principal, familiar, authority, runtime, approval, and receipt integration | `OpenCoven/coven#857` | Protocol plus pinned identity/authority profiles |
-| P0 | Independent conformance, chaos, security/privacy, load/SLO, diagnostics, and exact-artifact certification | `OpenCoven/coven#858` | Protocol, reliability, and authority integration |
+| Priority | Outcome | GitHub | Bead | Dependencies |
+| --- | --- | --- | --- | --- |
+| P0 | `coven.automations.v1` schemas, state machines, command adoption/idempotency, typed errors, and changefeed | `OpenCoven/coven#855` | `cave-tm1y0` | Foundation |
+| P0 | Deterministic time, IANA timezone/DST, retries, cancellation, scheduler leadership/fencing, crash recovery, backpressure | `OpenCoven/coven#856` | `cave-1sh6p` | Foundation; protocol states/errors where required |
+| P0 | Universal familiar embodiment binding | `OpenCoven/familiar-contract#17` | `cave-6jswi` | Foundation |
+| P0 | Automation authority, approval, risk/capability, and degrade-to-proposal profile | `OpenCoven/coven-threads#29` | `cave-m9tw3` | Familiar embodiment profile for exact binding |
+| P0 | Dispatch-time principal, familiar, authority, runtime, approval, and receipt integration | `OpenCoven/coven#857` | `cave-dbkng` | Protocol plus pinned identity/authority profiles |
+| P0 | Independent conformance, chaos, security/privacy, load/SLO, diagnostics, and exact-artifact certification | `OpenCoven/coven#858` | `cave-x28j6` | Protocol, reliability, and authority integration |
 
 ### P1 supported ecosystem
 
-| Priority | Outcome | GitHub | Dependencies |
-| --- | --- | --- | --- |
-| P1 | SDK types, read/verify/subscribe, then authority-bearing adopted commands | `OpenCoven/sdk#80` | Protocol; authority and certification before mutation graduation |
-| P1 | Cave oversight, approvals, recovery, and Codex compatibility retirement | `OpenCoven/coven-cave#5217` | Protocol, reliability, authority, exact canaries |
-| P1 | Psyche invocation adapter without schedule ownership | `OpenCoven/psyche#18` | Protocol, familiar binding, authority profile |
-| P1 | Protocol/operator/migration/security/troubleshooting documentation | `OpenCoven/coven-docs#76` | Stabilized exact artifacts and scenarios |
-| P1 | Reusable contract, conformance, evidence, and roadmap-drift workflows | `OpenCoven/.github#2` | Conformance and tracker contracts |
+| Priority | Outcome | GitHub | Bead | Dependencies |
+| --- | --- | --- | --- | --- |
+| P1 | SDK types, read/verify/subscribe, then authority-bearing adopted commands | `OpenCoven/sdk#80` | `cave-90hwl` | Conformance |
+| P1 | Cave oversight, approvals, recovery, and Codex compatibility retirement | `OpenCoven/coven-cave#5217` | `cave-e52qp` | Conformance |
+| P1 | Psyche invocation adapter without schedule ownership | `OpenCoven/psyche#18` | `cave-yaul2` | Conformance |
+| P1 | Protocol/operator/migration/security/troubleshooting documentation | `OpenCoven/coven-docs#76` | `cave-qwnxq` | Conformance |
+| P1 | Reusable contract, conformance, evidence, and roadmap-drift workflows | `OpenCoven/.github#2` | `cave-xqbs4` | Conformance and program control |
 
 ### P2 deliberate expansion
 
@@ -111,14 +115,13 @@ all required P0 + supported P1 canaries
 
 ### Execution order
 
-1. **Operationalize the graph.** Complete `coven#859`, reuse Cave's existing Beads infrastructure, map every public outcome exactly once, and establish drift reporting.
-2. **Reconcile the foundation.** Close `coven#816` only after clean-clone, migration, daemon wiring, restart, stale-lease, shared-path, and delivery evidence is attached.
-3. **Ratify the public protocol.** Complete `coven#855` before clients harden hand-authored JSON shapes.
-4. **Parallelize independent foundations.** Progress `coven#856`, `familiar-contract#17`, and `coven-threads#29` against pinned draft artifacts.
-5. **Integrate trust at dispatch.** Complete `coven#857`; do not retain a string-only fallback.
-6. **Certify the core.** Complete `coven#858` against packed/exact artifacts under deterministic, crash, duplicate, security, privacy, and load tests.
-7. **Graduate clients and orchestration.** Land SDK read/verify/subscribe, Cave oversight, and the Psyche adapter against immutable canaries.
-8. **Publish and enforce.** Complete Docs and organization workflows, then produce one exact-release go/no-go evidence packet under `coven#854`.
+1. **Preserve the completed control plane.** `coven#859`, `coven#816`, `familiar-contract#17`, and `coven-threads#29` are closed-verified; do not reopen them absent evidence of new drift.
+2. **Continue the active public protocol work.** `coven#855` / `cave-tm1y0` is claimed and in progress. Complete it before clients harden hand-authored JSON shapes.
+3. **Advance scheduler reliability when its protocol dependency clears.** `coven#856` remains open and dependency-blocked while protocol work continues.
+4. **Integrate trust at dispatch.** Complete `coven#857`; its embodiment and authority prerequisites are closed, while protocol remains open.
+5. **Certify the core.** Complete `coven#858` against packed/exact artifacts under deterministic, crash, duplicate, security, privacy, and load tests.
+6. **Graduate clients and orchestration.** Land SDK read/verify/subscribe, Cave oversight, and the Psyche adapter against immutable canaries.
+7. **Publish and enforce.** Complete Docs and organization workflows, then produce one exact-release go/no-go evidence packet under `coven#854`.
 
 ## 5. Beads operating model
 
@@ -135,27 +138,33 @@ The canonical Beads graph already lives in `OpenCoven/coven-cave`:
 
 Do **not** initialize a competing `.beads` store in `OpenCoven/coven`. Cross-repository outcomes may be represented in Cave's work graph through exact external references while implementation and review stay in their canonical repositories.
 
-### Proposed graph
+### Provisioned graph
 
-Create one child epic under the existing `cave-hlv` operating program:
+The graph is seeded live under the existing `cave-hlv` operating program. Bead IDs
+below are confirmed from live Dolt state (`bd show` / `bd dep list`):
 
 ```text
-Coven Automations v1 delivery program
-  ├── Foundation reconciliation                    -> coven#816
-  ├── Protocol contract                            -> coven#855
-  ├── Scheduler reliability                        -> coven#856
-  ├── Familiar embodiment profile                  -> familiar-contract#17
-  ├── Automation authority profile                 -> coven-threads#29
-  ├── Coven dispatch/receipt integration            -> coven#857
-  ├── Conformance and diagnostics                   -> coven#858
-  ├── SDK                                           -> sdk#80
-  ├── Cave oversight                                -> coven-cave#5217
-  ├── Psyche adapter                                -> psyche#18
-  ├── Documentation                                 -> coven-docs#76
-  └── Organization canaries                         -> .github#2
+Coven Automations v1 (release rollup) -> coven#854   = cave-hlv.9   (task, parent cave-hlv)
+Program control / drift (closed)      -> coven#859   = cave-hlv.10  (task, parent cave-hlv)
+  ├── Foundation (verified, closed)                  -> coven#816              = cave-stsf7
+  ├── Protocol contract (in progress)                -> coven#855              = cave-tm1y0
+  ├── Scheduler reliability                          -> coven#856              = cave-1sh6p
+  ├── Familiar embodiment profile (closed)           -> familiar-contract#17   = cave-6jswi
+  ├── Automation authority profile (closed)          -> coven-threads#29       = cave-m9tw3
+  ├── Coven dispatch/receipt integration             -> coven#857              = cave-dbkng
+  ├── Conformance and diagnostics                    -> coven#858              = cave-x28j6
+  ├── SDK                                            -> sdk#80                 = cave-90hwl
+  ├── Cave oversight                                 -> coven-cave#5217        = cave-e52qp
+  ├── Psyche adapter                                 -> psyche#18              = cave-yaul2
+  ├── Documentation                                  -> coven-docs#76          = cave-qwnxq
+  └── Organization canaries                          -> .github#2             = cave-xqbs4
 ```
 
-The `coven#854` program and `coven#859` tracker-control outcome may map to the delivery epic and one dedicated control Bead respectively. Every other public outcome maps to exactly one implementation Bead.
+The seed bootstrap task `coven-cave#5220` (Bead `cave-tmegk`) is **closed-verified**: the graph is seeded, dependency-verified, synchronized, and reconciled. The
+`coven#854` release rollup and `coven#859` program-control outcomes are provisioned
+as dedicated Beads under `cave-hlv`; every other public outcome maps to exactly one
+implementation Bead. Foundation `coven#816` is represented as verified-foundation
+(closed), not pending work.
 
 ### Priority and labels
 
@@ -261,9 +270,64 @@ bd ready --json
 
 Record before/after Dolt remote OIDs when state is expected to advance. Do not hand-edit `.beads/issues.jsonl`; when an export is committed for review, ensure it is scrubbed of local emails, machine paths, secrets, private transcripts, and sensitive identity/authority data.
 
+**Historical seed run (2026-09-01).** All 15 program beads (seed `cave-tmegk` plus 14
+outcomes) are committed to the canonical embedded Dolt database `cave` and carry
+30 in-program blocked-first edges. The `blocks` projections in the mapping file
+are the exact inverse of the live `bd dep list --direction down` output for all
+15 beads, every outcome's `dependsOn` equals its live down-edges, and `bd dep
+cycles` reports no cycles. The two `cave-hlv.9`/`cave-hlv.10` -> `cave-hlv`
+parent-child edges are pre-existing epic hierarchy outside the program set and
+are excluded from the 30.
+
+**Historical remote-propagation evidence (2026-09-01).** `pnpm beads:sync` —
+the documented wrapper — completed both its pull and push phases and exited 0:
+
+```text
+[beads:sync] pull  -> Pull complete.
+[beads:sync] push  -> Push complete.
+EXIT=0
+```
+
+After the run, local embedded Dolt `main` and `remotes/origin/main` are equal at
+`thpoaq91d1nmqaas4lk6hhcs217foge2`, `dolt diff --summary remotes/origin/main main` is empty,
+and `git ls-remote origin refs/dolt/data` reads
+`7855b5bcb436bf4ac062c1c24c966f1450971e95` before and after the run (the push was a fast-forward
+no-op — the shared history already carried these bead commits). The remote was
+**not** force-pushed and no concurrent Dolt commit was discarded. The graph was
+re-verified afterward: all 15 beads present, 30 in-program blocked-first edges,
+none missing.
+
+The 2026-09-04 read-only audit observed `refs/dolt/data` at
+`11c53114f4e6b79029f806ea88e57db01a13585b`. It did not run a sync or compare
+the current local and remote Dolt branches, so the 2026-09-01 equality claim
+above is historical evidence, not a claim about current synchronization.
+
+**Historical tooling observations from 2026-09-01 (external, recorded rather
+than worked around).**
+The canonical embedded Dolt database is at schema v66, so every `bd` command
+requires a v66-capable client (`bd` 1.3.0-rc.1); Homebrew `bd` 1.2.2 (schema
+v53) cannot operate on it. `pnpm beads:doctor` (`bd doctor && bd lint`) exits 1:
+`bd doctor` is not yet supported in embedded mode, and `bd lint` reports a
+repository-wide template-convention backlog (57 issues / 63 warnings, e.g.
+missing `## Acceptance Criteria`) that also covers the Automations v1 outcome
+beads; it is an advisory convention, not a CI gate, and was recorded rather than
+weakened. `pnpm beads:surfaces` exits 1 on a repository-wide backlog of 245
+beads missing shared-ownership labels; none of the 15 Automations v1 beads
+appears in that list and each carries exactly one `surface:shared` label.
+
+**Task 1 is reconciled and closed.** The seed bead `cave-tmegk` is
+closed-verified and `OpenCoven/coven-cave#5220` is closed. Continue the claimed
+protocol outcome `OpenCoven/coven#855` (Bead `cave-tm1y0`), which is in progress.
+Familiar embodiment (`OpenCoven/familiar-contract#17`, `cave-6jswi`) and
+automation authority (`OpenCoven/coven-threads#29`, `cave-m9tw3`) are now
+closed-verified. Scheduler reliability remains open behind the protocol
+dependency.
+
 ## 6. Drift contract
 
-The tracker-control work under `coven#859` and `.github#2` must report at least:
+The completed tracker-control outcome under `coven#859`, together with the
+still-open organization-canaries outcome under `.github#2`, must report at
+least:
 
 - GitHub outcome without exactly one Bead mapping;
 - Bead mapped to multiple public outcomes;

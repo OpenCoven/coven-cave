@@ -139,15 +139,26 @@ function validateSoul(soul: string | null): ContractViolation[] {
 
 // ── IDENTITY.md ────────────────────────────────────────────────────────────────
 
-type IdentityParse = {
+export type IdentityParse = {
   hasName: boolean;
   name: string | null;
   hasCreature: boolean;
+  /** The text after `**Creature:**`, or null when the field is absent. */
+  creature: string | null;
+  /** The text after `**Person:**`, or null when IDENTITY.md names no person. */
+  person: string | null;
   hasPurpose: boolean;
 };
 
 export function parseIdentity(content: string): IdentityParse {
-  const result: IdentityParse = { hasName: false, name: null, hasCreature: false, hasPurpose: false };
+  const result: IdentityParse = {
+    hasName: false,
+    name: null,
+    hasCreature: false,
+    creature: null,
+    person: null,
+    hasPurpose: false,
+  };
 
   for (const raw of content.split("\n")) {
     const trimmed = raw.trim();
@@ -163,7 +174,17 @@ export function parseIdentity(content: string): IdentityParse {
       result.name = nameField[1].trim();
     }
 
-    if (/\*\*Creature:\*\*/i.test(trimmed)) result.hasCreature = true;
+    const creatureField = trimmed.match(/\*\*Creature:\*\*\s*(.*)/i);
+    if (creatureField) {
+      result.hasCreature = true;
+      const creature = creatureField[1].trim();
+      if (creature) result.creature = creature;
+    }
+    const personField = trimmed.match(/\*\*Person:\*\*\s*(.*)/i);
+    if (personField) {
+      const person = personField[1].trim();
+      if (person) result.person = person;
+    }
     if (/^##\s*Purpose/i.test(trimmed)) result.hasPurpose = true;
     if (/I help|my purpose|I assist/i.test(trimmed) && !result.hasPurpose) result.hasPurpose = true;
   }
@@ -197,7 +218,7 @@ function validateIdentity(identity: string | null): ContractViolation[] {
 
 // ── ward.toml ──────────────────────────────────────────────────────────────────
 
-type WardParse = {
+export type WardParse = {
   hasMeta: boolean;
   metaFamiliar: string | null;
   metaPerson: string | null;
@@ -210,6 +231,14 @@ type WardParse = {
   hasApprovalTiers: boolean;
   hasAutoTier: boolean;
   hasHumanReviewTier: boolean;
+  /**
+   * What the familiar may do without asking: `blocks` under
+   * `[approval_tiers.auto]`, or the inline `auto = [...]` under
+   * `[approval_tiers]`. Both spellings are in use, so both are read.
+   */
+  autoTier: string[];
+  /** What must be approved by a person: the `human_review` counterpart. */
+  humanReviewTier: string[];
 };
 
 export function parseWardToml(content: string): WardParse {
@@ -226,6 +255,8 @@ export function parseWardToml(content: string): WardParse {
     hasApprovalTiers: false,
     hasAutoTier: false,
     hasHumanReviewTier: false,
+    autoTier: [],
+    humanReviewTier: [],
   };
 
   const lines = content.split("\n");
@@ -240,11 +271,19 @@ export function parseWardToml(content: string): WardParse {
       .map((s) => s.trim().replace(/^["']|["']$/g, ""))
       .filter(Boolean);
 
+  const assignArray = (section: string | null, key: string, items: string[]) => {
+    if (section === "protected" && key === "files") result.protectedFiles = items;
+    if (section === "protected" && key === "invariants") result.protectedInvariants = items;
+    if (section === "editable" && key === "paths") result.editablePaths = items;
+    if (section === "approval_tiers" && key === "auto") result.autoTier = items;
+    if (section === "approval_tiers" && key === "human_review") result.humanReviewTier = items;
+    if (section === "approval_tiers.auto" && key === "blocks") result.autoTier = items;
+    if (section === "approval_tiers.human_review" && key === "blocks") result.humanReviewTier = items;
+  };
+
   const commitArray = () => {
     if (!arrayTarget) return;
-    if (arrayTarget.section === "protected" && arrayTarget.key === "files") result.protectedFiles = [...arrayBuffer];
-    if (arrayTarget.section === "protected" && arrayTarget.key === "invariants") result.protectedInvariants = [...arrayBuffer];
-    if (arrayTarget.section === "editable" && arrayTarget.key === "paths") result.editablePaths = [...arrayBuffer];
+    assignArray(arrayTarget.section, arrayTarget.key, [...arrayBuffer]);
   };
 
   for (const raw of lines) {
@@ -256,10 +295,10 @@ export function parseWardToml(content: string): WardParse {
       if (/^\[meta\]/.test(trimmed)) { currentSection = "meta"; continue; }
       if (/^\[protected\]/.test(trimmed)) { currentSection = "protected"; result.hasProtected = true; continue; }
       if (/^\[editable\]/.test(trimmed)) { currentSection = "editable"; result.hasEditable = true; continue; }
-      if (/^\[approval_tiers\.auto\]/.test(trimmed)) { result.hasAutoTier = true; continue; }
-      if (/^\[approval_tiers\.human_review\]/.test(trimmed)) { result.hasHumanReviewTier = true; continue; }
+      if (/^\[approval_tiers\.auto\]/.test(trimmed)) { currentSection = "approval_tiers.auto"; result.hasAutoTier = true; continue; }
+      if (/^\[approval_tiers\.human_review\]/.test(trimmed)) { currentSection = "approval_tiers.human_review"; result.hasHumanReviewTier = true; continue; }
       if (/^\[approval_tiers\]/.test(trimmed)) { currentSection = "approval_tiers"; result.hasApprovalTiers = true; continue; }
-      if (/^\[approval_tiers\.\w+\]/.test(trimmed)) { continue; }
+      if (/^\[approval_tiers\.\w+\]/.test(trimmed)) { currentSection = "other"; continue; }
       if (/^\[/.test(trimmed)) { currentSection = "other"; continue; }
     }
 
@@ -293,11 +332,7 @@ export function parseWardToml(content: string): WardParse {
     // Whole array on one line.
     const inlineArr = trimmed.match(/^(\w+)\s*=\s*\[(.+)\]/);
     if (inlineArr) {
-      const key = inlineArr[1];
-      const items = stripItems(inlineArr[2]);
-      if (currentSection === "protected" && key === "files") result.protectedFiles = items;
-      if (currentSection === "protected" && key === "invariants") result.protectedInvariants = items;
-      if (currentSection === "editable" && key === "paths") result.editablePaths = items;
+      assignArray(currentSection, inlineArr[1], stripItems(inlineArr[2]));
       continue;
     }
 
