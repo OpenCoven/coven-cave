@@ -7,6 +7,21 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-05
+
+> Starts the v0.4 release line from the fully validated v0.3.13 payload,
+> preserving GPT-6 Astra and the complete cross-platform release baseline.
+
+Minor release on top of v0.3.13. This stamp intentionally carries the
+validated v0.3.13 application payload forward without additional functional
+commits, establishing v0.4.0 as the baseline for the next minor series.
+
+### Changes
+- Advance the desktop, daemon, and iOS marketing version to v0.4.0.
+- Refresh the iOS App Store build number for a new TestFlight upload.
+- Preserve the validated v0.3.13 feature set, including Claude Fable 5.1 and
+  GPT-6 Astra, unchanged.
+
 ## [0.3.13] - 2026-09-01
 
 > Makes native iOS chat recovery more durable, introduces a review-first
