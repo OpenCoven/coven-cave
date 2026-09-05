@@ -106,6 +106,11 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
   );
   assert.match(
     compatibilityHarness,
+    /process\.platform\s*===\s*["']win32["']\s*\?\s*90_000\s*:\s*45_000/,
+    "Windows packaged startup must use the production sidecar's 90-second readiness budget",
+  );
+  assert.match(
+    compatibilityHarness,
     /rm\(root,\s*\{[\s\S]*?maxRetries:\s*10,[\s\S]*?retryDelay:\s*100,[\s\S]*?\}\)/,
     "artifact cleanup must retry transient Windows file locks",
   );
