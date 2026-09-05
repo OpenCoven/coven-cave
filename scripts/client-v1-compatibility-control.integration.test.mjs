@@ -170,6 +170,7 @@ function isolatedEnvironment(root, port, selector) {
       || name === "USERPROFILE"
       || name === "HOMEDRIVE"
       || name === "HOMEPATH"
+      || name === "NODE_OPTIONS"
       || name.startsWith("COVEN_")
       || /(?:TOKEN|SECRET|PASSWORD|PRIVATE|API_KEY|CREDENTIAL)/i.test(name)
     ) {

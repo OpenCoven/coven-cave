@@ -101,6 +101,11 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
   );
   assert.match(
     compatibilityHarness,
+    /name === "NODE_OPTIONS"/,
+    "the isolated environment must not inherit a non-macOS heap override",
+  );
+  assert.match(
+    compatibilityHarness,
     /rm\(root,\s*\{[\s\S]*?maxRetries:\s*10,[\s\S]*?retryDelay:\s*100,[\s\S]*?\}\)/,
     "artifact cleanup must retry transient Windows file locks",
   );
