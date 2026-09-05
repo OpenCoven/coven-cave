@@ -16,6 +16,14 @@
       },
       "contextWindow": 1000000
     },
+    "gpt-6-astra": {
+      "label": "GPT-6 Astra",
+      "ids": {
+        "openai": "gpt-6-astra",
+        "github": "gpt-6-astra"
+      },
+      "contextWindow": 1000000
+    },
     "gpt-5.6-terra": {
       "label": "GPT-5.6 Terra",
       "ids": {
@@ -185,6 +193,7 @@
       "provider": "openai",
       "models": [
         "gpt-5.6-sol",
+        "gpt-6-astra",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
         "gpt-5.5",
@@ -213,6 +222,7 @@
       "provider": "github",
       "models": [
         "copilot-auto",
+        "gpt-6-astra",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
@@ -231,6 +241,7 @@
       "provider": "openai",
       "models": [
         "gpt-5.6-sol",
+        "gpt-6-astra",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
         "gpt-5.5",

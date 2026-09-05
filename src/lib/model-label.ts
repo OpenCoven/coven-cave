@@ -6,6 +6,7 @@
 import type { IconName } from "@/lib/icon";
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
+const GPT_VARIANTS = ["astra"] as const;
 
 function capitalize(word: string): string {
   return word ? word.charAt(0).toUpperCase() + word.slice(1) : word;
@@ -23,7 +24,11 @@ export function modelLabel(model: string | null | undefined): string {
     if (lower.includes(family)) return version ? `${capitalize(family)} ${version}` : capitalize(family);
   }
   if (lower.includes("codex")) return "Codex";
-  if (lower.includes("gpt")) return version ? `GPT-${version}` : "GPT";
+  if (lower.includes("gpt")) {
+    const variant = GPT_VARIANTS.find((candidate) => lower.includes(candidate));
+    const base = version ? `GPT-${version}` : "GPT";
+    return variant ? `${base} ${capitalize(variant)}` : base;
+  }
   // Unknown model: drop a provider prefix ("anthropic/…") and a bracket suffix
   // ("…[1m]") so the raw id at least reads cleanly.
   return raw.replace(/^[a-z0-9.]+\//i, "").replace(/\s*\[[^\]]*\]\s*$/, "");

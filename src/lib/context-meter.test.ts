@@ -26,6 +26,14 @@ test("contextWindowForModel resolves catalogued ids as known", () => {
     tokens: 1_000_000,
     known: true,
   });
+  assert.deepEqual(contextWindowForModel("openai/gpt-6-astra"), {
+    tokens: 1_000_000,
+    known: true,
+  });
+  assert.deepEqual(contextWindowForModel("github/gpt-6-astra"), {
+    tokens: 1_000_000,
+    known: true,
+  });
 });
 
 test("contextWindowForModel tolerates a bare model id (no provider prefix)", () => {

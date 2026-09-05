@@ -12,6 +12,8 @@ assert.equal(modelLabel("claude-fable-5"), "Fable 5", "Fable family");
 assert.equal(modelLabel("claude-fable-5-1"), "Fable 5.1", "Fable minor version");
 assert.equal(modelLabel("gpt-5-codex"), "Codex", "codex wins over gpt");
 assert.equal(modelLabel("gpt-5"), "GPT-5", "GPT family + version");
+assert.equal(modelLabel("gpt-6-astra"), "GPT-6 Astra", "named GPT variant");
+assert.equal(modelLabel("github/gpt-6-astra"), "GPT-6 Astra", "provider-prefixed named GPT variant");
 assert.equal(modelLabel("anthropic/some-future-model"), "some-future-model", "provider prefix dropped");
 assert.equal(modelLabel(""), "", "empty input yields empty label");
 assert.equal(modelLabel(null), "", "null input yields empty label");

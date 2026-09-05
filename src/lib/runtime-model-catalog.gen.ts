@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: 1966f8d4fd40035a84fb0b952900a954b016e0742e405fae9e46543d9c7d6843
+// sha256: bc98df0212b96b69bcfe8b54828768e1174b725ffdd9b78e018b1d8d4e837806
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "1966f8d4fd40035a84fb0b952900a954b016e0742e405fae9e46543d9c7d6843",
+  sha256: "bc98df0212b96b69bcfe8b54828768e1174b725ffdd9b78e018b1d8d4e837806",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -37,6 +37,10 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
       {
         "id": "openai/gpt-5.6-sol",
         "label": "GPT-5.6 Sol"
+      },
+      {
+        "id": "openai/gpt-6-astra",
+        "label": "GPT-6 Astra"
       },
       {
         "id": "openai/gpt-5.6-terra",
@@ -111,6 +115,10 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
         "label": "Auto (Copilot picks)"
       },
       {
+        "id": "github/gpt-6-astra",
+        "label": "GPT-6 Astra"
+      },
+      {
         "id": "github/gpt-5.6-sol",
         "label": "GPT-5.6 Sol"
       },
@@ -161,6 +169,10 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
       {
         "id": "openai/gpt-5.6-sol",
         "label": "GPT-5.6 Sol"
+      },
+      {
+        "id": "openai/gpt-6-astra",
+        "label": "GPT-6 Astra"
       },
       {
         "id": "openai/gpt-5.6-terra",
@@ -224,6 +236,8 @@ export const GENERATED_MODEL_CONTEXT_WINDOWS: Record<string, number> =
   "github/auto": 200000,
   "openai/gpt-5.6-sol": 1000000,
   "github/gpt-5.6-sol": 1000000,
+  "openai/gpt-6-astra": 1000000,
+  "github/gpt-6-astra": 1000000,
   "openai/gpt-5.6-terra": 1000000,
   "github/gpt-5.6-terra": 1000000,
   "openai/gpt-5.6-luna": 1000000,

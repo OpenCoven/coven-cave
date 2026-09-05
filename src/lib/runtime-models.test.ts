@@ -198,6 +198,7 @@ assert.deepEqual(
   catalogForRuntime("codex").models.map((model) => model.id),
   [
     "openai/gpt-5.6-sol",
+    "openai/gpt-6-astra",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
     "openai/gpt-5.5",
@@ -242,6 +243,10 @@ assert.ok(
   "copilot catalog should seed GPT-5.6 Sol",
 );
 assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-6-astra"),
+  "copilot catalog should seed GPT-6 Astra",
+);
+assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.6-terra"),
   "copilot catalog should seed GPT-5.6 Terra",
 );
@@ -281,6 +286,48 @@ assert.equal(
   runtimeModelIdForLaunch("copilot", "github/claude-fable-5-1"),
   "claude-fable-5-1",
   "Copilot receives its account-scoped Fable 5.1 model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("codex", "openai/gpt-6-astra"),
+  "gpt-6-astra",
+  "Codex receives GPT-6 Astra's bare OpenAI model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("copilot", "github/gpt-6-astra"),
+  "gpt-6-astra",
+  "Copilot receives GPT-6 Astra's account-scoped model id",
+);
+assert.equal(
+  runtimeModelIdForLaunch("hermes", "openai/gpt-6-astra"),
+  "openai/gpt-6-astra",
+  "Hermes preserves GPT-6 Astra's provider-qualified model id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "codex",
+    "openai/gpt-6-astra",
+    "gpt-6-astra",
+  ),
+  "openai/gpt-6-astra",
+  "Codex's native GPT-6 Astra echo maps back to Cave's stable id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "copilot",
+    "github/gpt-6-astra",
+    "gpt-6-astra",
+  ),
+  "github/gpt-6-astra",
+  "Copilot's native GPT-6 Astra echo maps back to Cave's stable id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "hermes",
+    "openai/gpt-6-astra",
+    "openai/gpt-6-astra",
+  ),
+  "openai/gpt-6-astra",
+  "Hermes' preserved GPT-6 Astra echo maps back to Cave's stable id",
 );
 assert.equal(
   modelForCaveFromRuntimeEcho(
@@ -357,6 +404,7 @@ assert.deepEqual(
   hermes.models.map((model) => model.id),
   [
     "openai/gpt-5.6-sol",
+    "openai/gpt-6-astra",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
     "openai/gpt-5.5",
