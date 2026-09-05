@@ -96,8 +96,18 @@ test("conformance builds keep Turbopack and start from a clean plugin runtime", 
   assert.match(script, /NODE_OPTIONS:\s*"--max-old-space-size=6144"/);
   assert.match(
     compatibilityHarness,
-    /env\.NODE_OPTIONS = "--max-old-space-size=6144"/,
-    "both packaged compatibility builds need the macOS runner's proven V8 heap ceiling",
+    /process\.platform === "darwin"[\s\S]*?env\.NODE_OPTIONS = "--max-old-space-size=6144"/,
+    "the packaged compatibility builds need the proven V8 heap ceiling only on macOS",
+  );
+  assert.match(
+    compatibilityHarness,
+    /name === "NODE_OPTIONS"/,
+    "the isolated environment must not inherit a non-macOS heap override",
+  );
+  assert.match(
+    compatibilityHarness,
+    /rm\(root,\s*\{[\s\S]*?maxRetries:\s*10,[\s\S]*?retryDelay:\s*100,[\s\S]*?\}\)/,
+    "artifact cleanup must retry transient Windows file locks",
   );
   assert.match(
     script,
