@@ -187,6 +187,8 @@ function isolatedEnvironment(root, port, selector) {
   env.XDG_CACHE_HOME = path.join(root, "cache");
   if (process.platform === "darwin") {
     env.NODE_OPTIONS = "--max-old-space-size=6144";
+  } else {
+    delete env.NODE_OPTIONS;
   }
   env.NODE_ENV = "production";
   env.COVEN_HOME = path.join(root, "coven");
