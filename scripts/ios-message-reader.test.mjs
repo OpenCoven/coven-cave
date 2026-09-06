@@ -18,7 +18,7 @@ assert.match(
 
 assert.match(
   messageBubble,
-  /private var canOpenReader: Bool \{[\s\S]*!isUser[\s\S]*!message\.streaming[\s\S]*!message\.isError[\s\S]*!parsed\.visible\.isEmpty[\s\S]*onOpenReader != nil/,
+  /private var canOpenReader: Bool \{\s*canOpenReader\(parsed\)\s*\}[\s\S]*private func canOpenReader\(_ projection: AssistantResponseProjection\) -> Bool \{[\s\S]*!isUser[\s\S]*!message\.streaming[\s\S]*!message\.isError[\s\S]*!projection\.visible\.isEmpty[\s\S]*onOpenReader != nil/,
   "reader action should only be available for settled non-error assistant responses",
 );
 
@@ -32,6 +32,12 @@ assert.match(
   messageBubble,
   /\.accessibilityLabel\("Open response in reader"\)/,
   "reader expand button should be directly accessible from the assistant bubble",
+);
+
+assert.match(
+  messageBubble,
+  /if !projection\.visible\.isEmpty \|\| \(message\.streaming && message\.attachmentDataUrls\.isEmpty\)/,
+  "settled control-only responses should not render an empty text bubble",
 );
 
 assert.match(
