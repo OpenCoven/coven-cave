@@ -95,6 +95,9 @@ struct ChatView: View {
     @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
     @State private var projectResolved = false
+    @State private var firstRichRenderMessageID: String?
+    @State private var firstRichRenderSpan: CavePerformanceSpan?
+    @State private var recordedFirstRichRender = false
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
@@ -246,7 +249,7 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button { app.navigationDrawerOpen = true } label: {
+                Button { app.openNavigationDrawer() } label: {
                     Image(systemName: "line.3.horizontal")
                 }
                 .accessibilityLabel("Open navigation")
@@ -417,6 +420,7 @@ struct ChatView: View {
         }
         .onDisappear {
             flushDraftPersistence()
+            finishFirstRichRender()
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
@@ -1091,6 +1095,12 @@ struct ChatView: View {
                           onSuggestion: { sendSuggestion($0) },
                           onOpenReader: bubbleOpenReader,
                           onForward: { beginForward($0) },
+                          onRichRenderStart: {
+                              beginFirstRichRender(messageID: message.id)
+                          },
+                          onRichRenderComplete: {
+                              finishFirstRichRender(messageID: message.id)
+                          },
                           onRetry: bubbleRetry,
                           onReply: { beginReply($0) },
                           onRetryDelete: bubbleRetryDelete,
@@ -1110,6 +1120,24 @@ struct ChatView: View {
                         : .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
                     removal: .opacity))
         }
+    }
+
+    private func beginFirstRichRender(messageID: String) {
+        guard !recordedFirstRichRender, firstRichRenderMessageID == nil else { return }
+        firstRichRenderMessageID = messageID
+        firstRichRenderSpan = app.performanceRecorder.begin(
+            CavePerformanceSpanName.chatFirstRichRender.rawValue
+        )
+    }
+
+    private func finishFirstRichRender(messageID: String? = nil) {
+        if let messageID, messageID != firstRichRenderMessageID { return }
+        app.performanceRecorder.end(firstRichRenderSpan)
+        firstRichRenderSpan = nil
+        if firstRichRenderMessageID != nil {
+            recordedFirstRichRender = true
+        }
+        firstRichRenderMessageID = nil
     }
 
     // MARK: - Empty state

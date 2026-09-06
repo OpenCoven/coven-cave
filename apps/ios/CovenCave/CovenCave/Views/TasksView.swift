@@ -134,7 +134,7 @@ struct TasksView: View {
                 .searchable(text: $query, prompt: "Search tasks…")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { app.navigationDrawerOpen = true } label: {
+                        Button { app.openNavigationDrawer() } label: {
                             Image(systemName: "line.3.horizontal")
                         }
                         .accessibilityLabel("Open navigation")

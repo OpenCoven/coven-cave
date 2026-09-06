@@ -1,6 +1,26 @@
 import Foundation
 import OSLog
 
+enum CavePerformanceSpanName: String, CaseIterable, Sendable {
+    case drawerOpen = "drawer.open"
+    case projectSwitcherPresent = "project.switcher.present"
+    case projectSwitch = "project.switch"
+    case destinationStableFrame = "destination.stable-frame"
+    case searchQuery = "search.query"
+    case chatFirstRichRender = "chat.first-rich-render"
+    case projectProjection = "project.projection"
+
+    static let baseline: [CavePerformanceSpanName] = [
+        .drawerOpen,
+        .projectSwitcherPresent,
+        .projectSwitch,
+        .destinationStableFrame,
+        .searchQuery,
+        .chatFirstRichRender,
+        .projectProjection,
+    ]
+}
+
 struct CavePerformanceSample: Equatable {
     var count: Int
     var latestMilliseconds: Double
@@ -31,11 +51,13 @@ struct CavePerformanceInstrumentationRecord: Equatable {
     let spanName: String
     let beginMessage: String
     let endMessage: String
+    let cancelMessage: String
 
     init(spanName: String) {
         self.spanName = spanName
         self.beginMessage = "span=\(spanName) phase=begin"
         self.endMessage = "span=\(spanName) phase=end"
+        self.cancelMessage = "span=\(spanName) phase=cancel"
     }
 }
 
@@ -57,6 +79,45 @@ final class CavePerformanceSpan {
         self.clock = clock
         self.startedAt = startedAt
         self.intervalState = intervalState
+    }
+}
+
+@MainActor
+final class CavePerformanceSpanLifecycle {
+    private let recorder: CavePerformanceRecorder
+    private var active: [CavePerformanceSpanName: CavePerformanceSpan] = [:]
+
+    init(recorder: CavePerformanceRecorder) {
+        self.recorder = recorder
+    }
+
+    func begin(
+        _ name: CavePerformanceSpanName,
+        clock: any CavePerformanceClock = ContinuousPerformanceClock()
+    ) {
+        if let superseded = active.removeValue(forKey: name) {
+            recorder.cancel(superseded)
+        }
+        if let span = recorder.begin(name.rawValue, clock: clock) {
+            active[name] = span
+        }
+    }
+
+    func finish(_ name: CavePerformanceSpanName) {
+        guard let span = active.removeValue(forKey: name) else { return }
+        recorder.end(span)
+    }
+
+    func finishAll() {
+        let spans = active.values
+        active.removeAll()
+        for span in spans {
+            recorder.end(span)
+        }
+    }
+
+    func isActive(_ name: CavePerformanceSpanName) -> Bool {
+        active[name] != nil
     }
 }
 
@@ -239,6 +300,19 @@ final class CavePerformanceRecorder {
             CavePerformanceInstrumentationRecord.intervalName,
             span.intervalState,
             "\(span.instrumentation.endMessage, privacy: .public)"
+        )
+    }
+
+    func cancel(_ span: CavePerformanceSpan?) {
+        guard let span, !span.finished, storage != nil, let signposter else {
+            return
+        }
+
+        span.finished = true
+        signposter.endInterval(
+            CavePerformanceInstrumentationRecord.intervalName,
+            span.intervalState,
+            "\(span.instrumentation.cancelMessage, privacy: .public)"
         )
     }
 

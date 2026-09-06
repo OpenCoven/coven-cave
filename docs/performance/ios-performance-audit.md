@@ -8,6 +8,166 @@ rendering. The first six implementation tasks landed in PR #3623; this closeout
 adds typed markdown signatures, renderer instrumentation, the final simulator
 validation, and the physical-device handoff.
 
+## Project-workspace Phase 0 baseline status (2026-09-05)
+
+Issue #5292 extends this audit with seven stable user-interaction spans and a
+large deterministic fixture. The implementation and fixture are complete in
+the `cave-4vi9i` worktree. The deterministic simulator UI journeys pass, but
+the required physical-device percentile baseline is **not complete**. A signed
+Release app built, installed, and launched on the target iPhone. CoreDevice
+reports the paired device as booted, wired, in Developer Mode, and able to
+provide developer services, while `xctrace` continues to list it under
+`Devices Offline` and fails with:
+
+```text
+Timed out waiting for device to boot
+```
+
+This is an Instruments transport blocker, not a failed performance sample.
+Simulator Time Profiler attempts were also unusable: all-process recording
+ignored its 120-second limit and created only an incomplete trace without a
+template, while process-attached recording did not finish after a 45-second
+limit. Those attempts are retained as diagnostics but are not used as latency
+evidence.
+
+### Stable spans
+
+All spans use the existing `CavePerformanceRecorder` signpost convention.
+Starting a span whose stable name is already active ends the superseded
+interval with `phase=cancel`; trace analysis must exclude those intervals.
+Completed intervals end with `phase=end`.
+
+| Name | Boundary |
+| --- | --- |
+| `drawer.open` | Drawer request to the first stable open frame |
+| `project.switcher.present` | Switcher request to the first frame containing loaded project rows |
+| `project.switch` | Project selection through overlay dismissal and the stable destination frame |
+| `destination.stable-frame` | Chats or Tasks selection to the next stable destination frame |
+| `search.query` | Published query revision to the stable frame containing its current results |
+| `chat.first-rich-render` | First rich assistant message render request to successful JavaScript render completion |
+| `project.projection` | Project switcher projection computation |
+
+`project.switch` and `destination.stable-frame` intentionally include the
+overlay-dismissal animation. Their future budgets must preserve that boundary
+or explicitly introduce a differently named span rather than silently changing
+the meaning of these measurements.
+
+### Deterministic Release fixture
+
+Launch with both flags:
+
+```bash
+--performance-fixture --performance-instrumentation
+```
+
+The optional `--performance-fixture-start-tasks` flag starts task work used by
+the UI journeys. Fixture mode is compiled into Release but remains opt-in. It
+contains 20 projects, 1,000 local chats, 1,000 server sessions, 1,000 tasks,
+and 12 Familiars with overlapping project membership. It also contains
+Unassigned/recovery records, an active streaming conversation, and rich
+Markdown. All values are deterministic synthetic data.
+
+Fixture persistence is isolated from normal app state:
+
+- chat snapshots use
+  `Application Support/performance-fixture/cave-threads.json`;
+- widget snapshots use fixture-specific `UserDefaults`, not the production app
+  group;
+- persisted desktop connection restoration and normal networking are disabled;
+- the fixture uses isolated lock preferences and launches unlocked.
+
+The records are distributed across 20 projects. A selected project therefore
+renders approximately 50 chats, tasks, and sessions, while global search and
+project projection still traverse the full fixture.
+
+### Physical Release evidence
+
+Target:
+
+| Field | Value |
+| --- | --- |
+| Device | iPhone 16 Pro Max (`iPhone17,2`) |
+| OS | iOS 26.6 (`23G71`) |
+| Device identifier | Kept in local evidence; pass it as `$DEVICE_UDID` |
+| Xcode | 26.6 (`17F113`) |
+| Configuration | Release, automatic development signing |
+| Fixture | 20 projects; 1,000 local chats; 1,000 server sessions; 1,000 tasks; 12 Familiars |
+| Desktop endpoint | None; deterministic fixture mode |
+| Transport | CoreDevice `wired` |
+
+The normal signed Release app built, installed, and launched successfully.
+`xctrace` could not start an Instruments recording against the same device, so
+no physical interaction run was recorded.
+
+No physical interaction samples exist yet:
+
+| Span | Cold count | Cold median | Cold p95 | Cold max | Warm count | Warm median | Warm p95 | Warm max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `drawer.open` | — | — | — | — | — | — | — | — |
+| `project.switcher.present` | — | — | — | — | — | — | — | — |
+| `project.switch` | — | — | — | — | — | — | — | — |
+| `destination.stable-frame` | — | — | — | — | — | — | — | — |
+| `search.query` | — | — | — | — | — | — | — | — |
+| `chat.first-rich-render` | — | — | — | — | — | — | — | — |
+| `project.projection` | — | — | — | — | — | — | — | — |
+
+The em dashes mean **not measured**, not zero. No bottleneck ranking or
+evidence-backed Phase 1 budget can be ratified until a working physical
+Instruments connection produces these series plus Time Profiler, SwiftUI,
+memory, and Power Profiler evidence.
+
+Exact Release test-build command:
+
+```bash
+cd apps/ios/CovenCave
+xcodebuild \
+  -project CovenCave.xcodeproj \
+  -scheme CovenCave \
+  -configuration Release \
+  -destination "platform=iOS,id=$DEVICE_UDID" \
+  -derivedDataPath build-device \
+  -allowProvisioningUpdates \
+  ENABLE_TESTABILITY=YES \
+  -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRepeatedDrawerOpen \
+  test
+```
+
+When `xcrun xctrace list devices` reports the iPhone as online, use
+`test-without-building` against the same DerivedData while Instruments records
+the isolated journeys. Keep cold and warm runs separate, preserve the raw
+`.trace` bundles, exclude `phase=cancel`, and report count, median, p95, and
+maximum from completed intervals only.
+
+### Simulator journey evidence
+
+The iPhone 16 Pro simulator on iOS 26.5 passed all three deterministic UI
+journeys:
+
+| Journey | Repetitions | Result |
+| --- | ---: | --- |
+| Repeated drawer open | 5 | Passed |
+| Repeated project switch | 5 | Passed |
+| Repeated global search publication | 5 | Passed |
+
+The complete run recorded 3 passed tests and 0 failures in
+`Test-CovenCave-2026.09.05_06-47-57--0500.xcresult`. A focused repeated-drawer
+run also passed in
+`Test-CovenCave-2026.09.05_07-19-19--0500.xcresult`.
+
+The navigation journeys launch with
+`--performance-fixture-start-tasks`. This avoids mounting rich Markdown during
+accessibility automation because the iOS 26.5 simulator reports duplicate
+`UIAccessibilityLoaderWebShared` implementations in WebCore and WebKit and
+warns that the condition can cause mysterious crashes. The default fixture
+still starts on the rich-chat path for a future dedicated
+`chat.first-rich-render` capture.
+
+These results prove the fixture and repeated interaction paths are stable under
+automation. They do not provide simulator latency percentiles: the available
+`xctrace` CLI could not finalize a usable simulator trace, and XCTest wall-clock
+duration includes build, runner startup, and automation overhead rather than
+the instrumented interaction boundaries.
+
 ## Before/after metrics
 
 The request/work-count evidence is deterministic rather than a claim about
