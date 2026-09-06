@@ -346,9 +346,32 @@ struct AssistantResponseProjection: Equatable {
         let fragments: [(token: String, source: String)]
 
         func restore(in value: String) -> String {
-            fragments.reduce(value) { result, fragment in
-                result.replacingOccurrences(of: fragment.token, with: fragment.source)
+            guard !fragments.isEmpty else { return value }
+            let sourcesByToken = Dictionary(
+                uniqueKeysWithValues: fragments.map { ($0.token, $0.source) }
+            )
+            var output = ""
+            output.reserveCapacity(value.count)
+            var cursor = value.startIndex
+            while cursor < value.endIndex,
+                  let tokenStart = value[cursor...].firstIndex(of: "\u{E000}") {
+                output += value[cursor..<tokenStart]
+                guard let terminator = value[tokenStart...].firstIndex(of: "\u{E001}") else {
+                    output += value[tokenStart...]
+                    return output
+                }
+                let tokenEnd = value.index(after: terminator)
+                let token = String(value[tokenStart..<tokenEnd])
+                if let source = sourcesByToken[token] {
+                    output += source
+                    cursor = tokenEnd
+                } else {
+                    output.append(value[tokenStart])
+                    cursor = value.index(after: tokenStart)
+                }
             }
+            output += value[cursor...]
+            return output
         }
     }
 
@@ -384,7 +407,7 @@ struct AssistantResponseProjection: Equatable {
                     closingIndex += 1
                 }
                 let endIndex = closingIndex < lines.count ? closingIndex : lines.count - 1
-                ranges.append(line.range.lowerBound..<lines[endIndex].range.upperBound)
+                ranges.append(line.range.lowerBound..<lines[endIndex].contentRange.upperBound)
                 lineIndex = endIndex + 1
                 continue
             }
@@ -401,7 +424,7 @@ struct AssistantResponseProjection: Equatable {
                 while endIndex > lineIndex, lines[endIndex].isBlank {
                     endIndex -= 1
                 }
-                ranges.append(line.range.lowerBound..<lines[endIndex].range.upperBound)
+                ranges.append(line.range.lowerBound..<lines[endIndex].contentRange.upperBound)
                 lineIndex = endIndex + 1
                 continue
             }
@@ -431,6 +454,7 @@ struct AssistantResponseProjection: Equatable {
 
     private static func markdownLines(in text: String) -> [MarkdownLine] {
         var lines: [MarkdownLine] = []
+        var activeListContentIndent: Int?
         var cursor = text.startIndex
         while cursor < text.endIndex {
             let newline = text[cursor...].firstIndex(of: "\n")
@@ -439,16 +463,63 @@ struct AssistantResponseProjection: Equatable {
             let contentRange = cursor..<contentEnd
             let content = text[contentRange]
             let leadingSpaces = content.prefix(while: { $0 == " " }).count
+            let isBlank = content.allSatisfy(\.isWhitespace)
+            let listContentIndent = listItemContentIndent(in: content)
+            let isIndentedCode: Bool
+            if isBlank {
+                isIndentedCode = false
+            } else if let listContentIndent {
+                activeListContentIndent = listContentIndent
+                isIndentedCode = false
+            } else if let activeIndent = activeListContentIndent,
+                      leadingSpaces >= activeIndent {
+                isIndentedCode = content.hasPrefix("\t")
+                    || leadingSpaces >= activeIndent + 4
+            } else {
+                activeListContentIndent = nil
+                isIndentedCode = content.hasPrefix("\t") || leadingSpaces >= 4
+            }
             lines.append(MarkdownLine(
                 range: cursor..<lineEnd,
                 contentRange: contentRange,
                 content: content,
-                isBlank: content.allSatisfy(\.isWhitespace),
-                isIndentedCode: content.hasPrefix("\t") || leadingSpaces >= 4
+                isBlank: isBlank,
+                isIndentedCode: isIndentedCode
             ))
             cursor = lineEnd
         }
         return lines
+    }
+
+    private static func listItemContentIndent(in line: Substring) -> Int? {
+        let leadingSpaces = line.prefix(while: { $0 == " " }).count
+        let markerStart = line.index(line.startIndex, offsetBy: leadingSpaces)
+        guard markerStart < line.endIndex else { return nil }
+
+        var cursor = markerStart
+        let first = line[cursor]
+        if first == "-" || first == "+" || first == "*" {
+            cursor = line.index(after: cursor)
+        } else if first.isNumber {
+            var digitCount = 0
+            while cursor < line.endIndex, line[cursor].isNumber, digitCount < 9 {
+                cursor = line.index(after: cursor)
+                digitCount += 1
+            }
+            guard digitCount > 0, cursor < line.endIndex,
+                  line[cursor] == "." || line[cursor] == ")" else { return nil }
+            cursor = line.index(after: cursor)
+        } else {
+            return nil
+        }
+
+        guard cursor < line.endIndex, line[cursor].isWhitespace else { return nil }
+        let whitespaceStart = cursor
+        while cursor < line.endIndex, line[cursor] == " " {
+            cursor = line.index(after: cursor)
+        }
+        let padding = max(1, line.distance(from: whitespaceStart, to: cursor))
+        return leadingSpaces + line.distance(from: markerStart, to: whitespaceStart) + padding
     }
 
     private static func fenceMarker(in line: Substring) -> FenceMarker? {

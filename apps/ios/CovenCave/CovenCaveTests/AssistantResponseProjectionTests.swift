@@ -213,4 +213,49 @@ final class AssistantResponseProjectionTests: XCTestCase {
             "Source [docs.www.example.com](https://docs.www.example.com/report)."
         )
     }
+
+    func testListContinuationStillProcessesControlsAndCitations() {
+        let response = AssistantResponseProjection.parse(
+            """
+            Findings:
+
+            - Top level
+
+                Continue here <coven:github kind="pr" repo="owner/repo" number="7" /> with a source[^1].
+
+            [^1]: https://example.com/source
+            """
+        )
+
+        XCTAssertFalse(response.visible.contains("<coven:"))
+        XCTAssertTrue(
+            response.visible.contains(
+                "Continue here  with a source [example.com](https://example.com/source)."
+            )
+        )
+        XCTAssertEqual(
+            response.previewURLs.map(\.absoluteString),
+            ["https://github.com/owner/repo/pull/7"]
+        )
+    }
+
+    func testCitationImmediatelyAfterFenceIsProcessed() {
+        let response = AssistantResponseProjection.parse(
+            """
+            Cite this[^1].
+
+            ```
+            code
+            ```
+            [^1]: https://example.com/source
+            """
+        )
+
+        XCTAssertTrue(
+            response.visible.contains(
+                "Cite this [example.com](https://example.com/source)."
+            )
+        )
+        XCTAssertFalse(response.visible.contains("[^1]:"))
+    }
 }
