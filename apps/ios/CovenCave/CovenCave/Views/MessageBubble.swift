@@ -265,7 +265,8 @@ struct MessageBubble: View {
                                       messageId: message.id)
                         .padding(.leading, 2)
                 }
-                // Hide the (empty) text bubble for image-only messages.
+                // Hide empty settled bubbles, including image-only and
+                // control-only assistant responses.
                 if !projection.visible.isEmpty || (message.streaming && message.attachmentDataUrls.isEmpty) {
                     bubble(projection)
                         .contextMenu { messageActions }
