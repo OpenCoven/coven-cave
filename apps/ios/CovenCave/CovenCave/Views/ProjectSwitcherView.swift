@@ -42,6 +42,21 @@ enum ProjectSwitcherState: Equatable, Sendable {
     case loaded(rows: [ProjectSwitcherRowModel], cachedError: String?)
 }
 
+private extension ProjectSwitcherState {
+    var stableFrameToken: String {
+        switch self {
+        case .loading:
+            return "loading"
+        case .firstLoadError:
+            return "first-load-error"
+        case .emptyNoProjects:
+            return "empty"
+        case .loaded(let rows, let cachedError):
+            return "loaded-\(rows.count)-\(cachedError == nil ? "fresh" : "cached")"
+        }
+    }
+}
+
 enum ProjectContextGateState: Equatable, Sendable {
     case ready
     case loading
@@ -277,11 +292,12 @@ struct ProjectSwitcherView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.dismiss) private var dismiss
+    @State private var projectedState: ProjectSwitcherState = .loading
 
     var body: some View {
         NavigationStack {
             Group {
-                switch app.projectSwitcherState {
+                switch projectedState {
                 case .loading:
                     loadingState
                 case .firstLoadError(let message):
@@ -302,6 +318,26 @@ struct ProjectSwitcherView: View {
             }
         }
         .themedSheetBackground()
+        .task(id: app.projectProjectionRevision) {
+            projectedState = app.performanceRecorder.measureSynchronous(
+                CavePerformanceSpanName.projectProjection.rawValue
+            ) {
+                app.projectSwitcherState
+            }
+        }
+        .background {
+            CavePerformanceStableFrame(
+                token: "\(app.projectProjectionRevision)|\(projectedState.stableFrameToken)"
+            ) {
+                if case .loaded = projectedState {
+                    app.performanceSpans.finish(.projectSwitcherPresent)
+                }
+            }
+            .frame(width: 0, height: 0)
+        }
+        .onDisappear {
+            app.performanceSpans.finish(.projectSwitcherPresent)
+        }
     }
 
     private var loadingState: some View {

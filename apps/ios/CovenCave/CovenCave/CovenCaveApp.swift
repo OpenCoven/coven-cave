@@ -6,6 +6,7 @@ import UserNotifications
 struct CovenCaveApp: App {
     @State private var app: AppModel
     @State private var notificationDelegate: CaveNotificationDelegate
+    private let performanceFixtureEnabled: Bool
     /// Owns the biometric app-unlock + approval state. Created alongside
     /// `AppModel` so its cold-start lock decision is settled before the first
     /// view mounts (see `LockScreenView`, substituted in for the whole root).
@@ -18,7 +19,29 @@ struct CovenCaveApp: App {
 
     @MainActor
     init() {
-        let app = AppModel()
+        let performanceFixtureEnabled = CavePerformanceFixture.shouldEnable(
+            arguments: ProcessInfo.processInfo.arguments
+        )
+        let fixtureDefaults = performanceFixtureEnabled
+            ? UserDefaults(suiteName: "ai.opencoven.cave.performance-fixture")
+            : nil
+        let app = AppModel(
+            defaults: fixtureDefaults ?? .standard,
+            restoreLocalState: !performanceFixtureEnabled,
+            loadPersistedConnection: !performanceFixtureEnabled,
+            widgetSnapshotDefaults: fixtureDefaults,
+            threadStoreURL: performanceFixtureEnabled
+                ? CavePerformanceFixture.threadStoreURL
+                : nil
+        )
+        if performanceFixtureEnabled {
+            CavePerformanceFixture.install(in: app)
+            if ProcessInfo.processInfo.arguments.contains(
+                CavePerformanceFixture.startTasksLaunchArgument
+            ) {
+                app.selectedTab = .tasks
+            }
+        }
         let notificationDelegate = CaveNotificationDelegate()
         notificationDelegate.onOpen = { app.handleDeepLink($0) }
         ConnectionBackgroundRefresh.shared.register(app: app)
@@ -27,7 +50,8 @@ struct CovenCaveApp: App {
         UNUserNotificationCenter.current().delegate = notificationDelegate
         _app = State(initialValue: app)
         _notificationDelegate = State(initialValue: notificationDelegate)
-        _appLock = State(initialValue: AppLock())
+        _appLock = State(initialValue: AppLock(defaults: fixtureDefaults ?? .standard))
+        self.performanceFixtureEnabled = performanceFixtureEnabled
     }
 
     var body: some Scene {
@@ -70,6 +94,7 @@ struct CovenCaveApp: App {
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
+                    guard !performanceFixtureEnabled else { return }
                     #if DEBUG
                     guard !app.isConnectingPreview else { return }
                     #endif
@@ -86,6 +111,7 @@ struct CovenCaveApp: App {
                 // of launching its own retry task. When iOS grants a background
                 // refresh, it performs one ping/token roll and never a retry loop.
                 .onChange(of: scenePhase) { _, phase in
+                    guard !performanceFixtureEnabled else { return }
                     // Leaving the foreground: flush any debounced thread
                     // persistence and WAIT for it, holding a background-task
                     // assertion so the system grants time to finish (cave-2cpo).
@@ -140,6 +166,7 @@ struct CovenCaveApp: App {
                 // through `.inactive` without a genuine background stint,
                 // which must never force re-authentication on a quick return.
                 .onChange(of: scenePhase) { _, phase in
+                    guard !performanceFixtureEnabled else { return }
                     switch phase {
                     case .background: appLock.sceneDidEnterBackground()
                     case .active:

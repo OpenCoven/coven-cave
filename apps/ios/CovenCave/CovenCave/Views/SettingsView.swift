@@ -54,7 +54,7 @@ struct SettingsView: View {
                         Button("Close") { dismiss() }
                             .accessibilityLabel("Close")
                     } else {
-                        Button { app.navigationDrawerOpen = true } label: {
+                        Button { app.openNavigationDrawer() } label: {
                             Image(systemName: "line.3.horizontal")
                         }
                         .accessibilityLabel("Open navigation")

@@ -83,6 +83,10 @@ struct MarkdownWebView: UIViewRepresentable {
     /// `window.caveRender` undefined, or a JS error) so the caller can fall back
     /// to native `Text` instead of leaving the reply as a blank sliver.
     var onFailure: (() -> Void)? = nil
+    /// Actual renderer lifecycle signals. They fire only for a changed render
+    /// signature, never for an ordinary SwiftUI body re-evaluation.
+    var onRenderStart: (() -> Void)? = nil
+    var onRenderComplete: (() -> Void)? = nil
     /// Reader TOC: the renderer's headings, in document order.
     var onHeadings: (([ReaderHeading]) -> Void)? = nil
 
@@ -94,6 +98,8 @@ struct MarkdownWebView: UIViewRepresentable {
         let c = context.coordinator
         c.onHeight = { h in if abs(h - height) > 0.5 { height = h } }
         c.onFailure = onFailure
+        c.onRenderStart = onRenderStart
+        c.onRenderComplete = onRenderComplete
         c.onHeadings = onHeadings
         c.setScrollable(scrollable)
         c.apply(markdown: markdown, streaming: streaming,
@@ -106,6 +112,8 @@ struct MarkdownWebView: UIViewRepresentable {
         let webView: WKWebView
         var onHeight: ((CGFloat) -> Void)?
         var onFailure: (() -> Void)?
+        var onRenderStart: (() -> Void)?
+        var onRenderComplete: (() -> Void)?
         var onHeadings: (([ReaderHeading]) -> Void)?
 
         private var ready = false
@@ -182,6 +190,8 @@ struct MarkdownWebView: UIViewRepresentable {
             }
             lastRenderSignature = renderSignature
             lastStyleSignature = styleSignature
+            let callback = onRenderStart
+            DispatchQueue.main.async { callback?() }
             pending = md
             requestRender()
         }
@@ -245,6 +255,7 @@ struct MarkdownWebView: UIViewRepresentable {
                     }
                     if let h = value as? Double, h > 0 {
                         self.onHeight?(CGFloat(h))
+                        self.onRenderComplete?()
                     } else if !o.streaming {
                         // A settled reply that produced no height is a real failure;
                         // mid-stream transients are expected, so don't fall back then.

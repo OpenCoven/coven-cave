@@ -457,14 +457,21 @@ final class AppModel {
     /// (foreground probe, path monitor, pill tap, retry tickers) collapse
     /// into one discovery sweep instead of stacking probes.
     @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
+    @ObservationIgnored let performanceRecorder: CavePerformanceRecorder
+    @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
+    private(set) var projectProjectionRevision: UInt64 = 0
 
-    var familiars: [Familiar] = []
+    var familiars: [Familiar] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var familiarsError: String?
     var familiarsLoaded = false
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -511,7 +518,12 @@ final class AppModel {
         }
         #endif
         return .chats
-    }()
+    }() {
+        willSet {
+            guard newValue != selectedTab else { return }
+            performanceSpans.begin(.destinationStableFrame)
+        }
+    }
 
     /// A thread the central resolver asked Chats to open. `ChatsHomeView`
     /// observes this, pushes the thread, and clears it back to nil.
@@ -533,6 +545,12 @@ final class AppModel {
     }()
     var newChatRequested = false
     var chatSearchRequested = false
+
+    func openNavigationDrawer() {
+        guard !navigationDrawerOpen else { return }
+        performanceSpans.begin(.drawerOpen)
+        navigationDrawerOpen = true
+    }
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -762,9 +780,13 @@ final class AppModel {
     }
 
     /// Configured project roots used by chat creation and project browsing.
-    var projects: [ProjectInfo] = []
+    var projects: [ProjectInfo] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var projectsError: String?
-    var projectsLoaded = false
+    var projectsLoaded = false {
+        didSet { invalidateProjectProjection() }
+    }
 
     private func markProjectNavigationConnectionKnownGood(generation: UInt64?) {
         guard let generation else { return }
@@ -1644,7 +1666,9 @@ final class AppModel {
             || $0.id.lowercased().contains(q) }
     }
 
-    var tasks: [BoardCard] = []
+    var tasks: [BoardCard] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var tasksError: String?
     var tasksLoaded = false
 
@@ -1665,9 +1689,15 @@ final class AppModel {
 
     // MARK: - Projects
 
-    var projectContext: ProjectContext?
-    var projectContextError: String?
-    var projectMembership = ProjectMembershipIndex()
+    var projectContext: ProjectContext? {
+        didSet { invalidateProjectProjection() }
+    }
+    var projectContextError: String? {
+        didSet { invalidateProjectProjection() }
+    }
+    var projectMembership = ProjectMembershipIndex() {
+        didSet { invalidateProjectProjection() }
+    }
     var projectMembershipLoaded = false
     @ObservationIgnored private var projectContextSelectionSource: ProjectContextSelectionSource?
 
@@ -2170,7 +2200,10 @@ final class AppModel {
     init(
         defaults: UserDefaults = .standard,
         restoreLocalState: Bool = true,
+        loadPersistedConnection: Bool = true,
         widgetSnapshotDefaults: UserDefaults? = nil,
+        performanceRecorder: CavePerformanceRecorder? = nil,
+        threadStoreURL: URL? = nil,
         threadSnapshotLoader: (@Sendable () async -> [ThreadSnapshot])? = nil,
         coreResourceClientFactory: @escaping @Sendable (CaveConnection) -> any AppModelCoreResourceClient = {
             CaveClient(connection: $0)
@@ -2180,7 +2213,10 @@ final class AppModel {
             await AppModel.discoverBaseURL(candidates)
         }
     ) {
-        let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
+        let performanceRecorder = performanceRecorder ?? .shared
+        let threadStore = ThreadSnapshotStore(url: threadStoreURL ?? AppModel.threadsFileURL)
+        self.performanceRecorder = performanceRecorder
+        self.performanceSpans = CavePerformanceSpanLifecycle(recorder: performanceRecorder)
         self.projectContextDefaults = defaults
         self.widgetSnapshotDefaults = widgetSnapshotDefaults
         self.threadStore = threadStore
@@ -2190,7 +2226,7 @@ final class AppModel {
         self.coreResourceClientFactory = coreResourceClientFactory
         self.reminderNotificationScheduler = reminderNotificationScheduler
         self.baseURLDiscoverer = baseURLDiscoverer
-        connection = CaveConnection.load(defaults: defaults)
+        connection = loadPersistedConnection ? CaveConnection.load(defaults: defaults) : nil
         if connection != nil {
             projectNavigationConnectionGeneration = 1
         }
@@ -2807,6 +2843,9 @@ final class AppModel {
     /// destination. Later tasks will route surfaces through this state; for now
     /// it persists the chosen context and clears any pending cross-surface handoff.
     func switchProject(to context: ProjectContext) {
+        guard context.id != projectContext?.id else { return }
+        performanceSpans.begin(.projectSwitch)
+        performanceSpans.begin(.destinationStableFrame)
         let preservedTab = selectedTab
         switch context {
         case .project(let selected):
@@ -2828,6 +2867,10 @@ final class AppModel {
             seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
         }
         publishWidgetSnapshot()
+    }
+
+    private func invalidateProjectProjection() {
+        projectProjectionRevision &+= 1
     }
 
     func loadTasks() async {
@@ -5764,7 +5807,9 @@ final class AppModel {
     /// Chat sessions known to the server (`GET /api/sessions/list`) — including
     /// conversations started on the desktop/web that have no local thread yet.
     /// Merged with on-device threads to build each familiar's thread list.
-    var serverSessions: [SessionRow] = []
+    var serverSessions: [SessionRow] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var sessionsError: String?
     var sessionsLoaded = false
 

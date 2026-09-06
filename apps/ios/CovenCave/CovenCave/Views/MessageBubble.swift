@@ -10,6 +10,8 @@ struct MessageBubble: View {
     var onSuggestion: (String) -> Void = { _ in }
     var onOpenReader: ((String) -> Void)? = nil
     var onForward: ((DisplayMessage) -> Void)? = nil
+    var onRichRenderStart: (() -> Void)? = nil
+    var onRichRenderComplete: (() -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
     /// Quote this message into the composer — swipe the bubble right, or use the
@@ -491,7 +493,9 @@ struct MessageBubble: View {
                             streaming: message.streaming && !isUser,
                             theme: colorScheme == .light ? .light : .dark,
                             accentHex: chrome.accentHex,
-                            onFailure: { markdownFailed = true })
+                            onFailure: { markdownFailed = true },
+                            onRenderStart: reportsRichRender ? onRichRenderStart : nil,
+                            onRenderComplete: reportsRichRender ? onRichRenderComplete : nil)
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
@@ -543,6 +547,10 @@ struct MessageBubble: View {
                 style: .continuous
             )
         }
+    }
+
+    private var reportsRichRender: Bool {
+        !isUser && MarkdownDetect.hasMarkdown(parsed.visible)
     }
 
     /// Bubble fills: errors stay red; the user's bubble is a soft vertical
@@ -776,5 +784,7 @@ extension MessageBubble: Equatable {
             && (lhs.onRetryDelete == nil) == (rhs.onRetryDelete == nil)
             && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
             && (lhs.onForward == nil) == (rhs.onForward == nil)
+            && (lhs.onRichRenderStart == nil) == (rhs.onRichRenderStart == nil)
+            && (lhs.onRichRenderComplete == nil) == (rhs.onRichRenderComplete == nil)
     }
 }

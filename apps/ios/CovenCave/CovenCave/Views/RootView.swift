@@ -179,9 +179,18 @@ struct MainShellView: View {
                 CaveNavigationDrawer(
                     isOpen: Binding(
                         get: { app.navigationDrawerOpen },
-                        set: { app.navigationDrawerOpen = $0 }
+                        set: { isOpen in
+                            if isOpen {
+                                app.openNavigationDrawer()
+                            } else {
+                                app.navigationDrawerOpen = false
+                            }
+                        }
                     ),
-                    openProjectSwitcher: { presentedOverlay = .projectSwitcher },
+                    openProjectSwitcher: {
+                        app.performanceSpans.begin(.projectSwitcherPresent)
+                        presentedOverlay = .projectSwitcher
+                    },
                     openFamiliars: { presentedOverlay = .familiars },
                     openThread: { _ = app.requestOpen($0) },
                     newChat: {
@@ -244,6 +253,14 @@ struct MainShellView: View {
         // Command confirmations float above the whole shell so they're visible
         // whether a command stays in chat or jumps to the Tasks destination.
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
+        .background {
+            CavePerformanceStableFrame(token: destinationStableFrameToken) {
+                guard presentedOverlay == nil else { return }
+                app.performanceSpans.finish(.destinationStableFrame)
+                app.performanceSpans.finish(.projectSwitch)
+            }
+            .frame(width: 0, height: 0)
+        }
         // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–3.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
@@ -288,6 +305,14 @@ struct MainShellView: View {
             await Task.yield()
             action?()
         }
+    }
+
+    private var destinationStableFrameToken: String {
+        [
+            app.selectedTab.rawValue,
+            app.projectContext?.id ?? "no-project",
+            presentedOverlay?.id ?? "no-overlay",
+        ].joined(separator: "|")
     }
 
     @ViewBuilder
