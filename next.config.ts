@@ -116,7 +116,10 @@ const nextConfig: NextConfig = {
     // The conformance artifact is built inside Chat's bounded macOS authority
     // runner. Keep the production Turbopack compiler, but avoid the PostCSS
     // child-process IPC path that can time out under that runner's contention.
-    turbopackPluginRuntimeStrategy: conformanceBuild
+    // Linux uses the default plugin runtime because the worker-thread path is
+    // not reliable under its hosted build environment.
+    turbopackPluginRuntimeStrategy:
+      conformanceBuild && process.platform === "darwin"
       ? "workerThreads"
       : undefined,
     // Next 16.2 enables Turbopack's persistent dev cache by default. In a

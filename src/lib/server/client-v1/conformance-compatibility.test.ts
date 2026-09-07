@@ -95,6 +95,6 @@ test("conformance builds keep Turbopack while avoiding plugin process IPC", () =
   assert.doesNotMatch(manifest.scripts?.build ?? "", /--webpack/);
   assert.match(
     config,
-    /COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1"[\s\S]*?turbopackPluginRuntimeStrategy:\s*conformanceBuild\s*\?\s*"workerThreads"\s*:\s*undefined/,
+    /COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1"[\s\S]*?turbopackPluginRuntimeStrategy:\s*conformanceBuild\s*&&\s*process\.platform\s*===\s*"darwin"\s*\?\s*"workerThreads"\s*:\s*undefined/,
   );
 });
