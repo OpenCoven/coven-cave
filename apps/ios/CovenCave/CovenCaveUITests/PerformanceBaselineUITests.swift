@@ -46,14 +46,24 @@ final class PerformanceBaselineUITests: XCTestCase {
         XCTAssertTrue(scope.waitForExistence(timeout: 10))
         scope.buttons["Everywhere"].tap()
 
-        for index in 0..<5 {
+        for index in 1...5 {
             search.tap()
-            if index > 0 {
+            if index > 1 {
                 let clearText = app.buttons["Clear text"]
                 XCTAssertTrue(clearText.waitForExistence(timeout: 5))
                 clearText.tap()
             }
-            search.typeText("Fixture \(index)")
+            let query = "Fixture chat \(index + 1)"
+            search.typeText(query)
+
+            let expectedResult = app.buttons[
+                String(format: "Global search chat performance-fixture-chat-%04d", index)
+            ]
+            XCTAssertTrue(expectedResult.waitForExistence(timeout: 10))
+            let settledMarker = app.descendants(matching: .any)[
+                "Performance search settled \(query.lowercased())"
+            ].firstMatch
+            XCTAssertTrue(settledMarker.waitForExistence(timeout: 10))
         }
     }
 

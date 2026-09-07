@@ -14,7 +14,17 @@ struct GlobalSearchView: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
+    @Environment(\.scenePhase) private var scenePhase
     @State private var query: String = {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "--ui-search-query"), index + 1 < args.count {
+            return args[index + 1]
+        }
+        #endif
+        return ""
+    }()
+    @State private var effectiveQuery: String = {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if let index = args.firstIndex(of: "--ui-search-query"), index + 1 < args.count {
@@ -25,6 +35,9 @@ struct GlobalSearchView: View {
     }()
     @State private var scope: SearchScope = .project
     @State private var searchRevision: UInt64 = 0
+    @State private var pendingMeasuredQuery: String?
+    @State private var settledMeasuredQuery = ""
+    @State private var searchMeasurementTask: Task<Void, Never>?
 
     private struct SearchProjection {
         let chats: [GlobalChatSearchResult]
@@ -65,12 +78,43 @@ struct GlobalSearchView: View {
         .themedSheetBackground()
         .background {
             CavePerformanceStableFrame(token: "search-\(searchRevision)") {
+                guard let pendingMeasuredQuery else { return }
                 app.performanceSpans.finish(.searchQuery)
+                settledMeasuredQuery = pendingMeasuredQuery
+                self.pendingMeasuredQuery = nil
             }
             .frame(width: 0, height: 0)
         }
+        .overlay(alignment: .topLeading) {
+            if CavePerformanceFixture.shouldEnable(
+                arguments: ProcessInfo.processInfo.arguments
+            ), !settledMeasuredQuery.isEmpty {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityLabel("Performance search settled")
+                    .accessibilityIdentifier(
+                        "Performance search settled \(settledMeasuredQuery)"
+                    )
+            }
+        }
         .onDisappear {
-            app.performanceSpans.finish(.searchQuery)
+            searchMeasurementTask?.cancel()
+            searchMeasurementTask = nil
+            pendingMeasuredQuery = nil
+            app.performanceSpans.cancel(.searchQuery)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                if normalizedInputQuery != normalizedQuery {
+                    scheduleSearchMeasurement(for: query)
+                }
+            } else {
+                searchMeasurementTask?.cancel()
+                searchMeasurementTask = nil
+                pendingMeasuredQuery = nil
+                app.performanceSpans.cancel(.searchQuery)
+            }
         }
     }
 
@@ -227,6 +271,10 @@ struct GlobalSearchView: View {
     }
 
     private var normalizedQuery: String {
+        effectiveQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var normalizedInputQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
@@ -235,9 +283,8 @@ struct GlobalSearchView: View {
             get: { query },
             set: { newValue in
                 guard newValue != query else { return }
-                app.performanceSpans.begin(.searchQuery)
                 query = newValue
-                searchRevision &+= 1
+                scheduleSearchMeasurement(for: newValue)
             }
         )
     }
@@ -247,11 +294,40 @@ struct GlobalSearchView: View {
             get: { scope },
             set: { newValue in
                 guard newValue != scope else { return }
-                app.performanceSpans.begin(.searchQuery)
                 scope = newValue
-                searchRevision &+= 1
+                scheduleSearchMeasurement(for: query)
             }
         )
+    }
+
+    private func scheduleSearchMeasurement(for rawQuery: String) {
+        searchMeasurementTask?.cancel()
+        searchMeasurementTask = nil
+        pendingMeasuredQuery = nil
+        app.performanceSpans.cancel(.searchQuery)
+
+        let measuredQuery = rawQuery
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !measuredQuery.isEmpty else {
+            effectiveQuery = ""
+            settledMeasuredQuery = ""
+            searchRevision &+= 1
+            return
+        }
+
+        searchMeasurementTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled,
+                  scenePhase == .active,
+                  normalizedInputQuery == measuredQuery
+            else { return }
+            app.performanceSpans.begin(.searchQuery)
+            pendingMeasuredQuery = measuredQuery
+            effectiveQuery = measuredQuery
+            searchRevision &+= 1
+            searchMeasurementTask = nil
+        }
     }
 
     private func makeSearchProjection() -> SearchProjection {

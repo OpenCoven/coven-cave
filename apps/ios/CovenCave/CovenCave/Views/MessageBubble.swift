@@ -12,6 +12,7 @@ struct MessageBubble: View {
     var onForward: ((DisplayMessage) -> Void)? = nil
     var onRichRenderStart: (() -> Void)? = nil
     var onRichRenderComplete: (() -> Void)? = nil
+    var onRichRenderCancel: (() -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
     /// Quote this message into the composer — swipe the bubble right, or use the
@@ -46,6 +47,8 @@ struct MessageBubble: View {
     /// error) — flips this bubble back to plain `Text` so the reply is never
     /// shown as a blank sliver.
     @State private var markdownFailed = false
+    @State private var richRenderRevision: UInt64 = 0
+    @State private var richRenderCompletionPending = false
 
     private var isUser: Bool { message.role == .user }
 
@@ -188,6 +191,10 @@ struct MessageBubble: View {
             }
         }
         .simultaneousGesture(replySwipe)
+        .onDisappear {
+            richRenderCompletionPending = false
+            onRichRenderCancel?()
+        }
     }
 
     /// Inline slash-command output — a subtle monospaced card so it reads as
@@ -495,10 +502,24 @@ struct MessageBubble: View {
                             accentHex: chrome.accentHex,
                             onFailure: { markdownFailed = true },
                             onRenderStart: reportsRichRender ? onRichRenderStart : nil,
-                            onRenderComplete: reportsRichRender ? onRichRenderComplete : nil)
+                            onRenderComplete: reportsRichRender ? {
+                                richRenderCompletionPending = true
+                                richRenderRevision &+= 1
+                            } : nil,
+                            onRenderCancelled: reportsRichRender ? onRichRenderCancel : nil)
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
+                .background {
+                    CavePerformanceStableFrame(
+                        token: "\(message.id)|rich-render|\(richRenderRevision)"
+                    ) {
+                        guard richRenderCompletionPending else { return }
+                        richRenderCompletionPending = false
+                        onRichRenderComplete?()
+                    }
+                    .frame(width: 0, height: 0)
+                }
                 .overlay(alignment: .topTrailing) {
                     if canOpenReader(projection) {
                         Button {
@@ -786,5 +807,6 @@ extension MessageBubble: Equatable {
             && (lhs.onForward == nil) == (rhs.onForward == nil)
             && (lhs.onRichRenderStart == nil) == (rhs.onRichRenderStart == nil)
             && (lhs.onRichRenderComplete == nil) == (rhs.onRichRenderComplete == nil)
+            && (lhs.onRichRenderCancel == nil) == (rhs.onRichRenderCancel == nil)
     }
 }

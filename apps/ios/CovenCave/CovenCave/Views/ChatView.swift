@@ -30,6 +30,7 @@ struct ChatView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -102,9 +103,6 @@ struct ChatView: View {
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
 
-    /// Per-thread key for the persisted unsent draft.
-    private var draftKey: String { AppModel.draftKey(thread.id) }
-
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
     private var slashMatches: [SlashCommand] {
@@ -174,29 +172,28 @@ struct ChatView: View {
         app.projectContext(for: thread)
     }
 
-    private func writeDraftPersistence(_ value: String, key: String) {
-        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            UserDefaults.standard.removeObject(forKey: key)
-            app.setThreadDraft(thread.id, text: nil)
-        } else {
-            UserDefaults.standard.set(value, forKey: key)
-            app.setThreadDraft(thread.id, text: value)
-        }
+    private func writeDraftPersistence(_ value: String) {
+        app.persistThreadDraft(
+            thread.id,
+            text: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : value
+        )
     }
 
     private func scheduleDraftPersistence(_ value: String) {
         draftPersistenceTask?.cancel()
-        draftPersistenceTask = Task { [draftKey] in
+        draftPersistenceTask = Task {
             try? await Task.sleep(nanoseconds: draftPersistenceDelay)
             guard !Task.isCancelled else { return }
-            writeDraftPersistence(value, key: draftKey)
+            writeDraftPersistence(value)
         }
     }
 
     private func flushDraftPersistence() {
         draftPersistenceTask?.cancel()
         draftPersistenceTask = nil
-        writeDraftPersistence(draft, key: draftKey)
+        writeDraftPersistence(draft)
     }
 
     /// Compute the divider once per visit against the pre-visit seen boundary.
@@ -391,7 +388,7 @@ struct ChatView: View {
         // was dismissed or the app backgrounded). Only when the live draft is
         // empty, so a draft already in hand isn't clobbered.
         .onAppear {
-            if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
+            if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
             }
             // Place the "New Messages" divider from the seen boundary BEFORE
@@ -420,7 +417,12 @@ struct ChatView: View {
         }
         .onDisappear {
             flushDraftPersistence()
-            finishFirstRichRender()
+            cancelFirstRichRender()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                cancelFirstRichRender()
+            }
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
@@ -1101,6 +1103,9 @@ struct ChatView: View {
                           onRichRenderComplete: {
                               finishFirstRichRender(messageID: message.id)
                           },
+                          onRichRenderCancel: {
+                              cancelFirstRichRender(messageID: message.id)
+                          },
                           onRetry: bubbleRetry,
                           onReply: { beginReply($0) },
                           onRetryDelete: bubbleRetryDelete,
@@ -1123,7 +1128,10 @@ struct ChatView: View {
     }
 
     private func beginFirstRichRender(messageID: String) {
-        guard !recordedFirstRichRender, firstRichRenderMessageID == nil else { return }
+        guard scenePhase == .active,
+              !recordedFirstRichRender,
+              firstRichRenderMessageID == nil
+        else { return }
         firstRichRenderMessageID = messageID
         firstRichRenderSpan = app.performanceRecorder.begin(
             CavePerformanceSpanName.chatFirstRichRender.rawValue
@@ -1137,6 +1145,13 @@ struct ChatView: View {
         if firstRichRenderMessageID != nil {
             recordedFirstRichRender = true
         }
+        firstRichRenderMessageID = nil
+    }
+
+    private func cancelFirstRichRender(messageID: String? = nil) {
+        if let messageID, messageID != firstRichRenderMessageID { return }
+        app.performanceRecorder.cancel(firstRichRenderSpan)
+        firstRichRenderSpan = nil
         firstRichRenderMessageID = nil
     }
 

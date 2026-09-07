@@ -114,7 +114,7 @@ assert.match(
 // The fold must persist what it reconciles, or the fix dies with the install.
 assert.match(
   fold,
-  /if changed \{\n\s*persistThreads\(\)/,
+  /if changed \{[\s\S]{0,120}persistThreads\(\)/,
   "a changed flag must be persisted",
 );
 

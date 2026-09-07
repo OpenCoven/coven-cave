@@ -292,6 +292,7 @@ struct ProjectSwitcherView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.dismiss) private var dismiss
+    let onSwitchProject: (ProjectContext) -> Void
     @State private var projectedState: ProjectSwitcherState = .loading
 
     var body: some View {
@@ -336,7 +337,7 @@ struct ProjectSwitcherView: View {
             .frame(width: 0, height: 0)
         }
         .onDisappear {
-            app.performanceSpans.finish(.projectSwitcherPresent)
+            app.performanceSpans.cancel(.projectSwitcherPresent)
         }
     }
 
@@ -390,9 +391,10 @@ struct ProjectSwitcherView: View {
         List(rows) { row in
             Button {
                 if !row.isSelected {
-                    app.switchProject(to: row.context)
+                    onSwitchProject(row.context)
+                } else {
+                    dismiss()
                 }
-                dismiss()
             } label: {
                 ProjectSwitcherRow(row: row)
             }

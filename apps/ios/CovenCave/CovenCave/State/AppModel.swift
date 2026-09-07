@@ -460,6 +460,7 @@ final class AppModel {
     @ObservationIgnored let performanceRecorder: CavePerformanceRecorder
     @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
     private(set) var projectProjectionRevision: UInt64 = 0
+    private(set) var projectSwitchMutationPending = false
 
     var familiars: [Familiar] = [] {
         didSet { invalidateProjectProjection() }
@@ -508,10 +509,14 @@ final class AppModel {
     /// The selected application destination. Mounted by `MainShellView`; set by
     /// drawer actions, deep links, and `/board` / `/chats`.
     var selectedTab: AppTab = {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains(CavePerformanceFixture.launchArgument),
+           args.contains(CavePerformanceFixture.startTasksLaunchArgument) {
+            return .tasks
+        }
         #if DEBUG
         // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
         // into a destination for screenshot automation.
-        let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
            let tab = AppTab(rawValue: args[i + 1]) {
             return tab
@@ -543,13 +548,32 @@ final class AppModel {
         return false
         #endif
     }()
+    var navigationDrawerAnimationSettled: Bool = {
+        #if DEBUG
+        return !ProcessInfo.processInfo.arguments.contains("--ui-open-drawer")
+        #else
+        return true
+        #endif
+    }()
     var newChatRequested = false
     var chatSearchRequested = false
 
     func openNavigationDrawer() {
         guard !navigationDrawerOpen else { return }
         performanceSpans.begin(.drawerOpen)
+        navigationDrawerAnimationSettled = false
         navigationDrawerOpen = true
+    }
+
+    func closeNavigationDrawer() {
+        guard navigationDrawerOpen else { return }
+        navigationDrawerAnimationSettled = false
+        navigationDrawerOpen = false
+    }
+
+    func markNavigationDrawerAnimationSettled() {
+        guard !navigationDrawerOpen else { return }
+        navigationDrawerAnimationSettled = true
     }
 
     /// The active confirmation toast, auto-dismissed by the overlay.
@@ -2421,6 +2445,7 @@ final class AppModel {
         }
         if arguments.contains("--ui-preview-new-chat-unassigned") {
             threads.first?.projectRoot = nil
+            invalidateProjectProjection()
             projectContext = .unassigned
             projectContextSelectionSource = .user
         }
@@ -2532,6 +2557,7 @@ final class AppModel {
 
         if let currentThread = threads.first {
             currentThread.projectRoot = projectRoot
+            invalidateProjectProjection()
             currentThread.updatedAt = Date(timeIntervalSince1970: 1_000)
             currentThread.messages = [
                 DisplayMessage(
@@ -2842,10 +2868,34 @@ final class AppModel {
     /// Switch the canonical application context without disturbing the current
     /// destination. Later tasks will route surfaces through this state; for now
     /// it persists the chosen context and clears any pending cross-surface handoff.
-    func switchProject(to context: ProjectContext) {
-        guard context.id != projectContext?.id else { return }
+    @discardableResult
+    func beginProjectSwitchMeasurement(to context: ProjectContext) -> Bool {
+        guard context.id != projectContext?.id else { return false }
         performanceSpans.begin(.projectSwitch)
         performanceSpans.begin(.destinationStableFrame)
+        projectSwitchMutationPending = true
+        return true
+    }
+
+    func cancelProjectSwitchMeasurement() {
+        performanceSpans.cancel(.projectSwitch)
+        performanceSpans.cancel(.destinationStableFrame)
+        projectSwitchMutationPending = false
+    }
+
+    func switchProject(
+        to context: ProjectContext,
+        measurementAlreadyStarted: Bool = false
+    ) {
+        guard context.id != projectContext?.id else {
+            if measurementAlreadyStarted {
+                cancelProjectSwitchMeasurement()
+            }
+            return
+        }
+        if !measurementAlreadyStarted {
+            _ = beginProjectSwitchMeasurement(to: context)
+        }
         let preservedTab = selectedTab
         switch context {
         case .project(let selected):
@@ -2867,6 +2917,7 @@ final class AppModel {
             seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
         }
         publishWidgetSnapshot()
+        projectSwitchMutationPending = false
     }
 
     private func invalidateProjectProjection() {
@@ -5766,6 +5817,21 @@ final class AppModel {
     /// Per-thread UserDefaults key for the composer's unsent draft.
     static func draftKey(_ threadId: String) -> String { "cave.chat.draft.\(threadId)" }
 
+    func persistedThreadDraft(_ threadId: String) -> String? {
+        projectContextDefaults.string(forKey: Self.draftKey(threadId))
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?) {
+        let key = Self.draftKey(threadId)
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            projectContextDefaults.set(text, forKey: key)
+            setThreadDraft(threadId, text: text)
+        } else {
+            projectContextDefaults.removeObject(forKey: key)
+            setThreadDraft(threadId, text: nil)
+        }
+    }
+
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
@@ -5779,7 +5845,7 @@ final class AppModel {
     /// Load persisted drafts for restored threads into the observable mirror.
     private func seedThreadDrafts() {
         for thread in threads where threadDrafts[thread.id] == nil {
-            if let saved = UserDefaults.standard.string(forKey: Self.draftKey(thread.id)),
+            if let saved = persistedThreadDraft(thread.id),
                !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 threadDrafts[thread.id] = saved
             }
@@ -5947,6 +6013,7 @@ final class AppModel {
         guard let sessionID = normalizedSessionID(row.id),
               let resolvedFamiliarID else {
             if changed {
+                invalidateProjectProjection()
                 persistThreads()
             }
             return (resolvedFamiliarID, changed)
@@ -5982,6 +6049,7 @@ final class AppModel {
         }
 
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return (resolvedFamiliarID, changed)
@@ -6031,6 +6099,7 @@ final class AppModel {
             changed = true
         }
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return changed
@@ -6094,6 +6163,7 @@ final class AppModel {
             }
         }
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return changed
@@ -6236,6 +6306,7 @@ final class AppModel {
         }) {
             if thread.projectRoot != nil {
                 thread.projectRoot = nil
+                invalidateProjectProjection()
                 persistThreads()
             }
             return thread
@@ -6388,6 +6459,7 @@ final class AppModel {
         guard !trimmed.isEmpty, thread.sessionIds[familiarId] != trimmed else { return }
         let hadAnySession = primarySessionId(of: thread) != nil
         thread.sessionIds[familiarId] = trimmed
+        invalidateProjectProjection()
         touch(thread)
         if !hadAnySession, cardThreadLinks.values.contains(thread.id) {
             Task { await reconcileCardLinks(for: thread) }
@@ -7260,10 +7332,14 @@ final class AppModel {
         guard let target = threads.first(where: { $0.id == thread.id }),
               target.archived != archived else { return }
         target.archived = archived
+        invalidateProjectProjection()
         persistThreads()
         fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, archived: archived)
-        } rollback: { $0.archived = !archived }
+        } rollback: { [weak self] thread in
+            thread.archived = !archived
+            self?.invalidateProjectProjection()
+        }
         retry: { [weak self] in self?.setThreadArchived(thread, archived) }
     }
 

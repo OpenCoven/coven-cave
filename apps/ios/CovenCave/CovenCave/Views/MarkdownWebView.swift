@@ -87,6 +87,7 @@ struct MarkdownWebView: UIViewRepresentable {
     /// signature, never for an ordinary SwiftUI body re-evaluation.
     var onRenderStart: (() -> Void)? = nil
     var onRenderComplete: (() -> Void)? = nil
+    var onRenderCancelled: (() -> Void)? = nil
     /// Reader TOC: the renderer's headings, in document order.
     var onHeadings: (([ReaderHeading]) -> Void)? = nil
 
@@ -100,11 +101,16 @@ struct MarkdownWebView: UIViewRepresentable {
         c.onFailure = onFailure
         c.onRenderStart = onRenderStart
         c.onRenderComplete = onRenderComplete
+        c.onRenderCancelled = onRenderCancelled
         c.onHeadings = onHeadings
         c.setScrollable(scrollable)
         c.apply(markdown: markdown, streaming: streaming,
                 fontScale: fontScale, theme: theme, accentHex: accentHex, reader: scrollable)
         c.applyScroll(scrollCommand)
+    }
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.dismantle()
     }
 
     @MainActor
@@ -114,6 +120,7 @@ struct MarkdownWebView: UIViewRepresentable {
         var onFailure: (() -> Void)?
         var onRenderStart: (() -> Void)?
         var onRenderComplete: (() -> Void)?
+        var onRenderCancelled: (() -> Void)?
         var onHeadings: (([ReaderHeading]) -> Void)?
 
         private var ready = false
@@ -125,6 +132,9 @@ struct MarkdownWebView: UIViewRepresentable {
         private var lastRenderSignature: MarkdownRenderSignature?
         private var lastStyleSignature: MarkdownStyleSignature?
         private var lastScrollToken: Int?
+        private var renderStartGeneration: UInt64 = 0
+        private var renderGeneration: UInt64 = 0
+        private var isDismantled = false
         private let performanceRecorder: CavePerformanceRecorder
         private var rendererAcquisitionSpan: CavePerformanceSpan?
 
@@ -172,6 +182,7 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         func apply(markdown md: String, streaming: Bool, fontScale: CGFloat, theme: ReaderTheme, accentHex: String?, reader: Bool) {
+            guard !isDismantled else { return }
             opts = Opts(streaming: streaming, fontScale: fontScale, theme: theme, accentHex: accentHex, reader: reader)
             if failed { reportFailure(); return }
             // Markdown / streaming / reader changes need a full re-render; a pure
@@ -190,8 +201,15 @@ struct MarkdownWebView: UIViewRepresentable {
             }
             lastRenderSignature = renderSignature
             lastStyleSignature = styleSignature
-            let callback = onRenderStart
-            DispatchQueue.main.async { callback?() }
+            renderStartGeneration &+= 1
+            let startGeneration = renderStartGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      !self.isDismantled,
+                      self.renderStartGeneration == startGeneration
+                else { return }
+                self.onRenderStart?()
+            }
             pending = md
             requestRender()
         }
@@ -232,6 +250,8 @@ struct MarkdownWebView: UIViewRepresentable {
             guard ready, !rendering, let md = pending else { return }
             pending = nil
             rendering = true
+            renderGeneration &+= 1
+            let generation = renderGeneration
             let o = opts
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -253,6 +273,7 @@ struct MarkdownWebView: UIViewRepresentable {
                             contentWorld: .page
                         )
                     }
+                    guard !self.isDismantled, self.renderGeneration == generation else { return }
                     if let h = value as? Double, h > 0 {
                         self.onHeight?(CGFloat(h))
                         self.onRenderComplete?()
@@ -260,9 +281,16 @@ struct MarkdownWebView: UIViewRepresentable {
                         // A settled reply that produced no height is a real failure;
                         // mid-stream transients are expected, so don't fall back then.
                         self.reportFailure()
+                    } else {
+                        self.onRenderCancelled?()
                     }
                 } catch {
-                    if !o.streaming { self.reportFailure() }
+                    guard !self.isDismantled, self.renderGeneration == generation else { return }
+                    if o.streaming {
+                        self.onRenderCancelled?()
+                    } else {
+                        self.reportFailure()
+                    }
                 }
                 self.rendering = false
                 // Deltas that arrived while this render was in flight: render again.
@@ -270,10 +298,26 @@ struct MarkdownWebView: UIViewRepresentable {
             }
         }
 
+        func dismantle() {
+            guard !isDismantled else { return }
+            isDismantled = true
+            renderStartGeneration &+= 1
+            renderGeneration &+= 1
+            pending = nil
+            onRenderCancelled?()
+            onHeight = nil
+            onFailure = nil
+            onRenderStart = nil
+            onRenderComplete = nil
+            onRenderCancelled = nil
+            onHeadings = nil
+        }
+
         private func reportFailure() {
             guard !failedReported else { return }
             failedReported = true
             failed = true
+            onRenderCancelled?()
             finishRendererAcquisition()
             // Defer past the current SwiftUI update cycle — `apply()` runs inside
             // `updateUIView`, and mutating the caller's @State synchronously there

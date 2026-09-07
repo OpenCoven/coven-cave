@@ -168,6 +168,43 @@ final class CavePerformanceTests: XCTestCase {
         )
     }
 
+    func testSpanLifecycleCancellationDoesNotRecordASuccessfulSample() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(values: [.zero, .milliseconds(12)])
+        let lifecycle = CavePerformanceSpanLifecycle(recorder: recorder)
+
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.cancel(.searchQuery)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertNil(recorder.snapshot()[CavePerformanceSpanName.searchQuery.rawValue])
+    }
+
+    func testInactiveSceneCancelsAndSuppressesSpansUntilReactivated() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(
+            values: [.zero, .milliseconds(10), .milliseconds(20)]
+        )
+        let lifecycle = CavePerformanceSpanLifecycle(recorder: recorder)
+
+        lifecycle.begin(.drawerOpen, clock: clock)
+        lifecycle.setSceneActive(false)
+        lifecycle.finish(.drawerOpen)
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+
+        lifecycle.setSceneActive(true)
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertEqual(
+            recorder.snapshot()[CavePerformanceSpanName.searchQuery.rawValue]?.count,
+            1
+        )
+    }
+
     func testMeasureEvictsOldestDistinctSampleWhenSampleKeyLimitIsReached() async {
         let recorder = CavePerformanceRecorder(enabled: true, sampleKeyLimit: 2)
 
@@ -286,6 +323,42 @@ final class CavePerformanceTests: XCTestCase {
                 arguments: ["CovenCave", "--performance-fixture"]
             )
         )
+    }
+
+    func testPerformanceFixtureDefaultsResetBetweenRuns() {
+        let existing = UserDefaults(suiteName: CavePerformanceFixture.defaultsSuiteName)
+        existing?.set(true, forKey: "cave.lock.enabled")
+
+        let reset = CavePerformanceFixture.makeIsolatedDefaults()
+
+        XCTAssertFalse(reset.bool(forKey: "cave.lock.enabled"))
+    }
+
+    func testThreadDraftPersistenceUsesInjectedDefaults() {
+        let suiteName = "CavePerformanceTests.drafts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let threadID = "fixture-thread-\(UUID().uuidString)"
+        let app = AppModel(
+            defaults: defaults,
+            restoreLocalState: false,
+            loadPersistedConnection: false
+        )
+
+        app.persistThreadDraft(threadID, text: "isolated draft")
+
+        XCTAssertEqual(app.persistedThreadDraft(threadID), "isolated draft")
+        XCTAssertEqual(app.threadDrafts[threadID], "isolated draft")
+        XCTAssertNil(
+            UserDefaults.standard.string(
+                forKey: AppModel.draftKey(threadID)
+            )
+        )
+
+        app.persistThreadDraft(threadID, text: " ")
+
+        XCTAssertNil(app.persistedThreadDraft(threadID))
+        XCTAssertNil(app.threadDrafts[threadID])
     }
 
     func testPerformanceFixtureHasDeterministicSafeScaleAndContent() {

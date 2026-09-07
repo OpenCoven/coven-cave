@@ -183,7 +183,7 @@ struct MainShellView: View {
                             if isOpen {
                                 app.openNavigationDrawer()
                             } else {
-                                app.navigationDrawerOpen = false
+                                app.closeNavigationDrawer()
                             }
                         }
                     ),
@@ -205,7 +205,15 @@ struct MainShellView: View {
         .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
             case .projectSwitcher:
-                ProjectSwitcherView()
+                ProjectSwitcherView { context in
+                    guard app.beginProjectSwitchMeasurement(to: context) else { return }
+                    dismissOverlay {
+                        app.switchProject(
+                            to: context,
+                            measurementAlreadyStarted: true
+                        )
+                    }
+                }
             case .familiars: FamiliarsListView { familiar in
                 dismissOverlay {
                     if let thread = app.openFamiliarLandingThread(
@@ -255,7 +263,10 @@ struct MainShellView: View {
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
         .background {
             CavePerformanceStableFrame(token: destinationStableFrameToken) {
-                guard presentedOverlay == nil else { return }
+                guard presentedOverlay == nil,
+                      app.navigationDrawerAnimationSettled,
+                      !app.projectSwitchMutationPending
+                else { return }
                 app.performanceSpans.finish(.destinationStableFrame)
                 app.performanceSpans.finish(.projectSwitch)
             }
@@ -312,6 +323,8 @@ struct MainShellView: View {
             app.selectedTab.rawValue,
             app.projectContext?.id ?? "no-project",
             presentedOverlay?.id ?? "no-overlay",
+            app.navigationDrawerAnimationSettled ? "drawer-settled" : "drawer-moving",
+            app.projectSwitchMutationPending ? "project-switch-pending" : "project-switch-settled",
         ].joined(separator: "|")
     }
 

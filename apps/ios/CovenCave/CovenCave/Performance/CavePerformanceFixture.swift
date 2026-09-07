@@ -13,6 +13,7 @@ struct CavePerformanceFixtureSnapshot {
 enum CavePerformanceFixture {
     static let launchArgument = "--performance-fixture"
     static let startTasksLaunchArgument = "--performance-fixture-start-tasks"
+    static let defaultsSuiteName = "ai.opencoven.cave.performance-fixture"
     static let projectCount = 20
     static let localChatCount = 1_000
     static let serverSessionCount = 1_000
@@ -27,6 +28,23 @@ enum CavePerformanceFixture {
 
     static func shouldEnable(arguments: [String]) -> Bool {
         arguments.contains(launchArgument)
+    }
+
+    static func makeIsolatedDefaults() -> UserDefaults {
+        guard let defaults = UserDefaults(suiteName: defaultsSuiteName) else {
+            preconditionFailure("Unable to create performance fixture defaults")
+        }
+        defaults.removePersistentDomain(forName: defaultsSuiteName)
+
+        let fixtureDirectory = threadStoreURL.deletingLastPathComponent()
+        do {
+            if FileManager.default.fileExists(atPath: fixtureDirectory.path) {
+                try FileManager.default.removeItem(at: fixtureDirectory)
+            }
+        } catch {
+            preconditionFailure("Unable to reset performance fixture persistence: \(error)")
+        }
+        return defaults
     }
 
     static func make() -> CavePerformanceFixtureSnapshot {
@@ -190,7 +208,6 @@ enum CavePerformanceFixture {
         app.projectMembership = fixture.projectMembership
         app.projectMembershipLoaded = true
         app.projectContext = fixture.projects.first.map(ProjectContext.project)
-        app.selectedTab = .chats
         app.connectionState = .connected
     }
 

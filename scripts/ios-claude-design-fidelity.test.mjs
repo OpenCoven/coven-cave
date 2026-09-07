@@ -350,7 +350,7 @@ assert.match(
 );
 assert.match(
   root,
-  /case \.projectSwitcher:\s*ProjectSwitcherView\(\)/,
+  /case \.projectSwitcher:\s*ProjectSwitcherView \{ context in/,
   "the project switcher is a real shell overlay destination",
 );
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
@@ -371,8 +371,8 @@ assert.match(
 );
 assert.match(
   projectSwitcher,
-  /Button \{[\s\S]{0,180}app\.switchProject\(to: row\.context\)/,
-  "choosing a project row switches the app context in place",
+  /Button \{[\s\S]{0,180}onSwitchProject\(row\.context\)/,
+  "choosing a project row delegates the switch to the shell dismissal boundary",
 );
 assert.match(
   projectSwitcher,

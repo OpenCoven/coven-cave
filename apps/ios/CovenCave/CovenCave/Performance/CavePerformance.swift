@@ -86,6 +86,7 @@ final class CavePerformanceSpan {
 final class CavePerformanceSpanLifecycle {
     private let recorder: CavePerformanceRecorder
     private var active: [CavePerformanceSpanName: CavePerformanceSpan] = [:]
+    private var sceneIsActive = true
 
     init(recorder: CavePerformanceRecorder) {
         self.recorder = recorder
@@ -95,6 +96,7 @@ final class CavePerformanceSpanLifecycle {
         _ name: CavePerformanceSpanName,
         clock: any CavePerformanceClock = ContinuousPerformanceClock()
     ) {
+        guard sceneIsActive else { return }
         if let superseded = active.removeValue(forKey: name) {
             recorder.cancel(superseded)
         }
@@ -106,6 +108,26 @@ final class CavePerformanceSpanLifecycle {
     func finish(_ name: CavePerformanceSpanName) {
         guard let span = active.removeValue(forKey: name) else { return }
         recorder.end(span)
+    }
+
+    func cancel(_ name: CavePerformanceSpanName) {
+        guard let span = active.removeValue(forKey: name) else { return }
+        recorder.cancel(span)
+    }
+
+    func cancelAll() {
+        let spans = active.values
+        active.removeAll()
+        for span in spans {
+            recorder.cancel(span)
+        }
+    }
+
+    func setSceneActive(_ isActive: Bool) {
+        sceneIsActive = isActive
+        if !isActive {
+            cancelAll()
+        }
     }
 
     func finishAll() {
