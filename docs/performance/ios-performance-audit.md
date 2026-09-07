@@ -8,22 +8,26 @@ rendering. The first six implementation tasks landed in PR #3623; this closeout
 adds typed markdown signatures, renderer instrumentation, the final simulator
 validation, and the physical-device handoff.
 
-## Project-workspace Phase 0 baseline status (2026-09-05)
+## Project-workspace Phase 0 baseline status (2026-09-06)
 
 Issue #5292 extends this audit with seven stable user-interaction spans and a
 large deterministic fixture. The implementation and fixture are complete in
 the `cave-4vi9i` worktree. The deterministic simulator UI journeys pass, but
-the required physical-device percentile baseline is **not complete**. A signed
-Release app built, installed, and launched on the target iPhone. CoreDevice
-reports the paired device as booted, wired, in Developer Mode, and able to
-provide developer services, while `xctrace` continues to list it under
-`Devices Offline` and fails with:
+the required physical-device percentile baseline is **not complete**. An
+earlier checkpoint built, installed, and launched a signed Release app on the
+target iPhone. The current CoreDevice probe reports the paired device as
+booted, in Developer Mode, and connected over its local-network tunnel, but the
+device is locked and the developer disk image cannot mount. `xctrace` can
+enumerate the device after the tunnel refresh, but recording still fails with:
 
 ```text
 Timed out waiting for device to boot
 ```
 
-This is an Instruments transport blocker, not a failed performance sample.
+The Release XCTest destination reports the underlying
+`kAMDMobileImageMounterDeviceLocked` error. Unlocking the physical device is
+therefore required before the Release test runner or Instruments can attach.
+This is a device-access blocker, not a failed performance sample.
 Simulator Time Profiler attempts were also unusable: all-process recording
 ignored its 120-second limit and created only an incomplete trace without a
 template, while process-attached recording did not finish after a 45-second
@@ -87,17 +91,18 @@ Target:
 | Field | Value |
 | --- | --- |
 | Device | iPhone 16 Pro Max (`iPhone17,2`) |
-| OS | iOS 26.6 (`23G71`) |
+| OS | iOS 26.6.1 (`23G83`) |
 | Device identifier | Kept in local evidence; pass it as `$DEVICE_UDID` |
 | Xcode | 26.6 (`17F113`) |
 | Configuration | Release, automatic development signing |
 | Fixture | 20 projects; 1,000 local chats; 1,000 server sessions; 1,000 tasks; 12 Familiars |
 | Desktop endpoint | None; deterministic fixture mode |
-| Transport | CoreDevice `wired` |
+| Transport | CoreDevice `localNetwork`; tunnel connected |
 
-The normal signed Release app built, installed, and launched successfully.
-`xctrace` could not start an Instruments recording against the same device, so
-no physical interaction run was recorded.
+An earlier checkpoint built, installed, and launched the normal signed Release
+app successfully. The current run cannot mount the developer disk image while
+the phone is locked, so XCTest and `xctrace` cannot attach and no physical
+interaction run was recorded.
 
 No physical interaction samples exist yet:
 
