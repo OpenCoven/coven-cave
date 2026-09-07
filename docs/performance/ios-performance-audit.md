@@ -150,7 +150,7 @@ journeys:
 | Repeated global search publication | 5 | Passed |
 
 The complete run recorded 3 passed tests and 0 failures in
-`Test-CovenCave-2026.09.05_06-47-57--0500.xcresult`. A focused repeated-drawer
+`Test-CovenCave-2026.09.06_19-02-22--0500.xcresult`. A focused repeated-drawer
 run also passed in
 `Test-CovenCave-2026.09.05_07-19-19--0500.xcresult`.
 
