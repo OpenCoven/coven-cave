@@ -24,7 +24,7 @@
     {
       "rule": "components/no-native-select",
       "path": "src/components/first-project-gate.tsx",
-      "excerpt": "<select id=\"first-project-gate-existing\" value={selectedExistingProjectId} onChange={(event) => { setSelectedExistingProjectId(event.target.value); setSubmitError(null); }} disabled={submitting} className=\"focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)]\" >"
+      "excerpt": "<select id=\"first-project-gate-existing\" value={selectedExistingProjectId} onChange={(event) => { setSelectedExistingProjectId(event.target.value); clearSubmitError(); }} disabled={submitting} className=\"focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)]\" >"
     },
     {
       "rule": "components/no-native-select",

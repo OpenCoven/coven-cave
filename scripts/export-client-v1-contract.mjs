@@ -58,6 +58,7 @@ export const REVIEWED_CLIENT_V1_OPERATIONS = Object.freeze([
   "pairing.admin.decide",
   "credentials.admin.list",
   "credentials.admin.revoke",
+  "status.admin.read",
   "familiars.list",
   "projects.list",
   "conversations.list",

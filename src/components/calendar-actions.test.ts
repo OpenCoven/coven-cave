@@ -55,7 +55,15 @@ assert.match(view, /setTimeout\(\(\) => \{[\s\S]{0,120}?\}, 60_000 - \(Date\.now
 assert.match(view, /now && isSameDay\(col\.date, now\) &&/, "the now-line only renders once `now` resolves, derived from TimeGrid's own clock");
 // The grid sub-views derive "today" from useNow (hydration-safe + live), not a
 // render-time `new Date()` (Agenda, Day, Week, Month, TimeGrid).
-assert.ok((view.match(/const now = useNow\(\)/g) ?? []).length >= 5, "every grid sub-view uses useNow for today");
+// Matched on the CALL, not the binding name: DayView stopped needing a clock of
+// its own when its heading moved to the toolbar, and the toolbar took one up as
+// `toolbarNow` to derive the day's relative word (cave-25914). Pinning
+// `const now =` would have failed on a rename while the property — every
+// surface that needs "today" derives it from useNow — still held.
+assert.ok((view.match(/=\s*useNow\(\)/g) ?? []).length >= 5, "every surface that needs today derives it from useNow");
+// The actual hazard the count stands in for: a render-time clock, which is what
+// makes SSR and the client disagree about which day is highlighted.
+assert.doesNotMatch(view, /isSameDay\([^)]*new Date\(\)\)/, "no sub-view compares against a render-time new Date()");
 
 // ───────── Month-cell keyboard access ─────────
 // (cave-zqsj) The month is a real ARIA grid: grid → header row of

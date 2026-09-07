@@ -15,7 +15,7 @@
  * the whole decision path is testable under `node --test` with no DOM.
  */
 
-import { extractAutoStatusMarkers } from "./auto-status-blocks.ts";
+import { extractAutoStatusMarkers, type AutoMissionState } from "./auto-status-blocks.ts";
 
 /** Minimal Storage surface — window.localStorage or a test fake. */
 export type AutoMissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -187,12 +187,24 @@ export type AutoTurnLike = {
 
 export type AutoMissionPing = {
   turnId: string;
-  state: "blocked" | "failed" | "done";
+  state: "needs-approval" | "blocked" | "failed" | "done";
   note?: string;
 };
 
-/** States that end the mission. `blocked` does not: answering the familiar resumes it. */
-const TERMINAL: ReadonlySet<string> = new Set(["failed", "done"]);
+/** States that end the mission. `needs-approval` and `blocked` do not: answering the familiar resumes it. */
+const TERMINAL: ReadonlySet<AutoMissionPing["state"]> = new Set(["failed", "done"]);
+
+/** States that draw the human back in — all four ping; only `failed`/`done` end the mission. */
+const ATTENTION: ReadonlySet<AutoMissionPing["state"]> = new Set([
+  "needs-approval",
+  "blocked",
+  "failed",
+  "done",
+]);
+
+function isAttentionState(state: AutoMissionState): state is AutoMissionPing["state"] {
+  return ATTENTION.has(state as AutoMissionPing["state"]);
+}
 
 /**
  * Decide which terminal states still owe the human a ping, given the record
@@ -219,7 +231,7 @@ export function pendingAutoMissionPings(
     if (seen.has(t.id)) continue;
     const { update } = extractAutoStatusMarkers(t.text);
     if (!update) continue;
-    if (update.state !== "blocked" && update.state !== "failed" && update.state !== "done") continue;
+    if (!isAttentionState(update.state)) continue;
     out.push({ turnId: t.id, state: update.state, note: update.note });
     // `done`/`failed` end the mission — nothing after them can still ping.
     if (TERMINAL.has(update.state)) break;

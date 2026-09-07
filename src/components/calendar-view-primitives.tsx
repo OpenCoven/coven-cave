@@ -130,7 +130,7 @@ export function agendaDayLabel(date: Date, now: Date = new Date()): string {
 // "what's next" at a glance ("now", "in 25m", "in 3h", "40m ago"). Only
 // meaningful inside a ~12h window; beyond that the day header already carries
 // the date, so we return null and the row shows just its clock time.
-export function relTimeShort(target: Date, now: Date): string | null {
+function relTimeShort(target: Date, now: Date): string | null {
   const mins = Math.round((target.getTime() - now.getTime()) / 60_000);
   const abs = Math.abs(mins);
   if (abs < 1) return "now";
@@ -199,7 +199,7 @@ export function defaultEntryFireAt(day: Date): string {
 
 // A reminder still pending after its fire time never fired — flag it so it
 // stands out on the calendar like it does in the Schedules list.
-export function isOverdueReminder(item: InboxItem): boolean {
+function isOverdueReminder(item: InboxItem): boolean {
   return (
     item.kind === "reminder" &&
     item.status === "pending" &&

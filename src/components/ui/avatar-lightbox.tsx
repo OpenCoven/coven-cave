@@ -20,6 +20,10 @@ type AvatarLightboxProps = {
    *  settings. Keeps that path discoverable without stealing the primary
    *  click, which now enlarges like every other avatar surface. */
   footerActions?: ReactNode;
+  /** Extra classes for the trigger button, appended after the shared reset —
+   *  the caller's own sizing/markup (e.g. a chat ring's width/height or a
+   *  flex-item utility) rides on the outermost element. */
+  triggerClassName?: string;
 };
 
 /**
@@ -36,6 +40,7 @@ export function AvatarLightbox({
   label,
   category = "Avatar",
   footerActions,
+  triggerClassName,
 }: AvatarLightboxProps) {
   const [enlarged, setEnlarged] = useState(false);
   const noun = category.toLowerCase();
@@ -45,7 +50,7 @@ export function AvatarLightbox({
       <button
         type="button"
         onClick={() => setEnlarged(true)}
-        className="cave-avatar-lightbox-trigger focus-ring"
+        className={`cave-avatar-lightbox-trigger focus-ring${triggerClassName ? ` ${triggerClassName}` : ""}`}
         aria-label={`Enlarge ${label} ${noun}`}
         title="Click to enlarge"
       >

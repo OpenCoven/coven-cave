@@ -72,11 +72,15 @@ assert.doesNotMatch(
   /<MetaLine[\s>][\s\S]*?<ComposerContextChips/,
   "the shared node should prevent duplicate picker state in the header",
 );
+// cave-zfmqm: the footer band is the ONE home for the context controls, for
+// new and active chats alike. The old `inlineComposer` gate paired with a copy
+// in the session header; that copy is gone, so the gate would now strand an
+// active chat with no picker at all.
 assert.match(
   source,
-  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
-  "the footer band cluster carries chatContextControls only when inlineComposer",
-);
+  /cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the footer band cluster carries chatContextControls for every composable chat",
+)
 // The context section label flips with placement: "New chat context" when the
 // composer is inline (new-chat), "Session context" when docked to an active chat.
 assert.match(
@@ -98,16 +102,20 @@ assert.match(
   /className="cave-chat-meta-line__meta"[^>]*aria-live="polite"/,
   "the live region is narrowed to the meta text span that actually changes",
 );
-assert.match(
+// The session header carries NO context controls (cave-zfmqm) — neither the
+// inline title-row copy nor the `.cave-chat-header-context` strip beneath it.
+// Both are asserted absent so a half-removal, or a quiet reintroduction of the
+// picker toolbar onto the title row, fails here.
+assert.doesNotMatch(
   source,
-  /contextControls=\{!inlineComposer && !offlineReadOnly \? chatContextControls : null\}/,
-  "context controls ride the title row inline, and stay off read-only history",
+  /contextControls=/,
+  "the session header takes no context controls",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "the writable active-chat header carries chatContextControls after MetaLine",
-);
+  /cave-chat-header-context">/,
+  "and no below-title context strip survives",
+)
 assert.match(
   source,
   /className="cave-composer-footer-band"[\s\S]*?\{linkedContextRow\}/,

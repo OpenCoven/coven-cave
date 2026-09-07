@@ -51,6 +51,27 @@ export type ClientAccessAction = {
   id: string;
 };
 
+// Operational state of the client v1 surface itself (cave-6rwq0), as answered
+// by GET /api/client/v1/admin/status. The two degraded states — the discovery
+// record not published (the CLIENT V1 DISABLED boot banner) and the
+// unverified-ownership waiver in force (the SECURITY WAIVER line) — previously
+// existed only on stderr; this is the same state, read from the admin surface
+// this Settings screen already uses for pairing and credentials.
+export type ClientV1DiscoveryStatus = {
+  available: boolean;
+  reason?: string;
+};
+
+export type ClientV1OwnershipWaiverStatus = {
+  granted: boolean;
+  reason?: string;
+};
+
+export type ClientV1Status = {
+  discovery: ClientV1DiscoveryStatus;
+  ownershipWaiver: ClientV1OwnershipWaiverStatus;
+};
+
 type ClientAccessErrorState = {
   source: "load" | "mutation";
   headline: string;
@@ -61,6 +82,7 @@ type ClientAccessErrorState = {
 type ControlledClientAccessProps = {
   pendingRequests: ClientAccessPairingRequest[];
   credentials: ClientAccessCredential[];
+  status?: ClientV1Status | null;
   loading?: boolean;
   error?: string | null;
   errorHeadline?: string | null;
@@ -196,6 +218,51 @@ function parseCredentials(payload: unknown): ClientAccessCredential[] | null {
     return null;
   }
   return payload.data.credentials as ClientAccessCredential[];
+}
+
+function parseStatus(payload: unknown): ClientV1Status | null {
+  if (!isRecord(payload) || typeof payload.apiVersion !== "string") return null;
+  if (!isRecord(payload.data) || !isRecord(payload.data.status)) return null;
+  const status = payload.data.status;
+  if (!isRecord(status.discovery) || typeof status.discovery.available !== "boolean") {
+    return null;
+  }
+  if (
+    !isRecord(status.ownershipWaiver)
+    || typeof status.ownershipWaiver.granted !== "boolean"
+  ) {
+    return null;
+  }
+  const discovery: ClientV1DiscoveryStatus = {
+    available: status.discovery.available,
+    ...(typeof status.discovery.reason === "string"
+      ? { reason: status.discovery.reason }
+      : {}),
+  };
+  const ownershipWaiver: ClientV1OwnershipWaiverStatus = {
+    granted: status.ownershipWaiver.granted,
+    ...(typeof status.ownershipWaiver.reason === "string"
+      ? { reason: status.ownershipWaiver.reason }
+      : {}),
+  };
+  return { discovery, ownershipWaiver };
+}
+
+// Best-effort by design: the degraded states are important when they exist,
+// but the status endpoint must never take the whole client access page down
+// with it. Any failure — network, refused auth, a body that is not the
+// expected envelope — reads as "no status known" and leaves the rest of the
+// load untouched.
+async function fetchClientV1Status(signal: AbortSignal): Promise<ClientV1Status | null> {
+  try {
+    const response = await fetch("/api/client/v1/admin/status", {
+      cache: "no-store",
+      signal,
+    });
+    return parseStatus(await parseJson(response));
+  } catch {
+    return null;
+  }
 }
 
 function parsePairingRequest(payload: unknown): ClientAccessPairingRequest | null {
@@ -539,9 +606,65 @@ function CredentialCard({
   );
 }
 
+function ClientV1StatusSection({ status }: { status: ClientV1Status }) {
+  const discoveryUnavailable = status.discovery.available === false;
+  const waiverGranted = status.ownershipWaiver.granted === true;
+  if (!discoveryUnavailable && !waiverGranted) return null;
+  return (
+    <SettingsGroup
+      label="Client v1 status"
+      description="Operational state of the client v1 surface."
+      variant="ruled"
+      panel={false}
+    >
+      {discoveryUnavailable ? (
+        <div
+          className="settings-client-access__alert"
+          role="alert"
+          aria-label="Client v1 is disabled"
+        >
+          <h3>Client v1 is disabled</h3>
+          <p>
+            The client v1 discovery record was not published, so paired clients
+            cannot find this server and every client v1 request stays refused.
+            Everything else on this server is running normally. Repair the path
+            and restart to restore client v1 pairing.
+          </p>
+          {status.discovery.reason ? (
+            <p className="settings-client-access__alert-detail">
+              {status.discovery.reason}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {waiverGranted ? (
+        <div
+          className="settings-client-access__alert"
+          role="alert"
+          aria-label="Security waiver in force"
+        >
+          <h3>Security waiver in force</h3>
+          <p>
+            Client v1 paths are being used with unverified ownership. The
+            operator accepted this on this host with: “
+            {status.ownershipWaiver.reason ?? "no reason recorded"}
+            ”. Any principal that can write those paths can mint credentials
+            or point a paired client at another server.
+          </p>
+          <p className="settings-client-access__alert-detail">
+            Restart Cave without COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP set to
+            restore the check.
+          </p>
+        </div>
+      ) : null}
+    </SettingsGroup>
+  );
+}
+
 function SettingsClientAccessContent({
   pendingRequests,
   credentials,
+  status = null,
   loading = false,
   error = null,
   errorHeadline = null,
@@ -583,6 +706,7 @@ function SettingsClientAccessContent({
           ) : undefined}
         />
       ) : null}
+      {status ? <ClientV1StatusSection status={status} /> : null}
       {showInitialLoading ? (
         <div className="settings-client-access__loading" role="status" aria-busy="true">
           <p>Loading client access…</p>
@@ -655,6 +779,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const [pendingRequests, setPendingRequests] = useState<ClientAccessPairingRequest[]>([]);
   const [terminalRequests, setTerminalRequests] = useState<ClientAccessPairingRequest[]>([]);
   const [credentials, setCredentials] = useState<ClientAccessCredential[]>([]);
+  const [status, setStatus] = useState<ClientV1Status | null>(null);
   const [hasConfirmedSnapshot, setHasConfirmedSnapshot] = useState(false);
   const [loading, setLoading] = useState(active);
   const [errorState, setErrorState] = useState<ClientAccessErrorState | null>(null);
@@ -704,7 +829,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         controller.abort();
       }, CLIENT_ACCESS_LOAD_TIMEOUT_MS);
       try {
-        const [pairingResponse, credentialResponse] = await Promise.all([
+        const [pairingResponse, credentialResponse, nextStatus] = await Promise.all([
           fetch("/api/client/v1/admin/pairing-requests", {
             cache: "no-store",
             signal: controller.signal,
@@ -713,6 +838,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
             cache: "no-store",
             signal: controller.signal,
           }),
+          fetchClientV1Status(controller.signal),
         ]);
         const [pairingPayload, credentialPayload] = await Promise.all([
           parseJson(pairingResponse),
@@ -760,6 +886,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         credentialsRef.current = nextCredentials;
         setPendingRequests(nextPending);
         setCredentials(nextCredentials);
+        setStatus(nextStatus);
         hasConfirmedSnapshotRef.current = true;
         setHasConfirmedSnapshot(true);
         hasLocalMutationStateRef.current = false;
@@ -959,6 +1086,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     <SettingsClientAccessContent
       pendingRequests={requests}
       credentials={credentials}
+      status={status}
       loading={loading}
       error={errorState?.subtitle ?? null}
       errorHeadline={errorState?.headline}

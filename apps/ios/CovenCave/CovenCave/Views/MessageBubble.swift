@@ -15,6 +15,9 @@ struct MessageBubble: View {
     /// Quote this message into the composer — swipe the bubble right, or use the
     /// long-press menu. nil hides the action.
     var onReply: ((DisplayMessage) -> Void)? = nil
+    /// Retry the delete a partial-delete report note is warning about; nil
+    /// hides the action.
+    var onRetryDelete: (() -> Void)? = nil
     /// The human operator's display name, shown above their own bubbles in
     /// group threads (mirrors the familiar name row). Defaults to "You" so a
     /// missing profile reads exactly as before.
@@ -175,16 +178,32 @@ struct MessageBubble: View {
     /// Inline slash-command output — a subtle monospaced card so it reads as
     /// system feedback rather than a familiar's reply.
     private var systemNote: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: message.isError ? "exclamationmark.triangle.fill" : "terminal.fill")
-                .font(.caption)
-                .foregroundStyle(message.isError ? Color.red : Color.secondary)
-                .padding(.top, 2)
-            Text(message.text.isEmpty ? " " : message.text)
-                .font(.callout.monospaced())
-                .foregroundStyle(message.isError ? Color.red : Color.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: message.isError ? "exclamationmark.triangle.fill" : "terminal.fill")
+                    .font(.caption)
+                    .foregroundStyle(message.isError ? Color.red : Color.secondary)
+                    .padding(.top, 2)
+                Text(message.text.isEmpty ? " " : message.text)
+                    .font(.callout.monospaced())
+                    .foregroundStyle(message.isError ? Color.red : Color.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // A partial-delete report carries its own recovery: the retry
+            // re-deletes the surviving copies by the turn names the first
+            // attempt already resolved, so a drifted transcript cannot refuse
+            // it a second time.
+            if let onRetryDelete {
+                Button(action: onRetryDelete) {
+                    Label("Retry delete", systemImage: "arrow.clockwise")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.red)
+                .accessibilityLabel("Retry deleting the copy that survived")
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .glassFill(.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -736,6 +755,7 @@ extension MessageBubble: Equatable {
             && lhs.chrome == rhs.chrome
             && (lhs.onRetry == nil) == (rhs.onRetry == nil)
             && (lhs.onReply == nil) == (rhs.onReply == nil)
+            && (lhs.onRetryDelete == nil) == (rhs.onRetryDelete == nil)
             && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
             && (lhs.onForward == nil) == (rhs.onForward == nil)
     }

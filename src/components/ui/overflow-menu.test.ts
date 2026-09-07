@@ -7,6 +7,11 @@ const src = readFileSync(new URL("./overflow-menu.tsx", import.meta.url), "utf8"
 // The trigger must be a real menu button: aria-haspopup="menu" + aria-expanded
 // reflecting open state, with an accessible name required at the type level.
 assert.match(src, /ariaLabel: string/, "OverflowMenu requires an accessible name");
+assert.match(
+  src,
+  /aria-label=\{ariaLabel\}[\s\S]*?title=\{ariaLabel\}/,
+  "the icon-only trigger exposes a native title matching its accessible name",
+);
 assert.match(src, /aria-haspopup="menu"/, "trigger declares the menu popup");
 assert.match(src, /aria-expanded=\{open\}/, "trigger reflects open state");
 

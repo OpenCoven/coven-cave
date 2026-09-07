@@ -28,7 +28,7 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import { flowRunRedactsData } from "@/lib/flow/flow-doc";
 import { isResearchMissionFlowSnapshot } from "@/lib/research-mission-flow";
 import type { FlowRunStepStatus } from "@/lib/flows";
-import { startAutomationRun } from "@/lib/server/automation-runner";
+import { runRoutine } from "@/lib/server/coven-automations-client";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -473,25 +473,17 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
 async function replayJob(item: CaveTravelQueueItem): Promise<void> {
   const payload = record(item.payload);
   const automation = record(payload.automation) as Partial<CodexAutomation>;
-  if (!automation.id || !automation.name || !Array.isArray(automation.cwds) || typeof automation.prompt !== "string") {
+  if (!automation.id || typeof automation.prompt !== "string") {
     throw new Error("queued job payload missing automation snapshot");
   }
-  await startAutomationRun({
-    id: automation.id,
-    name: automation.name,
-    kind: automation.kind ?? "manual",
-    status: automation.status ?? "ACTIVE",
-    rrule: automation.rrule ?? null,
-    model: automation.model ?? null,
-    reasoningEffort: automation.reasoningEffort ?? null,
-    executionEnvironment: automation.executionEnvironment ?? null,
-    cwds: automation.cwds,
-    tags: automation.tags ?? [],
-    familiars: automation.familiars ?? [],
-    prompt: automation.prompt,
-    skillPath: automation.skillPath ?? null,
-    scheduleHuman: automation.scheduleHuman ?? "manual",
-  });
+  // Routines execute through the Coven daemon (coven#816); the offline queue
+  // replays by dispatching the daemon run action, never by spawning codex
+  // exec directly. A daemon that is still offline fails the replay with the
+  // normalized degraded error instead of silently falling back.
+  const outcome = await runRoutine(automation.id);
+  if (outcome.status === "failed") {
+    throw new Error(outcome.error ?? "automation run failed");
+  }
 }
 
 async function replayTravelQueueItem(item: CaveTravelQueueItem, config: CaveConfig): Promise<void> {

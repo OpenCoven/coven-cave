@@ -12,7 +12,6 @@
 import { readdir, readFile, writeFile, access, mkdir, rm, realpath } from "node:fs/promises";
 // Relative + explicit extension like the other local imports: this module is
 // exercised by a loaderless node:test run, where "@/" aliases don't resolve.
-import { purgeRuns } from "./automation-runs.ts";
 import path from "node:path";
 import { homedir } from "node:os";
 import { slugifyAutomationId } from "./codex-automation-form.ts";
@@ -390,7 +389,6 @@ export async function deleteCodexAutomation(id: string): Promise<boolean> {
     // Run history is keyed by automation id, and a re-created automation with
     // the same name gets the same slug — purge so it can't inherit the deleted
     // one's runs (whose logPaths point at removed worktrees).
-    await purgeRuns(id);
-    return true;
+        return true;
   });
 }

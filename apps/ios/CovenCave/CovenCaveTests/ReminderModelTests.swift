@@ -169,7 +169,7 @@ private final class ReminderTestCoreClient: AppModelCoreResourceClient, Reminder
         )
     }
     func familiars() async throws -> [Familiar] { [] }
-    func sessions() async throws -> [SessionRow] { [] }
+    func sessions(includeArchived: Bool = false) async throws -> [SessionRow] { [] }
     func tasks() async throws -> [BoardCard] { [] }
     func fetchTheme() async throws -> ThemeSnapshot {
         ThemeSnapshot(

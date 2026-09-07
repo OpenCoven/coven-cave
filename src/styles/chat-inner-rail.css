@@ -231,3 +231,162 @@
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────────
+ *
+ * The rail is 280px wide, so the shared SelectionToolbar — built for the board
+ * and the chat list, where a row is the width of the page — needs its type and
+ * padding brought down rather than being dropped in at full size. */
+.cnav__select-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  margin-inline: var(--space-3);
+  margin-block-start: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.cnav__select-enter:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.cnav__select-bar {
+  flex: none;
+  padding-inline: var(--space-2);
+  padding-block-start: var(--space-2);
+}
+
+/* The toolbar's own margin assumes a page-width list; inside the rail it would
+   push the first thread out of view. */
+.cnav__select-bar [role="toolbar"] {
+  margin-bottom: var(--space-2);
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+}
+
+.cnav__broadcast-open {
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 2px var(--space-2);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cnav__broadcast-open:disabled {
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Checkbox in the row's leading slot — the same box-and-tick the chat list
+   uses, so select mode reads identically on both surfaces. */
+.cnav__select-box {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 4px);
+  color: transparent;
+}
+
+.cnav__select-box.is-on {
+  border-color: var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+
+/* Per-row broadcast outcome. Sits where the timestamp does, so it reads as
+   "what just happened to this row" rather than as new chrome. Failed carries
+   the danger tone because it is the one that needs acting on. */
+.cnav__broadcast {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.cnav__broadcast[data-state="sent"] {
+  color: var(--color-success);
+}
+
+.cnav__broadcast[data-state="failed"] {
+  color: var(--color-danger);
+}
+
+/* The broadcast composer — one textarea and one verb. Deliberately not a chat
+   view: replies land in each target's own thread, never here. */
+.chat-broadcast__title {
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 650;
+}
+
+.chat-broadcast__note {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.chat-broadcast__input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.chat-broadcast__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
+.chat-broadcast__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-broadcast__cancel {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.chat-broadcast__send {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--accent-presence);
+  padding: var(--space-1) var(--space-3);
+  color: var(--accent-presence-foreground);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-broadcast__send:disabled {
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-muted);
+  cursor: default;
+}

@@ -19,23 +19,52 @@ function finiteNonNegative(value: unknown): number | undefined {
     : undefined;
 }
 
+/** First finite, non-negative number among several candidate fields, or
+ *  undefined when none qualifies. Accepts the several field-name spellings
+ *  the different harness CLIs emit for the same counter without guessing. */
+function firstFiniteNonNegative(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = finiteNonNegative(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
 /** Validated cost from an untrusted number-ish value. Zero is preserved
  *  (formatCost hides it at render time); negatives/NaN/non-numbers drop. */
 export function parseCostUsd(raw: unknown): number | undefined {
   return finiteNonNegative(raw);
 }
 
-/** Parse the `usage` object from a Claude Code stream-json `result` event.
+/** Parse the `usage` object from a harness stream-json/JSONL terminal event
+ *  and normalize it onto Cave's TurnUsage shape. Three wire conventions are
+ *  accepted, one per harness family:
+ *    • Claude / Grok: `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+ *      `cache_creation_input_tokens`
+ *    • Codex: `input_tokens`, `output_tokens`, `cached_input_tokens`,
+ *      `cache_write_input_tokens`
+ *    • OpenCode: camelCase `input`, `output`, nested `cache.read`, `cache.write`
  *  Fields are optional and defensively validated — a malformed or empty
  *  usage block yields undefined so callers omit it entirely. */
 export function parseStreamJsonUsage(raw: unknown): TurnUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const u = raw as Record<string, unknown>;
-  const inputTokens = finiteNonNegative(u.input_tokens);
-  const outputTokens = finiteNonNegative(u.output_tokens);
+  const cache = u.cache && typeof u.cache === "object" && !Array.isArray(u.cache)
+    ? u.cache as Record<string, unknown>
+    : null;
+  const inputTokens = firstFiniteNonNegative(u.input_tokens, u.input);
+  const outputTokens = firstFiniteNonNegative(u.output_tokens, u.output);
   if (inputTokens === undefined && outputTokens === undefined) return undefined;
-  const cacheReadTokens = finiteNonNegative(u.cache_read_input_tokens);
-  const cacheCreationTokens = finiteNonNegative(u.cache_creation_input_tokens);
+  const cacheReadTokens = firstFiniteNonNegative(
+    u.cache_read_input_tokens,
+    u.cached_input_tokens,
+    cache?.read,
+  );
+  const cacheCreationTokens = firstFiniteNonNegative(
+    u.cache_creation_input_tokens,
+    u.cache_write_input_tokens,
+    cache?.write,
+  );
   return {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,

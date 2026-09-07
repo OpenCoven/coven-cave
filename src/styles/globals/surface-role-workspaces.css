@@ -1111,6 +1111,8 @@
 .research-artifact-reject input, .research-source-attach input { width: 100%; min-width: 0; padding: 5px 6px; font-size: 16px; color: var(--text-primary); border: 1px solid var(--input); border-radius: var(--radius-sm); background: var(--bg-base); }
 .research-artifact-reject input { margin: 6px 0; }
 .research-source-attach { display: grid; gap: 5px; margin-bottom: 8px; }
+.research-source-attach__error { margin: 0; font-size: 9.5px; color: var(--destructive, oklch(0.68 0.18 25)); }
+.research-source-attach input[aria-invalid="true"] { border-color: var(--destructive, oklch(0.68 0.18 25)); }
 .research-source-attach-disclosure { margin-bottom: 8px; font-size: 10px; color: var(--text-muted); }
 .research-source-attach-disclosure summary { width: fit-content; cursor: pointer; }
 .research-source-attach-disclosure[open] summary { margin-bottom: 7px; }

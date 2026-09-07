@@ -66,6 +66,10 @@ export function FamiliarSettingsSection({
   const [tab, setTab] = useState<FamiliarSettingsTab>(
     initialTab && initialTab !== "projects" ? initialTab : "identity",
   );
+  // Contract is a focused handoff into the Grimoire section of Identity, not
+  // a second editor or a fabricated route. Keep the internal destination
+  // distinct while the visible tablist remains the canonical five tabs.
+  const displayedTab = tab === "contract" ? "identity" : tab;
   useEffect(() => {
     // `projects` no longer names a tab here. Rather than silently landing on
     // Identity, hand the request to the surface that owns project access now.
@@ -76,6 +80,15 @@ export function FamiliarSettingsSection({
     }
     if (initialTab) setTab(initialTab);
   }, [initialTab]);
+  useEffect(() => {
+    if (tab !== "contract") return;
+    const focusFrame = requestAnimationFrame(() => {
+      const grimoire = document.querySelector<HTMLElement>(".familiar-studio-grimoire");
+      grimoire?.scrollIntoView({ block: "nearest" });
+      grimoire?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [tab]);
   const raw = useMemo(
     () => familiars.find((item) => item.id === familiar.id),
     [familiars, familiar.id],
@@ -97,7 +110,7 @@ export function FamiliarSettingsSection({
           variant="underline"
           idPrefix="familiar-settings"
           ariaLabel="Familiar settings"
-          value={tab}
+          value={displayedTab}
           onChange={setTab}
           items={SETTINGS_TABS}
         />
@@ -105,12 +118,12 @@ export function FamiliarSettingsSection({
 
       <div
         role="tabpanel"
-        id={`familiar-settings-panel-${tab}`}
-        aria-labelledby={`familiar-settings-tab-${tab}`}
+        id={`familiar-settings-panel-${displayedTab}`}
+        aria-labelledby={`familiar-settings-tab-${displayedTab}`}
         className="familiar-tab__settings-body familiar-studio__body"
       >
         {tab === "chat" ? <ChatSettingsView /> : null}
-        {tab === "identity" ? (
+        {tab === "identity" || tab === "contract" ? (
           <FamiliarStudioIdentityTab
             key={`${familiar.id}:identity`}
             familiar={familiar}

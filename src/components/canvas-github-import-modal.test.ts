@@ -58,8 +58,13 @@ assert.match(
 );
 assert.match(
   modal,
-  /role="alert"/,
-  "submission failures remain assertive",
+  /\{error \? \(\s*<ProjectRootWorkspaceNotice[\s\S]*className="canvas-github-import__error"/,
+  "submission failures render inline through the shared workspace notice",
+);
+assert.match(
+  modal,
+  /ProjectRootWorkspaceNotice[\s\S]*errorCode[\s\S]*error=\{error\}/,
+  "the modal threads the server failure code so the notice can render the containment error inline",
 );
 assert.doesNotMatch(
   modal,

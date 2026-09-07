@@ -43,11 +43,13 @@ function credential(overrides: Partial<Parameters<typeof saveCredential>[0]> = {
     signCount: 0,
     aaguid: "AAAAAAAAAAAAAAAAAAAAAA",
     attestationFormat: "none",
+    attestationVerified: false,
+    attestationTrustPath: "legacy",
     label: "iPhone",
     createdAt: 1_000,
     lastUsedAt: null,
     ...overrides,
-  };
+  } as const;
 }
 
 // ─── credentials ───────────────────────────────────────────────────────────
@@ -126,7 +128,7 @@ test("entries that do not look like credentials are dropped on read", async () =
 test("the store is written as JSON at the configured path", async () => {
   await saveCredential(credential());
   const parsed = JSON.parse(await readFile(passkeyStorePath(), "utf8"));
-  assert.equal(parsed.version, 1);
+  assert.equal(parsed.version, 2, "writes carry the attestation-aware store version");
   assert.equal(parsed.credentials[0].tailnetNodeId, NODE_A);
 });
 
@@ -204,4 +206,44 @@ test("outstanding challenges are bounded so an abandoned ceremony cannot grow th
     null,
     "the oldest challenge was evicted",
   );
+});
+
+// ─── attestation outcome fields (cave-01v4u) ────────────────────────────────
+
+test("a legacy credential without attestation outcome fields loads and stays assertable", async () => {
+  const legacy = credential() as unknown as Record<string, unknown>;
+  delete legacy.attestationVerified;
+  delete legacy.attestationTrustPath;
+  await writeFile(
+    passkeyStorePath(),
+    JSON.stringify({ version: 1, credentials: [legacy] }),
+  );
+  const found = await findCredential("Y3JlZC1vbmU", NODE_A);
+  assert.ok(found, "legacy rows are not dropped by the lenient reader");
+  assert.equal(found.attestationVerified, false);
+  assert.equal(found.attestationTrustPath, "legacy");
+  assert.equal(found.attestationVerifiedAt, undefined);
+});
+
+test("a credential stores its attestation outcome", async () => {
+  await saveCredential(
+    credential({
+      attestationFormat: "apple",
+      attestationVerified: true,
+      attestationTrustPath: "apple",
+      attestationVerifiedAt: 2_000,
+    }),
+  );
+  const found = await findCredential("Y3JlZC1vbmU", NODE_A);
+  assert.equal(found?.attestationVerified, true);
+  assert.equal(found?.attestationTrustPath, "apple");
+  assert.equal(found?.attestationVerifiedAt, 2_000);
+  const raw = JSON.parse(await readFile(passkeyStorePath(), "utf8")) as { version: number };
+  assert.equal(raw.version, 2, "new writes carry the attestation-aware store version");
+});
+
+test("a malformed attestation trust path normalizes to legacy rather than dropping the credential", async () => {
+  await saveCredential(credential({ attestationTrustPath: "bogus" as never }));
+  const found = await findCredential("Y3JlZC1vbmU", NODE_A);
+  assert.equal(found?.attestationTrustPath, "legacy");
 });

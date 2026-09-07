@@ -139,6 +139,22 @@ type SyntheticRouteState = {
 };
 
 function defaultApiPayload(pathname: string): unknown {
+  if (pathname === "/api/running-activity") {
+    return {
+      ok: true,
+      generatedAt: "2026-07-26T10:00:00.000Z",
+      total: 0,
+      items: [],
+      sources: {
+        sessions: { ok: true, count: 0 },
+        board: { ok: true, count: 0 },
+        automations: { ok: true, count: 0 },
+        flows: { ok: true, count: 0 },
+        workflows: { ok: true, count: 0 },
+      },
+      unavailable: [],
+    };
+  }
   if (pathname === "/api/harnesses") return { ok: true, harnesses: [] };
   if (pathname === "/api/openclaw-agents") return { ok: true, agents: [] };
   if (pathname === "/api/projects") return { ok: true, projects: [] };

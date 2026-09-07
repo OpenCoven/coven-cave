@@ -141,6 +141,11 @@ type WorktreeEntry = {
   ref: string | null;
   branch: string | null;
   refError: string | null;
+  /**
+   * The worktree's lock reason from `git worktree list --porcelain -z`.
+   * `null` = not locked; `""` = locked with no reason recorded.
+   */
+  lockReason: string | null;
 };
 
 type LocalBranchRef = {
@@ -536,7 +541,15 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       const worktreeFields = fields.filter((field) => field.startsWith("worktree "));
       const headFields = fields.filter((field) => field.startsWith("HEAD "));
       const branchFields = fields.filter((field) => field.startsWith("branch "));
-      if (worktreeFields.length !== 1 || headFields.length !== 1 || branchFields.length > 1) {
+      const lockFields = fields.filter(
+        (field) => field === "locked" || field.startsWith("locked "),
+      );
+      if (
+        worktreeFields.length !== 1 ||
+        headFields.length !== 1 ||
+        branchFields.length > 1 ||
+        lockFields.length > 1
+      ) {
         throw new Error("malformed git worktree inventory");
       }
       const worktreePath = worktreeFields[0]!.slice("worktree ".length);
@@ -545,6 +558,9 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
       if (normalizedWorktreePath === null || !OID.test(head)) {
         throw new Error("malformed git worktree inventory");
       }
+      const lockField = lockFields[0] ?? null;
+      const lockReason =
+        lockField === null ? null : lockField === "locked" ? "" : lockField.slice("locked ".length);
       const ref = branchFields[0]?.slice("branch ".length) ?? null;
       if (ref === null) {
         return {
@@ -554,6 +570,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
           ref: null,
           branch: null,
           refError: null,
+          lockReason,
         };
       }
       const match = ref.match(/^refs\/heads\/(.+)$/);
@@ -564,6 +581,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
           ref,
           branch: null,
           refError: `worktree ref is not a direct refs/heads ref: ${ref}`,
+          lockReason,
         };
       }
       return {
@@ -572,6 +590,7 @@ function parseWorktrees(raw: string): WorktreeEntry[] {
         ref,
         branch: match[1],
         refError: null,
+        lockReason,
       };
     });
 }
@@ -3338,6 +3357,7 @@ function collectInventory(
       ref: entry.ref,
       branch: entry.branch,
       head: entry.head,
+      lockReason: entry.lockReason,
       initialErrors: [
         entry.refError,
         entry.ref && !localRefByName.has(entry.ref)
@@ -3365,6 +3385,7 @@ function collectInventory(
         ref: localRef.ref,
         branch: localRef.branch,
         head: localRef.oid,
+        lockReason: null,
         initialErrors: [] as string[],
       })),
   ];
@@ -3613,6 +3634,7 @@ function collectInventory(
       ref: unit.ref,
       branch: unit.branch,
       head: unit.head,
+      lockReason: unit.lockReason,
       isPrimary: unit.path !== null && normalizePath(unit.path) === primaryPath,
       protectedBranch:
         unit.branch !== null &&

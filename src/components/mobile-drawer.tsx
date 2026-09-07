@@ -158,6 +158,23 @@ export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
           inert={open !== "right-chat"}
           tabIndex={-1}
         >
+          {/* Full-bleed close strip (cave-4snk9): on phones (≤480px) the
+              drawer is width:100vw and covers the backdrop button at every
+              pixel, so CSS hides the backdrop for this slot and THIS strip
+              owns dismissal instead. It is a child of the dialog — not a
+              sibling like the backdrop — so the focus trap reaches it: it is
+              the drawer's first focusable, and a Tab/Enter user can close
+              the drawer without ever touching the phantom backdrop. CSS
+              shows it only at ≤480px; at wider mobile widths the real,
+              exposed backdrop is the close surface and this strip stays
+              display:none. */}
+          <button
+            type="button"
+            className="focus-ring mobile-right-chat-drawer__close"
+            data-drawer-slot="right-chat"
+            aria-label="Close drawer"
+            onClick={onClose}
+          />
           {rightChat}
         </section>
       ) : null}

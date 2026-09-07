@@ -42,6 +42,18 @@ export function caveResearchContextPacks(): boolean {
     && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_CONTEXT_PACKS);
 }
 
+/**
+ * Browser-capable resource preview: loading a resource's source URL in the
+ * Research Desk browser modal. This is rollout availability only: callers
+ * must separately prove an explicitly selected Context Pack's
+ * `consent.allowRemoteContent`. The flag never substitutes for consent and
+ * still requires the authoritative resource catalog (cave-m13fh).
+ */
+export function caveResearchRemoteContent(): boolean {
+  return caveResearchResources()
+    && envFlag(process.env.NEXT_PUBLIC_CAVE_RESEARCH_REMOTE_CONTENT);
+}
+
 /** Topic Discovery cannot run until Context Packs are available. */
 export function caveResearchTopicDiscovery(): boolean {
   return caveResearchContextPacks()

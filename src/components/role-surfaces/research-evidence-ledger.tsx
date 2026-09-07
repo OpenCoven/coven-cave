@@ -10,6 +10,7 @@ import {
   type ResearchMissionActionInput,
   type ResearchSourceRef,
 } from "@/lib/research-missions";
+import { isValidResearchSourceUrl } from "@/lib/research-source-url";
 import { relativeTime } from "@/lib/relative-time";
 import { ResearchArtifactActions } from "./research-artifact-actions";
 
@@ -47,6 +48,9 @@ const SOURCE_STATUSES: ResearchSourceRef["status"][] = [
 export const VERIFY_NOTE = "Verify next iteration";
 const LEGACY_VERIFY_NOTE = "Verify next pass";
 
+/** Inline error target for the Attach source URL field (aria-describedby). */
+const SOURCE_URL_ERROR_ID = "research-source-url-error";
+
 function hasVerificationRequest(note: string | undefined): boolean {
   return [VERIFY_NOTE, LEGACY_VERIFY_NOTE].some((marker) => (note ?? "").includes(marker));
 }
@@ -66,6 +70,7 @@ export function ResearchEvidenceLedger({
   const [rejection, setRejection] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<"all" | ResearchSourceRef["status"]>("all");
   // Tracks the mission currently on screen so an act that settles after the
   // user switched missions is discarded instead of planting its error/busy
@@ -83,6 +88,7 @@ export function ResearchEvidenceLedger({
     setRejection({});
     setBusy(false);
     setError(null);
+    setUrlError(null);
     setSourceFilter("all");
   }, [mission.id]);
 
@@ -137,6 +143,14 @@ export function ResearchEvidenceLedger({
   const attach = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !url.trim()) return;
+    // Only http(s) URLs may be recorded as web sources; a typo'd or hostile
+    // scheme (ftp:, file:, javascript:, …) is refused here so it never reaches
+    // an action round-trip (the server enforces the same gate).
+    if (!isValidResearchSourceUrl(url)) {
+      setUrlError("Source URL must start with http:// or https://");
+      return;
+    }
+    setUrlError(null);
     const ok = await act({
       action: "attach-source",
       source: {
@@ -242,10 +256,20 @@ export function ResearchEvidenceLedger({
             />
             <input
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={(event) => {
+                setUrl(event.target.value);
+                if (urlError) setUrlError(null);
+              }}
               placeholder="https://…"
               aria-label="Source URL"
+              aria-invalid={urlError ? true : undefined}
+              aria-describedby={urlError ? SOURCE_URL_ERROR_ID : undefined}
             />
+            {urlError ? (
+              <p id={SOURCE_URL_ERROR_ID} role="alert" className="research-source-attach__error">
+                {urlError}
+              </p>
+            ) : null}
             <Button type="submit" size="xs" variant="ghost" disabled={busy || !title.trim() || !url.trim()}>
               Attach
             </Button>

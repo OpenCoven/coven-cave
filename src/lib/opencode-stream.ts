@@ -7,6 +7,10 @@ export type OpenCodeRunEvent =
   | { kind: "tool_progress"; sessionId?: string; id: string; output: unknown }
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
+  /** Terminal `step_finish` token usage and cost. Raw `tokens`/`cost` values
+   *  are passed through; the chat route validates them with
+   *  parseStreamJsonUsage / parseCostUsd. */
+  | { kind: "usage"; sessionId?: string; usage: unknown; totalCostUsd?: unknown }
   | { kind: "error"; sessionId?: string; message: string }
   | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event" };
 
@@ -17,6 +21,7 @@ export type OpenCodeJsonLineHandlers = {
   onToolStart?: (event: Extract<OpenCodeRunEvent, { kind: "tool_start" }>) => void;
   onToolProgress?: (event: Extract<OpenCodeRunEvent, { kind: "tool_progress" }>) => void;
   onToolEnd?: (event: Extract<OpenCodeRunEvent, { kind: "tool_end" }>) => void;
+  onUsage?: (event: Extract<OpenCodeRunEvent, { kind: "usage" }>) => void;
   onError?: (event: Extract<OpenCodeRunEvent, { kind: "error" }>) => void;
   onOther?: (event: Extract<OpenCodeRunEvent, { kind: "other" }>, rawEvent: unknown) => void;
   onMalformedJson?: () => void;
@@ -147,6 +152,19 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const discriminator = schema?.shape?.discriminator ?? { envelope: "root" as const, field: "type" };
   const eventType = stringAt(envelope(event, [discriminator.envelope]), discriminator.field);
   if (!eventType) return { kind: "other", sessionId, diagnostic: "malformed-event" };
+  // OpenCode's terminal `step_finish` event carries token usage and cost on
+  // its payload (`part.tokens` / `part.cost`; observed CLI 1.18.x). Extract
+  // them through the same envelope used for text/tools so the chat route can
+  // validate them with parseStreamJsonUsage / parseCostUsd. A `step_finish`
+  // with no usage falls through to the ordinary lifecycle handling below.
+  if (eventType === "step_finish") {
+    const usageSource = part ?? event;
+    const tokens = valueAt(usageSource, ["tokens"]);
+    const cost = valueAt(usageSource, ["cost"]);
+    if (tokens !== undefined || cost !== undefined) {
+      return { kind: "usage", sessionId, usage: tokens, totalCostUsd: cost };
+    }
+  }
   if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(eventType)) {
     // Lifecycle/control frames are deliberately non-renderable. The selected
     // schema nevertheless authorizes their label, so retain its session token:
@@ -298,6 +316,7 @@ export function handleOpenCodeJsonLine(
       case "tool_start": handlers.onToolStart?.(event); return;
       case "tool_progress": handlers.onToolProgress?.(event); return;
       case "tool_end": handlers.onToolEnd?.(event); return;
+      case "usage": handlers.onUsage?.(event); return;
       case "error": handlers.onError?.(event); return;
       case "other": handlers.onOther?.(event, rawEvent); return;
     }

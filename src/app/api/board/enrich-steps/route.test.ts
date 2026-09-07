@@ -156,3 +156,75 @@ assert.match(
   /Simplify the description into concise task notes[\s\S]*Create or update subtasks[\s\S]*Set startDate and endDate[\s\S]*Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats/,
   "Enrich prompt should explicitly instruct the assigned familiar to clean up subtasks, dates, description, status/priority, and issue/chat links",
 );
+
+assert.match(
+  source,
+  /type TaskEnrichment = \{[\s\S]*dependencies\?: unknown[\s\S]*primaryBlockerId\?: unknown[\s\S]*primaryBlockerPinned\?: unknown[\s\S]*nextStep\?: unknown[\s\S]*confidence\?: unknown/,
+  "Enrich route should accept dependency, primary-blocker, next-step, and confidence suggestions from the model",
+);
+
+assert.match(
+  source,
+  /cleanOrchestrationProposal\(enrichment, card, now\)[\s\S]*hasOrchestrationContent\(orchestration\)/,
+  "Enrich route should clean and detect dependency/next-step suggestions from the parsed enrichment",
+);
+
+assert.match(
+  source,
+  /assessEnrichmentGates\(card, board\.cards, orchestration, candidate\)[\s\S]*buildEnrichmentProposalRecord\(card, board\.cards, orchestration, gates, now\)/,
+  "Enrich route should run the three auto-application gates and build a review-queue record per suggestion",
+);
+
+assert.match(
+  source,
+  /gates\.gatesFailed\.length === 0 \? enrichmentPatch\(orchestration\) : \{\}/,
+  "Only a suggestion that passed every gate is folded into the write",
+);
+
+assert.match(
+  source,
+  /agenticEnhance: appendEnrichmentProposal\(/,
+  "Gate-rejected and auto-applied suggestions land in the card's agenticEnhance review queue",
+);
+
+assert.match(
+  source,
+  /blockedRecordFromWriteErrors\(card, board\.cards, orchestration, error\.errors, now\)/,
+  "Write-level orchestration rejections persist a gate-blocked review proposal (acceptance test 3 parity)",
+);
+
+assert.match(
+  source,
+  /kind: "orchestration"[\s\S]*state: gates\.gatesFailed\.length === 0 \? "auto-applied" : "blocked"/,
+  "Enrich route should stream which gates each suggestion passed or failed",
+);
+
+assert.match(
+  source,
+  /Dependencies: propose only what actually blocks this task[\s\S]*Never invent task ids, issue numbers, or services/,
+  "Enrich prompt should ground dependency proposals to live tasks, attached GitHub items, and known services",
+);
+
+assert.match(
+  source,
+  /confidence: your self-reported 0\.\.1 confidence\. It only ranks suggestions; it never authorizes a write/,
+  "Enrich prompt should rank suggestions by confidence without authorizing writes from it",
+);
+
+assert.match(
+  source,
+  /Set requiresApproval true only when a human decision must gate the action[\s\S]*never dispatched automatically/,
+  "Enrich prompt should keep approval-gated next steps human-bound and auto-dispatch-ineligible",
+);
+
+assert.match(
+  source,
+  /Never propose replacing a human-authored dependency or next step; propose a reviewable change instead/,
+  "Enrich prompt should respect human authorship of dependency and next-step records",
+);
+
+assert.match(
+  source,
+  /Live board tasks you may reference as task dependencies/,
+  "Enrich prompt should hand the familiar the live board task ids it may ground against",
+);

@@ -190,15 +190,22 @@ export async function completeRegistration(input: {
 
   let result;
   try {
-    result = verifyRegistration({
-      clientDataJSON: base64UrlDecode(input.clientDataJSON),
-      attestationObject: base64UrlDecode(input.attestationObject),
-      expectedChallenge: input.challenge,
-      // The challenge record's origin/rpId, NOT this request's. Otherwise a
-      // ceremony begun on one host could be completed against another.
-      expectedOrigin: record.origin,
-      expectedRpId: record.rpId,
-    });
+    result = verifyRegistration(
+      {
+        clientDataJSON: base64UrlDecode(input.clientDataJSON),
+        attestationObject: base64UrlDecode(input.attestationObject),
+        expectedChallenge: input.challenge,
+        // The challenge record's origin/rpId, NOT this request's. Otherwise a
+        // ceremony begun on one host could be completed against another.
+        expectedOrigin: record.origin,
+        expectedRpId: record.rpId,
+      },
+      // cave-01v4u: attestation "none" is refused for remote peers, but the
+      // local loopback peer may enroll without device attestation — loopback
+      // already equals "someone at this machine" (the same boundary as the
+      // local-ingress presence exemption).
+      { allowNone: input.peer.kind === "local" },
+    );
   } catch (err) {
     if (err instanceof WebAuthnError) return { ok: false, status: 400, error: err.reason };
     return { ok: false, status: 400, error: "malformed" };
@@ -215,6 +222,9 @@ export async function completeRegistration(input: {
     signCount: result.signCount,
     aaguid: base64UrlEncode(result.aaguid),
     attestationFormat: result.attestationFormat,
+    attestationVerified: result.attestation.verified,
+    attestationTrustPath: result.attestation.trustPath,
+    ...(result.attestation.verified ? { attestationVerifiedAt: now } : {}),
     label: (input.label ?? "").trim().slice(0, 64) || "Passkey",
     createdAt: now,
     lastUsedAt: null,

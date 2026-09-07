@@ -42,7 +42,7 @@ assert.match(
 );
 
 // ── Search only; no mode filters (All / Active / Tasks / Pinned) ─────────────
-assert.match(source, /placeholder="Search chats…"/, "Rail offers inline chat search");
+assert.match(source, /placeholder="Filter chats…"/, "Rail offers inline chat search");
 assert.doesNotMatch(source, /type ChatFilter =/, "Rail no longer owns filter tab state");
 assert.doesNotMatch(source, /role="tablist"/, "All/Active/Tasks/Pinned tablist is removed");
 assert.doesNotMatch(source, /s\.origin === "board"/, "Tasks filtering is gone from this simplified rail");

@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
-import { createCodexAutomation, listCodexAutomations, toCodexAutomationPayload } from "@/lib/codex-automations";
+import { toCodexAutomationPayload } from "@/lib/coven-automations-facade";
+import { createRoutine, listRoutines } from "@/lib/server/coven-automations-client";
+import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const automations = (await listCodexAutomations()).map(toCodexAutomationPayload);
+    const automations = (await listRoutines()).map(toCodexAutomationPayload);
     return NextResponse.json({ ok: true, automations });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "unknown" },
-      { status: 500 },
-    );
+    return degradedOrUnknown(err);
   }
 }
 
@@ -37,23 +36,39 @@ export async function POST(req: Request) {
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !x.includes("\n")) : [];
   const asStr = (v: unknown): string => (typeof v === "string" && !v.includes("\n") ? v : "");
   try {
-    const created = await createCodexAutomation({
+    const created = await createRoutine({
+      id:
+        typeof body.id === "string" && body.id.trim()
+          ? body.id.trim()
+          : `cron-${Date.now().toString(36)}`,
       name,
-      rrule,
+      status: "PAUSED",
+      rrule: rrule.slice("RRULE:".length),
       prompt,
-      cwds: asArray(body.cwds),
+      runtime: "coven-code",
+      timeoutMinutes: 60,
       tags: asArray(body.tags),
-      familiars: asArray(body.familiars),
-      model: asStr(body.model),
-      reasoningEffort: asStr(body.reasoning_effort),
-      executionEnvironment: asStr(body.execution_environment),
-      skillPath: asStr(body.skill_path) || null,
+      cwd: asArray(body.cwds)[0],
+      familiarId: asArray(body.familiars)[0],
+      model: asStr(body.model) || undefined,
     });
     return NextResponse.json({ ok: true, automation: toCodexAutomationPayload(created) });
   } catch (err) {
+    return degradedOrUnknown(err);
+  }
+}
+
+function degradedOrUnknown(err: unknown) {
+  if (err instanceof CovenAutomationsUnavailableError && err.degraded) {
+    // The Automations daemon (Coven, with coven.automations.*) is offline or
+    // too old. Present it precisely; never fall back to Codex execution.
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "create failed" },
-      { status: 500 },
+      { ok: false, error: err.message, degraded: true },
+      { status: 503 },
     );
   }
+  return NextResponse.json(
+    { ok: false, error: err instanceof Error ? err.message : "unknown" },
+    { status: 500 },
+  );
 }

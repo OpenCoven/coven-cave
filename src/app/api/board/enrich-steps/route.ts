@@ -7,12 +7,14 @@ import {
   LIFECYCLES,
   PRIORITIES,
   STATUSES,
+  type BoardAgenticProposalRecord,
   type Card,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
   type CardStep,
+  type TaskDependency,
 } from "@/lib/cave-board-types";
 import { normalizeTaskGitHubLinks } from "@/lib/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
@@ -20,6 +22,16 @@ import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-on
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { stripAnsi } from "@/lib/ansi";
 import { resolveGitHubToken } from "@/lib/github-token";
+import {
+  appendEnrichmentProposal,
+  assessEnrichmentGates,
+  blockedRecordFromWriteErrors,
+  buildEnrichmentProposalRecord,
+  cleanOrchestrationProposal,
+  enrichmentPatch,
+  hasOrchestrationContent,
+  type EnrichmentGateResult,
+} from "@/lib/enrich-steps-orchestration";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,6 +55,15 @@ type TaskEnrichment = {
   sessionId?: string | null;
   needsHuman?: boolean;
   lifecycleReason?: string;
+  // Dependency and next-step suggestions (cave-bmcoe). Kept as raw values
+  // here; cleanOrchestrationProposal validates and bounds them with card
+  // context before the auto-application gates run.
+  dependencies?: unknown;
+  primaryBlockerId?: unknown;
+  primaryBlockerPinned?: unknown;
+  nextStep?: unknown;
+  confidence?: unknown;
+  rationale?: unknown;
 };
 
 type EnrichRequestBody = {
@@ -150,7 +171,40 @@ function cleanSessionId(value: unknown): string | null | undefined {
   return /^[a-z0-9_.:-]{1,160}$/i.test(trimmed) ? trimmed : undefined;
 }
 
-function enrichPrompt(card: Card): string {
+function dependencyLine(dependency: TaskDependency): string {
+  return [
+    `- ${dependency.id}`,
+    `[${dependency.kind}:${dependency.state}]`,
+    dependency.label,
+    dependency.taskId ? `(task: ${dependency.taskId})` : "",
+    dependency.ref ? `(${dependency.ref})` : "",
+  ].filter(Boolean).join(" ");
+}
+
+function boardTaskContext(board: Card[]): string {
+  if (board.length === 0) return "";
+  return [
+    ``,
+    `Live board tasks you may reference as task dependencies:`,
+    ...board
+      .slice(0, 48)
+      .map((entry) => `- ${entry.id}: ${entry.title.trim().slice(0, 80)}`),
+  ].join("\n");
+}
+
+function reachableGitHubContext(card: Card): string {
+  const items = card.github
+    .filter((link) => link.repo && typeof link.number === "number")
+    .slice(0, 16)
+    .map((link) => `- ${link.repo}#${link.number}${link.title ? ` (${link.title.trim().slice(0, 80)})` : ""}`);
+  return [
+    ``,
+    `GitHub items attached to this task (reachable references):`,
+    items.length ? items.join("\n") : "- none",
+  ].join("\n");
+}
+
+function enrichPrompt(card: Card, board: Card[]): string {
   const labels = card.labels?.length
     ? `\nLabels: ${card.labels.join(", ")}`
     : "";
@@ -159,6 +213,15 @@ function enrichPrompt(card: Card): string {
     ? `\n\nCurrent steps:\n${card.steps
         .map((step, index) => `${index + 1}. [${step.done ? "x" : " "}] ${step.text}`)
         .join("\n")}`
+    : "";
+  const dependencies = card.dependencies?.length
+    ? `\n\nCurrent dependencies:\n${card.dependencies.map(dependencyLine).join("\n")}`
+    : "";
+  const primaryBlocker = card.primaryBlockerId
+    ? `\nCurrent primary blocker: ${card.primaryBlockerId}`
+    : "";
+  const nextStep = card.nextStep
+    ? `\nCurrent next step: ${card.nextStep.summary}${card.nextStep.requiresApproval ? " (requires approval)" : ""}`
     : "";
   return [
     `You are the assigned familiar refreshing your board task so it reflects the current best plan, ownership, links, schedule, and state.`,
@@ -171,10 +234,10 @@ function enrichPrompt(card: Card): string {
     `Current sessionId: ${card.sessionId ?? "none"}`,
     `Current links: ${card.links.length ? card.links.join(", ") : "none"}`,
     `Current GitHub items: ${card.github.length ? card.github.map((item) => item.url).join(", ") : "none"}`,
-    `Needs human: ${card.needsHuman ? "yes" : "no"}${steps}`,
+    `Needs human: ${card.needsHuman ? "yes" : "no"}${steps}${dependencies}${primaryBlocker}${nextStep}${boardTaskContext(board)}${reachableGitHubContext(card)}`,
     ``,
     `Output ONLY one JSON object with these keys:`,
-    `{"notes":"concise task description","steps":["short subtask"],"status":"backlog|inbox|running|review|blocked|done","lifecycle":"queued|dispatched|running|review|completed|failed|cancelled","priority":"low|medium|high|urgent","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","links":["https://..."],"github":[{"url":"https://github.com/owner/repo/issues/123","title":"issue title","repo":"owner/repo","kind":"issue|pr|repo|discussion|review_request|notification","number":123,"state":"open|closed|merged","labels":[]}],"sessionId":"linked-chat-session-id|null","needsHuman":false,"lifecycleReason":"short reason"}`,
+    `{"notes":"concise task description","steps":["short subtask"],"status":"backlog|inbox|running|review|blocked|done","lifecycle":"queued|dispatched|running|review|completed|failed|cancelled","priority":"low|medium|high|urgent","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","links":["https://..."],"github":[{"url":"https://github.com/owner/repo/issues/123","title":"issue title","repo":"owner/repo","kind":"issue|pr|repo|discussion|review_request|notification","number":123,"state":"open|closed|merged","labels":[]}],"sessionId":"linked-chat-session-id|null","needsHuman":false,"lifecycleReason":"short reason","dependencies":[{"id":"stable-id","kind":"task|github|human|credential|service|execution|external","label":"short blocker","taskId":"TASK_ID|null","ref":"repo#number or svc:name or null","state":"unresolved|resolved|waived"}],"primaryBlockerId":"DEPENDENCY_ID|null","primaryBlockerPinned":false,"nextStep":{"summary":"one imperative action","actorFamiliarId":"familiar-id|null","capability":"skill-or-tool|null","target":"repo/path/url/svc:name|null","inputs":["..."],"requiresApproval":false},"confidence":0.0,"rationale":"short reason"}`,
     `Simplify the description into concise task notes without losing constraints.`,
     `Create or update subtasks for the assigned task; include 3-8 short action steps.`,
     `Set startDate and endDate when the task has clear timing or sequence; use null only to clear a wrong date.`,
@@ -183,6 +246,12 @@ function enrichPrompt(card: Card): string {
     `Preserve useful existing links and GitHub/chat assignments unless they are clearly wrong.`,
     `Each subtask must be a short, actionable sentence under 80 characters.`,
     `Use status, lifecycle, priority, needsHuman, and lifecycleReason to reflect the task's current reality.`,
+    `Dependencies: propose only what actually blocks this task. A task dependency must name a live board task id from the list above; a github dependency must use a repo#number from the reachable items; a service dependency must use a known svc: reference. Never invent task ids, issue numbers, or services.`,
+    `primaryBlockerId must be the id of one of your proposed dependencies or the task's existing dependencies, or null.`,
+    `primaryBlockerPinned: true only to freeze the operator's chosen primary blocker.`,
+    `nextStep: exactly one imperative action. Set requiresApproval true only when a human decision must gate the action; an approval-gated next step flags the task for a human and is never dispatched automatically.`,
+    `confidence: your self-reported 0..1 confidence. It only ranks suggestions; it never authorizes a write.`,
+    `Never propose replacing a human-authored dependency or next step; propose a reviewable change instead.`,
     `Return no explanation, no markdown, and no extra text.`,
   ].join("\n");
 }
@@ -303,6 +372,12 @@ function parseTaskEnrichment(raw: string): TaskEnrichment | null {
         ...(sessionId !== undefined ? { sessionId } : {}),
         needsHuman: typeof candidate.needsHuman === "boolean" ? candidate.needsHuman : undefined,
         lifecycleReason: cleanReason(candidate.lifecycleReason),
+        ...(candidate.dependencies !== undefined ? { dependencies: candidate.dependencies } : {}),
+        ...(candidate.primaryBlockerId !== undefined ? { primaryBlockerId: candidate.primaryBlockerId } : {}),
+        ...(candidate.primaryBlockerPinned !== undefined ? { primaryBlockerPinned: candidate.primaryBlockerPinned } : {}),
+        ...(candidate.nextStep !== undefined ? { nextStep: candidate.nextStep } : {}),
+        ...(candidate.confidence !== undefined ? { confidence: candidate.confidence } : {}),
+        ...(candidate.rationale !== undefined ? { rationale: candidate.rationale } : {}),
       };
     }
   } catch {
@@ -520,7 +595,7 @@ export async function POST(req: Request) {
         ];
         if (/^[a-z0-9_-]+$/i.test(familiarId))
           args.push("--familiar", familiarId);
-        args.push("--", enrichPrompt(cardForPrompt));
+        args.push("--", enrichPrompt(cardForPrompt, board.cards));
 
         const workspace = await resolveFamiliarWorkspace(familiarId);
         const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
@@ -576,6 +651,23 @@ export async function POST(req: Request) {
         }
 
         const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
+        // Dependency and next-step suggestions ride the same model run. They are
+        // gated before any write: auto-application requires grounding, structural
+        // validity, and non-conflict (cave-bmcoe); anything failing a gate lands
+        // in the card's agenticEnhance review queue naming the gate it failed.
+        const orchestration = cleanOrchestrationProposal(enrichment, card, now);
+        const hasOrchestration = hasOrchestrationContent(orchestration);
+        let gates: EnrichmentGateResult | null = null;
+        let proposalRecord: BoardAgenticProposalRecord | null = null;
+        if (hasOrchestration) {
+          const candidate: Card = {
+            ...card,
+            ...normalized,
+            ...enrichmentPatch(orchestration),
+          };
+          gates = assessEnrichmentGates(card, board.cards, orchestration, candidate);
+          proposalRecord = buildEnrichmentProposalRecord(card, board.cards, orchestration, gates, now);
+        }
         let updated;
         try {
           updated = await updateCard(card.id, {
@@ -592,15 +684,56 @@ export async function POST(req: Request) {
             needsHuman: normalized.needsHuman,
             lifecycleReason: normalized.lifecycleReason,
             lifecycleAt: normalized.lifecycleAt,
+            // Only a suggestion that passed every gate is folded into the write;
+            // the review queue still records what was proposed and why.
+            ...(gates && gates.gatesFailed.length === 0 ? enrichmentPatch(orchestration) : {}),
+            ...(hasOrchestration && proposalRecord
+              ? {
+                agenticEnhance: appendEnrichmentProposal(
+                  card.agenticEnhance,
+                  proposalRecord,
+                  proposalRecord.state === "auto-applied" ? "auto-applied" : "blocked",
+                  "enhance",
+                  now,
+                ),
+              }
+              : {}),
           }, { automated: true });
         } catch (error) {
           if (error instanceof OrchestrationValidationError) {
-            push({
-              kind: "skip",
-              cardId: card.id,
-              reason: "orchestration_invalid",
-              errors: error.errors,
-            });
+            if (hasOrchestration && proposalRecord) {
+              // Defense in depth: the mutator re-ran the same validator and
+              // rejected the write (acceptance test 3 parity). Persist the
+              // suggestion as a gate-blocked review proposal so the operator
+              // sees exactly why it could not auto-apply.
+              const blocked = blockedRecordFromWriteErrors(card, board.cards, orchestration, error.errors, now);
+              try {
+                const recorded = await updateCard(card.id, {
+                  agenticEnhance: appendEnrichmentProposal(card.agenticEnhance, blocked, "blocked", "enhance", now),
+                }, { automated: true });
+                if (recorded) {
+                  push({
+                    kind: "orchestration",
+                    cardId: card.id,
+                    state: "blocked",
+                    gatesPassed: [],
+                    gatesFailed: ["structural"],
+                    proposalId: blocked.id,
+                  });
+                } else {
+                  push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+                }
+              } catch {
+                push({ kind: "skip", cardId: card.id, reason: "orchestration_invalid", errors: error.errors });
+              }
+            } else {
+              push({
+                kind: "skip",
+                cardId: card.id,
+                reason: "orchestration_invalid",
+                errors: error.errors,
+              });
+            }
             continue;
           }
           throw error;
@@ -609,7 +742,18 @@ export async function POST(req: Request) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           continue;
         }
+        if (hasOrchestration && gates && proposalRecord) {
+          push({
+            kind: "orchestration",
+            cardId: card.id,
+            state: gates.gatesFailed.length === 0 ? "auto-applied" : "blocked",
+            gatesPassed: gates.gatesPassed,
+            gatesFailed: gates.gatesFailed,
+            proposalId: proposalRecord.id,
+          });
+        }
         push({ kind: "done", cardId: card.id, count: normalized.steps.length });
+
       }
 
       push({ kind: "complete" });

@@ -28,4 +28,14 @@ assert.match(src, /breadcrumb=\{\[label, category\]\}/, "Modal is named via its 
 // rides on this optional footer slot — it must be forwarded to the Modal.
 assert.match(src, /footerActions=\{footerActions\}/, "footerActions passes through to the Modal footer");
 
+// The caller's own sizing/markup (chat ring classes, flex-item utilities) rides
+// on the trigger button, appended after the shared reset — never lost when a
+// surface wraps its avatar in the lightbox.
+assert.match(src, /triggerClassName\?: string;/, "primitive accepts caller trigger classes");
+assert.match(
+  src,
+  /\$\{triggerClassName \?/,
+  "caller classes are conditionally appended to the trigger's reset classes",
+);
+
 console.log("avatar-lightbox.test.ts: ok");

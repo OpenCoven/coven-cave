@@ -8,7 +8,7 @@ const src = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf
 // It already had aria-label/aria-controls/aria-activedescendant; these complete
 // the pattern so screen readers announce the popup's open state + autocomplete.
 assert.match(src, /role="combobox"/, "the search input declares the combobox role");
-assert.match(src, /aria-expanded=\{rows\.length > 0\}/, "the input reports whether the results popup is open");
+assert.match(src, /aria-expanded=\{displayRows\.length > 0\}/, "the input reports whether the results popup is open");
 assert.match(src, /aria-autocomplete="list"/, "the input advertises list autocomplete");
 
 // ── Corpus loader drops post-close/unmount responses ─────────────────────────

@@ -6,3 +6,8 @@ export const PROJECT_ROOT_WORKSPACE_HELP =
 
 export const PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR =
   "Choose a specific folder for this project — your home folder itself or the top of a drive can't be a project root.";
+
+/** True when a project creation/grant failure carries the out-of-workspace code. */
+export function isProjectRootOutsideAllowedWorkspace(code: string | null | undefined): boolean {
+  return code === PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE;
+}

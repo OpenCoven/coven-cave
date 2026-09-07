@@ -1070,6 +1070,9 @@ export type CodexStreamEvent =
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
   /** Terminal Codex failure with no untrusted payload attached. */
   | { kind: "failure" }
+  /** `turn.completed` token usage. The raw `usage` object is passed through
+   *  untouched; the chat route validates it with parseStreamJsonUsage. */
+  | { kind: "usage"; usage: unknown }
   | { kind: "unknown"; fingerprint: string }
   | { kind: "ignored" };
 
@@ -1112,8 +1115,15 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   if (event.type === "turn.failed" || event.type === "error") {
     return { kind: "failure" };
   }
-  if (event.type === "turn.started" || event.type === "turn.completed") {
+  if (event.type === "turn.started") {
     return { kind: "ignored" };
+  }
+  if (event.type === "turn.completed") {
+    // The terminal turn event carries token usage (`input_tokens`,
+    // `output_tokens`, `cached_input_tokens`, `cache_write_input_tokens`).
+    // Pass the raw object through so the route can validate it through the
+    // shared defensive parser; Codex reports no cost, so none is attached.
+    return { kind: "usage", usage: event.usage };
   }
   const item = record(event.item);
   if (!item) return { kind: "unknown", fingerprint: eventFingerprint(event) };

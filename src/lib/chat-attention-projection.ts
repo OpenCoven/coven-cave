@@ -481,7 +481,9 @@ export function forgetChatAttentionProjections(
 }
 
 function clearSessionAttention(row: SessionRow): SessionRow {
-  return row.attention.state === "none"
+  // A row with no attention record has no attention to preserve: patching it
+  // with the explicit none snapshot is the same clear it would have received.
+  return row.attention?.state === "none"
     ? row
     : { ...row, attention: NO_CHAT_ATTENTION };
 }
@@ -515,7 +517,7 @@ export function applyChatAttentionSettlementToRows(
       changed = changed || projected !== row;
       return projected;
     }
-    if (!settlement.restoreAttention || row.attention.state !== "none") return row;
+    if (!settlement.restoreAttention || row.attention?.state !== "none") return row;
     changed = true;
     return { ...row, attention: settlement.restoreAttention };
   });
@@ -557,6 +559,10 @@ export function applyChatAttentionProjections(
   const canonicalTracker = canonicalAttentionTrackerFor(state);
   let changed = false;
   const projectedRows = rows.map((row) => {
+    // Normalize once so every read below is safe even for rows whose list
+    // payload carries no attention record (minimal mocks / malformed data):
+    // missing attention reads as "none", never as a crash.
+    const attention = row.attention ?? NO_CHAT_ATTENTION;
     const operations = state.get(row.id);
     if (!operations) {
       const retainedCanonical = canonicalTracker.get(row.id);
@@ -564,7 +570,7 @@ export function applyChatAttentionProjections(
         trackOrForgetCanonicalAttention(
           state,
           row.id,
-          row.attention,
+          attention,
           currentScopeKey ?? retainedCanonical.scopeKey,
         );
       }
@@ -575,17 +581,17 @@ export function applyChatAttentionProjections(
     // Refresh real canonical attention before masking it again. Canonical none
     // can settle a persisted operation below, but while any operation is live
     // it must not erase the non-none baseline a failed clear will retry from.
-    if (row.attention.state !== "none") {
+    if (attention.state !== "none") {
       trackCanonicalAttention(
         state,
         row.id,
-        row.attention,
+        attention,
         currentScopeKey ?? operations.values().next().value?.scopeKey ?? "all-familiars",
       );
     }
 
     const causallySupersededUnknownOperationIds = new Set<string>();
-    const causalOperationId = row.attention.state === "none"
+    const causalOperationId = attention.state === "none"
       ? null
       : normalizeChatAttentionOperationId(row.attentionAfterOperationId);
     const operationLineage = normalizeChatAttentionOperationLineage(row.attentionOperationLineage);
@@ -641,19 +647,19 @@ export function applyChatAttentionProjections(
 
     for (const [operationId, operation] of operations) {
       operation.latestCanonical = {
-        attention: normalizeAttentionSnapshot(row.attention),
+        attention: normalizeAttentionSnapshot(attention),
         scopeKey: currentScopeKey ?? operation.scopeKey,
       };
       if (operation.status !== "persisted" || responseRequestId < operation.canonicalAfterRequestId) continue;
       if (operation.baseline) {
-        if (!attentionMatchesBaseline(row.attention, operation.baseline)) {
+        if (!attentionMatchesBaseline(attention, operation.baseline)) {
           rememberRetiredPersistedOperation(state, row.id, operationId, operation);
           operations.delete(operationId);
           tombstoneChatAttentionOperation(state, row.id, operationId);
         }
         continue;
       }
-      if (row.attention.state === "none") {
+      if (attention.state === "none") {
         rememberRetiredPersistedOperation(state, row.id, operationId, operation);
         operations.delete(operationId);
         tombstoneChatAttentionOperation(state, row.id, operationId);

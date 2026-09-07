@@ -14,6 +14,14 @@
  */
 
 export { ApprovalCard } from "./ApprovalCard";
+export type {
+  ApprovalAnswers,
+  ApprovalCardKind,
+  ApprovalCardProps,
+  ApprovalQuestion,
+  ApprovalQuestionType,
+  PermissionScope,
+} from "./ApprovalCard";
 export { ChatComposer } from "./ChatComposer";
 export { CodeBlock } from "./CodeBlock";
 export { ContextCards } from "./ContextCards";

@@ -636,6 +636,71 @@ test("an aged queued run with zero jobs is recovered once", async () => {
   assert.equal(result.recoveries[0].dispatched, true);
 });
 
+test("an aged pending run with zero jobs is recovered as a stalled run", async () => {
+  // A run parked behind ci.yml's concurrency group reports status `pending`
+  // with ZERO jobs until the group key frees — not `queued`, which is the only
+  // waiting status the stalled-empty-run path used to recognise. The key only
+  // frees when the holder's `if: always()` required job drains, which under
+  // runner queueing takes 10-15 minutes, so a pending run can sit empty well
+  // past the grace window (observed on #4925: run 32632713873 pending with 0
+  // jobs behind run 32631588451). Recovery used to read `pending` as
+  // `ci_present` and decline forever, leaving the PR with no checks while
+  // nothing was actually running (cave-q7spw).
+  const pr = pull();
+  const pending = workflowRun({ id: 78, status: "pending" });
+  const fixture = githubFixture({
+    pulls: [pr],
+    runsBySha: { [pr.head.sha]: [pending] },
+    jobsByRun: { 78: 0 },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.equal(result.recoveries[0].reason, "stalled_empty_run");
+  assert.equal(result.recoveries[0].dispatched, true);
+});
+
+test("a young pending run is still given the grace window", async () => {
+  // The concurrency group can free within minutes of the run appearing, so a
+  // freshly created pending run is not stalled yet — same grace window as a
+  // queued run, same `ci_queued` wait.
+  const pr = pull();
+  const pending = workflowRun({
+    id: 79,
+    status: "pending",
+    createdAt: new Date(NOW - RECOVERY_GRACE_MS + 1).toISOString(),
+  });
+  const fixture = githubFixture({
+    pulls: [pr],
+    runsBySha: { [pr.head.sha]: [pending] },
+    jobsByRun: { 79: 0 },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.equal(result.skipped[0].reason, "ci_queued");
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("a pending run that actually has jobs is CI present, not a stalled run", async () => {
+  // Pending with jobs means the group freed and the run is really coming;
+  // dispatching recovery on top of it would be redundant.
+  const pr = pull();
+  const pending = workflowRun({ id: 80, status: "pending" });
+  const fixture = githubFixture({
+    pulls: [pr],
+    runsBySha: { [pr.head.sha]: [pending] },
+    jobsByRun: { 80: 3 },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.equal(result.skipped[0].reason, "ci_present");
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
 test("a recent recovery dispatch enforces the cooldown even when it has no jobs", async () => {
   const pr = pull();
   const recovery = workflowRun({

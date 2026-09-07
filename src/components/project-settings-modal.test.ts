@@ -68,7 +68,7 @@ test("project icons generate, regenerate, and remove through the shared image st
   assert.match(modal, /generateProjectIcon/, "uses the tested icon action helper");
   assert.match(modal, /saveImage: setProjectImage/, "persists generated images through the shared store");
   assert.match(modal, /clearProjectImage\(project\.root\)/, "offers removal for an existing icon");
-  assert.match(modal, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="xl" \/>/, "previews the result at a legible size");
+  assert.match(modal, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="xl" expandable \/>/, "previews the result at a legible size, expandable to a full-size peek");
   assert.match(modal, /hasIcon \? "Regenerate icon" : "Generate icon"/, "names the action for the current state");
 });
 

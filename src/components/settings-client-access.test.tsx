@@ -343,6 +343,109 @@ describe("SettingsClientAccess", () => {
     expect(loading.root.findAll((node) => node.props.role === "alert")).not.toHaveLength(0);
   });
 
+  test("renders no status alert when client v1 is healthy", async () => {
+    const renderer = await render({
+      pendingRequests: [],
+      credentials: [],
+      status: { discovery: { available: true }, ownershipWaiver: { granted: false } },
+      onApprove: vi.fn(),
+      onDeny: vi.fn(),
+      onRevoke: vi.fn(),
+    });
+    const rendered = text(renderer);
+    expect(rendered).not.toContain("Client v1 is disabled");
+    expect(rendered).not.toContain("Security waiver in force");
+    expect(rendered).toContain("No pending requests.");
+    expect(renderer.root.findAll((node) => node.props.role === "alert")).toHaveLength(0);
+  });
+
+  test("renders the degraded client v1 states from controlled status props", async () => {
+    const renderer = await render({
+      pendingRequests: [],
+      credentials: [],
+      status: {
+        discovery: {
+          available: false,
+          reason: "The client v1 discovery record was NOT published, so paired clients cannot find this server.",
+        },
+        ownershipWaiver: { granted: true, reason: "Kiosk operator accepted an unreadable DACL." },
+      },
+      onApprove: vi.fn(),
+      onDeny: vi.fn(),
+      onRevoke: vi.fn(),
+    });
+    const rendered = text(renderer);
+    expect(rendered).toContain("Client v1 is disabled");
+    expect(rendered).toContain("paired clients cannot find this server");
+    expect(rendered).toContain("Security waiver in force");
+    expect(rendered).toContain("Kiosk operator accepted an unreadable DACL.");
+    expect(rendered).toContain("COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP");
+    expect(
+      renderer.root.findAll(
+        (node) => node.props.role === "alert" && typeof node.props["aria-label"] === "string",
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("surfaces the client v1 disabled and security waiver states from the admin status endpoint", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return clientV1SuccessResponse({ pairingRequests: [] });
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return clientV1SuccessResponse({ credentials: [] });
+      }
+      if (url === "/api/client/v1/admin/status") {
+        return clientV1SuccessResponse({
+          status: {
+            discovery: {
+              available: false,
+              reason: "The client v1 discovery record was NOT published.",
+            },
+            ownershipWaiver: {
+              granted: true,
+              reason: "Kiosk operator accepted an unreadable DACL.",
+            },
+          },
+        });
+      }
+      throw new Error("Unexpected fetch: " + url);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+    const rendered = text(renderer);
+    expect(rendered).toContain("Client v1 is disabled");
+    expect(rendered).toContain("paired clients cannot find this server");
+    expect(rendered).toContain("Security waiver in force");
+    expect(rendered).toContain("Kiosk operator accepted an unreadable DACL.");
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === "/api/client/v1/admin/status",
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps client access loading when the status endpoint is refused", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return clientV1SuccessResponse({ pairingRequests: [] });
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return clientV1SuccessResponse({ credentials: [] });
+      }
+      if (url === "/api/client/v1/admin/status") {
+        return clientV1ErrorResponse("unauthorized", "admin authorization is required", 401);
+      }
+      throw new Error("Unexpected fetch: " + url);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+    expect(text(renderer)).toContain("No pending requests.");
+    expect(text(renderer)).toContain("No client credentials issued.");
+    expect(text(renderer)).not.toContain("Client v1 is disabled");
+    expect(renderer.root.findAll((node) => node.props.role === "alert")).toHaveLength(0);
+  });
+
   test("uses app-specific accessible actions and disables duplicate mutations", async () => {
     const onApprove = vi.fn();
     const onDeny = vi.fn();
@@ -801,7 +904,9 @@ describe("SettingsClientAccess", () => {
       await flush();
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // One fetch per surface the load reads: pairing requests, credentials,
+    // and the best-effort operational status.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(text(renderer)).toContain("Client access took too long to load");
     expect(text(renderer)).toContain("Retry");
     expect(text(renderer)).not.toContain("Loading client access…");
@@ -828,7 +933,7 @@ describe("SettingsClientAccess", () => {
     });
     globalThis.fetch = fetchMock;
     const renderer = await render({ active: true });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(signals.every((signal) => signal.aborted === false)).toBe(true);
 
     await act(async () => {
@@ -836,7 +941,7 @@ describe("SettingsClientAccess", () => {
       globalThis.window.dispatchEvent(new Event("focus"));
       await flush();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(signals.every((signal) => signal.aborted === false)).toBe(true);
 
     await act(async () => {
@@ -1369,13 +1474,15 @@ describe("SettingsClientAccess", () => {
     });
     globalThis.fetch = fetchMock;
     const renderer = await render({ active: true });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Three surfaces per load: pairing requests, credentials, and the
+    // best-effort operational status.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     await act(async () => {
       vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS);
       await flush();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
 
     await act(async () => {
       renderer.update(<SettingsClientAccess active={false} />);
@@ -1385,11 +1492,11 @@ describe("SettingsClientAccess", () => {
       vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS * 3);
       await flush();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
 
     await act(async () => renderer.unmount());
     vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS * 3);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   test("registers one searchable Client access destination in the existing section navigation", () => {

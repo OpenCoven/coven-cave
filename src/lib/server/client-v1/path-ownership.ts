@@ -43,7 +43,7 @@ const UNVERIFIED_OWNERSHIP_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_RE
 const UNVERIFIED_OWNERSHIP_TOKEN = "i-accept-unverified-path-ownership";
 const UNVERIFIED_OWNERSHIP_MIN_REASON = 12;
 
-type UnverifiedOwnershipWaiver =
+export type UnverifiedOwnershipWaiver =
   | { granted: true; reason: string }
   | { granted: false; note: string };
 
@@ -69,7 +69,7 @@ type UnverifiedOwnershipWaiver =
  * the artifact it produces (cave-yp21x). The disclosure here is the warning the
  * caller prints, once per waived path, plus the boot banner in server.ts.
  */
-function resolveUnverifiedOwnershipWaiver(
+export function resolveUnverifiedOwnershipWaiver(
   env: Record<string, string | undefined>,
 ): UnverifiedOwnershipWaiver {
   const requested = env[UNVERIFIED_OWNERSHIP_ENV]?.trim() ?? "";

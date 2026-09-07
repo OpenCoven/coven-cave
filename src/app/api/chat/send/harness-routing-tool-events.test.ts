@@ -1160,6 +1160,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /case "usage": \{[\s\S]*?result = \{ \.\.\.result, usage: parseStreamJsonUsage\(event\.usage\) \};/,
+  "Codex turn.completed usage must be captured through parseStreamJsonUsage (cave-0osmn)",
+);
+
+assert.match(
+  chatRoute,
+  /onUsage: \(ev\) => \{[\s\S]*?usage: parseStreamJsonUsage\(ev\.usage\),[\s\S]*?costUsd: parseCostUsd\(ev\.totalCostUsd\),/,
+  "OpenCode step_finish usage/cost must be captured through the defensive validators (cave-0osmn)",
+);
+
+assert.match(
+  chatRoute,
   /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
   "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
 );
@@ -1232,6 +1244,39 @@ assert.match(
     parseStreamJsonUsage({ input_tokens: 7, output_tokens: -3, cache_read_input_tokens: -1 }),
     { inputTokens: 7, outputTokens: 0 },
     "negative counters drop; partial blocks keep the valid fields",
+  );
+  // Codex `turn.completed` usage is flat snake_case with its own cache spellings.
+  assert.deepEqual(
+    parseStreamJsonUsage({
+      input_tokens: 24763,
+      cached_input_tokens: 24448,
+      cache_write_input_tokens: 128,
+      output_tokens: 122,
+    }),
+    {
+      inputTokens: 24763,
+      outputTokens: 122,
+      cacheReadTokens: 24448,
+      cacheCreationTokens: 128,
+    },
+    "Codex cached_input_tokens/cache_write_input_tokens map onto cache read/write",
+  );
+  // OpenCode `step_finish` tokens are camelCase with a nested cache object.
+  assert.deepEqual(
+    parseStreamJsonUsage({
+      total: 7077,
+      input: 205,
+      output: 3,
+      reasoning: 21,
+      cache: { write: 0, read: 6848 },
+    }),
+    {
+      inputTokens: 205,
+      outputTokens: 3,
+      cacheReadTokens: 6848,
+      cacheCreationTokens: 0,
+    },
+    "OpenCode camelCase counters and nested cache map onto the turn shape",
   );
 }
 

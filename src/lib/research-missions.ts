@@ -200,6 +200,10 @@ export type ResearchSourceRef = {
   availability?: ResearchSourceAvailability;
 };
 
+export type ResearchSourceLedgerSnapshot =
+  | { state: "available"; sources: ResearchSourceRef[] }
+  | { state: "empty" | "failed"; sources: [] };
+
 export type ResearchSourceDraft = Partial<ResearchSourceRef> & {
   id: string;
   title: string;
@@ -710,6 +714,19 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
   };
 }
 
+/** Parse the canonical sources.json payload without requiring a mission
+ * wrapper. This is shared by mission hydration and file-serving routes so both
+ * surfaces apply exactly the same source-row validation. */
+export function parseResearchSources(
+  value: unknown,
+): ResearchSourceRef[] | null {
+  if (!Array.isArray(value)) return null;
+  const sources = value.map(parseResearchSource);
+  return sources.some((source) => source === null)
+    ? null
+    : sources as ResearchSourceRef[];
+}
+
 function parseResearchAutomation(value: unknown): ResearchAutomationLink | null {
   if (!isRecord(value)
     || typeof value.id !== "string"
@@ -823,10 +840,10 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   }
   const iterations = value.iterations.map(parseResearchIteration);
   const artifacts = value.artifacts.map(parseResearchArtifact);
-  const sources = value.sources.map(parseResearchSource);
+  const sources = parseResearchSources(value.sources);
   if (iterations.some((iteration) => iteration === null)
     || artifacts.some((artifact) => artifact === null)
-    || sources.some((source) => source === null)) {
+    || sources === null) {
     return null;
   }
   const automation = value.automation === undefined
@@ -862,7 +879,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(automationId !== undefined ? { automationId } : {}),
     iterations: iterations as ResearchIteration[],
     artifacts: artifacts as ResearchArtifactRef[],
-    sources: sources as ResearchSourceRef[],
+    sources,
     ...(lastError !== undefined ? { lastError } : {}),
   };
 }

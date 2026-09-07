@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function seedClosedSidebar(page: Page) {
   await page.addInitScript(() => {
@@ -6,6 +6,29 @@ async function seedClosedSidebar(page: Page) {
     window.localStorage.setItem("cave:shell:nav-open", "0");
     window.localStorage.setItem("cave:shell:nav-open:source", "user");
   });
+}
+
+// Await the SETTLED panel state rather than the toggle transition:
+// aria-expanded is derived from the panel's measured width via the nav
+// Panel's onResize callback, so it converges a frame after the width does.
+// Polling the PAIR (aria state AND width) passes only once the panel has
+// stopped moving and the toggle agrees with it, which is the state a real
+// user perceives.
+async function expectNavSettled(
+  toggle: Locator,
+  navPanel: Locator,
+  expected: "open" | "closed",
+) {
+  await expect
+    .poll(async () => {
+      const expanded = await toggle.getAttribute("aria-expanded");
+      const width =
+        (await navPanel.boundingBox())?.width ?? (expected === "open" ? 0 : 1);
+      return expected === "open"
+        ? expanded === "true" && width >= 220
+        : expanded === "false" && width <= 1;
+    })
+    .toBe(true);
 }
 
 async function dispatchTouchSwipe(
@@ -51,7 +74,7 @@ test("closing navigation removes the rail and opening pushes the main panel", as
   expect(closedNav?.width ?? 1).toBeLessThanOrEqual(1);
 
   await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expectNavSettled(toggle, navPanel, "open");
   await expect(page.locator(".shell-nav")).toHaveAttribute("aria-hidden", "false");
 
   const openNav = await navPanel.boundingBox();
@@ -60,8 +83,7 @@ test("closing navigation removes the rail and opening pushes the main panel", as
   expect((openDetail?.x ?? 0) - (closedDetail?.x ?? 0)).toBeGreaterThanOrEqual(200);
 
   await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect.poll(async () => (await navPanel.boundingBox())?.width ?? 1).toBeLessThanOrEqual(1);
+  await expectNavSettled(toggle, navPanel, "closed");
 });
 
 test("the fully closed sidebar remains closed after reload", async ({ page }) => {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import { realpath, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import test from "node:test";
 
 import {
@@ -21,6 +23,8 @@ import {
   checkRecordShape,
   checkRecordValues,
   buildCaveEnvironment,
+  caveReadinessFailure,
+  createConformanceFixtureRoot,
   createRecorder,
   expectedAssertionIds,
   expectedBranchedMessages,
@@ -31,9 +35,11 @@ import {
   parseConformanceArgs,
   parseRawResponse,
   recordAuthorityTakeoverResult,
+  requestOnce,
   renderConformanceRecord,
   stopCave,
   summarizeConformance,
+  tokenlessAdminProbeExpectation,
 } from "./client-v1-conformance.mjs";
 
 // The conformance run itself needs a release build, a spare port and a couple
@@ -189,6 +195,118 @@ test("stopCave subscribes before terminating a live child and does not force-kil
   await stopCave({ child }, 1);
 
   assert.deepEqual(events, ["subscribe", "SIGTERM"]);
+});
+
+test("tokenless loopback admin probes follow the reviewed development contract", () => {
+  assert.deepEqual(
+    tokenlessAdminProbeExpectation("GET", "/admin/pairing-requests"),
+    { status: 200, kind: "success", collection: "pairingRequests" },
+  );
+  assert.deepEqual(
+    tokenlessAdminProbeExpectation("GET", "/admin/credentials"),
+    { status: 200, kind: "success", collection: "credentials" },
+  );
+  assert.deepEqual(
+    tokenlessAdminProbeExpectation(
+      "POST",
+      "/admin/pairing-requests/00000000-0000-4000-8000-000000000000/decision",
+    ),
+    { status: 404, kind: "error", code: "not_found", retryable: false },
+  );
+  assert.deepEqual(
+    tokenlessAdminProbeExpectation(
+      "DELETE",
+      "/admin/credentials/00000000-0000-4000-8000-000000000000",
+    ),
+    { status: 404, kind: "error", code: "not_found", retryable: false },
+  );
+  assert.throws(
+    () => tokenlessAdminProbeExpectation("PATCH", "/admin/credentials"),
+    /unsupported tokenless admin probe/u,
+  );
+});
+
+test("Cave readiness requires the matching discovery record after health answers", () => {
+  const origin = "http://127.0.0.1:4310";
+  const expectedPid = 4310;
+  assert.equal(
+    caveReadinessFailure({
+      healthStatus: 200,
+      discovery: null,
+      expectedPid,
+      origin,
+    }),
+    "Client v1 discovery record is not published.",
+  );
+  assert.equal(
+    caveReadinessFailure({
+      healthStatus: 200,
+      discovery: {
+        endpoint: "http://127.0.0.1:4311",
+        pid: expectedPid,
+      },
+      expectedPid,
+      origin,
+    }),
+    "Client v1 discovery endpoint does not match the listening Cave.",
+  );
+  assert.equal(
+    caveReadinessFailure({
+      healthStatus: 503,
+      discovery: { endpoint: origin, pid: expectedPid },
+      expectedPid,
+      origin,
+    }),
+    "Cave health is not ready.",
+  );
+  assert.equal(
+    caveReadinessFailure({
+      healthStatus: 200,
+      discovery: { endpoint: origin, pid: expectedPid + 1 },
+      expectedPid,
+      origin,
+    }),
+    "Client v1 discovery pid does not match the launched Cave.",
+  );
+  assert.equal(
+    caveReadinessFailure({
+      healthStatus: 200,
+      discovery: { endpoint: origin, pid: expectedPid },
+      expectedPid,
+      origin,
+    }),
+    null,
+  );
+});
+
+test("bounded readiness requests reject a stalled HTTP response", async () => {
+  const server = createServer(() => {});
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  try {
+    await assert.rejects(
+      requestOnce(`http://127.0.0.1:${address.port}`, {
+        path: "/api/client/v1/health",
+        timeoutMs: 50,
+      }),
+      /request timed out/u,
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()),
+    );
+  }
+});
+
+test("the conformance fixture root is canonical before Cave validates it", async () => {
+  const root = await createConformanceFixtureRoot();
+  try {
+    assert.equal(root, await realpath(root));
+  } finally {
+    await rm(root, { recursive: true });
+  }
 });
 
 // ── the envelope ─────────────────────────────────────────────────────────────

@@ -174,7 +174,7 @@ import {
   SettingsShell,
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { RightChatPanel } from "@/components/right-chat-panel";
@@ -216,7 +216,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
-import { RunningSessionsPopover } from "@/components/running-sessions-popover";
+import { RunningActivityPopover } from "@/components/running-activity-popover";
+import type { RunningActivityItem } from "@/lib/running-activity";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -225,7 +226,6 @@ import {
   covenRunPillSnapshot,
   subscribeCovenRunPill,
 } from "@/lib/coven-run-signal";
-import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import { fetchProjectsFromCache } from "@/lib/use-projects-cache";
@@ -271,6 +271,10 @@ import {
 } from "@/lib/workspace-tiles";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import {
+  GLOBAL_SEARCH_REQUEST_EVENT,
+  globalSearchRequestFromDetail,
+} from "@/lib/global-search-request";
 import { publishSchedulesChanged } from "@/lib/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
@@ -716,6 +720,21 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
+
+  // Relocation (cave-ychtl.6): chat/tasks/files/familiars search shortcuts
+  // focus global search with the right type: filter instead of opening a
+  // second search surface. They dispatch a named event; this is the one
+  // listener that opens the palette with the preset query.
+  useEffect(() => {
+    const onGlobalSearchRequest = (event: Event) => {
+      const query = globalSearchRequestFromDetail((event as CustomEvent).detail);
+      if (query === null) return;
+      setTopSearchQuery(query);
+      openPalette();
+    };
+    window.addEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+    return () => window.removeEventListener(GLOBAL_SEARCH_REQUEST_EVENT, onGlobalSearchRequest);
+  }, []);
   const [
     pendingCanonicalMemorySelection,
     setPendingCanonicalMemorySelection,
@@ -833,7 +852,13 @@ export function Workspace() {
       return;
     }
     if (next === "chat") {
+      const familiarSettingsPending = hasFamiliarSettingsPending();
       commitMode("chat");
+      // A Studio handoff already has a concrete nested Chat destination. Do
+      // not emit the ordinary conversation landing event after the Chat
+      // surface consumes that handoff, or it would overwrite Familiar with
+      // generic Sessions during the same mount.
+      if (familiarSettingsPending) return;
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_CONVERSATION_EVENT)), 0);
       return;
     }
@@ -1008,7 +1033,9 @@ export function Workspace() {
         // (either truly no attention ever existed, or it was already patched to
         // none by an earlier optimistic clear and tells us nothing new).
         const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
-        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+        // Guard rows that carry no attention record (e.g. minimal list mocks):
+        // missing attention reads as "none" for baseline purposes, never a crash.
+        const acceptedCanonical = acceptedRow?.attention && acceptedRow.attention.state !== "none"
           ? acceptedRow.attention
           : null;
         const baselineAttention = acceptedCanonical ??
@@ -3558,6 +3585,11 @@ export function Workspace() {
       shellRef.current?.dismissNavMobile();
       return;
     }
+    if (intent.kind === "open-href") {
+      // Global-search result actions are in-app hrefs (never filesystem paths).
+      nextRouter.push(intent.href);
+      return;
+    }
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
@@ -3837,15 +3869,6 @@ export function Workspace() {
         ? openTaskCards.length
         : openTaskCards.filter((c) => c.familiarId === activeId).length,
     [openTaskCards, activeId],
-  );
-
-  // Live daemon activity for the top bar's running-processes control: sessions
-  // whose status reads as running (shared sessionStatusTone vocabulary —
-  // running / starting / working), excluding archived rows. Derived from the
-  // same 4s-polled sessions list every other chrome badge uses.
-  const runningSessions = useMemo(
-    () => sessions.filter((s) => !s.archived_at && sessionStatusTone(s.status) === "running"),
-    [sessions],
   );
 
   // Ephemeral bridge: turn each "needs response" familiar into a transient
@@ -4366,6 +4389,8 @@ export function Workspace() {
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
         }
+        activeFamiliarId={activeId}
+        onSetActiveFamiliar={setActiveId}
         onRequestActingFamiliar={requestActingFamiliar}
         onValidateActingFamiliar={validateActingFamiliar}
         sessions={sessions}
@@ -4697,13 +4722,33 @@ export function Workspace() {
             </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              // Running processes: clicking the waveform trigger lists each
-              // live daemon session; a row jumps into that chat.
+              // Running activity: the waveform trigger opens the live activity
+              // popover — chats, Board tasks, ritual runs, Flow and Workflow
+              // runs — with direct navigation per row (cave-21rp).
               runningStatus={
-                <RunningSessionsPopover
-                  sessions={runningSessions}
+                <RunningActivityPopover
                   familiars={familiars}
-                  onOpenSession={openFamiliarSession}
+                  onOpenItem={(item: RunningActivityItem) => {
+                    switch (item.kind) {
+                      case "session":
+                        openFamiliarSession(item.targetId, item.familiarId);
+                        return;
+                      case "board-task":
+                        onPaletteIntent({ kind: "focus-card", cardId: item.targetId });
+                        return;
+                      case "automation":
+                        setMode("inbox");
+                        return;
+                      case "flow":
+                      case "workflow":
+                        // Flow/Workflow surfaces are retired; a run backed by a
+                        // live chat jumps to that chat, otherwise to Rituals.
+                        if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
+                        else setMode("inbox");
+                        return;
+                    }
+                  }}
+                  onViewAll={() => setMode("inbox")}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile

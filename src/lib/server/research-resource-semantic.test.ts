@@ -44,7 +44,14 @@ async function fixture(
   try { await operation(input); } finally {
     input.lexical.close();
     input.semanticIndex.close();
-    await rm(input.root, { recursive: true, force: true });
+    // Multi-process lock cleanup may finish asynchronously after the child exits.
+    // Give recursive removal bounded retries without hiding persistent fixture leaks.
+    await rm(input.root, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   }
 }
 

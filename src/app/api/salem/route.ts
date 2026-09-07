@@ -187,15 +187,16 @@ async function askLocalFamiliar(args: {
   try {
     const controller = new AbortController();
     const streamTimer = setTimeout(() => controller.abort(), CHAT_API_TIMEOUT_MS);
-    const res = await fetch(new URL("/api/chat/send", args.req.url), {
+    const res = await fetch(new URL("/api/chat/generate/enhance", args.req.url), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         familiarId: args.familiarId,
         prompt: args.message,
         // Ask Salem synthesis is a hidden, read-only docs generation rather
-        // than a user Chat thread. Keep it on the bounded projectless lane.
-        origin: "enhance",
+        // than a user Chat thread. The generation route mints the "enhance"
+        // provenance server-side and keeps it on the bounded projectless lane
+        // (cave-cst0g).
         permissionMode: "read",
         ...(args.model ? { modelOverride: args.model, modelOverrideScope: "next-message" } : {}),
       }),

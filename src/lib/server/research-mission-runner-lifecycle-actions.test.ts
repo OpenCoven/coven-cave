@@ -133,6 +133,55 @@ test("sources file parsing rejects malformed ledgers", () => {
   assert.throws(() => parseResearchSourcesFile('[{"id":"bad"}]'), /sources\.json source 1/);
 });
 
+// cave-10kr8. The ledger is written by an AGENT, and the iteration prompt tells
+// it to read/write sources.json without pinning a top-level shape — so a model
+// that wraps the list in `{ mission, updated, sources, … }` is following the
+// instruction. Requiring a bare array cost a whole mission: research-00b591f3
+// wrote exactly that envelope carrying 25 valid sources against a target of 12,
+// and every one was discarded, because runResearchIteration catches the throw,
+// checkpoints, and merges NOTHING. The run then reported zero sources while its
+// findings sat on disk — unsourced claims, the one output a research run must
+// not produce.
+const REAL_SOURCE = {
+  id: "S1",
+  title: "Brief independent investigation",
+  url: "https://metr.org/blog/example",
+};
+
+test("an agent-written envelope around the ledger is accepted (cave-10kr8)", () => {
+  // The exact shape the live mission wrote — sibling keys and all.
+  const envelope = JSON.stringify({
+    mission: "research-00b591f3",
+    updated: "2026-08-28T13:55:00.000Z",
+    sources: [REAL_SOURCE, { ...REAL_SOURCE, id: "S2" }],
+    iteration2_summary: "…",
+  });
+  const parsed = parseResearchSourcesFile(envelope);
+  assert.equal(parsed.length, 2, "every source in the envelope survives");
+  assert.deepEqual(parsed.map((s) => s.id), ["S1", "S2"]);
+
+  // A bare array is still the canonical form and must keep working.
+  assert.equal(parseResearchSourcesFile(JSON.stringify([REAL_SOURCE])).length, 1);
+});
+
+test("only the ENVELOPE is relaxed — a bad entry still refuses (cave-10kr8)", () => {
+  // Per-entry strictness is the part worth keeping: silently dropping evidence
+  // from a ledger would be worse than refusing to load it, because the caller
+  // cannot tell a short ledger from a filtered one.
+  assert.throws(
+    () => parseResearchSourcesFile(JSON.stringify({ sources: [REAL_SOURCE, { id: "bad" }] })),
+    /sources\.json source 2/,
+    "a malformed entry inside an envelope is still named by index",
+  );
+  // An object with no `sources` array is not an envelope, and the message says
+  // both shapes rather than only the array.
+  assert.throws(
+    () => parseResearchSourcesFile('{"sources":"nope"}'),
+    /must contain an array, or an object with a `sources` array/,
+  );
+  assert.throws(() => parseResearchSourcesFile('{"other":[]}'), /must contain an array/);
+});
+
 const NOW = new Date("2026-07-12T12:00:00.000Z");
 const RUN: FlowRunRecord = {
   id: "run-1",
@@ -1467,7 +1516,7 @@ test("an active private owner blocks lifecycle, artifact, and schedule mutations
   );
 });
 
-test("manual sources normalize, dedupe, and remain revisable", async () => {
+test("manual sources normalize, preserve same-URL versions, and remain revisable", async () => {
   let stored = checkpointMission();
   const runner = makeResearchMissionRunner(deps({
     loadMission: async () => structuredClone(stored),
@@ -1486,9 +1535,13 @@ test("manual sources normalize, dedupe, and remain revisable", async () => {
     sourceId: "manual-1",
     patch: { status: "conflicting", note: "Different target cohort" },
   });
-  assert.equal(result.sources.length, 1);
-  assert.equal(result.sources[0].status, "conflicting");
-  assert.equal(result.sources[0].note, "Different target cohort");
+  assert.equal(result.sources.length, 2);
+  assert.equal(result.sources.find((source) => source.id === "manual-1")?.status, "conflicting");
+  assert.equal(
+    result.sources.find((source) => source.id === "manual-1")?.note,
+    "Different target cohort",
+  );
+  assert.equal(result.sources.find((source) => source.id === "manual-2")?.status, "used");
 });
 
 test("attach-saved-link materializes a matching familiar's Article and remains idempotent", async () => {

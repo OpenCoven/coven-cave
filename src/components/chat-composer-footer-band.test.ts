@@ -79,18 +79,32 @@ assert.match(
   /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?modelValue=\{composerModelValue\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
   "chatContextControls is constructed once as ComposerContextChips with preserved runtime/model picker props",
 );
-// New chats (inlineComposer): cluster mounts in footer band; active chats: session header
+// The band carries the context cluster for new AND active chats (cave-zfmqm).
+// It was gated on `inlineComposer`, with active chats getting the controls in
+// the session header instead; the header is a title and its verbs now, so
+// re-introducing that gate would strand an active chat with no way to change
+// project or model. Read-only offline transcripts are the one exclusion —
+// there is nothing to compose.
 assert.match(
   source,
-  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}/,
-  "the band conditionally mounts the context cluster (inlineComposer only) and linked work",
+  /className="cave-composer-footer-band">[\s\S]*?\{!offlineReadOnly \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}/,
+  "the band mounts the context cluster for every composable chat, plus linked work",
 );
 assert.doesNotMatch(source, /<FollowUpCards|cave-chat-followups/, "the footer has no recommendation section");
-assert.match(
+// The session header carries NO context controls (cave-zfmqm) — neither the
+// inline title-row copy nor the `.cave-chat-header-context` strip beneath it.
+// Both are asserted absent so a half-removal, or a quiet reintroduction of the
+// picker toolbar onto the title row, fails here.
+assert.doesNotMatch(
   source,
-  /cave-chat-header-context">\{chatContextControls\}/,
-  "active chat mounts the context controls in the session header (.cave-chat-header-context)",
+  /contextControls=/,
+  "the session header takes no context controls",
 );
+assert.doesNotMatch(
+  source,
+  /cave-chat-header-context">/,
+  "and no below-title context strip survives",
+)
 assert.doesNotMatch(
   source.match(/<footer[\s\S]*?className="cave-composer-shell"/)?.[0] ?? "",
   /cave-chat-followups/,
@@ -193,13 +207,6 @@ assert.doesNotMatch(
   header,
   /linkedContextRow/,
   "the header never carries the linked-context strip (that always stays in the band)",
-);
-// For writable active chats the header hosts chatContextControls in
-// .cave-chat-header-context; for new chats they move to the footer band.
-assert.match(
-  source,
-  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "writable active chats mount context controls in .cave-chat-header-context inside the header",
 );
 // Interactive controls must not be nested inside MetaLine's live region —
 // the context div is placed *after* </MetaLine>, not inside it.
@@ -376,16 +383,6 @@ assert.match(
   css,
   /\.cave-context-controls \{[^}]*padding-block: calc\(var\(--ring-offset\) \+ var\(--ring-width\)\);/,
   "context controls need padding-block so overflow-y clip preserves the full focus-ring outline",
-);
-assert.match(
-  activityCss,
-  /\.cave-chat-header-context \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;/,
-  "the active header should contain context overflow without widening the pane",
-);
-assert.match(
-  transcriptCss,
-  /@media \(max-width: 767px\)[\s\S]*?\.cave-chat-header-context[\s\S]*?\.cave-context-chip \{[^}]*min-height: var\(--touch-target\);/,
-  "mobile header context controls should retain touch targets",
 );
 
 console.log("chat-composer-footer-band.test.ts: ok");

@@ -141,6 +141,22 @@ test("split panes use their container instead of generic overflow floors", () =>
   assert.match(host, /<div className="split-host__pane-body">\{primary\}<\/div>/, "legacy primary content uses the pane body class");
 });
 
+test("the browser preview pane fills its split panel instead of collapsing to a sliver (cave-lzl2e)", () => {
+  // A flex (non-grid) tile-panel laid its pane out on the row axis with no flex
+  // basis, so a narrow surface (the browser preview pane, whose toolbar is only
+  // ~120px wide) shrink-to-fit to a ~123px sliver beside dead space. The pane
+  // must claim the whole panel so the grid/flex paths cannot regress it.
+  const css = readFileSync(
+    new URL("../styles/globals/surface-chat-overlays.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    css,
+    /\.split-host__tile-panel > \.split-host__pane \{[\s\S]*?flex: 1 1 auto;[\s\S]*?width: 100%;/,
+    "tile panels fill their pane so the browser preview cannot collapse to a sliver",
+  );
+});
+
 test("surfaces size their grids by PANE, not viewport (cave-hivd)", () => {
   // In a split tile, a wide window must not force wide-viewport column counts.
   const roster = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");

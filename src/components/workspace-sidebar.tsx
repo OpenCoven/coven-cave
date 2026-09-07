@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useMultiSelect } from "@/lib/use-multi-select";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { failedTargets, type BroadcastResult } from "@/lib/chat-broadcast";
+import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import { Icon, type IconName } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
@@ -180,6 +184,14 @@ type ThreadRowProps = {
   onOpen: () => void;
   /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
   onOpenInSplit?: () => void;
+  /** Broadcast select mode (cave-g7yg6). The row becomes a checkbox and its
+   *  click picks instead of opens. Both split-pane affordances stand down —
+   *  ⌥-click and drag-to-split would otherwise fire from inside a picker. */
+  selectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  /** Transient per-row outcome after a broadcast: "sent" | "failed". */
+  broadcast?: "sent" | "failed" | null;
   onTogglePin: () => void;
   /** Archive/unarchive via the sessions PATCH (same endpoint as chat-list). */
   onToggleArchive: () => void;
@@ -203,6 +215,10 @@ function ThreadRow({
   onOpenUrl,
   onOpen,
   onOpenInSplit,
+  selectMode = false,
+  selected = false,
+  onToggleSelect,
+  broadcast = null,
   onTogglePin,
   onToggleArchive,
   archiving,
@@ -218,8 +234,8 @@ function ThreadRow({
   // reached an actual pull request, the leading slot shows the clickable
   // state-colored badge instead of the dot or heuristic icon.
   const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
-  // Archived rows (visible via the "Show archived" option) read muted, and the
-  // leading slot shows the archive glyph so they can't pass for live threads.
+  // Archived rows read muted, and the leading slot shows the archive glyph so
+  // they can't pass for live threads.
   const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
@@ -245,9 +261,20 @@ function ThreadRow({
       {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
-        aria-current={active ? "page" : undefined}
+        // Same markup contract the board and the chat list already use for
+        // select mode, so assistive tech reads one pattern across surfaces.
+        role={selectMode ? "checkbox" : undefined}
+        aria-checked={selectMode ? selected : undefined}
+        aria-current={!selectMode && active ? "page" : undefined}
         aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
         onClick={(e) => {
+          // Select mode intercepts FIRST. This row's click is overloaded —
+          // ⌥-click opens a split pane — so without this the modifier path
+          // would still fire from inside a picker.
+          if (selectMode) {
+            onToggleSelect?.();
+            return;
+          }
           // ⌥-click opens beside the current chat instead of replacing it.
           if (e.altKey && onOpenInSplit) {
             onOpenInSplit();
@@ -258,6 +285,7 @@ function ThreadRow({
         onKeyDown={(e) => {
           // ⌥↵ opens in a split pane (keyboard twin of drag-to-split); stop
           // the native button activation so onClick doesn't also fire.
+          if (selectMode) return;
           if (e.key === "Enter" && e.altKey && onOpenInSplit) {
             e.preventDefault();
             onOpenInSplit();
@@ -265,7 +293,7 @@ function ThreadRow({
         }}
         // Dragging the row onto the chat surface snaps it into a split pane
         // (chat-split-host's drop zone; same protocol as the project rail).
-        draggable={Boolean(onOpenInSplit)}
+        draggable={Boolean(onOpenInSplit) && !selectMode}
         onDragStart={(e) => {
           if (!onOpenInSplit) return;
           e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, session.id);
@@ -278,7 +306,18 @@ function ThreadRow({
         }}
         className="cnav__thread-main focus-ring"
       >
-        {prStatus ? null : leadGlyph ? (
+        {/* In select mode the leading slot IS the checkbox — the status dot,
+            PR badge and heuristic glyph all describe the thread, and none of
+            them says whether it is picked. Colour is not the only channel:
+            role=checkbox + aria-checked carry the same state (cave-g7yg6). */}
+        {selectMode ? (
+          <span
+            aria-hidden
+            className={`cnav__lead cnav__select-box${selected ? " is-on" : ""}`}
+          >
+            <Icon name="ph:check-bold" width={9} aria-hidden />
+          </span>
+        ) : prStatus ? null : leadGlyph ? (
           <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
         ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
@@ -292,7 +331,15 @@ function ThreadRow({
         <span className="cnav__thread-copy">
           <span className="cnav__thread-line">
             <span className="cnav__thread-title" title={title}>{title}</span>
-            {confirming ? null : (
+            {/* Broadcast outcome replaces the timestamp while it shows: a
+                failed target must be visible on its own row, since a
+                broadcast that half-worked and said nothing is worse than one
+                that failed outright. */}
+            {broadcast ? (
+              <span className="cnav__broadcast" data-state={broadcast}>
+                {broadcast === "sent" ? "Sent" : "Failed"}
+              </span>
+            ) : confirming ? null : (
               <span className="cnav__time">{bareTimeAt(session.updated_at || session.created_at, now)}</span>
             )}
           </span>
@@ -365,9 +412,9 @@ type PinnedThreadRowProps = {
 // with ThreadRow so the two row shapes can't render divergent attention state
 // for the same session — only the surrounding chrome differs. Same rule for
 // the runtime tick/archive semantics below: a pinned session can still be
-// running, failed, or (once "Show archived" is on) archived, so this row
-// reuses ThreadRow's own tick class and archive-glyph derivation rather than
-// re-deriving them — see cave-zs85n Task 6 gap-fix notes.
+// running or failed, so this row reuses ThreadRow's own tick class and
+// archive-glyph derivation rather than re-deriving them — see cave-zs85n
+// Task 6 gap-fix notes.
 function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
   const archived = Boolean(session.archived_at);
@@ -456,13 +503,12 @@ export function SidebarChatsSection({
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // The Organize menu that toggled this went with the old search row, so
-  // archived threads stay excluded (as /api/sessions/list already does
-  // server-side). The archive/unarchive ACTIONS on each row are untouched.
-  const showArchived = false;
-  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  // Archive visibility lives on the Sessions list (ChatList) — this rail is
+  // archive-free. /api/sessions/list already excludes archived threads
+  // server-side, so the rail never fetches or renders them; the per-row
+  // archive/unarchive ACTIONS stay (once a session is archived from the rail,
+  // the normal session refresh removes it).
   const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const normalizedSessions = useMemo(
     () => sessions.map(normalizeSessionAttention),
@@ -477,45 +523,10 @@ export function SidebarChatsSection({
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
 
-  // Archived sessions only load while "Show archived" is on; archive/unarchive
-  // bumps archiveNonce so the opt-in list refetches after each change (same
-  // idiom as the chat list's toggle).
-  useEffect(() => {
-    if (!showArchived) {
-      setArchivedRows([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Scope archived rows to the active familiar's projects, same as the
-        // live list — keeps forbidden-project sessions out of the archive view.
-        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
-        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
-        const json = await res.json().catch(() => ({ ok: false }));
-        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
-        setArchivedRows(
-          (json.sessions as SessionRow[])
-            .filter((session) => session.archived_at)
-            .map(normalizeSessionAttention),
-        );
-      } catch {
-        // keep whatever archived rows we already have
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showArchived, archiveNonce, activeFamiliarId]);
-
-  const visibleSessions = useMemo(() => {
-    let rows: SessionRow[] = normalizedSessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(normalizedSessions.map((session) => session.id));
-      rows = [...normalizedSessions, ...archivedRows.filter((session) => !seen.has(session.id))];
-    }
-    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
-  }, [normalizedSessions, showArchived, archivedRows, activeFamiliarId]);
+  const visibleSessions = useMemo(
+    () => filterVisibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
+    [normalizedSessions, activeFamiliarId],
+  );
 
   const groups = useMemo(
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
@@ -573,6 +584,51 @@ export function SidebarChatsSection({
     [recentSessions, now],
   );
 
+  // ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────
+  //
+  // `visibleThreads` is what select-all acts on and what the hook keys its
+  // reset to. It is the rows actually ON SCREEN — a section collapsed behind
+  // "Show N more" is excluded, so Select all can never pick a chat the user
+  // cannot see and then broadcast into it.
+  const visibleThreads = useMemo(() => {
+    const rows: SessionRow[] = [];
+    const seen = new Set<string>();
+    const push = (list: SessionRow[], key: string, previewed: boolean) => {
+      const shown = previewed && !showAllByKey.has(key) ? list.slice(0, THREADS_PREVIEW) : list;
+      for (const session of shown) {
+        if (seen.has(session.id)) continue;
+        seen.add(session.id);
+        rows.push(session);
+      }
+    };
+    push(pinnedSessions, "pinned", false);
+    push(attentionSessions, "attention", true);
+    for (const bucket of recentBuckets) push(bucket.sessions, `bucket:${bucket.key}`, true);
+    return rows;
+  }, [pinnedSessions, attentionSessions, recentBuckets, showAllByKey]);
+
+  const select = useMultiSelect(visibleThreads, (session) => session.id);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [broadcastState, setBroadcastState] = useState<Record<string, "sent" | "failed">>({});
+
+  // A broadcast's outcome is per row, and it clears itself: the markers say
+  // "this just happened", not "this is what this chat is". Failures are why the
+  // selection is not simply dropped — a retry must target only the failures,
+  // since nothing about a send is idempotent.
+  function applyBroadcastResults(results: BroadcastResult[]) {
+    const next: Record<string, "sent" | "failed"> = {};
+    for (const r of results) next[r.sessionId] = r.ok ? "sent" : "failed";
+    setBroadcastState(next);
+    const failures = failedTargets(results).map((t) => t.sessionId);
+    select.exit();
+    if (failures.length > 0) {
+      // Re-enter select mode holding exactly the failures, so the obvious next
+      // action — press Broadcast again — retries those and nothing else.
+      select.setSelectMode(true);
+      for (const id of failures) select.toggle(id);
+    }
+  }
+
   const togglePin = (sessionId: string) => {
     toggleStoredPinnedSession(sessionId);
   };
@@ -591,7 +647,8 @@ export function SidebarChatsSection({
   }
 
   // Archive/unarchive rides the same undo-safe sessions PATCH as the chat
-  // list; a success refreshes both the workspace poll and the opt-in list.
+  // list; a success refreshes the workspace poll so the row leaves or
+  // re-enters the live list without waiting a cycle.
   async function setSessionArchived(session: SessionRow, archived: boolean) {
     setArchivingId(session.id);
     setArchiveError(null);
@@ -606,7 +663,6 @@ export function SidebarChatsSection({
         setArchiveError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
         return;
       }
-      setArchiveNonce((n) => n + 1);
       onSessionsChanged?.();
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
@@ -623,9 +679,9 @@ export function SidebarChatsSection({
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
         {/* Title row: "Sessions" plus the rail's collapse toggle, and nothing
             else. It replaces the old search row, which also carried the
-            Organize menu. Search and "Show archived" went with it — the list
-            below is already grouped by attention and recency, and the row is
-            the rail's header, not a toolbar. */}
+            Organize menu. Search and the archived-visibility toggle went with
+            it — the list below is already grouped by attention and recency,
+            and the row is the rail's header, not a toolbar. */}
         {/* The whole row is the control, mirroring the collapsed spine — the
             icon is decoration inside it, not a nested <button> (which would be
             invalid HTML and would swallow clicks aimed at the row). */}
@@ -642,6 +698,39 @@ export function SidebarChatsSection({
             <Icon name="ph:sidebar-simple-fill" width={15} aria-hidden />
           </span>
         </button>
+        {/* Entering select mode is its own control rather than a row gesture:
+            the rows are already overloaded (⌥-click splits, drag splits), and
+            a long-press or modifier would be a fourth meaning on one target. */}
+        {!select.selectMode && visibleThreads.length > 1 ? (
+          <button
+            type="button"
+            className="cnav__select-enter focus-ring"
+            title="Select chats to broadcast a message to"
+            onClick={() => select.setSelectMode(true)}
+          >
+            <Icon name="ph:list-checks-bold" width={13} aria-hidden />
+            <span>Select</span>
+          </button>
+        ) : null}
+        {select.selectMode ? (
+          <div className="cnav__select-bar">
+            <SelectionToolbar
+              allSelected={select.allSelected(visibleThreads)}
+              count={select.selectedCount}
+              onToggleSelectAll={() => select.toggleSelectAll(visibleThreads)}
+              onCancel={select.exit}
+            >
+              <button
+                type="button"
+                className="focus-ring cnav__broadcast-open"
+                disabled={select.selectedCount === 0}
+                onClick={() => setComposerOpen(true)}
+              >
+                Broadcast
+              </button>
+            </SelectionToolbar>
+          </div>
+        ) : null}
         {deleteError ? (
           <div role="alert" className="cnav__error">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
@@ -715,6 +804,10 @@ export function SidebarChatsSection({
                           onOpenInSplit={
                             onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                           }
+                          selectMode={select.selectMode}
+                          selected={select.isSelected(session.id)}
+                          onToggleSelect={() => select.toggle(session.id)}
+                          broadcast={broadcastState[session.id] ?? null}
                           onTogglePin={() => togglePin(session.id)}
                           onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
                           archiving={archivingId !== null}
@@ -776,6 +869,10 @@ export function SidebarChatsSection({
                             onOpenInSplit={
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
                             }
+                            selectMode={select.selectMode}
+                            selected={select.isSelected(session.id)}
+                            onToggleSelect={() => select.toggle(session.id)}
+                            broadcast={broadcastState[session.id] ?? null}
                             onTogglePin={() => togglePin(session.id)}
                             onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
                             archiving={archivingId !== null}
@@ -805,6 +902,14 @@ export function SidebarChatsSection({
           </>
           </nav>
         </div>
+        {composerOpen ? (
+          <ChatBroadcastComposer
+            count={select.selectedCount}
+            targets={[...select.selectedIds]}
+            onClose={() => setComposerOpen(false)}
+            onSent={applyBroadcastResults}
+          />
+        ) : null}
     </div>
   );
 }

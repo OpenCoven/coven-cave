@@ -310,4 +310,205 @@ assert.equal(satisfiesHardConstraints(doc({ updatedAt: "2026-08-09T00:00:00Z" })
   assert.deepEqual(once, twice, "input order must not change output order");
 }
 
+/* ---------------------------------------------------------------------- */
+/* Cursors: a page token pages the SAME ordered list, never re-serving       */
+/* ---------------------------------------------------------------------- */
+
+// The first page returns a cursor; the second page starts where it stopped.
+{
+  const many = Array.from({ length: 120 }, (_, i) => doc({ id: `d${i}`, title: "widget" }));
+  const first = await runSearch({ query: query({ text: "widget" }), context: unrestricted, limit: 50, now: NOW },
+    deps([provider()], rowsFrom(many)));
+  assert.equal(first.results.length, 50);
+  assert.ok(first.cursor, "more results must yield a cursor");
+  const second = await runSearch({ query: query({ text: "widget" }), context: unrestricted, limit: 50, cursor: first.cursor, now: NOW },
+    deps([provider()], rowsFrom(many)));
+  assert.equal(second.results.length, 50);
+  const ids = new Set([...first.results, ...second.results].map((r) => r.document.id));
+  assert.equal(ids.size, 100, "cursor pages must not overlap or skip");
+  const third = await runSearch({ query: query({ text: "widget" }), context: unrestricted, limit: 50, cursor: second.cursor, now: NOW },
+    deps([provider()], rowsFrom(many)));
+  assert.equal(third.results.length, 20);
+  assert.equal(third.cursor, null, "the final page has no further cursor");
+}
+
+// A garbled cursor fails closed instead of silently re-paging.
+{
+  const out = await runSearch({ query: query({ text: "widget" }), context: unrestricted, cursor: "not-a-number", now: NOW },
+    deps([provider()], rowsFrom([doc({ title: "widget" })])));
+  assert.equal(out.ok, false);
+  assert.equal(out.code, "malformed-cursor");
+}
+
+// A cursor beyond the end of the list is an empty page, not an error.
+{
+  const out = await runSearch({ query: query({ text: "widget" }), context: unrestricted, cursor: "999", now: NOW },
+    deps([provider()], rowsFrom([doc({ title: "widget" })])));
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.results, []);
+  assert.equal(out.emptyReason, "no-matches");
+}
+
+/* ---------------------------------------------------------------------- */
+/* Abort and timeout: a fired signal stops the run and says why             */
+/* ---------------------------------------------------------------------- */
+
+// An aborted signal stops providers from starting and reports them timed out.
+{
+  let started = 0;
+  const slow = provider({ id: "tasks", collect: async () => { started += 1; return []; } });
+  const controller = new AbortController();
+  controller.abort();
+  const out = await runSearch(
+    { query: query({ text: "widget" }), context: unrestricted, now: NOW, signal: controller.signal },
+    {
+      providers: [slow],
+      readIndexed: async () => { started += 1; return { rows: [], stale: false }; },
+    },
+  );
+  assert.equal(started, 0, "an aborted request must not start providers");
+  assert.equal(out.ok, true);
+  assert.equal(out.partial, true);
+  assert.equal(out.emptyReason, "provider-unavailable");
+  assert.equal(out.diagnostics[0].code, "timeout");
+  assert.equal(out.diagnostics[0].providerId, "tasks");
+}
+
+// A provider that resolves BEFORE the deadline is collected even though the
+// signal fires later; only providers still in flight at abort time time out.
+{
+  const good = provider({ id: "tasks" });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 10);
+  const out = await runSearch(
+    { query: query({ text: "widget" }), context: unrestricted, now: NOW, signal: controller.signal },
+    {
+      providers: [good],
+      readIndexed: async () => ({ rows: rowsFrom([doc({ title: "widget" })]), stale: false }),
+    },
+  );
+  assert.equal(out.results.length, 1, "results that resolved before the deadline are returned");
+  assert.equal(out.partial, false);
+}
+
+// A provider still in flight when the deadline fires is reported as a timeout,
+// and the healthy provider's results still return.
+{
+  const good = provider({ id: "tasks" });
+  const hanging = provider({ id: "files", entityTypes: ["file"], supportedFilters: ["type"] });
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 5);
+  const out = await runSearch(
+    { query: query({ text: "widget" }), context: unrestricted, now: NOW, signal: controller.signal },
+    {
+      providers: [good, hanging],
+      readIndexed: async (p) => {
+        if (p.id === "files") {
+          // Still in flight when the deadline fires, so raceAbort rejects first.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return { rows: [], stale: false };
+        }
+        return { rows: rowsFrom([doc({ title: "widget" })]), stale: false };
+      },
+    },
+  );
+  assert.equal(out.results.length, 1, "the healthy provider still returns results");
+  assert.equal(out.partial, true);
+  assert.ok(out.diagnostics.some((d) => d.code === "timeout"), "the hung provider is reported as timed out");
+}
+
+/* ---------------------------------------------------------------------- */
+/* Warming and stale index states                                          */
+/* ---------------------------------------------------------------------- */
+
+// An index still building is reported as warming, never as ready.
+{
+  const out = await runSearch({ query: query({ text: "widget" }), context: unrestricted, now: NOW },
+    {
+      providers: [provider()],
+      readIndexed: async () => ({ rows: rowsFrom([doc({ title: "widget" })]), stale: false, warming: true }),
+    });
+  assert.equal(out.indexState, "warming");
+  assert.equal(out.results.length, 1, "warming still returns whatever is already indexed");
+}
+
+// Stale beats ready.
+{
+  const stale = await runSearch({ query: query({ text: "widget" }), context: unrestricted, now: NOW },
+    { providers: [provider()], readIndexed: async () => ({ rows: [], stale: true }) });
+  assert.equal(stale.indexState, "stale");
+}
+
+/* ---------------------------------------------------------------------- */
+/* Permission leakage: diagnostics expose ids and safe categories only      */
+/* ---------------------------------------------------------------------- */
+
+// A provider's raw error text must never reach the caller.
+{
+  const bad = provider({ id: "files", entityTypes: ["file"], supportedFilters: ["type"] });
+  const out = await runSearch({ query: query({ text: "widget" }), context: unrestricted, now: NOW },
+    {
+      providers: [bad],
+      readIndexed: async () => { throw new Error("/home/secret/.coven/creds.txt: boom"); },
+    });
+  assert.equal(out.partial, true);
+  assert.equal(out.diagnostics[0].providerId, "files");
+  assert.equal(out.diagnostics[0].code, "unavailable");
+  assert.doesNotMatch(JSON.stringify(out.diagnostics), /secret|creds|\/home/, "no path or secret leaks");
+}
+
+// A provider-supplied diagnostic message is replaced by the safe category copy.
+{
+  const noisy = provider({
+    id: "tasks",
+    kind: "live",
+    entityTypes: ["task"],
+    supportedFilters: ["type"],
+    query: async () => ({
+      documents: [],
+      diagnostics: [{ providerId: "tasks", code: "malformed-source", message: "C:/Users/timot/secret" }],
+    }),
+  });
+  const out = await runSearch({ query: query({ text: "widget" }), context: unrestricted, now: NOW },
+    { providers: [noisy], readIndexed: async () => ({ rows: [], stale: false }) });
+  assert.equal(out.diagnostics[0].code, "malformed-source");
+  assert.doesNotMatch(JSON.stringify(out.diagnostics), /Users|secret/, "provider message text is discarded");
+}
+
+// Hidden result counts do not leak: a denied document contributes no facet.
+{
+  const secret = doc({ id: "s", title: "widget", entityType: "file", projectId: "hidden" });
+  const visible = doc({ id: "v", title: "widget", entityType: "task", projectId: "p1" });
+  const restricted = { allowedProjectIds: ["p1"], allowedProjectRoots: null, familiarId: null };
+  const out = await runSearch({ query: query({ text: "widget" }), context: restricted, now: NOW },
+    deps([provider({ entityTypes: ["task", "file"] })], rowsFrom([secret, visible])));
+  assert.deepEqual(out.facets, { task: 1 }, "only permitted results are counted");
+}
+
+/* ---------------------------------------------------------------------- */
+/* Former-context boost after explicit global broadening                    */
+/* ---------------------------------------------------------------------- */
+
+// After the user removes implicit scopes, former-context matches get a small
+// boost within their tier — enough to keep local work near the top, never
+// enough to cross a tier.
+{
+  const former = doc({ id: "former", title: "widget factory", projectId: "p1", updatedAt: "2026-08-09T00:00:00Z" });
+  const other = doc({ id: "other", title: "widget plant", projectId: "p2", updatedAt: "2026-08-09T00:00:00Z" });
+  const ranked = rankResults(rowsFrom([other, former]), {
+    text: "widget", phrases: [], now: NOW,
+    formerContextProjectIds: ["p1"],
+  });
+  assert.equal(ranked[0].document.id, "former", "former-context match is boosted within its tier");
+
+  // The boost must not lift a title-prefix match over an exact title match.
+  const exact = doc({ id: "exact", title: "widget", projectId: "p2", updatedAt: "2026-08-09T00:00:00Z" });
+  const boostedPrefix = doc({ id: "prefix", title: "widget factory", projectId: "p1", updatedAt: "2026-08-09T00:00:00Z" });
+  const ranked2 = rankResults(rowsFrom([boostedPrefix, exact]), {
+    text: "widget", phrases: [], now: NOW,
+    formerContextProjectIds: ["p1"],
+  });
+  assert.equal(ranked2[0].document.id, "exact", "a tier difference beats the former-context boost");
+}
+
 console.log("search-coordinator.test.ts: ok");

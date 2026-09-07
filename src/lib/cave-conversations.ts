@@ -33,6 +33,12 @@ export type ChatTurn = {
    *  branch tip can resume the right rollout. Distinct from the conversation
    *  field of the same name (which is just the latest). */
   harnessSessionId?: string;
+  /** The ResearchMission this turn started or reports (chat /research, #4808).
+   *  Persisted as the durable link back to the run so the Research Desk can
+   *  jump into the exact conversation that started it and the inline run card
+   *  can rehydrate from the canonical mission API after a reload. Deliberately
+   *  a reference (the mission id) rather than a frozen copy of UI state. */
+  researchRunId?: string;
   role: "user" | "assistant" | "system";
   text: string;
   attachments?: import("./chat-attachments").ChatAttachment[];

@@ -22,6 +22,8 @@ import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
+export type AttestationTrustPath = "apple" | "packed-basic" | "packed-self" | "none" | "legacy";
+
 export type StoredCredential = {
   /** base64url, as it appears on the wire and in allowCredentials. */
   credentialId: string;
@@ -33,14 +35,20 @@ export type StoredCredential = {
   algorithm: number;
   signCount: number;
   aaguid: string;
-  /** Recorded, NOT verified — see cave-01v4u. */
+  /** The attestation fmt string the authenticator reported. */
   attestationFormat: string;
+  /** True only when the authenticator MODEL was proven (cave-01v4u). */
+  attestationVerified: boolean;
+  /** How the attestation statement was (or was not) verified. */
+  attestationTrustPath: AttestationTrustPath;
+  /** Epoch ms when `attestationVerified` became true, if it ever did. */
+  attestationVerifiedAt?: number;
   label: string;
   createdAt: number;
   lastUsedAt: number | null;
 };
 
-type StoreFile = { version: 1; credentials: StoredCredential[] };
+type StoreFile = { version: 1 | 2; credentials: StoredCredential[] };
 
 export function passkeyStorePath(): string {
   const override = process.env.COVEN_CAVE_PASSKEY_STORE_PATH?.trim();
@@ -48,7 +56,7 @@ export function passkeyStorePath(): string {
 }
 
 function emptyStore(): StoreFile {
-  return { version: 1, credentials: [] };
+  return { version: 2, credentials: [] };
 }
 
 function isCredential(value: unknown): value is StoredCredential {
@@ -65,6 +73,25 @@ function isCredential(value: unknown): value is StoredCredential {
   );
 }
 
+const TRUST_PATHS = new Set<AttestationTrustPath>(["apple", "packed-basic", "packed-self", "none", "legacy"]);
+
+/**
+ * Credentials written before cave-01v4u carry no attestation outcome fields;
+ * their attestation statement was discarded at registration, so they can
+ * never be re-verified. Normalize them to an honest `legacy` trust path —
+ * assertions never read attestation fields, so existing credentials keep
+ * working exactly as before.
+ */
+function normalizeCredential(value: StoredCredential): StoredCredential {
+  const trustPath = TRUST_PATHS.has(value.attestationTrustPath) ? value.attestationTrustPath : "legacy";
+  return {
+    ...value,
+    attestationVerified: value.attestationVerified === true,
+    attestationTrustPath: trustPath,
+    ...(value.attestationVerifiedAt !== undefined ? { attestationVerifiedAt: value.attestationVerifiedAt } : {}),
+  };
+}
+
 async function readStore(): Promise<StoreFile> {
   let parsed: unknown;
   try {
@@ -77,8 +104,13 @@ async function readStore(): Promise<StoreFile> {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptyStore();
   const record = parsed as Record<string, unknown>;
-  const credentials = Array.isArray(record.credentials) ? record.credentials.filter(isCredential) : [];
-  return { version: 1, credentials };
+  const credentials = Array.isArray(record.credentials)
+    ? record.credentials.filter(isCredential).map(normalizeCredential)
+    : [];
+  // Version 1 files are valid input forever: they just lack the attestation
+  // outcome fields, which normalization fills in as `legacy`.
+  const version = record.version === 1 || record.version === 2 ? record.version : 2;
+  return { version, credentials };
 }
 
 async function writeStore(store: StoreFile): Promise<void> {
@@ -120,7 +152,7 @@ export async function saveCredential(credential: StoredCredential): Promise<void
     (existing) => existing.credentialId !== credential.credentialId,
   );
   remaining.push(credential);
-  await writeStore({ version: 1, credentials: remaining });
+  await writeStore({ version: 2, credentials: remaining });
 }
 
 export async function recordCredentialUse(
@@ -150,7 +182,7 @@ export async function deleteCredential(credentialId: string): Promise<boolean> {
     (credential) => credential.credentialId !== credentialId,
   );
   if (remaining.length === store.credentials.length) return false;
-  await writeStore({ version: 1, credentials: remaining });
+  await writeStore({ version: 2, credentials: remaining });
   return true;
 }
 

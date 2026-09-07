@@ -55,6 +55,24 @@
   text-transform: uppercase;
 }
 
+/* The runs control is its own group, set apart from the view switcher: it
+   toggles an overlay, not a view (cave-25914). */
+.cal-runs-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-2);
+  border-inline-start: 1px solid var(--border-hairline);
+}
+
+/* Day only — the count that used to need a full-width band of its own. */
+.cal-runs-count {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .cal-runs-toggle.is-on {
   border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
   color: var(--accent-presence);
@@ -111,20 +129,40 @@
   pointer-events: none;
 }
 
-.cal-run-mark__tick {
-  flex: 1;
-  height: 0;
-  border-top: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+/* A projection reads left-to-right from the hour gutter: dot, name, then the
+   dashed rule as a continuation out to the edge (cave-25914). The rule used to
+   take the flexible width with the label pinned right, which put a run's time
+   and its name most of the viewport apart on a wide day.
+
+   The dot is what separates a FORECAST from a real event at a glance: events
+   are solid blocks in the lane packer, projections are a hollow tick on a
+   dashed line. Before this the only difference was the dash, and both drew in
+   the same accent. */
+.cal-run-mark__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-inline-start: 1px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  border-radius: 50%;
+  background: var(--bg-base);
 }
 
 .cal-run-mark__label {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: color-mix(in oklch, var(--accent-presence) 82%, transparent);
   font-size: var(--text-2xs);
+}
+
+.cal-run-mark__tick {
+  flex: 1;
+  height: 0;
+  border-top: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 
 /* Week view: per-day density strip. Six four-hour bands say WHEN a day's load

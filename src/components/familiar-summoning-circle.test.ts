@@ -271,6 +271,43 @@ assert.doesNotMatch(
   "vitality stays honest — no invented XP mechanics",
 );
 
+// ── Enhancement rite: vitality hints wire to their verbs (cave-mo4q) ─────────
+assert.match(
+  source,
+  /action: "chat"/,
+  "conversation hints carry a Start chat verb",
+);
+assert.match(
+  source,
+  /action: "daily-notes"/,
+  "the no-memories hint carries an Open daily notes verb",
+);
+assert.match(
+  source,
+  /vitality\.action === "chat" && onStartChat \?[\s\S]*Start chat/,
+  "the rite renders a Start chat action when the hint asks for one",
+);
+assert.match(
+  source,
+  /vitality\.action === "daily-notes" && onOpenDailyNotes \?[\s\S]*Open daily notes/,
+  "the rite renders an Open daily notes action when the hint asks for one",
+);
+assert.match(
+  source,
+  /vitalityFor\(familiar, memoryCount\)/,
+  "the rite feeds the known memory count into vitality",
+);
+assert.match(
+  source,
+  /No memories yet — open daily notes to seed its mind\./,
+  "the no-memory vitality hint points at the daily notes verb",
+);
+assert.match(
+  source,
+  /role="group"/,
+  "the vitality strip stays a labelled group so the hint action stays reachable to AT",
+);
+
 // ── A11y: trap, announcer, roles ─────────────────────────────────────────────
 assert.match(source, /useFocusTrap\(true, dialogRef, \{ onEscape: handleClose \}\)/, "the circle traps focus and closes on Escape");
 assert.match(source, /useAnnouncer\(\)/, "the circle announces through the shared live region");

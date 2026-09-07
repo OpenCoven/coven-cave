@@ -216,6 +216,43 @@ assert.match(
   "the roster does not expose a fallback-derived renown score in its tooltip",
 );
 
+// cave-mo4q: roster cards derive the growth healthLabel from the SAME stats
+// the card renders (retro state is the dashboard's — null here) and pass it
+// to the card as the status-dot + word pattern.
+assert.match(
+  source,
+  /const healthByFamiliar = useMemo\(\(\) => \{[\s\S]*deriveGrowthReport\(\{ familiar, stats: cardStats, retroState: null \}\)\.healthLabel,[\s\S]*\}, \[familiars, stats\]\);/,
+  "Roster health labels derive from deriveGrowthReport over the rendered stats",
+);
+assert.match(
+  source,
+  /healthLabel=\{healthByFamiliar\.get\(familiar\.id\) \?\? "steady"\}/,
+  "Each roster card receives its derived health label",
+);
+
+// cave-mo4q: the Enhancement Rite's "open daily notes" hint lands on the
+// familiar's Daily Notes tab — same preference registry the panel reads.
+assert.match(
+  source,
+  /const \[, setDetailTab\] = useSurfacePreference\(surfacePreferenceSpecs\.familiars\.detailTab\);/,
+  "FamiliarsView shares the detail-tab preference registry with the detail panel",
+);
+assert.match(
+  source,
+  /const openDailyNotes = useCallback\(\(id: string\) => \{[\s\S]*setEnhanceTarget\(null\);\s*setSelectedFamiliarId\(id\);\s*setViewMode\("detail"\);\s*setDetailTab\("daily-notes"\);/,
+  "Open daily notes closes the rite and opens the familiar's Daily Notes tab",
+);
+assert.match(
+  source,
+  /onOpenDailyNotes=\{openDailyNotes\}/,
+  "The summoning circle receives the daily-notes wiring",
+);
+assert.match(
+  source,
+  /memoryCount=\{[\s\S]*stats\.get\(enhanceTarget\.id\)\?\.memoryAvailability === "ready"[\s\S]*memoryCount \?\? null/,
+  "The rite learns the known memory count (null when memory is unavailable)",
+);
+
 assert.match(
   source,
   /viewMode === "detail" && selectedFamiliar/,

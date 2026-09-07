@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AvatarLightbox } from "./ui/avatar-lightbox";
 import { useProjectImages } from "@/lib/cave-project-images";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { projectMonogram, projectTint } from "@/lib/comux-projects";
@@ -20,12 +21,17 @@ export function ProjectAvatar({
   color,
   size = "md",
   className,
+  expandable,
 }: {
   name: string;
   root?: string | null;
   color?: string | null;
   size?: keyof typeof PX;
   className?: string;
+  /** When true and an uploaded image is set, clicking the avatar opens the
+   *  full-size lightbox — the same peek affordance as familiar avatars.
+   *  Monogram fallbacks stay inert: there is no image to enlarge. */
+  expandable?: boolean;
 }) {
   const images = useProjectImages();
   const image = root ? images[normalizeProjectRoot(root)] : undefined;
@@ -33,17 +39,25 @@ export function ProjectAvatar({
   // A replaced image gets a fresh chance even if the previous one failed.
   useEffect(() => setBroken(false), [image?.dataUrl]);
 
-  const classes = `project-avatar${className ? ` ${className}` : ""}`;
+  const hasImage = Boolean(image && !broken);
+  // The caller's className rides on the OUTERMOST element so flex-item
+  // utilities (e.g. shrink-0) keep applying: the tile span by default, the
+  // lightbox trigger button when expandable + an image exists.
+  const outerClass = className ? ` ${className}` : "";
   const style = {
     ["--pa-size" as string]: `${PX[size]}px`,
     ["--tile" as string]: color ?? (root ? projectTint(root) : "var(--accent-presence)"),
   };
 
-  return (
-    <span className={classes} style={style} aria-hidden="true">
-      {image && !broken ? (
+  const tile = (
+    <span
+      className={`project-avatar${expandable && hasImage ? "" : outerClass}`}
+      style={style}
+      aria-hidden={expandable && hasImage ? undefined : "true"}
+    >
+      {hasImage ? (
         <img
-          src={image.dataUrl}
+          src={image!.dataUrl}
           alt=""
           className="project-avatar__img"
           onError={() => setBroken(true)}
@@ -53,4 +67,14 @@ export function ProjectAvatar({
       )}
     </span>
   );
+
+  if (expandable && hasImage) {
+    return (
+      <AvatarLightbox src={image!.dataUrl} label={name} category="Project" triggerClassName={className}>
+        {tile}
+      </AvatarLightbox>
+    );
+  }
+
+  return tile;
 }

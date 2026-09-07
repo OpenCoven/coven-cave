@@ -376,11 +376,11 @@ The `hpke-bound-v1` protected operation list is exactly `pairing.poll`,
 `conversations.list`, `conversations.read`, and `messages.list`.
 `health.read` and `pairing.create` carry no credential and remain unbound.
 
-The four administrator operations — `pairing.admin.list`,
-`pairing.admin.decide`, `credentials.admin.list`, and
-`credentials.admin.revoke` — are explicitly excluded. Their `admin` sidecar
-credential is not a pairing secret or bearer and is never carried by this
-mechanism.
+The five administrator operations — `pairing.admin.list`,
+`pairing.admin.decide`, `credentials.admin.list`,
+`credentials.admin.revoke`, and `status.admin.read` — are explicitly
+excluded. Their `admin` sidecar credential is not a pairing secret or bearer
+and is never carried by this mechanism.
 
 The normative deterministic interoperability artifacts are:
 
@@ -408,7 +408,7 @@ one shape, so a client parses once:
   "operations": [
     "health.read", "pairing.create", "pairing.poll", "pairing.exchange",
     "pairing.admin.list", "pairing.admin.decide",
-    "credentials.admin.list", "credentials.admin.revoke",
+    "credentials.admin.list", "credentials.admin.revoke", "status.admin.read",
     "familiars.list", "projects.list",
     "conversations.list", "conversations.read", "messages.list"
   ],
@@ -492,6 +492,7 @@ contract fixture, which carries the same records — rather than by probing path
 | `pairing.admin.decide` | `POST /api/client/v1/admin/pairing-requests/:id/decision` | admin | `admin` | `none` | — | `pairing` |
 | `credentials.admin.list` | `GET /api/client/v1/admin/credentials` | admin | `admin` | `none` | — | `credentials` |
 | `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | `admin` | `none` | — | `credentials` |
+| `status.admin.read` | `GET /api/client/v1/admin/status` | admin | `admin` | `none` | — | `health` |
 | `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `familiars`, `cursors` |
 | `projects.list` | `GET /api/client/v1/projects` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `projects`, `cursors` |
 | `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations`, `cursors` |
@@ -661,7 +662,14 @@ in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 `authenticated` rather than public. That classification is a **demotion**, not a
 promotion: `proxy()` skips the mobile-access gate and returns *before* the
 sidecar-token block, so on those paths the route's own bearer check is the only
-credential check in the request. See *When the authenticated routes land*.
+check that *verifies* the credential. The proxy still demands a well-formed
+`Authorization: Bearer` presentation or the complete exact
+`hpke-bound-v1` header set first (cave-q5mwb) — presentation, not verification.
+A syntactically valid fake bearer passes the proxy and is refused by the route's
+`requireScope`; a complete bound presentation reaches the authority runtime,
+which validates and opens it before the route runs. A request presenting neither
+receives the proxy's bare `401 {"ok":false,"error":"unauthorized"}`. See *When
+the authenticated routes land*.
 
 Eight of the thirteen routes re-check the stamp in the route itself, via
 `runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the
@@ -800,13 +808,32 @@ because the whole body is public.
 - **`releaseVersion`** is the running Cave's package version. The fixture's
   `"0.0.0"` is a placeholder and never served.
 
+### Conformance-only compatibility controls
+
+Normal `pnpm build` artifacts compile this control disabled; setting a runtime
+environment variable cannot activate it. The explicit conformance build
+contract is:
+
+```bash
+pnpm build:conformance
+COVEN_CAVE_CLIENT_V1_COMPATIBILITY_PRESET=api-major pnpm start
+```
+
+The runtime selector is finite: `api-major` emits `apiVersion: "2.0"` while
+keeping `minimumClientVersion: "0.1.0"`, and `minimum-client` emits
+`apiVersion: "1.0"` with `minimumClientVersion: "999.0.0"`. An unset selector
+emits normal metadata; any other value returns HTTP 500 with the shared error
+envelope. These controls exist only to let the Phase 1 harness independently
+prove the SDK's API-major and minimum-client compatibility checks.
+
 The live inventory is **not** in `data`: `capabilities` and `operations` ride
 the envelope, here as on every other response. This is nonetheless the response
 a client reads them from, because it is the only one reachable before pairing —
 so it is the first place the declaration has to be true. See *Capability
 discovery*.
 
-**Errors:** none. The route has no failure branch of its own.
+**Errors:** normal builds have no failure branch of their own. An enabled
+conformance build returns `500 internal_error` when its selector is invalid.
 
 ### `POST /api/client/v1/pairing/requests`
 
@@ -1453,8 +1480,10 @@ All four call `requireClientV1Admin`, which:
    [the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22;
    a handler-level test cannot see it, because it never runs the proxy. The
    check in `requireClientV1Admin` is not redundant — it is what answers if the
-   admin family ever stops falling through — but it is the *second* refusal, and
-   the 503 for an unset token is the only one of its answers a caller observes.
+   admin family ever stops falling through — but it is the *second* refusal.
+   With no configured token, a verified direct-loopback development request
+   receives the proxy's per-boot marker and reaches the route; a missing marker
+   still receives the route-level 503.
 3. For **mutations only** (the decision POST and the credential DELETE),
    requires **at least one** of `Origin` and `Referer`, and requires every one
    that *is* present to be same-origin. A request carrying neither is refused;
@@ -1592,6 +1621,23 @@ characters.
 
 Unlike every other id-bearing route here, `:id` is not parsed as a UUID; it is
 matched against the store as an opaque string.
+
+### `GET /api/client/v1/admin/status`
+
+The operational state of the client v1 surface itself, for the Settings screen
+that manages it. It answers the two degraded states that otherwise exist only
+on stderr: whether the discovery record was actually published (the
+`CLIENT V1 DISABLED` boot banner), and whether the unverified-ownership waiver
+is in force (the `SECURITY WAIVER` line).
+
+**200:** `{ "data": { "status": { "discovery": { "available": true },
+"ownershipWaiver": { "granted": false } } } }`. `discovery.available` is
+false — with `reason` — when no valid discovery record for a live process is
+on disk; `ownershipWaiver.granted` is true — with `reason` — when the
+operator has set `COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP` and
+`COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON`.
+
+**Errors:** 503 / 401 as above.
 
 ## Rate limits
 
@@ -1834,12 +1880,16 @@ adding a route here.
 `CLIENT_V1_AUTHENTICATED_PATHS` now holds exactly those five paths. **Matching
 it is a demotion, not a promotion**: `proxy()` computes the ingress kind before
 the mobile-access gate, skips that gate for any client-v1 match, and returns
-before the sidecar-token block ever runs — so for a listed path the *only*
-credential check left is the one the route performs on itself. That is a sound
-trade for a route that really calls `requireScope`, and a hole for a path that
-does not exist yet: a handler landing later would inherit an exemption it never
-opted into. The list previously named thirteen Phase 2 paths against zero
-handlers, which is why it was emptied before any of them existed.
+before the sidecar-token block ever runs. The proxy still requires a
+well-formed `Authorization: Bearer` *presentation* on a listed path
+(cave-q5mwb, revived from cave-d1sjz) — presentation only, so a 12-byte fake
+`Bearer AAAA` passes it and lands on the route's own `requireScope` — which
+means for a listed path the *only* check that verifies the credential is the
+one the route performs on itself. That is a sound trade for a route that really
+calls `requireScope`, and a hole for a path that does not exist yet: a handler
+landing later would inherit an exemption it never opted into. The list
+previously named thirteen Phase 2 paths against zero handlers, which is why it
+was emptied before any of them existed.
 
 **But absence is a decision too, and it costs something.** Both of the
 client-v1-only protections described under *Reaching the API at all* are gated

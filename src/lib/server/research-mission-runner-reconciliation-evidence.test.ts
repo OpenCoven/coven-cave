@@ -408,13 +408,90 @@ test("manually attached sources survive evidence reconciliation", async () => {
     }],
   }));
   const result = await runner.reconcile(stored);
-  assert.equal(result.sources.length, 2);
+  assert.equal(result.sources.length, 3);
   const manual = result.sources.find((source) => source.id === "manual-memo");
   assert.ok(manual, "the manual-only source must survive the reconcile");
   assert.equal(manual?.status, "candidate");
-  const collided = result.sources.find((source) => source.url === "https://example.com/source");
-  assert.equal(collided?.id, "source-1", "the flow-written entry wins a url collision");
-  assert.equal(collided?.status, "used");
+  const versions = result.sources.filter(
+    (source) => source.url === "https://example.com/source",
+  );
+  assert.deepEqual(
+    versions.map((source) => source.id),
+    ["source-1", "manual-dup"],
+    "distinct source ids may intentionally share a URL",
+  );
+  assert.equal(versions[0]?.status, "used");
+  assert.equal(versions[1]?.status, "candidate");
+});
+
+test("ambiguous provider-backed source bridges fail closed", async () => {
+  let stored = checkpointMission({
+    status: "running",
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "running",
+      finishedAt: undefined,
+    }],
+    sources: [
+      {
+        id: "attached-v1",
+        title: "Attached source v1",
+        url: "https://example.com/versioned",
+        sourceType: "web",
+        status: "candidate",
+        provider: "x",
+        externalId: "version-1",
+      },
+      {
+        id: "attached-v2",
+        title: "Attached source v2",
+        url: "https://example.com/versioned",
+        sourceType: "web",
+        status: "candidate",
+        provider: "x",
+        externalId: "version-2",
+      },
+    ],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: [
+          "@@research-control",
+          '{"decision":"complete","reason":"Done","confidence":0.9}',
+          "@@research-artifacts-written",
+        ].join("\n"),
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async () => "# Complete\n",
+    readSources: async () => [{
+      id: "agent-written",
+      title: "Agent source",
+      url: "https://example.com/versioned",
+      sourceType: "web",
+      status: "used",
+    }],
+  }));
+
+  await assert.rejects(
+    () => runner.reconcile(stored),
+    /source identities are ambiguous/i,
+  );
+  assert.deepEqual(
+    stored.sources.map((source) => source.id),
+    ["attached-v1", "attached-v2"],
+    "an ambiguous ledger must not overwrite either stored identity",
+  );
 });
 
 test("one poisoned mission degrades to its stored snapshot instead of failing the list", async () => {

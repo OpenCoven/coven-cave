@@ -41,6 +41,7 @@ test("declares exactly the reviewed operation inventory, in order", () => {
     "pairing.admin.decide",
     "credentials.admin.list",
     "credentials.admin.revoke",
+    "status.admin.read",
     "familiars.list",
     "projects.list",
     "conversations.list",
@@ -205,6 +206,7 @@ test("pins every operation's credential and authority binding", () => {
       "pairing.admin.decide": { credential: "admin", binding: "none" },
       "credentials.admin.list": { credential: "admin", binding: "none" },
       "credentials.admin.revoke": { credential: "admin", binding: "none" },
+      "status.admin.read": { credential: "admin", binding: "none" },
       "familiars.list": { credential: "bearer", binding: "hpke-bound-v1" },
       "projects.list": { credential: "bearer", binding: "hpke-bound-v1" },
       "conversations.list": {

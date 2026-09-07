@@ -949,7 +949,9 @@ test("release-ios-build carries its platform selection once, at job level", asyn
     guarded.map((step) => step.name),
     [
       "Install iOS signing assets",
-      "Archive and export the iOS app",
+      "Archive the iOS app (signed, TestFlight)",
+      "Audit embedded-framework dSYM coverage",
+      "Export the iOS app to IPA",
       "Validate, upload, and confirm TestFlight processing",
       "Clean up iOS signing material",
     ],
@@ -978,7 +980,7 @@ test("release-ios-build carries its platform selection once, at job level", asyn
     );
   }
   assert.equal(
-    evaluateCondition(guarded[3].if, resuming),
+    evaluateCondition(guarded[guarded.length - 1].if, resuming),
     true,
     "signing material must be cleaned up even after a failed archive",
   );

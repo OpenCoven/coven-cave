@@ -123,7 +123,11 @@ export async function registerPasskey(
           userVerification: "required",
         },
         timeout: 60_000,
-        attestation: "none",
+        // cave-01v4u: request the attestation statement so the server can
+        // prove the authenticator MODEL (Secure Enclave) instead of trusting
+        // a client-asserted flag. Never fall back to "none" here — that would
+        // recreate the exact gap attestation verification closes.
+        attestation: "direct",
       },
     })) as PublicKeyCredential | null;
   } catch (err) {

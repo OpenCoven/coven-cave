@@ -413,7 +413,7 @@ assert.match(
 );
 assert.match(
   onChatAttentionClearBlock,
-  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?\s*CHAT_ATTENTION_UNPROVEN_SCOPE,[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
+  /const acceptedRow = baseSessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\);[\s\S]*?const acceptedCanonical = acceptedRow\?\.attention && acceptedRow\.attention\.state !== "none"[\s\S]*?\? acceptedRow\.attention[\s\S]*?: null;[\s\S]*?const baselineAttention = acceptedCanonical \?\?[\s\S]*?detail\.baselineAttention \?\?[\s\S]*?acceptedRow\?\.attention \?\?[\s\S]*?sessionsRef\.current\.find\(\(session\) => session\.id === detail\.sessionId\)\?\.attention;[\s\S]*?const recordResult = recordChatAttentionClear\([\s\S]*?baseSessionScopeKeyByIdRef\.current\.get\(detail\.sessionId\)\s*\?\?\s*CHAT_ATTENTION_UNPROVEN_SCOPE,[\s\S]*?baselineAttention[\s\S]*?baseSessionsRef\.current = clearSessionAttentionRows/,
   "workspace should prefer its own accepted canonical row over stale event fallback evidence and preserve the actual accepted request scope",
 );
 assert.match(

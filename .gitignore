@@ -148,3 +148,4 @@ __verify-chat-detail.mjs
 /.xcode-source-packages
 /.demo
 /apps/ios/CovenCave/build-*
+/OpenCoven/chat/.beads

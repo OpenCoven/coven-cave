@@ -225,6 +225,18 @@
         "scope": null
       },
       {
+        "binding": "none",
+        "credential": "admin",
+        "families": [
+          "health"
+        ],
+        "id": "status.admin.read",
+        "ingress": "admin",
+        "method": "GET",
+        "path": "/api/client/v1/admin/status",
+        "scope": null
+      },
+      {
         "binding": "hpke-bound-v1",
         "credential": "bearer",
         "families": [
@@ -379,6 +391,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -419,6 +432,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -458,6 +472,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -503,6 +518,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -537,6 +553,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",
@@ -586,6 +603,7 @@
         "pairing.admin.decide",
         "credentials.admin.list",
         "credentials.admin.revoke",
+        "status.admin.read",
         "familiars.list",
         "projects.list",
         "conversations.list",

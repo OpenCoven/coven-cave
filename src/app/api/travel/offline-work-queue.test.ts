@@ -47,15 +47,16 @@ assert.ok(
   "Flow queueing should run before daemon session spawning",
 );
 
-assert.match(automationRunRoute, /travelLocalQueueStatus\(config\)/, "Automation jobs should check travel-local authority");
-assert.match(automationRunRoute, /enqueueOfflineTravelItem\(\{[\s\S]*kind: "job"/, "Automation jobs should queue job work");
-assert.match(automationRunRoute, /status:\s*"queued"/, "Automation run history should show queued offline jobs");
-assert.match(automationRunRoute, /executor:\s*"travel-queue"/, "Automation queue responses should name the travel queue executor");
-assert.ok(
-  automationRunRoute.indexOf("const travelStatus = await travelLocalQueueStatus(config)") <
-    automationRunRoute.indexOf("startAutomationRun(auto)"),
-  "Automation queueing should run before codex exec spawning",
-);
+// cave-4990: the run route no longer enqueues offline work itself — it
+// dispatches through the Coven automations facade (runRoutine). Jobs queued by
+// an offline session replay through travel-offline-replay (which also calls
+// runRoutine), and a daemon that is still offline degrades to 503 instead of
+// falling back to codex exec.
+assert.match(automationRunRoute, /runRoutine\(id\)/, "Automation runs should dispatch through the Coven automations facade");
+assert.match(automationRunRoute, /outcome\.status === "failed"/, "Automation run failures should surface as a failed run outcome");
+assert.match(automationRunRoute, /CovenAutomationsUnavailableError[\s\S]*degraded: true[\s\S]*status: 503/, "An offline automations daemon should degrade to 503");
+assert.doesNotMatch(automationRunRoute, /startAutomationRun/, "Automation runs must not fall back to the retired Codex runner");
+assert.doesNotMatch(automationRunRoute, /enqueueOfflineTravelItem/, "The run route must not enqueue offline work — queued jobs replay through travel-offline-replay");
 
 assert.match(flows, /FlowRunStatus = "preview" \| "queued" \| "running"/, "Flow run type should include queued");
 assert.match(automationRuns, /AutomationRunStatus = "queued" \| "running"/, "Automation run type should include queued");

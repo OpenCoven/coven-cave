@@ -111,6 +111,54 @@ test("a single failed clear immediately restores its stored baseline without a l
   assert.equal(state.has("session-1"), false);
 });
 
+test("attention-less rows survive an optimistic clear and failed-settlement restore (cave-zdbij guard)", () => {
+  // Minimal list payloads (E2E mocks) carry no attention record at all. The
+  // clear path must treat missing attention as "none" instead of throwing on
+  // row.attention.state — the crash seen in cave-zdbij's E2E 1/8 shard.
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  const bare = [row({ attention: undefined as unknown as never }) as SessionRow];
+
+  const optimisticallyCleared = clearSessionAttentionRows(bare, "session-1");
+  assert.deepEqual(optimisticallyCleared[0]?.attention, NO_CHAT_ATTENTION);
+  // The clear patches rather than mutating: the input row stays attention-less.
+  assert.equal(bare[0]?.attention, undefined);
+
+  const settlement = settleChatAttentionClear(
+    state,
+    "session-1",
+    "operation-1",
+    "failed",
+    5,
+  );
+  // No attention to restore into — the row must pass through untouched.
+  const restored = applyChatAttentionSettlementToRows(
+    optimisticallyCleared,
+    settlement,
+    scopeKey,
+  );
+  assert.deepEqual(restored[0]?.attention, NO_CHAT_ATTENTION);
+});
+
+test("applyChatAttentionProjections tolerates attention-less rows with a recorded operation", () => {
+  // Once a clear with real canonical evidence is recorded for a session whose
+  // list rows never carry attention, the next poll applies projections over
+  // those bare rows — every attention read in the projection loop must treat
+  // the gap as "none" instead of dereferencing undefined.
+  const state = createChatAttentionProjectionState();
+  const scopeKey = chatAttentionProjectionScopeKey("nova");
+  recordChatAttentionClear(state, "session-1", "operation-1", scopeKey, NEEDS_ATTENTION);
+
+  const projected = applyChatAttentionProjections(
+    state,
+    [row({ attention: undefined as unknown as never }) as SessionRow],
+    2,
+    scopeKey,
+  );
+  // The live operation masks the attention-less row to an explicit none.
+  assert.equal(projected[0]?.attention.state, "none");
+});
+
 test("a failed overlapping clear remains projected to none while another operation is live", () => {
   const state = createChatAttentionProjectionState();
   const scopeKey = chatAttentionProjectionScopeKey("nova");

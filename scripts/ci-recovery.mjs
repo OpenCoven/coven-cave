@@ -320,7 +320,18 @@ async function decideRecovery(context, runs, now) {
     return { recover: true, reason: "approval_gated_run" };
   }
 
-  if (latest.status !== "queued") return { recover: false, reason: "ci_present" };
+  // `queued` and `pending` are the two "waiting to start" statuses. GitHub
+  // reports `queued` while a run waits for a runner, but a run parked behind
+  // ci.yml's concurrency group reports `pending` with ZERO jobs until the
+  // group key frees — and the key only frees when the holder's `if: always()`
+  // required job drains, which under runner queueing takes 10-15 minutes
+  // (observed on #4925: run 32632713873 pending with 0 jobs behind run
+  // 32631588451). Reading `pending` as `ci_present` made recovery decline
+  // forever for a head that was actually waiting on the group, so it must
+  // ride the same grace window and job-count checks as `queued` (cave-q7spw).
+  if (latest.status !== "queued" && latest.status !== "pending") {
+    return { recover: false, reason: "ci_present" };
+  }
   if (latest.createdAt > now - RECOVERY_GRACE_MS) {
     return { recover: false, reason: "ci_queued" };
   }

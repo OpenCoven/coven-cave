@@ -3,8 +3,13 @@ import type {
   ResearchArtifactKind,
   ResearchMission,
   ResearchMissionActionInput,
+  ResearchSourceLedgerSnapshot,
 } from "./research-missions.ts";
-import { parseResearchMission } from "./research-missions.ts";
+import {
+  parseResearchMission,
+  parseResearchSources,
+  RESEARCH_ARTIFACT_KINDS,
+} from "./research-missions.ts";
 import type { AutomationStatus } from "./codex-automations-types.ts";
 import type { ResearchAutomationScheduleInput } from "./server/research-mission-runner.ts";
 import { publishSchedulesChanged } from "./board-cache-events.ts";
@@ -30,6 +35,7 @@ export type ResearchMissionFile = {
   content: string | null;
   workspacePath: string;
   updatedAt: string;
+  sourceLedger: ResearchSourceLedgerSnapshot;
 };
 
 export type ResearchMissionFileResponse =
@@ -79,6 +85,67 @@ function parseMissionListResponse(value: unknown): ResearchMissionListResponse {
     : { ok: true, missions: missions as ResearchMission[] };
 }
 
+function failedSourceLedger(): ResearchSourceLedgerSnapshot {
+  return { state: "failed", sources: [] };
+}
+
+function parseSourceLedgerSnapshot(
+  value: unknown,
+): ResearchSourceLedgerSnapshot {
+  if (!isRecord(value)) return failedSourceLedger();
+  if (value.state === "failed") return failedSourceLedger();
+  if (value.state !== "available" && value.state !== "empty") {
+    return failedSourceLedger();
+  }
+  const sources = parseResearchSources(value.sources);
+  if (!sources) return failedSourceLedger();
+  const expectedState = sources.length > 0 ? "available" : "empty";
+  if (value.state !== expectedState) return failedSourceLedger();
+  return expectedState === "available"
+    ? { state: "available", sources }
+    : { state: "empty", sources: [] };
+}
+
+function parseMissionFileResponse(value: unknown): ResearchMissionFileResponse {
+  if (!isRecord(value) || value.ok !== true || !isRecord(value.file)) {
+    if (isRecord(value) && value.ok === false) {
+      return {
+        ok: false,
+        ...(typeof value.error === "string" ? { error: value.error } : {}),
+      };
+    }
+    return { ok: false, error: "Research file returned an invalid response" };
+  }
+  const file = value.file;
+  if (
+    typeof file.key !== "string" ||
+    typeof file.kind !== "string" ||
+    !RESEARCH_ARTIFACT_KINDS.includes(file.kind as ResearchArtifactKind) ||
+    typeof file.title !== "string" ||
+    typeof file.fileName !== "string" ||
+    typeof file.relativePath !== "string" ||
+    (file.content !== null && typeof file.content !== "string") ||
+    typeof file.workspacePath !== "string" ||
+    typeof file.updatedAt !== "string"
+  ) {
+    return { ok: false, error: "Research file returned an invalid response" };
+  }
+  return {
+    ok: true,
+    file: {
+      key: file.key,
+      kind: file.kind as ResearchArtifactKind,
+      title: file.title,
+      fileName: file.fileName,
+      relativePath: file.relativePath,
+      content: file.content as string | null,
+      workspacePath: file.workspacePath,
+      updatedAt: file.updatedAt,
+      sourceLedger: parseSourceLedgerSnapshot(file.sourceLedger),
+    },
+  };
+}
+
 export function isActiveResearchMission(mission: ResearchMission): boolean {
   return ["queued", "planning", "running"].includes(mission.status);
 }
@@ -125,7 +192,7 @@ export async function getResearchMissionFile(
     `/api/research/missions/${encodeURIComponent(missionId)}/files/${encodeURIComponent(artifactKey)}`,
     { cache: "no-store", signal },
   );
-  const data = await readJson(response) as ResearchMissionFileResponse;
+  const data = parseMissionFileResponse(await readJson(response));
   if (!data.ok) throw new Error(data.error ?? "request failed");
   return data.file;
 }

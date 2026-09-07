@@ -61,8 +61,9 @@ function chatSettingsTabFor(tab?: FamiliarStudioTab): FamiliarSettingsTab | unde
       return "projects";
     case "vault":
       return "vault";
-    case "identity":
     case "contract":
+      return "contract";
+    case "identity":
       return "identity";
     default:
       return undefined;

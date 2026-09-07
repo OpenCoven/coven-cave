@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CHAT_FOLD_FADE_TURNS,
   CHAT_FOLD_KEEP_GROUPS,
   CHAT_FOLD_MIN_HIDDEN_TURNS,
   chatFoldAriaLabel,
+  chatFoldFadedGroupIndexes,
   chatFoldLabel,
   chatTranscriptFold,
 } from "./chat-transcript-fold.ts";
@@ -84,4 +86,34 @@ test("the label never claims turns are hidden while they are on screen", () => {
   assert.equal(chatFoldAriaLabel(3, false), "Show 3 earlier turns");
   assert.equal(chatFoldAriaLabel(1, false), "Show 1 earlier turn");
   assert.equal(chatFoldAriaLabel(3, true), "Hide earlier turns");
+});
+
+test("an open or absent fold never dims anything", () => {
+  const groups = singles(20);
+  assert.equal(chatFoldFadedGroupIndexes(groups, false).size, 0, "fold open -> no fade");
+  assert.equal(chatFoldFadedGroupIndexes([], true).size, 0, "nothing visible -> no fade");
+});
+
+test("a closed fold dims the first visible turns only", () => {
+  const groups = singles(10);
+  const faded = chatFoldFadedGroupIndexes(groups, true);
+  assert.deepEqual([...faded], [0, 1], "the first two visible turns sit dimmed");
+  assert.equal(faded.size, CHAT_FOLD_FADE_TURNS);
+});
+
+test("a voice call at the head of the tail consumes its turn count as one block", () => {
+  // One 5-turn call is the first visible group: it covers the whole fade
+  // budget by itself, so nothing after it dims.
+  const groups = [call("c1", 5), ...singles(10)];
+  assert.deepEqual([...chatFoldFadedGroupIndexes(groups, true)], [0]);
+  // A 1-turn call behaves like a single: the next group dims too.
+  const short = [call("c2", 1), ...singles(10)];
+  assert.deepEqual([...chatFoldFadedGroupIndexes(short, true)], [0, 1]);
+});
+
+test("the fade budget is capped by what is actually visible", () => {
+  const groups = singles(1);
+  const faded = chatFoldFadedGroupIndexes(groups, true);
+  assert.equal(faded.size, 1, "only one turn exists to dim");
+  assert.deepEqual([...faded], [0]);
 });

@@ -171,3 +171,23 @@ assert.match(
   /grantChangeOriginLabel\(e\)/,
   "each line says where the change came from",
 );
+
+// ── Per-root read/write rollup (cave-fydri) ─────────────────────────────────
+// The grant-matrix header rolls the familiar's effective per-root levels up
+// into a read vs write line (same levels the chat runtime-scope preamble
+// annotates), so read vs write is visible at a glance.
+assert.match(
+  tab,
+  /rollupAccessLevels\(/,
+  "the tab rolls per-root levels into read vs write counts",
+);
+assert.match(
+  tab,
+  /\$\{accessibleCount\} of \$\{projects\.length\} accessible · \$\{accessRollupLabel\(accessRollup\)\}/,
+  "the matrix header shows the read/write rollup next to the accessible count",
+);
+assert.match(
+  tab,
+  /effectiveByProject\.get\(project\.id\)\?\.level \?\? null/,
+  "the rollup uses the EFFECTIVE level (direct + group union-max), matching the preamble",
+);

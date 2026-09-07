@@ -124,6 +124,13 @@ export type OrchestrationError = {
   dependencyId?: string;
 };
 
+/**
+ * The auto-application gate that rejected a Board Enhance suggestion
+ * (cave-bmcoe). Every gated suggestion must pass all three before it is
+ * written; anything failing one lands in the review queue naming it.
+ */
+export type EnrichmentGateName = "grounding" | "structural" | "non-conflict";
+
 export type CardGitHubKind = "repo" | "issue" | "pr" | "discussion" | "review_request" | "notification";
 
 export type CardGitHubLink = {
@@ -168,6 +175,8 @@ export type BoardAgenticProposalError = {
   field?: "dependencies" | "primaryBlockerId" | "primaryBlockerPinned" | "nextStep";
   dependencyId?: string;
   message: string;
+  /** The auto-application gate that produced this error, when gated (cave-bmcoe). */
+  gate?: EnrichmentGateName;
 };
 
 export type BoardAgenticEvidenceResolution = {

@@ -68,10 +68,30 @@ assert.match(
   /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail\s*\{[^}]*border:\s*1px solid var\(--border-hairline\);[^}]*border-radius:\s*var\(--radius-panel\);[^}]*box-shadow:/,
   "desktop main content should read as a rounded elevated panel",
 );
-assert.doesNotMatch(
+// The sidepanel now gets the SAME inset treatment as the main content: a
+// tokenized margin pulls it off the shell floor, and the hairline border,
+// rounded corners, and elevation make it read as a sibling card around the
+// content rather than flush edge-to-edge. This inverts the older "nav stays
+// flush" contract — the two can never pass together.
+assert.match(
   shellCss,
-  /\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*margin:/,
-  "expanded navigation should sit on the shell floor instead of floating as a competing card",
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*margin:\s*var\(--space-2\);/,
+  "desktop sidepanel should keep its inset margin around the main content",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*border:\s*1px solid var\(--border-hairline\);/,
+  "desktop sidepanel should keep its hairline border",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*border-radius:\s*var\(--radius-panel\);/,
+  "desktop sidepanel should keep its rounded corners",
+);
+assert.match(
+  shellCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-nav-panel > \.shell-nav:not\(\.shell-nav--rail\)\s*\{[^}]*box-shadow:/,
+  "desktop sidepanel should keep its elevation",
 );
 assert.match(
   responsiveCss,
@@ -85,12 +105,13 @@ assert.match(
 );
 
 // Carried over from sidebar-floating-edge.test.ts, which this file replaced.
-// That test encoded the older "Dia-style floating sidebar edge" contract, which
-// the inset layout deliberately reversed — its central assertion is the exact
-// negation of the doesNotMatch above, so the two could never pass together. Most
-// of it went with the design, but these two claims are orthogonal to whether the
-// sidebar floats or sits flush, still hold, and were covered nowhere else. They
-// are kept so retiring the obsolete file is not a silent loss of coverage.
+// That test encoded the "Dia-style floating sidebar edge" contract. The inset
+// layout reversed it (sidebar flush, content elevated), and this bead
+// (cave-x1hk6) restores the inset sidepanel as a SIBLING of the elevated
+// content — both float on the shell floor now. These two claims are orthogonal
+// to whether the expanded sidebar floats or sits flush, still hold, and were
+// covered nowhere else. They are kept so retiring the obsolete file is not a
+// silent loss of coverage.
 // Whitespace-tolerant on purpose. These came over with exact-spacing regexes,
 // which is a real hazard for the negative one below: if a reformat turned
 // `.shell-nav--rail {` into `.shell-nav--rail{`, the pattern would stop matching

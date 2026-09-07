@@ -130,6 +130,7 @@ export function OverflowMenu({
         size={size}
         className={["focus-ring", className ?? ""].filter(Boolean).join(" ")}
         aria-label={ariaLabel}
+        title={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         // `active` drives the pressed visual; aria-expanded is the correct

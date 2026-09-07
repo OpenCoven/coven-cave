@@ -45,7 +45,16 @@ assert.match(
   /<ComposerContextChips[\s\S]*showProject=\{false\}/,
   "Home does not duplicate the project-primary rail selector",
 );
-assert.doesNotMatch(source, /FamiliarQuickSwitch/, "Home does not own familiar switching");
+assert.match(
+  source,
+  /home-composer-familiar-context[\s\S]*?<FamiliarQuickSwitch[\s\S]*?activeFamiliarId=\{activeFamiliarId\}[\s\S]*?onSelectFamiliar=\{\(id\) => \{\s*if \(id\) onSetActiveFamiliar\(id\);\s*\}\}[\s\S]*?labeled[\s\S]*?singleRequired[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
+  "Home renders the shared familiar selector in a full-width context row above the Chat/Task destination tabs",
+);
+assert.match(
+  source,
+  /home-composer-toolbar__left[\s\S]*?<ComposerContextChips[\s\S]*?<\/div>/,
+  "the footer context cluster still carries project/model and no longer owns familiar selection",
+);
 assert.doesNotMatch(source, /projectLaunchReady|projectLaunchMessage/, "shell owns launch eligibility");
 assert.match(
   workspaceSource,

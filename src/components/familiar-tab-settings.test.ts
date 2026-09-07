@@ -39,6 +39,13 @@ assert.match(settings, /localDaemonReady/);
 assert.match(settings, /allFamiliars/);
 assert.match(settings, /<Tabs<FamiliarSettingsTab>/);
 assert.match(settings, /initialTab\?: FamiliarSettingsTab/);
+assert.match(settings, /const displayedTab = tab === "contract" \? "identity" : tab;/);
+assert.match(
+  settings,
+  /tab !== "contract"[\s\S]*?familiar-studio-grimoire[\s\S]*?grimoire\?\.focus\(\{ preventScroll: true \}\)/,
+  "the contract handoff focuses the existing Grimoire section for keyboard users",
+);
+assert.match(settings, /tab === "identity" \|\| tab === "contract"/);
 assert.match(
   settings,
   /useState<FamiliarSettingsTab>\(\s*initialTab && initialTab !== "projects" \? initialTab : "identity",?\s*\)/,

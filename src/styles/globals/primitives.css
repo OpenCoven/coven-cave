@@ -1846,6 +1846,26 @@ html[data-backdrop-on] .glass-overlay {
   font-size: var(--text-base);
   line-height: 1.65;
 }
+/* ---- AvatarLightbox trigger -------------------------------- */
+/* Shared reset for the "click to enlarge" avatar button (AvatarLightbox). The
+   caller owns the inline avatar inside; this strips all button chrome so the
+   avatar looks identical whether or not it is expandable, and only adds the
+   zoom cursor. Focus styling comes from the composed .focus-ring utility. */
+.cave-avatar-lightbox-trigger {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 0;
+  border-radius: inherit;
+  cursor: zoom-in;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* Shared project identity tile (ProjectAvatar): uploaded image or a tinted
    monogram, serving every surface. Size comes from --pa-size, hue from
    --tile (projectTint / project.color). */

@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon as IconifyIcon, addCollection } from "@iconify/react";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 // Defaults, inferred-role glyphs, and summoning choices render immediately
 // from this ~10 KiB collection. The ~638 KiB searchable picker catalogue is a
 // separate async chunk and is only fetched when an uncommon selected glyph or
@@ -19,6 +19,12 @@ const CORE_GLYPH_NAMES = new Set(
 
 let fullGlyphNames: Set<string> | null = null;
 let fullCatalogPromise: Promise<Set<string>> | null = null;
+const fullCatalogListeners = new Set<() => void>();
+
+/** Tell every subscribed FamiliarGlyph that the offline catalogue landed. */
+function notifyFullCatalogListeners() {
+  for (const listener of fullCatalogListeners) listener();
+}
 
 /** Register the full offline catalogue once, shared by every uncommon glyph. */
 export function loadFullFamiliarGlyphCatalog(): Promise<Set<string>> {
@@ -33,6 +39,10 @@ export function loadFullFamiliarGlyphCatalog(): Promise<Set<string>> {
         );
         return fullGlyphNames;
       })
+      .then((names) => {
+        notifyFullCatalogListeners();
+        return names;
+      })
       .catch((error) => {
         fullCatalogPromise = null;
         throw error;
@@ -41,9 +51,30 @@ export function loadFullFamiliarGlyphCatalog(): Promise<Set<string>> {
   return fullCatalogPromise;
 }
 
+// The loaded-name set is delivered through useSyncExternalStore rather than a
+// per-instance setState bump: a setter whose value the render never reads is
+// exactly the shape the React Compiler memoizes away, which left every mounted
+// glyph stuck on the default fallback after the catalogue loaded (issue #5192 —
+// the Familiar identity picker rendered ~788 of 800 entries as the same
+// sparkle). A store subscription re-renders through React itself, so the
+// compiler cannot skip it.
+function subscribeFullCatalog(onStoreChange: () => void): () => void {
+  fullCatalogListeners.add(onStoreChange);
+  return () => {
+    fullCatalogListeners.delete(onStoreChange);
+  };
+}
+
+function getFullCatalogSnapshot(): Set<string> | null {
+  return fullGlyphNames;
+}
+
 /** Never hand Iconify an unavailable name: it renders no placeholder itself. */
-function renderableGlyphName(name: string): string {
-  return CORE_GLYPH_NAMES.has(name) || fullGlyphNames?.has(name)
+function renderableGlyphName(
+  name: string,
+  fullCatalogNames: Set<string> | null,
+): string {
+  return CORE_GLYPH_NAMES.has(name) || fullCatalogNames?.has(name)
     ? name
     : DEFAULT_FAMILIAR_GLYPH.name;
 }
@@ -85,22 +116,18 @@ type Props = {
 
 export function FamiliarGlyph({ glyph, size = "md", className, title }: Props) {
   const px = SIZE_PX[size];
-  const [, markCatalogLoaded] = useState(0);
-  const needsFullCatalog = !CORE_GLYPH_NAMES.has(glyph.name) && !fullGlyphNames;
+  const fullCatalogNames = useSyncExternalStore(
+    subscribeFullCatalog,
+    getFullCatalogSnapshot,
+    getFullCatalogSnapshot,
+  );
+  const needsFullCatalog = !CORE_GLYPH_NAMES.has(glyph.name) && !fullCatalogNames;
 
   useEffect(() => {
     if (!needsFullCatalog) return;
-    let active = true;
-    void loadFullFamiliarGlyphCatalog()
-      .then(() => {
-        if (active) markCatalogLoaded((revision) => revision + 1);
-      })
-      .catch(() => {
-        // Keep the guaranteed core fallback when a lazy chunk cannot load.
-      });
-    return () => {
-      active = false;
-    };
+    void loadFullFamiliarGlyphCatalog().catch(() => {
+      // Keep the guaranteed core fallback when a lazy chunk cannot load.
+    });
   }, [needsFullCatalog, glyph.name]);
 
   ensureCoreRegistered();
@@ -110,7 +137,7 @@ export function FamiliarGlyph({ glyph, size = "md", className, title }: Props) {
       title={title}
     >
       <IconifyIcon
-        icon={renderableGlyphName(glyph.name)}
+        icon={renderableGlyphName(glyph.name, fullCatalogNames)}
         width={px}
         height={px}
         aria-label={title}

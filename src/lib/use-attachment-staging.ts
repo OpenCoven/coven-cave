@@ -81,9 +81,12 @@ export function useAttachmentStaging(opts?: {
 
   // Paste-to-attach: clipboard files (screenshots, copied files) win over any
   // text payload riding along. Only preventDefault when files were actually
-  // consumed so a plain-text paste is untouched.
+  // consumed so a plain-text paste is untouched. Check the advertised type
+  // first: Windows WebView can make touching clipboard file items on a
+  // text-only paste synchronous, while a real file paste advertises `Files`.
   const handlePaste = useCallback(
     (e: ClipboardEvent) => {
+      if (!hasDraggedFiles(e.clipboardData.types)) return;
       const pastedFiles = Array.from(e.clipboardData.items)
         .filter((item) => item.kind === "file")
         .map((item) => item.getAsFile())

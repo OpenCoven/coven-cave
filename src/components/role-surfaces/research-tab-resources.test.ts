@@ -162,6 +162,24 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
 });
 
+test("browser preview keeps rollout availability separate from Context Pack consent", () => {
+  assert.match(
+    source,
+    /remoteContentRolloutEnabled=\{caveResearchRemoteContent\(\)\}/,
+    "the public flag is passed only as rollout availability",
+  );
+  assert.match(
+    source,
+    /contextPackConsent=\{undefined\}/,
+    "Resources fails closed while it has no authoritative explicit pack selection",
+  );
+  assert.doesNotMatch(
+    source,
+    /allowRemoteContent=\{caveResearchRemoteContent\(\)\}/,
+    "the rollout flag must never be wired directly as consent",
+  );
+});
+
 test("the paper reader opens directly into a near-bezelless focus mode", () => {
   assert.match(
     source,

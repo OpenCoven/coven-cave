@@ -28,3 +28,12 @@ test("download builds a Blob and revokes the object URL", () => {
 test("exports the workspace-path fetcher for the desk summary", () => {
   assert.match(source, /export async function fetchResearchWorkspacePath/);
 });
+
+test("reader receives the file-backed source ledger and can refresh it", () => {
+  assert.match(source, /sourceLedger=\{readerFile\.sourceLedger\}/);
+  assert.match(source, /onRetrySources=\{retryReaderSources\}/);
+  assert.match(
+    source,
+    /setReaderFile\(file\)[\s\S]*?return file\.sourceLedger/,
+  );
+});

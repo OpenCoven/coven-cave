@@ -98,8 +98,8 @@ assert.match(
 
 assert.match(
   source,
-  /minimumVersion: "0\.2\.5"/,
-  "coven CLI compatibility floor requires the released maintenance protocol",
+  /minimumVersion: "0\.4\.0"/,
+  "coven CLI compatibility floor requires the supervised research protocol",
 );
 
 assert.match(

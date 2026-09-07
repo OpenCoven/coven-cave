@@ -42,7 +42,7 @@ assert.match(
 
 assert.match(
   chatView,
-  /onOpenReader: \{ openReader\(text: \$0, familiar: message\.familiarId\.flatMap\(app\.familiar\)\) \}/,
+  /let bubbleFamiliar = message\.familiarId\.flatMap\(app\.familiar\)\s*\n\s*let bubbleOpenReader: \(\(String\) -> Void\)\? = \{\s*\n\s*openReader\(text: \$0, familiar: bubbleFamiliar\)/,
   "ChatView should wire assistant messages into the reader presenter",
 );
 

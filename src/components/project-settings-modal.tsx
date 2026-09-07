@@ -194,7 +194,7 @@ export function ProjectSettingsModal({
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          <ProjectAvatar name={project.name} root={project.root} size="xl" />
+          <ProjectAvatar name={project.name} root={project.root} size="xl" expandable />
           <div className="min-w-0">
             <div className="text-[length:var(--text-sm)] text-foreground">Project icon</div>
             <p className="text-xs text-muted-foreground">

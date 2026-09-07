@@ -142,13 +142,15 @@ function TrapProbe({
   probeId,
   active,
   onEscape,
+  restoreFocus,
 }: {
   probeId: string;
   active: boolean;
   onEscape: () => void;
+  restoreFocus?: () => boolean;
 }) {
   const containerRef = useRef<unknown>(null);
-  useFocusTrap(active, containerRef as never, { onEscape });
+  useFocusTrap(active, containerRef as never, { onEscape, restoreFocus });
   return <div data-probe-id={probeId} ref={containerRef as never} />;
 }
 
@@ -170,6 +172,44 @@ afterEach(() => {
 });
 
 describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)", () => {
+  test("a late-bound gate suppresses focus restoration during a direct layer transition", () => {
+    const activeHolder: { current: FakeElement | null } = { current: null };
+    const win = makeWindowStub();
+    restoreGlobals = stubDomGlobals(activeHolder, win);
+
+    const trigger = makeElement("trigger", activeHolder);
+    const dialogControl = makeElement("dialog-control", activeHolder);
+    const container = makeContainer([dialogControl], activeHolder);
+    let shouldRestore = true;
+
+    activeHolder.current = trigger;
+    act(() => {
+      renderer = create(
+        <TrapProbe
+          probeId="dialog"
+          active
+          onEscape={() => {}}
+          restoreFocus={() => shouldRestore}
+        />,
+        { createNodeMock: () => container },
+      );
+    });
+    expect(activeHolder.current).toBe(dialogControl);
+
+    shouldRestore = false;
+    act(() => {
+      renderer!.update(
+        <TrapProbe
+          probeId="dialog"
+          active={false}
+          onEscape={() => {}}
+          restoreFocus={() => shouldRestore}
+        />,
+      );
+    });
+    expect(activeHolder.current).toBe(dialogControl);
+  });
+
   test("Escape closes only the topmost (child) trap while both are active, then the parent resumes", () => {
     const activeHolder: { current: FakeElement | null } = { current: null };
     const win = makeWindowStub();

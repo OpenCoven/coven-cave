@@ -98,6 +98,7 @@ export const CLIENT_V1_OPERATIONS = freezeReadonlyArray([
   "pairing.admin.decide",
   "credentials.admin.list",
   "credentials.admin.revoke",
+  "status.admin.read",
   "familiars.list",
   "projects.list",
   "conversations.list",

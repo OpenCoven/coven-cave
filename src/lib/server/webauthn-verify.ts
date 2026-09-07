@@ -22,9 +22,16 @@
 //     synced), so a zero counter is accepted rather than treated as a clone
 //     signal — see checkSignCount.
 
-import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  verify as cryptoVerify,
+  X509Certificate,
+  type KeyObject,
+} from "node:crypto";
 
 import { decodeCbor, decodeCborItem, CborError, type CborValue } from "./webauthn-cbor.ts";
+import { APPLE_WEB_AUTHN_ROOTS, PACKED_WEB_AUTHN_ROOTS, type PinnedRoot } from "./webauthn-roots.ts";
 
 export class WebAuthnError extends Error {
   readonly reason: WebAuthnFailureReason;
@@ -45,7 +52,8 @@ export type WebAuthnFailureReason =
   | "user-verification"
   | "algorithm"
   | "signature"
-  | "counter";
+  | "counter"
+  | "attestation";
 
 // COSE algorithm identifiers (IANA). ES256 is what every Apple platform
 // authenticator produces; the other two are here so a hardware key or an
@@ -337,17 +345,44 @@ export type RegistrationResult = {
   signCount: number;
   aaguid: Uint8Array;
   attestationFormat: string;
+  /** The cryptographically-derived attestation outcome (cave-01v4u). */
+  attestation: AttestationOutcome;
   backupEligible: boolean;
   backedUp: boolean;
 };
 
-export function verifyRegistration(input: {
-  clientDataJSON: Uint8Array;
-  attestationObject: Uint8Array;
-  expectedChallenge: string;
-  expectedOrigin: string;
-  expectedRpId: string;
-}): RegistrationResult {
+export type AttestationTrustPath = "apple" | "packed-basic" | "packed-self" | "none" | "legacy";
+
+export type AttestationOutcome = {
+  format: string;
+  /** True only when the authenticator MODEL was proven (chain to a pinned root). */
+  verified: boolean;
+  trustPath: AttestationTrustPath;
+};
+
+export type RegistrationAttestationPolicy = {
+  /**
+   * When true, `fmt === "none"` is accepted and recorded as model-unproven
+   * (`trustPath: "none"`). The ceremony grants this only to the local loopback
+   * peer, where "someone at this machine" is already the trust boundary.
+   */
+  allowNone: boolean;
+  /** Test seam: override the Apple trust anchors (defaults to production roots). */
+  appleRoots?: readonly PinnedRoot[];
+  /** Test seam: override the packed trust anchors (defaults to production roots). */
+  packedRoots?: readonly PinnedRoot[];
+};
+
+export function verifyRegistration(
+  input: {
+    clientDataJSON: Uint8Array;
+    attestationObject: Uint8Array;
+    expectedChallenge: string;
+    expectedOrigin: string;
+    expectedRpId: string;
+  },
+  policy: RegistrationAttestationPolicy = { allowNone: false },
+): RegistrationResult {
   const clientData = parseClientData(input.clientDataJSON);
   checkClientData(clientData, {
     expectedType: "webauthn.create",
@@ -381,14 +416,20 @@ export function verifyRegistration(input: {
     throw new WebAuthnError("malformed", "registration carries no attested credential data");
   }
 
-  // NOTE: the attestation STATEMENT is recorded but not cryptographically
-  // verified. Doing so means walking a certificate chain to Apple's or the
-  // vendor's root, which proves the authenticator MODEL. Here the binding that
-  // carries the authorization weight is the tailnet node (cave-zm6pn) plus the
-  // UV flag, and registration is already reachable only from an allowlisted
-  // device. Recording `fmt` keeps the gap visible in stored state instead of
-  // implying a check that did not happen. Follow-up: cave-01v4u.
   const { algorithm, publicKey } = coseKeyToPublicKey(authData.attestedCredential.coseKey);
+  const clientDataHash = sha256(input.clientDataJSON);
+
+  const outcome = verifyAttestationStatement({
+    format,
+    attStmt: attestation.get("attStmt"),
+    authData: rawAuthData,
+    clientDataHash,
+    algorithm,
+    credentialPublicKey: publicKey,
+    allowNone: policy.allowNone,
+    appleRoots: policy.appleRoots ?? APPLE_WEB_AUTHN_ROOTS,
+    packedRoots: policy.packedRoots ?? PACKED_WEB_AUTHN_ROOTS,
+  });
 
   return {
     credentialId: authData.attestedCredential.credentialId,
@@ -397,9 +438,350 @@ export function verifyRegistration(input: {
     signCount: authData.signCount,
     aaguid: authData.attestedCredential.aaguid,
     attestationFormat: format,
+    attestation: outcome,
     backupEligible: authData.flags.backupEligible,
     backedUp: authData.flags.backedUp,
   };
+}
+
+// ─── attestation statement verification (cave-01v4u) ────────────────────────
+//
+// The attestation statement proves the authenticator MODEL: fmt "apple" chains
+// to the Apple WebAuthn Root CA (Secure Enclave), fmt "packed" either chains to
+// a pinned vendor root or self-attests (model unproven), and fmt "none" is
+// refused for new remote registrations. Verification is fully offline — no
+// OCSP/CRL/AIA — and every parse failure fails closed.
+
+// 1.2.840.113635.100.8.2 — Apple's anonymous-attestation nonce extension.
+const APPLE_ANONYMOUS_ATTESTATION_NONCE_OID = Uint8Array.from([
+  0x2a, 0x86, 0x48, 0x86, 0xf7, 0x63, 0x64, 0x08, 0x02,
+]);
+
+const MAX_X5C_CERTS = 5;
+const MAX_CERT_DER_BYTES = 16 * 1024;
+
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+/**
+ * Read one definite-length DER TLV at `offset`. Returns null on truncation or
+ * a non-definite (indefinite) length — this walker only ever reads certs we
+ * are about to trust, so anything it cannot parse exactly is refused.
+ */
+function readDerTlv(
+  bytes: Uint8Array,
+  offset: number,
+): { tag: number; headerEnd: number; contentEnd: number } | null {
+  if (offset >= bytes.length) return null;
+  const tag = bytes[offset];
+  let cursor = offset + 1;
+  if (cursor >= bytes.length) return null;
+  const first = bytes[cursor];
+  cursor += 1;
+  let length: number;
+  if (first < 0x80) {
+    length = first;
+  } else {
+    const lengthBytes = first & 0x7f;
+    if (lengthBytes === 0 || lengthBytes > 4 || cursor + lengthBytes > bytes.length) return null;
+    length = 0;
+    for (let i = 0; i < lengthBytes; i += 1) length = length * 256 + bytes[cursor + i];
+    cursor += lengthBytes;
+  }
+  if (cursor + length > bytes.length) return null;
+  return { tag, headerEnd: cursor, contentEnd: cursor + length };
+}
+
+/**
+ * Locate the Apple anonymous-attestation nonce (extension OID
+ * 1.2.840.113635.100.8.2) inside a credential certificate. X509Certificate does
+ * not expose arbitrary extensions, so this walks the DER itself: Certificate →
+ * tbsCertificate → [3] EXPLICIT extensions → extnValue OCTET STRING that wraps
+ * a second OCTET STRING holding the 32 nonce bytes. Returns null for anything
+ * it does not fully understand.
+ */
+export function appleNonceExtension(cert: X509Certificate): Uint8Array | null {
+  const der = cert.raw;
+  const certificate = readDerTlv(der, 0);
+  if (!certificate || certificate.tag !== 0x30) return null;
+  const tbs = readDerTlv(der, certificate.headerEnd);
+  if (!tbs || tbs.tag !== 0x30) return null;
+  const tbsContent = der.subarray(tbs.headerEnd, tbs.contentEnd);
+
+  // tbsCertificate fields in order: [0] version?, serial, signature, issuer,
+  // validity, subject, subjectPublicKeyInfo, [1]/[2] unique ids?, [3] extensions.
+  let offset = 0;
+  while (offset < tbsContent.length) {
+    const field = readDerTlv(tbsContent, offset);
+    if (!field) return null;
+    if (field.tag !== 0xa3) {
+      offset = field.contentEnd;
+      continue;
+    }
+    // [3] EXPLICIT extensions: content is a SEQUENCE OF Extension.
+    const extensions = readDerTlv(tbsContent, field.headerEnd);
+    if (!extensions || extensions.tag !== 0x30) return null;
+    const sequence = tbsContent.subarray(extensions.headerEnd, extensions.contentEnd);
+    let extensionOffset = 0;
+    while (extensionOffset < sequence.length) {
+      const extension = readDerTlv(sequence, extensionOffset);
+      if (!extension || extension.tag !== 0x30) return null;
+      const body = sequence.subarray(extension.headerEnd, extension.contentEnd);
+      const oid = readDerTlv(body, 0);
+      if (!oid || oid.tag !== 0x06) return null;
+      let bodyOffset = oid.contentEnd;
+      const maybeCritical = readDerTlv(body, bodyOffset);
+      if (maybeCritical && maybeCritical.tag === 0x01) bodyOffset = maybeCritical.contentEnd;
+      const value = readDerTlv(body, bodyOffset);
+      if (!value || value.tag !== 0x04) return null;
+      if (equalBytes(body.subarray(oid.headerEnd, oid.contentEnd), APPLE_ANONYMOUS_ATTESTATION_NONCE_OID)) {
+        // The extension value wraps the nonce bytes. Apple's real encoding is
+        // SEQUENCE { [1] EXPLICIT { OCTET STRING(32) } } (30 24 a1 22 04 20 …),
+        // so descend 0x30 → 0xa1 → 0x04 before reading the 32 bytes. A bare
+        // OCTET STRING and the tagless SEQUENCE { OCTET STRING(32) } variant
+        // (generated fixtures) are also accepted.
+        const outer = body.subarray(value.headerEnd, value.contentEnd);
+        let cursor = outer;
+        let inner = readDerTlv(cursor, 0);
+        if (inner && inner.tag === 0x30) {
+          cursor = cursor.subarray(inner.headerEnd, inner.contentEnd);
+          inner = readDerTlv(cursor, 0);
+          if (inner && inner.tag === 0xa1) {
+            cursor = cursor.subarray(inner.headerEnd, inner.contentEnd);
+            inner = readDerTlv(cursor, 0);
+          }
+        }
+        if (inner && inner.tag === 0x04) {
+          return cursor.subarray(inner.headerEnd, inner.contentEnd);
+        }
+        return null;
+      }
+      extensionOffset = extension.contentEnd;
+    }
+    return null;
+  }
+  return null;
+}
+
+function parseX5c(attStmt: Map<CborValue, CborValue>): X509Certificate[] {
+  const raw = attStmt.get("x5c");
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_X5C_CERTS) {
+    throw new WebAuthnError("attestation", "attestation x5c is missing or exceeds 5 certificates");
+  }
+  const certs: X509Certificate[] = [];
+  for (const entry of raw) {
+    if (!(entry instanceof Uint8Array) || entry.length === 0 || entry.length > MAX_CERT_DER_BYTES) {
+      throw new WebAuthnError("attestation", "attestation x5c contains an invalid certificate");
+    }
+    try {
+      certs.push(new X509Certificate(entry));
+    } catch {
+      throw new WebAuthnError("attestation", "attestation x5c contains an unparsable certificate");
+    }
+  }
+  return certs;
+}
+
+/**
+ * Validate `certs` (leaf first) against pinned roots. Per the WebAuthn spec,
+ * x5c runs "up to but not including" the root, so the chain's top certificate
+ * must be ISSUED BY one of the pinned roots — the roots themselves are trusted
+ * by exact equality, never by self-signature. All certificates must be inside
+ * their validity window, and every non-leaf must be a CA.
+ */
+export function validateChainToPinnedRoot(
+  certs: X509Certificate[],
+  roots: readonly PinnedRoot[],
+): boolean {
+  if (certs.length === 0 || roots.length === 0) return false;
+  const now = Date.now();
+  const inWindow = (cert: X509Certificate): boolean => {
+    const from = Date.parse(cert.validFrom);
+    const to = Date.parse(cert.validTo);
+    return Number.isFinite(from) && Number.isFinite(to) && now >= from && now <= to;
+  };
+  for (const cert of certs) {
+    if (!inWindow(cert)) return false;
+  }
+  for (let index = 0; index < certs.length - 1; index += 1) {
+    const child = certs[index];
+    const parent = certs[index + 1];
+    if (!parent.ca) return false;
+    if (!child.checkIssued(parent)) return false;
+    try {
+      if (!child.verify(parent.publicKey)) return false;
+    } catch {
+      return false;
+    }
+  }
+  const top = certs[certs.length - 1];
+  for (const root of roots) {
+    let parsed: X509Certificate;
+    try {
+      parsed = new X509Certificate(root.der);
+    } catch {
+      continue;
+    }
+    if (!inWindow(parsed)) continue;
+    if (!top.checkIssued(parsed)) continue;
+    try {
+      if (top.verify(parsed.publicKey)) return true;
+    } catch {
+      // keep looking at other pinned roots
+    }
+  }
+  return false;
+}
+
+function publicKeyJwkFieldsEqual(a: KeyObject, b: KeyObject): boolean {
+  const ja = a.export({ format: "jwk" }) as Record<string, unknown>;
+  const jb = b.export({ format: "jwk" }) as Record<string, unknown>;
+  if (ja.kty !== jb.kty) return false;
+  if (ja.kty === "EC" || ja.kty === "OKP") {
+    return ja.crv === jb.crv && ja.x === jb.x && ja.y === jb.y;
+  }
+  if (ja.kty === "RSA") {
+    return ja.n === jb.n && ja.e === jb.e;
+  }
+  return false;
+}
+
+export function verifyAppleAttestation(input: {
+  attStmt: Map<CborValue, CborValue>;
+  authData: Uint8Array;
+  clientDataHash: Uint8Array;
+  credentialPublicKey: KeyObject;
+  roots: readonly PinnedRoot[];
+}): AttestationOutcome {
+  const nonce = input.attStmt.get("nonce");
+  if (!(nonce instanceof Uint8Array) || nonce.length === 0) {
+    throw new WebAuthnError("attestation", "apple attestation is missing its nonce");
+  }
+  const certs = parseX5c(input.attStmt);
+  const leaf = certs[0];
+  if (!publicKeyJwkFieldsEqual(leaf.publicKey, input.credentialPublicKey)) {
+    throw new WebAuthnError("attestation", "attestation certificate does not match the credential public key");
+  }
+  // Apple commits SHA256(authData || clientDataHash) inside the credential
+  // certificate; the authenticator binds the certificate to this exact
+  // ceremony by signing it with the Secure Enclave key. The attStmt carries
+  // the same nonce on the wire; it must agree with the certificate extension.
+  const committed = appleNonceExtension(leaf);
+  if (!committed || committed.length !== 32 || !equalBytes(committed, nonce)) {
+    throw new WebAuthnError("attestation", "apple attestation nonce does not match the certificate extension");
+  }
+  const expected = sha256(concatBytes(input.authData, input.clientDataHash));
+  if (!equalBytes(committed, expected)) {
+    throw new WebAuthnError("attestation", "apple attestation nonce does not match authData || clientDataHash");
+  }
+  if (!validateChainToPinnedRoot(certs, input.roots)) {
+    throw new WebAuthnError("attestation", "apple attestation chain does not reach a pinned root");
+  }
+  return { format: "apple", verified: true, trustPath: "apple" };
+}
+
+export function verifyPackedAttestation(input: {
+  attStmt: Map<CborValue, CborValue>;
+  authData: Uint8Array;
+  clientDataHash: Uint8Array;
+  algorithm: number;
+  credentialPublicKey: KeyObject;
+  roots: readonly PinnedRoot[];
+}): AttestationOutcome {
+  const alg = input.attStmt.get("alg");
+  const sig = input.attStmt.get("sig");
+  if (typeof alg !== "number" || !SUPPORTED_ALGORITHMS.has(alg)) {
+    throw new WebAuthnError("attestation", "packed attestation declares an unsupported algorithm");
+  }
+  if (!(sig instanceof Uint8Array) || sig.length === 0) {
+    throw new WebAuthnError("attestation", "packed attestation is missing its signature");
+  }
+  const payload = concatBytes(input.authData, input.clientDataHash);
+
+  if (input.attStmt.get("x5c") !== undefined) {
+    // Basic attestation: the signature is made with the attestation key in
+    // x5c[0], and the chain must reach a pinned root. No universal WebAuthn
+    // root exists for packed, so the production root set is empty — fail
+    // closed until a specific vendor root is deliberately pinned.
+    const certs = parseX5c(input.attStmt);
+    let valid = false;
+    try {
+      valid = verifySignature(alg, certs[0].publicKey, payload, sig);
+    } catch {
+      valid = false;
+    }
+    if (!valid) throw new WebAuthnError("signature", "packed attestation signature did not verify");
+    if (!validateChainToPinnedRoot(certs, input.roots)) {
+      throw new WebAuthnError("attestation", "packed attestation chain does not reach a pinned root");
+    }
+    return { format: "packed", verified: true, trustPath: "packed-basic" };
+  }
+
+  // Self-attestation: signed with the credential key itself. This proves the
+  // key holder signed — not the model — so it is recorded honestly.
+  if (alg !== input.algorithm) {
+    throw new WebAuthnError("attestation", "packed self-attestation algorithm does not match the credential algorithm");
+  }
+  let valid = false;
+  try {
+    valid = verifySignature(alg, input.credentialPublicKey, payload, sig);
+  } catch {
+    valid = false;
+  }
+  if (!valid) throw new WebAuthnError("signature", "packed self-attestation signature did not verify");
+  return { format: "packed", verified: false, trustPath: "packed-self" };
+}
+
+function verifyAttestationStatement(input: {
+  format: string;
+  attStmt: CborValue | undefined;
+  authData: Uint8Array;
+  clientDataHash: Uint8Array;
+  algorithm: number;
+  credentialPublicKey: KeyObject;
+  allowNone: boolean;
+  appleRoots: readonly PinnedRoot[];
+  packedRoots: readonly PinnedRoot[];
+}): AttestationOutcome {
+  if (input.format === "apple") {
+    if (!(input.attStmt instanceof Map)) {
+      throw new WebAuthnError("attestation", "apple attestation statement is missing");
+    }
+    return verifyAppleAttestation({
+      attStmt: input.attStmt,
+      authData: input.authData,
+      clientDataHash: input.clientDataHash,
+      credentialPublicKey: input.credentialPublicKey,
+      roots: input.appleRoots,
+    });
+  }
+  if (input.format === "packed") {
+    if (!(input.attStmt instanceof Map)) {
+      throw new WebAuthnError("attestation", "packed attestation statement is missing");
+    }
+    return verifyPackedAttestation({
+      attStmt: input.attStmt,
+      authData: input.authData,
+      clientDataHash: input.clientDataHash,
+      algorithm: input.algorithm,
+      credentialPublicKey: input.credentialPublicKey,
+      roots: input.packedRoots,
+    });
+  }
+  if (input.format === "none") {
+    if (!input.allowNone) {
+      throw new WebAuthnError(
+        "attestation",
+        "fmt 'none' is not accepted for new credentials — enroll from a browser that returns device attestation",
+      );
+    }
+    return { format: "none", verified: false, trustPath: "none" };
+  }
+  throw new WebAuthnError("attestation", `unsupported attestation format '${input.format}'`);
 }
 
 // ─── assertion ─────────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { ResearchMissionMode } from "@/lib/research-missions";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
+import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 import { RESEARCHER_SURFACE_ID } from "./ids";
 import { ResearchTabDesk } from "./research-tab-desk";
 import { ResearchTabLibrary } from "./research-tab-library";
@@ -45,6 +46,8 @@ export type ResearchTabNavigateOptions = {
   missionId?: string;
   /** Preselect a composer mode on the Prompt tab (deep loop = "autoresearch"). */
   mode?: ResearchMissionMode;
+  /** An accepted Topic Discovery proposal pre-fills the composer on Prompt. */
+  draft?: TopicProposalDraftV1;
 };
 
 export type ResearchTabNavigate = (tab: ResearchDeskTab, opts?: ResearchTabNavigateOptions) => void;
@@ -101,6 +104,7 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   );
   const [tab, setTab] = useState<ResearchDeskTab | null>(readStoredTab);
   const [promptMode, setPromptMode] = useState<ResearchMissionMode | null>(null);
+  const [promptDraft, setPromptDraft] = useState<TopicProposalDraftV1 | null>(null);
   const liveRunCount = researchLiveRunCount(research.missions);
 
   // Publish only settled reads. Loading and failed refreshes retain the last
@@ -145,6 +149,7 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   const onNavigate = useCallback<ResearchTabNavigate>((next, opts) => {
     if (opts?.missionId) select(opts.missionId);
     if (opts?.mode !== undefined) setPromptMode(opts.mode);
+    if (opts?.draft) setPromptDraft(opts.draft);
     selectTab(next);
   }, [select, selectTab]);
 
@@ -153,7 +158,8 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   // so later manual visits to the tab never re-apply a stale mode.
   useEffect(() => {
     if (activeTab === "prompt" && promptMode !== null) setPromptMode(null);
-  }, [activeTab, promptMode]);
+    if (activeTab === "prompt" && promptDraft !== null) setPromptDraft(null);
+  }, [activeTab, promptMode, promptDraft]);
 
   // Checkpoint dot on the Desk tab label — only while the desk is not looking.
   const checkpointWaiting = research.missions.some((mission) => mission.status === "checkpoint");
@@ -230,6 +236,7 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
             context={context}
             onNavigate={onNavigate}
             initialMode={promptMode ?? undefined}
+            initialDraft={promptDraft ?? undefined}
           />
         ) : activeTab === "desk" ? (
           <ResearchTabDesk research={research} context={context} onNavigate={onNavigate} />

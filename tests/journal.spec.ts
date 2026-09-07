@@ -154,7 +154,7 @@ async function gotoJournal(page: Page, scenario: JournalScenario = {}) {
     route.fulfill({ json: { ok: true, graph: { nodes: [], edges: [] } } }),
   );
   await page.route("**/api/journal**", (route) => fulfillJournal(route, state));
-  await page.route("**/api/chat/send", (route) =>
+  await page.route("**/api/chat/generate/journal", (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/event-stream",

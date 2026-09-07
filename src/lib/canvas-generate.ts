@@ -70,7 +70,7 @@ export async function generateArtifactCode(opts: {
 }): Promise<GenerateResult> {
   let res: Response;
   try {
-    res = await fetch("/api/chat/send", {
+    res = await fetch("/api/chat/generate/canvas", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -78,9 +78,10 @@ export async function generateArtifactCode(opts: {
         prompt: opts.prompt,
         sessionId: opts.sessionId ?? undefined,
         projectRoot: opts.projectRoot ?? undefined,
-        // Provenance: these sends belong to the Canvas/artifact surface, so
-        // the chat lists can keep them out of the conversation rail.
-        origin: "canvas",
+        // Provenance is server-minted (cave-cst0g): these sends belong to the
+        // Canvas/artifact surface, so they go through the dedicated generation
+        // route, which stamps the "canvas" origin from its own path and keeps
+        // the runs out of the conversation rail.
       }),
       signal: opts.signal,
     });

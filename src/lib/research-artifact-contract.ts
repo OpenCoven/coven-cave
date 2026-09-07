@@ -153,6 +153,151 @@ export function normalizeResearchSource(
   };
 }
 
+/** Parse and normalize the authoritative sources.json payload. Keep this
+ * outside the runner so read-only routes can validate the ledger without
+ * importing the runner's orchestration graph. */
+export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("sources.json is malformed");
+  }
+  const list = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        Array.isArray((parsed as { sources?: unknown }).sources)
+      ? (parsed as { sources: unknown[] }).sources
+      : null;
+  if (!list) {
+    throw new Error("sources.json must contain an array, or an object with a `sources` array");
+  }
+  return list.map((item, index) => {
+    const normalized = normalizeResearchSource(
+      item as Parameters<typeof normalizeResearchSource>[0],
+    );
+    if (!normalized.ok) {
+      throw new Error(
+        `sources.json source ${index + 1}: ${normalized.reason}`,
+      );
+    }
+    return normalized.value;
+  });
+}
+
+export function researchSourcesShareIdentity(
+  left: ResearchSourceRef,
+  right: ResearchSourceRef,
+): boolean {
+  return left.id === right.id ||
+    Boolean(left.url && right.url && left.url === right.url) ||
+    Boolean(
+      left.localPath &&
+      right.localPath &&
+      left.localPath === right.localPath,
+    );
+}
+
+function ambiguousResearchSourceIdentities(): never {
+  throw new Error("Research source identities are ambiguous");
+}
+
+export function indexDistinctResearchSourceIds(
+  sources: ResearchSourceRef[],
+): Map<string, number> {
+  const owners = new Map<string, number>();
+
+  sources.forEach((source, index) => {
+    if (owners.has(source.id)) ambiguousResearchSourceIdentities();
+    owners.set(source.id, index);
+  });
+
+  return owners;
+}
+
+export function researchSourcesShareSecondaryIdentity(
+  left: ResearchSourceRef,
+  right: ResearchSourceRef,
+): boolean {
+  return Boolean(left.url && right.url && left.url === right.url) ||
+    Boolean(
+      left.localPath &&
+      right.localPath &&
+      left.localPath === right.localPath,
+    );
+}
+
+/**
+ * Reconcile a healthy file snapshot with the mission's current user-owned
+ * source state. Exact ids pair first. Remaining rows may bridge by one unique
+ * URL or local-path match; shared secondary identities otherwise stay distinct
+ * or fail closed when they make the bridge ambiguous. Mission order and fields
+ * win, and unmatched file rows follow in their file order.
+ */
+export function reconcileResearchSourcesForRead(
+  fileSources: ResearchSourceRef[],
+  missionSources: ResearchSourceRef[],
+): ResearchSourceRef[] {
+  const fileIdOwners = indexDistinctResearchSourceIds(fileSources);
+  indexDistinctResearchSourceIds(missionSources);
+
+  const matchedFileIndexes = new Set<number>();
+  const fileIndexByMissionIndex = new Map<number, number>();
+
+  missionSources.forEach((missionSource, missionIndex) => {
+    const fileIndex = fileIdOwners.get(missionSource.id);
+    if (fileIndex === undefined) return;
+    matchedFileIndexes.add(fileIndex);
+    fileIndexByMissionIndex.set(missionIndex, fileIndex);
+  });
+
+  const candidateMissionIndexesByFile = new Map<number, number[]>();
+  missionSources.forEach((missionSource, missionIndex) => {
+    if (fileIndexByMissionIndex.has(missionIndex)) return;
+
+    const candidateFileIndexes: number[] = [];
+    fileSources.forEach((fileSource, fileIndex) => {
+      if (
+        !matchedFileIndexes.has(fileIndex) &&
+        researchSourcesShareSecondaryIdentity(missionSource, fileSource)
+      ) {
+        candidateFileIndexes.push(fileIndex);
+      }
+    });
+    if (candidateFileIndexes.length > 1) ambiguousResearchSourceIdentities();
+    const fileIndex = candidateFileIndexes[0];
+    if (fileIndex === undefined) return;
+    const candidateMissionIndexes =
+      candidateMissionIndexesByFile.get(fileIndex) ?? [];
+    candidateMissionIndexes.push(missionIndex);
+    candidateMissionIndexesByFile.set(fileIndex, candidateMissionIndexes);
+  });
+
+  for (const [fileIndex, missionIndexes] of candidateMissionIndexesByFile) {
+    if (missionIndexes.length > 1) ambiguousResearchSourceIdentities();
+    matchedFileIndexes.add(fileIndex);
+    fileIndexByMissionIndex.set(missionIndexes[0], fileIndex);
+  }
+
+  const reconciledMissionSources = missionSources.map((missionSource, missionIndex) => {
+    const fileIndex = fileIndexByMissionIndex.get(missionIndex);
+    if (fileIndex === undefined) return missionSource;
+    return {
+      ...fileSources[fileIndex],
+      ...missionSource,
+    };
+  });
+
+  const reconciledSources = [
+    ...reconciledMissionSources,
+    ...fileSources.filter((_, index) => !matchedFileIndexes.has(index)),
+  ];
+  indexDistinctResearchSourceIds(reconciledSources);
+  return reconciledSources;
+}
+
 export function normalizeResearchArtifact(
   draft: ResearchArtifactDraft,
 ): ContractResult<{ kind: ResearchArtifactKind; relativePath: string }> {

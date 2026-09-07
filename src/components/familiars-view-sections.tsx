@@ -84,7 +84,9 @@ type MemoryStatus = "loading" | "error" | "ready";
 type AgentRosterCardProps = {
   familiar: ResolvedFamiliar;
   stats: FamiliarCardStats;
-  daemonRunning: boolean;
+  /** Growth health (active/steady/quiet/stalled) — the status-dot + word
+   *  pattern (design language §3) replacing the duplicated online/offline dot. */
+  healthLabel: "active" | "steady" | "quiet" | "stalled";
   responseNeeded: boolean;
   memoryStatus: MemoryStatus;
   onSelect: () => void;
@@ -93,7 +95,7 @@ type AgentRosterCardProps = {
 export function FamiliarRosterCard({
   familiar,
   stats,
-  daemonRunning,
+  healthLabel,
   responseNeeded,
   memoryStatus,
   onSelect,
@@ -148,10 +150,10 @@ export function FamiliarRosterCard({
           </span>
           <span className="familiars-view__microlabel inline-flex shrink-0 items-center gap-1.5 self-start">
             <span
-              className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)] familiars-view__status-dot--live" : "bg-[var(--text-muted)]"}`}
+              className={`familiars-view__health-dot familiars-view__health-dot--${healthLabel}`}
               aria-hidden="true"
             />
-            {daemonRunning ? "online" : "offline"}
+            {healthLabel}
           </span>
         </span>
 

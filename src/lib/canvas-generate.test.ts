@@ -65,7 +65,9 @@ const responseFor = (frames) => new Response(
 try {
   let sentBody = null;
   let streamed: string[] = [];
-  globalThis.fetch = async (_url, init) => {
+  let sentUrl = null;
+  globalThis.fetch = async (url, init) => {
+   sentUrl = String(url);
    sentBody = JSON.parse(init.body);
    return responseFor([
      { kind: "session", sessionId: "canvas-session" },
@@ -81,7 +83,10 @@ try {
   assert.equal(valid.failure, null);
   assert.equal(valid.kind, "html");
   assert.equal(valid.sessionId, "canvas-session");
-  assert.equal(sentBody.origin, "canvas");
+  // Provenance is server-minted (cave-cst0g): the canvas send targets the
+  // dedicated generation route and no longer claims an origin in the body.
+  assert.equal(sentUrl, "/api/chat/generate/canvas");
+  assert.equal(sentBody.origin, undefined);
   assert.deepEqual(streamed, ["```html\n<!doctype html><html></html>\n```"]);
 
   streamed = [];

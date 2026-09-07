@@ -122,7 +122,7 @@ test.describe("sessions list", () => {
   });
 
   test("the reference toolbar keeps search, status, and sort on one compact line", async ({ page }) => {
-    const search = page.getByPlaceholder("Search sessions…");
+    const search = page.getByPlaceholder("Filter sessions…");
     const all = chip(page, "All");
     const sort = page.locator(".chat-sessions-sort");
     const [searchBox, allBox, sortBox] = await Promise.all([
@@ -154,7 +154,7 @@ test.describe("sessions list", () => {
     await expect(rows(page)).toHaveCount(SEEDS.length);
     await expect(chip(page, "All")).toHaveAttribute("aria-pressed", "true");
 
-    const search = page.getByPlaceholder("Search sessions…");
+    const search = page.getByPlaceholder("Filter sessions…");
     await search.fill("no matching session");
     await expect(clearFilters).toHaveCount(1);
     await clearFilters.click();

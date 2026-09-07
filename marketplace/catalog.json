@@ -5099,6 +5099,63 @@
       }
     },
     {
+      "name": "daytona",
+      "displayName": "Daytona Sandboxes",
+      "version": "1.0.0",
+      "description": "Create and manage isolated Daytona Cloud sandboxes with API, CLI, and SDK guidance for Python, TypeScript, Java, Go, and Ruby.",
+      "category": "Developer Tools",
+      "author": {
+        "name": "Daytona",
+        "url": "https://github.com/daytona"
+      },
+      "homepage": "https://www.daytona.io",
+      "repository": "https://github.com/daytona/skills",
+      "license": "Apache-2.0",
+      "keywords": [
+        "daytona",
+        "sandbox",
+        "secure-compute",
+        "isolated-runtime",
+        "code-execution",
+        "sdk"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/daytona/skills",
+        "https://github.com/daytona/skills/tree/ad4d8e088582fc995def67474a03eabede30564e/skills/daytona"
+      ],
+      "trust": "official-remote",
+      "userConfig": {
+        "daytona_api_key": {
+          "type": "string",
+          "title": "Daytona API Key",
+          "description": "API key used by Daytona SDK and CLI operations.",
+          "required": false,
+          "sensitive": true,
+          "env": "DAYTONA_API_KEY"
+        }
+      },
+      "skill": {
+        "managed": "manual",
+        "description": "Create and manage isolated Daytona Cloud sandboxes through its API, CLI, and Python, TypeScript, Java, Go, or Ruby SDKs.",
+        "useCases": [
+          "Run code or development tools in an isolated cloud environment",
+          "Create reusable sandbox images, snapshots, and volumes",
+          "Use Daytona APIs, CLI commands, or language SDKs"
+        ],
+        "guardrails": [
+          "Never print, persist, or expose Daytona API keys or preview tokens",
+          "Treat sandbox creation and lifecycle changes as remote state changes",
+          "Require explicit confirmation before deleting sandboxes, snapshots, or volumes"
+        ]
+      }
+    },
+    {
       "name": "browserbase",
       "displayName": "Browserbase",
       "version": "0.1.0",

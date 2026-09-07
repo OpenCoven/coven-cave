@@ -12,6 +12,7 @@ import {
   extractResearchRunMarkers,
   parseResearchRunPreviewUrl,
   researchMissionToRunSurface,
+  researchRunBootstrapSnapshot,
 } from "./research-run-surface.ts";
 import type { ResearchMission } from "./research-missions.ts";
 
@@ -272,3 +273,17 @@ test("research missions project into truthful compact run state", () => {
     artifacts: 1,
   });
 });
+test("researchRunBootstrapSnapshot builds a minimal, rehydratable projection from a bare run id", () => {
+  // cave-8o5s7.2: /research-started turns persist only the run id, so the card
+  // rehydrates from the canonical mission API instead of a frozen UI snapshot.
+  const boot = researchRunBootstrapSnapshot("mission-run-xyz");
+  assert.equal(boot.runId, "mission-run-xyz");
+  assert.equal(boot.status, "queued");
+  assert.equal(boot.title, "Research run");
+  assert.deepEqual(boot.steps, []);
+  assert.deepEqual(boot.evidence, {});
+
+  const titled = researchRunBootstrapSnapshot("mission-run-xyz", "  Vector stores  ");
+  assert.equal(titled.title, "Vector stores");
+});
+

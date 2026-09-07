@@ -3,22 +3,11 @@ import path from "node:path";
 import type { ProjectPermissionSurface } from "../project-access-levels.ts";
 import type { SessionOrigin } from "../types.ts";
 
-const PROJECTLESS_GENERATION_ORIGINS: ReadonlySet<SessionOrigin> = new Set([
-  "canvas",
-  "enhance",
-  "journal",
-]);
-
-/**
- * Hidden generation runs are not conversations and retain their historical
- * familiar-workspace runtime. Every user-facing or automated chat origin
- * remains project-gated.
- */
-export function isProjectlessGenerationOrigin(
-  origin: SessionOrigin | null | undefined,
-): boolean {
-  return Boolean(origin && PROJECTLESS_GENERATION_ORIGINS.has(origin));
-}
+import {
+  isProjectlessGenerationOrigin,
+  PROJECTLESS_GENERATION_ORIGINS,
+} from "../chat-origins.ts";
+export { isProjectlessGenerationOrigin, PROJECTLESS_GENERATION_ORIGINS };
 
 function isInsideRoot(root: string, candidate: string): boolean {
   const rel = path.relative(root, candidate);

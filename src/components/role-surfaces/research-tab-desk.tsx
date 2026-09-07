@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SearchInput } from "@/components/ui/search-input";
+import { caveResearchTopicDiscovery } from "@/lib/feature-flags";
 import { Icon } from "@/lib/icon";
 import {
   filterResearchMissionsByText,
@@ -37,6 +38,7 @@ import {
 } from "./research-desk-view";
 import { ResearchMissionDetail } from "./research-mission-detail";
 import { ResearchMissionList } from "./research-mission-list";
+import { ResearchTopicDiscovery } from "./research-topic-discovery";
 import type { ResearchTabProps } from "./researcher-surface";
 import { useResearchPane } from "./use-research-pane";
 
@@ -93,6 +95,7 @@ function readFocusMode(familiarId: string): boolean {
 export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabProps) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ResearchMissionScope>("all");
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const familiarId = context.activeFamiliar.id;
   const [focusMode, setFocusMode] = useState(() =>
     readFocusMode(familiarId));
@@ -116,6 +119,12 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
     { cmd: "/paper", label: "Deep paper", hint: "Prompt · paper mode", run: () => onNavigate("prompt", { mode: "paper" }) },
     { cmd: "/deep", label: "Deep research loop", hint: "Prompt · deep loop", run: () => onNavigate("prompt", { mode: "autoresearch" }) },
     { cmd: "/save", label: "Saved resources", hint: "Resources tab", run: () => onNavigate("resources") },
+    ...(caveResearchTopicDiscovery() ? [{
+      cmd: "/discover",
+      label: "Discover topics",
+      hint: "Mine a sealed context pack",
+      run: () => setDiscoverOpen(true),
+    }] : []),
     {
       cmd: "/find",
       label: "Filter runs",
@@ -248,6 +257,15 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           >
             New research
           </Button>
+          {caveResearchTopicDiscovery() ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => setDiscoverOpen(true)}
+            >
+              Discover topics
+            </Button>
+          ) : null}
         </div>
         {commandsOpen ? (
           <div
@@ -374,6 +392,32 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
           />
         </main>
       </div>
+
+      {discoverOpen ? (
+        <div
+          className="research-topic-discovery__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Discover topics"
+        >
+          <div className="research-topic-discovery__sheet">
+            <ResearchTopicDiscovery
+              familiarId={familiarId}
+              onUseTopic={(draft) => {
+                setDiscoverOpen(false);
+                onNavigate("prompt", { mode: draft.mode });
+              }}
+            />
+            <button
+              type="button"
+              className="research-topic-discovery__close focus-ring"
+              onClick={() => setDiscoverOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

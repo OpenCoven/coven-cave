@@ -5,6 +5,7 @@ import {
   grantChangeOriginLabel,
   grantLevelLabel,
   accessLevelMeta,
+  accessRollupLabel,
   accessSummary,
   auditDecisionMeta,
   auditReasonLabel,
@@ -19,6 +20,7 @@ import {
   nameResolver,
   pendingProposalCount,
   proposalStatusMeta,
+  rollupAccessLevels,
   sortFamiliars,
   splitProposals,
   surfaceLabel,
@@ -230,6 +232,31 @@ assert.equal(
 assert.equal(
   grantChangeOriginLabel({ actor: "system", kind: "project-removed" }),
   "project removed from the registry",
+);
+
+// ── Per-root read/write rollup (cave-fydri) ────────────────────────────────
+// The UI rolls the SAME effective per-root levels the chat runtime-scope
+// preamble annotates into a compact read vs write summary, so a human looking
+// at a familiar's (or group's) grants sees read vs write without reading the
+// preamble.
+assert.deepEqual(
+  rollupAccessLevels(["read", "write", "write", null, undefined]),
+  { read: 1, write: 2 },
+  "counts read vs write and skips non-grants",
+);
+assert.deepEqual(rollupAccessLevels([]), { read: 0, write: 0 }, "empty rollup is zeros");
+assert.deepEqual(rollupAccessLevels(["write"]), { read: 0, write: 1 });
+assert.equal(accessRollupLabel({ read: 1, write: 2 }), "1 read-only · 2 read + write");
+assert.equal(
+  accessRollupLabel({ read: 3, write: 0 }),
+  "3 read-only",
+  "zero-count levels are dropped so a fully read-only set reads plainly",
+);
+assert.equal(accessRollupLabel({ read: 0, write: 2 }), "2 read + write");
+assert.equal(
+  accessRollupLabel({ read: 0, write: 0 }),
+  "no access",
+  "an empty rollup reads as no access",
 );
 
 console.log("permissions-console grant-change assertions: ok");

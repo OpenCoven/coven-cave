@@ -289,6 +289,13 @@
   line-height: 1.15;
 }
 
+.document-reader__context {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: calc(var(--text-lg) * var(--reader-text-scale));
+  line-height: var(--cave-reading-leading, 1.6);
+}
+
 .document-reader__lede {
   margin: 0 0 var(--space-5);
   padding-left: var(--space-4);

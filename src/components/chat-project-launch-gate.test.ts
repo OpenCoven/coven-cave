@@ -117,7 +117,7 @@ assert.match(
 
 assert.match(
   salem,
-  /familiarId:\s*args\.familiarId,[\s\S]*origin:\s*"enhance",[\s\S]*permissionMode:\s*"read"/,
+  /fetch\(new URL\("\/api\/chat\/generate\/enhance"[\s\S]*familiarId:\s*args\.familiarId,[\s\S]*permissionMode:\s*"read"/,
   "Ask Salem's hidden docs synthesis should remain projectless and read-only instead of becoming a broken Chat launch",
 );
 

@@ -60,6 +60,21 @@ const MEMORY_ENTRY = {
 
 const JOURNAL_DAY = "2026-07-01";
 
+const EMPTY_RUNNING_ACTIVITY = {
+  ok: true,
+  generatedAt: "2026-07-01T00:00:00.000Z",
+  total: 0,
+  items: [],
+  sources: {
+    sessions: { ok: true, count: 0 },
+    board: { ok: true, count: 0 },
+    automations: { ok: true, count: 0 },
+    flows: { ok: true, count: 0 },
+    workflows: { ok: true, count: 0 },
+  },
+  unavailable: [],
+} as const;
+
 async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -67,6 +82,10 @@ async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
     // through the same updateRaw → debounce → save pipeline as VISUAL mode,
     // without Milkdown's cold-compile flake.
     window.localStorage.setItem("cave:md-editor:mode", "markdown");
+  });
+  await page.route(/\/api\/running-activity(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    return route.fulfill({ json: EMPTY_RUNNING_ACTIVITY });
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active" }] } }),

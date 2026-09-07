@@ -61,10 +61,13 @@ import {
 } from "./research-mission-composer";
 import type { ResearchTabProps } from "./researcher-surface";
 import { useResearchLinks } from "./use-research-links";
+import type { TopicProposalDraftV1 } from "@/lib/research-topic-discovery";
 
 export type ResearchTabPromptProps = ResearchTabProps & {
   /** Composer mode preselected by cross-tab navigation. */
   initialMode?: ResearchMissionMode;
+  /** An accepted Topic Discovery proposal pre-fills the composer once. */
+  initialDraft?: TopicProposalDraftV1;
 };
 
 /** How many recent titles feed the suggested-angle rotation from each pool. */
@@ -162,7 +165,7 @@ async function revalidateResearchRecommendation(
   return current;
 }
 
-export function ResearchTabPrompt({ research, context, onNavigate, initialMode }: ResearchTabPromptProps) {
+export function ResearchTabPrompt({ research, context, onNavigate, initialMode, initialDraft }: ResearchTabPromptProps) {
   const links = useResearchLinks();
   const { announce } = useAnnouncer();
   const [attached, setAttached] = useState<SavedLinkSummary[]>([]);
@@ -451,6 +454,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
             familiarId={context.activeFamiliar.id}
             daemonRunning={context.runtimeState.daemonRunning}
             initialMode={initialMode}
+            initialDraft={initialDraft}
             recommendedDraft={recommendedDraft}
             attachedLinks={attachedChips}
             onRemoveAttached={(id) => setAttached((current) => current.filter((entry) => entry.id !== id))}

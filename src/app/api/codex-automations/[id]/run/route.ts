@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { enqueueOfflineTravelItem, loadConfig } from "@/lib/cave-config";
-import { getCodexAutomation } from "@/lib/codex-automations";
-import { recordRun } from "@/lib/automation-runs";
-import { startAutomationRun } from "@/lib/server/automation-runner";
+import { runRoutine } from "@/lib/server/coven-automations-client";
+import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
-import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 
 export const dynamic = "force-dynamic";
 
@@ -15,48 +12,34 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
   const { id } = await params;
-  const auto = await getCodexAutomation(id);
-  if (!auto) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  const config = await loadConfig();
-  const travelStatus = await travelLocalQueueStatus(config);
-  if (travelStatus) {
-    const queued = await enqueueOfflineTravelItem({
-      kind: "job",
-      summary: `Automation: ${auto.name}`,
-      payload: {
-        route: `/api/codex-automations/${auto.id}/run`,
-        automation: {
-          id: auto.id,
-          name: auto.name,
-          model: auto.model,
-          cwds: auto.cwds,
-          familiars: auto.familiars,
-          prompt: auto.prompt,
-        },
-      },
-    });
-    const run = await recordRun({
-      automationId: auto.id,
-      automationName: auto.name,
-      startedAt: queued.createdAt,
-      status: "queued",
-      summary: `queued offline ${queued.id}`,
-    });
+  try {
+    const outcome = await runRoutine(id);
+    if (outcome.status === "failed") {
+      return NextResponse.json(
+        { ok: false, error: outcome.error ?? "run failed" },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({
       ok: true,
-      queued: true,
-      queueItem: queued,
-      run,
-      executor: "travel-queue",
-      travel: { reason: travelStatus.reason },
+      run: {
+        id: outcome.runId,
+        automationId: id,
+        status: "running",
+        startedAt: new Date().toISOString(),
+        sessionId: outcome.sessionId,
+      },
     });
-  }
-  try {
-    const run = await startAutomationRun(auto);
-    return NextResponse.json({ ok: true, run });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "run failed to start";
-    const already = msg.includes("already in progress");
-    return NextResponse.json({ ok: false, error: msg }, { status: already ? 409 : 500 });
+    if (err instanceof CovenAutomationsUnavailableError && err.degraded) {
+      return NextResponse.json(
+        { ok: false, error: err.message, degraded: true },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : "unknown" },
+      { status: 500 },
+    );
   }
 }

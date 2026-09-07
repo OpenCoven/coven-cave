@@ -9,6 +9,13 @@
  * components and cannot code-split.
  */
 
+/* Plate behind grid logo tiles. Theme-independent on purpose — see the
+   .marketplace-card .marketplace-logo rule below for the measurements. */
+:root {
+  --marketplace-logo-plate: oklch(0.97 0.003 240);
+  --marketplace-logo-plate-ink: oklch(0.32 0.012 240);
+}
+
 /* ── Explore rail: Type · Status · Categories/Topics ── */
 .mk-rail {
   width: 236px;
@@ -141,6 +148,37 @@
   border-radius: var(--radius-control);
   background: var(--bg-elevated);
   color: var(--text-secondary);
+}
+
+/* Grid tiles carry a solid light plate (cave-5es49).
+ *
+ * Every one of the 35 generated brand assets is a TRANSPARENT png, and the ink
+ * in them is overwhelmingly dark: measured across the set, 9 sit under 60
+ * median luminance and 21 under 110 — GitHub, Notion, ElevenLabs and
+ * next-devtools are effectively pure black. `--bg-elevated` is oklch(0.18 …)
+ * in the dark theme, so those marks were black-on-black: present in the DOM,
+ * invisible on screen.
+ *
+ * A plate fixes it because brand marks are drawn for light backgrounds; that
+ * is why the distribution leans dark in the first place. It is deliberately
+ * theme-INDEPENDENT — the artwork does not change with the theme, so a plate
+ * that flips would just move the failure to the other mode.
+ *
+ * Scoped to `.marketplace-card` (the grid) per the owner's call. Detail and
+ * dossier tiles keep the elevated surface: they are larger, sit on a different
+ * ground, and were not part of the ask.
+ *
+ * ⚠️ One asset is pure white (unity.png) and reads faintly here. That is 1 of
+ * 35 against 21 that were invisible before, and the border keeps its tile
+ * legible; a per-asset plate override is cave-5es49 follow-up work if it
+ * bothers anyone. */
+.marketplace-card .marketplace-logo {
+  border-color: color-mix(in oklch, var(--border-hairline) 60%, transparent);
+  background: var(--marketplace-logo-plate);
+  /* The monogram fallback inherits `color` from this element, so it has to be
+     re-inked for the plate — otherwise `--text-secondary` (light in the dark
+     theme) would repeat exactly the bug this rule exists to fix. */
+  color: var(--marketplace-logo-plate-ink);
 }
 .marketplace-logo--card {
   width: 36px;

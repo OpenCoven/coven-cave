@@ -24,6 +24,9 @@ type ThreadSignalCardProps = {
   report: ThreadSelfReport;
   onViewFull: () => void;
   onDismiss: () => void;
+  /** Open the familiar's daily note — where a completed Reflect can continue
+   *  in prose (cave-mo4q). Absent when the host surface cannot navigate. */
+  onOpenDailyNote?: (familiarId: string) => void;
 };
 
 /** Undo window before a dismissal is committed upward, matching use-undo-delete. */
@@ -46,7 +49,7 @@ function weakestTileId(tiles: ThreadSignalScoreTile[]): string | null {
   return [...scored].sort((a, b) => a.percent - b.percent)[0]?.id ?? null;
 }
 
-export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignalCardProps) {
+export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNote }: ThreadSignalCardProps) {
   const { announce } = useAnnouncer();
   const tiles = useMemo(() => buildThreadSignalScoreTiles(report), [report]);
   const rows = useMemo(() => buildThreadSignalRows(report), [report]);
@@ -91,7 +94,10 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
     return () => clearTimeout(timer);
   }, [dismissed]);
   useEffect(() => {
-    announce(`Thread Signal available for ${name}.`);
+    // A completed Reflect announces where it landed: the self-report is
+    // persisted to the familiar's growth analytics, with the daily note one
+    // action away (cave-mo4q).
+    announce(`Reflection saved to ${name}'s growth analytics. Open the daily note to continue it.`);
   }, [announce, name, report.id]);
 
   const selected = tiles.find((tile) => tile.id === selectedTile) ?? null;
@@ -349,6 +355,16 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
         <Button size="sm" variant="ghost" trailingIcon="ph:arrow-square-out" onClick={onViewFull}>
           Analytics
         </Button>
+        {onOpenDailyNote ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            leadingIcon="ph:book-open"
+            onClick={() => onOpenDailyNote(report.familiarId)}
+          >
+            Open daily note
+          </Button>
+        ) : null}
         <span className="tsc-foot-spacer" />
         {criticals.length === 0 ? null : openCriticals.length > 0 ? (
           <Button

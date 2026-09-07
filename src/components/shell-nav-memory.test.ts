@@ -491,7 +491,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*setNavOpen\(rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
   "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
 );
 assert.match(
@@ -571,7 +571,6 @@ assert.equal(
           chatContextualGroupRef.current !== groupId
         ) {
           chatContextualGroupRef.current = groupId;
-          setNavOpen(true);
         }
         previousNavPolicyRef.current = navPolicy;
         return;
@@ -593,7 +592,6 @@ assert.equal(
         navPrefArmedGroupRef.current = null;
         visitCollapsedGroupRef.current = groupId;
         navRef.current?.collapse();
-        setNavOpen(false);
       }
       previousNavPolicyRef.current = navPolicy;
     }, [mounted, groupId, isMobile, navPolicy]);

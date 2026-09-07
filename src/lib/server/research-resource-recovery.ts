@@ -26,22 +26,28 @@ import {
   type ResourceOperationalTransaction,
 } from "./research-resource-store.ts";
 
+import { reconcileRestoredContextPacks } from "./research-context-pack-store.ts";
+
 export type ResearchResourceRecoveryPhase =
   | "tombstones-repaired"
   | "projection-reconciled"
   | "jobs-recreated"
-  | "lexical-rebuilt";
+  | "lexical-rebuilt"
+  | "context-packs-validated";
 
 export type ResearchResourceRecoveryResult = {
   projectionReconciled: boolean;
   tombstoneFencesRepaired: number;
   jobsRecreated: number;
   lexicalRebuilt: boolean;
+  contextPacksValidated: number;
+  contextPacksInvalid: number;
 };
 
 export type ResearchResourceRecoveryOptions = {
   root?: string;
   store?: ResearchResourceStore;
+  packRoot?: string;
   reconcileProjection?: () => Promise<unknown>;
   resetOperationalState?: boolean;
   failpoint?: (phase: ResearchResourceRecoveryPhase) => void | Promise<void>;
@@ -268,11 +274,26 @@ async function reconcileRestoredResearchResourcesLocked(
   rebuilt.index.close();
   await failpoint("lexical-rebuilt");
 
+  // Pack manifests must be validated against their pack-owned blobs BEFORE
+  // exposure. This runs with the feature flag off: it is recovery, not
+  // rollout (A8 rule).
+  const packCounts = await reconcileRestoredContextPacks(
+    options.packRoot ? { root: options.packRoot } : {},
+  );
+  if (packCounts.invalid > 0) {
+    throw new Error(
+      `context-packs-validated: restored context packs failed validation (${packCounts.invalid} invalid)`,
+    );
+  }
+  await failpoint("context-packs-validated");
+
   return {
     projectionReconciled: true,
     tombstoneFencesRepaired,
     jobsRecreated,
     lexicalRebuilt: true,
+    contextPacksValidated: packCounts.validated,
+    contextPacksInvalid: packCounts.invalid,
   };
 }
 

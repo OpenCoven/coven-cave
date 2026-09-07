@@ -5896,6 +5896,57 @@ exit 0
       "a worktree registered mid-run is out of scope for this report",
     );
   }
+
+  // cave-eg1ag: the read-only patrol surfaces each locked unit's lock reason
+  // alongside its live cleanliness/retention verdict — so a lock contradicted
+  // by current state (clean + retained, yet held by "active … PR completion")
+  // is visible at a glance. It never releases a lock the hook did not write:
+  // it only names it. feat/old is clean/landed (retire-after-gate), feat/live
+  // is dirty (active); both get a foreign reason the hook cannot evaluate.
+  {
+    const foreignReason = "active cave-1c8zf PR completion";
+    git(["worktree", "lock", "--reason", foreignReason, old], repo);
+    git(["worktree", "lock", "--reason", foreignReason, live], repo);
+    try {
+      const lockedReport = JSON.parse(patrol(["--json"]));
+      const lockedOld = lockedReport.items.find((item) => item.branch === "feat/old");
+      const lockedLive = lockedReport.items.find((item) => item.branch === "feat/live");
+      assert.equal(
+        lockedOld.lane,
+        "retire-after-gate",
+        "a lock never changes the live cleanliness/retention verdict",
+      );
+      assert.equal(
+        lockedOld.lockReason,
+        foreignReason,
+        "a clean/retained locked unit carries its lock reason into the report",
+      );
+      assert.equal(
+        lockedLive.lane,
+        "active",
+        "a dirty unit stays active under a lock, exactly as when unlocked",
+      );
+      assert.equal(
+        lockedLive.lockReason,
+        foreignReason,
+        "a dirty locked unit carries its lock reason into the report",
+      );
+
+      const humanReport = patrol();
+      assert.match(
+        humanReport,
+        /worktree locked: active cave-1c8zf PR completion/,
+        "the human report names the lock reason verbatim",
+      );
+      // The stale-lock signal is the juxtaposition: the clean unit still says
+      // "clean landed work is at least 15 minutes old" while naming a lock that
+      // claims live work. Both facts appear for the same unit.
+      assert.match(humanReport, /clean landed work is at least 15 minutes old/);
+    } finally {
+      git(["worktree", "unlock", old], repo);
+      git(["worktree", "unlock", live], repo);
+    }
+  }
 } finally {
   if (existsSync(registeredDrift)) {
     git(["worktree", "remove", registeredDrift], repo);

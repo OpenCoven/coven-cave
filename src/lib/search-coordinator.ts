@@ -19,7 +19,7 @@
  * Spec: docs/superpowers/specs/2026-08-03-global-intelligent-search-design.md
  */
 
-import { SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
+import { canonicalEntityTypes, SEARCH_QUERY_VERSION, type SearchQueryState } from "./search-filters.ts";
 import { normalizeSearchDocument, type SearchDocument } from "./search-document.ts";
 import {
   permitsByProject,
@@ -65,8 +65,11 @@ export type SearchRequest = {
   query: SearchQueryState;
   context: SearchRequesterContext;
   limit?: number;
+  /** Opaque page token returned by the previous response; validated by runSearch. */
   cursor?: string | null;
   now?: number;
+  /** Aborts the run. A fired signal stops starting providers and marks the rest timed out. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -79,10 +82,11 @@ export type SearchEmptyReason =
   | "none"
   | "no-matches"
   | "filtered-empty"
-  | "permission-denied";
+  | "permission-denied"
+  | "provider-unavailable";
 
 export type SearchOutcome =
-  | { ok: false; code: "unsupported-version" | "malformed-query" | "query-too-long"; message: string }
+  | { ok: false; code: "unsupported-version" | "malformed-query" | "query-too-long" | "malformed-cursor"; message: string }
   | {
       ok: true;
       results: RankedResult[];
@@ -185,7 +189,7 @@ export function satisfiesHardConstraints(
     if (!document.familiarId || !wanted.includes(document.familiarId.toLowerCase())) return false;
   }
   const types = filterValues(query, "type");
-  if (types.length > 0 && !types.includes(document.entityType)) return false;
+  if (types.length > 0 && !canonicalEntityTypes(types).includes(document.entityType)) return false;
 
   const statuses = filterValues(query, "status");
   if (statuses.length > 0 && (!document.status || !statuses.includes(document.status))) return false;
@@ -207,6 +211,34 @@ export function satisfiesHardConstraints(
   return true;
 }
 
+/** Canonical diagnostic copy per safe code. Providers may not dictate message text. */
+const SAFE_DIAGNOSTIC_MESSAGES: Record<SearchProviderDiagnostic["code"], string> = {
+  unavailable: "provider could not be searched",
+  timeout: "provider timed out",
+  "permission-denied": "permission denied",
+  "malformed-source": "provider source could not be read",
+};
+
+/**
+ * Re-emit a provider diagnostic as id + safe category + canonical copy only.
+ *
+ * This is the coordinator's second permission boundary, in the same spirit as
+ * the document re-check: a provider is trusted to classify its own failure but
+ * never to write free-form message text, because that text is how a path or a
+ * secret reaches the caller. The code is clamped to the safe set; anything
+ * else reads as "unavailable".
+ */
+export function sanitizeProviderDiagnostic(
+  providerId: string,
+  code: unknown,
+): SearchProviderDiagnostic {
+  const safe: SearchProviderDiagnostic["code"] =
+    code === "timeout" || code === "permission-denied" || code === "malformed-source"
+      ? code
+      : "unavailable";
+  return { providerId, code: safe, message: SAFE_DIAGNOSTIC_MESSAGES[safe] };
+}
+
 export type CoordinatorDependencies = {
   providers: readonly SearchProvider[];
   /** Reads indexed documents. Injected so the coordinator never opens a store. */
@@ -214,8 +246,51 @@ export type CoordinatorDependencies = {
     provider: SearchProvider,
     query: SearchQueryState,
     limit: number,
-  ) => Promise<{ rows: RankableResult[]; stale: boolean }>;
+  ) => Promise<{ rows: RankableResult[]; stale: boolean; warming?: boolean }>;
 };
+
+const ABORTED = Symbol("search-aborted");
+
+/**
+ * Race provider work against the request's abort signal.
+ *
+ * A fired signal rejects with ABORTED so a hanging provider cannot hold the
+ * page hostage past the route's timeout; the coordinator then records the
+ * provider as timed out and still returns whatever the other providers found.
+ */
+function raceAbort<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(ABORTED);
+      return;
+    }
+    const onAbort = () => reject(ABORTED);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Parse the opaque cursor into an offset into the fully ordered result list.
+ * Returns null for anything that is not a non-negative integer, so a garbled
+ * cursor fails closed with malformed-cursor rather than silently re-paging.
+ */
+function parseCursor(cursor: string | null | undefined): number | null {
+  if (cursor === null || cursor === undefined) return 0;
+  if (!/^\d+$/.test(cursor)) return null;
+  const offset = Number(cursor);
+  return Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
+}
 
 export async function runSearch(
   request: SearchRequest,
@@ -224,6 +299,11 @@ export async function runSearch(
   const validated = validateQuery(request.query);
   if (!validated.ok) return validated;
   const query = validated.query;
+
+  const offset = parseCursor(request.cursor);
+  if (offset === null) {
+    return { ok: false, code: "malformed-cursor", message: "cursor must be a non-negative integer" };
+  }
 
   const limit = Math.max(1, Math.min(request.limit ?? MAX_PAGE, MAX_PAGE));
   const now = request.now ?? 0;
@@ -243,41 +323,62 @@ export async function runSearch(
   const diagnostics: SearchProviderDiagnostic[] = [];
   const collected: RankableResult[] = [];
   let anyStale = false;
+  let anyWarming = false;
   let failures = 0;
 
   for (const provider of applicable) {
+    // A fired signal stops the run: remaining providers never start, and each
+    // one is reported as timed out so the page still says WHY it is short.
+    if (request.signal?.aborted) {
+      const remaining = applicable.slice(applicable.indexOf(provider));
+      for (const rest of remaining) {
+        failures += 1;
+        diagnostics.push(sanitizeProviderDiagnostic(rest.id, "timeout"));
+      }
+      break;
+    }
     try {
       if (provider.kind === "live" && provider.query) {
-        const live = await provider.query(
-          {
-            text: query.text,
-            phrases: query.phrases,
-            filters: query.filters,
-            projectIds: scopeIds(query, "project"),
-            familiarIds: scopeIds(query, "familiar"),
-            entityTypes,
-            limit,
-          },
-          request.context,
+        const live = await raceAbort(
+          provider.query(
+            {
+              text: query.text,
+              phrases: query.phrases,
+              filters: query.filters,
+              projectIds: scopeIds(query, "project"),
+              familiarIds: scopeIds(query, "familiar"),
+              entityTypes,
+              limit,
+            },
+            request.context,
+          ),
+          request.signal,
         );
-        diagnostics.push(...live.diagnostics);
+        // The coordinator re-emits diagnostics itself: provider ids and safe
+        // categories only. A provider's free-form message never reaches the
+        // caller, because that message is where a path or a secret would hide.
+        for (const diagnostic of live.diagnostics) {
+          diagnostics.push(sanitizeProviderDiagnostic(provider.id, diagnostic.code));
+        }
         for (const document of live.documents) {
           collected.push({ document, relevance: 0, providerId: provider.id });
         }
       } else {
-        const indexed = await deps.readIndexed(provider, query, limit);
+        const indexed = await raceAbort(
+          deps.readIndexed(provider, query, limit),
+          request.signal,
+        );
         if (indexed.stale) anyStale = true;
+        if (indexed.warming) anyWarming = true;
         collected.push(...indexed.rows);
       }
     } catch (error) {
       // One provider failing must not take the page down. It becomes a
       // diagnostic and the rest of the results still return.
       failures += 1;
-      diagnostics.push({
-        providerId: provider.id,
-        code: "unavailable",
-        message: "provider failed",
-      });
+      diagnostics.push(
+        sanitizeProviderDiagnostic(provider.id, request.signal?.aborted ? "timeout" : "unavailable"),
+      );
     }
   }
 
@@ -316,12 +417,19 @@ export async function runSearch(
     }),
   );
 
-  const page =
-    query.presentation === "top" ? interleaveByType(ranked, limit) : ranked.slice(0, limit);
+  // The cursor pages over the SAME fully ordered list the first page came from,
+  // so page N+1 continues exactly where page N stopped and never re-serves or
+  // skips a result. Top mode pages the interleaved order; grouped mode pages
+  // the ranked order.
+  const ordered =
+    query.presentation === "top" ? interleaveByType(ranked, ranked.length) : ranked;
+  const page = ordered.slice(offset, offset + limit);
+  const nextOffset = offset + page.length;
 
   let emptyReason: SearchEmptyReason;
   if (page.length > 0) emptyReason = "none";
   else if (deniedAny) emptyReason = "permission-denied";
+  else if (failures > 0) emptyReason = "provider-unavailable";
   else if (query.filters.length > 0 || query.scopes.length > 0) emptyReason = "filtered-empty";
   else emptyReason = "no-matches";
 
@@ -332,7 +440,8 @@ export async function runSearch(
     facets: facetCounts(ranked),
     diagnostics,
     partial: failures > 0,
-    cursor: ranked.length > page.length ? String(page.length) : null,
-    indexState: anyStale ? "stale" : "ready",
+    // Opaque offset token for the NEXT page; null when the list is exhausted.
+    cursor: nextOffset < ordered.length ? String(nextOffset) : null,
+    indexState: anyWarming ? "warming" : anyStale ? "stale" : "ready",
   };
 }

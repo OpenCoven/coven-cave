@@ -15,6 +15,21 @@ struct ToastView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
+            // A failed mutation can offer a way forward (cave-ioswipe.1):
+            // tapping Retry runs the action and the toast's tap-to-dismiss
+            // clears the banner so the retry's own feedback takes over.
+            if let actionTitle = message.actionTitle, message.action != nil {
+                Button {
+                    message.action?()
+                } label: {
+                    Text(actionTitle)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(tint)
+                .controlSize(.small)
+                .accessibilityLabel("\(actionTitle): \(message.text)")
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)

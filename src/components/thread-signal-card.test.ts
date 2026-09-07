@@ -86,6 +86,15 @@ describe("thread-signal-card module wiring", () => {
     assert.match(source, /launch\(\s*openCriticals,/);
   });
 
+  it("announces where the completed Reflect landed and offers the daily note", () => {
+    // cave-mo4q: the card announces the persisted destination (growth analytics)
+    // and carries an Open daily note action wired to the report's familiar.
+    assert.match(source, /Reflection saved to \$\{name\}'s growth analytics/);
+    assert.match(source, /onOpenDailyNote\?: \(familiarId: string\) => void/);
+    assert.match(source, /onClick=\{\(\) => onOpenDailyNote\(report\.familiarId\)\}/);
+    assert.match(source, /Open daily note/);
+  });
+
   it("defers the dismissal upward so Undo can restore the card", () => {
     assert.match(source, /const \[dismissed, setDismissed\] = useState\(false\)/);
     assert.match(source, /setTimeout\(\(\) => onDismissRef\.current\(\), DISMISS_UNDO_MS\)/);
@@ -114,7 +123,7 @@ describe("thread-signal-card module wiring", () => {
 
   it("keeps every interactive element keyboard-reachable and announced", () => {
     assert.match(source, /useAnnouncer\(\)/);
-    assert.match(source, /announce\(`Thread Signal available for \$\{name\}\.`\)/);
+    assert.match(source, /announce\(`Reflection saved to \$\{name\}'s growth analytics/);
     assert.match(source, /className="tsc-row-btn focus-ring-inset"/);
     assert.match(source, /tsc-tile focus-ring/);
     assert.match(source, /aria-expanded=\{open\}/);
