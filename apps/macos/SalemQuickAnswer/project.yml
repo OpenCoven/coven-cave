@@ -1,0 +1,47 @@
+name: SalemQuickAnswer
+options:
+  bundleIdPrefix: ai.opencoven
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
+targets:
+  SalemQuickAnswer:
+    type: application
+    platform: macOS
+    sources:
+      - path: SalemQuickAnswer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave.quickanswer
+        PRODUCT_NAME: Salem Quick Answer
+        INFOPLIST_KEY_LSUIElement: YES
+        ENABLE_PREVIEWS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+  SalemQuickAnswerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SalemQuickAnswerTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave.quickanswer.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: SalemQuickAnswer
+schemes:
+  SalemQuickAnswer:
+    build:
+      targets:
+        SalemQuickAnswer: all
+    test:
+      targets:
+        - SalemQuickAnswerTests
+    run:
+      config: Debug
