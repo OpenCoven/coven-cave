@@ -7,6 +7,21 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-09
+
+> Makes assistant responses easier to read in native iOS chat.
+
+Patch release on top of v0.4.0, carrying the iOS assistant response formatting repair.
+
+### Fixed
+- Normalize assistant protocol markers and citations before native rendering.
+- Preserve Markdown code examples and improve inline-code wrapping.
+- Bound automatic link previews and hide empty control-only message bubbles.
+
+### Changed
+- Advance desktop and iOS release metadata to 0.4.1 and refresh the TestFlight build number.
+- Remove the temporary August worktree recovery notice from the tracked tree.
+
 ## [0.4.0] - 2026-09-05
 
 > Starts the v0.4 release line from the fully validated v0.3.13 payload,
