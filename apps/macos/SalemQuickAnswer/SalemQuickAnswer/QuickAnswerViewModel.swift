@@ -43,11 +43,11 @@ final class QuickAnswerViewModel: ObservableObject {
                 } else {
                     state = .answered(response)
                 }
-            } catch FixtureBriefError.offline {
+            } catch BriefServiceError.offline {
                 state = .offline
-            } catch FixtureBriefError.unauthorized {
+            } catch BriefServiceError.unauthorized {
                 state = .unauthorized
-            } catch FixtureBriefError.rateLimited {
+            } catch BriefServiceError.rateLimited {
                 state = .rateLimited
             } catch {
                 state = .failed("Couldn't get an answer. Try again.")
