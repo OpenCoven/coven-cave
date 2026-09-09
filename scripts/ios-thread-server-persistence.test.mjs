@@ -73,7 +73,7 @@ for (const [fn, verbs, field] of [
   );
   assert.match(
     body,
-    new RegExp(`rollback: \\{ \\$0\\.${field} = !${field} \\}`),
+    new RegExp(`rollback: \\{[\\s\\S]{0,100}(?:\\$0|thread)\\.${field} = !${field}`),
     `${fn} must roll the flag back when the server rejects it`,
   );
 }

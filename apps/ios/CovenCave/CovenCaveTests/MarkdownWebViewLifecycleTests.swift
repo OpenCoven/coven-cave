@@ -142,7 +142,11 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
             }; true;
             """)
         var failures = 0
+        var measurements: [String] = []
         coordinator.onFailure = { failures += 1 }
+        coordinator.onRenderStart = { measurements.append("start") }
+        coordinator.onRenderComplete = { measurements.append("complete") }
+        coordinator.onRenderCancelled = { measurements.append("cancel") }
         coordinator.apply(markdown: "Partial", streaming: true,
                           fontScale: 1, theme: .dark, accentHex: nil, reader: false)
         let streamDeadline = clock.now.advanced(by: .seconds(5))
@@ -152,6 +156,7 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         await drainMainQueue()
         XCTAssertEqual(recorder.snapshot()["markdown.render.streaming"]?.count, 1)
         XCTAssertEqual(failures, 0, "A streaming rejection must not trigger terminal fallback")
+        XCTAssertEqual(measurements, ["start", "cancel"])
 
         var settledHeight: CGFloat?
         coordinator.onHeight = { settledHeight = $0 }
@@ -165,6 +170,7 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         XCTAssertEqual(recorder.snapshot()["markdown.render.settled"]?.count, 1)
         XCTAssertGreaterThan(settledHeight ?? 0, 0)
         XCTAssertEqual(failures, 0)
+        XCTAssertEqual(measurements, ["start", "cancel", "start", "complete"])
     }
 
     @MainActor
@@ -219,6 +225,100 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
             XCTAssertNil(observed, "The removed SwiftUI row must release its coordinator")
             XCTAssertNil(observedWebView, "The removed SwiftUI row must release its web view")
         }
+    }
+
+    @MainActor
+    func testInvalidationSuppressesQueuedMeasurementStart() async {
+        let coordinator = MarkdownWebView.Coordinator()
+        var starts = 0
+        var completions = 0
+        var cancellations = 0
+        coordinator.onRenderStart = { starts += 1 }
+        coordinator.onRenderComplete = { completions += 1 }
+        coordinator.onRenderCancelled = { cancellations += 1 }
+        coordinator.apply(markdown: "Queued", streaming: true,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        coordinator.invalidate()
+        coordinator.invalidate()
+        await drainMainQueue()
+        XCTAssertEqual(starts, 0)
+        XCTAssertEqual(completions, 0)
+        XCTAssertEqual(cancellations, 1)
+        XCTAssertNil(coordinator.onRenderStart)
+        XCTAssertNil(coordinator.onRenderComplete)
+        XCTAssertNil(coordinator.onRenderCancelled)
+    }
+
+    @MainActor
+    func testFirstSuccessfulRenderCompletesWithNewerDeltaPending() async throws {
+        try await verifyCoalescedMeasurement(failFirst: false)
+    }
+
+    @MainActor
+    func testTransientFailurePreservesMeasurementForPendingDelta() async throws {
+        try await verifyCoalescedMeasurement(failFirst: true)
+    }
+
+    @MainActor
+    private func verifyCoalescedMeasurement(failFirst: Bool) async throws {
+        let coordinator = MarkdownWebView.Coordinator()
+        let host = UIViewController()
+        host.view = coordinator.webView
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.layoutIfNeeded()
+        defer {
+            coordinator.invalidate()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        let clock = ContinuousClock()
+        func waitForJS(_ expression: String) async throws {
+            let deadline = clock.now.advanced(by: .seconds(30))
+            while clock.now < deadline {
+                if (try? await coordinator.webView.evaluateJavaScript(expression)) as? Bool == true { return }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTFail("JavaScript condition did not become true: \(expression)")
+        }
+        try await waitForJS("typeof window.caveRender === 'function'")
+        _ = try await coordinator.webView.evaluateJavaScript("""
+            window.caveRender = async function(md) {
+                await new Promise((resolve, reject) => {
+                    if (md === 'A') {
+                        window.finishFirst = \(failFirst ? "() => reject(new Error('transient'))" : "resolve");
+                    } else { window.finishSecond = resolve; }
+                });
+                document.body.innerHTML = '<p>' + md + '</p>';
+                document.body.style.height = '100px';
+            }; true;
+            """)
+        var starts = 0
+        var completions = 0
+        var cancellations = 0
+        coordinator.onRenderStart = { starts += 1 }
+        coordinator.onRenderComplete = { completions += 1 }
+        coordinator.onRenderCancelled = { cancellations += 1 }
+        coordinator.apply(markdown: "A", streaming: true,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        try await waitForJS("typeof window.finishFirst === 'function'")
+        coordinator.apply(markdown: "B", streaming: true,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        await drainMainQueue()
+        _ = try await coordinator.webView.evaluateJavaScript("window.finishFirst(); true;")
+        try await waitForJS("typeof window.finishSecond === 'function'")
+        XCTAssertEqual(starts, 2)
+        XCTAssertEqual(cancellations, 0, "A pending delta must retain its first-rich measurement")
+        XCTAssertEqual(completions, failFirst ? 0 : 1,
+                       "The first displayed render must complete without waiting for a newer delta")
+        _ = try await coordinator.webView.evaluateJavaScript("window.finishSecond(); true;")
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while completions < (failFirst ? 1 : 2), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(completions, failFirst ? 1 : 2)
+        XCTAssertEqual(cancellations, 0)
     }
 
     @MainActor

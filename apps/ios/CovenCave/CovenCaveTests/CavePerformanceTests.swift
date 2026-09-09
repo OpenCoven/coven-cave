@@ -58,6 +58,21 @@ private enum RecorderTestError: Error, Equatable {
 
 @MainActor
 final class CavePerformanceTests: XCTestCase {
+    func testBaselineSpanNamesStayStable() {
+        XCTAssertEqual(
+            CavePerformanceSpanName.baseline.map(\.rawValue),
+            [
+                "drawer.open",
+                "project.switcher.present",
+                "project.switch",
+                "destination.stable-frame",
+                "search.query",
+                "chat.first-rich-render",
+                "project.projection",
+            ]
+        )
+    }
+
     func testMeasureRecordsDurationAndCount() async {
         let recorder = CavePerformanceRecorder(enabled: true)
         let clock = TestPerformanceClock(values: [.zero, .milliseconds(12)])
@@ -115,6 +130,79 @@ final class CavePerformanceTests: XCTestCase {
                        CavePerformanceSample(count: 1,
                                              latestMilliseconds: 19,
                                              maximumMilliseconds: 19))
+    }
+
+    func testSpanLifecycleDiscardsSupersededSpansAndFinishesActiveSpansExactlyOnce() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(
+            values: [
+                .zero,
+                .milliseconds(4),
+                .milliseconds(10),
+                .milliseconds(20),
+                .milliseconds(30),
+                .milliseconds(41),
+            ]
+        )
+        let lifecycle = CavePerformanceSpanLifecycle(recorder: recorder)
+
+        lifecycle.begin(.drawerOpen, clock: clock)
+        lifecycle.begin(.drawerOpen, clock: clock)
+        lifecycle.finish(.drawerOpen)
+        lifecycle.finish(.drawerOpen)
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.finishAll()
+        lifecycle.finishAll()
+
+        XCTAssertEqual(
+            recorder.snapshot()[CavePerformanceSpanName.drawerOpen.rawValue],
+            CavePerformanceSample(count: 1,
+                                  latestMilliseconds: 6,
+                                  maximumMilliseconds: 6)
+        )
+        XCTAssertEqual(
+            recorder.snapshot()[CavePerformanceSpanName.searchQuery.rawValue],
+            CavePerformanceSample(count: 1,
+                                  latestMilliseconds: 10,
+                                  maximumMilliseconds: 10)
+        )
+    }
+
+    func testSpanLifecycleCancellationDoesNotRecordASuccessfulSample() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(values: [.zero, .milliseconds(12)])
+        let lifecycle = CavePerformanceSpanLifecycle(recorder: recorder)
+
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.cancel(.searchQuery)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertNil(recorder.snapshot()[CavePerformanceSpanName.searchQuery.rawValue])
+    }
+
+    func testInactiveSceneCancelsAndSuppressesSpansUntilReactivated() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(
+            values: [.zero, .milliseconds(10), .milliseconds(20)]
+        )
+        let lifecycle = CavePerformanceSpanLifecycle(recorder: recorder)
+
+        lifecycle.begin(.drawerOpen, clock: clock)
+        lifecycle.setSceneActive(false)
+        lifecycle.finish(.drawerOpen)
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+
+        lifecycle.setSceneActive(true)
+        lifecycle.begin(.searchQuery, clock: clock)
+        lifecycle.finish(.searchQuery)
+
+        XCTAssertEqual(
+            recorder.snapshot()[CavePerformanceSpanName.searchQuery.rawValue]?.count,
+            1
+        )
     }
 
     func testMeasureEvictsOldestDistinctSampleWhenSampleKeyLimitIsReached() async {
@@ -220,6 +308,97 @@ final class CavePerformanceTests: XCTestCase {
                 environment: [:],
                 arguments: ["CovenCave", "--performance-instrumentation"]
             )
+        )
+    }
+
+    func testPerformanceFixtureRequiresExplicitLaunchArgument() {
+        XCTAssertFalse(CavePerformanceFixture.shouldEnable(arguments: []))
+        XCTAssertFalse(
+            CavePerformanceFixture.shouldEnable(
+                arguments: ["CovenCave", "--performance-instrumentation"]
+            )
+        )
+        XCTAssertTrue(
+            CavePerformanceFixture.shouldEnable(
+                arguments: ["CovenCave", "--performance-fixture"]
+            )
+        )
+    }
+
+    func testPerformanceFixtureDefaultsResetBetweenRuns() {
+        let existing = UserDefaults(suiteName: CavePerformanceFixture.defaultsSuiteName)
+        existing?.set(true, forKey: "cave.lock.enabled")
+
+        let reset = CavePerformanceFixture.makeIsolatedDefaults()
+
+        XCTAssertFalse(reset.bool(forKey: "cave.lock.enabled"))
+    }
+
+    func testThreadDraftPersistenceUsesInjectedDefaults() {
+        let suiteName = "CavePerformanceTests.drafts.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let threadID = "fixture-thread-\(UUID().uuidString)"
+        let app = AppModel(
+            defaults: defaults,
+            restoreLocalState: false,
+            loadPersistedConnection: false
+        )
+
+        app.persistThreadDraft(threadID, text: "isolated draft")
+
+        XCTAssertEqual(app.persistedThreadDraft(threadID), "isolated draft")
+        XCTAssertEqual(app.threadDrafts[threadID], "isolated draft")
+        XCTAssertNil(
+            UserDefaults.standard.string(
+                forKey: AppModel.draftKey(threadID)
+            )
+        )
+
+        app.persistThreadDraft(threadID, text: " ")
+
+        XCTAssertNil(app.persistedThreadDraft(threadID))
+        XCTAssertNil(app.threadDrafts[threadID])
+    }
+
+    func testPerformanceFixtureHasDeterministicSafeScaleAndContent() {
+        let first = CavePerformanceFixture.make()
+        let second = CavePerformanceFixture.make()
+
+        XCTAssertEqual(first.projects.count, 20)
+        XCTAssertEqual(first.threads.count, 1_000)
+        XCTAssertEqual(first.serverSessions.count, 1_000)
+        XCTAssertEqual(first.tasks.count, 1_000)
+        XCTAssertEqual(first.familiars.count, 12)
+        XCTAssertEqual(first.projects.map(\.id), second.projects.map(\.id))
+        XCTAssertEqual(first.threads.map(\.id), second.threads.map(\.id))
+        XCTAssertEqual(first.serverSessions.map(\.id), second.serverSessions.map(\.id))
+        XCTAssertEqual(first.tasks.map(\.id), second.tasks.map(\.id))
+        XCTAssertTrue(first.threads.contains(where: \.isStreaming))
+        XCTAssertTrue(
+            first.threads
+                .flatMap(\.messages)
+                .contains {
+                    $0.role == .assistant
+                        && MarkdownDetect.hasMarkdown($0.text)
+                        && $0.text.contains("```swift")
+                        && $0.text.contains("| Signal | State |")
+                }
+        )
+        XCTAssertTrue(
+            ProjectContext.hasUnassignedArtifacts(
+                threads: first.threads,
+                sessions: first.serverSessions,
+                tasks: first.tasks,
+                registeredProjects: first.projects
+            )
+        )
+        XCTAssertTrue(first.projects.allSatisfy { $0.root.hasPrefix("/performance-fixture/") })
+        XCTAssertTrue(first.projects.allSatisfy { !$0.root.contains("/Users/") })
+        XCTAssertTrue(
+            first.projects.allSatisfy {
+                first.projectMembership.familiarIDs(for: $0).count >= 3
+            }
         )
     }
 

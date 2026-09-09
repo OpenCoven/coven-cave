@@ -39,6 +39,24 @@ struct CaveNavigationDrawer: View {
         .allowsHitTesting(isOpen)
         .accessibilityAddTraits(.isModal)
         .accessibilityHidden(!isOpen)
+        .background {
+            CavePerformanceStableFrame(
+                token: isOpen ? "drawer-open" : "drawer-closed",
+                minimumDelay: reduceMotion ? 0 : 0.26
+            ) {
+                if isOpen {
+                    app.performanceSpans.finish(.drawerOpen)
+                } else {
+                    app.markNavigationDrawerAnimationSettled()
+                }
+            }
+            .frame(width: 0, height: 0)
+        }
+        .onChange(of: isOpen) { _, open in
+            if !open {
+                app.performanceSpans.cancel(.drawerOpen)
+            }
+        }
     }
 
     private func panel(width: CGFloat) -> some View {

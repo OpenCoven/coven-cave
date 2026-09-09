@@ -33,6 +33,210 @@ existing renderer lifecycle/signature tests. The previously merged renderer
 teardown repair remains intact. No new physical-device latency or thermal
 claim is made by this hotfix.
 
+## Renderer integration and physical verification (2026-09-09)
+
+The Phase 0 baseline is reconciled with the renderer lifecycle fix in PR #5324
+on main. The integration preserves weak WebKit ownership, terminal disposal,
+and late-callback fences. Measurement callbacks follow successful rendering;
+a newer pending streaming delta does not suppress the first successful render
+or lose its measurement when an earlier transient render fails. Cancelled
+stable-frame callbacks cannot complete a later measurement.
+
+The earlier integrated, development-signed **Release** binary (before the
+Mermaid payload reduction above) was verified with
+`codesign --verify --deep --strict`. Its arm64 UUID is
+`9E3098E2-88F8-3764-964C-C29531B903B8`. On the physical iPhone 16 Pro Max,
+iOS 26.6.1, all 32 focused native tests passed: 11 renderer lifecycle tests
+and 21 performance recorder tests. All four physical UI journeys passed: five
+drawer cycles, five rich-render visits, five project switches, and five search
+queries. All 101 mobile source-test files passed with the frozen lockfile and
+Vitest 4.1.11; typecheck, lint, and test wiring also passed.
+
+The recorder now uses the standard `PointsOfInterest` category. The earlier
+custom `performance` category was not collected by the documented Instruments
+template. A 190.942-second Time Profiler plus Points of Interest capture saved
+and exported successfully. It contains six complete app intervals: five search
+queries and one drawer open. Earlier rich-render and project-switch app
+processes appear in the trace process list but have no exported app signposts.
+Consequently, **the seven-span percentile baseline remains incomplete**.
+XCTest duration is not used as an interaction measurement.
+
+## Project-workspace Phase 0 baseline status (updated 2026-09-09)
+
+Issue #5292 extends this audit with seven stable user-interaction spans and a
+large deterministic fixture. Implementation and physical Release journey
+verification are complete; the table below records the available intervals
+and explicitly leaves missing series unmeasured. Earlier device-lock and
+incomplete-trace failures are historical diagnostics, superseded by the
+successful physical tests and export. The integration is now reconciled with v0.4.2 main; repeat physical verification
+and capture all seven series on that smaller renderer before Phase 0 can close.
+The earlier timings below are retained as historical evidence, not v0.4.2 metrics. The
+reconciled development-signed Release test build succeeded with arm64 UUID
+`84F86C66-E821-3207-9663-44C17CDA9071` and passed strict code-signature verification.
+All 102 mobile test files, 2,007-file test wiring, frozen installation, typecheck,
+and lint passed. All 35 focused native Release simulator tests passed: 21
+performance-recorder, 11 renderer-lifecycle, and three packaged-renderer tests.
+A fresh physical-device probe reports `passcodeRequired: true`;
+unlock the device before testing or recording this binary.
+
+### Stable spans
+
+All spans use the existing `CavePerformanceRecorder` signpost convention.
+Starting a span whose stable name is already active ends the superseded
+interval with `phase=cancel`; trace analysis must exclude those intervals.
+Completed intervals end with `phase=end`.
+
+| Name | Boundary |
+| --- | --- |
+| `drawer.open` | Drawer request to the first stable open frame |
+| `project.switcher.present` | Switcher request to the first frame containing loaded project rows |
+| `project.switch` | Project selection through overlay dismissal and the stable destination frame |
+| `destination.stable-frame` | Chats or Tasks selection to the next stable destination frame |
+| `search.query` | Published query revision to the stable frame containing its current results |
+| `chat.first-rich-render` | First rich assistant message render request through successful JavaScript rendering to its stable-frame callback |
+| `project.projection` | Project switcher projection computation |
+
+`project.switch` and `destination.stable-frame` intentionally include the
+overlay-dismissal animation. Their future budgets must preserve that boundary
+or explicitly introduce a differently named span rather than silently changing
+the meaning of these measurements.
+
+### Deterministic Release fixture
+
+Launch with both flags:
+
+```bash
+--performance-fixture --performance-instrumentation
+```
+
+The optional `--performance-fixture-start-tasks` flag starts task work used by
+the UI journeys. Fixture mode is compiled into Release but remains opt-in. It
+contains 20 projects, 1,000 local chats, 1,000 server sessions, 1,000 tasks,
+and 12 Familiars with overlapping project membership. It also contains
+Unassigned/recovery records, an active streaming conversation, and rich
+Markdown. All values are deterministic synthetic data.
+
+Fixture persistence is isolated from normal app state:
+
+- chat snapshots use
+  `Application Support/performance-fixture/cave-threads.json`;
+- widget snapshots use fixture-specific `UserDefaults`, not the production app
+  group;
+- persisted desktop connection restoration and normal networking are disabled;
+- the fixture uses isolated lock preferences and launches unlocked.
+
+The records are distributed across 20 projects. A selected project therefore
+renders approximately 50 chats, tasks, and sessions, while global search and
+project projection still traverse the full fixture.
+
+### Physical Release evidence
+
+Target:
+
+| Field | Value |
+| --- | --- |
+| Device | iPhone 16 Pro Max (`iPhone17,2`) |
+| OS | iOS 26.6.1 (`23G83`) |
+| Device identifier | Kept in local evidence; pass it as `$DEVICE_UDID` |
+| Xcode | 26.6 (`17F113`) |
+| Configuration | Release, automatic development signing |
+| Fixture | 20 projects; 1,000 local chats; 1,000 server sessions; 1,000 tasks; 12 Familiars |
+| Desktop endpoint | None; deterministic fixture mode |
+| Transport | CoreDevice `localNetwork`; tunnel connected |
+
+The development-signed Release binary above passed 36 focused tests on this
+device (32 native and four UI tests). The usable trace was recorded from
+07:09:19.017 to 07:12:29.959 CDT on 2026-09-09 and ended with `User pressed Stop`,
+not a device disconnection.
+
+All durations below are milliseconds. “Cold” means the first attempted named
+interval in a fresh UI-journey app process, not a clean-install launch or cold
+OS cache. “Warm” means subsequent attempts in that process. A cancelled first
+attempt does not promote a later completion into the cold bucket. p95 uses
+nearest rank; at these small sample counts it equals the maximum and is only
+a baseline observation, not a reliable tail-latency estimate.
+
+| Span | Cold count | Cold median | Cold p95 | Cold max | Warm count | Warm median | Warm p95 | Warm max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `drawer.open` | 1 | 172.994 | 172.994 | 172.994 | — | — | — | — |
+| `project.switcher.present` | — | — | — | — | — | — | — | — |
+| `project.switch` | — | — | — | — | — | — | — | — |
+| `destination.stable-frame` | — | — | — | — | — | — | — | — |
+| `search.query` | 1 | 268.148 | 268.148 | 268.148 | 4 | 190.063 | 196.698 | 196.698 |
+| `chat.first-rich-render` | — | — | — | — | — | — | — | — |
+| `project.projection` | — | — | — | — | — | — | — | — |
+
+The em dashes mean **not measured**, not zero. Analysis filters the
+`ai.opencoven.cave` subsystem to the three fresh UI-journey app processes
+started after capture began, excluding the partially observed initial drawer
+process and the unit-test process with injected clocks. It pairs begin/end
+records by process, span name, and signpost identifier. Cancelled, incomplete,
+and ambiguous intervals are excluded; none occurred in the six recovered
+intervals. Only the final search process contributed samples.
+
+The raw trace, XCTest result bundle, exported XML, analysis script, and sample
+JSON are retained in the maintainer's private `ios-baseline-20260909` evidence
+bundle. The all-process trace is not published because it includes unrelated
+process metadata. Instruments emitted system-dylib overlap warnings during
+save/export; no CPU attribution claim is made from this trace. The six explicit
+app begin/end pairs remain inspectable in the exported signpost table.
+
+No bottleneck ranking or Phase 1 budget is ratified from these partial series.
+The remaining spans plus SwiftUI, memory, and Power Profiler evidence still
+need collection.
+
+Exact Release test-build command:
+
+```bash
+cd apps/ios/CovenCave
+xcodebuild \
+  -project CovenCave.xcodeproj \
+  -scheme CovenCave \
+  -configuration Release \
+  -destination "platform=iOS,id=$DEVICE_UDID" \
+  -derivedDataPath build-device \
+  -allowProvisioningUpdates \
+  ENABLE_TESTABILITY=YES \
+  -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRepeatedDrawerOpen \
+  test
+```
+
+When `xcrun xctrace list devices` reports the iPhone as online, use
+`test-without-building` against the same DerivedData while Instruments records
+the isolated journeys. Keep cold and warm runs separate, preserve the raw
+`.trace` bundles, exclude `phase=cancel`, and report count, median, p95, and
+maximum from completed intervals only.
+
+### Simulator journey evidence
+
+The iPhone 16 Pro simulator on iOS 26.5 passed all three deterministic UI
+journeys:
+
+| Journey | Repetitions | Result |
+| --- | ---: | --- |
+| Repeated drawer open | 5 | Passed |
+| Repeated project switch | 5 | Passed |
+| Repeated global search publication | 5 | Passed |
+
+The complete run recorded 3 passed tests and 0 failures in
+`Test-CovenCave-2026.09.06_19-02-22--0500.xcresult`. A focused repeated-drawer
+run also passed in
+`Test-CovenCave-2026.09.05_07-19-19--0500.xcresult`.
+
+The navigation journeys launch with
+`--performance-fixture-start-tasks`. This avoids mounting rich Markdown during
+accessibility automation because the iOS 26.5 simulator reports duplicate
+`UIAccessibilityLoaderWebShared` implementations in WebCore and WebKit and
+warns that the condition can cause mysterious crashes. The default fixture
+starts on the rich-chat path. The new dedicated rich-render journey passed
+on the physical device; its timing series still needs a separate capture.
+
+These results prove the fixture and repeated interaction paths are stable under
+automation. They do not provide simulator latency percentiles: the available
+`xctrace` CLI could not finalize a usable simulator trace, and XCTest wall-clock
+duration includes build, runner startup, and automation overhead rather than
+the instrumented interaction boundaries.
+
 ## Before/after metrics
 
 The request/work-count evidence is deterministic rather than a claim about
@@ -105,7 +309,7 @@ SIMCTL_CHILD_CAVE_PERFORMANCE_INSTRUMENTATION=1 \
   "$SIMULATOR_ID" ai.opencoven.cave
 ```
 
-Capture the `ai.opencoven.cave` / `performance` signposts with Instruments'
+Capture the `ai.opencoven.cave` / `PointsOfInterest` signposts with Instruments'
 Points of Interest template.
 
 ## Budget status
@@ -118,7 +322,7 @@ as passed.
 | --- | --- | --- |
 | App model initialization <= 50 ms p95 | Deferred | Thread snapshot I/O moved out of initialization, but no `app-model.init` p95 series is captured. Add the named span and collect repeated Release samples. |
 | First connection bootstrap local processing <= 250 ms | Deferred | Single-flight and concurrent-resource tests pass; add a local-processing span and collect repeated Release samples. |
-| Warm tab selection to stable frame <= 100 ms | Deferred | No stable-frame timing hook exists. Measure with a Release signpost around tab selection and first stable frame. |
+| Warm tab selection to stable frame <= 100 ms | Deferred | The destination stable-frame hook exists, but no completed physical series was exported. Its drawer-dismissal boundary also differs from direct tab selection; do not silently compare the two. |
 | Chat publication cadence 10-20 updates/second | Pass (upper bound) | The 50 ms coalescer limits publication to at most 20 updates/second; terminal events still flush immediately. |
 | Main-thread attachment decode in row body = 0 | Pass | `MessageBubble.body` no longer calls `UIImage.fromDataUrl`; cache tests prove one downsampled decode per source/size. |
 | Duplicate in-flight fetches for the same bootstrap resource = 0 | Pass | Two concurrent refresh callers share one probe; independent bootstrap resources run once each. |
@@ -176,8 +380,8 @@ simulator build succeeded.
 
 ## Physical-device gates
 
-These remain intentionally unclaimed until a maintainer runs them on a real
-supported iPhone:
+The following broader performance gates remain unclaimed; the focused physical
+Release interaction tests and partial signpost capture above do not satisfy them:
 
 1. Cold-launch p50/p95 and first-interaction latency from a clean install.
 2. Instruments Energy Log during a long streamed response and repeated image
@@ -185,8 +389,8 @@ supported iPhone:
 3. Thermal behavior during sustained chat, voice, and reconnect activity.
 4. Memory-pressure behavior with large transcripts and mixed attachment sizes.
 5. Wi-Fi/cellular handoff, packet loss, and radio-energy behavior.
-6. Release-build OSLog signpost capture with instrumentation explicitly enabled
-   through the procedure above.
+6. Complete seven-span Release-build OSLog series with instrumentation enabled.
+   Capture/export is verified; the missing series in the table remain open.
 
 ## Plan differences
 

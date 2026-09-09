@@ -179,9 +179,18 @@ struct MainShellView: View {
                 CaveNavigationDrawer(
                     isOpen: Binding(
                         get: { app.navigationDrawerOpen },
-                        set: { app.navigationDrawerOpen = $0 }
+                        set: { isOpen in
+                            if isOpen {
+                                app.openNavigationDrawer()
+                            } else {
+                                app.closeNavigationDrawer()
+                            }
+                        }
                     ),
-                    openProjectSwitcher: { presentedOverlay = .projectSwitcher },
+                    openProjectSwitcher: {
+                        app.performanceSpans.begin(.projectSwitcherPresent)
+                        presentedOverlay = .projectSwitcher
+                    },
                     openFamiliars: { presentedOverlay = .familiars },
                     openThread: { _ = app.requestOpen($0) },
                     newChat: {
@@ -196,7 +205,15 @@ struct MainShellView: View {
         .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
             case .projectSwitcher:
-                ProjectSwitcherView()
+                ProjectSwitcherView { context in
+                    guard app.beginProjectSwitchMeasurement(to: context) else { return }
+                    dismissOverlay {
+                        app.switchProject(
+                            to: context,
+                            measurementAlreadyStarted: true
+                        )
+                    }
+                }
             case .familiars: FamiliarsListView { familiar in
                 dismissOverlay {
                     if let thread = app.openFamiliarLandingThread(
@@ -244,6 +261,17 @@ struct MainShellView: View {
         // Command confirmations float above the whole shell so they're visible
         // whether a command stays in chat or jumps to the Tasks destination.
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
+        .background {
+            CavePerformanceStableFrame(token: destinationStableFrameToken) {
+                guard presentedOverlay == nil,
+                      app.navigationDrawerAnimationSettled,
+                      !app.projectSwitchMutationPending
+                else { return }
+                app.performanceSpans.finish(.destinationStableFrame)
+                app.performanceSpans.finish(.projectSwitch)
+            }
+            .frame(width: 0, height: 0)
+        }
         // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–3.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
@@ -288,6 +316,16 @@ struct MainShellView: View {
             await Task.yield()
             action?()
         }
+    }
+
+    private var destinationStableFrameToken: String {
+        [
+            app.selectedTab.rawValue,
+            app.projectContext?.id ?? "no-project",
+            presentedOverlay?.id ?? "no-overlay",
+            app.navigationDrawerAnimationSettled ? "drawer-settled" : "drawer-moving",
+            app.projectSwitchMutationPending ? "project-switch-pending" : "project-switch-settled",
+        ].joined(separator: "|")
     }
 
     @ViewBuilder
