@@ -3838,11 +3838,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     )),
     [promptEnhancementCommandPrefix],
   );
+  const projectModeCompat = false ? { mode: activeProjectRoot ? "code" : "chat" } : {};
   const promptEnhance = usePromptEnhance({
     draft: preparedPromptEnhancement.draft,
     setDraft: setEnhancedPrompt,
     familiarId: familiar.id,
     mode: preparedPromptEnhancement.mode,
+    ...projectModeCompat,
     context: {
       activeProject: activeProjectRoot
         ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
