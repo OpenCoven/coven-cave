@@ -3,6 +3,7 @@ import SwiftUI
 struct QuickAnswerView: View {
     @ObservedObject var model: QuickAnswerViewModel
     @FocusState private var questionFocused: Bool
+    @State private var showingAccess = false
     let dismiss: () -> Void
 
     var body: some View {
@@ -19,6 +20,9 @@ struct QuickAnswerView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { questionFocused = true }
         .onExitCommand { dismiss() }
+        .sheet(isPresented: $showingAccess) {
+            CredentialSetupView()
+        }
     }
 
     private var header: some View {
@@ -34,12 +38,15 @@ struct QuickAnswerView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button("Access") { showingAccess = true }
+                .buttonStyle(.borderless)
+                .accessibilityHint("Configure the scoped Quick Answer credential in Keychain")
             Button(model.showingPitches ? "Ask" : "Pitches") {
                 model.showingPitches.toggle()
                 if !model.showingPitches { questionFocused = true }
             }
             .buttonStyle(.borderless)
-            .accessibilityHint("Switches between live-answer fixtures and offline reference pitches")
+            .accessibilityHint("Switches between live answers and offline reference pitches")
         }
         .padding(16)
     }
@@ -94,9 +101,9 @@ struct QuickAnswerView: View {
     private var stateContent: some View {
         switch model.state {
         case .idle:
-            helper("Ask a question. Fixture commands: fixture:stale, fixture:offline, fixture:unauthorized, fixture:rate.")
+            helper("Ask a question. Live answers require the scoped Quick Answer credential; reference pitches remain available offline.")
         case .querying:
-            helper("Checking the available OpenCoven evidence…")
+            helper("Checking current OpenCoven evidence…")
         case .answered(let brief):
             answerCard(brief, notice: nil)
         case .lowConfidence(let brief):
@@ -104,11 +111,21 @@ struct QuickAnswerView: View {
         case .stale(let brief):
             answerCard(brief, notice: "Stale knowledge — don't use this as current release-status authority.")
         case .offline:
-            failureState("Salem is offline.", detail: "Use Pitches for versioned reference language.")
+            failureState("Salem is offline.", detail: "No cached live answer was substituted. Use Pitches for versioned reference language.")
         case .unauthorized:
-            failureState("Quick Answer isn't authorized.", detail: "The live client credential will be added in the next integration slice.")
+            accessFailure("Quick Answer isn't authorized.", detail: "Add or replace the scoped brief.read token in Keychain.")
+        case .revoked:
+            accessFailure("Quick Answer access was revoked.", detail: "Remove the old token and add a currently authorized scoped token.")
         case .rateLimited:
-            failureState("Too many requests.", detail: "Use a reference pitch or try again after the rate-limit window resets.")
+            failureState("Too many requests.", detail: "No automatic retry is running. Use a reference pitch or retry after the rate-limit window resets.")
+        case .timedOut:
+            failureState("Salem didn't answer in time.", detail: "The request was bounded and stopped; no cached answer was substituted.")
+        case .invalidResponse:
+            failureState("Salem returned an answer this client can't trust.", detail: "The schema or evidence invariants didn't validate, so the response was withheld.")
+        case .modelUnavailable:
+            failureState("The answer model is unavailable.", detail: "Retrieved evidence was not converted into an answer. Try again later or use a reference pitch.")
+        case .serviceUnavailable:
+            failureState("Salem is temporarily unavailable.", detail: "No background retry is running and no stale live answer was substituted.")
         case .failed(let message):
             failureState(message, detail: "No answer was substituted for the failed request.")
         }
@@ -243,6 +260,25 @@ struct QuickAnswerView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(text)
+    }
+
+    private func accessFailure(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: "key.fill")
+                .font(.callout.weight(.semibold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Configure access") { showingAccess = true }
+                    .buttonStyle(.link)
+                Button("Open reference pitches") { model.showingPitches = true }
+                    .buttonStyle(.link)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 
     private func failureState(_ title: String, detail: String) -> some View {
