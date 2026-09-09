@@ -6,6 +6,7 @@ import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
 import { isRenderablePreviewUrl, slicePreviewBlocks } from "./preview-blocks.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 import { sliceSpecBlocks } from "./spec-blocks.ts";
+import { extractArtifactBlocks } from "./canvas-artifacts.ts";
 
 const directive = buildCovenMarkersDirective();
 
@@ -112,6 +113,20 @@ assert.ok(
   "the taught preview URL must be loopback-safe",
 );
 assert.match(directive, /temporary preview is not a durable deliverable/i);
+assert.match(directive, /preview card does not start, supervise, or retain a server/i);
+assert.match(directive, /owner, lifetime, restart command, and stop command/i);
+
+const exampleComparison = directive.match(/```html\n[\s\S]*?\n```/)?.[0];
+assert.ok(exampleComparison, "teach a concrete serverless visual comparison, not just a temporary URL");
+const comparisonBlocks = extractArtifactBlocks(exampleComparison);
+assert.equal(comparisonBlocks.length, 1, "the taught HTML fence must render as an artifact");
+assert.equal(comparisonBlocks[0].kind, "html");
+assert.match(comparisonBlocks[0].code, /<h2>Before<\/h2>/);
+assert.match(comparisonBlocks[0].code, /<h2>After<\/h2>/);
+assert.doesNotMatch(comparisonBlocks[0].code, /(?:src|href)=|https?:\/\//i);
+assert.match(directive, /inline CSS and scripts, embedded images, and no external or localhost assets/i);
+assert.match(directive, /save the complete HTML.*absolute path.*coven:attachment/i);
+assert.match(directive, /reopen.*after stopping.*server/i);
 
 const exampleSpec = directive.match(/`{3,}spec title="[^"]+"\n[\s\S]*?\n`{3,}/)?.[0];
 assert.ok(exampleSpec, "directive carries a spec-fence example");

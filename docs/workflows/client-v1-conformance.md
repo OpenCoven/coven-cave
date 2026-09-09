@@ -111,7 +111,10 @@ unsupported and repeated parameter refusals, and the two cursor refusals; the
 single-record route refusing any query parameter at all; the messages route
 serving the active branch and omitting the abandoned one, paging by position,
 answering `reconcile_required` when the branch moves under an open cursor, and
-restarting cleanly afterwards.
+restarting cleanly afterwards. A separate filename alias exercises canonical
+conversation identity independently of filesystem casing: the messages response
+must carry the transcript's own ID, not the alias used in the request. Missing
+aliases, server errors, empty pages, and echoed aliases fail rather than skip.
 
 **Ingress** — the escaped-target refusal, the forwarded-peer refusals for all
 three route families, the 411 for a missing `Content-Length`, the 400 for a
