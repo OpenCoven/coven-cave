@@ -3831,16 +3831,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     Boolean(activeProjectRoot),
   );
   const promptEnhancementCommandPrefix = preparedPromptEnhancement.commandPrefix;
-  const setEnhancedPrompt = useCallback(
-    (enhanced: string) => setInput(applyChatPromptEnhancement(
+  const transformEnhancedPrompt = useCallback(
+    (enhanced: string) => applyChatPromptEnhancement(
       { commandPrefix: promptEnhancementCommandPrefix },
       enhanced,
-    )),
+    ),
     [promptEnhancementCommandPrefix],
   );
   const promptEnhance = usePromptEnhance({
-    draft: preparedPromptEnhancement.draft,
-    setDraft: setEnhancedPrompt,
+    draft: input,
+    sourceDraft: preparedPromptEnhancement.draft,
+    setDraft: setInput,
+    transformEnhanced: transformEnhancedPrompt,
     familiarId: familiar.id,
     mode: preparedPromptEnhancement.mode,
     context: {

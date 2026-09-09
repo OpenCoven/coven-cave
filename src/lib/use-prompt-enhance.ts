@@ -50,13 +50,15 @@ export type PromptEnhanceRecommendation = AgenticRecommendation<PromptEnhancemen
 export type PromptEnhanceState =
   | { phase: "idle" }
   | { phase: "loading"; intent: EnhanceIntent; preview: string }
-  | { phase: "suggested"; enhanced: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
+  | { phase: "suggested"; enhanced: string; applied: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
   | { phase: "applied"; original: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
   | { phase: "error"; message: string };
 
 type PromptEnhanceRequest = {
   baseDraft: string;
+  originalDraft: string;
   intent: EnhanceIntent;
+  applyDraft: (enhanced: string) => string;
 };
 
 type PromptEnhanceLifecycleContext = {
@@ -99,14 +101,18 @@ function recommendationId(runId: string): string {
 
 export function usePromptEnhance({
   draft,
+  sourceDraft,
   setDraft,
+  transformEnhanced,
   familiarId,
   mode,
   context,
   disabled,
 }: {
   draft: string;
+  sourceDraft?: string;
   setDraft: (value: string) => void;
+  transformEnhanced?: (value: string) => string;
   familiarId: string | null | undefined;
   mode: PromptEnhanceMode;
   /** Passed through to the instruction builder (project, files, thread). */
@@ -125,12 +131,16 @@ export function usePromptEnhance({
   const selfEditRef = useRef(false);
   const contextRef = useRef(context);
   const familiarIdRef = useRef(familiarId);
+  const sourceDraftRef = useRef(sourceDraft);
+  const transformEnhancedRef = useRef(transformEnhanced);
   const currentContextFingerprintRef = useRef("");
 
   draftRef.current = draft;
   stateRef.current = state;
   contextRef.current = context;
   familiarIdRef.current = familiarId;
+  sourceDraftRef.current = sourceDraft;
+  transformEnhancedRef.current = transformEnhanced;
 
   const contextKey = contextFingerprint({
     mode,
@@ -278,12 +288,13 @@ export function usePromptEnhance({
 
     handledRecommendationRef.current = recommendation.id;
     const offline = recommendation.payload.offline;
-    if (settleEnhance(activeRequest.baseDraft, draftRef.current) === "apply") {
+    const applied = activeRequest.applyDraft(recommendation.payload.enhanced);
+    if (settleEnhance(activeRequest.originalDraft, draftRef.current) === "apply") {
       selfEditRef.current = true;
-      setDraft(recommendation.payload.enhanced);
+      setDraft(applied);
       setState({
         phase: "applied",
-        original: activeRequest.baseDraft,
+        original: activeRequest.originalDraft,
         offline,
         recommendation,
       });
@@ -293,6 +304,7 @@ export function usePromptEnhance({
     setState({
       phase: "suggested",
       enhanced: recommendation.payload.enhanced,
+      applied,
       offline,
       recommendation,
     });
@@ -326,10 +338,15 @@ export function usePromptEnhance({
   }, [agentic]);
 
   const enhance = useCallback((intent: EnhanceIntent = "auto", draftOverride?: string) => {
-    const baseDraft = draftOverride ?? draftRef.current;
+    const baseDraft = draftOverride ?? sourceDraftRef.current ?? draftRef.current;
     if (!baseDraft.trim() || disabled) return;
     handledRecommendationRef.current = null;
-    requestRef.current = { baseDraft, intent };
+    requestRef.current = {
+      baseDraft,
+      originalDraft: draftRef.current,
+      intent,
+      applyDraft: transformEnhancedRef.current ?? ((value) => value),
+    };
     enhanceRequestedRef.current = true;
     setState({ phase: "loading", intent, preview: "" });
     agentic.refresh();
@@ -347,7 +364,7 @@ export function usePromptEnhance({
     }
     const original = draftRef.current;
     selfEditRef.current = true;
-    setDraft(previous.enhanced);
+    setDraft(previous.applied);
     setState({
       phase: "applied",
       original,

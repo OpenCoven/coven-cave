@@ -19,11 +19,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /setInput\(applyChatPromptEnhancement\(\s*\{ commandPrefix: promptEnhancementCommandPrefix \},\s*enhanced,\s*\)\)/,
-  "Chat restores the slash-command prefix after enhancement",
+  /const transformEnhancedPrompt = useCallback\(\s*\(enhanced: string\) => applyChatPromptEnhancement\(\s*\{ commandPrefix: promptEnhancementCommandPrefix \},\s*enhanced,\s*\)/,
+  "Chat snapshots a prefix-aware transform for enhancement apply/suggest",
 );
 assert.doesNotMatch(chatView, /fetch\("\/api\/prompt\/enhance"/, "enhance must not round-trip through the dead API route");
-assert.match(chatView, /draft: preparedPromptEnhancement\.draft/, "enhance receives only the prepared draft body");
+assert.match(chatView, /draft: input/, "enhance settles against the full live composer input");
+assert.match(chatView, /sourceDraft: preparedPromptEnhancement\.draft/, "enhance still rewrites only the prepared draft body");
+assert.match(chatView, /transformEnhanced: transformEnhancedPrompt/, "enhance applies routed rewrites through the captured prefix transform");
 assert.match(chatView, /mode: preparedPromptEnhancement\.mode/, "enhance uses command-aware chat, code, image, or research mode");
 assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments\.map\(\(attachment\) => attachment\.name\)\]/, "enhance request forwards mentioned and attached file context");
 assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance request carries the thread title as context");
