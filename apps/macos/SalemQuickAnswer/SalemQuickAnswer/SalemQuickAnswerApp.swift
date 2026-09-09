@@ -16,7 +16,7 @@ struct SalemQuickAnswerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
-    private let model = QuickAnswerViewModel()
+    private let model = QuickAnswerViewModel(service: LiveBriefService())
     private var hotKeyController: GlobalHotKeyController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
