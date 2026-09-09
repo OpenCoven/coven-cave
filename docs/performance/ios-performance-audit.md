@@ -86,18 +86,47 @@ A subsequent GUI Immediate recording passed the UI journey but saved no
 exportable event stores. Neither capture establishes a cold baseline.
 
 A standard Logging recording with an explicit three-minute retention window
-saved and exported the project journey successfully. It contains five drawer,
-five switcher-presentation, five projection, and four project-switch/destination
-pairs. Coverage and the missing third selection interval are being reconciled against the
-UI log before assigning cold/warm labels. The project UI driver now checks the
-exact selected project after each tap; its strengthened device run is pending.
+saved and exported the first project journey, but missed its third
+switch/destination pair. That run remains unclassified. The strengthened UI
+driver then passed all five exact selected-project assertions. Its second trace
+retained all six drawer openings and all five switcher/projection/switch/destination
+sequences: 52 events, 26 complete pairs, no cancellations or unmatched events.
+Independent timeline review confirmed recording before launch and every expected
+interaction through the final verification drawer. Cold/warm classification is
+supported for those five names in that process.
 
-The following Logging rich-render capture passed all five visits but exported
-only visits two through five. Their warm count is 4, median 133.551 ms, p95 and
-maximum 137.642 ms. The interval-table export confirms the same missing initial
-events as the raw signpost export. No cold rich-render value is available, and
-the seven-span baseline remains open. These small-sample observations do not
-establish a regression comparison or a reliable tail-latency estimate.
+The Logging rich-render capture passed all five visits but exported only visits
+two through five. Both raw-event and interval exports show the same missing
+prefix. Those four samples are warm; no cold rich-render value is available.
+The seven-span baseline remains open. These small samples do not establish a
+regression comparison or a reliable tail-latency estimate.
+
+### Current v0.4.2 device intervals
+
+Milliseconds, nearest-rank p95. Cold means first attempted named interval in a
+fresh journey process, not cold OS caches or a clean install. Missing values
+mean not measured. Each row uses its independently reviewed capture; partial
+older captures are excluded.
+
+| Span | Cold n | Cold median | Cold p95 | Cold max | Warm n | Warm median | Warm p95 | Warm max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `drawer.open` | 1 | 139.679 | 139.679 | 139.679 | 5 | 141.080 | 158.035 | 158.035 |
+| `project.switcher.present` | 1 | 1163.545 | 1163.545 | 1163.545 | 4 | 1130.447 | 1130.633 | 1130.633 |
+| `project.switch` | 1 | 1031.323 | 1031.323 | 1031.323 | 4 | 1015.233 | 1016.119 | 1016.119 |
+| `destination.stable-frame` | 1 | 1031.313 | 1031.313 | 1031.313 | 4 | 1015.215 | 1016.113 | 1016.113 |
+| `search.query` | — | — | — | — | — | — | — | — |
+| `chat.first-rich-render` | — | — | — | — | 4 | 133.551 | 137.642 | 137.642 |
+| `project.projection` | 1 | 917.798 | 917.798 | 917.798 | 4 | 900.251 | 909.425 | 909.425 |
+
+Within the verified project journey, switcher presentation has the largest
+warm median (1,130.447 ms).
+Its nested synchronous projection accounts for 900.251 ms by its own span,
+so projection is the first profiling candidate. Project switch and destination
+completion share a boundary and overlap; their durations must not be added.
+They include overlay dismissal, so they are not equivalent to the existing
+100 ms warm-tab target. No new Phase 1 budget is ratified from this partial
+baseline. The existing engineering targets in the ultra-snappy design remain
+unchanged; SwiftUI, memory, CPU attribution, and power evidence remain separate.
 
 ### Stable spans
 
@@ -241,7 +270,10 @@ cause is not established.
 The UI tests accept an optional `CAVE_PERFORMANCE_CAPTURE_DELAY_SECONDS`
 runner environment variable. It defaults to no delay and accepts finite values
 between 0 and 60 seconds, exclusive of 0. This test-only pause precedes
-`XCUIApplication.launch()` and is outside all measured app intervals.
+`XCUIApplication.launch()` and is outside all measured app intervals. The runner
+presses Home between short waits to prevent idle auto-lock during attachment;
+automation calls can extend the requested pause. This keep-awake behavior still
+requires physical verification.
 
 For a prepared Release test build, copy its `.xctestrun` file alongside the
 original in `Build/Products`, then set the UI runner environment:

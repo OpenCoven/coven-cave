@@ -114,11 +114,21 @@ final class PerformanceBaselineUITests: XCTestCase {
 
     /// Test-only attachment window: start Instruments after the UI runner is
     /// installed, but before the fixture app emits its first-use signposts.
+    @MainActor
     private func waitForCaptureAttachment() {
         guard let raw = ProcessInfo.processInfo.environment["CAVE_PERFORMANCE_CAPTURE_DELAY_SECONDS"],
               let delay = TimeInterval(raw), delay.isFinite, delay > 0, delay <= 60 else { return }
         NSLog("PERFORMANCE_CAPTURE_READY: waiting %.0f seconds before fixture launch", delay)
-        Thread.sleep(forTimeInterval: delay)
+        let deadline = ProcessInfo.processInfo.systemUptime + delay
+        repeat {
+            // Device auto-lock can expire during an otherwise idle attachment
+            // window. Home keeps it awake before the measured app is launched.
+            XCUIDevice.shared.press(.home)
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            if remaining > 0 {
+                Thread.sleep(forTimeInterval: min(10, remaining))
+            }
+        } while ProcessInfo.processInfo.systemUptime < deadline
     }
 
     @MainActor
