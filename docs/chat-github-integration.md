@@ -327,6 +327,43 @@ slide track, and a zoom overlay that portals out, traps focus, and returns it.
 every turn, and `coven-marker-directive.test.ts` keeps the taught example
 parseable by the real extractor.
 
+## §11 Durable visual comparisons and temporary previews
+
+For static demos and visual comparisons, prefer the existing HTML artifact
+viewer to a session-owned HTTP server. Emit a **complete document** in a
+triple-backtick `html` fence, including `<!doctype html>` or `<html>`, so
+`extractArtifactBlocks` recognizes it rather than rendering an ordinary code
+snippet. The document lives in the saved assistant text and
+`ChatArtifactViewer` renders it through a sandboxed `srcdoc`; reopening the
+comparison does not require the generation session or its server.
+
+Keep CSS and scripts inline and images embedded. The preview CSP blocks
+external and localhost resources, including relative image/stylesheet URLs
+that would resolve against Cave. Save the complete HTML to a persistent path
+inside the runtime's granted roots and include its exact absolute path in a
+`coven:attachment` fence. For screenshot comparisons, attach the original image
+files using that same attachment protocol instead of hosting them on an
+ephemeral port. Large images should remain separate attachments rather than
+bloating the HTML; text attachments are size-capped and can be truncated, so
+retain the full original file.
+
+`<coven:preview url="http://127.0.0.1:3000/demo" title="Demo" />` is only a
+launcher for the Browser surface. **It does not start, supervise, restart, or
+retain a server.** A saved launcher preserves the URL, not the content at that
+URL. Use it for live interaction that genuinely needs a running server; verify
+the exact URL responds and disclose the process owner, expected lifetime,
+restart command, and stop command. A background process is not evidence of
+post-session availability. Claim runtime-managed persistence only with an
+actual lifecycle receipt; otherwise label it temporary.
+
+Deliver the serverless fallback in the same response and reopen it after
+stopping any temporary preparation server. This is not a promise that Cave
+itself works without its own app server, nor that a deleted transcript or file
+can be recovered. It removes the **additional comparison server** dependency.
+`coven-marker-directive.test.ts` pins the taught HTML example to the real
+extractor; `canvas-preview-csp-chromium.test.ts` reopens that example in fresh
+offline browser contexts after shutting down its fixture server.
+
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
