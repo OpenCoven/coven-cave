@@ -230,8 +230,8 @@ test("the shared projection never strips preview/GitHub/image markers before att
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
-    "skill markers must extract directly from reasoningSplit.visible — nothing may strip preview/GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
+    /const approveSplit = protectApproveMarkers\(reasoningSplit\.visible\);\s*const skillSplit = extractSkillMarkers\(approveSplit\.text\);/,
+    "skill markers must extract from reasoningSplit.visible via only the marker-protecting pass — nothing may strip preview/GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
   );
   const attentionIndex = pipeline.indexOf(
     "const attentionSplit = extractChatAttentionMarker(resultSplit.visible, {",
@@ -261,7 +261,7 @@ test("the shared projection extracts research and strips display markers only af
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
     "research extraction and preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
   );
 });
