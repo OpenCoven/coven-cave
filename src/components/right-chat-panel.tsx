@@ -18,6 +18,7 @@ import {
 } from "@/lib/right-chat-session";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
 
@@ -178,12 +179,11 @@ export function RightChatPanel(props: Props) {
   useEffect(() => {
     if (!familiarId || !props.open) return;
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 4_000);
     return () => {
       requestGeneration.current += 1;
-      window.clearInterval(timer);
     };
   }, [familiarId, props.open, refresh]);
+  usePausablePoll(refresh, 4_000, { enabled: Boolean(familiarId && props.open) });
 
   // A fix's actor is independent of the main surface's familiar filter. In
   // particular ChatRouter.newChat calls onSetActiveFamiliar synchronously;

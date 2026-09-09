@@ -125,7 +125,18 @@ import { RightChatPanel } from "./right-chat-panel";
 
 describe("authorized fix-thread handoffs", () => {
   beforeEach(() => {
-    vi.stubGlobal("window", { setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
+    vi.stubGlobal("window", {
+      setInterval: vi.fn(() => 1),
+      clearInterval: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    vi.stubGlobal("document", {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      hidden: false,
+      visibilityState: "visible",
+    });
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [] }) })));
   });
   afterEach(() => vi.unstubAllGlobals());
