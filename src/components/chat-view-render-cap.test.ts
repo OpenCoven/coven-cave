@@ -1,20 +1,11 @@
 // @ts-nocheck
-// Transcript render cap (perf): while the reader is pinned to the newest
-// content, only the last TRANSCRIPT_RENDER_CAP grouped turns mount, so opening a
-// long transcript doesn't build hundreds of DOM nodes up front. The cap must
-// dissolve the instant the reader leaves the bottom or opens find, so seeking
-// and find are never limited by it. These source-text assertions guard that
-// wiring (the behavior is exercised live; this catches accidental removal).
+// Browsing and find keep a hard group mounting budget. Pure range behavior
+// lives in chat-transcript-window.test.ts; these pins cover React/DOM wiring.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
-assert.match(src, /const TRANSCRIPT_RENDER_CAP = \d+;/, "a numeric render cap constant exists");
-
-// cave-u5lq7 put the earlier-turns fold ahead of the cap: a CLOSED fold mounts
-// even less than the cap would, so it wins outright and the cap decision below
-// is what runs whenever the fold is open or absent.
 assert.match(
   src,
   /const renderGroups = folded\s*\n\s*\? groupedTurns\.slice\(fold\.startIndex\)/,
@@ -22,9 +13,10 @@ assert.match(
 );
 assert.match(
   src,
-  /historyExpanded \|\| groupedTurns\.length <= TRANSCRIPT_RENDER_CAP\s*\?\s*groupedTurns\s*:\s*groupedTurns\.slice\(-TRANSCRIPT_RENDER_CAP\)/,
-  "the transcript renders the capped tail unless expanded or already short",
+  /: groupedTurns\.slice\(window\.start, window\.end\);/,
+  "every open-fold/find path renders only its bounded window",
 );
+assert.doesNotMatch(src, /historyExpanded|setHistoryExpanded/, "no unlimited expansion escape hatch remains");
 // The fold's own count must never be computed off the capped slice, or a long
 // thread's pill reports the render budget instead of the conversation.
 assert.match(
@@ -49,36 +41,57 @@ assert.match(
   "no time-gap divider on the first rendered row",
 );
 
-// Leaving the bottom (updateFollowing(false)) must mount the full transcript so
-// scroll-up / find-jump never land on an unmounted row.
 assert.match(
   src,
-  /if \(!next && !historyExpandedRef\.current\)\s*\{[\s\S]*?setHistoryExpanded\(true\)/,
-  "updateFollowing(false) expands the transcript (covers wheel/touch/keys/find-jump)",
+  /setTranscriptWindowStart\(\(start\) => start \?\? chatTranscriptWindow\(transcriptGroupCountRef\.current, null\)\.start\)/,
+  "leaving the bottom freezes the current window rather than mounting earlier history",
 );
 
-// Find must clear BOTH limiters (cave-u5lq7). Clearing only the cap left a
-// long thread reporting hits inside folded turns and then jumping nowhere,
-// because jumpToFindMatch resolves its target through querySelector and the
-// row it looks for was never rendered.
+// Search is over the whole active branch, never just the rendered page or
+// inactive siblings, and resolving its DOM node waits for the target commit.
 assert.match(
   src,
-  /if \(findOpen\) \{\s*\n\s*setHistoryExpanded\(true\);\s*\n\s*setFoldOpen\(true\);/,
-  "opening find mounts the whole transcript so jumps resolve via data-turn-id",
+  /findTranscriptHits\(\s*activePath\.map\(/,
+  "find searches the whole active transcript",
+);
+assert.match(
+  src,
+  /chatTranscriptWindowForTurn\(groupedTurns, id, transcriptWindowStartRef\.current\)/,
+  "a search target selects its containing bounded group window",
+);
+assert.match(
+  src,
+  /setFoldOpen\(true\);\s*setTranscriptWindowStart\(targetWindow\.start\);\s*setPendingFindJump\(\{ turnId: id, sessionId \}\)/,
+  "find schedules a target page, then a post-commit jump",
+);
+assert.match(
+  src,
+  /useLayoutEffect\(\(\) => \{\s*if \(!pendingFindJump\) return;[\s\S]*?querySelector<HTMLElement>[\s\S]*?scrollIntoView\(\{ block: "center", behavior: "auto" \}\);[\s\S]*?captureReleasedScrollAnchor\(\)/,
+  "the DOM jump runs after mounting and refreshes the released reader anchor",
 );
 
-// Switching sessions resets the cap so a long previous transcript is released.
 assert.match(
   src,
-  /updateFollowing\(true\);\s*setHistoryExpanded\(false\);/,
-  "a session switch resets the render cap",
+  /if \(next\) \{\s*setTranscriptWindowStart\(null\);/,
+  "every jump-to-latest resets the window to the live tail",
+);
+assert.match(
+  src,
+  /updateFollowing\(true\);[\s\S]{0,250}setFoldOpen\(false\);[\s\S]{0,200}\[sessionId, updateFollowing\]/,
+  "a session switch resets both tail following and the fold without remounting ChatView",
 );
 
-// The reveal must not jolt the viewport: distance-from-bottom is restored.
 assert.match(
   src,
-  /useLayoutEffect\(\(\) => \{[\s\S]*?el\.scrollTop = Math\.max\(0, el\.scrollHeight - anchor\)/,
-  "expanding restores the pre-expansion scroll anchor in a layout effect",
+  /el\.scrollTop \+= node\.getBoundingClientRect\(\)\.top - released\.top/,
+  "paging preserves a surviving overlapping turn's viewport position",
 );
+assert.match(src, /el\.scrollTop = Math\.max\(0, el\.scrollHeight - anchor\)/, "fold fallback keeps bottom distance");
+assert.match(src, /\[captureReleasedScrollAnchor, transcriptWindowStart, foldOpen\]/, "opening, closing and paging restore anchors");
+for (const label of ["Show earlier turns", "Show newer turns"]) {
+  assert.ok(src.includes(label), `${label} remains reachable by an explicit control`);
+}
+assert.match(src, /<Button[\s\S]{0,160}className="focus-ring"[\s\S]{0,80}aria-disabled=\{window\.start === 0\}/);
+assert.match(src, /aria-disabled=\{window\.end === groupedTurns\.length\}/, "boundary controls retain keyboard focus instead of unmounting");
 
 console.log("chat-view-render-cap.test.ts: ok");

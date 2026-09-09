@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const familiarChangeEffect =
-  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id, browseScope\]\);/)?.[0] ?? "";
 
 assert.match(
   familiarChangeEffect,
@@ -53,8 +53,8 @@ assert.match(
 
 assert.match(
   source,
-  /const chatFamiliar = selectedViewFamiliar \?\? sessionFamiliar \?\? familiar \?\? null/,
-  "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
+  /const chatFamiliar = boundFamiliarId\s*\? sessionFamiliar \?\? selectedViewFamiliar[\s\S]*?retainedFamiliarRef\.current\?\.id === boundFamiliarId/,
+  "An opened session keeps its own familiar even if the current browse roster temporarily omits it",
 );
 
 assert.match(
@@ -371,12 +371,22 @@ assert.match(
 
 assert.match(
   jumpFn,
+  /setTranscriptWindowStart\(targetWindow\.start\);\s*setPendingFindJump\(/,
+  "find selects a bounded target window before queuing the DOM jump",
+);
+
+const jumpAfterMount =
+  chatViewSource.match(/useLayoutEffect\(\(\) => \{\s*if \(!pendingFindJump\) return;[\s\S]*?\}, \[pendingFindJump,[^\]]*\]\);/)?.[0] ?? "";
+assert.ok(jumpAfterMount.length > 0, "find resolves the target after its window commits");
+
+assert.match(
+  jumpAfterMount,
   /scrollIntoView\(\{ block: "center", behavior: "auto" \}\)/,
   "Find jumps must scroll instantly (behavior: \"auto\") and center the matching turn",
 );
 
 assert.match(
-  jumpFn,
+  jumpAfterMount,
   /data-turn-id/,
   "Jump targeting should resolve the turn row via its data-turn-id attribute",
 );

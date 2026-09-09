@@ -32,12 +32,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const chatView = vi.hoisted(() => ({
   latestProps: null as Record<string, unknown> | null,
+  mounts: 0,
 }));
 
 vi.mock("@/components/chat-view", async () => {
-  const { forwardRef, useImperativeHandle } = await import("react");
+  const { forwardRef, useEffect, useImperativeHandle } = await import("react");
   const ChatView = forwardRef(function MockChatView(props: Record<string, unknown>, ref: unknown) {
     chatView.latestProps = props;
+    useEffect(() => { chatView.mounts += 1; }, []);
     useImperativeHandle(ref, () => ({
       clearTranscript: () => {},
       runSlash: () => {},
@@ -126,12 +128,129 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("network disabled in test"))));
   chatView.latestProps = null;
+  chatView.mounts = 0;
 });
 
 afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test("workspace browse changes and delayed familiar hydration preserve the open chat and its mount", async () => {
+  const cody = familiar("cody");
+  const sage = familiar("sage");
+  const current = { ...sessionRow("beta-chat", cody.id, "2026-09-01T00:00:00Z"), project_root: "/beta" };
+  const ref = { current: null as ChatRouterHandle | null };
+  const props = {
+    ref,
+    familiar: cody,
+    familiars: [cody, sage],
+    sessions: [current],
+    browseScope: { selection: "beta", ready: true },
+    onSessionsDeleted: vi.fn(),
+  };
+  await act(async () => { renderer = create(<ChatRouter {...props} />); });
+  await act(async () => { ref.current!.openSession(current.id); });
+  const mounts = chatView.mounts;
+  const composeInstance = chatView.latestProps!.composeInstance;
+  // The newly restored project crew and its filtered poll arrive after the
+  // user already opened Beta. Neither is a manual familiar-switch intent.
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} familiar={sage} sessions={[]} browseScope={{ selection: "alpha", ready: false }} />);
+  });
+  expect(ref.current!.currentSessionId()).toBe(current.id);
+  expect(ref.current!.currentFamiliarId()).toBe(cody.id);
+  expect(chatView.latestProps!.session).toBe(current);
+  expect(chatView.latestProps!.familiar).toBe(cody);
+  expect(chatView.latestProps!.composeInstance).toBe(composeInstance);
+  expect(chatView.mounts).toBe(mounts);
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} familiar={sage} familiars={[sage]} sessions={[]} browseScope={{ selection: "alpha", ready: true }} />);
+  });
+  expect(ref.current!.currentSessionId()).toBe(current.id);
+  expect(ref.current!.currentFamiliarId()).toBe(cody.id);
+  expect(chatView.latestProps!.familiar).toBe(cody);
+  expect(chatView.mounts).toBe(mounts);
+  // Explicit header/palette switches use this imperative fresh-compose path,
+  // not the asynchronous familiar prop effect.
+  await act(async () => { ref.current!.newChat(undefined, undefined, sage.id); });
+  expect(ref.current!.currentSessionId()).toBeNull();
+  expect(ref.current!.currentFamiliarId()).toBe(sage.id);
+  expect(chatView.latestProps!.familiar).toBe(sage);
+  expect(chatView.latestProps!.session).toBeNull();
+  expect(chatView.latestProps!.composeInstance).toBeGreaterThan(composeInstance);
+});
+
+test("global projects update a mounted blank compose, but never rebind an open or newly promoted chat", async () => {
+  const cody = familiar("cody");
+  const ref = { current: null as ChatRouterHandle | null };
+  const props = {
+    ref,
+    familiar: cody,
+    familiars: [cody],
+    sessions: [],
+    browseScope: { selection: "alpha", ready: true },
+    composeProjectRoot: "/alpha",
+    onSessionsDeleted: vi.fn(),
+  };
+  await act(async () => { renderer = create(<ChatRouter {...props} />); });
+  expect(chatView.latestProps!.projectRoot).toBe("/alpha");
+  const mounts = chatView.mounts;
+  const composeInstance = chatView.latestProps!.composeInstance;
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} browseScope={{ selection: "beta", ready: true }} composeProjectRoot="/beta" />);
+  });
+  expect(chatView.latestProps!.projectRoot).toBe("/beta");
+  expect(chatView.latestProps!.composeInstance).toBe(composeInstance);
+  expect(chatView.mounts).toBe(mounts);
+  await act(async () => { ref.current!.newChat("/beta/.worktrees/task", undefined, cody.id); });
+  expect(chatView.latestProps!.projectRoot).toBe("/beta/.worktrees/task");
+  const taskMounts = chatView.mounts;
+  const stalePromotion = chatView.latestProps!.onSessionStarted;
+  const taskComposeInstance = chatView.latestProps!.composeInstance;
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} />);
+  });
+  expect(chatView.latestProps!.projectRoot).toBe("/alpha");
+  expect(chatView.mounts).toBe(taskMounts);
+  await act(async () => {
+    stalePromotion({ newSessionId: "old-task", expectedSessionId: null, composeInstance: taskComposeInstance });
+  });
+  expect(ref.current!.currentSessionId()).toBeNull();
+  await act(async () => {
+    chatView.latestProps!.onSessionStarted({ newSessionId: "new-alpha", expectedSessionId: null, composeInstance: taskComposeInstance });
+  });
+  expect(ref.current!.currentSessionId()).toBe("new-alpha");
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} browseScope={{ selection: "beta", ready: true }} composeProjectRoot="/beta" />);
+  });
+  expect(chatView.latestProps!.projectRoot).toBe("/alpha");
+  expect(chatView.mounts).toBe(taskMounts);
+});
+
+test("the first send freezes compose identity before a server session id arrives", async () => {
+  const cody = familiar("cody");
+  const ref = { current: null as ChatRouterHandle | null };
+  const props = {
+    ref, familiar: cody, familiars: [cody], sessions: [],
+    browseScope: { selection: "alpha", ready: true },
+    composeProjectRoot: "/alpha", onSessionsDeleted: vi.fn(),
+  };
+  await act(async () => { renderer = create(<ChatRouter {...props} />); });
+  const mounts = chatView.mounts;
+  const composeInstance = chatView.latestProps!.composeInstance;
+  await act(async () => { chatView.latestProps!.onComposeStarted(); });
+  await act(async () => {
+    renderer.update(<ChatRouter {...props} browseScope={{ selection: "beta", ready: true }} composeProjectRoot="/beta" />);
+  });
+  expect(chatView.latestProps!.projectRoot).toBe("/alpha");
+  expect(chatView.mounts).toBe(mounts);
+  await act(async () => {
+    chatView.latestProps!.onSessionStarted({ newSessionId: "alpha-send", expectedSessionId: null, composeInstance });
+  });
+  expect(ref.current!.currentSessionId()).toBe("alpha-send");
+  expect(chatView.latestProps!.projectRoot).toBe("/alpha");
 });
 
 describe("ChatRouter onBack is conditional on the removed session still being displayed (cave-rl980 Task 4 final review)", () => {

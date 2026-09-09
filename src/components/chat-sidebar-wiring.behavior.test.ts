@@ -9,6 +9,16 @@ const dragSignals = vi.hoisted(() => ({
   start: vi.fn(),
   end: vi.fn(),
 }));
+const prefetchSignals = vi.hoisted(() => ({
+  hover: vi.fn(),
+  cancel: vi.fn(),
+  prefetch: vi.fn(),
+}));
+vi.mock("@/lib/conversation-cache", () => ({
+  hoverPrefetchConversation: prefetchSignals.hover,
+  cancelHoverPrefetch: prefetchSignals.cancel,
+  prefetchConversation: prefetchSignals.prefetch,
+}));
 
 const mockProjects = vi.hoisted(() => ({
   state: {
@@ -147,6 +157,13 @@ function bucketLabels(renderer: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  mockProjects.state.projects = [];
+  mockProjects.state.loading = false;
+  mockProjects.state.loadedSuccessfully = true;
+  mockProjects.state.error = null;
+  prefetchSignals.hover.mockReset();
+  prefetchSignals.cancel.mockReset();
+  prefetchSignals.prefetch.mockReset();
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-05T20:00:00.000Z"));
   const storage = new Map<string, string>();
@@ -175,6 +192,76 @@ afterEach(() => {
   vi.unstubAllGlobals();
   dragSignals.start.mockReset();
   dragSignals.end.mockReset();
+});
+
+test("workspace project browsing masks other roots, hosts, loading and revoked projects", async () => {
+  const alpha = { ...makeSession(), id: "alpha-chat", title: "Alpha chat", project_root: "/alpha" };
+  const beta = { ...makeSession(), id: "beta-chat", title: "Beta chat", project_root: "/beta" };
+  const ssh = { ...alpha, id: "ssh-chat", title: "Remote chat", runtime: "ssh:builder:/alpha" };
+  const project = { id: "alpha", name: "Alpha", root: "/alpha/" };
+  mockProjects.state.projects = [project];
+  const props = {
+    sessions: [alpha, beta, ssh],
+    browseScope: { selection: "alpha", ready: true },
+    onOpenSession: vi.fn(),
+    onDeleteSession: async () => undefined,
+  };
+  let renderer!: ReactTestRenderer;
+  const titles = () => renderer.root.findAllByProps({ className: "cnav__thread-title" }).map((row) => textContent(row.children));
+  await act(async () => { renderer = create(createElement(SidebarChatsSection, props)); });
+  expect(titles()).toEqual(["Alpha chat"]);
+  mockProjects.state.loading = true;
+  await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
+  expect(titles()).toEqual([]);
+  mockProjects.state.loading = false;
+  mockProjects.state.projects = [];
+  await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
+  expect(titles()).toEqual([]);
+  mockProjects.state.projects = [project];
+  await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props })); });
+  expect(titles()).toEqual(["Alpha chat"]);
+  await act(async () => { renderer.update(createElement(SidebarChatsSection, { ...props, browseScope: { selection: "missing", ready: true } })); });
+  expect(titles()).toEqual([]);
+  await act(async () => renderer.unmount());
+});
+
+test("actual thread buttons prefetch by hover, pointer down and focus, but never in select mode", async () => {
+  let renderer!: ReactTestRenderer;
+  const session = makeSession();
+  const props = {
+    sessions: [session, { ...session, id: "second", title: "Second chat" }],
+    onOpenSession: vi.fn(),
+    onOpenSessionInSplit: vi.fn(),
+    onDeleteSession: async () => undefined,
+  };
+  await act(async () => { renderer = create(createElement(SidebarChatsSection, props)); });
+  const rows = () => renderer.root.findAllByProps({ className: "cnav__thread-main focus-ring" });
+  await act(async () => {
+    rows()[0].props.onPointerEnter();
+    rows()[0].props.onPointerDown();
+    rows()[0].props.onFocus();
+    rows()[0].props.onPointerLeave();
+  });
+  const prefetchedId = prefetchSignals.hover.mock.calls[0][0];
+  expect(prefetchSignals.prefetch.mock.calls).toEqual([[prefetchedId], [prefetchedId]]);
+  expect(prefetchSignals.cancel).toHaveBeenCalled();
+  const preventDefault = vi.fn();
+  await act(async () => { rows()[0].props.onKeyDown({ key: "Enter", altKey: true, preventDefault }); });
+  expect(preventDefault).toHaveBeenCalled();
+  expect(props.onOpenSessionInSplit).toHaveBeenCalledTimes(1);
+  await act(async () => { renderer.root.findByProps({ className: "cnav__select-enter focus-ring" }).props.onClick(); });
+  prefetchSignals.hover.mockClear();
+  prefetchSignals.prefetch.mockClear();
+  await act(async () => {
+    rows()[0].props.onPointerEnter();
+    rows()[0].props.onPointerDown();
+    rows()[0].props.onFocus();
+    rows()[0].props.onKeyDown({ key: "Enter", altKey: true, preventDefault });
+  });
+  expect(prefetchSignals.hover).not.toHaveBeenCalled();
+  expect(prefetchSignals.prefetch).not.toHaveBeenCalled();
+  expect(props.onOpenSessionInSplit).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
 });
 
 test("workspace sidebar row timestamps update when the shared minute tick fires", async () => {
