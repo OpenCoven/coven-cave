@@ -48,12 +48,25 @@ assert.match(
   /Archive chat/,
   "primary CTA reads 'Archive chat'",
 );
-// X-close + secondary Dismiss both wired to onDismiss so the user can quit
-// from either affordance.
 assert.match(
   componentSrc,
-  /aria-label="Dismiss archive nudge"[\s\S]*onClick=\{onDismiss\}/,
-  "header close button is wired to onDismiss",
+  /onClick=\{onDismiss\}[\s\S]*Keep chat open/,
+  "secondary action clearly keeps the chat open",
+);
+assert.match(
+  componentSrc,
+  /Task complete\. Ready to archive\?/,
+  "the heading explains why archiving is being suggested without claiming the chat is finished",
+);
+assert.match(
+  componentSrc,
+  /finished with this topic[\s\S]*history[\s\S]*Show archived/,
+  "guidance explains when to archive, preserved history and where to find it",
+);
+assert.match(
+  componentSrc,
+  /<Button\s+variant="primary"[\s\S]*onClick=\{onArchive\}[\s\S]*loading=\{archiving\}/,
+  "archive uses the prominent shared primary button with loading semantics",
 );
 // Disabled state during the archive request.
 assert.match(
@@ -122,11 +135,19 @@ assert.match(
   /const dismissArchiveNudge = useCallback\([\s\S]*markChatArchiveNudgeDismissed\(sessionId, window\.localStorage\)/,
   "dismissArchiveNudge persists the per-session flag to localStorage",
 );
-// Banner is mounted inside the chat thread, just before tailRef so the new
-// turn appears below it visually.
+// The prompt stays outside the transcript scroller, directly above the composer.
+assert.ok(
+  chatViewSrc.indexOf("<ChatArchiveNudge") > chatViewSrc.indexOf("</ToolProjectRootContext.Provider>"),
+  "the archive prompt is not buried inside the scrollable transcript",
+);
 assert.match(
   chatViewSrc,
-  /shouldShowChatArchiveNudge\(\{\s*taskLifecycle: linkedContext\?\.task\?\.lifecycle \?\? null,\s*sessionArchived: Boolean\(session\?\.archived_at\),\s*dismissed: archiveNudgeDismissed,\s*\}\) \? \(\s*<ChatArchiveNudge[\s\S]*taskTitle=\{linkedContext\?\.task\?\.title \?\? ""\}[\s\S]*onArchive=\{\(\) => void setChatArchived\(true\)\}[\s\S]*onDismiss=\{dismissArchiveNudge\}[\s\S]*archiving=\{archiving\}/,
+  /<ChatArchiveNudge[\s\S]*?\/>\s*\) : null\}\s*\{inlineComposer \? null : showDockedComposer \? composerNode : null\}/,
+  "archive guidance is adjacent to the composer",
+);
+assert.match(
+  chatViewSrc,
+  /shouldShowChatArchiveNudge\(\{\s*taskLifecycle: linkedContext\?\.task\?\.lifecycle \?\? null,\s*sessionArchived: Boolean\(session\?\.archived_at\),\s*dismissed: archiveNudgeDismissed,\s*sessionBusy: busy \|\| autoMissionActive \|\| voiceCallOpen \|\| session\?\.status === "running",\s*\}\) \? \(\s*<ChatArchiveNudge[\s\S]*taskTitle=\{linkedContext\?\.task\?\.title \?\? ""\}[\s\S]*onArchive=\{\(\) => void setChatArchived\(true\)\}[\s\S]*onDismiss=\{dismissArchiveNudge\}[\s\S]*archiving=\{archiving\}/,
   "the nudge and header button share the same archive mutation and busy state",
 );
 
