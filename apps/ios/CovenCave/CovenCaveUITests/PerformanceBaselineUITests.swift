@@ -69,6 +69,7 @@ final class PerformanceBaselineUITests: XCTestCase {
 
     @MainActor
     func testRepeatedFirstRichRender() {
+        waitForCaptureAttachment()
         let app = XCUIApplication()
         app.launchArguments = ["--performance-instrumentation", "--performance-fixture"]
         app.launch()
@@ -89,6 +90,7 @@ final class PerformanceBaselineUITests: XCTestCase {
 
     @MainActor
     private func launchFixture() -> XCUIApplication {
+        waitForCaptureAttachment()
         let app = XCUIApplication()
         app.launchArguments = [
             "--performance-instrumentation",
@@ -97,6 +99,15 @@ final class PerformanceBaselineUITests: XCTestCase {
         ]
         app.launch()
         return app
+    }
+
+    /// Test-only attachment window: start Instruments after the UI runner is
+    /// installed, but before the fixture app emits its first-use signposts.
+    private func waitForCaptureAttachment() {
+        guard let raw = ProcessInfo.processInfo.environment["CAVE_PERFORMANCE_CAPTURE_DELAY_SECONDS"],
+              let delay = TimeInterval(raw), delay.isFinite, delay > 0, delay <= 60 else { return }
+        NSLog("PERFORMANCE_CAPTURE_READY: waiting %.0f seconds before fixture launch", delay)
+        Thread.sleep(forTimeInterval: delay)
     }
 
     @MainActor
