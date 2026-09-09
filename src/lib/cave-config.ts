@@ -1206,6 +1206,7 @@ export async function setSessionTitleAutoIfOwned(
     ) {
       return null; // manual title present — preserve it
     }
+    if (current === trimmed && currentAuto === trimmed && !explicitlyManual) return trimmed;
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
     delete state.sessionTitleManual[sessionId];

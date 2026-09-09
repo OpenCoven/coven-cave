@@ -9,10 +9,11 @@ import {
   isRenameDueAtTurn,
   normalizeChatAutoRenamePolicy,
   renameTitleFromLatestExchange,
+  hasMaterialTitleChange,
 } from "./chat-auto-rename.ts";
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
-// Opt-in: renaming a chat out from under someone is surprising, so it is off.
+// Enabled checkpoints evaluate whether the topic actually changed.
 assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.enabled, true);
 assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.everyTurns, 4);
 assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.preserveManualTitles, true);
@@ -168,5 +169,16 @@ assert.equal(
   assert.ok(wc <= 7, `≤7 words: "${title}" (${wc})`);
   assert.notEqual(title, overLimitText, "output differs from raw input");
 }
+
+assert.equal(hasMaterialTitleChange("Database migration plan", "Database migration tests"), false);
+assert.equal(hasMaterialTitleChange("DATABASE migration", "Database migration"), false);
+assert.equal(hasMaterialTitleChange("Database migration", "Thanks"), false);
+assert.equal(hasMaterialTitleChange("Database migration", "Continue please"), false);
+assert.equal(hasMaterialTitleChange("Database migration plan", "Keychain recovery testing"), true);
+assert.equal(hasMaterialTitleChange("Fix database migrations", "Update database migrations"), false);
+assert.equal(hasMaterialTitleChange(null, "Database migration plan"), true);
+assert.equal(hasMaterialTitleChange("New chat", "Database migration plan"), true);
+assert.equal(hasMaterialTitleChange("Database migration", ""), false);
+assert.equal(hasMaterialTitleChange("Cafe\u0301 database plan", "Caf\u00e9 database tests"), false);
 
 console.log("chat-auto-rename.test.ts ok");

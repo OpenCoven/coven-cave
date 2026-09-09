@@ -12,14 +12,17 @@ import {
   loadConfig,
   loadState,
   recordSessionFamiliar,
+  sessionTitleRevision,
   setSessionTitleAutoIfOwned,
 } from "@/lib/cave-config";
 import { chatSummaryTitle, chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
+  hasMaterialTitleChange,
   isRenameDueAtTurn,
   normalizeChatAutoRenamePolicy,
   renameTitleFromLatestExchange,
 } from "@/lib/chat-auto-rename";
+import { resolveActivePath } from "@/lib/conversation-tree";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -570,7 +573,9 @@ function attentionClearOperationForTurn(
  *  atomically skipping when a manual title is already present. Best effort. */
 async function setDefaultStubTitleAuto(sessionId: string, title: string): Promise<void> {
   const autoDefaults = new Set([defaultChatTitleForSession(sessionId)]);
-  await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => undefined);
+  await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => {
+    console.warn("[chat-title] initial title persistence failed");
+  });
 }
 
 /** Auto-name a thread from its first user/assistant exchange with a short
@@ -584,13 +589,14 @@ async function autoNameSessionFromFirstExchange(
   promptText: string,
 ): Promise<void> {
   try {
-    // Derive the title from the first settled exchange first, before any
-    // ownership check, so stale pre-await state cannot overwrite a manual rename.
-    const conversation = await loadConversation(sessionId).catch(() => null);
-    const turns = conversation?.turns ?? [];
+    const state = await loadState();
+    const conversation = await loadConversation(sessionId);
+    const turns = conversation?.activeLeafId
+      ? resolveActivePath(conversation.turns, conversation.activeLeafId)
+      : conversation?.turns ?? [];
     const firstUser = turns.find((t) => t.role === "user")?.text ?? promptText;
     const firstAssistant =
-      turns.find((t) => t.role === "assistant" && !t.isError)?.text ?? null;
+      turns.find((t) => t.role === "assistant" && !t.isError && !t.cancelled)?.text ?? null;
     const summary = chatSummaryTitle({ userText: firstUser, assistantText: firstAssistant });
     if (!summary) return;
 
@@ -604,18 +610,21 @@ async function autoNameSessionFromFirstExchange(
         defaultChatTitleForSession(sessionId),      // "New chat"
       ].filter((t): t is string => Boolean(t)),
     );
-    await setSessionTitleAutoIfOwned(sessionId, summary, autoDefaults);
+    await setSessionTitleAutoIfOwned(
+      sessionId, summary, autoDefaults, true,
+      sessionTitleRevision(state, sessionId), state.sessionTitles[sessionId],
+    );
   } catch {
-    /* best effort */
+    console.warn("[chat-title] first-exchange naming failed");
   }
 }
 
 /**
- * Periodic, context-aware rename (chat-auto-rename.ts). Opt-in via the
+ * Periodic, context-aware rename (chat-auto-rename.ts). Controlled by the
  * `chatAutoRename` policy: once a thread reaches a multiple of `everyTurns`
  * assistant turns, re-derive its title from the LATEST exchange so a long
- * conversation's name tracks where it actually went. Never overwrites a title
- * a person set by hand (provenance in `sessionTitleAuto`). Best effort: any
+ * conversation's name tracks where it actually went. Preserves manual titles
+ * under the configured ownership policy, and always fences newer writes. Any
  * failure leaves the current title in place. `firstPromptText` seeds the set of
  * auto-derived defaults the first-exchange name may have left behind.
  */
@@ -628,15 +637,25 @@ async function maybeAutoRenameFromContext(
     const policy = normalizeChatAutoRenamePolicy(config.chatAutoRename);
     if (!policy.enabled) return;
 
+    const state = await loadState();
     const conversation = await loadConversation(sessionId);
-    const turns = conversation?.turns ?? [];
-    const assistantTurns = turns.filter((t) => t.role === "assistant").length;
+    const turns = conversation?.activeLeafId
+      ? resolveActivePath(conversation.turns, conversation.activeLeafId)
+      : conversation?.turns ?? [];
+    const latestDialogueTurn = turns.findLast((turn) => turn.role === "user" || turn.role === "assistant");
+    if (
+      latestDialogueTurn?.role !== "assistant" ||
+      latestDialogueTurn.isError || latestDialogueTurn.cancelled || !latestDialogueTurn.text.trim()
+    ) return;
+    const assistantTurns = turns.filter((t) => t.role === "assistant" && !t.isError && !t.cancelled).length;
     if (!isRenameDueAtTurn(assistantTurns, policy.everyTurns)) return;
 
-    const lastUser = [...turns].reverse().find((t) => t.role === "user")?.text ?? null;
-    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant")?.text ?? null;
+    const assistantIndex = turns.findLastIndex((t) => t.role === "assistant" && !t.isError && !t.cancelled);
+    const lastUser = turns.slice(0, assistantIndex).findLast((t) => t.role === "user")?.text ?? null;
+    const lastAssistant = turns[assistantIndex]?.text ?? null;
     const next = renameTitleFromLatestExchange({ userText: lastUser, assistantText: lastAssistant });
     if (!next) return;
+    if (!hasMaterialTitleChange(state.sessionTitles[sessionId] ?? conversation?.title, next)) return;
 
     const firstPrompt = turns.find((t) => t.role === "user")?.text ?? firstPromptText;
     const autoDefaults = new Set(
@@ -653,9 +672,11 @@ async function maybeAutoRenameFromContext(
       next,
       autoDefaults,
       policy.preserveManualTitles,
+      sessionTitleRevision(state, sessionId),
+      state.sessionTitles[sessionId],
     );
   } catch {
-    /* best effort */
+    console.warn("[chat-title] periodic naming failed");
   }
 }
 
