@@ -13,8 +13,9 @@ import { createServer } from "node:http";
 import { existsSync } from "node:fs";
 import { chromium } from "@playwright/test";
 
-import { buildPreviewSrcDoc } from "./canvas-artifacts.ts";
+import { buildPreviewSrcDoc, extractArtifactBlocks } from "./canvas-artifacts.ts";
 import { buildReactSrcDoc, SANDBOX_RUNTIME_SRC, SANDBOX_TAILWIND_SRC } from "./canvas-react-harness.ts";
+import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
 
 const executablePath = chromium.executablePath();
 if (!existsSync(executablePath)) {
@@ -168,9 +169,42 @@ if (!existsSync(executablePath)) {
     );
     assert.ok(htmlGuarded.some((e) => e?.type === "img-failed"), "the HTML artifact's beacon is refused");
     assert.ok(!hits.includes("/beacon-img"), "and never reaches the network");
+
+    // Reopen the taught comparison from transcript bytes, not a cached page or
+    // a preview URL. Its HTML must survive the serving process going away.
+    const example = buildCovenMarkersDirective().match(/```html\n[\s\S]*?\n```/)?.[0];
+    assert.ok(example, "the directive must teach a self-contained comparison artifact");
+    const transcript = JSON.stringify({ role: "assistant", text: example });
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    assert.equal(server.listening, false);
+    await assert.rejects(fetch(origin, { signal: AbortSignal.timeout(2_000) }));
+
+    for (const label of ["first-open", "reopen"]) {
+      const context = await browser.newContext({ offline: true });
+      try {
+        const offlinePage = await context.newPage();
+        const requests = [];
+        offlinePage.on("request", (request) => requests.push(request.url()));
+        const [artifact] = extractArtifactBlocks(JSON.parse(transcript).text);
+        assert.equal(artifact.kind, "html");
+        await offlinePage.setContent('<iframe title="Comparison" sandbox="allow-scripts"></iframe>');
+        await offlinePage.locator("iframe").evaluate((frame, doc) => {
+          frame.srcdoc = doc;
+        }, buildPreviewSrcDoc(artifact.code, "", origin));
+        const preview = offlinePage.frameLocator("iframe");
+        for (const name of ["Before", "After"]) {
+          const heading = preview.getByRole("heading", { name, exact: true });
+          await heading.waitFor({ state: "visible", timeout: 5_000 });
+          assert.ok(await heading.isVisible(), `${label}: ${name} renders without a server`);
+        }
+        assert.deepEqual(requests, [], `${label}: the comparison needs no network resources`);
+      } finally {
+        await context.close();
+      }
+    }
   } finally {
     await browser.close();
-    await new Promise((resolve) => server.close(resolve));
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
   }
 
   console.log("canvas-preview-csp-chromium.test.ts ✓");
