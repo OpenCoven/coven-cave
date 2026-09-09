@@ -4,7 +4,7 @@ protocol BriefServing {
     func answer(question: String, audience: AnswerAudience, depth: AnswerDepth) async throws -> BriefResponse
 }
 
-enum FixtureBriefError: Error {
+enum BriefServiceError: Error {
     case offline
     case unauthorized
     case rateLimited
@@ -16,10 +16,10 @@ struct FixtureBriefService: BriefServing {
         try await Task.sleep(for: .milliseconds(180))
         let normalized = question.lowercased()
 
-        if normalized.contains("fixture:offline") { throw FixtureBriefError.offline }
-        if normalized.contains("fixture:unauthorized") { throw FixtureBriefError.unauthorized }
-        if normalized.contains("fixture:rate") { throw FixtureBriefError.rateLimited }
-        if normalized.contains("fixture:failed") { throw FixtureBriefError.failed }
+        if normalized.contains("fixture:offline") { throw BriefServiceError.offline }
+        if normalized.contains("fixture:unauthorized") { throw BriefServiceError.unauthorized }
+        if normalized.contains("fixture:rate") { throw BriefServiceError.rateLimited }
+        if normalized.contains("fixture:failed") { throw BriefServiceError.failed }
 
         let unknown = normalized.contains("every model") || normalized.contains("fixture:unknown")
         let stale = normalized.contains("fixture:stale")
