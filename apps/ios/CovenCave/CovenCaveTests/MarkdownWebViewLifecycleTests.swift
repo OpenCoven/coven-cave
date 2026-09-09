@@ -107,6 +107,55 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testTransientStreamingFailureCanRecoverWithSettledRender() async throws {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let coordinator = MarkdownWebView.Coordinator(performanceRecorder: recorder)
+        defer { coordinator.invalidate() }
+        let clock = ContinuousClock()
+        let readyDeadline = clock.now.advanced(by: .seconds(10))
+        var rendererReady = false
+        while !rendererReady, clock.now < readyDeadline {
+            rendererReady = (try? await coordinator.webView.evaluateJavaScript(
+                "typeof window.caveRender === 'function'"
+            )) as? Bool == true
+            if !rendererReady { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        XCTAssertTrue(rendererReady, "The bundled renderer must load before injecting a transient failure")
+        guard rendererReady else { return }
+        _ = try await coordinator.webView.evaluateJavaScript("""
+            window.caveRender = async function(md, opts) {
+                if (opts.streaming) throw new Error('transient streaming render');
+                document.body.innerHTML = '<p>Settled response</p>';
+                document.body.style.height = '100px';
+            }; true;
+            """)
+        var failures = 0
+        coordinator.onFailure = { failures += 1 }
+        coordinator.apply(markdown: "Partial", streaming: true,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        let streamDeadline = clock.now.advanced(by: .seconds(5))
+        while recorder.snapshot()["markdown.render.streaming"] == nil, clock.now < streamDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await drainMainQueue()
+        XCTAssertEqual(recorder.snapshot()["markdown.render.streaming"]?.count, 1)
+        XCTAssertEqual(failures, 0, "A streaming rejection must not trigger terminal fallback")
+
+        var settledHeight: CGFloat?
+        coordinator.onHeight = { settledHeight = $0 }
+        coordinator.apply(markdown: "Complete", streaming: false,
+                          fontScale: 1, theme: .dark, accentHex: nil, reader: false)
+        let settledDeadline = clock.now.advanced(by: .seconds(5))
+        while recorder.snapshot()["markdown.render.settled"] == nil, clock.now < settledDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await drainMainQueue()
+        XCTAssertEqual(recorder.snapshot()["markdown.render.settled"]?.count, 1)
+        XCTAssertGreaterThan(settledHeight ?? 0, 0)
+        XCTAssertEqual(failures, 0)
+    }
+
+    @MainActor
     func testSwiftUIUnmountCallsProductionDismantle() throws {
         let clock = ContinuousClock()
         weak var observed: MarkdownWebView.Coordinator?

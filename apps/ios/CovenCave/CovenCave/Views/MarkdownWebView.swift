@@ -333,8 +333,13 @@ struct MarkdownWebView: UIViewRepresentable {
                         return
                     }
                 case .failure:
-                    self.reportFailure()
-                    return
+                    // Streaming failures can be transient; the settled render
+                    // decides fallback. WebContent termination is terminal via
+                    // its delegate callback and fences this completion itself.
+                    if !o.streaming {
+                        self.reportFailure()
+                        return
+                    }
                 }
                 if self.pending != nil { self.requestRender() }
             }
