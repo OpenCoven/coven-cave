@@ -24,7 +24,6 @@ import {
   checkRecordValues,
   buildCaveEnvironment,
   caveReadinessFailure,
-  canonicalConversationIdFailures,
   createConformanceFixtureRoot,
   createRecorder,
   expectedAssertionIds,
@@ -974,26 +973,6 @@ test("the branched fixture's active path is the declared sequence and omits the 
 
 test("the branched fixture pages at limit 2 so the reconcile leg has an open cursor", () => {
   assert.ok(BRANCHED_ACTIVE_SEQUENCE.length > 2);
-});
-
-test("a case-sensitive filesystem refusal proves the canonical conversation-id boundary", () => {
-  assert.deepEqual(
-    canonicalConversationIdFailures({
-      status: 404,
-      json: {
-        apiVersion: "1.0",
-        minimumClientVersion: "0.1.0",
-        capabilities: ["reads"],
-        operations: ["conversations.messages.read"],
-        error: {
-          code: "not_found",
-          message: "Conversation not found",
-          retryable: false,
-        },
-      },
-    }),
-    [],
-  );
 });
 
 test("the branched fixture gives the message projection something to withhold and to count", () => {

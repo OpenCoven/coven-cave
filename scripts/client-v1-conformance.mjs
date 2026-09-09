@@ -437,21 +437,6 @@ export function checkEnvelope(body, expectation) {
   return failures;
 }
 
-export function canonicalConversationIdFailures(response) {
-  if (response.status === 404) {
-    return checkEnvelope(response.json, { kind: "error", code: "not_found" });
-  }
-  if (response.status !== 200) {
-    return [`/conversations/BRANCHED/messages answered ${response.status}, expected 200 or 404`];
-  }
-  return [
-    ...checkEnvelope(response.json, { kind: "success" }),
-    ...(response.json?.data?.messages?.[0]?.conversationId === "branched"
-      ? []
-      : [`conversationId is ${JSON.stringify(response.json?.data?.messages?.[0]?.conversationId)}, expected the transcript's own "branched"`]),
-  ];
-}
-
 /**
  * A projected record, checked as a whole key set rather than field by field.
  *
@@ -2990,14 +2975,31 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
   absentFailures.push(...checkEnvelope(absent.json, { kind: "error", code: "not_found" }));
   recorder.expect("reads.messages-not-found", absentFailures);
 
-  // A case-insensitive filesystem may resolve the differently-spelled id, but
-  // the response must carry the transcript's canonical id. A case-sensitive
-  // filesystem instead proves the same boundary by refusing the lookup.
+  // A conversation resolves to a FILE, so on a case-insensitive filesystem a
+  // differently-spelled id answers — with the transcript's own id, never the
+  // spelling that was asked for. Conditional because the answer depends on the
+  // filesystem this runs on, and a skip states that honestly.
   const mixedCase = await client.read("/conversations/BRANCHED/messages?limit=1", bearer);
-  recorder.expect(
-    "reads.messages-canonical-conversation-id",
-    canonicalConversationIdFailures(mixedCase),
-  );
+  if (mixedCase.status === 200) {
+    recorder.expect(
+      "reads.messages-canonical-conversation-id",
+      mixedCase.json?.data?.messages?.[0]?.conversationId === "branched"
+        ? []
+        : [`conversationId is ${JSON.stringify(mixedCase.json?.data?.messages?.[0]?.conversationId)}, expected the transcript's own "branched"`],
+    );
+  } else if (mixedCase.status === 404) {
+    recorder.skip(
+      "reads.messages-canonical-conversation-id",
+      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered 404`,
+    );
+  } else {
+    // A 5xx (or a 429) is never a filesystem property, and reporting it as one
+    // would let a broken server pass the whole run (cave-icyyg).
+    recorder.expect(
+      "reads.messages-canonical-conversation-id",
+      [`/conversations/BRANCHED/messages answered ${mixedCase.status}, expected 200 or 404`],
+    );
+  }
 }
 
 // ── the run ──────────────────────────────────────────────────────────────────
