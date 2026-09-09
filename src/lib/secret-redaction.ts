@@ -67,30 +67,42 @@ export function redactSecretText(text: string): string {
  * Detects actual credential material without comparing against redacted output,
  * which may serialize otherwise safe JSON or authorization documentation.
  */
-export function containsSecretText(text: string): boolean {
+export function containsSecretText(
+  text: string,
+  options: { knownFilesystemPaths?: readonly string[] } = {},
+): boolean {
+  // Only explicitly supplied paths may exempt slash-joined base64 lookalikes.
+  // Credential-shaped path segments and sensitive assignments still fail closed.
+  const knownFilesystemPaths = (options.knownFilesystemPaths ?? []).slice(0, 9).filter((value) =>
+    value.length <= 4096
+    && /^(?:\/|[A-Za-z]:[\\/])/.test(value)
+    && !/[?&#=\r\n`"'<>]/.test(value)
+    && !containsSecretText(value.replace(/[\\/]/g, " ")),
+  );
   const decoded = decodeJsonValue(text);
   return decoded !== undefined
-    ? containsSecretJsonValue(decoded.value)
-    : containsSecretTextPlain(text);
+    ? containsSecretJsonValue(decoded.value, knownFilesystemPaths)
+    : containsSecretTextPlain(text, knownFilesystemPaths);
 }
 
-function containsSecretJsonValue(value: unknown): boolean {
+function containsSecretJsonValue(value: unknown, knownFilesystemPaths: readonly string[] = []): boolean {
   if (typeof value === "string") {
     const nested = decodeJsonValue(value);
-    return containsSecretTextPlain(value) || (nested !== undefined && containsSecretJsonValue(nested.value));
+    return containsSecretTextPlain(value, knownFilesystemPaths)
+      || (nested !== undefined && containsSecretJsonValue(nested.value, knownFilesystemPaths));
   }
   if (value === null || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some((entry) => containsSecretJsonValue(entry));
+  if (Array.isArray(value)) return value.some((entry) => containsSecretJsonValue(entry, knownFilesystemPaths));
 
   return Object.entries(value).some(([key, entry]) => (
-    containsStructuredSecretFieldValue(key, entry) || containsSecretJsonValue(entry)
+    containsStructuredSecretFieldValue(key, entry) || containsSecretJsonValue(entry, knownFilesystemPaths)
   ));
 }
 
-function containsSecretTextPlain(text: string): boolean {
+function containsSecretTextPlain(text: string, knownFilesystemPaths: readonly string[] = []): boolean {
   if (
     WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))
-    || containsGenericBase64Secret(text)
+    || containsGenericBase64Secret(text, knownFilesystemPaths)
     || containsSecretUrlParameter(text)
   ) {
     return true;
@@ -188,11 +200,16 @@ function matchesSecretPattern(pattern: RegExp, text: string): boolean {
   return matched;
 }
 
-function containsGenericBase64Secret(text: string): boolean {
+function containsGenericBase64Secret(text: string, knownFilesystemPaths: readonly string[]): boolean {
   GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
-  const containsSecret = GENERIC_BASE64_SECRET_PATTERN.test(text);
-  GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
-  return containsSecret;
+  for (const match of text.matchAll(GENERIC_BASE64_SECRET_PATTERN)) {
+    const inKnownPath = knownFilesystemPaths.some((knownPath) => {
+      const start = text.lastIndexOf(knownPath, match.index);
+      return start >= 0 && match.index + match[0].length <= start + knownPath.length;
+    });
+    if (!inKnownPath) return true;
+  }
+  return false;
 }
 
 function isSingleTokenAuthorizationCredential(value: string): boolean {
