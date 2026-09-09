@@ -15,6 +15,7 @@ import {
   researchRunBootstrapSnapshot,
 } from "./research-run-surface.ts";
 import type { ResearchMission } from "./research-missions.ts";
+import { sliceApproveBlocks } from "./approve-blocks.ts";
 
 const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "```coven:attachment",
@@ -32,6 +33,7 @@ const CONTROL_HEAVY_ASSISTANT_TEXT = [
   '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />',
   '<coven:image src="/api/chat/attachment?id=preview.png" />',
   '<coven:preview url="http://127.0.0.1:3000/demo" title="Demo" />',
+  '<coven:approve kind="questions" id="q" prompt="Which?" options="A|B" other="no" />',
 ].join("\n");
 
 test("rendered assistant text keeps prose while removing every non-prose control", () => {
@@ -57,6 +59,7 @@ test("rendered assistant text keeps prose while removing every non-prose control
   assert.match(result.cardText, /<coven:image/);
   assert.match(result.cardText, /<coven:preview/);
   assert.match(result.cardText, /__coven\/research\/research-42/);
+  assert.match(result.cardText, /<coven:approve/);
   assert.doesNotMatch(result.visible, /coven:research/);
   assert.doesNotMatch(result.cardText, /coven:research/);
 });
@@ -72,6 +75,7 @@ test("find and reply projections cannot expose assistant control markers", () =>
 
   assert.equal(findTranscriptHits([{ ...turn, text: visible }], "attention").length, 0);
   assert.equal(findTranscriptHits([{ ...turn, text: visible }], "research-42").length, 0);
+  assert.equal(findTranscriptHits([{ ...turn, text: visible }], "approve").length, 0);
   assert.equal(findTranscriptHits([{ ...turn, text: visible }], "ordinary").length, 1);
   assert.equal(buildReplySnippet(visible), "The ordinary visible answer remains.");
 });
@@ -106,6 +110,75 @@ test("streaming preview fragments never enter visible assistant text", () => {
     assert.equal(rendered.visible, "Visible before ");
     assert.equal(rendered.cardText, "Visible before ");
   }
+});
+
+test("questions projections retain only valid live markers beside other rich cards", () => {
+  const valid = '<coven:approve kind="questions" id="q" prompt="Which?" options="A|B" />';
+  const github = '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />';
+  for (const invalid of [
+    '<coven:approve kind="command" prompt="Run?" options="Yes|No" />',
+    '<coven:approve kind="questions" prompt="Run?" options="Yes|No" command="yes" />',
+    '<coven:approve kind="questions" prompt="Invalid" options="One" />',
+    '<coven:approve kind=questions>',
+    '<coven:approve" busted>',
+    '</coven:approve>',
+    '<coven:approve kind="questions" prompt="unfinished',
+  ]) {
+    for (const pending of [true, false]) {
+      const rendered = extractChatRenderedText(`Before ${invalid}\n${github}\n${valid}`, { pending });
+      assert.equal(rendered.visible, "Before \n\n", invalid);
+      assert.equal(rendered.cardText, `Before \n${github}\n${valid}`, invalid);
+      assert.equal(sliceApproveBlocks(rendered.cardText).filter((piece) => piece.kind === "approve").length, 1);
+    }
+  }
+});
+
+test("all streamed questions prefixes are hidden without consuming attention", () => {
+  for (const fragment of ["<coven:a", "<coven:ap", "<coven:app", "<coven:approve", '<coven:approve kind="questions"']) {
+    for (const pending of [true, false]) {
+      const rendered = extractChatRenderedText(`Before ${fragment}`, { pending });
+      assert.equal(rendered.visible, "Before ", fragment);
+      assert.equal(rendered.cardText, "Before ", fragment);
+    }
+  }
+  const rendered = extractChatRenderedText(
+    '<coven:approve prompt="broken<coven:attention reason="decision" />',
+    { pending: true },
+  );
+  assert.deepEqual(rendered.attentionRequest, { reason: "decision" });
+  assert.equal(rendered.visible, "");
+  assert.equal(rendered.cardText, "");
+});
+
+test("question examples stay literal in fenced and inline code projections", () => {
+  const marker = '<coven:approve kind="questions" prompt="Example?" options="A|B" />';
+  for (const text of [
+    `\`${marker}\``,
+    `\`\`\`xml\n${marker}\n<coven:approve broken\n\`\`\``,
+    `> \`\`\`xml\n> ${marker}\n> \`\`\``,
+  ]) {
+    const rendered = extractChatRenderedText(text);
+    assert.equal(rendered.visible, text);
+    assert.equal(rendered.cardText, text);
+  }
+});
+
+test("question attribute backticks cannot hide research, results or attention", () => {
+  const marker = '<coven:approve kind="questions" prompt="Use `?" options="A|B" />';
+  const rendered = extractChatRenderedText([
+    "Visible.",
+    marker,
+    '<coven:result id="checks" state="passed" label="Checks passed" />',
+    '<coven:research run-id="question-run" title="Research" status="running" />',
+    '<coven:attention reason="decision" />',
+  ].join("\n"));
+  assert.equal(rendered.visible.trim(), "Visible.");
+  assert.deepEqual(rendered.attentionRequest, { reason: "decision" });
+  assert.equal(rendered.authoredResults[0]?.id, "checks");
+  assert.equal(rendered.researchRuns[0]?.runId, "question-run");
+  assert.ok(rendered.cardText.includes(marker));
+  assert.match(rendered.cardText, /__coven\/research\/question-run/);
+  assert.doesNotMatch(rendered.visible, /coven:|\uE000|\uE001/);
 });
 
 test("streaming research fragments never enter visible assistant text", () => {
@@ -286,4 +359,3 @@ test("researchRunBootstrapSnapshot builds a minimal, rehydratable projection fro
   const titled = researchRunBootstrapSnapshot("mission-run-xyz", "  Vector stores  ");
   assert.equal(titled.title, "Vector stores");
 });
-
