@@ -13,8 +13,16 @@ enum CredentialStoreError: Error, Equatable {
 }
 
 struct KeychainCredentialStore: CredentialStoring {
-    private let service = "ai.opencoven.cave.quickanswer"
-    private let account = "salem.brief.read"
+    private let service: String
+    private let account: String
+
+    init(
+        service: String = "ai.opencoven.cave.quickanswer",
+        account: String = "salem.brief.read"
+    ) {
+        self.service = service
+        self.account = account
+    }
 
     func readToken() throws -> String? {
         let query: [String: Any] = [
