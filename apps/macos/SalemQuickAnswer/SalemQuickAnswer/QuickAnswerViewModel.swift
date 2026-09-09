@@ -47,8 +47,18 @@ final class QuickAnswerViewModel: ObservableObject {
                 state = .offline
             } catch BriefServiceError.unauthorized {
                 state = .unauthorized
+            } catch BriefServiceError.revoked {
+                state = .revoked
             } catch BriefServiceError.rateLimited {
                 state = .rateLimited
+            } catch BriefServiceError.timedOut {
+                state = .timedOut
+            } catch BriefServiceError.invalidResponse {
+                state = .invalidResponse
+            } catch BriefServiceError.modelUnavailable {
+                state = .modelUnavailable
+            } catch BriefServiceError.serviceUnavailable {
+                state = .serviceUnavailable
             } catch {
                 state = .failed("Couldn't get an answer. Try again.")
             }
