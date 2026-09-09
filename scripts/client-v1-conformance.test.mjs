@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
-import { realpath, rm } from "node:fs/promises";
+import { readFile, readdir, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -1012,6 +1013,71 @@ test("expectedBranchedMessages pins a value for every turn of the active branch"
   // level down.
   for (const key of RECORD_SHAPES.message.required) {
     assert.ok(key in rich, `expectedBranchedMessages must pin ${key}, or a wrong value in it is unchecked`);
+  }
+});
+
+for (const [label, status, variant, expectedResult] of [
+  ["canonical transcript ID", 200, "canonical", "pass"],
+  ["missing alias", 404, "canonical", "fail"],
+  ["server failure", 500, "canonical", "fail"],
+  ["rate limit", 429, "canonical", "fail"],
+  ["echoed lookup ID", 200, "lookup", "fail"],
+  ["wrong message", 200, "wrong-message", "fail"],
+  ["empty page", 200, "empty", "fail"],
+  ["oversized page", 200, "multiple", "fail"],
+]) {
+  test(`canonical conversation ID probe rejects filesystem dependence: ${label}`, async () => {
+    const { runCanonicalConversationIdLeg } = await import("./client-v1-conformance.mjs");
+    assert.equal(typeof runCanonicalConversationIdLeg, "function");
+    const root = await createConformanceFixtureRoot();
+    const recorder = createRecorder();
+    let requests = 0;
+    try {
+      await runCanonicalConversationIdLeg({
+        async read(target, bearer) {
+          requests += 1;
+          assert.equal(bearer, "fixture-bearer");
+          const match = /^\/conversations\/([^/]+)\/messages\?limit=1$/.exec(target);
+          assert.ok(match, "the probe must use one bounded canonical messages read");
+          const lookupId = match[1];
+          const conversation = JSON.parse(await readFile(
+            path.join(root, "conversations", `${lookupId}.json`),
+            "utf8",
+          ));
+          assert.equal(conversation.sessionId, "branched");
+          assert.notEqual(lookupId.toLowerCase(), conversation.sessionId.toLowerCase());
+          const message = {
+            id: variant === "wrong-message" ? "other-message" : conversation.turns[0].id,
+            conversationId: variant === "lookup" ? lookupId : conversation.sessionId,
+          };
+          const messages = variant === "empty" ? [] : variant === "multiple" ? [message, message] : [message];
+          return { status, json: { data: { messages } } };
+        },
+      }, recorder, "fixture-bearer", root);
+      assert.equal(requests, 1);
+      assert.equal(recorder.entries.length, 1);
+      assert.equal(recorder.entries[0].id, "reads.messages-canonical-conversation-id");
+      assert.equal(recorder.entries[0].result, expectedResult);
+      assert.deepEqual(await readdir(path.join(root, "conversations")), []);
+    } finally {
+      await rm(root, { recursive: true });
+    }
+  });
+}
+
+test("canonical conversation ID probe removes its alias after a transport failure", async () => {
+  const { runCanonicalConversationIdLeg } = await import("./client-v1-conformance.mjs");
+  assert.equal(typeof runCanonicalConversationIdLeg, "function");
+  const root = await createConformanceFixtureRoot();
+  try {
+    await assert.rejects(runCanonicalConversationIdLeg({
+      async read() {
+        throw new Error("fixture transport failure");
+      },
+    }, createRecorder(), "fixture-bearer", root), /fixture transport failure/);
+    assert.deepEqual(await readdir(path.join(root, "conversations")), []);
+  } finally {
+    await rm(root, { recursive: true });
   }
 });
 
