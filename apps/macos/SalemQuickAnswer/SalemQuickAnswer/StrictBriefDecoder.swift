@@ -61,8 +61,7 @@ struct StrictBriefDecoder {
 
         let response: BriefResponse
         do {
-            let decoder = JSONDecoder()
-            response = try decoder.decode(BriefResponse.self, from: data)
+            response = try JSONDecoder().decode(BriefResponse.self, from: data)
         } catch {
             throw StrictBriefDecodeError.invalidShape("response.types")
         }
@@ -169,7 +168,7 @@ struct StrictBriefDecoder {
             throw StrictBriefDecodeError.invariantViolation("revision without repository/path")
         }
         if let revision = evidence.revision,
-           !revision.range(of: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$", options: .regularExpression).map({ _ in true })! {
+           revision.range(of: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$", options: .regularExpression) == nil {
             throw StrictBriefDecodeError.invariantViolation("moving or malformed revision")
         }
         if evidence.sourceHash != nil && !isSHA256(evidence.sourceHash) {
