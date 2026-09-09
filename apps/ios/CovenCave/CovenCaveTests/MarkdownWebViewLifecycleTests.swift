@@ -107,49 +107,75 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testSwiftUIUnmountCallsProductionDismantle() async throws {
-        var host: UIHostingController<AnyView>? = UIHostingController(rootView: AnyView(
-            MarkdownWebView(markdown: "Lifecycle probe", height: .constant(100))
-        ))
-        var window: UIWindow? = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
-        window?.rootViewController = host
-        window?.isHidden = false
-        let hostingView = try XCTUnwrap(host?.view)
-        hostingView.setNeedsLayout()
-        hostingView.layoutIfNeeded()
+    func testSwiftUIUnmountCallsProductionDismantle() throws {
         let clock = ContinuousClock()
-        let mountDeadline = clock.now.advanced(by: .seconds(5))
-        while findWebView(in: hostingView) == nil, clock.now < mountDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-            hostingView.layoutIfNeeded()
+        weak var observed: MarkdownWebView.Coordinator?
+        weak var observedWebView: WKWebView?
+        var mountedWindow: UIWindow?
+        defer {
+            mountedWindow?.isHidden = true
+            mountedWindow?.rootViewController = nil
         }
-        let webView = try XCTUnwrap(findWebView(in: hostingView))
-        var coordinator: MarkdownWebView.Coordinator? = try XCTUnwrap(
-            webView.navigationDelegate as? MarkdownWebView.Coordinator
-        )
-        weak var observed = coordinator
-
-        host?.rootView = AnyView(EmptyView())
-        hostingView.setNeedsLayout()
-        hostingView.layoutIfNeeded()
-        let unmountDeadline = clock.now.advanced(by: .seconds(5))
-        while coordinator?.isInvalidated == false, clock.now < unmountDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-            hostingView.layoutIfNeeded()
+        // Drain UIKit/SwiftUI's autoreleased graph references before checking
+        // deallocation, without disposing the hosting controller or its window.
+        let host = try autoreleasepool {
+            let state = MountedState()
+            let host = UIHostingController(rootView: MountedRow(state: state))
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+            mountedWindow = window
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            let mountDeadline = clock.now.advanced(by: .seconds(5))
+            while findWebView(in: host.view) == nil, clock.now < mountDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                host.view.layoutIfNeeded()
+            }
+            let webView = try XCTUnwrap(findWebView(in: host.view))
+            observedWebView = webView
+            let coordinator = try XCTUnwrap(
+                webView.navigationDelegate as? MarkdownWebView.Coordinator
+            )
+            observed = coordinator
+            state.mounted = false
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            let unmountDeadline = clock.now.advanced(by: .seconds(5))
+            while !coordinator.isInvalidated, clock.now < unmountDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                host.view.layoutIfNeeded()
+            }
+            XCTAssertTrue(coordinator.isInvalidated)
+            XCTAssertNil(webView.navigationDelegate)
+            return host
         }
-        XCTAssertEqual(coordinator?.isInvalidated, true)
-        XCTAssertNil(webView.navigationDelegate)
-        coordinator = nil
-        window?.isHidden = true
-        window?.rootViewController = nil
-        window = nil
-        host = nil
-        await drainMainQueue()
         let releaseDeadline = clock.now.advanced(by: .seconds(5))
-        while observed != nil, clock.now < releaseDeadline {
-            try await Task.sleep(for: .milliseconds(10))
+        while observed != nil || observedWebView != nil, clock.now < releaseDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
-        XCTAssertNil(observed, "The removed SwiftUI row must release its coordinator")
+        withExtendedLifetime(host) {
+            XCTAssertNil(observed, "The removed SwiftUI row must release its coordinator")
+            XCTAssertNil(observedWebView, "The removed SwiftUI row must release its web view")
+        }
+    }
+
+    @MainActor
+    private final class MountedState: ObservableObject {
+        @Published var mounted = true
+    }
+
+    @MainActor
+    private struct MountedRow: View {
+        @ObservedObject var state: MountedState
+
+        var body: some View {
+            // Remove a row from a live graph. Replacing the hosting controller's
+            // root instead can retain the retired graph until host teardown.
+            if state.mounted {
+                MarkdownWebView(markdown: "Lifecycle probe", height: .constant(100))
+            }
+        }
     }
 
     @MainActor
