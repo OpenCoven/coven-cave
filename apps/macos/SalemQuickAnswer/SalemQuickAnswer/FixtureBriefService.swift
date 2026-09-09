@@ -7,7 +7,12 @@ protocol BriefServing {
 enum BriefServiceError: Error {
     case offline
     case unauthorized
+    case revoked
     case rateLimited
+    case timedOut
+    case invalidResponse
+    case modelUnavailable
+    case serviceUnavailable
     case failed
 }
 
@@ -18,7 +23,12 @@ struct FixtureBriefService: BriefServing {
 
         if normalized.contains("fixture:offline") { throw BriefServiceError.offline }
         if normalized.contains("fixture:unauthorized") { throw BriefServiceError.unauthorized }
+        if normalized.contains("fixture:revoked") { throw BriefServiceError.revoked }
         if normalized.contains("fixture:rate") { throw BriefServiceError.rateLimited }
+        if normalized.contains("fixture:timeout") { throw BriefServiceError.timedOut }
+        if normalized.contains("fixture:invalid") { throw BriefServiceError.invalidResponse }
+        if normalized.contains("fixture:model") { throw BriefServiceError.modelUnavailable }
+        if normalized.contains("fixture:service") { throw BriefServiceError.serviceUnavailable }
         if normalized.contains("fixture:failed") { throw BriefServiceError.failed }
 
         let unknown = normalized.contains("every model") || normalized.contains("fixture:unknown")
