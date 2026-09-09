@@ -110,9 +110,21 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
     func testTransientStreamingFailureCanRecoverWithSettledRender() async throws {
         let recorder = CavePerformanceRecorder(enabled: true)
         let coordinator = MarkdownWebView.Coordinator(performanceRecorder: recorder)
-        defer { coordinator.invalidate() }
+        // A real render needs a visible, sized web view. An unattached zero-size
+        // view can defer WebContent startup on a cold CI simulator.
+        let host = UIViewController()
+        host.view = coordinator.webView
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window.rootViewController = host
+        window.isHidden = false
+        host.view.layoutIfNeeded()
+        defer {
+            coordinator.invalidate()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
         let clock = ContinuousClock()
-        let readyDeadline = clock.now.advanced(by: .seconds(10))
+        let readyDeadline = clock.now.advanced(by: .seconds(30))
         var rendererReady = false
         while !rendererReady, clock.now < readyDeadline {
             rendererReady = (try? await coordinator.webView.evaluateJavaScript(
