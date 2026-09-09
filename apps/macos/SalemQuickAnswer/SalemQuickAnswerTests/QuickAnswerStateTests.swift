@@ -88,11 +88,11 @@ final class QuickAnswerStateTests: XCTestCase {
     }
 
     @MainActor
-    func testFixtureFailuresRemainDistinct() async throws {
+    func testServiceFailuresRemainDistinct() async throws {
         for (error, assertion) in [
-            (FixtureBriefError.offline, "offline"),
-            (FixtureBriefError.unauthorized, "unauthorized"),
-            (FixtureBriefError.rateLimited, "rateLimited"),
+            (BriefServiceError.offline, "offline"),
+            (BriefServiceError.unauthorized, "unauthorized"),
+            (BriefServiceError.rateLimited, "rateLimited"),
         ] {
             let model = QuickAnswerViewModel(service: MockBriefService(result: .failure(error)))
             model.question = "fixture"
