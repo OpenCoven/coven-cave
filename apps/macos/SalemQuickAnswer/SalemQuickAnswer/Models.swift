@@ -90,7 +90,12 @@ enum QuickAnswerState: Equatable {
     case stale(BriefResponse)
     case offline
     case unauthorized
+    case revoked
     case rateLimited
+    case timedOut
+    case invalidResponse
+    case modelUnavailable
+    case serviceUnavailable
     case failed(String)
 }
 
