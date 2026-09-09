@@ -29,13 +29,15 @@ export function formatAttachmentBytes(size?: number): string {
   return `${size} B`;
 }
 
+const MARKDOWN_ATTACHMENT_EXTENSION = /\.(?:md|mdown|markdown)$/i;
+
 export function isMarkdownAttachment(attachment: ChatAttachment): boolean {
   const mimeType = (attachment.mimeType ?? attachment.type)?.toLowerCase();
-  return mimeType === "text/markdown" || /\.md(?:own)?$/i.test(attachment.name);
+  return mimeType === "text/markdown" || MARKDOWN_ATTACHMENT_EXTENSION.test(attachment.name);
 }
 
 function attachmentTitle(name: string): string {
-  return name.replace(/\.(?:md|mdown)$/i, "") || name;
+  return name.replace(MARKDOWN_ATTACHMENT_EXTENSION, "") || name;
 }
 
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {

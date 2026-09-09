@@ -15,7 +15,18 @@ assert.match(cards, /<FocusTrapPortalLayersContext.Provider value=\{portalLayers
 assert.match(cards, /aria-modal="true"/, "attachment preview remains a modal dialog");
 assert.match(cards, /export function isMarkdownAttachment/, "Markdown preview detection has a dedicated boundary");
 assert.match(cards, /mimeType === "text\/markdown"/, "Markdown MIME attachments use the document preview");
-assert.ok(cards.includes("/\\.md(?:own)?$/i"), "Markdown filenames use the document preview when MIME metadata is absent");
+const markdownExtensionSource = cards.match(/const MARKDOWN_ATTACHMENT_EXTENSION = \/(.+)\/i;/)?.[1];
+assert.ok(markdownExtensionSource, "Markdown filenames share one extension pattern");
+const markdownExtension = new RegExp(markdownExtensionSource, "i");
+for (const name of ["plan.md", "plan.mdown", "plan.markdown", "PLAN.MARKDOWN"]) {
+  assert.ok(markdownExtension.test(name), `${name} uses the document preview without MIME metadata`);
+  assert.equal(name.replace(markdownExtension, "").toLowerCase(), "plan", `${name} has an extension-free fallback title`);
+}
+for (const name of ["plan.txt", "plan.markdown.txt", "markdown"]) {
+  assert.equal(markdownExtension.test(name), false, `${name} keeps its non-Markdown fallback`);
+}
+assert.match(cards, /MARKDOWN_ATTACHMENT_EXTENSION\.test\(attachment\.name\)/, "detection uses the shared Markdown extensions");
+assert.match(cards, /name\.replace\(MARKDOWN_ATTACHMENT_EXTENSION, ""\)/, "fallback titles strip the same Markdown extensions");
 assert.match(cards, /parseMarkdownReaderDocument\(attachment\.text, attachmentTitle\(attachment\.name\)\)/, "Markdown attachments flow through the shared reader parser");
 assert.match(cards, /<DocumentReader[\s\S]*?navigation="rail"[\s\S]*?collapsibleSections=\{false\}/, "Markdown attachments use the Research-style shared document reader");
 assert.match(cards, /<MarkdownReaderBlock block=\{block\} blockKey=\{key\} \/>/, "Markdown attachment blocks use the shared safe renderer");
