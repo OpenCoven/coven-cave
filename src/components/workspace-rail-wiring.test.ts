@@ -18,6 +18,10 @@ assert.match(controller, /function stopRailTerminal[\s\S]*killPtyBridge\(threadI
 assert.match(controller, /setTerminalOpened\(false\)/);
 assert.match(controller, /"cave:changes-refresh"/);
 assert.match(controller, /fetchChangesSummary\(root, opts\)/);
+assert.match(controller, /useEffect\(\(\) => \{\s*if \(!active\) return;\s*if \(!effectiveProjectRoot\)/,
+  "inactive panes neither fetch changes nor subscribe to polling");
+assert.match(controller, /\[active, effectiveProjectRoot, sessionRunning\]/,
+  "hiding a pane cleans up its refresh subscription and poll");
 assert.match(controller, /const effectiveProjectRoot = browseRootOverride \?\? projectRoot/);
 assert.match(controller, /setBrowseRootOverride\(null\)/);
 assert.match(controller, /useState<number \| null>\(null\)/);

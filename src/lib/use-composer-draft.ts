@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 
 /**
  * Persist a composer's in-progress text so a page reload doesn't eat a
@@ -54,24 +54,61 @@ export function useDraftPersistence(
   useEffect(() => {
     latestRef.current = { key, value };
     const timer = window.setTimeout(() => {
-      writeComposerDraft(key, value);
+      if (latestRef.current.key === key) writeComposerDraft(key, latestRef.current.value);
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [key, value, delayMs]);
 
-  // Flush on unmount: the debounce cleanup above CANCELS a pending write, so
+  // Flush on unmount or key change: debounce cleanup CANCELS a pending write, so
   // unmounting within delayMs of the last keystroke dropped the draft's tail
   // (pane-set remounts, mode switches). Safe against sent-prompt
   // resurrection: send paths call clearNow before any same-tick unmount, and
   // clearNow updates latestRef, so the flush writes "" — never pre-send text.
   useEffect(
     () => () => writeComposerDraft(latestRef.current.key, latestRef.current.value),
-    [],
+    [key],
   );
 
   const clearNow = useCallback(() => {
+    if (latestRef.current.key !== key) return;
     latestRef.current = { key, value: "" };
     writeComposerDraft(key, "");
   }, [key]);
   return { clearNow };
+}
+
+/** A reused composer must switch text and persistence ownership together. */
+export function useComposerDraft(key: string, delayMs = 250) {
+  const [draft, setDraft] = useState(() => ({ key, value: readComposerDraft(key) }));
+  const committedDraft = useRef(draft);
+  useEffect(() => { committedDraft.current = draft; }, [draft]);
+  if (draft.key !== key) {
+    setDraft({ key, value: readComposerDraft(key) });
+  }
+  const setValue = useCallback((next: SetStateAction<string>) => {
+    setDraft((current) => {
+      // Async work started on another thread must not change this draft.
+      if (current.key !== key) return current;
+      return { key, value: typeof next === "function" ? next(current.value) : next };
+    });
+  }, [key]);
+  const value = draft.key === key ? draft.value : "";
+  const { clearNow } = useDraftPersistence(key, value, delayMs);
+  const transferTo = useCallback((destination: string) => {
+    if (committedDraft.current.key !== key || destination === key) return;
+    writeComposerDraft(destination, committedDraft.current.value);
+    clearNow();
+  }, [key, clearNow]);
+  return { value, setValue, clearNow, transferTo };
+}
+
+export function chatComposerDraftKey(
+  namespace: string,
+  context: { familiarId: string; sessionId: string | null; project: string; host: string },
+): string {
+  return `${namespace}:scoped:${JSON.stringify(
+    context.sessionId
+      ? ["session", context.familiarId, context.sessionId]
+      : ["compose", context.familiarId, context.project, context.host],
+  )}`;
 }

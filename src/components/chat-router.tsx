@@ -55,15 +55,19 @@ import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { SessionRemovalReason } from "@/lib/chat-session-removal";
+import { blankChatProjectRoot, retainOpenChatSession, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
+  | { kind: "chat"; sessionId: string | null; started?: boolean; projectRoot?: string; projectScopeAtOpen?: ProjectSelection; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
   familiar: Familiar | null;
   familiars?: Familiar[];
   sessions: SessionRow[];
+  browseScope?: ChatBrowseScope;
+  /** Live workspace project, used only while no session owns the composer. */
+  composeProjectRoot?: string | null;
   daemonRunning?: boolean;
   onSetActiveFamiliar?: (id: string) => void;
   onSessionStarted?: () => void;
@@ -126,6 +130,7 @@ export type ChatRouterHandle = {
    *  to a plain open when splits are unavailable (mobile, companion rail). */
   openSessionInSplit: (sessionId: string) => void;
   currentSessionId: () => string | null;
+  currentFamiliarId: () => string | null;
   clearTranscript: () => void;
   runSlash: (command: string) => void;
 };
@@ -160,6 +165,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     familiar,
     familiars = [],
     sessions,
+    browseScope,
+    composeProjectRoot,
     daemonRunning,
     onSetActiveFamiliar,
     onSessionStarted,
@@ -216,6 +223,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onActiveSessionChangeRef.current = onActiveSessionChange;
   }, [onActiveSessionChange]);
   const activeSessionId = view.kind === "chat" ? view.sessionId : null;
+  const viewProjectRoot = view.kind === "chat"
+    ? view.sessionId === null && !view.started
+      ? blankChatProjectRoot(view.projectRoot, view.projectScopeAtOpen, browseScope?.selection, composeProjectRoot)
+      : view.projectRoot
+    : undefined;
+  const viewProjectRootRef = useRef(viewProjectRoot);
+  viewProjectRootRef.current = viewProjectRoot;
   const lastReportedSessionRef = useRef<string | null>(activeSessionId);
   // A null activeSessionId is ambiguous on its own: the list view and every
   // distinct blank-compose attempt (list -> new chat, a familiar switch's
@@ -279,9 +293,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // Splits belong to the full-width desktop chat: the opted-in main surface
   // only (enableSplitPanes), never mobile, never the Codex surface.
   const enableSplit = enableSplitPanes && !isMobile && !caveChatoutCodex();
-  const activeSession = view.kind === "chat" && view.sessionId
-    ? sessions.find((s) => s.id === view.sessionId) ?? null
-    : null;
+  const retainedSessionRef = useRef<SessionRow | null>(null);
+  const activeSession = retainOpenChatSession(retainedSessionRef.current, sessions, activeSessionId);
+  retainedSessionRef.current = activeSession;
   // Archived familiars stay reachable from Familiar Studio Lifecycle so users
   // can unarchive, but they must NOT be the fallback default when the user is
   // starting a new session — silently dropping them into an archived agent is
@@ -299,11 +313,22 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const sessionFamiliar = activeSession?.familiarId
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
-  const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
+  const retainedFamiliarRef = useRef<Familiar | null>(null);
+  const boundFamiliarId = activeSession?.familiarId
+    ?? (view.kind === "chat" ? view.familiarId : null);
+  const chatFamiliar = boundFamiliarId
+    ? sessionFamiliar ?? selectedViewFamiliar
+      ?? (retainedFamiliarRef.current?.id === boundFamiliarId ? retainedFamiliarRef.current : null)
+    : familiar ?? null;
+  retainedFamiliarRef.current = chatFamiliar;
   const {
     projects,
-  } = useProjects();
+  } = useProjects({ familiarId: familiar?.id ?? null });
   const projectOverrides = useProjectOverrides();
+  const browseSessions = useMemo(
+    () => scopeChatBrowseSessions(sessions, projects, projectOverrides, browseScope),
+    [sessions, projects, projectOverrides, browseScope],
+  );
 
   const sidebarSessions = useMemo(
     () => filterVisibleChatSessions(sessions, familiar?.id ?? null),
@@ -323,21 +348,27 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     nextProjectRoot: string | null,
     nextRuntimeHost: string | null,
   ) => {
+    if (browseScope !== undefined) return;
     setSelection(selectionForProjectRoot(
       nextProjectRoot,
       nextRuntimeHost,
       sidebarGroups,
     ));
-  }, [sidebarGroups]);
+  }, [sidebarGroups, browseScope]);
+  const updateListSelection = useCallback((next: ProjectSelection) => {
+    if (browseScope !== undefined) return;
+    setSelection(next);
+  }, [browseScope]);
 
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
+    if (browseScope !== undefined) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, [sessionsLoaded]);
+  }, [sessionsLoaded, browseScope]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
@@ -543,6 +574,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   });
 
   useEffect(() => {
+    if (browseScope !== undefined) return;
     const nextFamiliarId = familiar?.id ?? null;
     if (previousFamiliarIdRef.current === undefined) {
       previousFamiliarIdRef.current = nextFamiliarId;
@@ -584,7 +616,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               }
         : { kind: "list" },
     );
-  }, [advanceComposeInstance, familiar?.id]);
+  }, [advanceComposeInstance, familiar?.id, browseScope]);
 
   // ── Chat-first IA (cave-hsa6): boot into a fresh compose view ──────────────
   // Booting into chat mode should read like ChatGPT — an empty conversation with
@@ -641,6 +673,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           kind: "chat",
           sessionId: null,
           projectRoot,
+          projectScopeAtOpen: browseScope?.selection,
           initialPrompt,
           initialAttachments,
           initialControls,
@@ -669,13 +702,14 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         handleOpenSessionInSplit(session);
       },
       currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
+      currentFamiliarId: () => (view.kind === "chat" ? chatFamiliar?.id ?? null : null),
       clearTranscript: () => viewHandle.current?.clearTranscript(),
       runSlash: (command: string) => viewHandle.current?.runSlash(command),
     }),
-    [advanceComposeInstance, fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
+    [advanceComposeInstance, chatFamiliar, fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split, browseScope?.selection],
   );
 
-  if (familiars.length === 0 && !familiar) {
+  if (familiars.length === 0 && !familiar && !chatFamiliar) {
     // While the roster fetch is still in flight, hold a quiet frame — the
     // "choose a familiar" copy below is wrong for a loading beat, and
     // skeletons would just be another wall. Loaded-and-empty falls through.
@@ -757,9 +791,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       <ChatList
         familiar={familiar}
         familiars={familiars}
-        sessions={sessions}
-        selection={selection}
-        onSelectionChange={setSelection}
+        sessions={browseSessions}
+        browseScope={browseScope}
+        selection={browseScope?.selection ?? selection}
+        onSelectionChange={updateListSelection}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
@@ -787,6 +822,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             kind: "chat",
             sessionId: null,
             projectRoot,
+            projectScopeAtOpen: browseScope?.selection,
             ...(runtimeHost ? { initialControls: { runtimeHost } } : {}),
             familiarId: next?.id ?? familiarId ?? null,
           });
@@ -799,7 +835,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     return (
       <NewChatLaunch
         familiars={familiars}
-        sessions={sessions}
+        sessions={browseSessions}
         pendingProjectRoot={pendingProjectRoot}
         onRequestActor={onRequestNewChat}
         onPick={(familiarId) => {
@@ -808,6 +844,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             kind: "chat",
             sessionId: null,
             projectRoot: view.kind === "chat" ? view.projectRoot : undefined,
+            projectScopeAtOpen: view.kind === "chat" ? view.projectScopeAtOpen : browseScope?.selection,
             initialPrompt: view.kind === "chat" ? view.initialPrompt : undefined,
             initialAttachments: view.kind === "chat" ? view.initialAttachments : undefined,
             initialControls: view.kind === "chat" ? view.initialControls : undefined,
@@ -836,7 +873,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       sessionId={view.sessionId}
       session={activeSession}
       activeFamiliarId={activeFamiliarId}
-      projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
+      projectRoot={viewProjectRoot}
       initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
       initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
       initialControls={view.kind === "chat" ? view.initialControls : undefined}
@@ -848,6 +885,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       daemonRunning={daemonRunning}
       sessions={sessions}
       composeInstance={composeInstance}
+      onComposeStarted={() => {
+        setView((previous) => previous === view && previous.kind === "chat" && previous.sessionId === null
+          ? { ...previous, started: true, projectRoot: viewProjectRoot }
+          : previous);
+      }}
       onSessionsChanged={onSessionsChanged}
       onSessionsDeleted={onSessionsDeleted}
       onSessionRemoved={onSessionRemoved}
@@ -875,6 +917,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         setView((prev) => {
           if (
             prev.kind !== "chat"
+            || (prev.sessionId === null && viewProjectRootRef.current !== viewProjectRoot)
             || !shouldRouterPromoteSession(
               { sessionId: prev.sessionId, composeInstance: composeInstanceRef.current },
               request,
@@ -885,7 +928,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           return {
             kind: "chat",
             sessionId: request.newSessionId,
-            projectRoot: prev.projectRoot,
+            projectRoot: viewProjectRoot,
             familiarId: prev.familiarId,
           };
         });
@@ -896,8 +939,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // it into the view (null-only: a voice pre-session is always sessionless)
         // and arm the auto-open nonce so the overlay opens once the session mounts.
         setView((prev) =>
-          prev.kind === "chat" && prev.sessionId === null
-            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+          prev.kind === "chat" && prev.sessionId === null && viewProjectRootRef.current === viewProjectRoot
+            ? { kind: "chat", sessionId: sid, projectRoot: viewProjectRoot, familiarId: prev.familiarId }
             : prev,
         );
         setPendingVoice({ nonce: Date.now(), sessionId: sid });
@@ -927,7 +970,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         }
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === removedSessionId
-            ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot, familiarId: prev.familiarId, projectScopeAtOpen: browseScope?.selection }
             : prev,
         );
       }}

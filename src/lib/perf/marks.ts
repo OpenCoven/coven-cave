@@ -38,15 +38,7 @@ export function markEnd(name: string): number | null {
       measure?.duration ??
       performance.getEntriesByName(`cave:${name}`).at(-1)?.duration ??
       0;
-    const entry: PerfMeasure = { name, duration, at: Date.now() };
-    ring.push(entry);
-    if (ring.length > RING_MAX) ring.shift();
-    // The ring above is 50 entries of module state and dies with the page, so
-    // it can show what just happened but never a before/after. Persist too.
-    recordPerfSample({ kind: "mark", name, value: duration, at: entry.at });
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("cave:perf-measure", { detail: entry }));
-    }
+    recordMeasure(name, duration);
     return duration;
   } catch {
     // markEnd without a matching markStart, etc. — non-fatal.
@@ -56,4 +48,28 @@ export function markEnd(name: string): number | null {
 
 export function getPerfMeasures(): readonly PerfMeasure[] {
   return ring;
+}
+
+function recordMeasure(name: string, duration: number): void {
+  const entry: PerfMeasure = { name, duration, at: Date.now() };
+  ring.push(entry);
+  if (ring.length > RING_MAX) ring.shift();
+  recordPerfSample({ kind: "mark", name, value: duration, at: entry.at });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("cave:perf-measure", { detail: entry }));
+  }
+}
+
+/** A request owns its start time, even when other requests use the same name. */
+export function startSpan(name: string): () => number | null {
+  if (!hasPerf()) return () => null;
+  const start = performance.now();
+  let ended = false;
+  return () => {
+    if (ended) return null;
+    ended = true;
+    const duration = performance.now() - start;
+    recordMeasure(name, duration);
+    return duration;
+  };
 }

@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { cancelHoverPrefetch, hoverPrefetchConversation, prefetchConversation } from "@/lib/conversation-cache";
+import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -42,6 +44,7 @@ import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
 
 type Props = {
   sessions: SessionRow[];
+  browseScope?: ChatBrowseScope;
   /** Selected familiar (null = "All familiars"). Scopes the project list and
    *  the per-project session rows. */
   activeFamiliarId?: string | null;
@@ -69,6 +72,27 @@ type Props = {
 };
 
 const THREADS_PREVIEW = 6;
+
+function useThreadPrefetch(sessionId: string, selectMode: boolean) {
+  useEffect(() => {
+    if (selectMode) cancelHoverPrefetch();
+    return cancelHoverPrefetch;
+  }, [selectMode, sessionId]);
+  const prefetch = () => {
+    if (selectMode) return;
+    cancelHoverPrefetch();
+    void prefetchConversation(sessionId);
+  };
+  return {
+    onPointerEnter: () => {
+      if (!selectMode) hoverPrefetchConversation(sessionId);
+    },
+    onPointerLeave: cancelHoverPrefetch,
+    onPointerDown: prefetch,
+    onFocus: prefetch,
+    onBlur: cancelHoverPrefetch,
+  };
+}
 
 function normalizeSessionAttention(session: SessionRow): SessionRow {
   return session.attention ? session : { ...session, attention: NO_CHAT_ATTENTION };
@@ -228,6 +252,7 @@ function ThreadRow({
   now,
 }: ThreadRowProps) {
   const attentionDescriptionId = useId();
+  const prefetchHandlers = useThreadPrefetch(session.id, selectMode);
   const archived = Boolean(session.archived_at);
   const title = sidebarThreadTitle(session, archived);
   // Real PR context beats the title-heuristic glyph — when the thread's work
@@ -267,6 +292,7 @@ function ThreadRow({
         aria-checked={selectMode ? selected : undefined}
         aria-current={!selectMode && active ? "page" : undefined}
         aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
+        {...prefetchHandlers}
         onClick={(e) => {
           // Select mode intercepts FIRST. This row's click is overloaded —
           // ⌥-click opens a split pane — so without this the modifier path
@@ -402,6 +428,7 @@ type PinnedThreadRowProps = {
   onOpenUrl?: (url: string) => void;
   onOpen: () => void;
   onTogglePin: () => void;
+  selectMode: boolean;
 };
 
 // The Pinned rail is deliberately NOT a ThreadRow: it drops the timestamp,
@@ -415,8 +442,9 @@ type PinnedThreadRowProps = {
 // running or failed, so this row reuses ThreadRow's own tick class and
 // archive-glyph derivation rather than re-deriving them — see cave-zs85n
 // Task 6 gap-fix notes.
-function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin }: PinnedThreadRowProps) {
+function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin, selectMode }: PinnedThreadRowProps) {
   const attentionDescriptionId = useId();
+  const prefetchHandlers = useThreadPrefetch(session.id, selectMode);
   const archived = Boolean(session.archived_at);
   const title = sidebarThreadTitle(session, archived);
   const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
@@ -445,6 +473,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
         aria-current={active ? "page" : undefined}
         aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
         onClick={onOpen}
+        {...prefetchHandlers}
         className="cnav__thread-main focus-ring"
       >
         {prStatus ? null : leadGlyph ? (
@@ -479,6 +508,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
 
 export function SidebarChatsSection({
   sessions,
+  browseScope,
   activeFamiliarId = null,
   activeSessionId,
   onOpenSession,
@@ -489,7 +519,8 @@ export function SidebarChatsSection({
   onCollapse,
   collapseLabel = "Collapse chat list",
 }: Props) {
-  const { projects } = useProjects({ familiarId: activeFamiliarId });
+  const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
+    useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
   const minuteTick = useMinuteTick();
   // Search was removed with the old search row (the header is a title row
@@ -529,8 +560,19 @@ export function SidebarChatsSection({
   // composing its own answer, which is how the two surfaces came to disagree
   // about how many chats a workspace had.
   const visibleSessions = useMemo(
-    () => visibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
-    [normalizedSessions, activeFamiliarId],
+    () => scopeChatBrowseSessions(
+      visibleChatSessions(normalizedSessions, activeFamiliarId ?? null),
+      projects,
+      overrides,
+      browseScope ? {
+        ...browseScope,
+        ready: browseScope.ready && (
+          browseScope.selection === "all"
+          || (projectsLoaded && !projectsLoading && projectsError === null)
+        ),
+      } : undefined,
+    ),
+    [normalizedSessions, activeFamiliarId, projects, overrides, browseScope, projectsLoaded, projectsLoading, projectsError],
   );
 
   const groups = useMemo(
@@ -772,6 +814,7 @@ export function SidebarChatsSection({
                   <li key={`pin-${session.id}`}>
                     <PinnedThreadRow
                       session={session}
+                      selectMode={select.selectMode}
                       active={activeSessionId === session.id}
                       now={now}
                       onOpenUrl={onOpenUrl}
@@ -840,7 +883,11 @@ export function SidebarChatsSection({
             {recentBuckets.length === 0 ? (
               attentionSessions.length > 0 && !hasSearch ? null : (
               <p className="cnav__empty">
-                {hasSearch ? "No threads match your search." : "No conversations yet."}
+                {hasSearch ? "No threads match your search." : browseScope && !browseScope.ready
+                  ? "Project context is unavailable. Choose another project or retry."
+                  : browseScope && browseScope.selection !== "all"
+                    ? "No chats in this project. Start a chat or choose another project."
+                    : "No conversations yet."}
               </p>
               )
             ) : (

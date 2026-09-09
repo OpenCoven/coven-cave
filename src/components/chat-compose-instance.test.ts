@@ -78,7 +78,7 @@ assert.match(
 // ── 5. Familiar-switch increments when creating a new null-session compose ───
 
 const familiarSwitchEffect =
-  routerSource.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
+  routerSource.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id, browseScope\]\);/)?.[0] ?? "";
 
 assert.ok(familiarSwitchEffect.length > 0, "familiar-switch effect must be present");
 
