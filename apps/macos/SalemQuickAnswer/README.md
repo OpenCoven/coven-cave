@@ -1,22 +1,73 @@
 # Salem Quick Answer for macOS
 
-Tracking: OpenCoven/coven-cave#5329 under #5323.
+Tracking: OpenCoven/coven-cave#5329 and #5330 under #5323.
 
-This is the native Cave-owned menu-bar shell for Salem Quick Answer. The #5329 slice is deliberately fixture-only: it contains no live Salem networking, Keychain credential, model/provider secret, familiar runtime, Psyche/Threads/Coven mutation path, chat history, or voice input.
+This is the native Cave-owned menu-bar client for Salem Quick Answer. The app uses the read-only `opencoven.salem-brief/v1` contract and keeps live answers separate from versioned offline reference pitches.
 
-## What works in this slice
+## Current architecture
 
-- menu-bar status item with a SwiftUI popover;
-- global `⌥ Space` toggle without an Accessibility permission dependency;
-- question field focused when the popover appears;
-- Anyone / AI user / Creator / Developer / Security / Partner audience selector;
-- Quick / Conversation / Deep / Technical depth selector;
-- explicit answered, low-confidence, stale, offline, unauthorized, rate-limited, and failed states;
-- claim status and confidence rendered separately;
-- caveat and evidence disclosure;
-- versioned offline pitch cards clearly labeled as reference language, not live implementation status;
-- deterministic fixture service implementing the `opencoven.salem-brief/v1` client shape;
-- XCTest state coverage plus a portable source-contract verifier.
+```text
+canonical OpenCoven sources
+          ↓
+       Salem
+   POST /api/brief
+          ↓
+ scoped salem.brief.read bearer
+          ↓
+ Salem Quick Answer (macOS)
+```
+
+The Mac never receives provider, Upstash, reindex, admin, GitHub research, Threads, Psyche, Coven, or memory-mutation credentials.
+
+## User flow
+
+- `⌥ Space` opens/closes the menu-bar popover without an Accessibility permission dependency.
+- Ask a question and receive `sayThis` first.
+- Claim status, confidence, and knowledge freshness remain separate concepts.
+- Caveats and evidence expand on demand.
+- `Access` stores/removes the scoped raw bearer in this Mac's Keychain.
+- `Pitches` remains usable without the network and is explicitly labeled as reference language, not current implementation/release status.
+
+## Live trust behavior
+
+The client does not render a successful HTTP response merely because it decodes as ordinary JSON. `StrictBriefDecoder` requires the exact v1 object shape and checks important epistemic invariants before the answer reaches UI state:
+
+- unknown fields or schema versions are rejected;
+- known claim statuses require evidence;
+- `unknown` must remain low-confidence and non-generalizable;
+- `implemented` needs pinned implementation evidence;
+- `verified` needs pinned verification evidence;
+- duplicate evidence IDs are rejected;
+- evidence URLs must be HTTPS without embedded credentials or query parameters;
+- moving/malformed revisions are rejected;
+- known freshness requires a content hash and canonical index/check timestamps;
+- `safeToGeneralize` cannot override stale/non-current/weak evidence.
+
+A failed validation becomes `invalidResponse`; the suspect answer is withheld.
+
+## Explicit failure states
+
+The UI distinguishes:
+
+- offline;
+- unauthorized;
+- revoked credential;
+- rate limited;
+- timeout;
+- invalid/unversioned response;
+- answer-model unavailable;
+- Salem service unavailable;
+- generic bounded failure;
+- low-confidence successful answer;
+- stale successful answer.
+
+No automatic retry loop runs in this slice, and no previous live answer is substituted as fresh truth.
+
+## Credential storage
+
+The raw `salem.brief.read` token is stored as a generic-password Keychain item using `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. It is not written to `UserDefaults`, source files, plist resources, or query history.
+
+The server-side hash/revocation contract is defined by the Salem backend #5328 slice. The client supports local save, replace, read, and delete operations.
 
 ## Generate and run
 
@@ -28,7 +79,7 @@ xcodegen generate
 open SalemQuickAnswer.xcodeproj
 ```
 
-Or build/test from the command line:
+Command-line verification:
 
 ```sh
 cd apps/macos/SalemQuickAnswer
@@ -39,7 +90,7 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
-The generated `.xcodeproj` is not the source of truth and should not be committed unless Cave later standardizes a different Apple-project policy. `project.yml` is canonical, matching the existing native iOS convention.
+The generated `.xcodeproj` is not source-of-truth; `project.yml` is canonical, matching Cave's native Apple project convention.
 
 ## Portable source check
 
@@ -49,23 +100,29 @@ From the repository root:
 node scripts/verify-quick-answer-macos.mjs
 ```
 
-This is not a substitute for Xcode compilation. It verifies the principal product boundary in CI/dev environments that cannot build macOS: LSUIElement/menu-bar wiring, ⌥Space registration, explicit failure states, offline pitch language, fixture schema version, and absence of live-network/provider-secret wiring.
+This is not a substitute for Xcode compilation. It verifies the principal source boundary on non-macOS CI/dev hosts: menu-bar/hot-key wiring, explicit failure states, offline pitch language, live endpoint, Keychain use, strict decoder presence, and absence of provider/admin infrastructure secrets.
 
-## Fixture paths
+## Deterministic tests
 
-Normal questions return a synthetic `specified` answer. These phrases exercise failures without network access:
+Ordinary XCTest uses injected services and mock URL loading; it does not require live Salem or OpenAI.
 
-```text
-fixture:unknown
-fixture:stale
-fixture:offline
-fixture:unauthorized
-fixture:rate
-fixture:failed
-```
+Coverage includes:
 
-Questions containing `every model` also exercise the low-confidence “I wouldn't claim that yet” path.
+- principal UI state transitions;
+- offline pitch completeness;
+- strict Brief valid/invalid decoding;
+- Keychain save/read/replace/delete in an isolated test namespace;
+- authorized request bearer/header behavior;
+- missing credential prevents network access;
+- revoked and rate-limited responses remain distinct;
+- future schema responses are withheld.
+
+The original `FixtureBriefService` remains available only for deterministic development/test injection. The production app instantiates `LiveBriefService`.
+
+## Live integration evidence still required
+
+A repository-native build can prove source behavior without proving that the currently deployed Salem environment accepts the new scoped endpoint. Before #5330 can close, record one authorized live `/api/brief` request against the exact deployed backend revision and verify that the returned source/freshness metadata survives strict decoding.
 
 ## Trust boundary
 
-The bundled pitches are reference language only. They are not evidence that a feature is currently implemented, verified, released, private, secure, or universally compatible. The next live-integration slice (#5330) must decode the server's structured Brief response and preserve its explicit evidence/freshness/failure states instead of turning the offline library into a cache of current truth.
+The bundled pitches are reference language only. They are not evidence that a feature is currently implemented, verified, released, private, secure, or universally compatible. Live failures never silently fall back to a pitch as though it were the answer to the current question.
