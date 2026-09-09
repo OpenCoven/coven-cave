@@ -27,7 +27,18 @@ final class PerformanceBaselineUITests: XCTestCase {
             ].firstMatch
             XCTAssertTrue(project.waitForExistence(timeout: 10))
             project.tap()
-            XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.navigationBars["Switch project"].waitForNonExistence(timeout: 10))
+            let selectedContext = openDrawer(in: app)
+            let selectedProject = NSPredicate(
+                format: "value == %@", "Fixture Project \(targetIndex + 1)"
+            )
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                    predicate: selectedProject, object: selectedContext
+                )], timeout: 10),
+                .completed,
+                "Every measured selection must activate the requested project"
+            )
         }
     }
 

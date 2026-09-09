@@ -77,12 +77,27 @@ All 102 mobile test files, 2,007-file test wiring, frozen installation, typechec
 and lint passed. All 35 focused native Release simulator tests passed: 21
 performance-recorder, 11 renderer-lifecycle, and three packaged-renderer tests.
 The unlocked physical iPhone also passed those 35 native Release tests.
-Three isolated five-visit rich-render UI journeys passed with the test-only
-capture attachment pause. The latest used a verified wired connection; its
-trace must finish saving and export before these visits can count toward the
-latency baseline. Earlier capture attempts stalled during remote symbol
-processing. One subsequent UI-runner startup timed out enabling automation;
-the next retry started successfully and passed.
+Five-visit rich-render UI journeys passed with the test-only capture
+attachment pause. The custom Immediate template was recorded by the CLI in
+Deferred mode; its saved export retained only rich-render visits four and five
+(546.389 ms and 161.231 ms, both warm). First observed is not necessarily first
+attempted: complete begin/end pairs do not prove that earlier pairs survived.
+A subsequent GUI Immediate recording passed the UI journey but saved no
+exportable event stores. Neither capture establishes a cold baseline.
+
+A standard Logging recording with an explicit three-minute retention window
+saved and exported the project journey successfully. It contains five drawer,
+five switcher-presentation, five projection, and four project-switch/destination
+pairs. Coverage and the missing third selection interval are being reconciled against the
+UI log before assigning cold/warm labels. The project UI driver now checks the
+exact selected project after each tap; its strengthened device run is pending.
+
+The following Logging rich-render capture passed all five visits but exported
+only visits two through five. Their warm count is 4, median 133.551 ms, p95 and
+maximum 137.642 ms. The interval-table export confirms the same missing initial
+events as the raw signpost export. No cold rich-render value is available, and
+the seven-span baseline remains open. These small-sample observations do not
+establish a regression comparison or a reliable tail-latency estimate.
 
 ### Stable spans
 
@@ -158,7 +173,9 @@ not a device disconnection.
 All durations below are milliseconds. “Cold” means the first attempted named
 interval in a fresh UI-journey app process, not a clean-install launch or cold
 OS cache. “Warm” means subsequent attempts in that process. A cancelled first
-attempt does not promote a later completion into the cold bucket. p95 uses
+attempt does not promote a later completion into the cold bucket. Cold labels
+also require independent evidence that the entire process journey was retained;
+the historical classification below remains provisional pending that check. p95 uses
 nearest rank; at these small sample counts it equals the maximum and is only
 a baseline observation, not a reliable tail-latency estimate.
 
@@ -213,7 +230,7 @@ the isolated journeys. Keep cold and warm runs separate, preserve the raw
 `.trace` bundles, exclude `phase=cancel`, and report count, median, p95, and
 maximum from completed intervals only.
 
-### Isolated capture procedure (under validation)
+### Isolated capture procedure (coverage validation required)
 
 Start Instruments after the XCTest UI runner has started, and before the
 fixture app launches. Starting the recording before runner installation can
@@ -247,6 +264,9 @@ Use `xcodebuild test-without-building -xctestrun` with that copy and exactly
 one `-only-testing:CovenCaveUITests/PerformanceBaselineUITests/<method>`.
 When `PERFORMANCE_CAPTURE_READY` appears in its log, start the chosen
 signpost-capable Instruments configuration before the 40-second pause ends.
+The current exportable configuration is the standard Logging template with
+`--all-processes --window 180s --time-limit 150s`; the retention window exceeds
+the recording limit. Verify `Windowed (3 minutes)` in the exported TOC.
 A signpost-only configuration avoids CPU sampling, but trace finalization may
 still perform remote symbol processing. Blank plus Points of Interest and a
 custom Immediate `os_signpost` template both entered that stage locally;
@@ -254,8 +274,9 @@ neither is yet a validated replacement capture recipe. Use the same verified
 configuration for each reported latency journey; collect CPU profiles
 separately. Wait for the journey to pass, stop Instruments, and wait for the
 trace to save before launching the next journey. Export and inspect
-actual completed span counts; successful UI assertions alone are not timing
-evidence. Keep the raw trace and generated test plan private.
+actual completed span counts and align every expected interaction with the UI
+log before assigning cold/warm labels; successful UI assertions alone are not
+timing evidence. Keep the raw trace and generated test plan private.
 
 ### Simulator journey evidence
 
