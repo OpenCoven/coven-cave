@@ -1105,11 +1105,11 @@ async function writeProjects(caveHomeDir, projects) {
   );
 }
 
-async function writeConversation(caveHomeDir, conversation) {
+async function writeConversation(caveHomeDir, conversation, fileId = conversation.sessionId) {
   const dir = path.join(caveHomeDir, "conversations");
   await mkdir(dir, { recursive: true });
   await writeFile(
-    path.join(dir, `${conversation.sessionId}.json`),
+    path.join(dir, `${fileId}.json`),
     `${JSON.stringify(conversation, null, 2)}\n`,
     "utf8",
   );
@@ -2859,6 +2859,37 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   await restore();
 }
 
+export async function runCanonicalConversationIdLeg(client, recorder, bearer, caveHomeDir) {
+  const conversation = fixtureBranchedConversation();
+  // A non-case-only alias exercises the transcript-owned ID on every filesystem.
+  const lookupId = "canonical-id-probe";
+  await writeConversation(caveHomeDir, conversation, lookupId);
+  try {
+    const response = await client.read(`/conversations/${lookupId}/messages?limit=1`, bearer);
+    const failures = [];
+    if (response.status !== 200) {
+      failures.push(`canonical ID probe answered ${response.status}, expected 200`);
+    } else {
+      const messages = response.json?.data?.messages;
+      if (
+        !Array.isArray(messages) ||
+        messages.length !== 1 ||
+        messages[0]?.id !== BRANCHED_ACTIVE_SEQUENCE[0] ||
+        messages[0]?.conversationId !== conversation.sessionId
+      ) {
+        failures.push("the first message must carry the transcript's canonical conversation ID");
+      }
+    }
+    recorder.expect(
+      "reads.messages-canonical-conversation-id",
+      failures,
+      "a filename alias must not replace the transcript-owned conversation ID",
+    );
+  } finally {
+    await removeConversation(caveHomeDir, lookupId);
+  }
+}
+
 async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
   const conversation = fixtureBranchedConversation();
   await writeConversation(caveHomeDir, conversation);
@@ -2975,31 +3006,7 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
   absentFailures.push(...checkEnvelope(absent.json, { kind: "error", code: "not_found" }));
   recorder.expect("reads.messages-not-found", absentFailures);
 
-  // A conversation resolves to a FILE, so on a case-insensitive filesystem a
-  // differently-spelled id answers — with the transcript's own id, never the
-  // spelling that was asked for. Conditional because the answer depends on the
-  // filesystem this runs on, and a skip states that honestly.
-  const mixedCase = await client.read("/conversations/BRANCHED/messages?limit=1", bearer);
-  if (mixedCase.status === 200) {
-    recorder.expect(
-      "reads.messages-canonical-conversation-id",
-      mixedCase.json?.data?.messages?.[0]?.conversationId === "branched"
-        ? []
-        : [`conversationId is ${JSON.stringify(mixedCase.json?.data?.messages?.[0]?.conversationId)}, expected the transcript's own "branched"`],
-    );
-  } else if (mixedCase.status === 404) {
-    recorder.skip(
-      "reads.messages-canonical-conversation-id",
-      `this filesystem is case-sensitive: /conversations/BRANCHED/messages answered 404`,
-    );
-  } else {
-    // A 5xx (or a 429) is never a filesystem property, and reporting it as one
-    // would let a broken server pass the whole run (cave-icyyg).
-    recorder.expect(
-      "reads.messages-canonical-conversation-id",
-      [`/conversations/BRANCHED/messages answered ${mixedCase.status}, expected 200 or 404`],
-    );
-  }
+  await runCanonicalConversationIdLeg(client, recorder, bearer, caveHomeDir);
 }
 
 // ── the run ──────────────────────────────────────────────────────────────────
