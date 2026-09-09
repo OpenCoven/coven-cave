@@ -58,6 +58,7 @@ export function useWorkspaceRailController({
   const changeCountRootRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     if (!effectiveProjectRoot) {
       setChangeCount(null);
       changeCountRootRef.current = null;
@@ -95,7 +96,7 @@ export function useWorkspaceRailController({
       window.removeEventListener("cave:changes-refresh", refresh);
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [effectiveProjectRoot, sessionRunning]);
+  }, [active, effectiveProjectRoot, sessionRunning]);
 
   const [terminalOpened, setTerminalOpened] = useState(false);
   const rail = useCodeRail({

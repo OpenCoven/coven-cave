@@ -83,8 +83,8 @@ test("the label never claims turns are hidden while they are on screen", () => {
   assert.equal(chatFoldLabel(3, false), "3 earlier turns");
   assert.equal(chatFoldLabel(1, false), "1 earlier turn");
   assert.equal(chatFoldLabel(12, true), "hide earlier turns");
-  assert.equal(chatFoldAriaLabel(3, false), "Show 3 earlier turns");
-  assert.equal(chatFoldAriaLabel(1, false), "Show 1 earlier turn");
+  assert.equal(chatFoldAriaLabel(3, false), "Browse 3 earlier turns");
+  assert.equal(chatFoldAriaLabel(1, false), "Browse 1 earlier turn");
   assert.equal(chatFoldAriaLabel(3, true), "Hide earlier turns");
 });
 

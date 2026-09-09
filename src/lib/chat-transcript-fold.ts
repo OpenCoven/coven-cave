@@ -4,11 +4,11 @@
 //
 // A long thread opens on the recent exchange and puts everything older behind
 // one pill on a rule. This is a READING affordance and is deliberately distinct
-// from `TRANSCRIPT_RENDER_CAP` / `historyExpanded`, which is a mounting budget:
+// from the bounded transcript window, which is a mounting budget:
 // the cap answers "how many rows can the browser afford right now?", the fold
 // answers "how much of this conversation is still the conversation?". They
-// compose — opening the fold also lifts the cap, because a pill that says
-// "hide earlier turns" has promised every earlier turn.
+// compose — opening the fold enters paged browsing, never unlimited mounting.
+// Its accessible action says "Browse", not "Show N", to make that explicit.
 //
 // Counts are in TURNS, not groups: a voice call is one group carrying several
 // turns, and a label reading "3 earlier turns" over a fold hiding eight would
@@ -84,5 +84,5 @@ export function chatFoldLabel(hiddenTurns: number, open: boolean): string {
  *  screen reader gets the whole sentence. */
 export function chatFoldAriaLabel(hiddenTurns: number, open: boolean): string {
   if (open) return "Hide earlier turns";
-  return `Show ${hiddenTurns} earlier ${hiddenTurns === 1 ? "turn" : "turns"}`;
+  return `Browse ${hiddenTurns} earlier ${hiddenTurns === 1 ? "turn" : "turns"}`;
 }

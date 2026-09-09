@@ -4,7 +4,7 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
@@ -39,6 +39,9 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
+import { useProjects } from "@/lib/use-projects";
+import { useProjectOverrides } from "@/lib/use-project-overrides";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -78,6 +81,8 @@ type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "canv
 type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
+  browseScope?: ChatBrowseScope;
+  composeProjectRoot?: string | null;
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
   selectedFamiliarIds: ReadonlySet<string>;
@@ -123,6 +128,8 @@ type Props = {
 export function ChatSurface({
   familiars,
   sessions,
+  browseScope,
+  composeProjectRoot,
   activeFamiliar,
   activeFamiliarId,
   selectedFamiliarIds,
@@ -157,6 +164,20 @@ export function ChatSurface({
   // mirror it locally so the rail can render the active row without ChatSurface
   // reaching into the router for state it is handed anyway.
   const [railActiveSessionId, setRailActiveSessionId] = useState<string | null>(null);
+  const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
+    useProjects({ familiarId: activeFamiliarId });
+  const projectOverrides = useProjectOverrides();
+  const effectiveBrowseScope = useMemo(() => browseScope ? ({
+    ...browseScope,
+    ready: browseScope.ready && (
+      browseScope.selection === "all"
+      || (projectsLoaded && !projectsLoading && projectsError === null)
+    ),
+  }) : undefined, [browseScope, projectsLoaded, projectsLoading, projectsError]);
+  const browseSessions = useMemo(
+    () => scopeChatBrowseSessions(sessions, projects, projectOverrides, effectiveBrowseScope),
+    [sessions, projects, projectOverrides, effectiveBrowseScope],
+  );
 
   // Rail collapse. Open is the SSR/first-paint default and the stored
   // preference is applied after mount, so server and client markup match —
@@ -353,7 +374,7 @@ export function ChatSurface({
       if (!d?.familiarId) return;
       onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.goToList(), 0);
+      window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, d.familiarId), 0);
     };
     // (cave-nwi8) "cave:agents-list" had zero dispatchers repo-wide — its
     // listener is gone so no future emitter half-works against it.
@@ -529,7 +550,8 @@ export function ChatSurface({
       {railAvailable && railOpen ? (
         <aside className="chat-inner-rail" aria-label="Chat threads">
           <SidebarChatsSection
-            sessions={sessions}
+            sessions={browseSessions}
+            browseScope={effectiveBrowseScope}
             activeFamiliarId={activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
@@ -552,7 +574,7 @@ export function ChatSurface({
             activeFamiliarId={activeFamiliarId}
             sessions={sessions}
             onSelectFamiliar={(id) => {
-              if (id) onSetActiveFamiliar(id);
+              if (id) onFamiliarScopeChange(id);
             }}
             labeled
             singleRequired
@@ -690,6 +712,8 @@ export function ChatSurface({
                   familiar={activeFamiliar}
                   familiars={familiars}
                   sessions={sessions}
+                  browseScope={effectiveBrowseScope}
+                  composeProjectRoot={composeProjectRoot}
                   daemonRunning={daemonRunning}
                   activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
@@ -777,7 +801,7 @@ export function ChatSurface({
       <ChatThreadsSheet
         open={threadsSheetOpen}
         onClose={() => setThreadsSheetOpen(false)}
-        sessions={sessions}
+        sessions={browseSessions}
         activeFamiliarId={activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}

@@ -11,7 +11,7 @@
 // small cap, and are explicitly dropped when a send starts or a conversation
 // is deleted (see invalidateConversation call sites).
 
-import { markEnd, markStart } from "./perf/marks.ts";
+import { startSpan } from "./perf/marks.ts";
 
 /** Shape callers care about; the payload is stored as parsed JSON verbatim. */
 export type CachedConversationPayload = {
@@ -130,7 +130,7 @@ export function loadConversation(
     // Only a real request is timed. The cache-hit and in-flight-dedupe paths
     // above return before reaching here, deliberately: counting them would add
     // zero-cost samples and flatter the percentile this span exists to report.
-    markStart(TRANSCRIPT_FETCH_SPAN);
+    const endSpan = startSpan(TRANSCRIPT_FETCH_SPAN);
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         cache: "no-store",
@@ -153,11 +153,7 @@ export function loadConversation(
       if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
       return json;
     } finally {
-      // In the `finally`, so a thrown ConversationLoadError still closes the
-      // span. A markStart left dangling would not merely lose one sample — the
-      // next markEnd for this name would measure from the ABANDONED start and
-      // report a wildly inflated duration, quietly corrupting the percentile.
-      markEnd(TRANSCRIPT_FETCH_SPAN);
+      endSpan();
       if (inflight.get(sessionId) === entry) inflight.delete(sessionId);
     }
   })();

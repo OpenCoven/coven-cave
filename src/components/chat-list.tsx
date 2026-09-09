@@ -46,6 +46,7 @@ import {
 } from "@/lib/project-organizations";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
+import { scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
 import {
   applyProjectScope,
   normalizeSelection,
@@ -123,6 +124,7 @@ type Props = {
   familiar: Familiar | null;
   familiars?: Familiar[];
   sessions: SessionRow[];
+  browseScope?: ChatBrowseScope;
   selection: ProjectSelection;
   onSelectionChange: (selection: ProjectSelection) => void;
   daemonRunning?: boolean;
@@ -199,7 +201,7 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, browseScope, selection, onSelectionChange, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
   // out of "Today" from sitting under the wrong header until the list reloads.
@@ -325,12 +327,13 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
     // server; restored if the user hits Undo).
     const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
     // Shared with the workspace sidebar (cave-dkdev) — see visibleChatSessions.
-    return visibleChatSessions(sessions, familiar?.id ?? null, {
+    const visible = visibleChatSessions(sessions, familiar?.id ?? null, {
       archivedRows,
       showArchived,
       pendingDeleteIds: hidden,
     });
-  }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
+    return scopeChatBrowseSessions(visible, projects, projectOverrides, browseScope);
+  }, [sessions, showArchived, archivedRows, familiar?.id, deletePending, projects, projectOverrides, browseScope]);
 
   // The siderail never shows archived chats: even while the list's "Show
   // archived" toggle is on, rail groups build from an archive-free view.
@@ -372,8 +375,8 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
     [filtered, railSessions, projects, projectIndex, projectOverrides],
   );
   const effectiveSelection = useMemo(
-    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
-    [isMobile, selection, sidebarGroups],
+    () => browseScope ? "all" : normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
+    [browseScope, isMobile, selection, sidebarGroups],
   );
   const hasAppliedFilters =
     search.trim().length > 0 ||

@@ -12,6 +12,7 @@ import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
+import type { ChatBrowseScope } from "@/lib/chat-browse-scope";
 import {
   isWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
@@ -402,6 +403,13 @@ export function Workspace() {
   } = useProjects();
   const selectedWorkspaceProject =
     registeredProjects.find((project) => project.id === selectedWorkspaceProjectId) ?? null;
+  const chatBrowseScope = useMemo<ChatBrowseScope>(() => ({
+    selection: selectedWorkspaceProjectId ?? "all",
+    ready: workspaceContextHydrated && (
+      selectedWorkspaceProjectId === null
+      || (projectsLoadedSuccessfully && !projectsLoading && projectsError === null && selectedWorkspaceProject !== null)
+    ),
+  }), [selectedWorkspaceProjectId, workspaceContextHydrated, projectsLoadedSuccessfully, projectsLoading, projectsError, selectedWorkspaceProject]);
   const {
     familiars: projectCrewRecords,
     loading: projectCrewLoading,
@@ -1830,6 +1838,11 @@ export function Workspace() {
         : null;
     }
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
+    // Only an explicit single-familiar switch starts a fresh compose. Project
+    // crew restoration and asynchronous roster hydration are browse changes.
+    if (id && id !== routerRef.current?.currentFamiliarId() && !opts?.multi && !opts?.preserveSurface) {
+      routerRef.current?.newChat(undefined, undefined, id);
+    }
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -3537,8 +3550,8 @@ export function Workspace() {
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
-      setActiveId(intent.familiarId);
-      showFamiliarChatList();
+      selectFamiliarScope(intent.familiarId);
+      setMode("chat");
       return;
     }
     if (intent.kind === "open-session") {
@@ -4233,6 +4246,8 @@ export function Workspace() {
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
+        browseScope={chatBrowseScope}
+        composeProjectRoot={selectedWorkspaceProject?.root ?? null}
         activeFamiliar={active}
         activeFamiliarId={activeId}
         selectedFamiliarIds={scopeIds}

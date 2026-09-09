@@ -763,13 +763,13 @@ assert.match(
 );
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(composerDraftKey\)\)/,
-  "composer input initialises from the selected draft namespace",
+  /useComposerDraft\(scopedDraftKey, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "composer text and persistence use the same context-owned key",
 );
 assert.match(
   source,
-  /const \{ clearNow: clearDraft \} = useDraftPersistence\(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
-  "the selected draft namespace persists through the shared debounced hook",
+  /value: input, setValue: setInput, clearNow: clearDraft, transferTo: transferDraft/,
+  "owned session promotion can transfer follow-up text without global draft reuse",
 );
 assert.match(
   routerSource,
@@ -851,8 +851,18 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(viewChanged\) \{[\s\S]{0,200}?setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
+  /if \(viewChanged\) \{[\s\S]{0,200}?setMentionedFiles\(\[\]\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
   "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
+);
+assert.match(
+  source,
+  /if \(previousDraftTarget !== draftTarget\) \{[\s\S]{0,200}?if \(!sessionId \|\| draftPromotionRef\.current !== sessionId\) \{[\s\S]{0,100}?setRuntimeHost\(null\);/,
+  "host ownership resets on real context changes, not initial mount or owned session promotion",
+);
+assert.doesNotMatch(
+  source,
+  /if \(viewChanged\) \{[^}]*setRuntimeHost\(null\);/,
+  "the mount-time composer cleanup must not discard an initialized handoff host",
 );
 
 // Stream teardown must be ownership-scoped: a settling BACKGROUND stream must
@@ -925,7 +935,7 @@ assert.match(
   // predicate, passing originSessionId so the router can match the specific
   // thread being replaced (null for sessionless creation, non-null for A→B).
   const notifyChecks = source.match(
-    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\);\s*\}/g,
+    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*promoteDraft\(ev\.sessionId\);\s*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\);\s*\}/g,
   );
   assert.ok(
     notifyChecks && notifyChecks.length === 2,
@@ -1086,7 +1096,7 @@ assert.match(
 // live registry doesn't mirror the cleared turns back on the next chunk.
 assert.match(
   source,
-  /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
+  /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*transcriptResetRevisionRef\.current \+= 1;\s*\n\s*setTurns\(\[\]\);/,
   "/clear cancels an in-flight stream before clearing the transcript",
 );
 

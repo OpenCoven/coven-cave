@@ -1,13 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import {
-  PROJECT_ACCESS_CHANGED_EVENT,
-  projectAccessChangedId,
-} from "./project-access-events.ts";
+import { reloadProjectCrew, subscribeProjectCrew, type ProjectCrewResult } from "./project-crew-requests.ts";
 
 const EMPTY_FAMILIARS: Familiar[] = [];
+const EMPTY_RESULTS: ReadonlyMap<string, ProjectCrewResult> = new Map();
 
 export type ProjectFamiliarsState = {
   familiars: Familiar[];
@@ -23,11 +21,36 @@ export type ProjectFamiliarsByProjectState = {
   loadedProjectIds: ReadonlySet<string>;
 };
 
-/**
- * Loads only familiars that may launch a session in the selected project.
- * Clearing the prior result before each fetch prevents a picker from briefly
- * offering a familiar authorized for the previously selected project.
- */
+function useProjectCrewResults(projectIdsKey: string, enabled: boolean) {
+  // Project id alone is insufficient for A → B → A or disable → re-enable:
+  // every selection must hide the previous load before passive effects run.
+  const identity = useMemo(() => ({
+    ids: projectIdsKey ? JSON.parse(projectIdsKey) as string[] : [],
+    enabled,
+  }), [projectIdsKey, enabled]);
+  const [state, setState] = useState<{
+    identity: typeof identity;
+    results: ReadonlyMap<string, ProjectCrewResult>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!identity.enabled || identity.ids.length === 0) return;
+    return subscribeProjectCrew(identity.ids, (projectId, result) => {
+      setState((previous) => {
+        const results = new Map(previous?.identity === identity ? previous.results : EMPTY_RESULTS);
+        results.set(projectId, result);
+        return { identity, results };
+      });
+    });
+  }, [identity]);
+
+  return {
+    ids: identity.enabled ? identity.ids : [],
+    results: identity.enabled && state?.identity === identity ? state.results : EMPTY_RESULTS,
+  };
+}
+
+/** Loads only the current, authorized crew; pending membership stays hidden. */
 export function useProjectFamiliars({
   projectId,
   enabled = true,
@@ -35,96 +58,26 @@ export function useProjectFamiliars({
   projectId: string | null;
   enabled?: boolean;
 }): ProjectFamiliarsState {
-  const [familiars, setFamiliars] = useState<Familiar[]>(EMPTY_FAMILIARS);
-  const [loading, setLoading] = useState(false);
-  // Keep the result tied to the project that produced it. Effects run after
-  // render, so clearing state inside the effect alone would briefly expose
-  // the previous project's roster after projectId changes.
-  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-  const [errorProjectId, setErrorProjectId] = useState<string | null>(null);
-  const [reloadEpoch, setReloadEpoch] = useState(0);
-  const generationRef = useRef(0);
-  // Synchronously invalidate any in-flight generation, clear stale UI state,
-  // and establish loading before the effect re-fires. The identity is stable
-  // unless enabled or projectId changes so callers may memoize it.
-  const reload = useCallback(() => {
-    generationRef.current += 1;
-    setFamiliars(EMPTY_FAMILIARS);
-    setLoadedProjectId(null);
-    setErrorProjectId(null);
-    setLoading(enabled && projectId !== null);
-    setReloadEpoch((epoch) => epoch + 1);
-  }, [enabled, projectId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onProjectAccessChanged = (event: Event) => {
-      if (projectAccessChangedId(event) === projectId) reload();
-    };
-    window.addEventListener(PROJECT_ACCESS_CHANGED_EVENT, onProjectAccessChanged);
-    return () => window.removeEventListener(PROJECT_ACCESS_CHANGED_EVENT, onProjectAccessChanged);
-  }, [projectId, reload]);
-
-  useEffect(() => {
-    generationRef.current += 1;
-    const generation = generationRef.current;
-
-    if (!enabled || !projectId) {
-      setFamiliars(EMPTY_FAMILIARS);
-      setLoading(false);
-      setLoadedProjectId(null);
-      setErrorProjectId(null);
-      return;
-    }
-
-    setFamiliars(EMPTY_FAMILIARS);
-    setLoading(true);
-    setLoadedProjectId(null);
-    setErrorProjectId(null);
-    void (async () => {
-      try {
-        const response = await fetch(`/api/familiars?projectId=${encodeURIComponent(projectId)}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json().catch(() => null) as { ok?: boolean; familiars?: Familiar[] } | null;
-        if (generationRef.current !== generation) return;
-        if (!response.ok || !payload?.ok || !Array.isArray(payload.familiars)) {
-          setErrorProjectId(projectId);
-          return;
-        }
-        setFamiliars(payload.familiars);
-        setLoadedProjectId(projectId);
-      } catch {
-        if (generationRef.current === generation) {
-          setErrorProjectId(projectId);
-        }
-      } finally {
-        if (generationRef.current === generation) setLoading(false);
-      }
-    })();
-  }, [enabled, projectId, reloadEpoch]);
-
-  const currentError = enabled && projectId !== null && errorProjectId === projectId ? "Couldn't load project crew" : null;
-  const currentFamiliars = enabled && projectId !== null && loadedProjectId === projectId ? familiars : EMPTY_FAMILIARS;
-  const currentLoading = Boolean(
-    enabled && projectId !== null && currentError === null && (loading || loadedProjectId !== projectId),
+  const normalizedProjectId = projectId?.trim() || null;
+  const { results } = useProjectCrewResults(
+    normalizedProjectId ? JSON.stringify([normalizedProjectId]) : "",
+    enabled,
   );
+  const result = normalizedProjectId ? results.get(normalizedProjectId) : undefined;
+  const reload = useCallback(() => {
+    if (enabled && normalizedProjectId) reloadProjectCrew(normalizedProjectId);
+  }, [enabled, normalizedProjectId]);
 
   return {
-    familiars: currentFamiliars,
-    loading: currentLoading,
-    error: currentError,
+    familiars: result?.status === "loaded" ? result.familiars : EMPTY_FAMILIARS,
+    loading: enabled && normalizedProjectId !== null && (!result || result.status === "loading"),
+    error: result?.status === "error" ? "Couldn't load project crew" : null,
     reload,
-    loadedSuccessfully: enabled && projectId !== null && loadedProjectId === projectId && currentError === null,
+    loadedSuccessfully: result?.status === "loaded",
   };
 }
 
-/**
- * Fetches the authorized roster once per distinct project. Table mode exposes
- * an inline familiar picker for many cards at once, so sharing this lookup
- * keeps project-backed cards constrained without hiding the complete roster
- * for intentionally unscoped tasks.
- */
+/** Shares project reads with single-project pickers without unscoping a batch. */
 export function useProjectFamiliarsByProject({
   projectIds,
   enabled = true,
@@ -132,67 +85,22 @@ export function useProjectFamiliarsByProject({
   projectIds: readonly string[];
   enabled?: boolean;
 }): ProjectFamiliarsByProjectState {
-  const [familiarsByProject, setFamiliarsByProject] = useState<Map<string, Familiar[]>>(() => new Map());
-  const [loadingProjectIds, setLoadingProjectIds] = useState<Set<string>>(() => new Set());
-  const [loadedProjectIds, setLoadedProjectIds] = useState<Set<string>>(() => new Set());
-  const generationRef = useRef(0);
-  const projectIdsKey = [...new Set(projectIds.map((projectId) => projectId.trim()).filter(Boolean))]
-    .sort()
-    .join("\u0000");
+  const projectIdsKey = JSON.stringify([...new Set(projectIds.map((id) => id.trim()).filter(Boolean))].sort());
+  const { ids, results } = useProjectCrewResults(projectIdsKey, enabled);
 
-  useEffect(() => {
-    generationRef.current += 1;
-    const generation = generationRef.current;
-    const ids = projectIdsKey ? projectIdsKey.split("\u0000") : [];
-
-    if (!enabled || ids.length === 0) {
-      setFamiliarsByProject(new Map());
-      setLoadingProjectIds(new Set());
-      setLoadedProjectIds(new Set());
-      return;
-    }
-
-    setFamiliarsByProject(new Map());
-    setLoadingProjectIds(new Set(ids));
-    setLoadedProjectIds(new Set());
-    const search = new URLSearchParams();
-    for (const projectId of ids) search.append("projectId", projectId);
-    void (async () => {
-      try {
-        const response = await fetch(`/api/familiars?${search}`, { cache: "no-store" });
-        const payload = await response.json().catch(() => null) as {
-          ok?: boolean;
-          familiars?: Familiar[];
-          familiarsByProject?: Record<string, Familiar[]>;
-        } | null;
-        if (!response.ok || !payload?.ok) return;
-        if (generationRef.current !== generation) return;
-        // `/api/familiars?projectId=…` deliberately retains its established
-        // single-project `{ familiars }` response for inspector/modal callers.
-        // A board can currently contain only one distinct project, though, in
-        // which case this batch hook makes that same one-id request. Accept
-        // both response forms so the inline picker works for single-project
-        // boards and during client/server version-skewed desktop updates.
-        const familiarsByProject = payload.familiarsByProject
-          ?? (ids.length === 1 && Array.isArray(payload.familiars)
-            ? { [ids[0]]: payload.familiars }
-            : null);
-        if (!familiarsByProject) return;
-        const loaded = ids.map((projectId) => [
-          projectId,
-          Array.isArray(familiarsByProject[projectId])
-            ? familiarsByProject[projectId]
-            : [],
-        ] as const);
-        setFamiliarsByProject(new Map(loaded));
-        setLoadedProjectIds(new Set(ids));
-      } catch {
-        // Keep every affected picker disabled and show its existing failure state.
-      } finally {
-        if (generationRef.current === generation) setLoadingProjectIds(new Set());
+  return useMemo(() => {
+    const familiarsByProject = new Map<string, Familiar[]>();
+    const loadingProjectIds = new Set<string>();
+    const loadedProjectIds = new Set<string>();
+    for (const projectId of ids) {
+      const result = results.get(projectId);
+      if (result?.status === "loaded") {
+        familiarsByProject.set(projectId, result.familiars);
+        loadedProjectIds.add(projectId);
+      } else if (!result || result.status === "loading") {
+        loadingProjectIds.add(projectId);
       }
-    })();
-  }, [enabled, projectIdsKey]);
-
-  return { familiarsByProject, loadingProjectIds, loadedProjectIds };
+    }
+    return { familiarsByProject, loadingProjectIds, loadedProjectIds };
+  }, [ids, results]);
 }

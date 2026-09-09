@@ -88,8 +88,8 @@ assert.ok(transcriptRowsStart > 0, "TranscriptRows component exists");
 const transcriptRowsBody = src.slice(transcriptRowsStart, transcriptRowsStart + 9000);
 assert.match(
   transcriptRowsBody,
-  /historyExpanded \|\| groupedTurns\.length <= TRANSCRIPT_RENDER_CAP/,
-  "the render cap decision moved with the loop",
+  /const window = chatTranscriptWindow\(groupedTurns\.length, windowStart\)/,
+  "the bounded window decision stays with the loop",
 );
 // cave-u5lq7: the loop now assigns instead of returning, because the
 // earlier-turns fold prepends a pill ahead of the rows. What this pin cares

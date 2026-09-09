@@ -102,6 +102,12 @@ import {
   type Turn,
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
+import { pendingHistorySystemTurns, startChatTranscriptLoad } from "@/lib/chat-transcript-load";
+import {
+  chatTranscriptWindow,
+  chatTranscriptWindowForTurn,
+  pageChatTranscriptWindow,
+} from "@/lib/chat-transcript-window";
 import { generateChatTitle } from "@/lib/chat-title-generation";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
@@ -316,7 +322,7 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { chatComposerDraftKey, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
@@ -473,6 +479,8 @@ type Props = {
   sessions?: SessionRow[];
   composerDraftKey?: string;
   composeInstance?: number;
+  /** Freeze new-chat execution context before awaiting its first session id. */
+  onComposeStarted?: () => void;
   onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
@@ -620,14 +628,6 @@ export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
-// Initial render cap: while the reader is pinned to the newest content, only the
-// last N grouped turns are mounted, so opening a long transcript doesn't build
-// hundreds of DOM nodes up front (off-screen rows already get
-// content-visibility:auto, but the nodes still cost mount + memory). The moment
-// the reader scrolls up or opens find — both routed through updateFollowing /
-// the find effect — the full transcript renders, so seeking, find, and deep
-// scroll are never limited by the cap.
-const TRANSCRIPT_RENDER_CAP = 60;
 // Streaming text flush window (cave-w50e): assistant_chunk frames arrive
 // ~one per token; buffering them for this long collapses dozens of React
 // commits (each a full turns map + registry advance) into one, while staying
@@ -2039,7 +2039,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2367,19 +2367,91 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
-  const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialControls?.runtimeHost ?? null);
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
+  const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
+  const draftPromotionRef = useRef<string | null>(null);
+  const draftTarget = JSON.stringify([familiar.id, sessionId, projectRoot ?? null]);
+  const [previousDraftTarget, setPreviousDraftTarget] = useState(draftTarget);
+  if (previousDraftTarget !== draftTarget) {
+    setPreviousDraftTarget(draftTarget);
+    if (!sessionId || draftPromotionRef.current !== sessionId) {
+      setProjectIdDraft(null);
+      setRuntimeHost(null);
+    }
+  }
+  // Resolve the execution root before assigning draft ownership. Project IDs
+  // and picker defaults must not create a second slot for the same folder.
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+    createProject,
+    createProjectOrThrow,
+    reload: reloadProjects,
+  } = useProjects({ familiarId: familiar.id });
+  const projects = useMemo(
+    () => scopedProjects.filter((project) => project.access !== undefined),
+    [scopedProjects],
+  );
+  const firstProject = projects[0] ?? null;
+  const recentProjectRoot = useMemo(
+    () => recentChatProjectRoot(sessions ?? [], projects),
+    [sessions, projects],
+  );
+  const projectSelection = resolveChatProjectSelection({
+    draftId: projectIdDraft,
+    hasSession: Boolean(session),
+    sessionProjectRoot: session?.project_root,
+    fallbackProjectRoot: projectRoot,
+    taskProjectId: linkedContext?.task?.projectId,
+    taskCwd: linkedContext?.task?.cwd,
+    recentProjectRoot,
+    defaultProjectId: savedDefaults.projectId,
+    projects,
+  });
+  const resolvedProjectId = projectSelection.projectId;
+  const selectedProject = projectSelection.project;
+  // Worktree roots remain distinct from their registered parent project.
+  const activeProjectRoot =
+    projectSelection.unregisteredRoot ??
+    selectedProject?.root ??
+    session?.project_root ??
+    projectRoot ??
+    "";
+  const freezeComposeContext = useCallback(() => {
+    // Once submitted, late session recency must not move an inferred project.
+    // Do not pin a worktree's parent ID: that would replace its execution root.
+    if (!sessionId && projectIdDraft === null && selectedProject && !projectSelection.unregisteredRoot) {
+      setProjectIdDraft(selectedProject.id);
+    }
+    onComposeStarted?.();
+  }, [sessionId, projectIdDraft, selectedProject, projectSelection.unregisteredRoot, onComposeStarted]);
+  const scopedDraftKey = chatComposerDraftKey(composerDraftKey, {
+    familiarId: familiar.id,
+    sessionId,
+    project: activeProjectRoot,
+    host: composerHostValue,
+  });
+  const { value: input, setValue: setInput, clearNow: clearDraft, transferTo: transferDraft } =
+    useComposerDraft(scopedDraftKey, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  const currentDraftKeyRef = useRef(scopedDraftKey);
+  currentDraftKeyRef.current = scopedDraftKey;
+  const promoteDraft = useCallback((newSessionId: string) => {
+    draftPromotionRef.current = newSessionId;
+    transferDraft(chatComposerDraftKey(composerDraftKey, {
+      familiarId: familiar.id, sessionId: newSessionId, project: "", host: "",
+    }));
+  }, [composerDraftKey, familiar.id, transferDraft]);
+  // Old drafts have no recorded recipient. Recover only on an explicit action.
+  const [legacyDraft, setLegacyDraft] = useState(() => readComposerDraft(composerDraftKey));
   const autoMissionActive = isAutoMissionArmed(autoMission);
   const autoModeSelected = autoMissionActive || isAutoModeDraft(input);
-  // Persist the composer draft so a reload restores a half-written message.
-  // Cleared (key removed) when the input empties — e.g. after a send. Shared
-  // hook — debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
@@ -2466,6 +2538,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // reply.
     if (busy) return;
     if (voiceCallPending) return;
+    freezeComposeContext();
     setVoiceCallPending(true);
     try {
       const requestedFamiliarId = familiar.id;
@@ -2475,16 +2548,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // DIFFERENT one would silently swap them, so bail on both outcomes —
       // don't promote, and don't announce a failure for a flow the user
       // already left.
-      if (familiarIdRef.current !== requestedFamiliarId) return; // user switched familiars mid-mint; abandon (orphan mint is the accepted abandon path)
+      if (familiarIdRef.current !== requestedFamiliarId) return;
+      if (currentDraftKeyRef.current !== scopedDraftKey) return;
       if (!result.ok) {
         announce(voiceChatStartErrorMessage(result.error), "assertive");
         return;
       }
+      promoteDraft(result.sessionId);
       onVoiceSessionCreated?.(result.sessionId);
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, busy, voiceCallPending, familiar.id, announce, onVoiceSessionCreated, raiseDebugError]);
+  }, [sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -2508,52 +2583,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  // Scope the picker to the projects THIS familiar has been granted access to —
-  // the chat-send route enforces the same grant (assertProjectAccess → 403), so
-  // an unscoped list would offer projects that fail on send.
-  const {
-    projects: scopedProjects,
-    loading: projectsLoading,
-    error: projectsError,
-    loadedSuccessfully: projectsLoadedSuccessfully,
-    createProject,
-    createProjectOrThrow,
-    reload: reloadProjects,
-  } = useProjects({ familiarId: familiar.id });
-  // A scoped mutation can briefly carry a freshly registered project before
-  // its grant refresh lands. Hide that unverified row until the server returns
-  // its effective access level; launch readiness uses the same list.
-  const projects = useMemo(
-    () => scopedProjects.filter((project) => project.access !== undefined),
-    [scopedProjects],
-  );
-  const firstProject = projects[0] ?? null;
-  const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
-  // The project the most recent chat ran in — the default a brand-new chat
-  // inherits (kept live: sessions can land seconds after boot).
-  const recentProjectRoot = useMemo(
-    () => recentChatProjectRoot(sessions ?? [], projects),
-    [sessions, projects],
-  );
-  // A session whose recorded cwd maps to no registered project resolves to
-  // NO_PROJECT_ID here — never to the first project, whose root would re-root
-  // the next turn's cwd and fork the harness session (`--continue` misses).
-  // A linked task's project (card projectId/cwd) outranks the recorded cwd: a
-  // chat tied to a task opens in — and runs in — the task's project.
-  const projectSelection = resolveChatProjectSelection({
-    draftId: projectIdDraft,
-    hasSession: Boolean(session),
-    sessionProjectRoot: session?.project_root,
-    fallbackProjectRoot: projectRoot,
-    taskProjectId: linkedContext?.task?.projectId,
-    taskCwd: linkedContext?.task?.cwd,
-    recentProjectRoot,
-    defaultProjectId: savedDefaults.projectId,
-    projects,
-  });
-  const resolvedProjectId = projectSelection.projectId;
-  const selectedProject = projectSelection.project;
-
   const currentNewSessionDefaults = {
     projectId: resolvedProjectId === NO_PROJECT_ID ? null : resolvedProjectId,
   };
@@ -2564,16 +2593,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSavedDefaults(next);
   }, [resolvedProjectId]);
 
-  // A registered project's worktree keeps its checkout root for execution
-  // while the parent project remains the visible, authorized selection.
-  // Historical unregistered roots remain readable but resolve to no selected
-  // project, so the next turn stays blocked until the user repairs it.
-  const activeProjectRoot =
-    projectSelection.unregisteredRoot ??
-    selectedProject?.root ??
-    session?.project_root ??
-    projectRoot ??
-    "";
   // ── Code reading (cave-f6mu9) ─────────────────────────────────────────────
   // A code block in the transcript is a claim about a file; the inspector is
   // where the reader checks it against the working tree and carries lines back
@@ -2710,7 +2729,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }, [sessionId]);
   const turnsRef = useRef<Turn[]>([]);
+  const transcriptResetRevisionRef = useRef(0);
   const tailRef = useRef<HTMLDivElement | null>(null);
+  // Both find and rendering use the active branch, not abandoned siblings.
+  const activePath = useMemo<Turn[]>(() => {
+    if (!activeLeafId) return turns;
+    return resolveActivePath(turns, activeLeafId) as Turn[];
+  }, [turns, activeLeafId]);
+  const { groupedTurns, turnIndexMap } = useMemo(() => groupTranscriptTurns(activePath), [activePath]);
+  const transcriptGroupCountRef = useRef(groupedTurns.length);
+  transcriptGroupCountRef.current = groupedTurns.length;
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // The retired activity-map toggle wrote `cave:chat:thread-instruments`, and an
   // opt-out "0" can still be sitting in a browser from an older build. Nothing
@@ -2736,23 +2765,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [newResponseContent, setNewResponseContent] = useState(false);
   const observedAssistantTurnIdRef = useRef<string | null>(null);
   const observedAssistantSourceRef = useRef("");
-  // Transcript render cap (see TRANSCRIPT_RENDER_CAP). Sticky for the session:
-  // once the reader leaves the bottom we mount the whole transcript and keep it
-  // mounted, so re-pinning doesn't churn rows in/out.
-  const [historyExpanded, setHistoryExpanded] = useState(false);
-  const historyExpandedRef = useRef(false);
-  historyExpandedRef.current = historyExpanded;
-  // "Chat Session - Prototype.dc.html" (cave-u5lq7): a long thread opens on the
-  // recent exchange with everything older behind one pill. Separate concern
-  // from historyExpanded above — that is a mounting budget, this is a reading
-  // affordance — but opening the fold lifts the cap too, because a pill that
-  // says "hide earlier turns" has promised every earlier turn.
+  // null follows the newest bounded window. Release freezes its start; paging
+  // replaces that window rather than accumulating the thread in the DOM.
+  const [transcriptWindowStart, setTranscriptWindowStart] = useState<number | null>(null);
+  const transcriptWindowStartRef = useRef<number | null>(null);
+  transcriptWindowStartRef.current = transcriptWindowStart;
+  // The closed fold still shows just the recent exchange. Opening it starts
+  // bounded browsing; it never lifts the mounting budget.
   const [foldOpen, setFoldOpen] = useState(false);
   const foldOpenRef = useRef(false);
   foldOpenRef.current = foldOpen;
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
+  const pageDirectionRef = useRef<-1 | 1 | null>(null);
   const releasedScrollAnchorRef = useRef<{ turnId: string | null; node: HTMLElement | null; top: number } | null>(null);
   const releasedAnchorFrameRef = useRef<number | null>(null);
   const captureReleasedScrollAnchor = useCallback(() => {
@@ -2805,6 +2831,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
+      setTranscriptWindowStart(null);
       setReleasedScrollDistance(0);
       setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
@@ -2813,54 +2840,66 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         releasedAnchorFrameRef.current = null;
       }
     } else {
+      setTranscriptWindowStart((start) => start ?? chatTranscriptWindow(transcriptGroupCountRef.current, null).start);
       const el = scrollRef.current;
       if (el) {
         setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
       }
     }
-    if (!next && !historyExpandedRef.current) {
-      // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
-      // the full transcript and anchor the scroll so older rows slide in above
-      // the current view instead of jumping it.
-      const el = scrollRef.current;
-      expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    if (!next) {
       captureReleasedScrollAnchor();
-      setHistoryExpanded(true);
     }
   }, [captureReleasedScrollAnchor]);
 
-  // Restore the pre-expansion distance-from-bottom once the full transcript has
-  // mounted, so revealing the older rows doesn't jump the reader's viewport.
-  // Either reveal prepends rows above the viewport, so both have to restore the
-  // anchor. Keying on historyExpanded alone missed the case where the reader
-  // had already scrolled up (cap lifted) and then opened the fold — the rows
-  // arrived with no effect left to fire, and the viewport jumped.
+  // Restore before paint. Prefer a surviving overlapping turn; distance from
+  // bottom handles fold changes, and an edge handles pages without an anchor.
   useLayoutEffect(() => {
-    if (!historyExpanded && !foldOpen) return;
     const anchor = expandAnchorRef.current;
     expandAnchorRef.current = null;
+    const direction = pageDirectionRef.current;
+    pageDirectionRef.current = null;
     if (anchor == null) return;
     const el = scrollRef.current;
     if (el) {
-      el.scrollTop = Math.max(0, el.scrollHeight - anchor);
+      const released = releasedScrollAnchorRef.current;
+      const node = released?.turnId
+        ? el.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(released.turnId)}"]`)
+        : null;
+      if (node && released) {
+        el.scrollTop += node.getBoundingClientRect().top - released.top;
+      } else if (direction !== null) {
+        el.scrollTop = direction === -1 ? el.scrollHeight : 0;
+      } else {
+        el.scrollTop = Math.max(0, el.scrollHeight - anchor);
+      }
       captureReleasedScrollAnchor();
     }
-  }, [captureReleasedScrollAnchor, historyExpanded, foldOpen]);
+  }, [captureReleasedScrollAnchor, transcriptWindowStart, foldOpen]);
 
-  // Opening the fold lifts the render cap with it and anchors the scroll, so
-  // the earlier turns slide in ABOVE the reader rather than shoving them down.
-  // Stable identity: TranscriptRows is memoized on its props.
+  // Release the follow-pin during browsing so a ResizeObserver cannot undo
+  // the restored anchor. Stable callbacks preserve TranscriptRows' memo.
   const toggleFold = useCallback(() => {
-    if (foldOpenRef.current) {
-      setFoldOpen(false);
-      return;
-    }
+    updateFollowing(false);
     const el = scrollRef.current;
     expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
     captureReleasedScrollAnchor();
-    setHistoryExpanded(true);
-    setFoldOpen(true);
-  }, [captureReleasedScrollAnchor]);
+    setTranscriptWindowStart(chatTranscriptWindow(transcriptGroupCountRef.current, null).start);
+    setFoldOpen(!foldOpenRef.current);
+  }, [captureReleasedScrollAnchor, updateFollowing]);
+
+  const pageTranscript = useCallback((direction: -1 | 1) => {
+    const count = transcriptGroupCountRef.current;
+    const current = chatTranscriptWindow(count, transcriptWindowStartRef.current);
+    const next = pageChatTranscriptWindow(count, current.start, direction);
+    if (next.start === current.start) return;
+    updateFollowing(false);
+    const el = scrollRef.current;
+    expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    pageDirectionRef.current = direction;
+    captureReleasedScrollAnchor();
+    setTranscriptWindowStart(next.start);
+    announce(direction === -1 ? "Showing earlier turns." : "Showing newer turns.");
+  }, [announce, captureReleasedScrollAnchor, updateFollowing]);
 
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
@@ -3176,7 +3215,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       );
     }
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [announce, autoMissionActive, input]);
+  }, [announce, autoMissionActive, input, setInput]);
   // Attachments staged in the composer (cap 10) with drag-and-drop
   // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
   // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
@@ -3469,6 +3508,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [foundTurnId, setFoundTurnId] = useState<string | null>(null);
   const foundClearTimerRef = useRef<number | null>(null);
   const foundFrameRef = useRef<number | null>(null);
+  const [pendingFindJump, setPendingFindJump] = useState<{ turnId: string; sessionId: string | null | undefined } | null>(null);
   const lastJumpedQueryRef = useRef("");
 
   const clearFoundHighlightTimer = useCallback(() => {
@@ -3496,7 +3536,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const findHits = useMemo(() => {
     if (!findOpen) return [];
     return findTranscriptHits(
-      turns.map((t) => ({
+      activePath.map((t) => ({
         id: t.id,
         role: t.role,
         // Match the exact prose projection used by the transcript, excluding
@@ -3506,19 +3546,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
     );
-  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, turns]);
-
-  // Find searches the whole transcript, so opening it mounts every turn — a
-  // jump (jumpToFindMatch) resolves its target via querySelector and must find
-  // the row in the DOM regardless of the render cap OR the fold. Without the
-  // fold half, searching a long thread reports hits in folded turns and then
-  // jumps nowhere, because the row it looks for was never rendered.
-  useEffect(() => {
-    if (findOpen) {
-      setHistoryExpanded(true);
-      setFoldOpen(true);
-    }
-  }, [findOpen]);
+  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, activePath]);
 
   // Keep the active pointer in bounds when the match set shrinks.
   useEffect(() => {
@@ -3529,32 +3557,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     (idx: number, matches: readonly { turnId: string }[]) => {
       const id = matches[idx]?.turnId;
       if (!id) return;
+      const targetWindow = chatTranscriptWindowForTurn(groupedTurns, id, transcriptWindowStartRef.current);
+      if (!targetWindow) return;
       setFindActiveIdx(idx);
       // A find jump is explicit navigation away from the tail — release the
       // stream follow-pin (CHAT-D10-01) so the next SSE chunk doesn't yank
       // the reader back to the bottom.
       if (followingRef.current) updateFollowing(false);
-      const el = scrollRef.current?.querySelector<HTMLElement>(
-        `[data-turn-id="${CSS.escape(id)}"]`,
-      );
-      // Always instant: the pin/release machinery owns smooth behavior, and
-      // "auto" is reduced-motion-safe without a matchMedia branch.
-      el?.scrollIntoView({ block: "center", behavior: "auto" });
-      // Restart the 1.5s highlight fade even when re-landing on the same
-      // turn: clear, then re-set on the next frame so the class re-applies.
-      clearFoundHighlightTimer();
-      setFoundTurnId(null);
-      foundFrameRef.current = requestAnimationFrame(() => {
-        setFoundTurnId(id);
-        foundFrameRef.current = null;
-      });
-      foundClearTimerRef.current = window.setTimeout(() => {
-        setFoundTurnId(null);
-        foundClearTimerRef.current = null;
-      }, 1500);
+      expandAnchorRef.current = null;
+      pageDirectionRef.current = null;
+      setFoldOpen(true);
+      setTranscriptWindowStart(targetWindow.start);
+      setPendingFindJump({ turnId: id, sessionId });
     },
-    [clearFoundHighlightTimer, updateFollowing],
+    [groupedTurns, sessionId, updateFollowing],
   );
+
+  // The selected bounded window must commit BEFORE resolving its DOM node.
+  // Opening find alone never expands or moves the transcript.
+  useLayoutEffect(() => {
+    if (!pendingFindJump) return;
+    setPendingFindJump(null);
+    if (pendingFindJump.sessionId !== sessionId) return;
+    const id = pendingFindJump.turnId;
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-turn-id="${CSS.escape(id)}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "auto" });
+    captureReleasedScrollAnchor();
+    clearFoundHighlightTimer();
+    setFoundTurnId(null);
+    foundFrameRef.current = requestAnimationFrame(() => {
+      setFoundTurnId(id);
+      foundFrameRef.current = null;
+    });
+    foundClearTimerRef.current = window.setTimeout(() => {
+      setFoundTurnId(null);
+      foundClearTimerRef.current = null;
+    }, 1500);
+  }, [pendingFindJump, sessionId, captureReleasedScrollAnchor, clearFoundHighlightTimer]);
 
   useEffect(() => () => clearFoundHighlightTimer(), [clearFoundHighlightTimer]);
 
@@ -3567,9 +3609,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!findOpen) return;
     const key = [findMatchCase ? "c" : "", findWholeWord ? "w" : "", findDebouncedQuery].join("|");
     if (key === lastJumpedQueryRef.current) return;
-    lastJumpedQueryRef.current = key;
-    if (findHits.length > 0) jumpToFindMatch(0, findHits);
-    else setFindActiveIdx(0);
+    if (findHits.length > 0) {
+      lastJumpedQueryRef.current = key;
+      jumpToFindMatch(0, findHits);
+    } else {
+      lastJumpedQueryRef.current = "";
+      setFindActiveIdx(0);
+    }
   }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, findHits, jumpToFindMatch]);
 
   // The band names who said each hit, so it needs the operator's display name
@@ -3604,6 +3650,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindActiveIdx(0);
     clearFoundHighlightTimer();
     setFoundTurnId(null);
+    setPendingFindJump(null);
     // Esc hands focus back to the composer.
     inputRef.current?.focus();
   }, [clearFoundHighlightTimer]);
@@ -3617,6 +3664,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindActiveIdx(0);
     clearFoundHighlightTimer();
     setFoundTurnId(null);
+    setPendingFindJump(null);
   }, [clearFoundHighlightTimer, sessionId]);
 
   // Open in-thread find on a query handed in from a ⌘K Conversations hit. Keyed
@@ -3708,7 +3756,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       textarea.focus();
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
-  }, []);
+  }, [setInput]);
   const {
     skills,
     prompts,
@@ -4043,15 +4091,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, projectRoot, familiar.harness, familiar.model, familiar.id]);
 
-  // Active branch path: when activeLeafId is set (branched conversation), only
-  // the turns on the path from the root to that leaf are rendered. For linear
-  // (non-branched) conversations every turn has exactly one child so
-  // resolveActivePath returns the full list — behaviour is identical.
-  const activePath = useMemo<Turn[]>(() => {
-    if (!activeLeafId) return turns;
-    return resolveActivePath(turns, activeLeafId) as Turn[];
-  }, [turns, activeLeafId]);
-
   const activeAssistantResponse = useMemo(() => {
     const turn = activePath.findLast((turn) => turn.role === "assistant");
     return {
@@ -4100,13 +4139,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     (turnId: string) => siblingIndex.get(turnId) ?? { siblings: [] as Turn[], index: 0 },
     [siblingIndex],
   );
-
-  // Voice-call grouping + a turn.id → index map for the timestamp-gap logic.
-  // Memoized on `activePath` so it's rebuilt only when the visible transcript
-  // changes — NOT on every composer keystroke / caret move / hover, which all
-  // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
-  // per render).
-  const { groupedTurns, turnIndexMap } = useMemo(() => groupTranscriptTurns(activePath), [activePath]);
 
   // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
   // @-mention picker re-arms here (same any-edit-brings-it-back contract).
@@ -4234,8 +4266,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onSessionsChangedRef.current?.();
       }
     }
-    const applyConversationPayload = (json: ConversationHistoryPayload) => {
-      const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
+    const applyConversationPayload = (json: ConversationHistoryPayload, localSystemTurns: Turn[] = []) => {
+      const mapped = [...mapConversationHistoryTurns(json.conversation?.turns ?? []), ...localSystemTurns];
       setFlowTranscriptFallback(null);
       setTurns(mapped);
       turnsRef.current = mapped;
@@ -4270,27 +4302,53 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // reloads (settle refetch / retry) keep the visible transcript in place
       // while revalidating. Clearing turnsRef also keeps keepLiveSession()
       // from counting the old thread's turns if this fetch fails.
-      setTurns([]);
-      turnsRef.current = [];
+      const emptyTurns: Turn[] = [];
+      setTurns(emptyTurns);
+      turnsRef.current = emptyTurns;
       setActiveLeafId("");
     }
     let cancelled = false;
     void (async () => {
       if (!cachedConversation) setHistoryState("loading");
       let durableConversation: ConversationHistoryPayload | null = null;
-      if (!cachedConversation) {
-        const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
-        if (cancelled) return;
-        if (cached?.data.ok && cached.data.conversation) {
-          durableConversation = cached.data;
-          setLinkedContext(durableConversation.context ?? null);
-          applyConversationPayload(durableConversation);
-          setHistoryState("offline");
-        }
-      }
+      let paintedConversation = cachedConversation;
+      let paintedTurns = turnsRef.current;
+      let localSystemTurns: Turn[] = [];
+      const resetRevision = transcriptResetRevisionRef.current;
+      const hasNewerGeneration = () =>
+        transcriptResetRevisionRef.current !== resetRevision ||
+        hasLiveGeneration() || pendingHistorySystemTurns(paintedTurns, turnsRef.current) === null;
+      const paintHistory = (payload: ConversationHistoryPayload) => {
+        const additions = pendingHistorySystemTurns(paintedTurns, turnsRef.current);
+        if (additions === null || hasNewerGeneration()) return;
+        localSystemTurns = [...localSystemTurns, ...additions];
+        applyConversationPayload(payload, localSystemTurns);
+        paintedTurns = turnsRef.current;
+      };
+      const paintDurable = (payload: ConversationHistoryPayload) => {
+        if (cancelled || hasNewerGeneration()) return;
+        durableConversation = payload;
+        paintedConversation = payload;
+        setLinkedContext(durableConversation.context ?? null);
+        paintHistory(durableConversation);
+        setHistoryState("offline");
+      };
+      const historyLoad = startChatTranscriptLoad<ConversationHistoryPayload>({
+        loadNetwork: () => loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>,
+        loadDurable: async () => {
+          if (cachedConversation) return null;
+          const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
+          return cached?.data.ok && cached.data.conversation ? cached.data : null;
+        },
+        onPendingDurable: paintDurable,
+      });
       try {
-        const json = await loadConversation(sessionId) as ConversationHistoryPayload | null;
+        const json = await historyLoad.network;
         if (cancelled) return;
+        if (hasNewerGeneration()) {
+          setHistoryState("loaded");
+          return;
+        }
         setLinkedContext(json?.context ?? null);
         if (json?.ok && json.conversation) {
           if (hasLiveGeneration()) {
@@ -4310,19 +4368,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // every time a cached thread is reopened. Content-equal → leave the
           // painted turns untouched; only a real change re-renders.
           if (
-            cachedConversation &&
+            paintedConversation &&
             sameConversationRevision(
               json.conversation,
-              cachedConversation.conversation as ConversationHistoryPayload["conversation"],
+              paintedConversation.conversation as ConversationHistoryPayload["conversation"],
             )
           ) {
             setHistoryState("loaded");
             return;
           }
-          applyConversationPayload(json);
+          paintHistory(json);
         } else if (json?.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
-          if (keepLiveSession()) {
+          if (keepLiveSession() || hasNewerGeneration()) {
             setHistoryState("loaded");
             return;
           }
@@ -4331,7 +4389,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setActiveLeafId("");
           setHistoryState("loaded");
         } else {
-          if (keepLiveSession()) {
+          if (keepLiveSession() || hasNewerGeneration()) {
             setHistoryState("loaded");
             return;
           }
@@ -4342,9 +4400,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }
       } catch (error) {
         if (!cancelled) {
-          if (keepLiveSession()) {
+          if (keepLiveSession() || hasNewerGeneration()) {
             setHistoryState("loaded");
             return;
+          }
+          // A 404 is authoritative absence, not an offline fallback. On a
+          // real network failure only, let slow decryption finish before
+          // choosing error vs offline — success never waits for it.
+          if (!(error instanceof ConversationLoadError && error.status === 404)) {
+            const durable = await historyLoad.durable;
+            if (cancelled) return;
+            if (keepLiveSession() || hasNewerGeneration()) {
+              setHistoryState("loaded");
+              return;
+            }
+            if (durable && !durableConversation) paintDurable(durable);
           }
           if (
             error instanceof ConversationLoadError
@@ -4353,7 +4423,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) {
             const transcript = await loadFlowSessionTranscript(sessionId);
             if (cancelled) return;
-            if (keepLiveSession()) {
+            if (keepLiveSession() || hasNewerGeneration()) {
               setHistoryState("loaded");
               return;
             }
@@ -4452,15 +4522,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // A freshly opened chat (or session switch) follows by default; the pin
   // effect above then handles the initial scroll-to-bottom once history lands.
-  // Reset the render cap too so a long previous transcript doesn't keep the
-  // whole DOM mounted for the next session.
+  // Reset the page and fold too; switching never remounts ChatView or its stream.
   useEffect(() => {
     updateFollowing(true);
-    setHistoryExpanded(false);
     // The fold is per-thread: arriving in a new chat should land on its recent
     // exchange, not inherit the last thread's expansion.
     setFoldOpen(false);
     expandAnchorRef.current = null;
+    pageDirectionRef.current = null;
     releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
 
@@ -4542,7 +4611,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       setReleasedScrollDistance(Math.max(0, gap));
-      if (gap <= 4) updateFollowing(true);
+      const mountedWindow = chatTranscriptWindow(
+        transcriptGroupCountRef.current,
+        transcriptWindowStartRef.current,
+      );
+      if (gap <= 4 && mountedWindow.end === transcriptGroupCountRef.current) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
@@ -4792,6 +4865,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // mirrors the just-cleared turns back, while busy stays set.
       cancelSend();
       liveSessionIdRef.current = null;
+      transcriptResetRevisionRef.current += 1;
       setTurns([]);
       setActiveLeafId("");
       setInput("");
@@ -5166,11 +5240,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
     // shows the new one.
+    if (text.trim() || outgoingAttachments.length > 0) freezeComposeContext();
     const runtimeMutation = runtimeMutationRef.current;
     if (runtimeMutation) {
       const runtimeSaved = await runtimeMutation;
       if (runtimeMutationRef.current === runtimeMutation && runtimeSaved) {
         runtimeMutationRef.current = null;
+      }
+      if (currentDraftKeyRef.current !== scopedDraftKey) {
+        if (!readComposerDraft(scopedDraftKey)) writeComposerDraft(scopedDraftKey, text);
+        announce("Chat changed while saving runtime settings. Your message was kept as a draft.", "assertive");
+        return;
       }
       if (!runtimeSaved) {
         setError("Runtime selection could not be saved; message not sent.");
@@ -6373,9 +6453,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setThinkingEffort(normalized.thinkingEffort);
         setResponseSpeed(normalized.responseSpeed);
       }
-      // The home composer's host pick rides the first send explicitly (state
-      // set below lands too late for this closure) and seeds the chip.
-      if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
+      // Host state is initialized before draft ownership. The handoff still
+      // rides this first send explicitly so it cannot inherit a later pick.
       const stagedInitialModelOverride = initialModelOverride !== undefined
         ? initialModelOverride
         : initialControls?.modelOverride;
@@ -6596,6 +6675,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // specific thread this generation started from (null for sessionless
           // new-chat; non-null for replacement/fork on an existing session).
           if (shouldPromote) {
+            promoteDraft(ev.sessionId);
             onSessionStarted?.({
               newSessionId: ev.sessionId,
               expectedSessionId: liveGeneration.originSessionId,
@@ -6800,6 +6880,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // Router promotion: pass originSessionId so ChatRouter can match the
           // specific thread this generation started from (mirrors the session event path).
           if (shouldPromote) {
+            promoteDraft(ev.sessionId);
             onSessionStarted?.({
               newSessionId: ev.sessionId,
               expectedSessionId: liveGeneration.originSessionId,
@@ -7013,7 +7094,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   //
   // Brand-new chats keep a NULL draft on purpose: the default project (opener
   // root → linked task → most recent chat's project → first project) resolves
-  // LIVE in resolveChatProjectSelection until the user explicitly picks, so
+  // LIVE in resolveChatProjectSelection until the user picks or starts a send, so
   // the recency signal still applies when sessions land after boot (an eager
   // first-project seed would freeze it out), and a background sessions
   // refresh can never clobber an explicit pick. Only switching compose
@@ -7049,7 +7130,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     if (viewChanged) {
       setMentionedFiles([]);
-      setRuntimeHost(null);
       // ChatView is a single instance reused across threads (not keyed by
       // sessionId in ChatRouter), so per-thread composer context must be cleared
       // on switch or it bleeds into the next conversation's next send: a
@@ -7213,6 +7293,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     () => ({
       clearTranscript: () => {
         liveSessionIdRef.current = null;
+        transcriptResetRevisionRef.current += 1;
         setTurns([]);
         setActiveLeafId("");
       },
@@ -7220,6 +7301,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // Push command into the composer + dispatch
         if (command === "/clear") {
           liveSessionIdRef.current = null;
+          transcriptResetRevisionRef.current += 1;
           setTurns([]);
           setActiveLeafId("");
           return;
@@ -7756,6 +7838,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </button>
                 </div>
               ) : null}
+              {legacyDraft && !input ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setInput(legacyDraft);
+                    writeComposerDraft(composerDraftKey, "");
+                    setLegacyDraft("");
+                    announce("Previous draft restored to this chat.");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Restore previous draft
+                </Button>
+              ) : null}
               <div className="cave-composer-input-wrap">
               <ComposerMarkdownLayer
                 value={input}
@@ -8272,9 +8369,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
             autoMission={autoMission}
-            historyExpanded={historyExpanded}
+            windowStart={transcriptWindowStart}
             foldOpen={foldOpen}
             onToggleFold={toggleFold}
+            onPage={pageTranscript}
             familiar={familiar}
             busy={busy}
             readOnly={offlineReadOnly}
@@ -8787,9 +8885,10 @@ const TranscriptRows = memo(function TranscriptRows({
   groupedTurns,
   turnIndexMap,
   allTurns,
-  historyExpanded,
+  windowStart,
   foldOpen,
   onToggleFold,
+  onPage,
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
@@ -8807,11 +8906,12 @@ const TranscriptRows = memo(function TranscriptRows({
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
   autoMission: AutoMissionRecord | null;
-  historyExpanded: boolean;
+  windowStart: number | null;
   /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
-   *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
+   *  exchange. Opening it enters bounded paging, not unlimited mounting. */
   foldOpen: boolean;
   onToggleFold: () => void;
+  onPage: (direction: -1 | 1) => void;
   familiar: Familiar;
   busy: boolean;
   readOnly: boolean;
@@ -8830,17 +8930,12 @@ const TranscriptRows = memo(function TranscriptRows({
   // reporting the render cap, not the conversation.
   const fold = chatTranscriptFold(groupedTurns);
   const folded = fold.hiddenTurns > 0 && !foldOpen;
-  // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
-  // mount the newest groups. The per-row prev-turn lookup still reads
-  // the full `allTurns`/`turnIndexMap`, so the first visible row's
-  // timestamp gap stays correct. Expands to the whole transcript the
-  // moment the reader scrolls up or opens find (see historyExpanded).
-  // A closed fold mounts even less than the cap would, so it wins outright.
+  // Even finding or browsing a distant turn never mounts outside this window.
+  // The closed fold is smaller still. Voice calls remain atomic groups.
+  const window = chatTranscriptWindow(groupedTurns.length, windowStart);
   const renderGroups = folded
     ? groupedTurns.slice(fold.startIndex)
-    : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
-      ? groupedTurns
-      : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+    : groupedTurns.slice(window.start, window.end);
   const latestAssistantId =
     allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
   // Prose-dimming hint ("Chat Session - Prototype.dc.html", cave-4akqc): below
@@ -8929,7 +9024,7 @@ const TranscriptRows = memo(function TranscriptRows({
     const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
     const ss = String(g.durationSec % 60).padStart(2, "0");
     return (
-      <div key={g.callId} className="cave-chat-voice-call-group">
+      <div key={g.turns[0]?.id ?? g.callId} className="cave-chat-voice-call-group">
         <div className="cave-chat-voice-call-header">
           <span aria-hidden>📞</span>
           Voice call · {mm}:{ss}
@@ -8986,12 +9081,12 @@ const TranscriptRows = memo(function TranscriptRows({
       </div>
     );
   });
-  if (fold.hiddenTurns === 0) return rows;
+  const paged = !folded && (window.start > 0 || window.end < groupedTurns.length);
   // The fold leads the transcript in both states: closed it names what is
   // hidden, open it names the way back. The visual stays one full-width seam;
   // the count remains available through its accessible name and title.
   return [
-    <div key="__chat-fold" className="cave-chat-fold">
+    fold.hiddenTurns > 0 ? <div key="__chat-fold" className="cave-chat-fold">
       <button
         type="button"
         className="cave-chat-fold__trigger focus-ring"
@@ -9005,8 +9100,37 @@ const TranscriptRows = memo(function TranscriptRows({
             data attribute here is silently dropped and the caret never turns. */}
         <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
       </button>
-    </div>,
+    </div> : null,
+    paged ? (
+      <div key="__chat-earlier" className="flex flex-wrap items-center justify-center gap-2 py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="focus-ring"
+          aria-disabled={window.start === 0}
+          onClick={() => { if (window.start > 0) onPage(-1); }}
+        >
+          Show earlier turns
+        </Button>
+        <span className="text-xs text-[var(--text-muted)]" title="Voice calls stay together in one group">
+          Groups {window.start + 1}–{window.end} of {groupedTurns.length}
+        </span>
+      </div>
+    ) : null,
     ...rows,
+    paged ? (
+      <div key="__chat-newer" className="flex justify-center py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="focus-ring"
+          aria-disabled={window.end === groupedTurns.length}
+          onClick={() => { if (window.end < groupedTurns.length) onPage(1); }}
+        >
+          Show newer turns
+        </Button>
+      </div>
+    ) : null,
   ];
 });
 
