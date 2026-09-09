@@ -35,6 +35,7 @@ import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
+import { emitFlowRunAttention } from "@/lib/server/flow-attention";
 import {
   startCopilotFlowRunWithTransportBoundary,
 } from "@/lib/server/flow-copilot-session";
@@ -195,6 +196,9 @@ export async function startFlowSession(
     targetNodeId?: string;
     triggerInput?: FlowTriggerInput;
     mode?: FlowExecutionMode;
+    /** Internal parent linkage supplied by the Research mission runner. */
+    missionId?: string;
+    iteration?: number;
     /**
      * Extra directories to trust at the harness level alongside the
      * familiar's own workspace (e.g. a research mission workspace when the
@@ -282,6 +286,7 @@ export async function startFlowSession(
     const run = await recordFlowRun({
       flowId: flow.id,
       flowName: flow.name,
+      ...(options.missionId ? { missionId: options.missionId, iteration: options.iteration } : {}),
       status: "queued",
       mode: options.mode ?? "manual",
       startedAt: new Date().toISOString(),
@@ -311,11 +316,12 @@ export async function startFlowSession(
     } catch (error) {
       // Never leave an un-replayable queued run behind — it would sit in the
       // runs list (and hold a research iteration) forever.
-      await updateFlowRun(run.id, {
+      const failed = await updateFlowRun(run.id, {
         status: "failed",
         finishedAt: new Date().toISOString(),
         summary: "offline enqueue failed",
       });
+      if (failed) await emitFlowRunAttention(failed);
       throw error;
     }
     const stamped = await updateFlowRun(run.id, {
@@ -354,6 +360,7 @@ export async function startFlowSession(
     const run = await recordFlowRun({
       flowId: flow.id,
       flowName: flow.name,
+      ...(options.missionId ? { missionId: options.missionId, iteration: options.iteration } : {}),
       status: "running",
       mode: options.mode ?? "manual",
       ...(Object.keys(customData).length > 0 ? { customData } : {}),

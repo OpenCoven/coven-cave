@@ -15,7 +15,7 @@
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const previousEnv = {
@@ -37,12 +37,22 @@ const rootlessCwd = path.join(scratchRoot, "scratch");
 const configPath = path.join(covenHome, "cave", "config.json");
 
 let stopDaemon = async () => {};
+let eventResponse = null;
+const eventCursors = [];
 
 async function startDaemon(rows) {
   const server = createServer((req, res) => {
     if (req.url === "/api/v1/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(rows));
+      return;
+    }
+    if (req.url.startsWith("/api/v1/events") && eventResponse) {
+      const cursor = Number(new URL(req.url, "http://daemon").searchParams.get("afterSeq"));
+      eventCursors.push(cursor);
+      const page = typeof eventResponse === "function" ? eventResponse(cursor) : eventResponse;
+      res.writeHead(page ? 200 : 503, { "content-type": "application/json" });
+      res.end(JSON.stringify(page ?? { error: "unavailable page" }));
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -249,7 +259,6 @@ try {
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = permissionsPath;
 
   const { computeSessionsList } = await import("./sessions-list.ts");
-  const { loadState } = await import("../cave-config.ts");
   const { saveConversation, clearConversationListMetadataCache } = await import(
     "../cave-conversations.ts"
   );
@@ -303,6 +312,7 @@ try {
   }
 
   /** sessionIds cave state currently records as archived. */
+  const { loadState } = await import("../cave-config.ts");
   async function archivedIds() {
     const state = await loadState();
     return Object.keys(state.sessionArchived ?? {}).sort();
@@ -591,6 +601,145 @@ workspace = "${relocatedProjectRoot}
     beforeProduction,
     "familiarDashboardDependencies().loadSessions archived a session — the dashboard's read-only opt-out is not wired through",
   );
+
+  await reset();
+  await stopDaemon();
+  daemonUrl = await startDaemon([{
+    id: "daemon-flow", harness: "claude", project_root: projectRoot,
+    status: "failed", exit_code: 1, archived_at: null,
+    created_at: "2099-08-23T11:00:00.000Z", updated_at: "2099-08-23T11:01:00.000Z",
+  }]);
+  await writeConfig(daemonUrl);
+  const { recordFlowRun, listFlowRuns } = await import("./flow-store.ts");
+  const { loadInbox, INBOX_PATH } = await import("../cave-inbox.ts");
+  for (const sessionId of ["daemon-flow", "direct-flow"]) {
+    await recordFlowRun({
+      flowId: "flow", sessionId, source: "cave", status: "running",
+      startedAt: "2099-08-23T11:00:00.000Z", steps: [],
+    });
+    await saveFixtureConversation(saveConversation, clearConversationListMetadataCache,
+      { ...chat(sessionId, `local:${projectRoot}`, "2099-08-23T11:01:00.000Z"),
+        ...(sessionId === "direct-flow" ? { origin: "flow", harness: "copilot" } : {}) });
+  }
+  const beforeRuns = await listFlowRuns();
+  await computeSessionsList(false, null, false, { sweepArchives: false, enrichGit: false });
+  assert.deepEqual(await listFlowRuns(), beforeRuns, "read-only session reads must not settle Flow runs");
+  assert.equal((await loadInbox()).items.length, 0, "read-only reads must not emit attention");
+  await computeSessionsList(false, null, false, { enrichGit: false });
+  const afterRuns = await listFlowRuns();
+  assert.equal(afterRuns.find((run) => run.sessionId === "daemon-flow").status, "failed");
+  assert.equal(afterRuns.find((run) => run.sessionId === "direct-flow").status, "running",
+    "local-only transcript presentation is not evidence of a daemon execution finishing");
+  assert.equal((await loadInbox()).items.length, 1);
+
+  const { recordOwnedSession } = await import("../cave-config.ts");
+  await recordOwnedSession("hydrate-flow");
+  // A missing PTY response must remain retryable, including a success whose
+  // actionable result only becomes available on the following poll.
+  await stopDaemon();
+  const hydrationRun = await recordFlowRun({
+    flowId: "hydrate", sessionId: "hydrate-flow", source: "cave", status: "running",
+    startedAt: "2099-08-23T11:00:00.000Z", steps: [],
+  });
+  daemonUrl = await startDaemon([{
+    id: "hydrate-flow", harness: "claude", project_root: projectRoot,
+    status: "completed", exit_code: 0, archived_at: null,
+    created_at: "2099-08-23T11:00:00.000Z", updated_at: "2099-08-23T11:01:00.000Z",
+  }]);
+  await writeConfig(daemonUrl);
+  clearCaveStoreReadCache();
+  await computeSessionsList(false, null, false, { enrichGit: false });
+  assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false,
+    "unavailable transcript must not permanently acknowledge completion");
+  const firstPage = {
+    events: [{ kind: "output", payload_json: JSON.stringify({ data: "First page only." }) }],
+    hasMore: true, nextCursor: { afterSeq: 500 },
+  };
+  for (const brokenPage of [
+    { ...firstPage, nextCursor: null },
+    { ...firstPage, nextCursor: { afterSeq: 0 } },
+    { ...firstPage, nextCursor: { afterSeq: "500" } },
+    { events: firstPage.events },
+    (cursor) => cursor === 0 ? firstPage : null,
+  ]) {
+    eventResponse = brokenPage;
+    await computeSessionsList(false, null, false, { enrichGit: false });
+    assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false,
+      "incomplete pages or invalid cursors must never acknowledge a partial transcript");
+  }
+  eventCursors.length = 0;
+  eventResponse = (cursor) => ({ ...firstPage, nextCursor: { afterSeq: cursor + 500 } });
+  await computeSessionsList(false, null, false, { enrichGit: false });
+  assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false);
+  assert.equal(eventCursors.length, 8, "strict hydration has a finite eight-page budget");
+  eventCursors.length = 0;
+  eventResponse = (cursor) => cursor === 0 ? firstPage : {
+    events: [{ kind: "output", payload_json: JSON.stringify({ data: 'Recovered result. <coven:attention reason="approval" />' }) }],
+    hasMore: false, nextCursor: { afterSeq: 501 },
+  };
+  const { flowSessionTranscript } = await import("./flow-session-transcript.ts");
+  assert.equal(await flowSessionTranscript("hydrate-flow"), "First page only.");
+  assert.deepEqual(eventCursors, [0], "display hydration retains its single-page compatibility");
+  eventCursors.length = 0;
+  await computeSessionsList(false, null, false, { enrichGit: false });
+  assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], true);
+  assert.deepEqual(eventCursors, [0, 500], "completion reads through the second page before acknowledging");
+  assert.equal((await listFlowRuns()).find((run) => run.id === hydrationRun.id).status, "succeeded");
+  assert.equal((await loadInbox()).items.filter((item) => item.auto === `flow-attention:run:${hydrationRun.id}`).length, 1);
+  await recordOwnedSession("empty-flow");
+  await recordFlowRun({
+    flowId: "empty", sessionId: "empty-flow", source: "cave", status: "running",
+    startedAt: "2099-08-23T11:00:00.000Z", steps: [],
+  });
+  eventResponse = { events: [], hasMore: false, nextCursor: null };
+  const { reconcileFlowSessionOutcomes } = await import("./flow-session-reconcile.ts");
+  await reconcileFlowSessionOutcomes([{
+    id: "empty-flow", status: "completed", exit_code: 0, updated_at: "2099-08-23T11:01:00.000Z",
+  }]);
+  assert.equal((await loadState()).sessionFlowCompleted["empty-flow"], true,
+    "a verified empty event response can be acknowledged");
+
+
+  for (const degraded of [false, true]) {
+    if (degraded) {
+      await stopDaemon();
+      stopDaemon = async () => {};
+    }
+    for (const outcome of ["failed", "cancelled", "completed"]) {
+      const sessionId = `settled-${degraded}-${outcome}`;
+      const run = await recordFlowRun({
+        flowId: "direct", sessionId, source: "cave", status: "running",
+        startedAt: "2099-08-23T11:00:00.000Z", steps: [],
+      });
+      await saveFixtureConversation(saveConversation, clearConversationListMetadataCache, {
+        ...chat(sessionId, `local:${projectRoot}`, "2099-08-23T11:01:00.000Z"),
+        origin: "flow", harness: "copilot",
+        flowOutcome: { status: outcome, exitCode: outcome === "failed" ? 1 : 0 },
+      });
+      await computeSessionsList(false, null, false, { sweepArchives: false, enrichGit: false });
+      assert.equal((await loadState()).sessionFlowCompleted[sessionId], false);
+      if (outcome === "failed") {
+        await rename(INBOX_PATH, `${INBOX_PATH}.saved`);
+        await mkdir(INBOX_PATH);
+        try {
+          await computeSessionsList(false, null, false, { enrichGit: false });
+          assert.equal((await loadState()).sessionFlowCompleted[sessionId], false,
+            "failed inbox persistence leaves exact local completion retryable");
+        } finally {
+          await rm(INBOX_PATH, { recursive: true });
+          await rename(`${INBOX_PATH}.saved`, INBOX_PATH);
+        }
+      }
+      await computeSessionsList(false, null, false, { enrichGit: false });
+      assert.equal((await loadState()).sessionFlowCompleted[sessionId], true,
+        `poll must retry explicit local completion, daemon degraded=${degraded}`);
+      assert.equal((await listFlowRuns()).find((item) => item.id === run.id).status,
+        outcome === "completed" ? "succeeded" : "failed");
+      assert.equal((await loadInbox()).items.filter((item) => item.auto === `flow-attention:run:${run.id}`).length,
+        outcome === "failed" ? 1 : 0, "cancelled execution must not generate failure attention");
+    }
+  }
+
 } finally {
   Date.now = realNow;
   await stopDaemon();

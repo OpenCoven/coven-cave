@@ -9,13 +9,16 @@
  *
  * ## Why this takes options rather than being a straight move
  *
- * `computeSessionsList` is named like a read and is not purely one. Two of the
+ * `computeSessionsList` is named like a read and is not purely one. Three of the
  * things it does are WRITES:
  *
  *   - `sweepAutoArchive` calls `autoArchiveSessionsLocal`, which archives
  *     sessions in cave state;
  *   - `sweepMergedPrAutoArchive` archives merged-PR chats and records the
  *     (session, PR) pair in cave state so the sweep stays one-shot.
+ *   - exact legacy Flow run/session links migrate into durable ownership so
+ *     clearing capped run history cannot put executions back in Chat; terminal
+ *     daemon outcomes settle their runs and notify the owning surface.
  *
  * That is correct and deliberate for `/api/sessions/list`: it is the workspace's
  * 4-second poll, and piggybacking the sweeps on it is what makes them happen at
@@ -24,7 +27,7 @@
  * chats — a mutation with no user gesture behind it, triggered by a read, on a
  * surface that cannot show what it just did.
  *
- * A third piece is not a write but is unbounded work: `enrichSessionsWithGitContext`
+ * Another piece is not a write but is unbounded work: `enrichSessionsWithGitContext`
  * shells out to `git` (per project root, plus diff calls) — fine amortised
  * across a cached desktop poll, wrong for a bounded mobile read that never
  * renders a branch or a diffstat.
@@ -40,7 +43,9 @@
 
 import fs from "node:fs";
 import { callDaemon } from "@/lib/coven-daemon";
-import { loadState, type CaveState } from "@/lib/cave-config";
+import type { CaveState } from "@/lib/cave-config";
+import { loadFlowSessionState } from "@/lib/server/flow-store";
+import { reconcileFlowSessionOutcomes } from "@/lib/server/flow-session-reconcile";
 import { listConversations } from "@/lib/cave-conversations";
 import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import {
@@ -80,7 +85,8 @@ import type { SessionInitiator, SessionRow } from "@/lib/types";
  */
 export type ComputeSessionsListOptions = {
   /**
-   * Run the policy and merged-PR auto-archive sweeps. These WRITE cave state.
+   * Run archive sweeps and Flow ownership/outcome reconciliation. These WRITE
+   * cave state, run history, and actionable notifications.
    * A read-only consumer must pass `false`.
    */
   sweepArchives?: boolean;
@@ -309,7 +315,7 @@ export async function computeSessionsList(
     enrichGit ? enrichSessionsWithGitContext(rows) : rows;
   const [res, state, projects, familiarWorkspaceRoots] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
-    loadState(),
+    loadFlowSessionState(sweepArchives),
     loadProjects(),
     loadFamiliarWorkspaceRoots(collapseFamiliarWorkspace, classifyFamiliarWorkspace),
   ]);
@@ -328,6 +334,27 @@ export async function computeSessionsList(
     if (conv.pending) return { ...conv, status: "failed", exitCode: 1 };
     return conv;
   });
+  if (sweepArchives) {
+    // Only the direct executor's persisted close result is local completion
+    // authority. Generic transcript status and stale-running presentation are
+    // projections, and cannot settle a process (including a live direct run).
+    const localOutcomes = localConversations.flatMap((conv) =>
+      conv.origin === "flow" && conv.harness === "copilot" && conv.flowOutcome && !conv.pending
+        ? [{
+            id: conv.sessionId,
+            status: conv.flowOutcome.status,
+            exit_code: conv.flowOutcome.exitCode,
+            updated_at: conv.updatedAt,
+            familiarId: conv.familiarId,
+          }]
+        : [],
+    );
+    const directIds = new Set(localOutcomes.map((row) => row.id));
+    await reconcileFlowSessionOutcomes([
+      ...localOutcomes,
+      ...(res.ok && res.data ? res.data.filter((row) => !directIds.has(row.id)) : []),
+    ]);
+  }
   // Backfill for local-only chat rows (UI chats the daemon never sees):
   // map the conversation's recorded cwd to its registered project root so
   // the sidebar's project groups pick new chats up immediately.
@@ -386,20 +413,21 @@ export async function computeSessionsList(
   // are never touched (see stale-running-sweep.ts).
   const staleRunningGhosts = await sweepStaleRunningGhosts(res.data);
 
+  const merged = mergeSessionRows({
+    daemonSessions: applyStaleRunningPresentation(res.data, staleRunningGhosts),
+    localConversations,
+    state,
+    includeArchived,
+    isValidDaemonProjectRoot: isKnownProjectOrValidDir,
+    projectRootForCwd,
+    familiarWorkspaceForCwd: classifyFamiliarWorkspaceForCwd,
+  }).map((session) =>
+    hasActiveChatRun(session.id)
+      ? { ...session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION }
+      : session
+  );
   const sessions = await applyAutoArchiveSweep(
-    mergeSessionRows({
-      daemonSessions: applyStaleRunningPresentation(res.data, staleRunningGhosts),
-      localConversations,
-      state,
-      includeArchived,
-      isValidDaemonProjectRoot: isKnownProjectOrValidDir,
-      projectRootForCwd,
-      familiarWorkspaceForCwd: classifyFamiliarWorkspaceForCwd,
-    }).map((session) =>
-      hasActiveChatRun(session.id)
-        ? { ...session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION }
-        : session
-    ),
+    merged,
     state,
     includeArchived,
     sweepArchives,

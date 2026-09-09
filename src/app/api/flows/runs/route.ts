@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { clearFlowRuns, listFlowRuns, recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import { emitFlowRunAttention } from "@/lib/server/flow-attention";
 import {
   resolveRunSource,
   resolveWipe,
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
     sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
     flowSnapshot: coerceFlowSnapshot(body.flowSnapshot),
   });
+  await emitFlowRunAttention(run);
   return NextResponse.json({ ok: true, run });
 }
 
@@ -91,6 +93,7 @@ export async function PATCH(req: Request) {
   if (typeof body.summary === "string") patch.summary = body.summary;
   if (body.redacted === true) patch.redacted = true;
   const run = await updateFlowRun(body.id, patch);
+  if (run) await emitFlowRunAttention(run);
   return NextResponse.json({ ok: Boolean(run), run: run ?? undefined });
 }
 

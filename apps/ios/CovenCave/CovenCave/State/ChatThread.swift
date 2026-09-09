@@ -261,6 +261,7 @@ struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var archived: Bool?
     var pinned: Bool?
     var muted: Bool?
+    var flowSessionIds: [String]? = nil
 }
 
 /// A conversation thread. One familiar = a direct chat; several = a group.
@@ -299,6 +300,10 @@ final class ChatThread: Identifiable, Hashable {
     var archived: Bool = false
     var pinned: Bool = false
     var muted: Bool = false
+    /// Exact execution sessions remain hidden after a direct transcript read,
+    /// including while offline. Rebinding to a different session does not hide it.
+    var flowSessionIds: Set<String> = []
+    var isFlowRun: Bool { sessionIds.values.contains { flowSessionIds.contains($0) } }
     /// Set when a pre-session send is rejected for project provenance so the
     /// UI can repair the thread without discarding the draft or transcript.
     var needsProjectSelection: Bool = false
@@ -334,6 +339,7 @@ final class ChatThread: Identifiable, Hashable {
         self.archived = s.archived ?? false
         self.pinned = s.pinned ?? false
         self.muted = s.muted ?? false
+        self.flowSessionIds = Set(s.flowSessionIds ?? [])
     }
 
     var snapshot: ThreadSnapshot {
@@ -341,7 +347,8 @@ final class ChatThread: Identifiable, Hashable {
                        sessionIds: sessionIds, projectRoot: projectRoot,
                        messages: messages,
                        pendingModelOverride: pendingModelOverride,
-                       updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted)
+                       updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted,
+                       flowSessionIds: flowSessionIds.isEmpty ? nil : flowSessionIds.sorted())
     }
 
     /// Send a user message and stream replies from every familiar in the thread.
@@ -1767,6 +1774,7 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private func canSend(to familiarIds: [String]) -> Bool {
+        guard !isFlowRun else { return false }
         if normalizedProjectRoot != nil { return true }
         return familiarIds.allSatisfy {
             guard let sessionID = sessionIds[$0] else { return false }
@@ -1793,6 +1801,7 @@ final class ChatThread: Identifiable, Hashable {
         modelOverride: String? = nil,
         modelOverrideScope: ChatModelOverrideScope? = nil
     ) -> CaveClient.SendBody? {
+        guard !isFlowRun else { return nil }
         let rawSessionID = sessionIds[familiarId]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let sessionID = rawSessionID?.isEmpty == false ? rawSessionID : nil

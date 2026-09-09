@@ -8,6 +8,25 @@ See [`docs/ios-current-direction.md`](../../../docs/ios-current-direction.md)
 for the canonical active product direction. The older native rebuild and dated
 implementation plans are historical lineage, not active priority queues.
 
+### Flow execution visibility
+
+Ordinary Chat lists, searches, and conversation counts exclude Flow execution
+sessions using the server's `origin: "flow"` or exact `flow` ownership metadata.
+Opening a transcript directly does not delete it or turn it into an ordinary
+Chat: its execution session ID is retained in the local snapshot so it stays
+hidden offline. Titles never establish Flow ownership; an intentional discussion
+with a similar title remains a normal conversation.
+
+Directly opened execution transcripts replace the composer with a read-only
+notice, disable continuation/queued sends and voice calls, and omit reply, retry,
+and message-delete actions. Start a discussion from the Flow on desktop; native
+discussion creation still needs project-selection support for the new chat.
+
+Client v1's canonical conversation inventory remains unfiltered. It publishes
+the same exact execution provenance without changing pagination, and both
+conversation detail and message reads remain available to `chat:read` clients.
+Client v1 currently exposes no conversation send or resume operation.
+
 ## Distribution
 
 Maintainer release builds use TestFlight, but Coven Cave does not currently

@@ -7,24 +7,26 @@
 
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { covenHome } from "../coven-paths.ts";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import { FLOW_SCHEMA_VERSION, normalizeNodeSettings, type FlowDoc, type FlowEdge, type FlowNodeSettings } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
+import { loadState, recordFlowSessionReferences, type CaveState } from "../cave-config.ts";
+import { flowSessionCompletions, flowSessionReferences } from "../flow-session.ts";
 
 export const FLOW_RUNS_CAP = 200;
 
 function flowsDir(): string {
   const override = process.env.COVEN_FLOWS_DIR?.trim();
   if (override) return override;
-  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "flows");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "flows");
 }
 
 function runsPath(): string {
   const override = process.env.COVEN_FLOW_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "flow-runs.json");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "flow-runs.json");
 }
 
 /** A safe, traversal-proof filename for a flow id. */
@@ -210,12 +212,14 @@ export async function deleteFlow(id: string): Promise<boolean> {
 
 type RunsFile = { version: 1; runs: FlowRunRecord[] };
 
-async function loadRunsFile(): Promise<RunsFile> {
+async function loadRunsFile(strict = false): Promise<RunsFile> {
   try {
     const text = await readFile(/* turbopackIgnore: true */ runsPath(), "utf8");
     const parsed = JSON.parse(text) as RunsFile;
     if (parsed && Array.isArray(parsed.runs)) return { version: 1, runs: parsed.runs };
-  } catch {
+    if (strict) throw new Error("Invalid Flow run history");
+  } catch (error) {
+    if (strict && !(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     // Missing/corrupt reads as empty; the next write rebuilds it.
   }
   return { version: 1, runs: [] };
@@ -228,11 +232,18 @@ function withRunsLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+async function retainFlowSessions(runs: readonly FlowRunRecord[]): Promise<void> {
+  const completed = Object.entries(flowSessionCompletions(runs))
+    .filter(([, settled]) => settled).map(([id]) => id);
+  await recordFlowSessionReferences(flowSessionReferences(runs), completed);
+}
+
 export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<FlowRunRecord> {
   const record: FlowRunRecord = { ...input, id: randomUUID() };
   await withRunsLock(async () => {
     const file = await loadRunsFile();
     file.runs.unshift(record);
+    await retainFlowSessions(file.runs);
     if (file.runs.length > FLOW_RUNS_CAP) file.runs.length = FLOW_RUNS_CAP;
     await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
     await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
@@ -246,6 +257,21 @@ export async function listFlowRuns(flowId?: string): Promise<FlowRunRecord[]> {
   return file.runs.filter((run) => run.flowId === flowId);
 }
 
+/** Project exact legacy links for read-only consumers; only the regular
+ * session poll persists the migration. Run mutations also retain links before
+ * clearing/evicting history, so neither path can resurrect execution chats. */
+export async function loadFlowSessionState(persist: boolean): Promise<CaveState> {
+  const runs = await listFlowRuns();
+  const references = flowSessionReferences(runs);
+  if (persist) await retainFlowSessions(runs);
+  const state = await loadState();
+  return {
+    ...state,
+    sessionFlow: { ...references, ...state.sessionFlow },
+    sessionFlowCompleted: { ...flowSessionCompletions(runs), ...state.sessionFlowCompleted },
+  };
+}
+
 /**
  * Patch an existing run in place (status/steps/finishedAt as a run finishes).
  * The run id is immutable; everything else is shallow-merged. Returns the
@@ -256,10 +282,11 @@ export async function updateFlowRun(
   patch: Partial<Omit<FlowRunRecord, "id">>,
 ): Promise<FlowRunRecord | null> {
   return withRunsLock(async () => {
-    const file = await loadRunsFile();
+    const file = await loadRunsFile(true);
     const index = file.runs.findIndex((run) => run.id === id);
     if (index < 0) return null;
     const updated: FlowRunRecord = { ...file.runs[index], ...patch, id };
+    await retainFlowSessions([updated]);
     file.runs[index] = updated;
     await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
     await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
@@ -271,6 +298,7 @@ export async function clearFlowRuns(flowId?: string): Promise<number> {
   return withRunsLock(async () => {
     const file = await loadRunsFile();
     const before = file.runs.length;
+    await retainFlowSessions(file.runs);
     file.runs = flowId ? file.runs.filter((run) => run.flowId !== flowId) : [];
     await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
     await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);

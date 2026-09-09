@@ -19,7 +19,9 @@ assert.match(bubble, /Label\("Reply", systemImage: "arrowshape\.turn\.up\.left"\
 const chat = await read("ChatView.swift");
 // ChatView holds the reply state, shows a banner, and prepends the quote.
 assert.match(chat, /@State private var replyingTo: DisplayMessage\?/, "ChatView should track the message being replied to");
-assert.match(chat, /onReply: \{ beginReply\(\$0\) \}/, "ChatView should wire the bubble's onReply");
+assert.match(chat, /let bubbleReply: \(\(DisplayMessage\) -> Void\)\? = thread\.isFlowRun \? nil : \{ beginReply\(\$0\) \}/,
+  "ChatView should enable reply for chats and disable it for read-only Flow executions");
+assert.match(chat, /onReply: bubbleReply/, "ChatView should wire the guarded reply handler");
 assert.match(chat, /func replyBanner\(_ message: DisplayMessage\)/, "ChatView should render a reply banner");
 assert.match(
   chat,

@@ -302,7 +302,7 @@ struct GlobalSearchView: View {
         case .project:
             return app.projectThreads
         case .everywhere:
-            return app.threads
+            return app.chatThreads
         }
     }
 
@@ -311,7 +311,7 @@ struct GlobalSearchView: View {
         case .project:
             return app.projectServerSessions
         case .everywhere:
-            return app.serverSessions
+            return app.chatServerSessions
         }
     }
 

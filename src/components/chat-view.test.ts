@@ -19,6 +19,11 @@ const assistantContentRule = styles.match(/\.cave-turn-content\s*\{(?<body>[^}]*
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 
+assert.match(source, /const offlineReadOnly = historyState === "offline" \|\| flowBackedSession/,
+  "Bookmarked Flow transcripts must use the same mutation gate as offline copies, not merely hide the composer");
+assert.match(source, /<TranscriptRows[\s\S]*?readOnly=\{offlineReadOnly\}/,
+  "Flow transcript rows must not expose edit, reply, or regenerate actions");
+
 assert.ok(assistantTurnRule, "Assistant turn styles should exist");
 assert.ok(assistantContentRule, "Assistant content styles should exist");
 

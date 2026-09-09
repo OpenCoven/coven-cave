@@ -14,13 +14,15 @@ import { createCredentialStore } from "@/lib/server/client-v1/credential-store.t
 import { createPairingStore } from "@/lib/server/client-v1/pairing-store.ts";
 import { decodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
 import { createClientV1RateLimiter } from "@/lib/server/client-v1/rate-limit.ts";
-import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
+import { listClientV1Conversations, type ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import { createClientV1HpkeTestClient } from "@/lib/server/client-v1/testing/hpke-client.ts";
 import { withClientV1HpkeRouteTestAuthority } from "@/lib/server/client-v1/testing/route-authority.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 import { createClientV1ConversationsGetHandler } from "./route.ts";
+import { createClientV1ConversationGetHandler } from "./[id]/route.ts";
+import { createClientV1ConversationMessagesGetHandler } from "./[id]/messages/route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-conversations-");
 const STAMP = "loopback-secret";
@@ -113,6 +115,61 @@ test("conversations are served most-recently-created first, id breaking the tie"
     });
     assert.ok(body.capabilities.includes("conversations"));
     assert.ok(body.capabilities.includes("cursors"));
+  });
+});
+
+test("Flow executions retain inventory pagination, canonical detail, and direct transcript access", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const flow = { flowId: "flow-1", runId: "run-1" };
+    const execution = { ...LEDGER[1], origin: "chat" as const };
+    const readSources = sources({
+      listConversations: () => listClientV1Conversations({
+        listConversations: async () => [LEDGER[0], execution, LEDGER[2]],
+        loadFlowSessionState: async (persist) => {
+          assert.equal(persist, false);
+          return { sessionFlow: { [execution.sessionId]: flow } };
+        },
+      }),
+      loadConversation: async (id) => id === execution.sessionId ? {
+        ...execution,
+        harness: "claude",
+        turns: [{
+          id: "turn-1",
+          role: "assistant",
+          text: "Execution result",
+          createdAt: execution.updatedAt,
+        }],
+      } : null,
+    });
+    const authorization = `Bearer ${bearer}`;
+    const list = createClientV1ConversationsGetHandler(runtime, readSources);
+    const first = await list(request("?limit=1", { authorization }));
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+    assert.equal(firstBody.data.conversations[0].id, execution.sessionId);
+    assert.equal(firstBody.data.conversations[0].origin, "flow");
+    assert.deepEqual(firstBody.data.conversations[0].flow, flow);
+    assert.equal(firstBody.cursor.hasMore, true);
+    const second = await list(request(
+      `?limit=2&cursor=${encodeURIComponent(firstBody.cursor.next)}`, { authorization },
+    ));
+    assert.equal(second.status, 200);
+    assert.deepEqual((await second.json()).data.conversations.map((row: { id: string }) => row.id),
+      ["conversation-a", "conversation-c"]);
+
+    const url = `http://127.0.0.1:3020/api/client/v1/conversations/${execution.sessionId}`;
+    const headers = { [LOCAL_PEER_HEADER]: STAMP, authorization };
+    const context = { params: Promise.resolve({ id: execution.sessionId }) };
+    const detail = await createClientV1ConversationGetHandler(runtime, readSources)(
+      new Request(url, { headers }), context,
+    );
+    assert.equal(detail.status, 200);
+    assert.deepEqual((await detail.json()).data.conversation, firstBody.data.conversations[0]);
+    const transcript = await createClientV1ConversationMessagesGetHandler(runtime, readSources)(
+      new Request(`${url}/messages`, { headers }), context,
+    );
+    assert.equal(transcript.status, 200);
+    assert.equal((await transcript.json()).data.messages[0].text, "Execution result");
   });
 });
 

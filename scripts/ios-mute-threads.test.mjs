@@ -11,7 +11,7 @@ const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`)
 assert.match(thread, /var muted: Bool = false/, "ChatThread should carry a muted flag");
 assert.match(thread, /var muted: Bool\?/, "ThreadSnapshot.muted should be optional for back-compat");
 assert.match(thread, /self\.muted = s\.muted \?\? false/, "snapshot decode should default muted to false");
-assert.match(thread, /pinned: pinned, muted: muted\)/, "snapshot encode should include muted");
+assert.match(thread, /pinned: pinned,\s*muted: muted(?=\s*[,\)])/, "snapshot encode should include muted");
 
 assert.match(
   model,

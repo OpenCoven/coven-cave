@@ -11,6 +11,15 @@ const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.met
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
 
+test("Research discussion commands use an explicit discussion mutation, never open an executor", () => {
+  assert.match(deskTab, /useFlowDiscussion/);
+  assert.match(deskTab, /discussion\.discuss\(selectedSessionId\)/);
+  assert.doesNotMatch(deskTab, /openMissionSession\(selectedSessionId\)/);
+  assert.match(deskTab, /discussion\.error/);
+  assert.match(detail, /discussion\.discuss\(sessionId\)/);
+  assert.doesNotMatch(detail, /onClick=\{\(\) => onOpenSession\(sessionId\)\}/);
+});
+
 // ── Stepper: 6 displayed phases, reconciled statuses ─────────────────────────
 
 test("stepper shows the six phases scope→publish with reconciled statuses", () => {

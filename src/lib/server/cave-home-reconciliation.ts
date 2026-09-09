@@ -1014,6 +1014,8 @@ const STATE_MAPS = [
   "sessionPinned",
   "sessionArchiveExtendedUntil",
   "sessionOwned",
+  "sessionFlow",
+  "sessionFlowCompleted",
   "mergedPrAutoArchived",
 ] as const;
 

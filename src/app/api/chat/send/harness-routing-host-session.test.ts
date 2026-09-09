@@ -448,7 +448,7 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = body\.startNewConversation && !existingConversation[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  /const resumeTarget = flowDiscussionStartsFresh \|\| \(body\.startNewConversation && !existingConversation\)[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
   "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
 assert.match(

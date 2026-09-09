@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
+import path from "node:path";
 
 const flowRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const workflowRoute = await readFile(
@@ -75,5 +76,43 @@ assert.match(
   /export async function PATCH\(req: Request\) \{\s*if \(!isLocalOrigin\(req\)\) return forbidden\(\);/,
   "flows PATCH rejects non-loopback requests",
 );
+
+const root = path.join(process.cwd(), `.flow-run-api-${process.pid}`);
+const savedEnv = { ...process.env };
+try {
+  await mkdir(root, { recursive: true });
+  process.env.COVEN_HOME = root;
+  process.env.COVEN_CAVE_HOME = path.join(root, "cave");
+  delete process.env.COVEN_FLOW_RUNS_PATH;
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  const { POST, PATCH } = await import("./route.ts");
+  const { loadInbox } = await import("../../../../lib/cave-inbox.ts");
+  const request = (method, body) => new Request("http://localhost/api/flows/runs", {
+    method, headers: { "content-type": "application/json", host: "localhost" },
+    body: JSON.stringify(body),
+  });
+  const response = await POST(request("POST", { flowId: "engine", status: "succeeded", steps: [] }));
+  assert.equal(response.status, 200);
+  const { run } = await response.json();
+  assert.equal((await loadInbox()).items.length, 0, "successful engine runs stay quiet");
+  for (let repeat = 0; repeat < 2; repeat += 1) {
+    assert.equal((await PATCH(request("PATCH", { id: run.id, status: "failed" }))).status, 200);
+  }
+  let items = (await loadInbox()).items;
+  assert.equal(items.length, 1, "repeated terminal PATCH produces one actionable parent item");
+  assert.equal(new URL(items[0].link.ref, "http://localhost").searchParams.get("flowRun"), run.id);
+  await PATCH(request("PATCH", { id: run.id, status: "succeeded" }));
+  assert.equal((await loadInbox()).items[0].status, "done", "success resolves stale attention quietly");
+  await POST(request("POST", { flowId: "failed-engine", status: "failed", steps: [] }));
+  items = (await loadInbox()).items;
+  assert.equal(items.filter((item) => item.status === "fired").length, 1,
+    "terminal POST follows the same parent notification policy");
+} finally {
+  for (const key of ["COVEN_HOME", "COVEN_CAVE_HOME", "COVEN_FLOW_RUNS_PATH", "COVEN_CAVE_AUTH_TOKEN"]) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+  await rm(root, { recursive: true, force: true });
+}
 
 console.log("run-history-hardening route.test.ts: ok");

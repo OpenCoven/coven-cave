@@ -113,6 +113,7 @@ import {
 } from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
+import { isFlowSession, useFlowDiscussion } from "@/lib/flow-discussion";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
@@ -524,12 +525,6 @@ export type ChatViewHandle = {
 };
 
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
-
-function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
-  const origin = session?.origin as string | undefined;
-  const title = session?.title?.trim() ?? "";
-  return origin === "flow" || title.startsWith("Flow: ") || title.startsWith("Flow step: ");
-}
 
 async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
   const params = new URLSearchParams({ sessionId });
@@ -2080,7 +2075,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFamiliarsDetailTab("daily-notes");
     window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "agents" } }));
   }, [setFamiliarsDetailTab, setFamiliarsSelectedId, setFamiliarsViewMode]);
-  const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
+  const flowBackedSession = isFlowSession(session) || origin === "flow";
+  const flowDiscussion = useFlowDiscussion((newSessionId) => {
+    onSessionsChanged?.();
+    onSessionStarted?.({ newSessionId, expectedSessionId: sessionId, composeInstance });
+  }, sessionId);
   const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
@@ -6182,6 +6181,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
+    if (flowBackedSession) {
+      announce("Flow transcripts are read-only. Choose Discuss in Chat to continue.", "assertive");
+      return;
+    }
     if (historyState === "offline") {
       announce("Offline copies are read only. Reconnect before sending.", "assertive");
       return;
@@ -7277,7 +7280,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
-  const offlineReadOnly = historyState === "offline";
+  const offlineReadOnly = historyState === "offline" || flowBackedSession;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -7287,7 +7290,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     taskArmed ||
     dictation.listening ||
     dropActive;
-  const showDockedComposer = shouldShowDockedComposer({
+  const showDockedComposer = !flowBackedSession && shouldShowDockedComposer({
     following,
     hasStagedInput: hasStagedComposerInput,
     releasedScrollDistance,
@@ -8186,6 +8189,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           aria-label="Conversation"
           aria-busy={busy || undefined}
         >
+          {flowBackedSession ? (
+            <div className="flex flex-wrap items-center gap-3 p-4 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+              <p>This is a read-only Flow execution, not a Chat conversation.</p>
+              {sessionId && onSessionStarted ? (
+                <Button size="sm" loading={flowDiscussion.busy} onClick={() => void flowDiscussion.discuss(sessionId)}>
+                  Discuss in Chat
+                </Button>
+              ) : null}
+              {flowDiscussion.error ? (
+                <ErrorState compact live={false} headline="Couldn’t open discussion" subtitle={flowDiscussion.error} />
+              ) : null}
+            </div>
+          ) : null}
           {turns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistorySkeleton />

@@ -22,7 +22,7 @@ struct ProjectsPanel: View {
             }
         }
         let threadsByProjectRoot = Dictionary(
-            grouping: app.threads.filter {
+            grouping: app.chatThreads.filter {
                 guard let root = $0.projectRoot else { return false }
                 return !$0.archived && !root.isEmpty
             },

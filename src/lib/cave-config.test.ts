@@ -26,6 +26,8 @@ try {
     sessionPinned: {},
     sessionArchiveExtendedUntil: {},
     sessionOwned: {},
+    sessionFlow: {},
+    sessionFlowCompleted: {},
     mergedPrAutoArchived: {},
     travel: {
       manualOffline: false,
@@ -765,6 +767,8 @@ try {
     sessionKeep: {},
     sessionPinned: {},
     sessionOwned: {},
+    sessionFlow: {},
+    sessionFlowCompleted: {},
     mergedPrAutoArchived: { "session-1": "OpenCoven/coven-cave#42" },
     travel: {
       manualOffline: false,
