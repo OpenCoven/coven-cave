@@ -98,6 +98,10 @@ supported for those five names in that process.
 The Logging rich-render capture passed all five visits but exported only visits
 two through five. Both raw-event and interval exports show the same missing
 prefix. Those four samples are warm; no cold rich-render value is available.
+A subsequent search journey passed all five queries and retained the initial
+drawer plus all five query intervals. Independent review verified launch and
+every query against its settled-result assertion, supporting search cold/warm
+classification. Six of seven names now have complete cold/warm coverage.
 The seven-span baseline remains open. These small samples do not establish a
 regression comparison or a reliable tail-latency estimate.
 
@@ -114,7 +118,7 @@ older captures are excluded.
 | `project.switcher.present` | 1 | 1163.545 | 1163.545 | 1163.545 | 4 | 1130.447 | 1130.633 | 1130.633 |
 | `project.switch` | 1 | 1031.323 | 1031.323 | 1031.323 | 4 | 1015.233 | 1016.119 | 1016.119 |
 | `destination.stable-frame` | 1 | 1031.313 | 1031.313 | 1031.313 | 4 | 1015.215 | 1016.113 | 1016.113 |
-| `search.query` | — | — | — | — | — | — | — | — |
+| `search.query` | 1 | 198.054 | 198.054 | 198.054 | 4 | 191.819 | 199.357 | 199.357 |
 | `chat.first-rich-render` | — | — | — | — | 4 | 133.551 | 137.642 | 137.642 |
 | `project.projection` | 1 | 917.798 | 917.798 | 917.798 | 4 | 900.251 | 909.425 | 909.425 |
 
@@ -272,8 +276,8 @@ runner environment variable. It defaults to no delay and accepts finite values
 between 0 and 60 seconds, exclusive of 0. This test-only pause precedes
 `XCUIApplication.launch()` and is outside all measured app intervals. The runner
 presses Home between short waits to prevent idle auto-lock during attachment;
-automation calls can extend the requested pause. This keep-awake behavior still
-requires physical verification.
+automation calls can extend the requested pause. The search retry passed with this
+behavior enabled; it does not bypass device unlock or UI-test authentication.
 
 For a prepared Release test build, copy its `.xctestrun` file alongside the
 original in `Build/Products`, then set the UI runner environment:
