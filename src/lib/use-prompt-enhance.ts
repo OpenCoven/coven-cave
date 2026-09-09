@@ -8,6 +8,7 @@ import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
 import {
   buildEnhanceInstruction,
   buildPromptEnhancement,
+  containsPromptEnhancementSecret,
   createPromptEnhancementRecommendation,
   extractCompleteEnhancedPrompt,
   extractEnhancedPrompt,
@@ -22,13 +23,14 @@ import {
   type PromptEnhancementPayload,
   type PromptEnhanceMode,
 } from "@/lib/prompt-enhancer";
-import { containsSecretText } from "@/lib/secret-redaction";
 
 // Model-backed prompt enhancement (cave-b6c2) is deliberately a manual use of
 // the shared recommendation lifecycle: typing only updates its fingerprint;
 // the existing Enhance control explicitly starts a generation.
 
-export const ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 8000;
+// Account-backed harnesses can spend ~20 seconds starting before emitting text.
+export const ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 30_000;
+export const ENHANCE_GENERATION_TIMEOUT_MS = 120_000;
 
 function newEnhanceRunId() {
   return globalThis.crypto?.randomUUID?.() ?? `enhance-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -162,7 +164,7 @@ export function usePromptEnhance({
     const toRecommendationOutput = (enhanced: string, offline: boolean) => {
       const clean = enhanced.trim();
       if (!clean) throw new Error("Enhance returned nothing usable.");
-      if (containsSecretText(clean)) {
+      if (containsPromptEnhancementSecret(clean, contextRef.current)) {
         throw new Error("Enhance returned text that may contain sensitive values.");
       }
       const recommendation = createPromptEnhancementRecommendation({
@@ -179,16 +181,16 @@ export function usePromptEnhance({
 
     if (!familiarIdRef.current) return toRecommendationOutput(localRecommendation(), true);
 
-    let sawToken = false;
     const controller = new AbortController();
     const abortForLifecycle = () => controller.abort();
     request.signal.addEventListener("abort", abortForLifecycle, { once: true });
-    const timer = setTimeout(() => {
-      if (!sawToken && !request.signal.aborted) {
-        stopEnhanceRun(request.runId);
-        controller.abort();
-      }
-    }, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
+    const abortForTimeout = () => {
+      if (controller.signal.aborted || request.signal.aborted) return;
+      stopEnhanceRun(request.runId);
+      controller.abort();
+    };
+    const firstTokenTimer = setTimeout(abortForTimeout, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
+    const generationTimer = setTimeout(abortForTimeout, ENHANCE_GENERATION_TIMEOUT_MS);
 
     try {
       const { text, error } = await streamFamiliarText({
@@ -207,7 +209,7 @@ export function usePromptEnhance({
         signal: controller.signal,
         onText: (text) => {
           if (controller.signal.aborted || activeRunIdRef.current !== request.runId) return;
-          sawToken = true;
+          if (text.trim()) clearTimeout(firstTokenTimer);
           const { partial } = extractEnhancedPrompt(text);
           setState((previous) =>
             previous.phase === "loading" ? { ...previous, preview: partial } : previous,
@@ -222,7 +224,8 @@ export function usePromptEnhance({
       if (request.signal.aborted) throw error;
       return toRecommendationOutput(localRecommendation(), true);
     } finally {
-      clearTimeout(timer);
+      clearTimeout(firstTokenTimer);
+      clearTimeout(generationTimer);
       request.signal.removeEventListener("abort", abortForLifecycle);
       if (activeRunIdRef.current === request.runId) activeRunIdRef.current = null;
     }
@@ -237,7 +240,7 @@ export function usePromptEnhance({
     debounceMs: 100,
     generate: async (request) => generate(request),
     apply: async () => ({ revert: () => {} }),
-    parseOutput: parsePromptEnhancementRecommendationOutput,
+    parseOutput: (text) => parsePromptEnhancementRecommendationOutput(text, contextRef.current),
   });
 
   // A user edit clears only a completed direct replacement. Loading work

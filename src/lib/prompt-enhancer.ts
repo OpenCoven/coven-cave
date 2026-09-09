@@ -185,11 +185,27 @@ function normalizeContext(context: unknown): PromptEnhanceContext {
   return typeof context === "object" && context !== null ? (context as PromptEnhanceContext) : {};
 }
 
+export function containsPromptEnhancementSecret(text: string, context?: unknown): boolean {
+  const normalized = normalizeContext(context);
+  const root = asText(normalized.activeProject?.root);
+  return containsSecretText(text, {
+    knownFilesystemPaths: [
+      ...(root ? [root] : []),
+      ...asStringList(normalized.selectedFiles).slice(0, 8),
+    ],
+  });
+}
+
 /** A bounded, secret-redacted fingerprint input; drafts deliberately stay out. */
 export function promptEnhancementContextFingerprintInput(context: unknown) {
   const normalized = normalizeContext(context);
   const task = asRecord(normalized.linkedTask);
   return {
+    // Redaction can collapse distinct long paths to the same placeholder.
+    pathIdentity: contextFingerprint({
+      root: asText(normalized.activeProject?.root),
+      files: asStringList(normalized.selectedFiles).slice(0, 8),
+    }),
     activeProject: {
       name: boundedContextText(normalized.activeProject?.name, 160),
       root: boundedContextText(normalized.activeProject?.root, 320),
@@ -445,7 +461,10 @@ function parsePromptEvidenceRefs(value: unknown): AgenticEvidenceRef[] | null {
  * A narrow parser for Chat's composer-sized prose payload. It leaves shared
  * recommendation bounds unchanged while retaining the 64 KiB input contract.
  */
-export function parsePromptEnhancementRecommendationOutput(text: string): AgenticRecommendation<PromptEnhancementPayload>[] {
+export function parsePromptEnhancementRecommendationOutput(
+  text: string,
+  context?: unknown,
+): AgenticRecommendation<PromptEnhancementPayload>[] {
   if (text.length > MAX_PROMPT_ENHANCEMENT_ENVELOPE_CHARS) {
     throw new Error("prompt enhancement output is too large");
   }
@@ -489,7 +508,7 @@ export function parsePromptEnhancementRecommendationOutput(text: string): Agenti
     || typeof modelOutput.payload.enhanced !== "string"
     || modelOutput.payload.enhanced.trim().length === 0
     || modelOutput.payload.enhanced.length > MAX_ENHANCED_PROMPT_CHARS
-    || containsSecretText(modelOutput.payload.enhanced)
+    || containsPromptEnhancementSecret(modelOutput.payload.enhanced, context)
     || typeof modelOutput.payload.offline !== "boolean"
     || !isPromptMode(modelOutput.payload.mode)
     || !isEnhanceIntent(modelOutput.payload.intent)
