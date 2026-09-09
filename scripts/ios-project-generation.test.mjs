@@ -53,7 +53,7 @@ assert.match(
 // full-text search passes even when the check loop does not mention them. This
 // is the third assertion in this file to have that shape — see the two notes
 // above. Search executable lines only.
-for (const resource of ["markdown.html", "markdown.css"]) {
+for (const resource of ["markdown.html", "markdown.css", "markdown-mermaid.js"]) {
   assert.ok(
     wrapperCode.includes(resource),
     `the wrapper should assert ${resource} exists before generating the project`,

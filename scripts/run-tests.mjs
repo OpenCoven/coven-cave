@@ -1939,6 +1939,7 @@ export const SUITES = {
     "scripts/ios-chat-familiars-home.test.mjs",
     "scripts/ios-familiar-profile.test.mjs",
     "scripts/ios-project-generation.test.mjs",
+    "scripts/ios-markdown-bundle.test.mjs",
     "scripts/ios-chat-restyle.test.mjs",
     "scripts/ios-claude-design-fidelity.test.mjs",
     "scripts/ios-modern-polish.test.mjs",
