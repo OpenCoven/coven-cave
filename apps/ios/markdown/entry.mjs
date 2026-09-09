@@ -2,11 +2,10 @@
 // Same @create-markdown/* + mermaid pipeline as the desktop chat, with
 // highlight.js for code syntax colours (shiki doesn't bundle into a browser
 // IIFE via esbuild — @shikijs/vscode-textmate's Resolver breaks). Bundled to a
-// self-contained HTML by scripts/build-ios-markdown.mjs.
+// local resources by scripts/build-ios-markdown.mjs.
 
 import { parse } from "@create-markdown/core";
 import { renderAsync } from "@create-markdown/preview";
-import { mermaidPlugin } from "@create-markdown/preview-mermaid";
 import { renderTableReplacements } from "../../../src/lib/markdown-table-cells.ts";
 import hljs from "highlight.js/lib/core";
 
@@ -49,10 +48,26 @@ hljs.configure({ classPrefix: "hljs-" });
 // a few extras it doesn't infer from our registered set:
 const ALIASES = { sh: "bash", shell: "bash", zsh: "bash", html: "xml", "objective-c": "c" };
 
-const mermaid = mermaidPlugin({ theme: "dark", config: { securityLevel: "strict" } });
 let mermaidReady = null;
 function initMermaid() {
-  if (!mermaidReady) mermaidReady = Promise.resolve(mermaid.init?.());
+  // A dynamic import inside the old IIFE still bundled the entire diagram
+  // engine into every message. Load a separate local script only on settle.
+  if (!mermaidReady) {
+    mermaidReady = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "markdown-mermaid.js";
+      script.onload = () => {
+        const plugin = window.caveMermaid;
+        if (!plugin) {
+          reject(new Error("Bundled Mermaid renderer unavailable"));
+          return;
+        }
+        Promise.resolve(plugin.init?.()).then(() => resolve(plugin), reject);
+      };
+      script.onerror = () => reject(new Error("Could not load bundled Mermaid renderer"));
+      document.head.appendChild(script);
+    });
+  }
   return mermaidReady;
 }
 
@@ -104,7 +119,7 @@ async function renderMarkdown(md, { streaming = false } = {}) {
   const blocks = parse(md || "");
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
   const hasMermaid = !streaming && codeBlocks.some(isMermaid);
-  if (hasMermaid) await initMermaid();
+  const mermaid = hasMermaid ? await initMermaid() : null;
 
   const replacements = new Array(codeBlocks.length);
   codeBlocks.forEach((block, i) => {
@@ -219,8 +234,10 @@ window.caveRender = async (md, opts = {}) => {
   } catch (err) {
     root.textContent = String(md || "");
     window.webkit?.messageHandlers?.cave?.postMessage({ type: "error", message: String(err) });
+    throw err;
+  } finally {
+    reportLayout();
   }
-  reportLayout();
 };
 
 // Re-style without re-rendering markdown — used when the reader's font size or
