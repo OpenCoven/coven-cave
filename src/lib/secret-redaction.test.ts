@@ -533,6 +533,58 @@ for (const ordinaryHexValue of ordinaryHexValues) {
   );
 }
 const hexApiKey = "a".repeat(64);
+const knownProjectPath = "/Users/example/Documents/GitHub/OpenCoven";
+const pathOptions = { knownFilesystemPaths: [knownProjectPath] };
+assert.equal(containsSecretText(knownProjectPath), true, "global detection stays conservative");
+assert.equal(
+  containsSecretText(`Review \`${knownProjectPath}\` and (${knownProjectPath}).`, pathOptions),
+  false,
+  "an explicitly supplied filesystem path is not a base64 credential",
+);
+assert.equal(
+  containsSecretText(JSON.stringify({ project: knownProjectPath }), pathOptions),
+  false,
+  "known path handling also works in structured prompt text",
+);
+for (const knownPath of [
+  `${knownProjectPath}/src/components/composer.tsx`,
+  "C:/Users/example/Documents/GitHub/OpenCoven",
+  String.raw`C:\Users\example\Documents\GitHub\OpenCoven`,
+]) {
+  const options = { knownFilesystemPaths: [knownPath] };
+  assert.equal(
+    containsSecretText(`Review \`${knownPath}\`.`, options),
+    false,
+    "explicit selected-file and Windows paths are accepted",
+  );
+  assert.equal(
+    containsSecretText(JSON.stringify([JSON.stringify({ project: knownPath })]), options),
+    false,
+    "known paths remain accepted in nested JSON",
+  );
+}
+assert.equal(
+  containsSecretText("/Users/other/Documents/GitHub/OpenCoven", pathOptions),
+  true,
+  "an unknown model-generated path receives no exemption",
+);
+for (const sensitive of [
+  `${knownProjectPath} ${hexApiKey}`,
+  `TOKEN=${knownProjectPath}`,
+  `Authorization: Bearer ${knownProjectPath}`,
+  JSON.stringify({ token: knownProjectPath }),
+  JSON.stringify({ project: knownProjectPath, token: hexApiKey }),
+  `${knownProjectPath}/new${"x".repeat(40)}`,
+]) {
+  assert.equal(containsSecretText(sensitive, pathOptions), true, "known paths never hide credential material");
+}
+for (const unsafePath of [hexApiKey, `/Users/${hexApiKey}/repo`, "/Users/example/api_key=unsafe"]) {
+  assert.equal(
+    containsSecretText(unsafePath, { knownFilesystemPaths: [unsafePath] }),
+    true,
+    "a credential-shaped value cannot exempt itself as a known path",
+  );
+}
 assert.equal(
   containsSecretText(`api key ${hexApiKey}`),
   true,

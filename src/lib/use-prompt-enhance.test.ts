@@ -79,7 +79,7 @@ assert.match(
 );
 assert.match(
   source,
-  /parseOutput: parsePromptEnhancementRecommendationOutput/,
+  /parseOutput: \(text\) => parsePromptEnhancementRecommendationOutput\(text, contextRef\.current\)/,
   "Chat uses its bounded prompt-specific parser without relaxing shared limits",
 );
 assert.match(
@@ -135,8 +135,13 @@ assert.match(
 // ── Fallback: local rule engine, never the dead API route ────────────────────
 assert.match(
   source,
-  /ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 8000/,
-  "no first token within 8s falls back to the local rule engine",
+  /ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 30_000/,
+  "cold harness startup gets 30s before falling back to the local rule engine",
+);
+assert.match(
+  source,
+  /ENHANCE_GENERATION_TIMEOUT_MS = 120_000/,
+  "a stream that starts but stalls cannot leave enhancement loading indefinitely",
 );
 assert.match(
   source,
