@@ -192,7 +192,7 @@
     "simple-icons": "16.28.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "packageManager": "pnpm@10.34.0",
   "pnpm": {
