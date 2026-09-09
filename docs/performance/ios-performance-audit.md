@@ -8,6 +8,31 @@ rendering. The first six implementation tasks landed in PR #3623; this closeout
 adds typed markdown signatures, renderer instrumentation, the final simulator
 validation, and the physical-device handoff.
 
+## September 9 responsiveness hotfix
+
+The renderer's single-file IIFE included the entire Mermaid dependency graph
+even though diagram initialization was deferred. Every assistant message
+therefore loaded that JavaScript payload, including messages without diagrams.
+The diagram engine now lives in a separately bundled local
+`markdown-mermaid.js`, loaded only for a settled Mermaid block. Streaming
+placeholders, ordinary markdown, code highlighting, and tables keep the small
+core renderer; the reader reuses the same lazy engine.
+
+The minified startup JavaScript fell from 3,620,968 bytes to approximately
+160 KB (about 95.6% less). This measures per-renderer payload, not total app
+download size or a claimed device-latency percentile. The remaining diagram
+payload is still packaged offline. `ios-markdown-bundle.test.mjs` enforces a
+512 KiB startup ceiling and excludes Mermaid dependencies from the core graph.
+
+`MarkdownBundleLoadingTests` exercises the packaged files in real WKWebView:
+ordinary markdown and streaming placeholders load no diagram script; settled
+diagrams produce SVG and reuse one script; a missing diagram resource preserves
+readable source and rejects the render so native fallback can handle it.
+The focused Release simulator run passed these three tests plus the fifteen
+existing renderer lifecycle/signature tests. The previously merged renderer
+teardown repair remains intact. No new physical-device latency or thermal
+claim is made by this hotfix.
+
 ## Before/after metrics
 
 The request/work-count evidence is deterministic rather than a claim about
