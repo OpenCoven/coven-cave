@@ -56,7 +56,10 @@ function run(command, args, cwd = ROOT, timeout = undefined) {
   });
 }
 
-const check = run("pnpm", ["protocol:tweet-thread:validator:check"]);
+const check = run(
+  process.platform === "win32" ? "corepack.cmd" : "corepack",
+  ["pnpm", "protocol:tweet-thread:validator:check"],
+);
 assert.equal(check.status, 0, check.stderr);
 const committedBundle = readFileSync(BUNDLE);
 
