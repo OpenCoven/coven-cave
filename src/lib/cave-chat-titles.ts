@@ -256,6 +256,15 @@ function sliceAtGraphemeBoundary(text: string, maxUnits: number): string {
 const UNSAFE_TITLE_CONTROLS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/gu;
 const HIDDEN_TITLE_BLOCK_RE = /<!--[\s\S]*?(?:-->|$)|<(\/?)(FAMILIAR_CONTRACT|KNOWLEDGE_VAULT|INSTRUCTIONS|system(?:[-_]reminder)?|identity|runtime|canon|thinking|think|reasoning|analysis|tool(?:s|[-_]call|[-_]result|[-_]use|[-_]response)?)(?:\s[^<>]*?)?\s*(\/?)>/gi;
 const PRIVATE_KEY_BLOCK_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z]+ )?PRIVATE KEY-----|$)/g;
+// Generic inline HTML (<b>, <code>, <span class="…">, …) — drop the tag but
+// keep its text. Requires a tag-name-shaped run right after '<'/'</', so a
+// Markdown autolink (<https://…>, <user@example.com>) never matches: ':' and
+// '@' break the run before any '>' or attribute whitespace is reached.
+const GENERIC_HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>])*)?\s*\/?>/g;
+
+function stripInlineHtmlTags(text: string): string {
+  return text.replace(GENERIC_HTML_TAG_RE, "");
+}
 
 function stripHiddenTitleSources(text: string): string {
   const visible: string[] = [];
@@ -369,7 +378,12 @@ function normalizeGeneratedTitleSource(input: unknown): string | null {
     .replace(/\r\n?/g, "\n")
     .replace(UNSAFE_TITLE_CONTROLS_RE, "")
     .normalize("NFC");
-  return redactTitleAssignments(stripHiddenTitleSources(source).replace(PRIVATE_KEY_BLOCK_RE, " ")).trim() || null;
+  // Flatten remaining inline HTML before either redaction pass: a secret can
+  // otherwise be split across a tag boundary (e.g. "sk-<b>proj</b>-…") and
+  // never match a contiguous-token pattern.
+  return redactTitleAssignments(
+    stripInlineHtmlTags(stripHiddenTitleSources(source)).replace(PRIVATE_KEY_BLOCK_RE, " "),
+  ).trim() || null;
 }
 
 function isCommonMarkEscapablePunctuation(char: string): boolean {

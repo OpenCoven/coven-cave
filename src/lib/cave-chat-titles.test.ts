@@ -1300,6 +1300,8 @@ assert.equal(
       `sk-proj-${"x".repeat(24)}**${"y".repeat(24)}**`,
       `ghp_${"x".repeat(35)}\`${"y".repeat(24)}\``,
       `sk-\u200Bproj-${"x".repeat(180)}`,
+      `sk-<b>proj</b>-${"x".repeat(180)}`,
+      `sk-<span class="hl">proj</span>-${"x".repeat(180)}`,
     ]) {
       assert.equal(generate(`Fix ${token} parser`), "Fix parser", `${name}: markup/control-rejoined token`);
     }
