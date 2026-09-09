@@ -971,22 +971,6 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
-/* Ultra-minimal header: at rest only the archive, find and ⋮ kebab
- * affordances show. The promoted voice + delete verbs stay quiet — they
- * carry the shared reveal-on-hover utility (design language §8) against the
- * chat header's reveal-scope, surfacing on header hover or keyboard focus
- * while keeping their layout slots (opacity-only: still tabbable, still in
- * the a11y tree, no reflow; coarse pointers show everything). This replaces
- * a bespoke pointer-events dance whose reveal rules could never outrank
- * their own hide rule, leaving hover-only controls unreachable (cave-zolo).
- *
- * An armed popover (kebab menu, delete confirm) keeps the whole cluster
- * revealed — the anchor must not fade under its own open popover when the
- * pointer travels into it. */
-.cave-chat-session-actions:has([aria-expanded="true"]) .reveal-on-hover {
-  opacity: 1;
-}
-
 /* The composer footer band's lone "link a task" chip follows the same
  * quiet-at-rest rhythm against the band (pointer devices only). */
 @media (hover: hover) and (pointer: fine) {

@@ -250,14 +250,17 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the thread back to the familiar analytics page");
     assert.match(source, /origin: "chat"/, "thread signal resolutions stay regular chat threads");
     assert.doesNotMatch(source, /origin: "eval"/, "thread signal resolutions are not routed through Evals");
-    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => launchResolutionThread\(familiarId, item\)\}/, "each review item is a clickable button");
+    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => \{[\s\S]*launchResolutionThread\(familiarId, item\)/, "each review item is a clickable button");
+    assert.match(source, /destination: "right-panel"/, "resolution requests preserve the main surface");
+    assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/, "handoff failures remain visible and retryable");
     assert.match(source, /Launch a thread to resolve/, "the affordance says it launches a resolution thread");
   });
 
   it("launches a resolution thread from actionable table rows", () => {
     assert.match(source, /function resolveRow\(familiarId: string, row: ThreadSignalTableRow\)/, "rows are shaped into review items");
     assert.match(source, /if \(!row\.kind\) return;/, "purely informational rows (skills used most) cannot launch a resolution");
-    assert.match(source, /onClick=\{\(\) => resolveRow\(familiarId, row\)\}/, "row action launches the resolution thread");
+    assert.match(source, /onClick=\{\(\) => resolve\(row\)\}/, "row action launches the resolution thread through visible error handling");
+    assert.match(source, /const result = resolveRow\(familiarId, row\)/);
     assert.match(source, /kind: "blocker",/, "blocker rows carry a review kind");
     assert.match(source, /kind: "skill-access",/, "access-gap rows carry a review kind");
     assert.match(source, /kind: "skill-clarity",/, "clarity-gap rows carry a review kind");

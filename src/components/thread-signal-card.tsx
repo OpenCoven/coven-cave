@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import { publishBoardChanged } from "@/lib/board-cache-events";
@@ -59,7 +60,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
 
   const [selectedTile, setSelectedTile] = useState<string | null>(() => weakestTileId(tiles));
   const [openRow, setOpenRow] = useState<string | null>(null);
-  const [launched, setLaunched] = useState<Set<string>>(() => new Set());
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [tasked, setTasked] = useState<Set<string>>(() => new Set());
   const [taskPending, setTaskPending] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState(false);
@@ -67,8 +68,8 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
   // Every piece of state above belongs to ONE report, and chat-view reuses this
   // instance when a newer self-report lands for the same session
   // (setThreadSignalReport). Without this reset the card would highlight the old
-  // report's tile and mark the new report's rows as already launched or already
-  // filed, because both sets are keyed by kind:sourceId and those repeat across
+  // report's tile and mark the new report's rows as already filed or pending,
+  // because the task sets are keyed by kind:sourceId and those repeat across
   // reports. React's documented "adjust state when a prop changes" pattern —
   // kept in the component so a caller cannot forget to pass a key.
   const [renderedReportId, setRenderedReportId] = useState(report.id);
@@ -76,7 +77,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     setRenderedReportId(report.id);
     setSelectedTile(weakestTileId(tiles));
     setOpenRow(null);
-    setLaunched(new Set());
+    setLaunchError(null);
     setTasked(new Set());
     setTaskPending(new Set());
     setDismissed(false);
@@ -102,7 +103,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
 
   const selected = tiles.find((tile) => tile.id === selectedTile) ?? null;
   const criticals = rows.filter((row) => row.severity === "critical");
-  const openCriticals = criticals.filter((row) => !launched.has(rowKey(row)));
+  const openCriticals = criticals;
   const warnings = rows.filter((row) => row.severity === "warning").length;
 
   const launch = useCallback(
@@ -112,17 +113,15 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
         targets.length === 1
           ? buildThreadSignalResolutionPrompt(targets[0])
           : buildThreadSignalBatchResolutionPrompt(targets);
-      requestAgentsNewChat({
+      const result = requestAgentsNewChat({
+        destination: "right-panel",
         familiarId: report.familiarId,
+        sourceSessionId: report.sessionId,
         initialPrompt: `${prompt}\n\nSource: self-report from thread ${report.sessionId}.`,
         origin: "chat" as const,
       });
-      setLaunched((prev) => {
-        const next = new Set(prev);
-        for (const row of targets) next.add(rowKey(row));
-        return next;
-      });
-      announce(label);
+      setLaunchError(result.ok ? null : result.error);
+      announce(result.ok ? label : result.error, result.ok ? "polite" : "assertive");
     },
     [announce, report.familiarId, report.sessionId],
   );
@@ -192,6 +191,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
 
   return (
     <article className="tsc-card" aria-label="Thread Signal">
+      {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
       <div className="tsc-head">
         <span className={`tsc-ring tsc-tone--${compositeTone(score)}`}>
           <svg width="34" height="34" viewBox="0 0 36 36" aria-hidden focusable="false">
@@ -284,8 +284,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
             {rows.map((row) => {
               const key = rowKey(row);
               const open = openRow === key;
-              const done = launched.has(key);
-              const tone = done ? "ok" : row.severity === "critical" ? "crit" : "warn";
+              const tone = row.severity === "critical" ? "crit" : "warn";
               return (
                 <div className="tsc-row" key={key}>
                   <button
@@ -317,21 +316,14 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
                         </div>
                       ) : null}
                       <div className="tsc-pop-actions">
-                        {done ? (
-                          <span className="tsc-done">
-                            <Icon name="ph:check-bold" width={11} aria-hidden />
-                            Thread launched
-                          </span>
-                        ) : (
-                          <Button
+                        <Button
                             size="xs"
                             variant="secondary"
                             leadingIcon="ph:lightning-fill"
-                            onClick={() => launch([row], `Launched a thread to fix ${row.title}.`)}
+                            onClick={() => launch([row], `Requested a Chat panel thread to fix ${row.title}.`)}
                           >
                             Fix in new thread
-                          </Button>
-                        )}
+                        </Button>
                         <Button
                           size="xs"
                           variant="ghost"
@@ -366,7 +358,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
           </Button>
         ) : null}
         <span className="tsc-foot-spacer" />
-        {criticals.length === 0 ? null : openCriticals.length > 0 ? (
+        {openCriticals.length > 0 ? (
           <Button
             size="sm"
             variant="primary"
@@ -375,8 +367,8 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
               launch(
                 openCriticals,
                 openCriticals.length === 1
-                  ? `Launched a thread to fix ${openCriticals[0].title}.`
-                  : `Launched one thread to fix ${openCriticals.length} critical signals.`,
+                  ? `Requested a Chat panel thread to fix ${openCriticals[0].title}.`
+                  : `Requested one Chat panel thread to fix ${openCriticals.length} critical signals.`,
               )
             }
           >
@@ -384,12 +376,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
               ? "Fix 1 critical in one thread"
               : `Fix ${openCriticals.length} critical in one thread`}
           </Button>
-        ) : (
-          <span className="tsc-done tsc-done--chip">
-            <Icon name="ph:check-bold" width={11} aria-hidden />
-            {criticals.length === 1 ? "1 thread launched" : `${criticals.length} signals launched`}
-          </span>
-        )}
+        ) : null}
       </div>
     </article>
   );

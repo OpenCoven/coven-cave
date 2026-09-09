@@ -313,17 +313,17 @@ const persistedHandoffEffect = workspace.slice(
 );
 assert.match(
   persistedHandoffEffect,
-  /!projectsLoadedSuccessfully[\s\S]{0,220}announce\(projectsError \?\? "Project registry is unavailable"\);\s*return;/,
+  /!projectsLoadedSuccessfully[\s\S]{0,220}reportProblem\(projectsError \?\? "Project registry is unavailable"\);\s*return;/,
   "settled registry failures should announce but retain persisted handoffs for retry",
 );
 assert.match(
   persistedHandoffEffect,
-  /requestedProjectId === undefined[\s\S]{0,180}announce\("That project is no longer available"\);\s*clearPendingAgentsNewChat\(\);\s*setPendingAgentsNewChat\(null\);\s*return;/,
+  /requestedProjectId === undefined[\s\S]{0,180}reportProblem\("That project is no longer available"\);\s*clearPendingAgentsNewChat\(\);\s*setPendingAgentsNewChat\(null\);\s*return;/,
   "unknown persisted project roots should be announced and discarded",
 );
 assert.match(
   persistedHandoffEffect,
-  /const authorityFailed =[\s\S]{0,500}!projectsLoadedSuccessfully[\s\S]{0,500}if \(authorityFailed\) \{[\s\S]{0,240}?announce\([\s\S]{0,180}?\);\s*return;\s*\}/,
+  /const authorityFailed =[\s\S]{0,500}!projectsLoadedSuccessfully[\s\S]{0,500}if \(authorityFailed\) \{[\s\S]{0,240}?reportProblem\([\s\S]{0,180}?\);\s*return;\s*\}/,
   "ownerless persisted handoffs should remain durable while restored authority is transiently unavailable",
 );
 // The bridge effect registers BOTH cave:agents-new-chat and
@@ -334,3 +334,27 @@ assert.match(
   /return \(\) => \{\s*window\.removeEventListener\("cave:agents-new-chat", onAgentsNewChat\);\s*window\.removeEventListener\("cave:continue-on-phone", onContinueOnPhone as EventListener\);\s*\};/,
   "Workspace bridge cleanup should remove every listener the effect adds",
 );
+
+const sideLaunchStart = workspace.indexOf('if (destination === "right-panel")');
+const sideLaunchEnd = workspace.indexOf('\n    if (\n      actorHasProjectAccess', sideLaunchStart);
+assert.ok(sideLaunchStart !== -1 && sideLaunchEnd > sideLaunchStart);
+const sideLaunch = workspace.slice(sideLaunchStart, sideLaunchEnd);
+assert.match(sideLaunch, /!familiarId \|\| actorHasProjectAccess !== true/);
+assert.match(sideLaunch, /setRightChatLaunchRequest\([\s\S]*familiarId, projectRoot, initialPrompt, initialControls, origin/);
+assert.match(sideLaunch, /shellRef\.current\?\.openRightChat\(\)/);
+assert.doesNotMatch(sideLaunch, /setMode|setActiveId|setActiveChatSessionId|setPendingChatAction|setPendingProjectChatRoot/, "a side-panel launch cannot mutate main navigation or actor scope");
+assert.match(workspace, /actorHasProjectAccess,\s*request\.destination/, "live requests preserve destination through the existing actor/project gate");
+assert.match(workspace, /actorHasProjectAccess,\s*pending\.destination/, "durable requests preserve destination through the same gate");
+const sideBridge = workspace.slice(workspace.indexOf("const onRightChat ="), workspace.indexOf("// Read a cross-page"));
+assert.match(sideBridge, /event\.preventDefault\(\);\s*startWorkspaceChat\(detail\)/);
+assert.doesNotMatch(sideBridge, /modeRef/, "the side-panel listener remains available while main Chat is mounted");
+assert.match(workspace, /<RightChatPanel\s*launchRequest=\{rightChatLaunchRequest\}/);
+const independentStart = workspace.indexOf("const startIndependentRightChat =");
+const independentEnd = workspace.indexOf("const requestActingFamiliar =", independentStart);
+const independentLaunch = workspace.slice(independentStart, independentEnd);
+assert.match(independentLaunch, /resolveRightChatProjectRoot\(request\)/);
+assert.match(independentLaunch, /resolveActorProjectAccess\(familiarId, projectId, projectRoot\)/, "a target outside the main scope gets fresh actor-specific grant proof");
+assert.match(independentLaunch, /projectAccessGenerationRef\.current\.byProject\.get\(projectId\)/, "grant invalidations are checked against the target project");
+assert.doesNotMatch(independentLaunch, /selectWorkspaceProject|setActiveId|setMode\(/, "independent authorization cannot change the main scope");
+assert.match(workspace, /hasIndependentRightChatProject\(pending\)[\s\S]*startIndependentRightChat\(pending, generation\)/, "standalone durable handoffs use identical target authority");
+assert.match(workspace, /projectId !== null && projectRoot === undefined/, "only already crew-verified selected-project requests may skip a grant lookup");

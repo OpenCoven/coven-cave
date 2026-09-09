@@ -382,12 +382,12 @@ assert.match(
 );
 assert.match(
   workspaceSource,
-  /requestedProjectId !== authority\.selectedWorkspaceProjectId[\s\S]{0,120}selectWorkspaceProject\(requestedProjectId\)/,
+  /requestedProjectId !== authority\.selectedWorkspaceProjectId[\s\S]{0,320}selectWorkspaceProject\(requestedProjectId\)/,
   "live explicit-root launches restore the destination project's saved crew",
 );
 assert.match(
   workspaceSource,
-  /requestedProjectId !== selectedWorkspaceProjectId[\s\S]{0,120}selectWorkspaceProject\(requestedProjectId\)/,
+  /requestedProjectId !== selectedWorkspaceProjectId[\s\S]{0,320}selectWorkspaceProject\(requestedProjectId\)/,
   "persisted explicit-root launches restore the destination project's saved crew",
 );
 assert.ok(

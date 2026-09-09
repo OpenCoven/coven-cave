@@ -57,6 +57,7 @@
 //   6. every loading/error/chooser state exposes a working Close action.
 //   7. the familiar chooser only offers the filtered, resolved roster.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const router = vi.hoisted(() => ({
@@ -121,6 +122,96 @@ import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { ChatRouter as MockChatRouter } from "@/components/chat-router";
 import { RightChatPanel } from "./right-chat-panel";
+
+describe("authorized fix-thread handoffs", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", { setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, sessions: [] }) })));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function launchProps(overrides = {}) {
+    return baseProps({
+      familiars: [familiar("cody"), familiar("sage")],
+      activeFamiliar: familiar("cody"),
+      sessions: [sessionRow("cody-main", { familiarId: "cody", updated_at: "2026-09-09T00:00:00Z", created_at: "2026-09-09T00:00:00Z" })],
+      sessionsScopeFamiliarId: "cody",
+      launchRequest: { familiarId: "sage", projectRoot: "/code/cave", initialPrompt: "Repair the failed tool", origin: "chat", initialControls: { thinkingEffort: "high" }, nonce: 1 },
+      ...overrides,
+    });
+  }
+
+  test("pins the authorized actor without changing the main familiar and primes once through refresh/reopen", async () => {
+    const props = launchProps();
+    const renderer = await renderPanel(props);
+    expect(fetch).toHaveBeenCalledWith("/api/sessions/list?familiarId=sage&classifyFamiliarWorkspace=1", { cache: "no-store" });
+    expect(router.latestProps.familiar.id).toBe("sage");
+    expect(router.latestProps.sessions).toEqual([]);
+    expect(router.calls.openSession).toEqual([]);
+    expect(router.calls.newChat).toEqual([["/code/cave", "Repair the failed tool", "sage", "chat", { thinkingEffort: "high" }]]);
+    await act(async () => router.latestProps.onSetActiveFamiliar("sage"));
+    expect(props.onSetActiveFamiliar).not.toHaveBeenCalled();
+    await update(renderer, { ...props, activeFamiliar: familiar("other") });
+    await act(async () => router.latestProps.onSessionsChanged());
+    await update(renderer, { ...props, open: false });
+    await update(renderer, props);
+    expect(router.calls.newChat).toHaveLength(1);
+    await update(renderer, { ...props, launchRequest: { ...props.launchRequest, nonce: 2 } });
+    expect(router.calls.newChat).toHaveLength(2);
+    await act(async () => renderer.unmount());
+  });
+
+  test("waits for its own roster and surfaces failure with retry instead of sending to a fallback", async () => {
+    const pending = deferred();
+    vi.mocked(fetch).mockImplementationOnce(() => pending.promise);
+    const props = launchProps();
+    const renderer = await renderPanel(props);
+    expect(isLoadingFrame(renderer)).toBe(true);
+    expect(router.calls.newChat).toEqual([]);
+    await act(async () => pending.settle({ ok: false, json: async () => ({ ok: false }) }));
+    expect(JSON.stringify(renderer.toJSON())).toContain("Couldn't load chats");
+    expect(router.calls.newChat).toEqual([]);
+    await act(async () => renderer.root.findAllByType(Button).find((button) => button.props.children === "Retry").props.onClick());
+    expect(router.calls.newChat).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+
+  test("StrictMode replay launches one primed compose, never the familiar's latest session first", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ok: true, sessions: [sessionRow("sage-old", { familiarId: "sage", updated_at: "2026-09-09T00:00:00Z", created_at: "2026-09-09T00:00:00Z" })] }) });
+    let renderer;
+    await act(async () => { renderer = create(<StrictMode><RightChatPanel {...launchProps()} /></StrictMode>); });
+    expect(router.calls.newChat).toHaveLength(1);
+    expect(router.calls.openSession).toEqual([]);
+    await act(async () => renderer.unmount());
+  });
+
+  test("discards an outgoing actor's late roster while a newer fix launch is waiting", async () => {
+    const outgoing = deferred();
+    const incoming = deferred();
+    vi.mocked(fetch).mockImplementationOnce(() => outgoing.promise).mockImplementationOnce(() => incoming.promise);
+    const props = launchProps();
+    const renderer = await renderPanel(props);
+    const nextProps = { ...props, launchRequest: { ...props.launchRequest, familiarId: "cody", initialPrompt: "Second fix", nonce: 2 } };
+    await update(renderer, nextProps);
+    await act(async () => outgoing.settle({ ok: true, json: async () => ({ ok: true, sessions: [] }) }));
+    expect(isLoadingFrame(renderer)).toBe(true);
+    expect(router.calls.newChat).toEqual([]);
+    await act(async () => incoming.settle({ ok: true, json: async () => ({ ok: true, sessions: [] }) }));
+    expect(router.calls.newChat).toEqual([["/code/cave", "Second fix", "cody", "chat", { thinkingEffort: "high" }]]);
+    await act(async () => renderer.unmount());
+  });
+
+  test("does not replay a consumed prompt if its familiar disappears and returns", async () => {
+    const props = launchProps();
+    const renderer = await renderPanel(props);
+    expect(router.calls.newChat).toHaveLength(1);
+    await update(renderer, { ...props, familiars: [familiar("cody")] });
+    expect(JSON.stringify(renderer.toJSON())).toContain("Familiar is unavailable");
+    await update(renderer, props);
+    expect(router.calls.newChat.filter((args) => args[1] === "Repair the failed tool")).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

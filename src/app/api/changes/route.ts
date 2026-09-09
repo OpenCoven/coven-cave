@@ -326,6 +326,15 @@ async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean
 async function listChanges(repoRoot: string): Promise<NextResponse> {
   const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
+  // A rewrite can keep the same path/status/diffstat. Cheap filesystem stamps
+  // let the collapsed Code tab notice it without fetching full diffs on polls.
+  for (const file of files) {
+    const absolutePath = resolveContainedFile(repoRoot, file.path);
+    if (absolutePath) {
+      const stat = fs.lstatSync(absolutePath, { throwIfNoEntry: false });
+      file.changeVersion = stat ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}` : "missing";
+    }
+  }
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.

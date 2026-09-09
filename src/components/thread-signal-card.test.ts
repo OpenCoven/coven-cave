@@ -80,6 +80,9 @@ describe("thread-signal-card module wiring", () => {
 
   it("launches resolution threads through the shared prompt + cross-page launcher", () => {
     assert.match(source, /requestAgentsNewChat\(/);
+    assert.match(source, /destination: "right-panel"/);
+    assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/);
+    assert.doesNotMatch(source, /Thread launched/, "an acknowledged request is not yet a launched thread");
     assert.match(source, /buildThreadSignalResolutionPrompt\(targets\[0\]\)/);
     assert.match(source, /buildThreadSignalBatchResolutionPrompt\(targets\)/);
     // One thread for all remaining criticals, not one per signal.
@@ -103,7 +106,7 @@ describe("thread-signal-card module wiring", () => {
   });
 
   it("resets per-report state when a newer report lands on the same instance", () => {
-    // chat-view reuses this instance via setThreadSignalReport, and launched/
+    // chat-view reuses this instance via setThreadSignalReport, and pending/
     // tasked are keyed by kind:sourceId — keys that repeat across reports.
     // Without the reset the new report's rows render as already actioned.
     assert.match(source, /const \[renderedReportId, setRenderedReportId\] = useState\(report\.id\)/);
@@ -112,7 +115,7 @@ describe("thread-signal-card module wiring", () => {
       /setRenderedReportId\(report\.id\)/,
       /setSelectedTile\(weakestTileId\(tiles\)\)/,
       /setOpenRow\(null\)/,
-      /setLaunched\(new Set\(\)\)/,
+      /setLaunchError\(null\)/,
       /setTasked\(new Set\(\)\)/,
       /setTaskPending\(new Set\(\)\)/,
       /setDismissed\(false\)/,

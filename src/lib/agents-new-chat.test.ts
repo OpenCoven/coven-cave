@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   AGENTS_NEW_CHAT_EVENT,
+  AGENTS_NEW_RIGHT_CHAT_EVENT,
   PENDING_AGENTS_NEW_CHAT_KEY,
   clearPendingAgentsNewChat,
   consumePendingAgentsNewChat,
+  hasIndependentRightChatProject,
   readPendingAgentsNewChat,
+  resolveRightChatProjectRoot,
   requestAgentsNewChat,
 } from "./agents-new-chat.ts";
 
@@ -17,6 +20,7 @@ type FakeWindow = {
     removeItem: (k: string) => void;
   };
   dispatchEvent: (e: Event) => boolean;
+  open?: (url: string, target: string) => unknown;
 };
 
 function makeWindow(pathname: string) {
@@ -84,6 +88,68 @@ describe("requestAgentsNewChat", () => {
     withWindow(win, () => requestAgentsNewChat({ familiarId: "cody" }));
     assert.deepEqual(assigned, ["/"], "chat opens unprimed rather than not at all");
   });
+
+  it("uses an acknowledged side-panel event, never the main-chat event", () => {
+    const { win, assigned, store } = makeWindow("/");
+    const events: Event[] = [];
+    win.dispatchEvent = (event) => {
+      events.push(event);
+      event.preventDefault();
+      return false;
+    };
+    const request = { destination: "right-panel" as const, familiarId: "sage", initialPrompt: "fix it", projectRoot: "/work" };
+    const result = withWindow(win, () => requestAgentsNewChat(request));
+    assert.equal(result.ok, true);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, AGENTS_NEW_RIGHT_CHAT_EVENT);
+    assert.deepEqual((events[0] as CustomEvent).detail, request);
+    assert.deepEqual(assigned, []);
+    assert.equal(store.size, 0);
+  });
+
+  it("reports an unavailable side-panel listener without navigating", () => {
+    const { win, assigned } = makeWindow("/");
+    const result = withWindow(win, () => requestAgentsNewChat({ destination: "right-panel" }));
+    assert.equal(result.ok, false);
+    assert.deepEqual(assigned, []);
+  });
+
+  it("stages a standalone fix before loading a new tab and preserves its source page", () => {
+    const { win, store, assigned } = makeWindow("/dashboard/familiars/sage/analytics");
+    const handoffs = new Map<string, string>();
+    const navigations: string[] = [];
+    const target = {
+      opener: win as unknown,
+      sessionStorage: { setItem: (key: string, value: string) => handoffs.set(key, value) },
+      location: { replace: (url: string) => { assert.equal(handoffs.size, 1); navigations.push(url); } },
+    };
+    win.open = (url, name) => {
+      assert.equal(url, "about:blank");
+      assert.equal(name, "_blank");
+      return target;
+    };
+    const request = { destination: "right-panel" as const, familiarId: "sage", initialPrompt: "repair" };
+    assert.deepEqual(withWindow(win, () => requestAgentsNewChat(request)), { ok: true, destination: "new-window" });
+    assert.deepEqual(JSON.parse(handoffs.get(PENDING_AGENTS_NEW_CHAT_KEY)!), request);
+    assert.equal(target.opener, null);
+    assert.deepEqual(navigations, ["/"]);
+    assert.deepEqual(assigned, []);
+    assert.equal(store.size, 0, "the analytics page cannot replay the child's request");
+  });
+
+  it("reports popup and storage failures rather than opening an unprimed chat", () => {
+    const { win, assigned } = makeWindow("/familiars/cody/analytics");
+    win.open = () => null;
+    assert.equal(withWindow(win, () => requestAgentsNewChat({ destination: "right-panel" })).ok, false);
+    let closed = false;
+    win.open = () => ({
+      sessionStorage: { setItem: () => { throw new Error("storage denied"); } },
+      close: () => { closed = true; },
+    });
+    assert.equal(withWindow(win, () => requestAgentsNewChat({ destination: "right-panel" })).ok, false);
+    assert.equal(closed, true);
+    assert.deepEqual(assigned, []);
+  });
 });
 
 describe("consumePendingAgentsNewChat", () => {
@@ -93,6 +159,46 @@ describe("consumePendingAgentsNewChat", () => {
     const got = withWindow(win, () => consumePendingAgentsNewChat());
     assert.deepEqual(got, { familiarId: "cody", initialPrompt: "go" });
     assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false, "consumed exactly once");
+  });
+
+  describe("independent fix-thread projects", () => {
+    it("routes explicit and source-thread targets independently, not ordinary main launches", () => {
+      assert.equal(hasIndependentRightChatProject({ destination: "right-panel", projectRoot: "/repo/alpha" }), true);
+      assert.equal(hasIndependentRightChatProject({ destination: "right-panel", sourceSessionId: "source" }), true);
+      assert.equal(hasIndependentRightChatProject({ destination: "right-panel" }), false);
+      assert.equal(hasIndependentRightChatProject({ projectRoot: "/repo/alpha" }), false);
+    });
+
+    it("keeps an explicit project root without resolving a different source", async () => {
+      assert.equal(await resolveRightChatProjectRoot({ projectRoot: "/repo/alpha", sourceSessionId: "old" }), "/repo/alpha");
+    });
+
+    it("resolves the popup's actual source project through the actor-scoped session list", async () => {
+      const previous = globalThis.fetch;
+      globalThis.fetch = async (url) => {
+        assert.equal(String(url), "/api/sessions/list?familiarId=cody");
+        return Response.json({ ok: true, sessions: [{ id: "source", familiarId: "cody", project_root: "/repo/alpha" }] });
+      };
+      try {
+        assert.equal(await resolveRightChatProjectRoot({ familiarId: "cody", sourceSessionId: "source" }), "/repo/alpha");
+      } finally {
+        globalThis.fetch = previous;
+      }
+    });
+
+    it("does not substitute the current project for unavailable or wrong-actor source evidence", async () => {
+      const previous = globalThis.fetch;
+      try {
+        for (const sessions of [[], [{ id: "source", familiarId: "nova", project_root: "/repo/alpha" }], [{ id: "source", familiarId: "cody", project_root: null }]]) {
+          globalThis.fetch = async () => Response.json({ ok: true, sessions });
+          await assert.rejects(resolveRightChatProjectRoot({ familiarId: "cody", sourceSessionId: "source" }), /source thread's project is unavailable/);
+        }
+        globalThis.fetch = async () => Response.json({ ok: false }, { status: 503 });
+        await assert.rejects(resolveRightChatProjectRoot({ familiarId: "cody", sourceSessionId: "source" }), /Couldn't load/);
+      } finally {
+        globalThis.fetch = previous;
+      }
+    });
   });
 
   describe("readPendingAgentsNewChat", () => {
@@ -126,5 +232,17 @@ describe("consumePendingAgentsNewChat", () => {
     store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ projectRoot: { path: "/code/cave" } }));
     assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
     assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false, "invalid field types cannot crash cold boot");
+  });
+
+  it("validates the destination and preserves a pending side-panel prompt until consumption", () => {
+    const { win, store } = makeWindow("/");
+    const request = { familiarId: "cody", destination: "right-panel", initialPrompt: "fix it" };
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify(request));
+    assert.deepEqual(withWindow(win, () => readPendingAgentsNewChat()), request);
+    assert.deepEqual(withWindow(win, () => consumePendingAgentsNewChat()), request);
+    assert.equal(withWindow(win, () => consumePendingAgentsNewChat()), null);
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ destination: "unknown" }));
+    assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
+    assert.equal(store.size, 0);
   });
 });

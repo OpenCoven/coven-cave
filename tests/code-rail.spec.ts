@@ -3,8 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // The code rail (WorkspaceRail) rests CLOSED beside the chat conversation
 // (cave-xsq.7 — the conversation owns the pane); a repo-linked session shows
 // the slim reopen strip instead. The rail opens on demand (strip / pin /
-// explicit focus target) and auto-reveals only on a genuinely observed 0→N
-// edit batch from /api/changes (re-polled on the cave:changes-refresh signal).
+// explicit focus target); fresh edits nudge the pull tab twice without opening.
 // Daemon-less — onboarding dismissed, all endpoints mocked via page.route.
 
 const ISO = "2026-06-12T10:00:00.000Z";
@@ -60,6 +59,15 @@ async function base(page: Page, sessions: unknown[]) {
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: [REPO_PROJECT] } }),
   );
+  await page.route("**/api/daemon/status**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await page.route("**/api/inbox**", (route) =>
+    route.fulfill({ json: { ok: true, items: [], unreadCount: 0 } }),
+  );
   await page.route("**/api/chat/conversation/**", (route) =>
     route.fulfill({
       json: {
@@ -76,11 +84,12 @@ async function base(page: Page, sessions: unknown[]) {
 }
 
 // Mock /api/changes with a mutable file count so the test can flip 0 → N.
-async function routeChanges(page: Page, filesRef: { count: number }) {
+async function routeChanges(page: Page, filesRef: { count: number; insertions?: number }) {
   await page.route("**/api/changes**", (route) => {
     const files = Array.from({ length: filesRef.count }, (_, i) => ({
       path: `src/file-${i}.ts`,
       status: "modified",
+      insertions: filesRef.insertions ?? 1,
     }));
     route.fulfill({ json: { ok: true, repo: true, repoRoot: "/repo/alpha", files } });
   });
@@ -114,8 +123,8 @@ test.describe("code rail beside chat", () => {
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
   });
 
-  test("(b) repo session → rail rests closed with the reopen strip; (c) a fresh 0→N edit batch auto-reveals with the Changes badge; (d) collapse → reopen strip", async ({ page }) => {
-    const filesRef = { count: 0 };
+  test("new code nudges the 28px labeled tab twice without opening; controls stay visible", async ({ page }, testInfo) => {
+    const filesRef = { count: 0, insertions: 1 };
     await routeChanges(page, filesRef);
     const initialChangesResponse = waitForChangesListResponse(page, REPO_PROJECT.root);
     await base(page, [REPO_SESSION]);
@@ -131,11 +140,22 @@ test.describe("code rail beside chat", () => {
     await expect(reopen).toBeVisible({ timeout: 30_000 });
     await expect(reopen).toHaveAttribute("data-change-count", "0");
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
+    await expect(reopen.locator(".workspace-rail-reopen__label")).toHaveText("Code");
+    expect((await reopen.boundingBox())?.width).toBe(28);
+    const cue = reopen.locator(".workspace-rail-reopen__tab");
+    await expect(cue).not.toHaveAttribute("data-notifying", "true");
+    await page.screenshot({ path: testInfo.outputPath("code-pull-tab.png") });
 
-    // (c) A genuinely observed fresh edit batch (the mocked count was a real 0,
-    // now 2 files arrive via the cave:changes-refresh signal) AUTO-REVEALS the
-    // rail with the Changes tab badge showing 2.
     const rail = page.locator(".workspace-rail");
+    await page.evaluate(() => {
+      const events: string[] = [];
+      Object.assign(window, { codeNudgeEvents: events });
+      for (const name of ["animationstart", "animationiteration", "animationend"]) {
+        document.addEventListener(name, (event) => {
+          if ((event as AnimationEvent).animationName === "code-rail-change-nudge") events.push(name);
+        });
+      }
+    });
     filesRef.count = 2;
     const populatedChangesResponse = waitForChangesListResponse(page, REPO_PROJECT.root);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
@@ -143,8 +163,31 @@ test.describe("code rail beside chat", () => {
       ok: true,
       files: [{ path: "src/file-0.ts" }, { path: "src/file-1.ts" }],
     });
+    await expect(reopen).toHaveAttribute("data-change-count", "2");
+    await expect(rail).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, "codeNudgeEvents"))).toEqual([
+      "animationstart", "animationiteration", "animationend",
+    ]);
+    const nonce = await reopen.getAttribute("data-change-nonce");
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect(reopen).toHaveAttribute("data-change-nonce", nonce!);
+    await expect(cue).not.toHaveAttribute("data-notifying", "true");
+    filesRef.insertions = 3;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect(reopen).not.toHaveAttribute("data-change-nonce", nonce!);
+    await expect(rail).toHaveCount(0);
+
+    await reopen.click();
     await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
     await expect(rail.locator(".workspace-rail__badge")).toHaveText("2", { timeout: 15_000 });
+    await expect(rail.getByRole("button", { name: "Changes", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.move(0, 0);
+    for (const name of ["Pin code rail open", "Expand code rail fullscreen", "Collapse code rail"]) {
+      const control = rail.getByRole("button", { name, exact: true });
+      await expect(control).toBeVisible();
+      await expect(control).toHaveCSS("opacity", "1");
+    }
+    await page.screenshot({ path: testInfo.outputPath("code-header-controls.png") });
 
     // (d) Collapsing hides the rail and surfaces the slim reopen strip.
     await rail.getByRole("button", { name: "Collapse code rail" }).click();
@@ -154,6 +197,27 @@ test.describe("code rail beside chat", () => {
     // And the strip reopens the rail.
     await reopen.click();
     await expect(page.locator(".workspace-rail")).toBeVisible();
+  });
+
+  test("reduced motion keeps new-code indication static in a light non-default theme", async ({ page }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const filesRef = { count: 0 };
+    await routeChanges(page, filesRef);
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+    const reopen = page.locator(".workspace-rail-reopen");
+    await expect(reopen).toHaveAttribute("data-change-count", "0");
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "tide";
+      document.documentElement.dataset.mode = "light";
+    });
+    filesRef.count = 1;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
+    await expect(reopen).toHaveAttribute("data-change-count", "1");
+    await expect(reopen.locator(".workspace-rail-reopen__tab")).toHaveCSS("animation-name", "none");
+    await expect(page.locator(".workspace-rail")).toHaveCount(0);
+    expect((await reopen.boundingBox())?.width).toBe(28);
+    await page.screenshot({ path: testInfo.outputPath("code-pull-tab-tide-light.png") });
   });
 
   test("(e) Files tab → project tree + read-only preview", async ({ page }) => {
@@ -303,7 +367,7 @@ test.describe("code rail beside chat", () => {
     const rail = page.locator(".workspace-rail");
     await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
 
-    await rail.getByRole("button", { name: "Changes" }).click();
+    await rail.getByRole("button", { name: "Changes", exact: true }).click();
     const review = rail.getByRole("button", { name: "Review changes in a new session" });
     await expect(review).toBeVisible({ timeout: 15_000 });
     await expect(review).toBeEnabled();

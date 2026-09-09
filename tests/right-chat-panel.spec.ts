@@ -284,6 +284,211 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
   await expect(toggle).toBeFocused();
 });
 
+async function bootFixThread(page: Page, options: { selectedProjectId?: string | null; denyNovaAlpha?: boolean } = {}) {
+  const selectedProjectId = options.selectedProjectId === undefined ? "fix-project" : options.selectedProjectId;
+  const sends: Array<Record<string, unknown>> = [];
+  const projectAuthorityReads: Array<string | null> = [];
+  let sessionListReads = 0;
+  const report = {
+    id: "fix-thread-report",
+    familiarId: "cody",
+    sessionId: "cody-new",
+    threadTitle: "Newest Cody chat",
+    reportedAt: "2026-09-09T00:00:00.000Z",
+    overallConfidence: 90,
+    overallConfidenceReason: "One tool needs repair.",
+    toolReliability: { score: 90, failedTools: [], unreliableTools: [] },
+    contextPressure: "adequate",
+    skillsUsed: [],
+    skillsNeedingClarity: [],
+    skillsNeedingAccess: [],
+    capabilitiesLacking: [],
+    capabilitiesVital: [],
+    memoryRecallScore: 90,
+    fileLocatabilityScore: 90,
+    persistentBlockers: [{
+      id: "lookup",
+      title: "Broken lookup",
+      category: "tooling",
+      impact: "blocking",
+      detail: "The lookup tool cannot find project files.",
+    }],
+  };
+  const fixtureSessionId = "fix-thread-new";
+  const fixtureReply = "Fix response complete.";
+  await page.addInitScript(({ selectedProjectId }) => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    localStorage.setItem("cave:active-familiar", "cody");
+    localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify(selectedProjectId));
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "fix-project": ["cody"], "__all-projects__": ["cody"] }));
+    localStorage.setItem("cave:shell:right-chat-open", "0");
+    localStorage.setItem("cave:shell:right-chat-width", "360");
+  }, { selectedProjectId });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: FAMILIARS } }));
+  await page.route("**/api/projects**", (route) => {
+    const familiarId = new URL(route.request().url()).searchParams.get("familiarId");
+    projectAuthorityReads.push(familiarId);
+    const projects = [
+      { id: "fix-project", name: "Fix project", root: "/repo", access: "write" },
+      { id: "alpha", name: "Alpha", root: "/repo/alpha", access: "write" },
+    ].filter((project) => !(options.denyNovaAlpha && familiarId === "nova" && project.id === "alpha"));
+    return route.fulfill({ json: { ok: true, projects } });
+  });
+  await page.route("**/api/sessions/list**", (route) => {
+    sessionListReads += 1;
+    const fixSessions = sends.length ? [{
+      ...sessions[0],
+      id: fixtureSessionId,
+      title: "Fix thread",
+      familiarId: sends[0].familiarId,
+      project_root: sends[0].projectRoot,
+      updated_at: "2026-09-09T00:00:00.000Z",
+    }] : [];
+    return route.fulfill({ json: { ok: true, sessions: [...sessions, ...fixSessions] } });
+  });
+  await page.route("**/api/chat/conversation**", (route) => {
+    if (route.request().method() !== "GET") return route.fulfill({ json: { ok: true } });
+    const isFix = route.request().url().includes(fixtureSessionId);
+    return route.fulfill({
+      json: {
+        ok: true,
+        conversation: {
+          sessionId: isFix ? fixtureSessionId : "cody-new",
+          familiarId: isFix ? sends[0]?.familiarId : "cody",
+          activeLeafId: "assistant-fixture",
+          turns: [
+            { id: "user-fixture", parentId: null, role: "user", text: isFix ? sends[0]?.prompt : "Keep this main conversation.", createdAt: report.reportedAt },
+            { id: "assistant-fixture", parentId: "user-fixture", role: "assistant", text: isFix ? fixtureReply : "Main conversation stays here.", createdAt: report.reportedAt },
+          ],
+        },
+      },
+    });
+  });
+  await page.route("**/api/chat/model-state**", (route) =>
+    route.fulfill({ json: { ok: true, state: { harness: "copilot", effectiveModel: "unknown", source: "runtime-default", applicationState: "saved", reason: "e2e" } } }));
+  await page.route("**/api/chat/generate/enhance", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: `data: ${JSON.stringify({ kind: "assistant_chunk", text: JSON.stringify(report) })}\n\ndata: {"kind":"done"}\n\n`,
+    }));
+  await page.route("**/api/familiars/cody/self-report", (route) =>
+    route.fulfill({ json: { ok: true, report } }));
+  await page.route("**/api/chat/send", (route) => {
+    sends.push(route.request().postDataJSON());
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body: [
+        { kind: "assistant_chunk", text: fixtureReply },
+        { kind: "done", sessionId: fixtureSessionId },
+      ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
+    });
+  });
+  await page.goto("/?mode=chat#chat-cody-new", { waitUntil: "domcontentloaded" });
+  const main = page.getByTestId("chat-main");
+  await expect(main.getByText("Main conversation stays here.", { exact: true })).toBeVisible({ timeout: 45_000 });
+  await main.getByRole("textbox", { name: "Message", exact: true }).fill("Unsent main draft");
+  return { sends, main, projectAuthorityReads, sessionListReads: () => sessionListReads, fixtureSessionId, fixtureReply };
+}
+
+test("fix-thread popup opens sidechat and sends once without replacing main Chat", async ({ page }, testInfo) => {
+  test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
+  const fixture = await bootFixThread(page, { selectedProjectId: null });
+  await page.mouse.move(0, 0);
+  await expect(fixture.main.getByRole("button", { name: "Delete this chat", exact: true })).toHaveCSS("opacity", "1");
+  await expect(fixture.main.locator(".voice-call-button")).not.toHaveClass(/reveal-on-hover/);
+  await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
+  const card = page.getByRole("article", { name: "Thread Signal" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: /Broken lookup/ }).click();
+  await card.getByRole("button", { name: "Fix in new thread", exact: true }).click();
+
+  const panel = page.locator(".right-chat").first();
+  await expect(panel).toHaveAttribute("aria-hidden", "false");
+  await expect.poll(() => fixture.sends.length).toBe(1);
+  expect(fixture.sends[0]).toMatchObject({ familiarId: "cody", projectRoot: "/repo" });
+  expect(fixture.sends[0].prompt).toContain("Broken lookup");
+  expect(fixture.sends[0].prompt).toContain("Source: self-report from thread cody-new.");
+  expect(fixture.sends[0].sessionId).not.toBe("cody-new");
+  await expect(panel.getByText(fixture.fixtureReply, { exact: true })).toBeVisible();
+  await expect(fixture.main.getByText("Main conversation stays here.", { exact: true })).toBeVisible();
+  await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+  await expect(page).toHaveURL(/#chat-cody-new$/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:workspace:project-scope:v1") ?? "null"))).toBeNull();
+
+  const reads = fixture.sessionListReads();
+  await panel.getByRole("button", { name: "Close Chat panel", exact: true }).click();
+  await page.getByRole("button", { name: "Open Chat panel", exact: true }).click();
+  await expect(panel).toHaveAttribute("aria-hidden", "false");
+  await expect.poll(fixture.sessionListReads).toBeGreaterThan(reads);
+  await expect(panel).toHaveAttribute("data-session-id", fixture.fixtureSessionId);
+  expect(fixture.sends).toHaveLength(1);
+  await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+  await page.screenshot({ path: testInfo.outputPath("fix-thread-preserves-main.png") });
+});
+
+test("fix-thread bridge retains the requested actor when main Chat belongs to another familiar", async ({ page }, testInfo) => {
+  test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
+  const fixture = await bootFixThread(page);
+  const acknowledged = await page.evaluate(() => {
+    const event = new CustomEvent("cave:agents-new-right-chat", {
+      cancelable: true,
+      detail: { destination: "right-panel", familiarId: "nova", initialPrompt: "Repair Nova's lookup without replacing Cody.", origin: "chat" },
+    });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(acknowledged).toBe(true);
+  await expect.poll(() => fixture.sends.length).toBe(1);
+  expect(fixture.sends[0]).toMatchObject({
+    familiarId: "nova",
+    projectRoot: "/repo",
+    prompt: "Repair Nova's lookup without replacing Cody.",
+  });
+  const panel = page.locator(".right-chat").first();
+  await expect(panel.getByText(fixture.fixtureReply, { exact: true })).toBeVisible();
+  await expect(fixture.main.getByText("Main conversation stays here.", { exact: true })).toBeVisible();
+  await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+  await expect(page).toHaveURL(/#chat-cody-new$/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:workspace:familiar-scope-by-project:v1") ?? "{}")["fix-project"])).toEqual(["cody"]);
+  expect(fixture.sends).toHaveLength(1);
+});
+
+for (const selectedProjectId of [null, "fix-project"]) {
+  test(`fix-thread explicit target authorizes Alpha without replacing ${selectedProjectId ?? "All projects"} scope`, async ({ page }, testInfo) => {
+    test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
+    const fixture = await bootFixThread(page, { selectedProjectId });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-right-chat", {
+      cancelable: true,
+      detail: { destination: "right-panel", familiarId: "nova", projectRoot: "/repo/alpha", initialPrompt: "Fix Alpha independently.", origin: "chat" },
+    })));
+    await expect.poll(() => fixture.sends.length).toBe(1);
+    expect(fixture.sends[0]).toMatchObject({ familiarId: "nova", projectRoot: "/repo/alpha", prompt: "Fix Alpha independently." });
+    expect(fixture.projectAuthorityReads).toContain("nova");
+    await expect(page.locator(".right-chat").first().getByText(fixture.fixtureReply, { exact: true })).toBeVisible();
+    await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+    await expect(page).toHaveURL(/#chat-cody-new$/);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:workspace:project-scope:v1") ?? "null"))).toBe(selectedProjectId);
+    expect(fixture.sends).toHaveLength(1);
+  });
+}
+
+test("fix-thread explicit target fails closed when the requested actor lacks that project's grant", async ({ page }, testInfo) => {
+  test.skip(!["desktop", "webkit"].includes(testInfo.project.name));
+  const fixture = await bootFixThread(page, { selectedProjectId: null, denyNovaAlpha: true });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-right-chat", {
+    cancelable: true,
+    detail: { destination: "right-panel", familiarId: "nova", projectRoot: "/repo/alpha", initialPrompt: "Unauthorized fix.", origin: "chat" },
+  })));
+  await expect(page.locator(".inbox-toast-stack").getByText("This familiar cannot access the fix thread's project. Grant access and try again.", { exact: true })).toBeVisible();
+  expect(fixture.projectAuthorityReads).toContain("nova");
+  expect(fixture.sends).toHaveLength(0);
+  await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+  await expect(page).toHaveURL(/#chat-cody-new$/);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:workspace:project-scope:v1") ?? "null"))).toBeNull();
+});
+
 test("tablet-width right drawer keeps a genuinely pointer-reachable backdrop", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "tablet");
   await boot(page);
