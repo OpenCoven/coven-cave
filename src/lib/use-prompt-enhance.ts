@@ -346,7 +346,7 @@ export function usePromptEnhance({
     handledRecommendationRef.current = null;
     requestRef.current = {
       baseDraft,
-      originalDraft: draftRef.current,
+      originalDraft: draftOverride ?? draftRef.current,
       intent,
       applyDraft: transformEnhancedRef.current ?? ((value) => value),
     };

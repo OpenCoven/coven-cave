@@ -34,7 +34,7 @@ assert.match(
 );
 assert.match(
   source,
-  /originalDraft: draftRef\.current,[\s\S]*?applyDraft: transformEnhancedRef\.current \?\? \(\(value\) => value\)/,
+  /originalDraft: draftOverride \?\? draftRef\.current,[\s\S]*?applyDraft: transformEnhancedRef\.current \?\? \(\(value\) => value\)/,
   "each enhance request snapshots the full original draft and the apply transform it started with",
 );
 assert.match(
