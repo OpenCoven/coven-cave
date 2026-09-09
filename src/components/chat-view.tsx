@@ -8286,18 +8286,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
-          {!offlineReadOnly && shouldShowChatArchiveNudge({
-            taskLifecycle: linkedContext?.task?.lifecycle ?? null,
-            sessionArchived: Boolean(session?.archived_at),
-            dismissed: archiveNudgeDismissed,
-          }) ? (
-            <ChatArchiveNudge
-              taskTitle={linkedContext?.task?.title ?? ""}
-              onArchive={() => void setChatArchived(true)}
-              onDismiss={dismissArchiveNudge}
-              archiving={archiving}
-            />
-          ) : null}
           <div ref={tailRef} />
         </div>
 
@@ -8463,6 +8451,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
+      {!offlineReadOnly && shouldShowChatArchiveNudge({
+        taskLifecycle: linkedContext?.task?.lifecycle ?? null,
+        sessionArchived: Boolean(session?.archived_at),
+        dismissed: archiveNudgeDismissed,
+        sessionBusy: busy || autoMissionActive || voiceCallOpen || session?.status === "running",
+      }) ? (
+        <ChatArchiveNudge
+          taskTitle={linkedContext?.task?.title ?? ""}
+          onArchive={() => void setChatArchived(true)}
+          onDismiss={dismissArchiveNudge}
+          archiving={archiving}
+        />
+      ) : null}
       {inlineComposer ? null : showDockedComposer ? composerNode : null}
       {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
