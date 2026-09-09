@@ -46,6 +46,11 @@ xcodebuild -project CovenCave.xcodeproj -scheme CovenCave \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 ```
 
+Markdown resources include `markdown.html`, `markdown.css`, and the lazy
+`markdown-mermaid.js` diagram engine. All three are packaged locally; ordinary
+replies and streaming diagram placeholders do not load the diagram engine.
+Settled diagrams load it once per renderer without requiring a network connection.
+
 ⚠️ **`cannot find type <Something> in scope` means a stale `.xcodeproj`, not a
 code bug.** `xcodegen` SCANS the source directory, so a project generated before
 a Swift file was added simply does not contain it — the file is on disk, in git,

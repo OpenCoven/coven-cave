@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-09
+
+> Reduces native iOS chat startup work and releases detached message renderers.
+
+Patch release on top of v0.4.1, focused on the urgent iOS responsiveness repair.
+
+### Fixed
+- Reduce ordinary iOS chat renderer startup JavaScript from 3.6 MB to about
+  160 KB by loading the bundled diagram engine only for completed diagrams
+  (#5350). This is a payload reduction, not a measured device-latency percentage.
+- Release detached iOS message renderers and ignore callbacks after teardown
+  while preserving streamed-response recovery (#5324).
+- Restore reliable chat prompt enhancement and make protocol conformance
+  probes portable across supported platforms.
+
+### Changed
+- Deliver visual comparisons without depending on session-owned servers.
+- Update Next.js, Sharp, and Vitest patch dependencies.
+- Advance release metadata to 0.4.2 and the iOS build to 2026090912.
+
 ## [0.4.1] - 2026-09-09
 
 > Makes assistant responses easier to read in native iOS chat.
