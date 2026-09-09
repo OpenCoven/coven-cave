@@ -108,41 +108,43 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
 
     @MainActor
     func testSwiftUIUnmountCallsProductionDismantle() async throws {
-        let host = UIHostingController(rootView: AnyView(
+        var host: UIHostingController<AnyView>? = UIHostingController(rootView: AnyView(
             MarkdownWebView(markdown: "Lifecycle probe", height: .constant(100))
         ))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
-        window.rootViewController = host
-        window.isHidden = false
-        defer {
-            window.isHidden = true
-            window.rootViewController = nil
-        }
-        host.view.setNeedsLayout()
-        host.view.layoutIfNeeded()
+        var window: UIWindow? = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window?.rootViewController = host
+        window?.isHidden = false
+        let hostingView = try XCTUnwrap(host?.view)
+        hostingView.setNeedsLayout()
+        hostingView.layoutIfNeeded()
         let clock = ContinuousClock()
         let mountDeadline = clock.now.advanced(by: .seconds(5))
-        while findWebView(in: host.view) == nil, clock.now < mountDeadline {
+        while findWebView(in: hostingView) == nil, clock.now < mountDeadline {
             try await Task.sleep(for: .milliseconds(10))
-            host.view.layoutIfNeeded()
+            hostingView.layoutIfNeeded()
         }
-        let webView = try XCTUnwrap(findWebView(in: host.view))
+        let webView = try XCTUnwrap(findWebView(in: hostingView))
         var coordinator: MarkdownWebView.Coordinator? = try XCTUnwrap(
             webView.navigationDelegate as? MarkdownWebView.Coordinator
         )
         weak var observed = coordinator
 
-        host.rootView = AnyView(EmptyView())
-        host.view.setNeedsLayout()
-        host.view.layoutIfNeeded()
+        host?.rootView = AnyView(EmptyView())
+        hostingView.setNeedsLayout()
+        hostingView.layoutIfNeeded()
         let unmountDeadline = clock.now.advanced(by: .seconds(5))
         while coordinator?.isInvalidated == false, clock.now < unmountDeadline {
             try await Task.sleep(for: .milliseconds(10))
-            host.view.layoutIfNeeded()
+            hostingView.layoutIfNeeded()
         }
         XCTAssertEqual(coordinator?.isInvalidated, true)
         XCTAssertNil(webView.navigationDelegate)
         coordinator = nil
+        window?.isHidden = true
+        window?.rootViewController = nil
+        window = nil
+        host = nil
+        await drainMainQueue()
         let releaseDeadline = clock.now.advanced(by: .seconds(5))
         while observed != nil, clock.now < releaseDeadline {
             try await Task.sleep(for: .milliseconds(10))
