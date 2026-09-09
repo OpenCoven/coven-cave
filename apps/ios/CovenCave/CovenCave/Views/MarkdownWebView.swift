@@ -92,6 +92,7 @@ struct MarkdownWebView: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
         let c = context.coordinator
+        guard !c.isInvalidated else { return }
         c.onHeight = { h in if abs(h - height) > 0.5 { height = h } }
         c.onFailure = onFailure
         c.onHeadings = onHeadings
@@ -101,6 +102,25 @@ struct MarkdownWebView: UIViewRepresentable {
         c.applyScroll(scrollCommand)
     }
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.invalidate()
+    }
+
+    /// WKUserContentController retains registered handlers. Forward weakly so
+    /// that keeping WebKit's configuration alive cannot keep the row alive.
+    private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+        weak var target: (any WKScriptMessageHandler)?
+
+        init(target: any WKScriptMessageHandler) {
+            self.target = target
+            super.init()
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            target?.userContentController(controller, didReceive: message)
+        }
+    }
+
     @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let webView: WKWebView
@@ -108,12 +128,18 @@ struct MarkdownWebView: UIViewRepresentable {
         var onFailure: (() -> Void)?
         var onHeadings: (([ReaderHeading]) -> Void)?
 
+        private(set) var isInvalidated = false
+        private var callbackGeneration: UInt64 = 0
+        private var throttleTask: Task<Void, Never>?
+        private var imageTask: Task<Void, Never>?
+        private var imageGeneration: UInt64 = 0
+        private var renderSpan: CavePerformanceSpan?
+
         private var ready = false
         private var failed = false
         private var failedReported = false
         private var pending: String?
         private var rendering = false
-        private var throttleScheduled = false
         private var lastRenderSignature: MarkdownRenderSignature?
         private var lastStyleSignature: MarkdownStyleSignature?
         private var lastScrollToken: Int?
@@ -138,7 +164,7 @@ struct MarkdownWebView: UIViewRepresentable {
             config.userContentController = userContentController
             webView = WKWebView(frame: .zero, configuration: config)
             super.init()
-            userContentController.add(self, name: "cave")
+            userContentController.add(WeakScriptMessageHandler(target: self), name: "cave")
             webView.navigationDelegate = self
             webView.isOpaque = false
             webView.backgroundColor = .clear
@@ -156,7 +182,48 @@ struct MarkdownWebView: UIViewRepresentable {
             }
         }
 
+        /// Terminal and idempotent. Cancellation fences native publication;
+        /// it does not pretend to synchronously abort WebKit JavaScript.
+        func invalidate() {
+            guard !isInvalidated else { return }
+            isInvalidated = true
+            callbackGeneration &+= 1
+            stopPendingWork()
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "cave")
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            onHeight = nil
+            onFailure = nil
+            onHeadings = nil
+            lastRenderSignature = nil
+            lastStyleSignature = nil
+            lastScrollToken = nil
+        }
+
+        private func stopPendingWork() {
+            ready = false
+            pending = nil
+            rendering = false
+            throttleTask?.cancel()
+            throttleTask = nil
+            imageTask?.cancel()
+            imageTask = nil
+            imageGeneration &+= 1
+            if renderSpan != nil {
+                performanceRecorder.increment("markdown.render.cancelled")
+            }
+            finishRenderSpan()
+            finishRendererAcquisition()
+            webView.stopLoading()
+        }
+
+        private func finishRenderSpan() {
+            performanceRecorder.end(renderSpan)
+            renderSpan = nil
+        }
+
         func setScrollable(_ on: Bool) {
+            guard !isInvalidated, !failed else { return }
             if webView.scrollView.isScrollEnabled != on {
                 webView.scrollView.isScrollEnabled = on
                 webView.scrollView.bounces = on
@@ -164,6 +231,7 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         func apply(markdown md: String, streaming: Bool, fontScale: CGFloat, theme: ReaderTheme, accentHex: String?, reader: Bool) {
+            guard !isInvalidated else { return }
             opts = Opts(streaming: streaming, fontScale: fontScale, theme: theme, accentHex: accentHex, reader: reader)
             if failed { reportFailure(); return }
             // Markdown / streaming / reader changes need a full re-render; a pure
@@ -187,15 +255,15 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         func applyScroll(_ cmd: ReaderScrollCommand?) {
-            guard let cmd, cmd.token != lastScrollToken else { return }
+            guard !isInvalidated, let cmd, cmd.token != lastScrollToken else { return }
             lastScrollToken = cmd.token
-            guard ready, !failed else { return }
+            guard ready, !failed, !isInvalidated else { return }
             webView.evaluateJavaScript("window.caveScrollToHeading && window.caveScrollToHeading(\(cmd.index))",
                                        completionHandler: nil)
         }
 
         private func applyStyleOnly() {
-            guard ready, !failed else { return }
+            guard ready, !failed, !isInvalidated else { return }
             let o = opts
             let accent = o.accentHex.map { "'\($0)'" } ?? "null"
             let js = "window.caveStyle && window.caveStyle({fontScale:\(Double(o.fontScale)),theme:'\(o.theme.rawValue)',accent:\(accent),reader:\(o.reader)})"
@@ -203,75 +271,94 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         private func requestRender() {
+            guard !isInvalidated, !failed else { return }
             if opts.streaming {
-                // Coalesce streaming deltas: render the latest pending markdown at
-                // most every ~150 ms (the heavy pipeline can't run per token).
-                guard !throttleScheduled else { return }
-                throttleScheduled = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    guard let self else { return }
-                    self.throttleScheduled = false
+                // Keep one cancellable throttle, never one task per delta.
+                guard throttleTask == nil else { return }
+                let generation = callbackGeneration
+                throttleTask = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(150)) }
+                    catch { return }
+                    guard let self, !Task.isCancelled,
+                          !self.isInvalidated, !self.failed,
+                          self.callbackGeneration == generation else { return }
+                    self.throttleTask = nil
                     self.flush()
                 }
             } else {
+                // Settled text flushes immediately instead of waiting for the
+                // streaming timer, which must not fire a second render later.
+                throttleTask?.cancel()
+                throttleTask = nil
                 flush()
             }
         }
 
         private func flush() {
-            guard ready, !rendering, let md = pending else { return }
+            guard !isInvalidated, !failed, ready, !rendering, let md = pending else { return }
             pending = nil
             rendering = true
             let o = opts
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    let spanName = o.streaming ? "markdown.render.streaming" : "markdown.render.settled"
-                    let value = try await self.performanceRecorder.measure(spanName) {
-                        try await self.webView.callAsyncJavaScript(
-                            "if (typeof window.caveRender !== 'function') throw new Error('caveRender unavailable'); await window.caveRender(md, opts); return Math.ceil(document.body.getBoundingClientRect().height);",
-                            arguments: [
-                                "md": md,
-                                "opts": [
-                                    "streaming": o.streaming,
-                                    "fontScale": Double(o.fontScale),
-                                    "theme": o.theme.rawValue,
-                                    "accent": o.accentHex ?? "",
-                                    "reader": o.reader,
-                                ],
-                            ],
-                            contentWorld: .page
-                        )
-                    }
-                    if let h = value as? Double, h > 0 {
+            let generation = callbackGeneration
+            let spanName = o.streaming ? "markdown.render.streaming" : "markdown.render.settled"
+            renderSpan = performanceRecorder.begin(spanName)
+            // The completion API deliberately holds only a weak coordinator.
+            // An async Task that promotes self before awaiting JavaScript keeps
+            // the coordinator/WebView alive even after the row is dismantled.
+            webView.callAsyncJavaScript(
+                "if (typeof window.caveRender !== 'function') throw new Error('caveRender unavailable'); await window.caveRender(md, opts); return Math.ceil(document.body.getBoundingClientRect().height);",
+                arguments: [
+                    "md": md,
+                    "opts": [
+                        "streaming": o.streaming,
+                        "fontScale": Double(o.fontScale),
+                        "theme": o.theme.rawValue,
+                        "accent": o.accentHex ?? "",
+                        "reader": o.reader,
+                    ],
+                ],
+                in: nil,
+                in: .page
+            ) { [weak self] result in
+                guard let self, !self.isInvalidated, !self.failed,
+                      self.callbackGeneration == generation else { return }
+                self.finishRenderSpan()
+                self.rendering = false
+                switch result {
+                case .success(let value):
+                    if let h = value as? Double, h.isFinite, h > 0 {
                         self.onHeight?(CGFloat(h))
                     } else if !o.streaming {
-                        // A settled reply that produced no height is a real failure;
-                        // mid-stream transients are expected, so don't fall back then.
                         self.reportFailure()
+                        return
                     }
-                } catch {
-                    if !o.streaming { self.reportFailure() }
+                case .failure:
+                    self.reportFailure()
+                    return
                 }
-                self.rendering = false
-                // Deltas that arrived while this render was in flight: render again.
                 if self.pending != nil { self.requestRender() }
             }
         }
 
         private func reportFailure() {
-            guard !failedReported else { return }
+            guard !isInvalidated, !failedReported else { return }
             failedReported = true
             failed = true
-            finishRendererAcquisition()
+            callbackGeneration &+= 1
+            let generation = callbackGeneration
+            stopPendingWork()
             // Defer past the current SwiftUI update cycle — `apply()` runs inside
             // `updateUIView`, and mutating the caller's @State synchronously there
             // is dropped ("Modifying state during view update").
-            let callback = onFailure
-            DispatchQueue.main.async { callback?() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isInvalidated,
+                      self.callbackGeneration == generation else { return }
+                self.onFailure?()
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard !isInvalidated, !failed else { return }
             ready = true
             finishRendererAcquisition()
             flush()
@@ -289,18 +376,25 @@ struct MarkdownWebView: UIViewRepresentable {
             reportFailure()
         }
 
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // Fail to the caller's readable fallback once, never auto-reload a
+            // terminated renderer into a memory-pressure/reload loop.
+            reportFailure()
+        }
+
         private func finishRendererAcquisition() {
             performanceRecorder.end(rendererAcquisitionSpan)
             rendererAcquisitionSpan = nil
         }
 
         nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            Task { @MainActor in
-                guard let body = message.body as? [String: Any],
+            Task { @MainActor [weak self] in
+                guard let self, !self.isInvalidated, !self.failed,
+                      let body = message.body as? [String: Any],
                       let type = body["type"] as? String else { return }
                 switch type {
                 case "height":
-                    if let h = body["height"] as? Double { self.onHeight?(CGFloat(h)) }
+                    if let h = body["height"] as? Double, h.isFinite, h > 0 { self.onHeight?(CGFloat(h)) }
                 case "headings":
                     if let arr = body["headings"] as? [[String: Any]] {
                         let hs: [ReaderHeading] = arr.compactMap { d in
@@ -331,6 +425,7 @@ struct MarkdownWebView: UIViewRepresentable {
         /// A tapped table / Mermaid diagram / inline image, or an expanded code
         /// block — hand it to the full-screen zoom surface.
         private func handleEnlarge(_ body: [String: Any]) {
+            guard !isInvalidated, !failed else { return }
             let kind = body["kind"] as? String
             switch kind {
             case "code":
@@ -353,6 +448,12 @@ struct MarkdownWebView: UIViewRepresentable {
         /// zoom (pinch/pan/double-tap), matching attachment behaviour. Falls back
         /// to the HTML zoom for data we can't decode (relative paths, failures).
         private func presentImage(src: String?, fallbackHTML: String) {
+            guard !isInvalidated, !failed else { return }
+            imageTask?.cancel()
+            imageTask = nil
+            imageGeneration &+= 1
+            let requestGeneration = imageGeneration
+            let generation = callbackGeneration
             if let src, !src.isEmpty {
                 if let img = UIImage.fromDataUrl(src) {
                     ContentZoom.image(img)
@@ -360,9 +461,14 @@ struct MarkdownWebView: UIViewRepresentable {
                 }
                 if let url = URL(string: src), let scheme = url.scheme,
                    scheme == "http" || scheme == "https" {
-                    Task { @MainActor in
-                        if let (data, _) = try? await URLSession.shared.data(from: url),
-                           let img = UIImage(data: data) {
+                    imageTask = Task { @MainActor [weak self] in
+                        let response = try? await URLSession.shared.data(from: url)
+                        guard let self, !Task.isCancelled,
+                              !self.isInvalidated, !self.failed,
+                              self.callbackGeneration == generation,
+                              self.imageGeneration == requestGeneration else { return }
+                        self.imageTask = nil
+                        if let (data, _) = response, let img = UIImage(data: data) {
                             ContentZoom.image(img)
                         } else if !fallbackHTML.isEmpty {
                             ContentZoom.html(fallbackHTML)
