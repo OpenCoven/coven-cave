@@ -76,8 +76,13 @@ reconciled development-signed Release test build succeeded with arm64 UUID
 All 102 mobile test files, 2,007-file test wiring, frozen installation, typecheck,
 and lint passed. All 35 focused native Release simulator tests passed: 21
 performance-recorder, 11 renderer-lifecycle, and three packaged-renderer tests.
-A fresh physical-device probe reports `passcodeRequired: true`;
-unlock the device before testing or recording this binary.
+The unlocked physical iPhone also passed those 35 native Release tests.
+Three isolated five-visit rich-render UI journeys passed with the test-only
+capture attachment pause. The latest used a verified wired connection; its
+trace must finish saving and export before these visits can count toward the
+latency baseline. Earlier capture attempts stalled during remote symbol
+processing. One subsequent UI-runner startup timed out enabling automation;
+the next retry started successfully and passed.
 
 ### Stable spans
 
@@ -129,7 +134,7 @@ The records are distributed across 20 projects. A selected project therefore
 renders approximately 50 chats, tasks, and sessions, while global search and
 project projection still traverse the full fixture.
 
-### Physical Release evidence
+### Historical physical Release evidence (before v0.4.2)
 
 Target:
 
@@ -144,7 +149,8 @@ Target:
 | Desktop endpoint | None; deterministic fixture mode |
 | Transport | CoreDevice `localNetwork`; tunnel connected |
 
-The development-signed Release binary above passed 36 focused tests on this
+The earlier development-signed Release binary, UUID
+`9E3098E2-88F8-3764-964C-C29531B903B8`, passed 36 focused tests on this
 device (32 native and four UI tests). The usable trace was recorded from
 07:09:19.017 to 07:12:29.959 CDT on 2026-09-09 and ended with `User pressed Stop`,
 not a device disconnection.
@@ -206,6 +212,50 @@ When `xcrun xctrace list devices` reports the iPhone as online, use
 the isolated journeys. Keep cold and warm runs separate, preserve the raw
 `.trace` bundles, exclude `phase=cancel`, and report count, median, p95, and
 maximum from completed intervals only.
+
+### Isolated capture procedure (under validation)
+
+Start Instruments after the XCTest UI runner has started, and before the
+fixture app launches. Starting the recording before runner installation can
+lose the device connection. An earlier Deferred recording listed several
+completed app processes but exported signposts only for the final process; the
+cause is not established.
+
+The UI tests accept an optional `CAVE_PERFORMANCE_CAPTURE_DELAY_SECONDS`
+runner environment variable. It defaults to no delay and accepts finite values
+between 0 and 60 seconds, exclusive of 0. This test-only pause precedes
+`XCUIApplication.launch()` and is outside all measured app intervals.
+
+For a prepared Release test build, copy its `.xctestrun` file alongside the
+original in `Build/Products`, then set the UI runner environment:
+
+```python
+import plistlib
+from pathlib import Path
+
+products = Path("build-device/Build/Products")
+plans = list(products.glob("CovenCave_*.xctestrun"))
+assert len(plans) == 1
+plan = plistlib.loads(plans[0].read_bytes())
+plan["CovenCaveUITests"].setdefault("EnvironmentVariables", {})[
+    "CAVE_PERFORMANCE_CAPTURE_DELAY_SECONDS"
+] = "40"
+(products / "CovenCave-capture.xctestrun").write_bytes(plistlib.dumps(plan))
+```
+
+Use `xcodebuild test-without-building -xctestrun` with that copy and exactly
+one `-only-testing:CovenCaveUITests/PerformanceBaselineUITests/<method>`.
+When `PERFORMANCE_CAPTURE_READY` appears in its log, start the chosen
+signpost-capable Instruments configuration before the 40-second pause ends.
+A signpost-only configuration avoids CPU sampling, but trace finalization may
+still perform remote symbol processing. Blank plus Points of Interest and a
+custom Immediate `os_signpost` template both entered that stage locally;
+neither is yet a validated replacement capture recipe. Use the same verified
+configuration for each reported latency journey; collect CPU profiles
+separately. Wait for the journey to pass, stop Instruments, and wait for the
+trace to save before launching the next journey. Export and inspect
+actual completed span counts; successful UI assertions alone are not timing
+evidence. Keep the raw trace and generated test plan private.
 
 ### Simulator journey evidence
 
