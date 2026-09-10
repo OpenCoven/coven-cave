@@ -51,9 +51,9 @@ export function extractChatRenderedText(
   text: string,
   options: { pending?: boolean } = {},
 ): ChatRenderedTextProjection {
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);
-  const approveSplit = protectApproveMarkers(reasoningSplit.visible);
-  const skillSplit = extractSkillMarkers(approveSplit.text);
+  const approveSplit = protectApproveMarkers(extractAgentAttachmentMarkers(text).text);
+  const reasoningSplit = splitReasoning(approveSplit.text);
+  const skillSplit = extractSkillMarkers(reasoningSplit.visible);
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {
     pending: Boolean(options.pending),
@@ -74,7 +74,7 @@ export function extractChatRenderedText(
       false,
     ),
     cardText: approveSplit.restore(stripIncompletePreviewMarker(cardSource), true),
-    inlineReasoning: reasoningSplit.reasoning,
+    inlineReasoning: approveSplit.restore(reasoningSplit.reasoning, true),
     skillUpdates: skillSplit.updates,
     researchRuns: researchSplit.runs,
     autoStatusUpdate: autoStatusSplit.update,

@@ -16,7 +16,7 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(approveSplit\.text\);/,
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
   "the shared projection extracts skill markers on both streaming and settled paths",
 );
 // Pinned as a flow, not a call site: marker extractors keep being inserted
@@ -26,7 +26,7 @@ assert.match(
 // that next-paths never runs on text still carrying skill markers.
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(approveSplit\.text\);[\s\S]{0,300}extractAutoStatusMarkers\(skillSplit\.visible\)/,
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]{0,300}extractAutoStatusMarkers\(skillSplit\.visible\)/,
   "downstream text flows from the skill-stripped visible — raw markers never render",
 );
 assert.doesNotMatch(

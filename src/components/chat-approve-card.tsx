@@ -142,7 +142,7 @@ export function ChatApproveCard({ request, disabledReason, onSubmit }: ChatAppro
         </fieldset>
       ))}
       {error ? <p className="cave-approve__error" role="alert" id={`${id}-error`}>{error}</p> : null}
-      {disabledReason ? <p className="cave-approve__help">{disabledReason}</p> : null}
+      {disabledReason ? <p className="cave-approve__help" id={`${id}-disabled`}>{disabledReason}</p> : null}
       <div className="cave-approve__actions">
         <Button
           type="submit"
@@ -150,7 +150,7 @@ export function ChatApproveCard({ request, disabledReason, onSubmit }: ChatAppro
           className="focus-ring"
           loading={phase === "sending"}
           disabled={disabled || answeredCount === 0}
-          aria-describedby={error ? `${id}-error` : `${id}-help`}
+          aria-describedby={[`${id}-help`, error && `${id}-error`, disabledReason && `${id}-disabled`].filter(Boolean).join(" ")}
         >
           {phase === "sending" ? "Sending answers…" : "Send answers"}
         </Button>

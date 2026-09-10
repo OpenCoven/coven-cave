@@ -253,7 +253,8 @@ export function stripIncompleteApproveMarker(text: string): string {
 /**
  * Keep valid question attributes opaque to sibling control parsers. In
  * particular a backtick in a prompt must not hide a later attention/result
- * marker. Restore only into cardText, after those parsers have run.
+ * marker or reasoning block. Restore into card/persisted text and reasoning
+ * only after those parsers have run; remove from prose-only projections.
  */
 export function protectApproveMarkers(text: string): {
   text: string;

@@ -359,3 +359,21 @@ test("researchRunBootstrapSnapshot builds a minimal, rehydratable projection fro
   const titled = researchRunBootstrapSnapshot("mission-run-xyz", "  Vector stores  ");
   assert.equal(titled.title, "Vector stores");
 });
+
+for (const pending of [false, true]) {
+  test(`question backticks cannot expose hidden reasoning (pending=${pending})`, () => {
+    const marker = '<coven:approve kind="questions" prompt="Use ` here?" options="Yes|No" />';
+    const result = extractChatRenderedText(`${marker}\n<thinking>private reasoning</thinking>\nVisible answer`, { pending });
+    assert.equal(result.inlineReasoning, "private reasoning");
+    assert.equal(result.visible.trim(), "Visible answer");
+    assert.equal(result.cardText.trim(), `${marker}\n\nVisible answer`);
+  });
+}
+
+test("questions inside reasoning never become cards or leak protection tokens", () => {
+  const marker = '<coven:approve kind="questions" prompt="Use ` here?" options="Yes|No" />';
+  const result = extractChatRenderedText(`<thinking>${marker}\nprivate reasoning</thinking>Visible answer`);
+  assert.equal(result.visible, "Visible answer");
+  assert.equal(result.cardText, "Visible answer");
+  assert.equal(result.inlineReasoning, `${marker}\nprivate reasoning`);
+});

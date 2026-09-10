@@ -285,6 +285,7 @@ import {
   extractIncompleteChatAttentionMarker,
 } from "@/lib/chat-attention-marker";
 import { splitReasoning } from "@/lib/chat-reasoning";
+import { protectApproveMarkers } from "@/lib/approve-blocks";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -538,7 +539,8 @@ function prepareAttentionRequest(args: {
   reasoning?: string;
   request: ChatResponseMetadata["attentionRequest"] | null;
 } {
-  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(args.text);
+  const approveSplit = protectApproveMarkers(args.text);
+  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(approveSplit.text);
   const { visible, request: marker } = args.incomplete
     ? extractIncompleteChatAttentionMarker(visibleBody)
     : extractChatAttentionMarker(visibleBody);
@@ -546,8 +548,8 @@ function prepareAttentionRequest(args: {
     ? extractIncompleteChatAttentionMarker(reasoningBody)
     : extractChatAttentionMarker(reasoningBody);
   return {
-    text: visible,
-    ...(cleanedReasoning.trim() ? { reasoning: cleanedReasoning.trim() } : {}),
+    text: approveSplit.restore(visible, true),
+    ...(cleanedReasoning.trim() ? { reasoning: approveSplit.restore(cleanedReasoning.trim(), true) } : {}),
     request: marker
       ? {
           sessionId: args.sessionId,

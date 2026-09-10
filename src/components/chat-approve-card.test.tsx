@@ -103,6 +103,10 @@ test.each([
 ])("disabled host state cannot submit: $disabledReason", async (props) => {
   const { renderer, onSubmit } = await mount(props);
   expect(renderer.root.findAllByType("fieldset").every((node) => node.props.disabled)).toBe(true);
+  const description = button(renderer, "Send answers").props["aria-describedby"]
+    .split(/\s+/).map((id) => renderer.root.findByProps({ id }).children.join("")).join(" ");
+  expect(description).toContain(props.disabledReason);
+
   await act(async () => formSubmit(renderer));
   expect(onSubmit).not.toHaveBeenCalled();
 });
