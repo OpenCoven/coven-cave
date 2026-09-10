@@ -6,7 +6,7 @@
 // garbage input. A guard bug must never brick Bash.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, chmodSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -1398,3 +1398,28 @@ await test("strict-worktree-remove is a fail-closed direct guard", () => {
 });
 
 console.log("worktree-guard.test.mjs passed");
+
+for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge"]) {
+  await test(`strict MERGE_RR recovery state: ${state}`, {
+    skip: isWin && ["symlink", "dangling"].includes(state),
+  }, () => {
+    const fixture = repoWithWorktree({ push: true });
+    const head = sh("git", ["rev-parse", "HEAD"], fixture.wt).trim();
+    const admin = sh("git", ["rev-parse", "--absolute-git-dir"], fixture.wt).trim();
+    const rr = path.join(admin, "MERGE_RR");
+    if (state === "directory") mkdirSync(rr);
+    else if (state === "symlink" || state === "dangling") {
+      const target = path.join(fixture.dir, "empty-rerere");
+      if (state === "symlink") writeFileSync(target, "");
+      symlinkSync(target, rr);
+    } else {
+      writeFileSync(rr, state === "nonempty" ? `${"a".repeat(40)}\tfile\0` : "");
+      if (state === "lock") writeFileSync(`${rr}.lock`, "");
+      if (state === "merge") writeFileSync(path.join(admin, "MERGE_HEAD"), `${head}\n`);
+    }
+    const result = runStrict(strictArgs(fixture.wt, head), fixture.dir, strictEnv());
+    assert.equal(result.status, state === "empty" ? 0 : 2, result.stderr);
+    if (state !== "empty") assert.match(result.stderr, /recovery state/);
+    assert.ok(existsSync(fixture.wt), "probe does not mutate the candidate");
+  });
+}

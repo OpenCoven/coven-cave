@@ -62,7 +62,7 @@
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import {
@@ -225,6 +225,32 @@ function strictRegisteredWorktree(target) {
     if (registeredPath === target) found = true;
   }
   if (!found) throw new Error("target is not an exactly registered worktree");
+}
+
+// MERGE_RR is rerere's pending-path list, not a commit/recovery OID.
+// An empty regular file is harmless residue; it never overrides operation state.
+function strictRecoveryState(target) {
+  const admin = strictSingleLine(
+    strictGit(["-C", target, "rev-parse", "--absolute-git-dir"]),
+    "git administrative directory",
+  );
+  for (const name of readdirSync(admin)) {
+    if (
+      name.endsWith(".lock") || name.startsWith("rebase-") ||
+      ["locked", "MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD",
+        "BISECT_HEAD", "AUTO_MERGE", "sequencer"].includes(name)
+    ) throw new Error(`target has recovery state: ${name}`);
+    if (name === "MERGE_RR") {
+      const entry = path.join(admin, name);
+      const stat = lstatSync(entry);
+      if (!stat.isFile() || stat.size !== 0) {
+        throw new Error("target has recovery state: MERGE_RR is not an empty regular file");
+      }
+      if (readFileSync(entry).length !== 0) {
+        throw new Error("target has recovery state: MERGE_RR changed during inspection");
+      }
+    }
+  }
 }
 
 function strictRemoteNames(target, deadline) {
@@ -781,6 +807,7 @@ function runStrictWorktreeRemove(args) {
   }
   if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
   strictRegisteredWorktree(target);
+  strictRecoveryState(target);
 
   const actualHead = strictSingleOid(
     strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
@@ -807,6 +834,7 @@ function runStrictWorktreeRemove(args) {
   else if (remoteBranchProof) strictRetainedByRemoteBranch(target, actualHead, remoteBranchProof);
   else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
+  strictRecoveryState(target);
   process.stdout.write(`${JSON.stringify({
     ok: true,
     mode: "strict-worktree-remove",

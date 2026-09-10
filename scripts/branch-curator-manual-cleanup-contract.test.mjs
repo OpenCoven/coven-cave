@@ -551,3 +551,32 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(byId.get(59).expected_output, /destination or OID drift/i);
   assert.match(byId.get(59).expected_output, /status 2/i);
 });
+
+for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge"]) {
+  test(`documented MERGE_RR admin proof: ${state}`, {
+    skip: process.platform === "win32" && ["symlink", "dangling"].includes(state),
+  }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curator-rerere-"));
+    const admin = path.join(dir, "admin");
+    fs.mkdirSync(admin);
+    const rr = path.join(admin, "MERGE_RR");
+    if (state === "directory") fs.mkdirSync(rr);
+    else if (state === "symlink" || state === "dangling") {
+      const target = path.join(dir, "empty");
+      if (state === "symlink") fs.writeFileSync(target, "");
+      fs.symlinkSync(target, rr);
+    } else {
+      fs.writeFileSync(rr, state === "nonempty" ? "pending" : "");
+      if (state === "lock") fs.writeFileSync(`${rr}.lock`, "");
+      if (state === "merge") fs.writeFileSync(path.join(admin, "MERGE_HEAD"), "");
+    }
+    const start = proof.indexOf("worktree_admin_safe=1");
+    const end = proof.indexOf("\n```", start);
+    assert.ok(start >= 0 && end > start);
+    const result = spawnSync("bash", ["-c",
+      `worktree_git_dir=$1\nfor candidate in one; do\n${proof.slice(start, end)}\nprintf 'SAFE\\n'\ndone`,
+      "admin-proof", admin], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), state === "empty" ? "SAFE" : "PRESERVE - worktree admin recovery state");
+  });
+}

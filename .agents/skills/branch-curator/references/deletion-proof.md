@@ -683,7 +683,15 @@ test "$worktree_recovery_safe" -eq 1 ||
 
 Prove `ORIG_HEAD` and every first-field OID in `FETCH_HEAD`. Treat operation
 state, locked worktrees, and unknown top-level admin entries as live or
-uncertain:
+uncertain. The sole rerere exception is a readable, non-symbolic, zero-byte
+regular `MERGE_RR` file: Git's [rerere implementation](https://github.com/git/git/blob/master/rerere.c)
+writes a list of pending conflict paths and can leave an empty list after
+resolution. A nonempty file, directory, symlink (including dangling), unreadable
+file, or `MERGE_RR.lock` remains protected. Empty residue never overrides an
+unmerged index, operation marker, lock, ownership, recency, or retention check.
+Do not delete or rewrite the file to qualify a candidate. The strict guard
+checks this state before retention probes and again before its allow result;
+the complete recovery-OID and unknown-admin proof below remains mandatory.
 
 ```bash
 emit_plain_oids() {
@@ -725,6 +733,10 @@ while IFS= read -r -d '' admin_entry; do
       ;;
     logs|refs)
       test -d "$admin_entry" || { worktree_admin_safe=0; break; }
+      ;;
+    MERGE_RR)
+      test -f "$admin_entry" && test -r "$admin_entry" &&
+        test ! -s "$admin_entry" || { worktree_admin_safe=0; break; }
       ;;
     ORIG_HEAD)
       test -f "$admin_entry" || { worktree_admin_safe=0; break; }
