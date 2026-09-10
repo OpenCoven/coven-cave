@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -579,7 +580,7 @@ for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "l
     assert.ok(start >= 0 && end > start);
     const result = spawnSync("bash", ["-c",
       `worktree_git_dir=$1\nprimary_checkout=$2\nfor candidate in one; do\n${proof.slice(start, end)}\nprintf 'SAFE\\n'\ndone`,
-      "admin-proof", admin, process.cwd()], { encoding: "utf8" });
+      "admin-proof", admin, fileURLToPath(new URL("..", import.meta.url))], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), state === "empty" ? "SAFE" : "PRESERVE - worktree admin recovery state");
   });
