@@ -121,6 +121,10 @@ import {
 } from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
+import {
+  applyChatPromptEnhancement,
+  prepareChatPromptEnhancement,
+} from "@/lib/chat-prompt-enhance";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useSurfacePreference } from "@/lib/surface-preferences";
@@ -3822,11 +3826,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
   // rewrite from this thread's familiar (rule engine as offline fallback) and
   // owns the race-safe apply/suggest/revert lifecycle.
+  const preparedPromptEnhancement = prepareChatPromptEnhancement(
+    input,
+    Boolean(activeProjectRoot),
+  );
+  const promptEnhancementCommandPrefix = preparedPromptEnhancement.commandPrefix;
+  const transformEnhancedPrompt = useCallback(
+    (enhanced: string) => applyChatPromptEnhancement(
+      { commandPrefix: promptEnhancementCommandPrefix },
+      enhanced,
+    ),
+    [promptEnhancementCommandPrefix],
+  );
   const promptEnhance = usePromptEnhance({
     draft: input,
+    sourceDraft: preparedPromptEnhancement.draft,
     setDraft: setInput,
+    transformEnhanced: transformEnhancedPrompt,
     familiarId: familiar.id,
-    mode: activeProjectRoot ? "code" : "chat",
+    mode: preparedPromptEnhancement.mode,
     context: {
       activeProject: activeProjectRoot
         ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
@@ -8286,18 +8304,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
-          {!offlineReadOnly && shouldShowChatArchiveNudge({
-            taskLifecycle: linkedContext?.task?.lifecycle ?? null,
-            sessionArchived: Boolean(session?.archived_at),
-            dismissed: archiveNudgeDismissed,
-          }) ? (
-            <ChatArchiveNudge
-              taskTitle={linkedContext?.task?.title ?? ""}
-              onArchive={() => void setChatArchived(true)}
-              onDismiss={dismissArchiveNudge}
-              archiving={archiving}
-            />
-          ) : null}
           <div ref={tailRef} />
         </div>
 
@@ -8463,6 +8469,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
+      {!offlineReadOnly && shouldShowChatArchiveNudge({
+        taskLifecycle: linkedContext?.task?.lifecycle ?? null,
+        sessionArchived: Boolean(session?.archived_at),
+        dismissed: archiveNudgeDismissed,
+        sessionBusy: busy || autoMissionActive || voiceCallOpen || session?.status === "running",
+      }) ? (
+        <ChatArchiveNudge
+          taskTitle={linkedContext?.task?.title ?? ""}
+          onArchive={() => void setChatArchived(true)}
+          onDismiss={dismissArchiveNudge}
+          archiving={archiving}
+        />
+      ) : null}
       {inlineComposer ? null : showDockedComposer ? composerNode : null}
       {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay

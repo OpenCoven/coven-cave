@@ -1,0 +1,49 @@
+name: TestFlight availability receipt
+run-name: TestFlight receipt ${{ inputs.marketing_version }} (${{ inputs.build_number }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: "Exact iOS marketing version (e.g. 0.4.2)"
+        type: string
+        required: true
+      build_number:
+        description: "Exact uploaded build number (e.g. 2026090912)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  receipt:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Verify read-only receipt contracts
+        run: node --test scripts/testflight-receipt.test.mjs
+      - name: Query Apple availability (GET only)
+        env:
+          TESTFLIGHT_MARKETING_VERSION: ${{ inputs.marketing_version }}
+          TESTFLIGHT_BUILD_NUMBER: ${{ inputs.build_number }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
+        run: node scripts/testflight-receipt.mjs
+      - name: Preserve sanitized receipt even when unavailable or denied
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: testflight-receipt
+          path: testflight-receipt.json
+          if-no-files-found: error
+          retention-days: 90
