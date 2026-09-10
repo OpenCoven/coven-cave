@@ -253,6 +253,11 @@ async function syncDirectory(directory: string): Promise<void> {
   try {
     handle = await open(directory, constants.O_RDONLY);
     await handle.sync();
+  } catch (error) {
+    if (error instanceof Error) {
+      error.message = `Research run receipt directory sync failed for ${directory}: ${error.message}`;
+    }
+    throw error;
   } finally {
     await handle?.close().catch(() => {});
   }
