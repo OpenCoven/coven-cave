@@ -90,7 +90,7 @@ const RUN: ResearchRunV1 = {
 };
 
 const TEST_ARTIFACTS_ROOT = path.join(process.cwd(), ".test-artifacts");
-const MAX_RECEIPT_RECORD_BYTES = 2 * 1024 * 1024;
+const { MAX_RESEARCH_RUN_RECEIPT_BYTES: MAX_RECEIPT_RECORD_BYTES } = await import("./research-run-receipt-store.ts");
 
 function receipt(citationCount = 1): ResearchRunCompletionReceiptV1 {
   return createResearchRunCompletionReceipt(RUN, { citationCount });
