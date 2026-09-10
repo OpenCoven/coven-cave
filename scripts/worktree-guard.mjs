@@ -64,6 +64,7 @@
 
 import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
+import { assertEmptyRegularRerere } from "./worktree-rerere-state.mjs";
 import path from "node:path";
 import {
   createStrictRetentionDeadline,
@@ -235,20 +236,23 @@ function strictRecoveryState(target) {
     "git administrative directory",
   );
   for (const name of readdirSync(admin)) {
-    if (
-      name.endsWith(".lock") || name.startsWith("rebase-") ||
-      ["locked", "MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD",
-        "BISECT_HEAD", "AUTO_MERGE", "sequencer"].includes(name)
-    ) throw new Error(`target has recovery state: ${name}`);
+    if (name.endsWith(".lock")) throw new Error(`target has recovery state: ${name}`);
+    const entry = path.join(admin, name);
+    const stat = lstatSync(entry);
+    if (stat.isSymbolicLink()) throw new Error(`target has recovery state: symbolic ${name}`);
     if (name === "MERGE_RR") {
-      const entry = path.join(admin, name);
-      const stat = lstatSync(entry);
-      if (!stat.isFile() || stat.size !== 0) {
-        throw new Error("target has recovery state: MERGE_RR is not an empty regular file");
+      try {
+        assertEmptyRegularRerere(entry);
+      } catch (error) {
+        throw new Error(`target has recovery state: ${error}`);
       }
-      if (readFileSync(entry).length !== 0) {
-        throw new Error("target has recovery state: MERGE_RR changed during inspection");
-      }
+    } else if (["logs", "refs"].includes(name)) {
+      if (!stat.isDirectory()) throw new Error(`target has recovery state: non-directory ${name}`);
+    } else if (["HEAD", "commondir", "gitdir", "index", "config.worktree",
+      "COMMIT_EDITMSG", "ORIG_HEAD", "FETCH_HEAD"].includes(name) || name.startsWith("sharedindex.")) {
+      if (!stat.isFile()) throw new Error(`target has recovery state: non-file ${name}`);
+    } else {
+      throw new Error(`target has recovery state: ${name}`);
     }
   }
 }

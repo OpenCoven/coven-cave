@@ -552,9 +552,9 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(byId.get(59).expected_output, /status 2/i);
 });
 
-for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge"]) {
+for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "lock", "merge", "unknown", "wrong-type", "admin-symlink", "shared-lock"]) {
   test(`documented MERGE_RR admin proof: ${state}`, {
-    skip: process.platform === "win32" && ["symlink", "dangling"].includes(state),
+    skip: process.platform === "win32" && ["symlink", "dangling", "admin-symlink"].includes(state),
   }, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curator-rerere-"));
     const admin = path.join(dir, "admin");
@@ -567,6 +567,10 @@ for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "l
       fs.symlinkSync(target, rr);
     } else {
       fs.writeFileSync(rr, state === "nonempty" ? "pending" : "");
+      if (state === "wrong-type") fs.mkdirSync(path.join(admin, "config.worktree"));
+      if (state === "admin-symlink") fs.symlinkSync(rr, path.join(admin, "config.worktree"));
+      if (state === "shared-lock") fs.writeFileSync(path.join(admin, "sharedindex.example.lock"), "");
+      if (state === "unknown") fs.writeFileSync(path.join(admin, "UNKNOWN_RECOVERY"), "");
       if (state === "lock") fs.writeFileSync(`${rr}.lock`, "");
       if (state === "merge") fs.writeFileSync(path.join(admin, "MERGE_HEAD"), "");
     }
@@ -574,8 +578,8 @@ for (const state of ["empty", "nonempty", "directory", "symlink", "dangling", "l
     const end = proof.indexOf("\n```", start);
     assert.ok(start >= 0 && end > start);
     const result = spawnSync("bash", ["-c",
-      `worktree_git_dir=$1\nfor candidate in one; do\n${proof.slice(start, end)}\nprintf 'SAFE\\n'\ndone`,
-      "admin-proof", admin], { encoding: "utf8" });
+      `worktree_git_dir=$1\nprimary_checkout=$2\nfor candidate in one; do\n${proof.slice(start, end)}\nprintf 'SAFE\\n'\ndone`,
+      "admin-proof", admin, process.cwd()], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), state === "empty" ? "SAFE" : "PRESERVE - worktree admin recovery state");
   });

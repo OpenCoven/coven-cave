@@ -725,6 +725,9 @@ EOF
 worktree_admin_safe=1
 while IFS= read -r -d '' admin_entry; do
   admin_name=${admin_entry##*/}
+  case "$admin_name" in
+    *.lock) worktree_admin_safe=0; break ;;
+  esac
   test ! -L "$admin_entry" ||
     { worktree_admin_safe=0; break; }
   case "$admin_name" in
@@ -735,8 +738,8 @@ while IFS= read -r -d '' admin_entry; do
       test -d "$admin_entry" || { worktree_admin_safe=0; break; }
       ;;
     MERGE_RR)
-      test -f "$admin_entry" && test -r "$admin_entry" &&
-        test ! -s "$admin_entry" || { worktree_admin_safe=0; break; }
+      node "$primary_checkout/scripts/worktree-rerere-state.mjs" "$admin_entry" ||
+        { worktree_admin_safe=0; break; }
       ;;
     ORIG_HEAD)
       test -f "$admin_entry" || { worktree_admin_safe=0; break; }
