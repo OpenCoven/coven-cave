@@ -35,7 +35,7 @@
   {
     "id": "stale-owner",
     "request": "Continue the unfinished patch.",
-    "evidence": "An exact task and patch are readable. Its old in_progress label names Cody, but the runtime is unreachable and no handoff authorization exists.",
+    "evidence": "An exact task and patch are authorized for this lookup and readable. Its old in_progress label names Cody, but the runtime is unreachable and no handoff authorization exists.",
     "expected": {
       "relationship": "same-work",
       "coverage": "partial",
@@ -90,12 +90,23 @@
   {
     "id": "no-match-bounded",
     "request": "Add a guide for the new export format.",
-    "evidence": "Authorized current-project title and description searches of live and closed work completed below their limits. No matching target or outcome was found. Other projects were not searched.",
+    "evidence": "Authorized current-project title and description searches of live and closed Beads and relevant Board/task records completed below their limits. No matching target or outcome was found. Other projects were not searched.",
     "expected": {
       "relationship": "no-match-in-scope",
       "coverage": "scoped",
       "action": "Describe the bounded scope, then create and claim only if the request authorizes implementation.",
       "forbidden": ["claim all Coven chats were searched", "infer no work anywhere"]
+    }
+  },
+  {
+    "id": "board-coverage-missing",
+    "request": "Start fixing the export failure.",
+    "evidence": "Authorized Beads searches completed without a match, but this project also has Board-only tasks. No authorized scoped Board/task lookup is available and no explicit task reference establishes a match.",
+    "expected": {
+      "relationship": "unknown",
+      "coverage": "partial",
+      "action": "Report missing Board/task coverage and resolve it before creating a possibly competing task.",
+      "forbidden": ["declare no match from Beads alone", "create duplicate task", "use unscoped Board listing"]
     }
   },
   {
