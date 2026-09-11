@@ -92,6 +92,8 @@ display name, local path, or matching task title cannot supply those facts.
 | `.agents/skills/work-continuity/SKILL.md` | Trigger, compact procedure, safety boundaries, output requirements |
 | `.agents/skills/work-continuity/agents/openai.yaml` | Harness-facing skill label and default prompt |
 | `.agents/skills/work-continuity/evals/scenarios.json` | Synthetic positive, negative, stale, ambiguous, privacy, and race cases |
+| `scripts/work-continuity-contract.test.mjs` | Deterministic corpus, procedural-boundary, and entrypoint contract |
+| `scripts/run-tests.mjs` and `.github/workflows/ci.yml` | Run the contract in the app suite and documentation CI |
 | `docs/workflows/work-continuity.md` | Living operational contract, evidence packet, commands, rollout boundaries |
 | `AGENTS.md` and `CLAUDE.md` | Identical preflight entrypoint before planning and work creation |
 | `docs/workflows/beads-familiars.md` | Link preflight to the existing claim-and-close workflow |
@@ -146,7 +148,7 @@ display name, local path, or matching task title cannot supply those facts.
 Run the existing targeted documentation and skill tests from the task worktree:
 
 ```bash
-node --test scripts/docs-index.test.mjs scripts/beads-familiar-workflow.test.mjs scripts/beads-skill-trigger-contract.test.mjs
+node --test scripts/docs-index.test.mjs scripts/beads-familiar-workflow.test.mjs scripts/beads-skill-trigger-contract.test.mjs scripts/work-continuity-contract.test.mjs
 node --experimental-strip-types --test src/lib/server/skill-scan.test.ts src/lib/slash-skill.test.ts
 ```
 
@@ -181,6 +183,12 @@ Use a fresh read-only evaluation context to apply the skill to every record in
 forbidden-action violations. Require all cases to agree with the rubric and
 zero forbidden actions. This is a bounded rehearsal, not a statistical accuracy
 claim. Record the result in the owning Bead.
+
+The corpus contract is wired into `scripts/run-tests.mjs` and the
+documentation check in `.github/workflows/ci.yml`. It checks structure and
+required procedural boundaries, not generated agent decisions. Review added
+the Board-only missing-coverage case to the original 14-case rehearsal; a
+Beads-only negative result cannot clear an uncovered Board execution surface.
 
 ### Task 5: Publish and retire this unit
 
@@ -219,6 +227,9 @@ resolver discover the new skill; both guide entrypoints match. A fresh
 read-only rehearsal covered all 14 synthetic cases without forbidden actions.
 Review clarified access-before-retrieval, known task versus uncertain
 execution permission, write authorization for comments, and unknown delivery.
+The review follow-up added explicit Board/task coverage, wired the deterministic
+contract, and rehearsed all 15 cases. The stale-owner fixture now explicitly
+establishes read authorization rather than relying on filesystem readability.
 These results are bounded evidence, not a universal compliance guarantee.
 
 Use the skill for new planning and task requests in this repository.

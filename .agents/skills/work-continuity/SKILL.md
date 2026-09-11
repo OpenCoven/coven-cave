@@ -38,6 +38,10 @@ one-turn answer.
 3. Read details and recent owner comments for candidates. When supported,
    search titles and descriptions separately. Record query limits and errors.
    A result at its limit is potentially truncated, not a negative result.
+   Beads-only absence does not cover Cave Board/task records. Include relevant
+   authorized Board/task sources or report coverage `partial` or `unknown`.
+   Without a positive match, missing relevant Board/task coverage means
+   relationship `unknown`, not `no-match-in-scope`; do not start competing work.
 4. Stop discovery when an authorized exact reference establishes the requested
    task and its current state; additional broad searches are not required.
 5. Keep task status, runtime liveness, and completion evidence separate.
