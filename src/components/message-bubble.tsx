@@ -40,6 +40,7 @@ import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
 import { getShikiHighlighter } from "@/lib/shiki-highlighter";
+import { stripReadmeLayoutHtml } from "@/lib/github-readme-layout-html";
 import { Icon } from "@/lib/icon";
 import {
   parseCitations,
@@ -430,12 +431,16 @@ export function MarkdownBlock({
   className,
   onOpenUrl,
   resolveOpenUrl,
+  stripLayoutHtml,
   suppressRemoteMedia,
 }: {
   text: string;
   className?: string;
   onOpenUrl?: (url: string) => void;
   resolveOpenUrl?: (url: string) => string | null;
+  /** Captured-document mode: drop block-level layout HTML instead of escaping
+   *  it into the prose. See `stripReadmeLayoutHtml`. */
+  stripLayoutHtml?: boolean;
   suppressRemoteMedia?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
@@ -444,11 +449,11 @@ export function MarkdownBlock({
   useEffect(() => {
     if (!text) return;
     let cancelled = false;
-    mdToHtml(text, { suppressRemoteMedia })
+    mdToHtml(text, { stripLayoutHtml, suppressRemoteMedia })
       .then((h) => { if (!cancelled) setHtml(h); })
       .catch((err) => { console.error("[MarkdownBlock] mdToHtml failed", err); });
     return () => { cancelled = true; };
-  }, [text, suppressRemoteMedia]);
+  }, [stripLayoutHtml, text, suppressRemoteMedia]);
 
   if (!html) {
     return (
@@ -676,17 +681,21 @@ async function mdToHtml(
     transient?: boolean;
     highlightCode?: boolean;
     decorateResponse?: boolean;
+    stripLayoutHtml?: boolean;
     suppressRemoteMedia?: boolean;
   },
 ): Promise<string> {
   const canUseCache = !opts?.transient && opts?.highlightCode !== false;
+  // The strip is part of the rendered result, so it has to key the cache too —
+  // otherwise a captured README and a chat message with the same text share an
+  // entry and one of them gets the other's treatment.
   const cacheKey = `${
     opts?.decorateResponse
       ? "response"
       : opts?.suppressRemoteMedia
         ? "remote-document"
         : "document"
-  }:${markdown}`;
+  }${opts?.stripLayoutHtml ? "+stripped" : ""}:${markdown}`;
   if (canUseCache) {
     const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) return cached;
@@ -704,7 +713,10 @@ async function mdToHtml(
   // continuation, so wrapped list items (and `1)` / `**1. Title**` markers)
   // otherwise render as dense paragraph fragments. Fence lines pass through
   // untouched, so the positional filename scan stays aligned.
-  const listNormalized = normalizePseudoLists(markdown);
+  // Layout HTML goes before every other pass: the parser has no block-HTML
+  // handling, so anything left here is escaped into the reader's prose.
+  const layoutStripped = opts?.stripLayoutHtml ? stripReadmeLayoutHtml(markdown) : markdown;
+  const listNormalized = normalizePseudoLists(layoutStripped);
   const fenceFilenames = scanFenceFilenames(listNormalized);
   const normalized = listNormalized.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
 

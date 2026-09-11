@@ -154,4 +154,26 @@ for (const lifecycle of [null, undefined, ""]) {
   clearChatArchiveNudgeDismissed("s-3", hostile);
 }
 
+assert.equal(
+  shouldShowChatArchiveNudge({
+    taskLifecycle: "completed",
+    sessionArchived: false,
+    dismissed: false,
+    sessionBusy: true,
+  }),
+  false,
+  "does not recommend archiving while the familiar is still working",
+);
+
+assert.equal(
+  shouldShowChatArchiveNudge({
+    taskLifecycle: "completed",
+    sessionArchived: false,
+    dismissed: false,
+    sessionBusy: false,
+  }),
+  true,
+  "returns after work settles without dismissing the recommendation",
+);
+
 console.log("chat-archive-nudge.test.ts ok");

@@ -334,6 +334,7 @@ test("read failures preserve bounded error detail without path or file data", as
   const secret = "private-content-marker";
   try {
     await writeFile(target, `{${secret}`);
+    await chmod(target, 0o644);
     await assert.rejects(
       () => readResearchLinksStrict({ path: target }),
       (error) => error instanceof ResearchLinksLegacyStoreError
