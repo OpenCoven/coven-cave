@@ -76,7 +76,7 @@ async function resolveAttention(key: string, mission?: ResearchMission): Promise
     const file = await load();
     const existing = file.items.find((item) => item.auto === key);
     if (!existing || existing.autoRevision?.startsWith("resolved:")) return null;
-    if (existing.autoRequest && !["cancelled", "archived"].includes(mission?.status ?? "")) {
+    if (existing.autoRequest && mission && !["cancelled", "archived"].includes(mission.status)) {
       const request = existing.autoRequest;
       const iteration = request.iteration ??
         mission?.iterations.find((item) => item.flowRunId === request.runId)?.number;
