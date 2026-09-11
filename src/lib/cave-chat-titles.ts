@@ -263,7 +263,13 @@ const PRIVATE_KEY_BLOCK_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:
 const GENERIC_HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\s*\/?>/g;
 
 function stripInlineHtmlTags(text: string): string {
-  return text.replace(GENERIC_HTML_TAG_RE, "");
+  let current = text;
+  let previous: string;
+  do {
+    previous = current;
+    current = current.replace(GENERIC_HTML_TAG_RE, "");
+  } while (current !== previous);
+  return current;
 }
 
 function stripHiddenTitleSources(text: string): string {
