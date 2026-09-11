@@ -105,7 +105,11 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
   // rails for reading, this keeps the queue while widening the run.
   const [evidenceOpen, setEvidenceOpen] = useState(true);
   const rail = useResearchPane(RAIL_PANE);
-  const canonicalRun = useResearchRunGateway(research.selected?.id ?? null, familiarId);
+  const canonicalRun = useResearchRunGateway(
+    research.selected?.id ?? null,
+    familiarId,
+    research.selected,
+  );
   const queryInputRef = useRef<HTMLInputElement>(null);
   const { announce } = useAnnouncer();
 
@@ -375,8 +379,15 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             </div>
           ) : null}
           <ResearchMissionDetail
-            mission={research.selected}
+            mission={canonicalRun.missionDetail}
             canonicalRun={canonicalRun.eventState}
+            runProjections={canonicalRun.projections}
+            runProjectionSource={canonicalRun.projectionSource}
+            runGatewayStatus={canonicalRun.status}
+            runGatewayError={canonicalRun.error ?? canonicalRun.projectionError}
+            onRetryRunGateway={canonicalRun.retry}
+            missionDetailAvailable={canonicalRun.missionDetailAvailable}
+            missionActionsAvailable={canonicalRun.missionActionsAvailable}
             showEvidence={!focusMode && evidenceOpen}
             onCollapseEvidence={focusMode ? undefined : () => setEvidenceOpen(false)}
             onOpenEvidence={focusMode ? undefined : () => setEvidenceOpen(true)}
@@ -387,14 +398,14 @@ export function ResearchTabDesk({ research, context, onNavigate }: ResearchTabPr
             }}
             onOpenUrl={context.openUrl}
             onShowResources={() => onNavigate("resources")}
-            onAction={(input) => research.selected
-              ? research.act(research.selected.id, input)
+            onAction={(input) => canonicalRun.missionDetail
+              ? research.act(canonicalRun.missionDetail.id, input)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onSchedule={(rrule) => research.selected
-              ? research.schedule(research.selected.id, rrule)
+            onSchedule={(rrule) => canonicalRun.missionDetail
+              ? research.schedule(canonicalRun.missionDetail.id, rrule)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
-            onAutomationAction={(automationId, action) => research.selected
-              ? research.controlAutomation(research.selected.id, automationId, action)
+            onAutomationAction={(automationId, action) => canonicalRun.missionDetail
+              ? research.controlAutomation(canonicalRun.missionDetail.id, automationId, action)
               : Promise.resolve({ ok: false, error: "No research mission selected" })}
           />
         </main>
