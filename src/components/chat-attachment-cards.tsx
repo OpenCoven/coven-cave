@@ -1,11 +1,21 @@
-import { useRef, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DocumentReader } from "@/components/document-reader";
 import { ImageCarousel } from "@/components/image-carousel";
+import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useAuthedImageState } from "@/lib/authed-image";
 import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
+import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import {
+  FocusTrapPortalLayersContext,
+  PortalLayerDepthContext,
+  PortalLayerRootContext,
+  useFocusTrap,
+  usePortalLayerRootId,
+} from "@/lib/use-focus-trap";
+import "@/styles/chat-attachment-reader.css";
 
 export function formatAttachmentBytes(size?: number): string {
   if (size == null) return "unknown";
@@ -19,13 +29,60 @@ export function formatAttachmentBytes(size?: number): string {
   return `${size} B`;
 }
 
+const MARKDOWN_ATTACHMENT_EXTENSION = /\.(?:md|mdown|markdown)$/i;
+
+export function isMarkdownAttachment(attachment: ChatAttachment): boolean {
+  const mimeType = (attachment.mimeType ?? attachment.type)?.toLowerCase();
+  return mimeType === "text/markdown" || MARKDOWN_ATTACHMENT_EXTENSION.test(attachment.name);
+}
+
+function attachmentTitle(name: string): string {
+  return name.replace(MARKDOWN_ATTACHMENT_EXTENSION, "") || name;
+}
+
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
   const isImage = (attachment.mimeType ?? attachment.type)?.startsWith("image/");
   const imageSrc = chatAttachmentSrc(attachment);
+  const markdownDocument = useMemo(
+    () =>
+      attachment.text && isMarkdownAttachment(attachment)
+        ? parseMarkdownReaderDocument(attachment.text, attachmentTitle(attachment.name))
+        : null,
+    [attachment],
+  );
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const portalLayerElementsRef = useRef<Map<HTMLElement, number>>(new Map());
+  const ownerLayerDepth = useContext(PortalLayerDepthContext);
+  const portalLayerRootId = usePortalLayerRootId();
+  const portalLayers = useMemo(
+    () => ({
+      register: (el: HTMLElement) => {
+        portalLayerElementsRef.current.set(
+          el,
+          (portalLayerElementsRef.current.get(el) ?? 0) + 1,
+        );
+        return () => {
+          const next = (portalLayerElementsRef.current.get(el) ?? 1) - 1;
+          if (next === 0) portalLayerElementsRef.current.delete(el);
+          else portalLayerElementsRef.current.set(el, next);
+        };
+      },
+      contains: (node: Node | null) => {
+        if (!node) return false;
+        for (const el of portalLayerElementsRef.current.keys()) if (el.contains(node)) return true;
+        return false;
+      },
+      elements: () => Array.from(portalLayerElementsRef.current.keys()),
+    }),
+    [],
+  );
   // This component only mounts while open: trap Tab/Shift+Tab and restore the
   // chip trigger on dismissal, including Escape.
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
+  useFocusTrap(true, dialogRef, {
+    onEscape: onClose,
+    portalLayers,
+    portalRootId: portalLayerRootId,
+  });
   // The transcript establishes containing blocks, so the preview must portal
   // to body for a viewport-sized fixed overlay. That places it in the root
   // stacking context next to the other portalled overlays, so it carries the
@@ -34,45 +91,80 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
   // reader's scrim (cave-yin71).
   return createPortal(
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
+      className="chat-attachment-backdrop fixed inset-0 z-[90] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
       onClick={onClose}
       role="presentation"
     >
       <div
         ref={dialogRef}
-        className="relative max-h-[90vh] w-[90vw] max-w-screen-2xl overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
+        className={[
+          "chat-attachment-lightbox relative flex max-h-[90vh] w-[90vw] max-w-screen-2xl flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl",
+          markdownDocument ? "chat-attachment-lightbox--document" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Preview ${attachment.name}`}
         tabIndex={-1}
       >
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
-          <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]">{attachment.name}</span>
-          <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
-          {attachment.truncated ? <span className="shrink-0 rounded bg-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">truncated</span> : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
-            aria-label="Close"
-          >
-            <Icon name="ph:x-bold" width={11} />
-          </button>
-        </div>
-        {isImage && imageSrc ? (
-          <div className="flex items-center justify-center overflow-hidden p-4">
-            <AuthedImage src={imageSrc} alt={attachment.name} className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!" />
-          </div>
-        ) : attachment.text ? (
-          <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">{attachment.text}</pre>
-        ) : (
-          <div className="flex flex-col items-center gap-3 px-8 py-10 text-[var(--text-muted)]">
-            <Icon name="ph:file-code" width={32} />
-            <span className="text-[length:var(--text-base)]">No preview available</span>
-          </div>
-        )}
+        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
+          <PortalLayerRootContext.Provider value={portalLayerRootId}>
+            <PortalLayerDepthContext.Provider value={ownerLayerDepth + 1}>
+              <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
+                <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0 text-[var(--text-muted)]" />
+                <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]">{attachment.name}</span>
+                <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
+                {attachment.truncated ? <span className="shrink-0 rounded bg-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">truncated</span> : null}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="focus-ring ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
+                  aria-label="Close"
+                >
+                  <Icon name="ph:x-bold" width={11} />
+                </button>
+              </div>
+              {markdownDocument ? (
+                <div className="chat-attachment-reader">
+                  <DocumentReader
+                    document={markdownDocument}
+                    navigation="rail"
+                    kicker="Markdown attachment"
+                    collapsibleSections={false}
+                    tocMeta={
+                      <>
+                        <span>{formatAttachmentBytes(attachment.size)}</span>
+                        <span>
+                          {markdownDocument.sections.length} section
+                          {markdownDocument.sections.length === 1 ? "" : "s"}
+                        </span>
+                      </>
+                    }
+                    renderLede={(block) => (
+                      <MarkdownReaderBlock block={block} blockKey="attachment-lede" />
+                    )}
+                    renderBlock={(block, key) => (
+                      <MarkdownReaderBlock block={block} blockKey={key} />
+                    )}
+                  />
+                </div>
+              ) : isImage && imageSrc ? (
+                <div className="flex items-center justify-center overflow-hidden p-4">
+                  <AuthedImage src={imageSrc} alt={attachment.name} className="rounded-lg object-contain block [max-height:75vh]! [max-width:min(85vw,_100%)]! [width:auto]! [height:auto]!" />
+                </div>
+              ) : attachment.text ? (
+                <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">{attachment.text}</pre>
+              ) : (
+                <div className="flex flex-col items-center gap-3 px-8 py-10 text-[var(--text-muted)]">
+                  <Icon name="ph:file-code" width={32} />
+                  <span className="text-[length:var(--text-base)]">No preview available</span>
+                </div>
+              )}
+            </PortalLayerDepthContext.Provider>
+          </PortalLayerRootContext.Provider>
+        </FocusTrapPortalLayersContext.Provider>
       </div>
     </div>,
     document.body,
@@ -88,7 +180,7 @@ export function AttachmentList({ attachments }: { attachments: ChatAttachment[] 
           <button
             type="button"
             key={`${attachment.name}-${index}`}
-            className="inline-flex max-w-72 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-presence)]/40 hover:bg-[var(--bg-raised)]/70"
+            className="focus-ring inline-flex max-w-72 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-presence)]/40 hover:bg-[var(--bg-raised)]/70"
             title={`View ${attachment.name}`}
             onClick={() => setSelected(attachment)}
           >
