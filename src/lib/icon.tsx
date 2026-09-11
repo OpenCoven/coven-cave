@@ -179,6 +179,7 @@ export const ICON_NAMES = [
   "ph:file-code",
   "ph:file-bold",
   "ph:file-text",
+  "ph:file-x",
   "ph:file-md",
   "ph:printer",
   "ph:flask",
@@ -335,6 +336,8 @@ export const ICON_NAMES = [
   // Flow editor (n8n-style automation canvas) node + UI icons.
   "ph:traffic-sign",
   "ph:git-fork",
+  "ph:star",
+  "ph:text-align-left",
   "ph:signpost",
   "ph:arrows-merge",
   "ph:repeat",
@@ -354,6 +357,7 @@ export const ICON_NAMES = [
   // lists (Desktop/Downloads/Documents already appear above).
   "ph:house",
   "ph:image",
+  "ph:keyboard",
   "ph:music-notes",
   // Chart Room (navigator) — lenses, chain tracing, and structural repairs.
   "ph:chart-line-up",

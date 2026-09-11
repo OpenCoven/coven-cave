@@ -1,5 +1,20 @@
 # Coven Cave Agent Notes
 
+## Work continuity before starting
+
+Before creating, claiming, planning, resuming, or delegating multi-step work,
+load [work-continuity](.agents/skills/work-continuity/SKILL.md). If the skill
+dispatcher does not index it, read that exact file directly. Run its bounded,
+authorized overlap check before `writing-plans` or a new implementation;
+`bd ready` alone does not list work already in progress.
+
+Follow [the living procedure](docs/workflows/work-continuity.md): match the
+outcome and target, preserve the existing owner and original messages, and
+record a proposed continuation rather than starting a competing task. Unknown
+coverage is not "no match"; a saved Bead comment is not a delivered handoff.
+Skip broad discovery for ordinary independent one-turn answers. This is
+operational guidance, not automatic cross-thread routing or additional access.
+
 ## Workflow-First Branch Hygiene
 
 - Treat `main` as the canonical project state. Before starting work, fetch and branch from current `origin/main`.

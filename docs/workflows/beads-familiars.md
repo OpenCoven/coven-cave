@@ -4,6 +4,13 @@ Beads is Cave's repo-local work graph for familiar-owned implementation. GitHub 
 
 ## Familiar Work Queue
 
+Before creating or claiming multi-step work, run the
+[work-continuity preflight](work-continuity.md). Search authorized active,
+blocked, deferred, and completed candidates before inventing a new task:
+`bd ready` lists available work, not every ongoing effort. Preserve an existing
+owner, link the new request to its canonical work, and distinguish a saved
+proposal from an acknowledged handoff.
+
 Every familiar starts a Cave work session by refreshing Beads context:
 
 ```bash
