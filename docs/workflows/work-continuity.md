@@ -77,6 +77,25 @@ potentially truncated: narrow the target, follow supported pagination, or mark
 coverage `partial`. Search titles and descriptions separately; their predicates
 may combine with AND rather than OR.
 
+### Cover Board/task records separately
+
+The commands above search Beads only. Cave Board/task records can exist without
+a linked Bead, so Beads-only absence does not cover Cave Board/task records.
+For a request that could correspond to Board work, use an authorized Board/task
+read or search surface whose scope is enforced before returning titles or
+snippets. Inspect explicit authorized task IDs first. Record the project,
+filters, pagination, and omitted sources alongside the Beads queries.
+
+If no appropriately scoped surface is available, do not replace it with a
+global task listing or private-store scan. Missing relevant Board/task coverage
+means coverage `partial` or `unknown`. Without a positive match, the relationship
+is `unknown`, not `no-match-in-scope`; do not create a possibly competing task.
+An authorized exact match remains `same-work` without an exhaustive search.
+Use `no-match-in-scope` only when every relevant source in the stated scope was
+successfully covered, or the request explicitly limits the question to a
+particular source such as Beads. Never widen that narrower answer into clearance
+to start work on an uncovered execution surface.
+
 Inspect linked PR state using `gh pr view` only for the exact authorized
 repository/item. Read linked artifacts only inside the current boundary. For
 a candidate tied to a worktree, `pnpm wt:status` helps distinguish unfinished
@@ -92,7 +111,7 @@ Scope and authority checks precede this table.
 | `same-work` | Same target and intended outcome; compatible acceptance and authority, ideally an explicit canonical task reference | Reuse the existing task. Show progress or propose a continuation to its owner; do not launch a duplicate |
 | `related-work` | Shared topic or surface, but distinct deliverable or acceptance criteria | Keep tasks separate, record the relationship and disjoint scope, add a dependency only when real |
 | `conflicting-work` | One request invalidates the other's goal, scope, or approved decision | Pause conflicting mutations; record the concrete conflict and route the decision |
-| `no-match-in-scope` | Successful bounded discovery found no matching task | State the searched scope, then create/claim through existing rules if authorized |
+| `no-match-in-scope` | Successful bounded discovery covered every relevant source in the stated scope and found no matching task | State the searched scope; create/claim only if authorized and no relevant execution source remains uncovered |
 | `unknown` | Ambiguous candidates, missing discovery scope, inaccessible records, or failed discovery prevents identifying the task | Preserve existing records and ownership; do only safe read-only/disjoint work until the uncertainty is resolved |
 
 Relationship and coverage are separate. An exact known task can remain
@@ -184,6 +203,14 @@ to the canonical task rather than rewriting the original message.
 Classify deliverables as verified, incomplete, or blocked. Mark inactive
 tasks honestly; preserve other owners' states. A completed plan is not a
 completed feature, and successful skill discovery is not universal adoption.
+
+The synthetic corpus in `.agents/skills/work-continuity/evals/scenarios.json`
+supports read-only agent rehearsals. Run
+`node --test scripts/work-continuity-contract.test.mjs` for deterministic checks
+of corpus structure, decision vocabulary, and required procedure boundaries.
+That contract runs in the app suite and documentation CI. It does not execute
+an agent or prove its classifications: behavioral evaluation still requires
+applying the skill to each case and comparing the response with the rubric.
 
 ## Automation boundary and rollout
 
