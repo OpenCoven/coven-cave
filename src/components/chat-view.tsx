@@ -416,6 +416,7 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
 // owner never comes back to consume it.
 const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
 const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the saved request can be identified.";
 
 type Props = {
   familiar: Familiar;
@@ -5420,6 +5421,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const assistantId = crypto.randomUUID();
     const assistantTurn: Turn = {
       id: assistantId,
+      persistedTurnId: null,
       parentId: userTurn.id,
       role: "assistant",
       text: "",
@@ -5616,7 +5618,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // position, send the explicit parent so the server builds the new
           // turn off the right node rather than defaulting to the current
           // active leaf.
-          ...(opts?.parentTurnId !== undefined ? { parentTurnId: opts.parentTurnId } : {}),
+          ...(opts?.parentTurnId !== undefined ? {
+            parentTurnId: turnsRef.current.find((turn) => turn.id === opts.parentTurnId)?.persistedTurnId
+              ?? opts.parentTurnId,
+          } : {}),
         }),
         signal: controller.signal,
       });
@@ -6343,6 +6348,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (historyState !== "loaded") return "Reconnect and load this chat before sending answers.";
     if (busy || abortRef.current) return "Wait for the current response before sending answers.";
     if (activePath.at(-1)?.id !== turnId) return "This request is from an earlier turn. Reply in the composer instead.";
+    if (turnsRef.current.find((turn) => turn.id === turnId)?.persistedTurnId === null) {
+      return APPROVAL_RELOAD_REQUIRED;
+    }
     if (!projectLaunchReady) return projectLaunchMessage;
     if (isOmnigentHostOptionId(runtimeHost)) return "Choose a chat host before sending answers in this conversation.";
     return undefined;
@@ -6796,6 +6804,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   usage: ev.usage,
                   costUsd: ev.costUsd,
                   responseMetadata: ev.responseMetadata,
+                  persistedTurnId: ev.persistedTurnId ?? t.persistedTurnId,
                   progress: settleRunningProgress(t.progress, ev.isError ? "error" : "done"),
                 }
               : t,
@@ -8991,7 +9000,7 @@ const TranscriptRows = memo(function TranscriptRows({
               ? "Wait for the current response before sending answers."
               : allTurns.at(-1)?.id !== t.id
                 ? "This request is from an earlier turn. Reply in the composer instead."
-                : undefined}
+                : t.persistedTurnId === null ? APPROVAL_RELOAD_REQUIRED : undefined}
           handlersRef={handlersRef}
           feedbackContext={readOnly ? undefined : feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
@@ -9069,7 +9078,7 @@ const TranscriptRows = memo(function TranscriptRows({
                   ? "Wait for the current response before sending answers."
                   : allTurns.at(-1)?.id !== t.id
                     ? "This request is from an earlier turn. Reply in the composer instead."
-                    : undefined}
+                    : t.persistedTurnId === null ? APPROVAL_RELOAD_REQUIRED : undefined}
               handlersRef={handlersRef}
               feedbackContext={readOnly ? undefined : feedbackContext}
               expanded={expandedAvatarTurnId === t.id}

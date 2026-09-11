@@ -28,3 +28,14 @@ test("card submission revalidates after the asynchronous runtime mutation bounda
   assert.ok(sendRaw.indexOf("!submission.canSend()") < sendRaw.indexOf('fetch("/api/chat/send"'));
   assert.match(sendRaw, /attentionSettlement\.markPersistenceConfirmed\(\);\s*submission\?\.onPersisted\(\)/);
 });
+
+test("streamed questions use confirmed store identity without replacing display ancestry", () => {
+  assert.match(source, /const assistantTurn: Turn = \{\s*id: assistantId,\s*persistedTurnId: null/);
+  assert.match(source, /persistedTurnId: ev\.persistedTurnId \?\? t\.persistedTurnId/);
+  assert.match(source, /parentTurnId: turnsRef\.current\.find\(\(turn\) => turn\.id === opts\.parentTurnId\)\?\.persistedTurnId\s*\?\? opts\.parentTurnId/);
+  assert.match(source, /turnsRef\.current\.find\(\(turn\) => turn\.id === turnId\)\?\.persistedTurnId === null/);
+  assert.equal((source.match(/t\.persistedTurnId === null \? APPROVAL_RELOAD_REQUIRED : undefined/g) ?? []).length, 2);
+  const route = readFileSync(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+  assert.equal((route.match(/await saveConversation\(conv\);\s*persistedTurnId = assistantTurnId;/g) ?? []).length, 3);
+  assert.equal((route.match(/\.\.\.\(persistedTurnId \? \{ persistedTurnId \} : \{\}\)/g) ?? []).length, 3);
+});

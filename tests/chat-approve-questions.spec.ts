@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.use({ serviceWorkers: "block" });
+
 const SESSION = "approve-questions";
 const ISO = "2026-09-09T12:00:00.000Z";
 const QUESTIONS = [
@@ -9,9 +11,35 @@ const QUESTIONS = [
   '<coven:attention reason="decision" />',
 ].join("\n");
 
-async function setup(page: Page, options: { text?: string; reject?: boolean; historical?: boolean; holdSend?: Promise<void> } = {}) {
+async function setup(page: Page, options: {
+  text?: string;
+  reject?: boolean;
+  historical?: boolean;
+  fresh?: boolean;
+  missingIdentity?: boolean;
+  branched?: boolean;
+  holdSend?: Promise<void>;
+} = {}) {
   const sends: Record<string, unknown>[] = [];
-  let saved = false;
+  const turns = options.fresh ? [
+    { id: "u0", parentId: null, role: "user", text: "Keep this earlier context.", createdAt: ISO },
+    { id: "a0", parentId: "u0", role: "assistant", text: "Ready for your request.", createdAt: ISO },
+  ] : [
+    { id: "u1", parentId: null, role: "user", text: "Ask me how to proceed.", createdAt: ISO },
+    { id: "a1", parentId: "u1", role: "assistant", text: options.text ?? QUESTIONS, createdAt: ISO },
+  ];
+  let activeLeafId = turns.at(-1)!.id;
+  if (options.branched) {
+    // An identical, newer sibling must not become the answer's parent.
+    turns.push({ id: "a-other", parentId: "u1", role: "assistant", text: QUESTIONS, createdAt: "2026-09-09T12:01:00.000Z" });
+  }
+  if (options.historical) {
+    turns.push(
+      { id: "u2", parentId: "a1", role: "user", text: "Continue without those choices.", createdAt: ISO },
+      { id: "a2", parentId: "u2", role: "assistant", text: "Received your choices.", createdAt: ISO },
+    );
+    activeLeafId = "a2";
+  }
   await page.addInitScript(() => {
     localStorage.setItem("cave:active-familiar", "cody");
     localStorage.setItem("cave:familiar:cody:last-surface", "chat");
@@ -36,40 +64,96 @@ async function setup(page: Page, options: { text?: string; reject?: boolean; his
     ok: true, state: { familiarId: "cody", harness: "claude", effectiveModel: "test", source: "session", applicationState: "saved" },
   } }));
   await page.route("**/api/chat/conversation/**", (route) => {
-    const subsequent = saved || options.historical;
     return route.fulfill({ json: {
       ok: true,
-      conversation: {
-        activeLeafId: subsequent ? "a2" : "a1",
-        turns: [
-          { id: "u1", parentId: null, role: "user", text: "Ask me how to proceed.", createdAt: ISO },
-          { id: "a1", parentId: "u1", role: "assistant", text: options.text ?? QUESTIONS, createdAt: ISO },
-          ...(subsequent ? [
-            { id: "u2", parentId: "a1", role: "user", text: sends[0]?.prompt ?? "Continue without those choices.", createdAt: ISO },
-            { id: "a2", parentId: "u2", role: "assistant", text: "Received your choices.", createdAt: ISO },
-          ] : []),
-        ],
-      },
+      conversation: { activeLeafId, turns },
     } });
   });
   await page.route("**/api/chat/send", async (route) => {
-    sends.push(route.request().postDataJSON());
+    const request = route.request().postDataJSON();
+    sends.push(request);
     await options.holdSend;
     if (options.reject) return route.fulfill({ status: 503, json: { ok: false, error: "Test bridge unavailable" } });
-    saved = true;
+    const firstStream = options.fresh && sends.length === 1;
+    const userId = firstStream ? "u1" : "u2";
+    const assistantId = firstStream ? "a1" : "a2";
+    const text = firstStream ? QUESTIONS : "Received your choices.";
+    // Model the real persistence boundary: do not silently repair a bad parent
+    // sent by the client, or reload would conceal this regression.
+    turns.push(
+      { id: userId, parentId: request.parentTurnId ?? activeLeafId, role: "user", text: request.prompt, createdAt: ISO },
+      { id: assistantId, parentId: userId, role: "assistant", text, createdAt: ISO },
+    );
+    activeLeafId = assistantId;
     return route.fulfill({
       contentType: "text/event-stream",
       body: [
-        { kind: "assistant_chunk", text: "Received your choices." },
-        { kind: "done", sessionId: SESSION },
+        { kind: "assistant_chunk", text },
+        { kind: "done", sessionId: SESSION, ...(!options.missingIdentity ? { persistedTurnId: assistantId } : {}) },
       ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
     });
   });
   await page.goto(`/?mode=chat#chat-${SESSION}`, { waitUntil: "domcontentloaded" });
   const chat = page.getByTestId("chat-main");
-  await expect(chat.getByText("Choose how to proceed.", { exact: true })).toBeVisible({ timeout: 45_000 });
-  return { chat, sends };
+  await expect(chat.getByText(options.fresh ? "Ready for your request." : "Choose how to proceed.", { exact: true })).toBeVisible({ timeout: 45_000 });
+  return { chat, sends, turns };
 }
+
+test("freshly streamed questions retain the complete ancestry after answering and reloading", async ({ page }) => {
+  const { chat, sends, turns } = await setup(page, { fresh: true });
+  const composer = chat.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Ask me how to proceed.");
+  await composer.press("Enter");
+  const card = chat.getByRole("form", { name: "Questions from familiar" });
+  await card.getByRole("radio", { name: "Cookies", exact: true }).check();
+  await expect(card.getByRole("button", { name: "Send answers", exact: true })).toBeEnabled();
+  const displayedTurnId = await card.evaluate((element) => element.closest("[data-turn-id]")?.getAttribute("data-turn-id"));
+  expect(displayedTurnId).toBeTruthy();
+  expect(displayedTurnId).not.toBe("a1");
+  await card.getByRole("button", { name: "Send answers", exact: true }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  expect(sends[1]).toMatchObject({ parentTurnId: "a1", prompt: "Which auth? → Cookies" });
+  expect(turns.find((turn) => turn.id === "u2")?.parentId).toBe("a1");
+  await expect(chat.locator('[data-approve-phase="sent"]')).toBeVisible();
+  await expect(chat.getByText("Keep this earlier context.", { exact: true })).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(chat.getByText("Keep this earlier context.", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(chat.getByText("Ask me how to proceed.", { exact: true })).toBeVisible();
+  await expect(chat.getByText("Choose how to proceed.", { exact: true })).toBeVisible();
+  await expect(chat.locator(".cave-bubble-user").last()).toContainText("Which auth? → Cookies");
+  await expect(chat.getByRole("button", { name: "Send answers", exact: true })).toBeDisabled();
+  expect(sends).toHaveLength(2);
+});
+
+test("fresh questions without a persistence identity require reload, not a guessed parent", async ({ page }) => {
+  const { chat, sends } = await setup(page, { fresh: true, missingIdentity: true });
+  const composer = chat.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Ask me how to proceed.");
+  await composer.press("Enter");
+  const card = chat.getByRole("form", { name: "Questions from familiar" });
+  await expect(card).toContainText("Reload this chat before sending answers");
+  await expect(card.getByRole("button", { name: "Send answers", exact: true })).toBeDisabled();
+  expect(sends).toHaveLength(1);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await card.getByRole("radio", { name: "Cookies", exact: true }).check();
+  await card.getByRole("button", { name: "Send answers", exact: true }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  expect(sends[1].parentTurnId).toBe("a1");
+});
+
+test("saved questions keep their selected branch despite identical newer sibling text", async ({ page }) => {
+  const { chat, sends, turns } = await setup(page, { branched: true });
+  const card = chat.getByRole("form", { name: "Questions from familiar" });
+  await card.getByRole("radio", { name: "Cookies", exact: true }).check();
+  await card.getByRole("button", { name: "Send answers", exact: true }).click();
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].parentTurnId).toBe("a1");
+  expect(turns.find((turn) => turn.id === "a-other")?.parentId).toBe("u1");
+  await expect(chat.locator('[data-approve-phase="sent"]')).toBeVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(chat.getByText("Ask me how to proceed.", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(chat.locator(".cave-bubble-user").last()).toContainText("Which auth? → Cookies");
+});
 
 test("production marker sends choices as the next user turn without consuming the composer draft", async ({ page }) => {
   const { chat, sends } = await setup(page);
