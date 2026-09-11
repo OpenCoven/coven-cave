@@ -260,7 +260,7 @@ const PRIVATE_KEY_BLOCK_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:
 // keep its text. Requires a tag-name-shaped run right after '<'/'</', so a
 // Markdown autolink (<https://…>, <user@example.com>) never matches: ':' and
 // '@' break the run before any '>' or attribute whitespace is reached.
-const GENERIC_HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>])*)?\s*\/?>/g;
+const GENERIC_HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\s*\/?>/g;
 
 function stripInlineHtmlTags(text: string): string {
   return text.replace(GENERIC_HTML_TAG_RE, "");
