@@ -94,6 +94,7 @@ display name, local path, or matching task title cannot supply those facts.
 | `.agents/skills/work-continuity/evals/scenarios.json` | Synthetic positive, negative, stale, ambiguous, privacy, and race cases |
 | `scripts/work-continuity-contract.test.mjs` | Deterministic corpus, procedural-boundary, and entrypoint contract |
 | `scripts/run-tests.mjs` and `.github/workflows/ci.yml` | Run the contract in the app suite and documentation CI |
+| `scripts/ci-paths.mjs` and `scripts/ci-paths.test.mjs` | Select the docs contract for standalone skill and agent-guide changes |
 | `docs/workflows/work-continuity.md` | Living operational contract, evidence packet, commands, rollout boundaries |
 | `AGENTS.md` and `CLAUDE.md` | Identical preflight entrypoint before planning and work creation |
 | `docs/workflows/beads-familiars.md` | Link preflight to the existing claim-and-close workflow |
@@ -223,8 +224,9 @@ introduced. Existing chats and their source branches remain unchanged.
 
 The completed artifacts cover every locked decision. The existing targeted
 documentation and skill tests passed. The actual parser, scanner, and slash
-resolver discover the new skill; both guide entrypoints match. A fresh
-read-only rehearsal covered all 14 synthetic cases without forbidden actions.
+resolver discover the new skill; both guide entrypoints match. The initial
+read-only rehearsal covered the original 14 synthetic cases without forbidden
+actions.
 Review clarified access-before-retrieval, known task versus uncertain
 execution permission, write authorization for comments, and unknown delivery.
 The review follow-up added explicit Board/task coverage, wired the deterministic
