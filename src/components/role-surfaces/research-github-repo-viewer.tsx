@@ -422,78 +422,105 @@ export function ResearchGithubRepoViewer({
    * never closes more than the user asked it to. Anything this handler
    * consumes is stopped here; anything it does not reaches the overlay's focus
    * trap, which closes the dialog.
+   *
+   * This one stays a REACT handler rather than joining the window listener
+   * below, and the split is load-bearing: the overlay's trap listens on
+   * `window` and calls `stopImmediatePropagation` on Escape. React dispatches
+   * from its root before the event reaches window, so handling Escape here is
+   * what lets the inner layers run at all — move it to window and the trap
+   * closes the whole modal on the first press.
    */
   const onKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement | null;
-    const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
-    const mod = event.metaKey || event.ctrlKey;
+    if (event.key !== "Escape") return;
+    if (helpOpen) { setHelpOpen(false); event.stopPropagation(); event.preventDefault(); return; }
+    if (overflowOpen) { setOverflowOpen(false); event.stopPropagation(); event.preventDefault(); return; }
+    if (filter) {
+      setFilter("");
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    // Anything left falls through to the overlay: close the modal.
+  }, [filter, helpOpen, overflowOpen]);
 
-    if (event.key === "Escape") {
-      if (helpOpen) { setHelpOpen(false); event.stopPropagation(); event.preventDefault(); return; }
-      if (overflowOpen) { setOverflowOpen(false); event.stopPropagation(); event.preventDefault(); return; }
-      if (filter) {
-        setFilter("");
-        event.stopPropagation();
+  /**
+   * Every other shortcut listens on `window` while the modal is mounted.
+   *
+   * A React handler on the section only sees keys dispatched from inside it,
+   * and focus leaves the section constantly through no fault of the user: the
+   * rail toggle, the filter's clear button and every overflow item UNMOUNT
+   * themselves on click, which drops focus to `<body>`. With the handler bound
+   * to the section, `?` and `/` silently stopped working after any of those —
+   * a hole an e2e test caught by pressing `?` right after reopening the rail.
+   */
+  useEffect(() => {
+    // The surface's behavior tests render through react-test-renderer, which
+    // has no DOM — and a shortcut layer is not a reason for a component to
+    // require one.
+    if (typeof window === "undefined") return;
+    const onWindowKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+      const mod = event.metaKey || event.ctrlKey;
+
+      // Escape belongs to the React handler above, which owns the layering.
+      if (event.key === "Escape") return;
+
+      if (mod && event.key === "Enter") {
         event.preventDefault();
+        openUrl(primaryUrl);
         return;
       }
-      return; // Falls through to the overlay: close the modal.
-    }
-
-    if (mod && event.key === "Enter") {
-      event.preventDefault();
-      openUrl(primaryUrl);
-      return;
-    }
-    if (mod && event.shiftKey && (event.key === "U" || event.key === "u")) {
-      event.preventDefault();
-      copyRepoUrl();
-      return;
-    }
-    if (mod && event.shiftKey && (event.key === "C" || event.key === "c")) {
-      event.preventDefault();
-      copySelectionPath();
-      return;
-    }
-    if (mod && (event.key === "b" || event.key === "B")) {
-      event.preventDefault();
-      onPreviewInBrowser();
-      return;
-    }
-    if (mod && event.key === "\\") {
-      event.preventDefault();
-      setRailOpen((open) => !open);
-      return;
-    }
-    if (mod && (event.key === "k" || event.key === "K")) {
-      event.preventDefault();
-      focusFilter();
-      return;
-    }
-    if (event.altKey && (event.key === "z" || event.key === "Z" || event.key === "Ω")) {
-      event.preventDefault();
-      setWrap((current) => !current);
-      return;
-    }
-    if (typing || mod || event.altKey) return;
-    if (event.key === "/") {
-      event.preventDefault();
-      focusFilter();
-      return;
-    }
-    if (event.key === "?") {
-      event.preventDefault();
-      setHelpOpen(true);
-    }
+      if (mod && event.shiftKey && (event.key === "U" || event.key === "u")) {
+        event.preventDefault();
+        copyRepoUrl();
+        return;
+      }
+      if (mod && event.shiftKey && (event.key === "C" || event.key === "c")) {
+        event.preventDefault();
+        copySelectionPath();
+        return;
+      }
+      if (mod && (event.key === "b" || event.key === "B")) {
+        event.preventDefault();
+        onPreviewInBrowser();
+        return;
+      }
+      if (mod && event.key === "\\") {
+        event.preventDefault();
+        setRailOpen((open) => !open);
+        return;
+      }
+      if (mod && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        focusFilter();
+        return;
+      }
+      // ⌥Z on macOS emits "Ω" as the key; both spellings mean soft wrap.
+      if (event.altKey && (event.key === "z" || event.key === "Z" || event.key === "Ω")) {
+        event.preventDefault();
+        setWrap((current) => !current);
+        return;
+      }
+      // A bare letter typed into the filter is text, not a shortcut.
+      if (typing || mod || event.altKey) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        focusFilter();
+        return;
+      }
+      if (event.key === "?") {
+        event.preventDefault();
+        setHelpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onWindowKey);
+    return () => window.removeEventListener("keydown", onWindowKey);
   }, [
     copyRepoUrl,
     copySelectionPath,
-    filter,
     focusFilter,
-    helpOpen,
     onPreviewInBrowser,
     openUrl,
-    overflowOpen,
     primaryUrl,
   ]);
 
