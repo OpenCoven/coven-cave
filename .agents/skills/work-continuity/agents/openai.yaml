@@ -1,0 +1,4 @@
+interface:
+  display_name: "Work Continuity"
+  short_description: "Find existing work before starting another effort"
+  default_prompt: "Use $work-continuity before planning, resuming, creating, claiming, or delegating multi-step work. Search only authorized sources, preserve the existing owner and source conversations, and report coverage and actual handoff receipts. Skip ordinary independent one-turn answers. This procedure does not grant authority or enforce runtime deduplication."
