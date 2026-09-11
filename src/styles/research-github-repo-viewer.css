@@ -47,8 +47,8 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 18px 22px 13px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-3);
   overflow: hidden;
 }
 
@@ -72,7 +72,7 @@
   position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -101,7 +101,12 @@
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 19px;
+  /* The spec asks for 19px and retires --text-xl (20px) — but it retires it as
+     the size of the DUPLICATE h4 this redesign deletes, not as a wrong value.
+     At 1px apart the hierarchy the spec actually argues for (slug over
+     description over meta, three ink tiers) is identical, so the token carries
+     it and the type scale stays unbroken. */
+  font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.018em;
@@ -113,7 +118,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -134,18 +139,18 @@
 
 .research-gh__dot {
   flex: none;
-  margin: 0 11px;
+  margin: 0 var(--space-3);
   color: color-mix(in oklch, var(--foreground) 26%, transparent);
 }
 
 .research-gh__meta-url {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   min-width: 0;
   max-width: 300px;
-  margin-left: -6px;
-  padding: 3px 6px;
+  margin-left: calc(-1 * var(--space-1));
+  padding: 3px var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -179,9 +184,9 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 5px;
-  margin: 0 -5px;
+  gap: var(--space-1);
+  padding: 3px var(--space-1);
+  margin: 0 calc(-1 * var(--space-1));
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -215,7 +220,7 @@
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   white-space: nowrap;
 }
 
@@ -233,8 +238,8 @@
    is spent on the exception (private / internal) and nothing else. */
 .research-gh__exception {
   flex: none;
-  margin-left: 11px;
-  padding: 2px 7px;
+  margin-left: var(--space-3);
+  padding: 2px var(--space-2);
   border: 1px solid color-mix(in oklch, var(--color-warning) 38%, transparent);
   border-radius: var(--radius-pill);
   color: var(--color-warning);
@@ -249,8 +254,8 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding-left: 14px;
+  gap: var(--space-4);
+  padding-left: var(--space-3);
   color: var(--text-secondary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -259,7 +264,7 @@
 .research-gh__metrics > span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .research-gh__metrics svg { opacity: 0.7; color: var(--text-muted); }
@@ -328,10 +333,10 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   height: 30px;
-  margin: 10px 8px 0;
-  padding: 0 8px 0 7px;
+  margin: var(--space-2) var(--space-2) 0;
+  padding: 0 var(--space-2) 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
@@ -353,7 +358,7 @@
   overflow: hidden;
   color: inherit;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 500;
   letter-spacing: 0.17em;
   text-transform: uppercase;
@@ -369,9 +374,9 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   height: 40px;
-  padding: 0 14px;
+  padding: 0 var(--space-3);
   color: var(--text-muted);
 }
 
@@ -385,7 +390,7 @@
   outline: none;
   color: var(--text-primary);
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1;
 }
 
@@ -417,7 +422,7 @@
   color: var(--text-muted);
   background: var(--bg-hover);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1;
 }
 
@@ -427,9 +432,9 @@
   flex: none;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin: 0 10px 6px;
-  padding: 9px 11px;
+  gap: var(--space-2);
+  margin: 0 var(--space-2) var(--space-1);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--color-warning) 11%, transparent);
 }
@@ -444,12 +449,12 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .research-gh__truncated span {
   color: var(--text-primary);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.45;
 }
 
@@ -459,7 +464,7 @@
   border: 0;
   color: var(--accent-presence);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
   line-height: 1.4;
   white-space: nowrap;
@@ -472,7 +477,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 10px 18px;
+  padding: 2px var(--space-2) var(--space-4);
 }
 
 /* ── Rail rows. One row per item, always: the name never wraps. ── */
@@ -482,7 +487,7 @@
   align-items: center;
   width: 100%;
   height: 28px;
-  padding: 0 9px 0 0;
+  padding: 0 var(--space-2) 0 0;
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -491,7 +496,7 @@
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
-.research-gh__row--readme { height: 30px; padding-left: 9px; }
+.research-gh__row--readme { height: 30px; padding-left: var(--space-2); }
 
 .research-gh__row:hover { background: var(--bg-hover); }
 
@@ -522,7 +527,7 @@
   flex: none;
   width: 13px;
   height: 28px;
-  margin-left: 5px;
+  margin-left: var(--space-1);
   border-left: 1px solid var(--border-hairline);
 }
 
@@ -531,7 +536,7 @@
   display: grid;
   place-items: center;
   width: 21px;
-  margin-left: 8px;
+  margin-left: var(--space-2);
   color: var(--text-muted);
 }
 
@@ -552,13 +557,13 @@
 .research-gh__row[data-dir] .research-gh__row-name {
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 450;
 }
 
 .research-gh__row--readme .research-gh__row-name {
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 450;
 }
 
@@ -568,13 +573,13 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: 44%;
-  padding-left: 8px;
+  padding-left: var(--space-2);
   overflow: hidden;
   direction: rtl;
   text-align: left;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   line-height: 1;
   opacity: 0.72;
   text-overflow: ellipsis;
@@ -583,10 +588,10 @@
 
 .research-gh__row-size {
   flex: none;
-  padding-left: 9px;
+  padding-left: var(--space-2);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
@@ -597,7 +602,7 @@
   flex: none;
   width: 10px;
   height: 10px;
-  margin-left: 9px;
+  margin-left: var(--space-2);
   border: 1.5px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
   border-top-color: var(--accent-presence);
   border-radius: 50%;
@@ -606,18 +611,18 @@
 
 .research-gh__row-divider {
   height: 1px;
-  margin: 7px 9px;
+  margin: var(--space-2) var(--space-2);
   background: var(--border-hairline);
 }
 
 .research-gh__no-results {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 30px 14px;
+  padding: var(--space-8) var(--space-3);
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.55;
   text-align: center;
 }
@@ -629,8 +634,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 14px 0;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
   border: 0;
   border-right: 1px solid var(--border-hairline);
   color: var(--text-muted);
@@ -661,7 +666,7 @@
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.1em;
   opacity: 0.6;
 }
@@ -679,9 +684,9 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   height: 46px;
-  padding: 0 16px 0 20px;
+  padding: 0 var(--space-4) 0 var(--space-5);
 }
 
 .research-gh__crumbs {
@@ -709,7 +714,7 @@
 
 .research-gh__crumb {
   flex: none;
-  padding: 3px 5px;
+  padding: 3px var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
@@ -730,7 +735,7 @@ button.research-gh__crumb:hover {
 
 .research-gh__crumb[data-current] {
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -744,14 +749,14 @@ button.research-gh__crumb:hover {
 .research-gh__tool {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   height: 26px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   background: transparent;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 450;
   line-height: 1;
   cursor: pointer;
@@ -781,24 +786,24 @@ button.research-gh__crumb:hover {
 .research-gh__markdown {
   max-width: 704px;
   margin: 0 auto;
-  padding: 8px 32px 72px;
+  padding: var(--space-2) var(--space-8) var(--space-12);
 }
 
 /* ── Source pane: deliberately dark in both modes, like every code surface. ── */
 .research-gh__source {
   min-height: 100%;
-  padding: 16px 0 48px;
+  padding: var(--space-4) 0 var(--space-12);
   background: var(--code-surface);
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   tab-size: 2;
 }
 
 .research-gh__line {
   display: flex;
-  gap: 18px;
-  padding-right: 20px;
+  gap: var(--space-4);
+  padding-right: var(--space-5);
 }
 
 .research-gh__line:hover {
@@ -808,7 +813,7 @@ button.research-gh__crumb:hover {
 .research-gh__line-no {
   flex: none;
   width: 52px;
-  padding-right: 6px;
+  padding-right: var(--space-1);
   text-align: right;
   color: var(--code-chrome-ink-faint, color-mix(in oklch, var(--code-foreground) 60%, transparent));
   opacity: 0.34;
@@ -834,16 +839,16 @@ button.research-gh__crumb:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: var(--space-2);
   min-height: 100%;
-  padding: 40px;
+  padding: var(--space-10);
   text-align: center;
 }
 
 .research-gh__restoring strong,
 .research-gh__empty strong {
   color: var(--text-secondary);
-  font-size: 13.5px;
+  font-size: var(--text-base);
   font-weight: 450;
   line-height: 1.5;
 }
@@ -876,7 +881,7 @@ button.research-gh__crumb:hover {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin: 16px 20px;
+  margin: var(--space-4) var(--space-5);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-card);
 }
@@ -899,9 +904,9 @@ button.research-gh__crumb:hover {
 .research-gh__skeletons li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   height: 28px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
 }
 
 .research-gh__sk-icon {
@@ -918,6 +923,33 @@ button.research-gh__crumb:hover {
   background: var(--bg-elevated);
 }
 
+/* Ragged bar widths are decoration, not measurement — a skeleton that
+   repeats one width reads as a loading BAR rather than as text. */
+.research-gh__skeletons li:nth-child(1) .research-gh__sk-bar { width: 70%; }
+.research-gh__skeletons li:nth-child(2) .research-gh__sk-bar { width: 52%; }
+.research-gh__skeletons li:nth-child(3) .research-gh__sk-bar { width: 84%; }
+.research-gh__skeletons li:nth-child(4) .research-gh__sk-bar { width: 46%; }
+.research-gh__skeletons li:nth-child(5) .research-gh__sk-bar { width: 62%; }
+.research-gh__skeletons li:nth-child(6) .research-gh__sk-bar { width: 90%; }
+.research-gh__skeletons li:nth-child(7) .research-gh__sk-bar { width: 56%; }
+.research-gh__skeletons li:nth-child(8) .research-gh__sk-bar { width: 74%; }
+.research-gh__skeletons li:nth-child(9) .research-gh__sk-bar { width: 48%; }
+.research-gh__skeletons li:nth-child(10) .research-gh__sk-bar { width: 80%; }
+.research-gh__skeletons li:nth-child(11) .research-gh__sk-bar { width: 60%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(1) { width: 86%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(2) { width: 44%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(3) { width: 70%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(4) { width: 62%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(5) { width: 92%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(6) { width: 38%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(7) { width: 76%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(8) { width: 58%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(9) { width: 84%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(10) { width: 50%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(11) { width: 68%; }
+.research-gh__code-skeleton .research-gh__sk-bar:nth-child(12) { width: 40%; }
+
+
 .research-gh__skeletons li,
 .research-gh__sk-crumb,
 .research-gh__code-skeleton {
@@ -929,8 +961,8 @@ button.research-gh__crumb:hover {
 .research-gh__code-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 13px;
-  padding: 24px 20px;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
 }
 
 /* ── Action bar: one primary, one secondary, overflow, destructive left. ── */
@@ -941,7 +973,7 @@ button.research-gh__crumb:hover {
   align-items: center;
   gap: var(--space-2);
   min-height: 58px;
-  padding: 0 16px 0 14px;
+  padding: 0 var(--space-4) 0 var(--space-3);
 }
 
 .research-gh__actions-left {
@@ -967,7 +999,7 @@ button.research-gh__crumb:hover {
   bottom: 38px;
   z-index: 5;
   min-width: 230px;
-  padding: 6px;
+  padding: var(--space-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--bg-elevated);
@@ -977,15 +1009,15 @@ button.research-gh__crumb:hover {
 .research-gh__overflow button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   width: 100%;
   height: 31px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 450;
   line-height: 1;
   text-align: left;
@@ -1007,15 +1039,15 @@ button.research-gh__crumb:hover {
 .research-gh__primary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: 340px;
   height: 32px;
-  padding: 0 15px;
+  padding: 0 var(--space-4);
   border: 0;
   border-radius: var(--radius-control);
   color: var(--accent-presence-foreground);
   background: var(--accent-presence);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -1041,7 +1073,7 @@ button.research-gh__crumb:hover {
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: 40px;
+  padding: var(--space-10);
   background: oklch(0 0 0 / 52%);
   backdrop-filter: blur(3px);
 }
@@ -1049,7 +1081,7 @@ button.research-gh__crumb:hover {
 .research-gh__help-card {
   width: 580px;
   max-width: 100%;
-  padding: 22px 24px 20px;
+  padding: var(--space-5) var(--space-6) var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--bg-elevated);
@@ -1059,14 +1091,14 @@ button.research-gh__crumb:hover {
 .research-gh__help-head {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .research-gh__help-head h4 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.012em;
@@ -1076,20 +1108,20 @@ button.research-gh__crumb:hover {
   margin-left: auto;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
 }
 
 .research-gh__help-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 30px;
+  gap: 0 var(--space-8);
   margin: 0;
 }
 
 .research-gh__help-grid > div {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   height: 29px;
   border-bottom: 1px solid var(--border-hairline);
 }
@@ -1099,7 +1131,7 @@ button.research-gh__crumb:hover {
   min-width: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1108,10 +1140,10 @@ button.research-gh__crumb:hover {
 
 .research-gh__help-grid kbd {
   min-width: 24px;
-  padding: 3px 7px;
+  padding: 3px var(--space-2);
   color: var(--text-primary);
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   line-height: 1.3;
 }
 
@@ -1132,16 +1164,15 @@ button.research-gh__crumb:hover {
 }
 
 @media (max-width: 640px) {
-  .research-gh__head { padding: 14px 16px 11px; }
-  .research-gh__slug { font-size: 17px; }
-  .research-gh__meta { height: auto; flex-wrap: wrap; row-gap: 6px; }
+  .research-gh__head { padding: var(--space-3) var(--space-4) var(--space-3); }
+  .research-gh__meta { height: auto; flex-wrap: wrap; row-gap: var(--space-1); }
   .research-gh__meta-item,
   .research-gh__exception { display: none; }
   .research-gh__rail { width: 100%; }
-  .research-gh__markdown { padding: 8px 18px 56px; }
+  .research-gh__markdown { padding: var(--space-2) var(--space-4) var(--space-12); }
   .research-gh__source[data-wrap] .research-gh__line-text,
   .research-gh__line-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .research-gh__actions { flex-wrap: wrap; padding: 10px 12px; }
+  .research-gh__actions { flex-wrap: wrap; padding: var(--space-2) var(--space-3); }
   .research-gh__actions-left { width: 100%; margin-right: 0; }
   .research-gh__actions-right { width: 100%; justify-content: flex-end; }
 }

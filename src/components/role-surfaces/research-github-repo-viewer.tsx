@@ -729,11 +729,13 @@ export function ResearchGithubRepoViewer({
 
             <div className="research-gh__tree" data-scroll ref={treeRef} onKeyDown={onTreeKeyDown}>
               {loading ? (
+                // The eleven bar widths are a fixed decorative pattern, not a
+                // measurement, so the sheet owns them through :nth-child.
                 <ul className="research-gh__skeletons" aria-hidden>
-                  {[70, 52, 84, 46, 62, 90, 56, 74, 48, 80, 60].map((width, index) => (
+                  {Array.from({ length: 11 }, (_, index) => (
                     <li key={index}>
                       <span className="research-gh__sk-icon" />
-                      <span className="research-gh__sk-bar" style={{ width: `${width}%` }} />
+                      <span className="research-gh__sk-bar" />
                     </li>
                   ))}
                 </ul>
@@ -977,8 +979,8 @@ export function ResearchGithubRepoViewer({
               </div>
             ) : fileState.kind === "loading" && fileState.path === selectedPath ? (
               <div className="research-gh__code-skeleton" aria-hidden>
-                {[86, 44, 70, 62, 92, 38, 76, 58, 84, 50, 68, 40].map((width, index) => (
-                  <span key={index} className="research-gh__sk-bar" style={{ width: `${width}%` }} />
+                {Array.from({ length: 12 }, (_, index) => (
+                  <span key={index} className="research-gh__sk-bar" />
                 ))}
               </div>
             ) : fileState.kind === "error" && fileState.path === selectedPath ? (

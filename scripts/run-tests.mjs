@@ -1184,6 +1184,8 @@ export const SUITES = {
     "src/lib/html-sanitize.test.ts",
     "src/lib/github-repo-link.test.ts",
     "src/lib/research-github-repo.test.ts",
+    "src/lib/research-github-repo-browser.test.ts",
+    "src/lib/github-readme-layout-html.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
     "src/lib/hf-papers.test.ts",
