@@ -451,12 +451,26 @@ export function ResearchGithubRepoViewer({
    * themselves on click, which drops focus to `<body>`. With the handler bound
    * to the section, `?` and `/` silently stopped working after any of those —
    * a hole an e2e test caught by pressing `?` right after reopening the rail.
+   *
+   * It listens in the CAPTURE phase and consumes what it handles, because the
+   * workspace already owns some of these keys globally: `?` opens Cave's own
+   * shortcuts sheet and `⌘K` opens the command palette, both on window. A
+   * bubble-phase listener here registers second and loses — pressing `?` over
+   * this modal opened the APP's sheet instead of the modal's. Capturing first
+   * and calling `stopImmediatePropagation` makes the open modal authoritative
+   * over its own keys, which is what a modal should be, and stops one keypress
+   * opening two different shortcuts sheets.
    */
   useEffect(() => {
     // The surface's behavior tests render through react-test-renderer, which
     // has no DOM — and a shortcut layer is not a reason for a component to
     // require one.
     if (typeof window === "undefined") return;
+    /** Take the key for this modal: no app-level handler should also see it. */
+    const claim = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
     const onWindowKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
@@ -466,55 +480,55 @@ export function ResearchGithubRepoViewer({
       if (event.key === "Escape") return;
 
       if (mod && event.key === "Enter") {
-        event.preventDefault();
+        claim(event);
         openUrl(primaryUrl);
         return;
       }
       if (mod && event.shiftKey && (event.key === "U" || event.key === "u")) {
-        event.preventDefault();
+        claim(event);
         copyRepoUrl();
         return;
       }
       if (mod && event.shiftKey && (event.key === "C" || event.key === "c")) {
-        event.preventDefault();
+        claim(event);
         copySelectionPath();
         return;
       }
       if (mod && (event.key === "b" || event.key === "B")) {
-        event.preventDefault();
+        claim(event);
         onPreviewInBrowser();
         return;
       }
       if (mod && event.key === "\\") {
-        event.preventDefault();
+        claim(event);
         setRailOpen((open) => !open);
         return;
       }
       if (mod && (event.key === "k" || event.key === "K")) {
-        event.preventDefault();
+        claim(event);
         focusFilter();
         return;
       }
       // ⌥Z on macOS emits "Ω" as the key; both spellings mean soft wrap.
       if (event.altKey && (event.key === "z" || event.key === "Z" || event.key === "Ω")) {
-        event.preventDefault();
+        claim(event);
         setWrap((current) => !current);
         return;
       }
       // A bare letter typed into the filter is text, not a shortcut.
       if (typing || mod || event.altKey) return;
       if (event.key === "/") {
-        event.preventDefault();
+        claim(event);
         focusFilter();
         return;
       }
       if (event.key === "?") {
-        event.preventDefault();
+        claim(event);
         setHelpOpen(true);
       }
     };
-    window.addEventListener("keydown", onWindowKey);
-    return () => window.removeEventListener("keydown", onWindowKey);
+    window.addEventListener("keydown", onWindowKey, true);
+    return () => window.removeEventListener("keydown", onWindowKey, true);
   }, [
     copyRepoUrl,
     copySelectionPath,
