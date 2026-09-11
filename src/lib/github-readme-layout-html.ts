@@ -21,10 +21,14 @@
 
 /**
  * Block-level wrappers that carry layout and nothing else. `<center>` is the
- * pre-HTML5 spelling of the same intent; `<picture>`/`<source>` wrap an
- * `<img>` that `suppressRemoteMedia` handles on its own.
+ * pre-HTML5 spelling of the same intent.
+ *
+ * These are replaced by a BLANK LINE rather than by nothing, because a blank
+ * line is how markdown spells the boundary the tag was expressing. Dropping
+ * them outright welds neighbours together — `<p>one</p><p>two</p>` becomes
+ * `onetwo`, losing a real paragraph break the author wrote.
  */
-const LAYOUT_TAGS = [
+const BLOCK_LAYOUT_TAGS = [
   "div",
   // `<p>` in markdown is always redundant layout — paragraph breaks come from
   // blank lines — and its CLOSING tag has to go with it. Stripping only the
@@ -36,16 +40,36 @@ const LAYOUT_TAGS = [
   "article",
   "figure",
   "figcaption",
-  "picture",
-  "source",
-  "span",
   "table-of-contents",
 ];
 
-const LAYOUT_TAG_RE = new RegExp(
-  `</?(?:${LAYOUT_TAGS.join("|")})(?:\\s[^<>]*)?/?>`,
+/**
+ * Wrappers that hold no text of their own. `<picture>`/`<source>` wrap an
+ * `<img>` that `suppressRemoteMedia` handles; `<span>` is inline by
+ * definition. A blank line here would split a sentence, so these vanish.
+ */
+const INLINE_LAYOUT_TAGS = ["picture", "source", "span"];
+
+const BLOCK_LAYOUT_TAG_RE = new RegExp(
+  `</?(?:${BLOCK_LAYOUT_TAGS.join("|")})(?:\\s[^<>]*)?/?>`,
   "gi",
 );
+
+const INLINE_LAYOUT_TAG_RE = new RegExp(
+  `</?(?:${INLINE_LAYOUT_TAGS.join("|")})(?:\\s[^<>]*)?/?>`,
+  "gi",
+);
+
+/**
+ * An inline code span, longest-run-first so a ``double`` delimiter is matched
+ * before the single backtick inside it.
+ *
+ * Inside a span the angle brackets are the CONTENT — a README explaining
+ * `<div align="center">` means the literal tag — so the transform must not
+ * reach in. Fenced-code protection alone does not cover this: fences are
+ * block-level, and most READMEs discuss tags inline.
+ */
+const INLINE_CODE_RE = /(`+)(?:[^`]|(?!\1)`)*\1/g;
 
 /** Self-closing or not, with or without alt/src ordering. */
 const IMG_RE = /<img\s+([^<>]*?)\/?>/gi;
@@ -127,6 +151,19 @@ function splitFences(markdown: string): Array<{ text: string; fenced: boolean }>
   return chunks;
 }
 
+/** Apply `transform` to everything EXCEPT inline code spans. */
+function mapOutsideInlineCode(text: string, transform: (chunk: string) => string): string {
+  let out = "";
+  let last = 0;
+  INLINE_CODE_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = INLINE_CODE_RE.exec(text)) !== null) {
+    out += transform(text.slice(last, match.index)) + match[0];
+    last = match.index + match[0].length;
+  }
+  return out + transform(text.slice(last));
+}
+
 /**
  * Strip block-level layout HTML from a captured README.
  *
@@ -140,11 +177,12 @@ export function stripReadmeLayoutHtml(markdown: string): string {
   return splitFences(markdown)
     .map(({ text, fenced }) => {
       if (fenced) return text;
-      return rewriteImages(text)
-        .replace(LAYOUT_TAG_RE, "")
+      return mapOutsideInlineCode(text, (prose) => rewriteImages(prose)
+        .replace(BLOCK_LAYOUT_TAG_RE, "\n\n")
+        .replace(INLINE_LAYOUT_TAG_RE, "")
         // A line that held nothing but layout tags is now blank-but-indented;
         // left alone it reads as an indented code block to the parser.
-        .replace(/^[ \t]+$/gm, "");
+        .replace(/^[ \t]+$/gm, ""));
     })
     .join("\n");
 }

@@ -20,8 +20,41 @@ test("strips the centred-header wrapper that READMEs leak as prose", () => {
   assert.ok(!out.includes("</div>"), "closing wrapper survived");
   assert.ok(out.includes("# Mori"));
   assert.ok(out.includes("## What Mori is"));
-  // The content keeps its line positions, so the parser still sees block breaks.
-  assert.equal(out.split("\n").length, readme.split("\n").length);
+  // A stripped block wrapper leaves a BLANK LINE where it stood, which is how
+  // markdown spells the boundary the tag was expressing — never fewer lines
+  // than the source, so no two blocks are welded together.
+  assert.ok(out.split("\n").length >= readme.split("\n").length);
+});
+
+test("a block wrapper becomes a paragraph boundary, not a weld", () => {
+  // Dropping the tags outright produced "onetwo" — a real paragraph break the
+  // README's author wrote, silently lost.
+  const out = stripReadmeLayoutHtml("<p>one</p><p>two</p>");
+  assert.match(out, /one\s*\n\s*\n\s*two/);
+  assert.ok(!out.includes("onetwo"));
+
+  const divs = stripReadmeLayoutHtml("<div>alpha</div><div>beta</div>");
+  assert.ok(!divs.includes("alphabeta"));
+});
+
+test("inline code spans are content, not layout — the transform never reaches in", () => {
+  // A README explaining a tag means the LITERAL tag. Fenced-code protection
+  // does not cover this: fences are block-level and most READMEs discuss tags
+  // inline, mid-sentence.
+  const out = stripReadmeLayoutHtml("Wrap the header in `<div align=\"center\">` to centre it.");
+  assert.equal(out, "Wrap the header in `<div align=\"center\">` to centre it.");
+
+  // An inline literal <img> must not become an actual image reference.
+  const img = stripReadmeLayoutHtml("Use `<img src=\"a.png\">` for the logo.");
+  assert.equal(img, "Use `<img src=\"a.png\">` for the logo.");
+
+  // A double-backtick span holding a single backtick stays intact.
+  const nested = stripReadmeLayoutHtml("Literal ``<p>`</p>`` stays.");
+  assert.ok(nested.includes("``<p>`</p>``"));
+
+  // Layout OUTSIDE the span is still stripped in the same line.
+  const mixed = stripReadmeLayoutHtml("<span>See `<div>` here</span>");
+  assert.equal(mixed.trim(), "See `<div>` here");
 });
 
 test("strips <p align>, <center>, and nested layout wrappers but keeps their text", () => {

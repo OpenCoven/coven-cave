@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   buildGithubRepoTree,
@@ -173,6 +174,7 @@ export function ResearchGithubRepoViewer({
   const filterRef = useRef<HTMLInputElement | null>(null);
   const treeRef = useRef<HTMLDivElement | null>(null);
   const overflowRef = useRef<HTMLDivElement | null>(null);
+  const helpRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,6 +183,13 @@ export function ResearchGithubRepoViewer({
     requestControllerRef.current?.abort();
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
   }, []);
+
+  // The shortcuts sheet is a modal layer over a dialog that already has a trap.
+  // Registering its own makes it the topmost trap, so Tab cycles inside the
+  // sheet rather than through the controls it covers, and focus returns to the
+  // trigger when it closes — which matters because the overflow item that opens
+  // it unmounts on the same click.
+  useFocusTrap(helpOpen, helpRef, { onEscape: () => setHelpOpen(false) });
 
   const flashFor = useCallback((key: "url" | "path" | "sha") => {
     setFlash(key);
@@ -216,6 +225,12 @@ export function ResearchGithubRepoViewer({
     return map;
   }, [roots]);
 
+  // `tree` carries directories as well as blobs, so its length is not a file
+  // count — it would overstate every repository that has folders.
+  const fileCount = useMemo(
+    () => (snapshot ? snapshot.tree.reduce((n, e) => (e.type === "blob" ? n + 1 : n), 0) : 0),
+    [snapshot],
+  );
   const filtering = filter.trim().length > 0;
   const hits = useMemo(
     () => (snapshot && filtering ? filterRepoFiles(snapshot.tree, filter) : []),
@@ -568,7 +583,13 @@ export function ResearchGithubRepoViewer({
             <Icon name="ph:github-logo" width={22} height={22} />
           </span>
           <div className="research-gh__naming">
-            <h3 className="research-gh__slug" title={slug}>{slug}</h3>
+            {/* The overlay dialog labels itself with this id. The generic
+                header that used to own it is not rendered for a repository, so
+                the slug carries it — otherwise the modal's accessible name is
+                a dangling reference. */}
+            <h3 id="research-res-overlay-title" className="research-gh__slug" title={slug}>
+              {slug}
+            </h3>
             {meta.description ? (
               <p className="research-gh__description" title={meta.description}>
                 {meta.description}
@@ -685,11 +706,12 @@ export function ResearchGithubRepoViewer({
               <input
                 ref={filterRef}
                 type="text"
+                className="focus-ring"
                 value={filter}
                 disabled={!snapshot}
                 onChange={(event) => setFilter(event.target.value)}
                 placeholder={
-                  snapshot ? `Filter ${snapshot.tree.length} files` : "Filter files"
+                  snapshot ? `Filter ${fileCount} files` : "Filter files"
                 }
                 aria-label="Filter repository files"
               />
@@ -713,7 +735,7 @@ export function ResearchGithubRepoViewer({
                 <Icon name="ph:warning" width={12} height={12} aria-hidden />
                 <div>
                   <span>
-                    Showing {snapshot.tree.length.toLocaleString()} files. GitHub truncated this
+                    Showing {fileCount.toLocaleString()} files. GitHub truncated this
                     tree at capture.
                   </span>
                   <button
@@ -849,7 +871,7 @@ export function ResearchGithubRepoViewer({
           >
             <Icon name="ph:sidebar-simple" width={15} height={15} aria-hidden />
             <span className="research-gh__rail-stub-label">File browser</span>
-            {snapshot ? <span className="research-gh__rail-stub-count">{snapshot.tree.length}</span> : null}
+            {snapshot ? <span className="research-gh__rail-stub-count">{fileCount}</span> : null}
           </button>
         )}
 
@@ -1091,10 +1113,12 @@ export function ResearchGithubRepoViewer({
 
       {helpOpen ? (
         <div
+          ref={helpRef}
           className="research-gh__help"
           role="dialog"
-          aria-modal="false"
+          aria-modal="true"
           aria-labelledby={helpTitleId}
+          tabIndex={-1}
           onClick={() => setHelpOpen(false)}
         >
           <div className="research-gh__help-card" onClick={(event) => event.stopPropagation()}>

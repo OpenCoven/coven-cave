@@ -10,6 +10,7 @@
 
 import {
   formatGithubBytes,
+  GITHUB_REPO_FILE_BYTE_CAP,
   type GithubRepoTreeEntry,
   type RepoTreeNode,
 } from "./research-github-repo.ts";
@@ -21,8 +22,15 @@ import {
  */
 export const REPO_TREE_MAX_INDENT = 5;
 
-/** Above this, Cave shows a "too large to preview" pane instead of the blob. */
-export const REPO_FILE_PREVIEW_BYTE_LIMIT = 2 * 1024 * 1024;
+/**
+ * Above this, Cave shows a "too large to preview" pane instead of the blob.
+ *
+ * This is the SERVER's cap, not a second number: the route refuses anything
+ * larger, so a client threshold above it would send a request that is destined
+ * to fail and land the reader in the generic error state instead of the
+ * specific "too large" one — defeating the point of refusing in-pane.
+ */
+export const REPO_FILE_PREVIEW_BYTE_LIMIT = GITHUB_REPO_FILE_BYTE_CAP;
 
 /** Extensions Cave can never render as text. */
 const BINARY_EXTENSIONS = new Set([

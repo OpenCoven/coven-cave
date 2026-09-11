@@ -387,7 +387,6 @@
   min-width: 0;
   height: 26px;
   border: 0;
-  outline: none;
   color: var(--text-primary);
   background: transparent;
   font-size: var(--text-sm);
@@ -1074,7 +1073,9 @@ button.research-gh__crumb:hover {
   display: grid;
   place-items: center;
   padding: var(--space-10);
-  background: oklch(0 0 0 / 52%);
+  /* The same scrim the research overlay beneath it uses — a hardcoded oklch
+     here would drop out of the theme contract the rest of the modal keeps. */
+  background: var(--backdrop-scrim);
   backdrop-filter: blur(3px);
 }
 
