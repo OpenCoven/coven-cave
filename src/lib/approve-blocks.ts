@@ -24,6 +24,14 @@ export const MAX_APPROVE_OPTIONS = 6;
 const MARKER_NAME = "approve";
 const ALLOWED_ATTRS = new Set(["kind", "id", "prompt", "options", "other"]);
 const RESERVED_ANSWER_IDS = new Set(Object.getOwnPropertyNames(Object.prototype));
+const CREDENTIAL_TERM = String.raw`(?:api[-\s]?key|password|passphrase|secret(?:[-\s]?key)?|token|access[-\s]?token|auth(?:entication)?[-\s]?token|bearer[-\s]?token|refresh[-\s]?token|personal[-\s]?access[-\s]?token|private[-\s]?key|ssh[-\s]?key|client[-\s]?secret|credentials?)`;
+const CREDENTIAL_REQUEST_VERB = String.raw`(?:paste|enter|provide|share|send|type|input|submit|write|include)`;
+const CREDENTIAL_REQUEST_RE = new RegExp(
+  String.raw`\b${CREDENTIAL_REQUEST_VERB}\b[\s\S]{0,80}\b${CREDENTIAL_TERM}\b`
+    + String.raw`|\b${CREDENTIAL_TERM}\b[\s\S]{0,80}\b${CREDENTIAL_REQUEST_VERB}\b`
+    + String.raw`|\b(?:your|my)\s+${CREDENTIAL_TERM}\b`,
+  "i",
+);
 // A new protocol opener always belongs to its own marker, even after a broken
 // quote. Never let a later marker's quotes complete this one.
 const MARKER_RE = /<coven:approve\b((?:\s+[a-zA-Z-]+="(?:(?!<\/?coven:)[^"])*")*)\s*\/>/y;
@@ -41,6 +49,10 @@ export function parseApproveOptions(raw: string | undefined): string[] {
     .slice(0, MAX_APPROVE_OPTIONS);
 }
 
+export function approveQuestionIsSafe(question: Pick<ApproveQuestion, "prompt" | "options">): boolean {
+  return ![question.prompt, ...question.options].some((value) => CREDENTIAL_REQUEST_RE.test(value));
+}
+
 function parseQuestion(rawAttrs: string): ApproveQuestion | null {
   const attrs = new Map<string, string>();
   for (const match of rawAttrs.matchAll(ATTR_RE)) {
@@ -52,12 +64,13 @@ function parseQuestion(rawAttrs: string): ApproveQuestion | null {
   const options = parseApproveOptions(attrs.get("options"));
   if (!prompt || options.length < MIN_APPROVE_OPTIONS) return null;
   const other = attrs.get("other")?.trim().toLowerCase();
-  return {
+  const question = {
     id: attrs.get("id")?.trim() ?? "",
     prompt,
     options,
     allowOther: other !== "no" && other !== "false",
   };
+  return approveQuestionIsSafe(question) ? question : null;
 }
 
 /** Include every answer-affecting field, with unambiguous boundaries. */
@@ -74,6 +87,7 @@ export function formatApproveAnswers(
   answers: Record<string, string>,
 ): string {
   return request.questions.flatMap((question) => {
+    if (!approveQuestionIsSafe(question)) return [];
     if (!Object.hasOwn(answers, question.id)) return [];
     const answer = answers[question.id]?.trim();
     return answer ? [`${question.prompt} → ${answer}`] : [];

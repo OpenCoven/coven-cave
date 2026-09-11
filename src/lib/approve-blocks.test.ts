@@ -5,6 +5,7 @@ import {
   MAX_APPROVE_QUESTIONS,
   MIN_APPROVE_OPTIONS,
   approveRequestKey,
+  approveQuestionIsSafe,
   formatApproveAnswers,
   parseApproveOptions,
   protectApproveMarkers,
@@ -97,6 +98,32 @@ test("free text is offered by default and opts out explicitly", () => {
     assert.equal(questions(q("A", "x|y", `other="${other}"`))[0].allowOther, false);
   }
   assert.equal(questions(q("A", "x|y", 'other="maybe"'))[0].allowOther, true);
+});
+
+test("credential-seeking prompts and options are rejected", () => {
+  for (const text of [
+    q("Paste your API key", "Ready|Cancel"),
+    q("Paste your token", "Ready|Cancel"),
+    q("Choose a path", "Use cookies|Enter password"),
+    q("Share the client secret for this service", "Yes|No"),
+  ]) {
+    assert.equal(questions(text).length, 0, text);
+    assert.equal(sanitizeApproveMarkers(text), "", text);
+  }
+  assert.equal(questions(q("Which auth?", "Cookies|JWT")).length, 1);
+});
+
+test("answer formatting refuses unsafe question descriptors", () => {
+  const request = {
+    kind: "questions" as const,
+    questions: [
+      { id: "safe", prompt: "Which auth?", options: ["Cookies", "JWT"], allowOther: true },
+      { id: "secret", prompt: "Paste your API key", options: ["Ready", "Cancel"], allowOther: true },
+    ],
+  };
+  assert.equal(approveQuestionIsSafe(request.questions[0]), true);
+  assert.equal(approveQuestionIsSafe(request.questions[1]), false);
+  assert.equal(formatApproveAnswers(request, { safe: "JWT", secret: "abc123" }), "Which auth? → JWT");
 });
 
 test("an unknown kind is dropped, never downgraded to questions", () => {
