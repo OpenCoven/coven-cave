@@ -1,6 +1,6 @@
 # Adapting the AICSS Approval Card and AI Agent Input into Cave chat
 
-Status: design assessment, nothing implemented. Written against `main` in
+Status: design assessment with questions implementation described below. Written against `main` in
 `OpenCoven/coven-cave` (this file's tree), 2026-08-20.
 
 Sources under evaluation:
@@ -155,3 +155,28 @@ cleaner path** and avoids the vendoring question entirely.
 Each step is a separate PR under the design-system gates
 (`pnpm lint`, `pnpm codemod:design:check`, `src/lib/design-token-drift.test.ts`)
 plus a `prefers-reduced-motion` story and an announcer call.
+
+## 7. Questions implementation (cave-eyl5a)
+
+The production questions path is `approve-blocks.ts` -> `chat-rendered-text.ts`
+-> `ChatView` -> `ChatApproveCard`. It does not import the Beautiful UI specimen.
+Two to six options are offered, consecutive markers group up to three
+questions, and Other is available unless `other="no"` or `other="false"`.
+Only the settled, current assistant turn in a writable, idle chat may send.
+Unsupported kinds and malformed markers are hidden; Markdown code examples
+remain literal.
+
+The grouped questions use native radio controls and remain visible together
+instead of the proposed timed stepper. This preserves keyboard arrow navigation,
+allows review of partial answers before sending, and introduces no automatic
+focus movement or motion. Sending and skipping use the shared announcer;
+reduced motion disables the button spinner.
+
+**Send answers** is the explicit human send gesture. It posts only the chosen
+answers through the existing `sendRaw` path with the source turn as parent,
+without consuming composer text, attachments, quote targets, or edit branches.
+The card reports sent only after the ordinary stream persistence acknowledgement;
+rejected requests retain their answers and surface an error. Existing transcript
+and attention settlement remain authoritative. Reloaded historical cards are
+read-only, not a second approval opportunity. Plan and command variants, secret
+entry, and the independent composer adaptations remain out of scope.

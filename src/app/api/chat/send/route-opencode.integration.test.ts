@@ -138,6 +138,8 @@ try {
   assert.equal(typeof sessionId, "string");
   assert.notEqual(sessionId, "native_opencode_session", "Cave keeps its stable conversation id separate from OpenCode's native resume id");
   const conversation = await loadConversation(sessionId);
+  assert.equal(done.persistedTurnId, conversation?.turns.at(-1)?.id, "completion identifies the saved assistant, not a client or native harness turn");
+  assert.equal(typeof done.persistedTurnId, "string");
   assert.equal(conversation?.harnessSessionId, "native_opencode_session", "the route persists the native OpenCode session id separately from Cave's stable id");
 
   // A future JSON format with no signed parser must fall back to plain chat

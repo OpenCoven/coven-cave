@@ -321,6 +321,8 @@ try {
 
   const conversation = await loadConversation(sessionId);
   const assistant = conversation?.turns.at(-1);
+  assert.equal(events.findLast((event) => event.kind === "done")?.persistedTurnId, assistant?.id);
+  assert.equal(typeof assistant?.id, "string");
   assert.equal(assistant?.text, "Gateway answer");
   assert.equal(assistant?.responseMetadata?.gatewaySessionId, "gateway-route-run");
   assert.deepEqual(
