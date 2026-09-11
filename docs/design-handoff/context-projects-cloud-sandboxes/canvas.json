@@ -1,0 +1,164 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 960,
+      "h": 1000,
+      "title": "Decisions"
+    },
+    {
+      "file": "ContextRail.dc.html",
+      "x": 0,
+      "y": 1160,
+      "w": 880,
+      "h": 660,
+      "title": "Shell rail · project + crew"
+    },
+    {
+      "file": "ProjectPicker.dc.html",
+      "x": 960,
+      "y": 1160,
+      "w": 340,
+      "h": 700,
+      "title": "Project picker"
+    },
+    {
+      "file": "CrewPicker.dc.html",
+      "x": 1380,
+      "y": 1160,
+      "w": 320,
+      "h": 600,
+      "title": "Crew picker"
+    },
+    {
+      "file": "ActingFamiliarGate.dc.html",
+      "x": 1780,
+      "y": 1160,
+      "w": 600,
+      "h": 480,
+      "title": "Acting familiar gate"
+    },
+    {
+      "file": "SurfaceAdapters.dc.html",
+      "x": 2460,
+      "y": 1160,
+      "w": 760,
+      "h": 600,
+      "title": "Surface adapters (Stage 2)"
+    },
+    {
+      "file": "MobileNewChat.dc.html",
+      "x": 3300,
+      "y": 1160,
+      "w": 390,
+      "h": 844,
+      "title": "iOS · new chat sheet"
+    },
+    {
+      "file": "AddProject.dc.html",
+      "x": 0,
+      "y": 2160,
+      "w": 640,
+      "h": 520,
+      "title": "Add project · two intakes"
+    },
+    {
+      "file": "CloneRepo.dc.html",
+      "x": 720,
+      "y": 2160,
+      "w": 600,
+      "h": 840,
+      "title": "Clone from GitHub"
+    },
+    {
+      "file": "ProjectsFolder.dc.html",
+      "x": 1400,
+      "y": 2160,
+      "w": 720,
+      "h": 440,
+      "title": "Settings · projects folder"
+    },
+    {
+      "file": "ProjectsHub.dc.html",
+      "x": 2200,
+      "y": 2160,
+      "w": 680,
+      "h": 460,
+      "title": "Projects hub · host chip"
+    },
+    {
+      "file": "VesselStage.dc.html",
+      "x": 0,
+      "y": 3160,
+      "w": 720,
+      "h": 540,
+      "title": "Summoning · cloud vessel"
+    },
+    {
+      "file": "HostChip.dc.html",
+      "x": 800,
+      "y": 3160,
+      "w": 560,
+      "h": 680,
+      "title": "Host chip · receipts"
+    },
+    {
+      "file": "CloudHosts.dc.html",
+      "x": 1440,
+      "y": 3160,
+      "w": 720,
+      "h": 740,
+      "title": "Settings · cloud sandboxes"
+    },
+    {
+      "file": "CreditsSketch.dc.html",
+      "x": 2240,
+      "y": 3160,
+      "w": 460,
+      "h": 560,
+      "title": "Phase B · credits (sketch)"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "build-order",
+      "x": 1040,
+      "y": 0,
+      "w": 360,
+      "text": "HOW TO READ THIS CANVAS\nRow 1 is the context model (Stage 2 of the approved 2026-08-18 spec).\nRow 2 is project intake and the default projects folder.\nRow 3 is the cloud sandbox as a host.\n\nThe handoff spec with data-model changes, file map and acceptance criteria lives in the repo: docs/superpowers/specs/2026-09-02-context-projects-cloud-sandbox-design.md"
+    },
+    {
+      "id": "row-context",
+      "x": 0,
+      "y": 1060,
+      "w": 720,
+      "text": "1 · CONTEXT — project first, familiar retained\nProject chooses the workspace. Crew chooses who. One acting familiar executes.\nStage 1 is shipped (rail switcher, acting-familiar gate, Home pilot). These frames are Stage 2: Chat, Tasks, Queue, Calendar and Code follow the shell project; a historical chat overrides visibly and never moves the shell; global surfaces say they ignore the project; deep links resolve project before familiar."
+    },
+    {
+      "id": "row-mobile",
+      "x": 3300,
+      "y": 1060,
+      "w": 390,
+      "text": "iOS keeps its familiars-first Chats list. Project is a per-thread setting on the new-chat sheet, not a global filter. \"Runs on\" is where a phone-only operator meets the cloud sandbox."
+    },
+    {
+      "id": "row-projects",
+      "x": 0,
+      "y": 2060,
+      "w": 720,
+      "text": "2 · PROJECTS — any folder, one entity, two intakes, a default home\nA project stays a local directory, one per root; git is detected, never required. No separate route for GitHub repositories: Clone from GitHub is a second intake into ~/Coven/projects/<owner>/<repo>, created lazily and changeable in Settings. The registry gains a host field, local by default."
+    },
+    {
+      "id": "row-cloud",
+      "x": 0,
+      "y": 3060,
+      "w": 720,
+      "text": "3 · CLOUD SANDBOX — a host, not a project type\nDaytona is a fifth vessel in the Summoning Circle and a host in the chat host chip. Reuse the SSH transport with short-lived sandbox tokens. One sandbox per project, auto-stop when idle, auto-archive later; the cost is a receipt the operator always sees. Bring your own key first. Metered credits (Phase B) need an account and a broker: a separate service and a separate decision."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
