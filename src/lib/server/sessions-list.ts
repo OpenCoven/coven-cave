@@ -45,7 +45,7 @@ import fs from "node:fs";
 import { callDaemon } from "@/lib/coven-daemon";
 import type { CaveState } from "@/lib/cave-config";
 import { loadFlowSessionState } from "@/lib/server/flow-store";
-import { reconcileFlowSessionOutcomes } from "@/lib/server/flow-session-reconcile";
+import { scheduleFlowSessionReconciliation } from "@/lib/server/flow-session-reconcile";
 import { listConversations } from "@/lib/cave-conversations";
 import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import {
@@ -350,7 +350,7 @@ export async function computeSessionsList(
         : [],
     );
     const directIds = new Set(localOutcomes.map((row) => row.id));
-    await reconcileFlowSessionOutcomes([
+    void scheduleFlowSessionReconciliation([
       ...localOutcomes,
       ...(res.ok && res.data ? res.data.filter((row) => !directIds.has(row.id)) : []),
     ]);

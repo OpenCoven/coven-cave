@@ -1755,8 +1755,8 @@ final class AppModel {
                 uniquingKeysWith: { first, _ in first }
             )
             let ids = ProjectContext.unassignedFamiliarIDs(
-                threads: threads,
-                sessions: serverSessions,
+                threads: chatThreads,
+                sessions: chatServerSessions,
                 tasks: tasks,
                 registeredProjects: projects
             )

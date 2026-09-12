@@ -13,7 +13,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 import { FLOW_SCHEMA_VERSION, normalizeNodeSettings, type FlowDoc, type FlowEdge, type FlowNodeSettings } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import { loadState, recordFlowSessionReferences, type CaveState } from "../cave-config.ts";
-import { flowSessionCompletions, flowSessionReferences } from "../flow-session.ts";
+import { flowSessionCompletions, flowSessionOwnership } from "../flow-session.ts";
 
 export const FLOW_RUNS_CAP = 200;
 
@@ -235,7 +235,8 @@ function withRunsLock<T>(fn: () => Promise<T>): Promise<T> {
 async function retainFlowSessions(runs: readonly FlowRunRecord[]): Promise<void> {
   const completed = Object.entries(flowSessionCompletions(runs))
     .filter(([, settled]) => settled).map(([id]) => id);
-  await recordFlowSessionReferences(flowSessionReferences(runs), completed);
+  const { references, ambiguous } = flowSessionOwnership(runs);
+  await recordFlowSessionReferences(references, completed, ambiguous);
 }
 
 export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<FlowRunRecord> {
@@ -262,12 +263,16 @@ export async function listFlowRuns(flowId?: string): Promise<FlowRunRecord[]> {
  * clearing/evicting history, so neither path can resurrect execution chats. */
 export async function loadFlowSessionState(persist: boolean): Promise<CaveState> {
   const runs = await listFlowRuns();
-  const references = flowSessionReferences(runs);
+  const { references, ambiguous } = flowSessionOwnership(runs);
   if (persist) await retainFlowSessions(runs);
   const state = await loadState();
+  const sessionFlow = { ...references, ...state.sessionFlow };
+  for (const id of [...ambiguous, ...Object.keys(state.sessionFlowAmbiguous ?? {}).filter((id) => state.sessionFlowAmbiguous?.[id])]) {
+    delete sessionFlow[id];
+  }
   return {
     ...state,
-    sessionFlow: { ...references, ...state.sessionFlow },
+    sessionFlow,
     sessionFlowCompleted: { ...flowSessionCompletions(runs), ...state.sessionFlowCompleted },
   };
 }
@@ -286,8 +291,8 @@ export async function updateFlowRun(
     const index = file.runs.findIndex((run) => run.id === id);
     if (index < 0) return null;
     const updated: FlowRunRecord = { ...file.runs[index], ...patch, id };
-    await retainFlowSessions([updated]);
     file.runs[index] = updated;
+    await retainFlowSessions(file.runs);
     await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
     await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
     return updated;

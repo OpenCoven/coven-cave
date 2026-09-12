@@ -76,6 +76,20 @@ try {
   await clearFlowRuns();
   assert.equal((await store.loadFlowSessionState(false)).sessionFlow?.["old-session"]?.runId, "old-run");
 
+  const ambiguousRun = await recordFlowRun({ ...legacy, sessionId: "ambiguous" });
+  await writeFile(process.env.COVEN_FLOW_RUNS_PATH, JSON.stringify({ version: 1, runs: [
+    ambiguousRun, { ...ambiguousRun, id: "conflicting-owner", flowId: "other-flow" },
+  ] }));
+  assert.equal((await store.loadFlowSessionState(false)).sessionFlow?.ambiguous, undefined,
+    "legacy ambiguity overrides an earlier durable owner during read-only projection");
+  await store.updateFlowRun(ambiguousRun.id, { status: "succeeded" });
+  assert.equal((await loadState()).sessionFlow?.ambiguous, undefined,
+    "updating one conflicting run must not retain an owner from that run alone");
+  await clearFlowRuns("other-flow");
+  assert.equal((await store.loadFlowSessionState(false)).sessionFlow?.ambiguous, undefined,
+    "partial clearing cannot resurrect the surviving ambiguous owner");
+  await clearFlowRuns();
+  assert.equal((await loadState()).sessionFlow?.ambiguous, undefined);
   await writeFile(process.env.COVEN_FLOW_RUNS_PATH, JSON.stringify({ version: 1, runs: [
     { ...legacy, id: "ambiguous-one", sessionId: "ambiguous" },
     { ...legacy, id: "ambiguous-two", sessionId: "ambiguous" },

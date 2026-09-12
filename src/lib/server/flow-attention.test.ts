@@ -17,6 +17,10 @@ const { saveConversation } = await import("../cave-conversations.ts");
 after(() => rmSync(home, { recursive: true, force: true }));
 
 async function flow(sessionId: string, missionId?: string) {
+  if (missionId) {
+    const { recordSessionFamiliar } = await import("../cave-config.ts");
+    await recordSessionFamiliar(sessionId, "sage");
+  }
   return recordFlowRun({
     flowId: "flow-one",
     flowName: "Source review",
@@ -97,10 +101,11 @@ test("notifications select their exact run or mission in supported parent surfac
     id: "navigation-approval-run",
     flowId: "navigation-flow",
     missionId: "navigation-approval-mission",
+    familiarId: "sage",
     status: "succeeded",
     text: '<coven:attention reason="approval" />',
   });
-  assert.equal(approvalItem?.link?.ref, "/?mode=surface%3Aresearcher-desk&researchMission=navigation-approval-mission");
+  assert.equal(approvalItem?.link?.ref, "/?mode=surface%3Aresearcher-desk&researchMission=navigation-approval-mission&flowFamiliar=sage");
 });
 
 test("one parent item follows changed blockers and re-arms only for a new event", async () => {
@@ -437,4 +442,24 @@ test("failed history writes retain reconciliation eligibility even after notific
   assert.equal((await listFlowRuns()).find((item) => item.id === run.id)?.status, "failed");
   assert.equal((await loadState()).sessionFlowCompleted?.[run.sessionId!], true);
   assert.equal((await loadInbox()).items.filter((item) => item.auto === `flow-attention:run:${run.id}`).length, 1);
+});
+
+
+test("successful ordinary run resolves a previous structured request", async () => {
+  const run = await flow("ordinary-request");
+  await attention.emitFlowRunAttention({ ...run, text: '<coven:attention reason="approval" />' });
+  await attention.emitFlowRunAttention({ ...run, status: "succeeded" });
+  assert.equal((await loadInbox()).items.find((item) => item.auto === `flow-attention:run:${run.id}`)?.status, "done");
+});
+
+test("mission requests resolve the durable familiar or fail closed", async () => {
+  const { saveResearchMission } = await import("./research-mission-store.ts");
+  mkdirSync(path.join(home, "research-missions", "durable-owner"), { recursive: true });
+  await saveResearchMission(mission("durable-owner"));
+  const run = { id: "owner-run", flowId: "owner-flow", status: "running" as const,
+    text: '<coven:attention reason="input" />' };
+  const item = await attention.emitFlowRunAttention({ ...run, missionId: "durable-owner" });
+  assert.ok(item);
+  assert.equal(new URL(item.link!.ref, "http://localhost").searchParams.get("flowFamiliar"), "sage");
+  assert.equal(await attention.emitFlowRunAttention({ ...run, missionId: "missing-owner" }), null);
 });

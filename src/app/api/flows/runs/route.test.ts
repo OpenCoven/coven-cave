@@ -91,6 +91,16 @@ try {
     method, headers: { "content-type": "application/json", host: "localhost" },
     body: JSON.stringify(body),
   });
+  const missionResponse = await POST(request("POST", {
+    flowId: "mission-flow", status: "running", steps: [], missionId: "mission", iteration: 2, sessionId: "mission-session",
+  }));
+  assert.equal(missionResponse.status, 200);
+  const missionRun = (await missionResponse.json()).run;
+  assert.equal(missionRun.missionId, "mission");
+  assert.equal(missionRun.iteration, 2);
+  for (const provenance of [{ missionId: " " }, { missionId: 42 }, { iteration: 0 }, { iteration: 1.5 }]) {
+    assert.equal((await POST(request("POST", { flowId: "bad", status: "running", steps: [], ...provenance }))).status, 400);
+  }
   const response = await POST(request("POST", { flowId: "engine", status: "succeeded", steps: [] }));
   assert.equal(response.status, 200);
   const { run } = await response.json();

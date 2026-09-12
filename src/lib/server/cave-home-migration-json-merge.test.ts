@@ -44,7 +44,7 @@ async function denySymlink() {
 const baseState = () => ({
   sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {},
   sessionKeep: {}, sessionArchiveExtendedUntil: {}, sessionOwned: {}, mergedPrAutoArchived: {},
-  sessionFlow: {}, sessionFlowCompleted: {},
+  sessionFlow: {}, sessionFlowCompleted: {}, sessionFlowAmbiguous: {},
   travel: {
     manualOffline: false, hubUnreachableSince: null, lastHubReachableAt: null,
     staleCache: false, localSubdaemonWakeRequestedAt: null, localBindHost: "127.0.0.1",
@@ -110,6 +110,7 @@ try {
     legacy.sessionFamiliar.legacy = "nova";
     legacy.sessionFlow.legacy = { flowId: "flow", runId: "legacy-run" };
     legacy.sessionFlowCompleted.legacy = false;
+    legacy.sessionFlowAmbiguous.uncertain = true;
     legacy.travel.offlineQueue.push({ id: "legacy-work", kind: "job", summary: "Legacy", createdAt: "2026-01-01T00:00:00Z", status: "pending" });
     const canonical = baseState();
     canonical.sessionFamiliar.current = "salem";
@@ -123,6 +124,7 @@ try {
     assert.deepEqual(Object.keys(merged.sessionFamiliar).sort(), ["current", "legacy"]);
     assert.deepEqual(merged.sessionFlow, { ...legacy.sessionFlow, ...canonical.sessionFlow });
     assert.deepEqual(merged.sessionFlowCompleted, { legacy: false, current: true });
+    assert.deepEqual(merged.sessionFlowAmbiguous, { uncertain: true });
     assert.deepEqual(merged.travel.offlineQueue.map((item) => item.id).sort(), ["current-work", "legacy-work"]);
   }
 

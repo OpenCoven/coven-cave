@@ -544,6 +544,7 @@ struct ChatView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(thread.archived ? "Unarchive chat" : "Archive chat")
         }
+        .disabled(thread.isFlowRun)
         .padding(.vertical, 4)
         .frame(maxWidth: 420)
         .glass(.raised, cornerRadius: 16)

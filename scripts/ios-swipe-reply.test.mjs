@@ -30,4 +30,8 @@ assert.match(
 );
 assert.match(chat, /"Replying to \\\(replyAuthor\(message\)\):\\n\\\(quoted\)\\n\\n"/, "replyQuote should build a Markdown quote");
 
+
+const details = chat.slice(chat.indexOf("private var sessionDetailsCard"), chat.indexOf("private var flowReadOnlyComposer"));
+assert.match(details, /\.disabled\(thread\.isFlowRun\)/, "Flow session detail controls must remain read-only");
+
 console.log("ios-swipe-reply: ok");

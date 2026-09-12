@@ -17,7 +17,7 @@ const { visibleChatSessions } = await import("../../../../lib/chat-list-model.ts
 
 function request(body: unknown) {
   return new Request("http://localhost/api/flows/discussion", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: { "content-type": "application/json", host: "localhost" }, body: JSON.stringify(body),
   });
 }
 
@@ -36,6 +36,16 @@ test("discussion persists as Chat, keeps exact lineage after history clearing an
     });
     await clearFlowRuns();
     const before = await loadConversation("execution");
+    const deniedHeaders: Record<string, string>[] = [
+      { host: "remote.ts.net" }, { host: "localhost", "x-coven-cave-mobile-access": "1" },
+    ];
+    for (const headers of deniedHeaders) {
+      const rejected = await POST(new Request("http://localhost/api/flows/discussion", {
+        method: "POST", headers, body: JSON.stringify({ sessionId: "execution" }),
+      }));
+      assert.equal(rejected.status, 403);
+      assert.equal((await listConversations()).length, 1, "rejection must precede durable writes");
+    }
     const response = await POST(request({ sessionId: "execution" }));
     assert.equal(response.status, 200);
     const result = await response.json();

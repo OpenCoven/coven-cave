@@ -392,8 +392,8 @@ struct GlobalSearchView: View {
 
     private var unassignedFamiliarIDs: Set<String> {
         Set(ProjectContext.unassignedFamiliarIDs(
-            threads: app.threads,
-            sessions: app.serverSessions,
+            threads: app.chatThreads,
+            sessions: app.chatServerSessions,
             tasks: app.tasks,
             registeredProjects: app.projects
         ))

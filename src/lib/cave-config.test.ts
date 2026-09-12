@@ -28,6 +28,7 @@ try {
     sessionOwned: {},
     sessionFlow: {},
     sessionFlowCompleted: {},
+    sessionFlowAmbiguous: {},
     mergedPrAutoArchived: {},
     travel: {
       manualOffline: false,
@@ -769,6 +770,7 @@ try {
     sessionOwned: {},
     sessionFlow: {},
     sessionFlowCompleted: {},
+    sessionFlowAmbiguous: {},
     mergedPrAutoArchived: { "session-1": "OpenCoven/coven-cave#42" },
     travel: {
       manualOffline: false,

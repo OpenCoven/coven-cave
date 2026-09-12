@@ -41,7 +41,7 @@ let eventResponse = null;
 const eventCursors = [];
 
 async function startDaemon(rows) {
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     if (req.url === "/api/v1/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(rows));
@@ -50,7 +50,7 @@ async function startDaemon(rows) {
     if (req.url.startsWith("/api/v1/events") && eventResponse) {
       const cursor = Number(new URL(req.url, "http://daemon").searchParams.get("afterSeq"));
       eventCursors.push(cursor);
-      const page = typeof eventResponse === "function" ? eventResponse(cursor) : eventResponse;
+      const page = typeof eventResponse === "function" ? await eventResponse(cursor) : eventResponse;
       res.writeHead(page ? 200 : 503, { "content-type": "application/json" });
       res.end(JSON.stringify(page ?? { error: "unavailable page" }));
       return;
@@ -610,6 +610,7 @@ workspace = "${relocatedProjectRoot}
     created_at: "2099-08-23T11:00:00.000Z", updated_at: "2099-08-23T11:01:00.000Z",
   }]);
   await writeConfig(daemonUrl);
+  const { scheduleFlowSessionReconciliation } = await import("./flow-session-reconcile.ts");
   const { recordFlowRun, listFlowRuns } = await import("./flow-store.ts");
   const { loadInbox, INBOX_PATH } = await import("../cave-inbox.ts");
   for (const sessionId of ["daemon-flow", "direct-flow"]) {
@@ -623,9 +624,11 @@ workspace = "${relocatedProjectRoot}
   }
   const beforeRuns = await listFlowRuns();
   await computeSessionsList(false, null, false, { sweepArchives: false, enrichGit: false });
+  await scheduleFlowSessionReconciliation([]);
   assert.deepEqual(await listFlowRuns(), beforeRuns, "read-only session reads must not settle Flow runs");
   assert.equal((await loadInbox()).items.length, 0, "read-only reads must not emit attention");
   await computeSessionsList(false, null, false, { enrichGit: false });
+  await scheduleFlowSessionReconciliation([]);
   const afterRuns = await listFlowRuns();
   assert.equal(afterRuns.find((run) => run.sessionId === "daemon-flow").status, "failed");
   assert.equal(afterRuns.find((run) => run.sessionId === "direct-flow").status, "running",
@@ -649,8 +652,25 @@ workspace = "${relocatedProjectRoot}
   await writeConfig(daemonUrl);
   clearCaveStoreReadCache();
   await computeSessionsList(false, null, false, { enrichGit: false });
+  await scheduleFlowSessionReconciliation([]);
   assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false,
     "unavailable transcript must not permanently acknowledge completion");
+  let releaseTranscript;
+  const heldTranscript = new Promise((resolve) => { releaseTranscript = resolve; });
+  let transcriptStarted;
+  const startedTranscript = new Promise((resolve) => { transcriptStarted = resolve; });
+  eventResponse = async () => { transcriptStarted(); return heldTranscript; };
+  let listReturned = false;
+  const listing = computeSessionsList(false, null, false, { enrichGit: false }).then(() => { listReturned = true; });
+  await startedTranscript;
+  await Promise.race([listing, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+  const returnedBeforeTranscript = listReturned;
+  const sameBatch = scheduleFlowSessionReconciliation([]);
+  assert.equal(scheduleFlowSessionReconciliation([]), sameBatch, "polls share one in-flight batch");
+  releaseTranscript(null);
+  await listing;
+  await scheduleFlowSessionReconciliation([]);
+  assert.equal(returnedBeforeTranscript, true, "slow Flow transcript hydration must not block session listing");
   const firstPage = {
     events: [{ kind: "output", payload_json: JSON.stringify({ data: "First page only." }) }],
     hasMore: true, nextCursor: { afterSeq: 500 },
@@ -664,12 +684,14 @@ workspace = "${relocatedProjectRoot}
   ]) {
     eventResponse = brokenPage;
     await computeSessionsList(false, null, false, { enrichGit: false });
+    await scheduleFlowSessionReconciliation([]);
     assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false,
       "incomplete pages or invalid cursors must never acknowledge a partial transcript");
   }
   eventCursors.length = 0;
   eventResponse = (cursor) => ({ ...firstPage, nextCursor: { afterSeq: cursor + 500 } });
   await computeSessionsList(false, null, false, { enrichGit: false });
+  await scheduleFlowSessionReconciliation([]);
   assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], false);
   assert.equal(eventCursors.length, 8, "strict hydration has a finite eight-page budget");
   eventCursors.length = 0;
@@ -682,6 +704,7 @@ workspace = "${relocatedProjectRoot}
   assert.deepEqual(eventCursors, [0], "display hydration retains its single-page compatibility");
   eventCursors.length = 0;
   await computeSessionsList(false, null, false, { enrichGit: false });
+  await scheduleFlowSessionReconciliation([]);
   assert.equal((await loadState()).sessionFlowCompleted["hydrate-flow"], true);
   assert.deepEqual(eventCursors, [0, 500], "completion reads through the second page before acknowledging");
   assert.equal((await listFlowRuns()).find((run) => run.id === hydrationRun.id).status, "succeeded");
@@ -717,12 +740,14 @@ workspace = "${relocatedProjectRoot}
         flowOutcome: { status: outcome, exitCode: outcome === "failed" ? 1 : 0 },
       });
       await computeSessionsList(false, null, false, { sweepArchives: false, enrichGit: false });
+      await scheduleFlowSessionReconciliation([]);
       assert.equal((await loadState()).sessionFlowCompleted[sessionId], false);
       if (outcome === "failed") {
         await rename(INBOX_PATH, `${INBOX_PATH}.saved`);
         await mkdir(INBOX_PATH);
         try {
           await computeSessionsList(false, null, false, { enrichGit: false });
+          await scheduleFlowSessionReconciliation([]);
           assert.equal((await loadState()).sessionFlowCompleted[sessionId], false,
             "failed inbox persistence leaves exact local completion retryable");
         } finally {
@@ -731,6 +756,7 @@ workspace = "${relocatedProjectRoot}
         }
       }
       await computeSessionsList(false, null, false, { enrichGit: false });
+      await scheduleFlowSessionReconciliation([]);
       assert.equal((await loadState()).sessionFlowCompleted[sessionId], true,
         `poll must retry explicit local completion, daemon degraded=${degraded}`);
       assert.equal((await listFlowRuns()).find((item) => item.id === run.id).status,

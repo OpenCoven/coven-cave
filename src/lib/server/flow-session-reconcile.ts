@@ -10,6 +10,18 @@ type OutcomeRow = Pick<SessionRow, "id" | "status" | "exit_code" | "updated_at">
 
 let nextOutcomeOffset = 0;
 
+let reconciliation: Promise<void> | null = null;
+
+/** Single-flight background work: a slow daemon must not stall session reads
+ * or accumulate another batch on every poll. Pending outcomes retry next poll. */
+export function scheduleFlowSessionReconciliation(sessions: readonly OutcomeRow[]): Promise<void> {
+  if (reconciliation) return reconciliation;
+  reconciliation = reconcileFlowSessionOutcomes(sessions)
+    .catch((error) => { console.warn("[flow-sessions] Could not reconcile outcomes:", error); })
+    .finally(() => { reconciliation = null; });
+  return reconciliation;
+}
+
 /** Retry exact terminal outcomes, including missed direct Copilot callbacks. */
 export async function reconcileFlowSessionOutcomes(sessions: readonly OutcomeRow[]): Promise<void> {
   const state = await loadFlowSessionState(false);

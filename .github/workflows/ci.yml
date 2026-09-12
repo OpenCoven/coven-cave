@@ -698,12 +698,12 @@ jobs:
             --live-base-sha "$LIVE_BASE_SHA" \
             < /tmp/cave-build-evidence-jobs.json 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # Runs without pnpm install: the test imports only node builtins, so a
+      # Runs without pnpm install: these tests import only node builtins, so a
       # documentation-only PR — which skips the frontend step entirely — still
       # gets the docs index checked. That is the case the ratchet exists for.
       - name: Validate docs
         if: needs.paths.outputs.docs == 'true'
-        run: node scripts/docs-index.test.mjs
+        run: node --test scripts/docs-index.test.mjs scripts/work-continuity-contract.test.mjs
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
         if: needs.paths.outputs.rust == 'true'

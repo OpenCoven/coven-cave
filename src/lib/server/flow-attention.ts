@@ -175,11 +175,17 @@ export async function emitFlowRunAttention(
     // An iteration transport failure is not yet the mission's outcome. The
     // mission persistence boundary decides whether retry/review is necessary.
     if (run.missionId && !request) return null;
+    let familiarId = run.familiarId;
+    if (run.missionId && !familiarId) {
+      const { loadResearchMission } = await import("./research-mission-store.ts");
+      familiarId = (await loadResearchMission(run.missionId))?.familiarId;
+      if (!familiarId) return null;
+    }
     const destination = new URLSearchParams(run.missionId
       ? { mode: "surface:researcher-desk", researchMission: run.missionId }
       : { mode: "chat", flowRun: run.id });
     if (!run.missionId && run.sessionId) destination.set("flowSession", run.sessionId);
-    if (run.familiarId) destination.set("flowFamiliar", run.familiarId);
+    if (familiarId) destination.set("flowFamiliar", familiarId);
     const revision = `${run.id}:${run.status}:${request?.reason ?? "failure"}`;
     return await emitOnce({
       key: run.missionId
@@ -194,7 +200,7 @@ export async function emitFlowRunAttention(
         ? NEXT_STEPS[request.reason]
         : "Review the failed Flow execution, resolve the error, and retry.",
       destination: `/?${destination}`,
-      familiarId: run.familiarId,
+      familiarId,
     });
   } catch (error) {
     if (options.propagateErrors) throw error;

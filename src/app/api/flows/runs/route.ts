@@ -39,12 +39,18 @@ export async function POST(req: Request) {
   if (!body.status || !STATUSES.has(body.status)) {
     return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
+  if ((body.missionId !== undefined && (typeof body.missionId !== "string" || !body.missionId.trim() || body.missionId.trim() !== body.missionId)) ||
+      (body.iteration !== undefined && (!Number.isSafeInteger(body.iteration) || body.iteration < 1))) {
+    return NextResponse.json({ ok: false, error: "invalid mission provenance" }, { status: 400 });
+  }
   const steps = validateSteps<FlowRunStepRecord>(body.steps);
   if (!steps.ok) {
     return NextResponse.json({ ok: false, error: steps.error }, { status: 413 });
   }
   const run = await recordFlowRun({
     flowId: body.flowId,
+    missionId: body.missionId,
+    iteration: body.iteration,
     flowName: typeof body.flowName === "string" ? body.flowName : undefined,
     status: body.status,
     mode: typeof body.mode === "string" && MODES.has(body.mode) ? body.mode : undefined,

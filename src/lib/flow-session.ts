@@ -75,7 +75,7 @@ export function normalizeFlowSessionCompletions(value: unknown): Record<string, 
   }));
 }
 
-export function flowSessionReferences(runs: readonly unknown[]): Record<string, FlowSessionReference> {
+export function flowSessionOwnership(runs: readonly unknown[]): { references: Record<string, FlowSessionReference>; ambiguous: string[] } {
   const references = new Map<string, FlowSessionReference>();
   const ambiguous = new Set<string>();
   for (const run of runs) {
@@ -90,7 +90,11 @@ export function flowSessionReferences(runs: readonly unknown[]): Record<string, 
     references.set(run.sessionId, owner);
   }
   for (const id of ambiguous) references.delete(id);
-  return Object.fromEntries(references);
+  return { references: Object.fromEntries(references), ambiguous: [...ambiguous] };
+}
+
+export function flowSessionReferences(runs: readonly unknown[]): Record<string, FlowSessionReference> {
+  return flowSessionOwnership(runs).references;
 }
 
 export function flowSessionCompletions(runs: readonly unknown[]): Record<string, boolean> {

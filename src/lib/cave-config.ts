@@ -168,6 +168,7 @@ function defaultState(): CaveState {
     sessionOwned: {},
     sessionFlow: {},
     sessionFlowCompleted: {},
+    sessionFlowAmbiguous: {},
     mergedPrAutoArchived: {},
     travel: defaultTravelState(),
   };
@@ -417,6 +418,8 @@ export type CaveState = {
   sessionFlow?: Record<string, import("./flow-session.ts").FlowSessionReference>;
   /** Reconciliation eligibility survives history clearing; false means pending. */
   sessionFlowCompleted?: Record<string, boolean>;
+  /** Ambiguous legacy owners remain excluded after history eviction or clearing. */
+  sessionFlowAmbiguous?: Record<string, boolean>;
   /** Session → PR key ("owner/repo#N") whose merge already auto-archived it
    *  once. Makes the merged-chat sweep one-shot: summoning the chat sticks. */
   mergedPrAutoArchived: Record<string, string>;
@@ -881,6 +884,11 @@ async function loadStateUnlocked(): Promise<CaveState> {
       );
     }
     const parsed = value as Partial<CaveState>;
+    const sessionFlow = normalizeFlowSessionReferences(parsed.sessionFlow);
+    const sessionFlowAmbiguous = normalizeFlowSessionCompletions(parsed.sessionFlowAmbiguous);
+    for (const [id, excluded] of Object.entries(sessionFlowAmbiguous)) {
+      if (excluded) delete sessionFlow[id];
+    }
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
@@ -893,8 +901,9 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionPinned: parsed.sessionPinned ?? {},
       sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
-      sessionFlow: normalizeFlowSessionReferences(parsed.sessionFlow),
+      sessionFlow,
       sessionFlowCompleted: normalizeFlowSessionCompletions(parsed.sessionFlowCompleted),
+      sessionFlowAmbiguous,
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
     };
@@ -957,18 +966,27 @@ async function updateState<T>(
 export async function recordFlowSessionReferences(
   references: Record<string, import("./flow-session.ts").FlowSessionReference>,
   completed: readonly string[] = [],
+  ambiguous: readonly string[] = [],
 ): Promise<void> {
   const normalized = normalizeFlowSessionReferences(references);
   const state = await loadState();
-  if (Object.keys(normalized).every((id) => Object.hasOwn(state.sessionFlow ?? {}, id) &&
-      Object.hasOwn(state.sessionFlowCompleted ?? {}, id))) return;
+  if (ambiguous.every((id) => state.sessionFlowAmbiguous?.[id]) &&
+      Object.keys(normalized).every((id) => state.sessionFlowAmbiguous?.[id] ||
+        (Object.hasOwn(state.sessionFlow ?? {}, id) && Object.hasOwn(state.sessionFlowCompleted ?? {}, id)))) return;
   await updateState((latest) => {
     // Existing ownership is immutable; an old history snapshot cannot retarget it.
+    latest.sessionFlowAmbiguous = { ...latest.sessionFlowAmbiguous,
+      ...Object.fromEntries(ambiguous.map((id) => [id, true])) };
     latest.sessionFlow = { ...normalized, ...latest.sessionFlow };
     latest.sessionFlowCompleted = {
       ...Object.fromEntries(Object.keys(normalized).map((id) => [id, completed.includes(id)])),
       ...latest.sessionFlowCompleted,
     };
+    for (const [id, excluded] of Object.entries(latest.sessionFlowAmbiguous)) {
+      if (!excluded) continue;
+      delete latest.sessionFlow[id];
+      delete latest.sessionFlowCompleted[id];
+    }
   });
   invalidateSessionsListCache();
 }

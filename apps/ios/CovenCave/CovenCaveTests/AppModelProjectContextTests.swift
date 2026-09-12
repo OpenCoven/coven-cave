@@ -961,6 +961,19 @@ final class AppModelProjectContextTests: XCTestCase {
     }
 
     @MainActor
+    func testUnassignedChatFamiliarsExcludeExecutionOnlyOwnership() {
+        let app = makeApp()
+        app.projectContext = .unassigned
+        app.familiars = [familiar("nova", "Nova"), familiar("sage", "Sage")]
+        var execution = session("flow-only", familiarId: "nova", projectRoot: nil)
+        execution.origin = "flow"
+        app.serverSessions = [execution, session("chat", familiarId: "sage", projectRoot: nil)]
+        XCTAssertEqual(app.projectFamiliars.map(\.id), ["sage"])
+        _ = app.openServerSession(execution, familiarId: "nova", loadHistory: false)
+        XCTAssertEqual(app.projectFamiliars.map(\.id), ["sage"], "opened transcripts cannot enter Chat scope")
+    }
+
+    @MainActor
     func testFlowSessionRefreshRetainsOwnershipForAnExistingLocalThread() async {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
