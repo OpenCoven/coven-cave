@@ -205,9 +205,11 @@ export interface ClientV1PathOwnershipOptions {
  * Node reports `uid: 0` for every path on win32 and `chmod` there sets nothing
  * but the read-only bit, so neither half of the POSIX contract this module
  * enforces has a native equivalent. The repair takes ownership as the current
- * SID, then writes only the owner and DACL sections; `Set-Acl`, which also
- * carries the audit section, fails with `PrivilegeNotHeldException`
- * (SeSecurityPrivilege) against an already-protected path.
+ * SID only when ownership differs, then writes the DACL. Avoiding a redundant
+ * owner write lets an ordinary owner restrict an inherited DACL without
+ * requiring `WRITE_OWNER`; `Set-Acl`, which also carries the audit section,
+ * fails with `PrivilegeNotHeldException` (SeSecurityPrivilege) against an
+ * already-protected path.
  *
  * The resulting owner and DACL are re-read below. A repair that cannot make
  * both exclusive remains a finding and is refused rather than trusted.
@@ -254,7 +256,9 @@ if (-not (Test-Exclusive $state)) {
   $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
-  $acl.SetOwner($me)
+  if ($state.owner -ne $me.Value) {
+    $acl.SetOwner($me)
+  }
   $acl.SetAccessRuleProtection($true, $false)
   foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
   $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }

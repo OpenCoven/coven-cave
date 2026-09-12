@@ -237,12 +237,12 @@ assert.match(
 );
 assert.match(
   newChat,
-  /Label\("Import from Markdown…", systemImage: "square\.and\.arrow\.down"\)[\s\S]*\.disabled\(!canLaunchChat\)[\s\S]*Button\(isGroup \? "Create" : "Start"\)\s*\{[\s\S]*\.disabled\(!canLaunchChat\)/,
+  /Label\("Import from Markdown…", systemImage: "square\.and\.arrow\.down"\)[\s\S]*\.disabled\(!canLaunchChat\)[\s\S]*Button\(isGroup \? "Create group" : "Start chat"\)\s*\{[\s\S]*\.disabled\(!canLaunchChat\)/,
   "Import and Start controls must stay disabled until launch is allowed",
 );
 assert.match(
   newChat,
-  /Section\("Project"\) \{[\s\S]*Label\(activeProject\.name, systemImage: "folder"\)[\s\S]*Switch projects from Chats to use another root\./,
+  /Section\("Project"\) \{[\s\S]*Label\(activeProject\.name, systemImage: "folder"\)[\s\S]*Switch projects from Chats to use a different project\./,
   "New Chat must describe the fixed active project instead of offering a picker",
 );
 assert.match(

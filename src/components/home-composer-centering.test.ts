@@ -171,7 +171,7 @@ assert.match(
 );
 assert.match(
   css,
-  /\.shell-frame\[data-settled\] \.home-composer-root\s*\{\s*transition:\s*transform 120ms ease-out;\s*\}/,
+  /\.shell-frame\[data-settled\] \.home-composer-root\s*\{\s*transition:\s*transform var\(--duration-fast\) var\(--ease-decelerate\);\s*\}/,
   "centering transition enabled only under .shell-frame[data-settled]",
 );
 

@@ -599,10 +599,20 @@ test("the standalone server enforces ownership on Windows with this module's scr
       `${what} must stay identical to the module server.mjs cannot import`,
     );
   }
+  const windowsAclScript = region(
+    moduleSource,
+    "path-ownership.ts",
+    /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/,
+  );
   assert.match(
-    region(moduleSource, "path-ownership.ts", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/),
-    /\$acl\.SetOwner\(\$me\)/,
-    "the Windows ACL repair must take ownership instead of leaving an Administrators-owned path unusable",
+    windowsAclScript,
+    /if \(\$state\.owner -ne \$me\.Value\) \{\s*\$acl\.SetOwner\(\$me\)\s*\}/,
+    "a current owner must be able to restrict an inherited DACL without WRITE_OWNER permission",
+  );
+  assert.equal(
+    windowsAclScript.match(/\$acl\.SetOwner\(\$me\)/g)?.length,
+    1,
+    "a foreign owner must still be taken exactly once before the DACL is repaired",
   );
   assert.equal(
     Number(region(moduleSource, "path-ownership.ts", /timeout:\s*([\d_]+),/).replaceAll("_", "")),

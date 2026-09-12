@@ -69,7 +69,7 @@ struct MessageBubble: View {
                 UIPasteboard.general.string = parsed.visible
                 Haptics.tap()
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label("Copy message", systemImage: "doc.on.doc")
             }
         }
         if canOpenReader {
@@ -77,7 +77,7 @@ struct MessageBubble: View {
                 onOpenReader?(parsed.visible)
                 Haptics.tap()
             } label: {
-                Label("Open in Reader", systemImage: "text.page")
+                Label("Open in reader", systemImage: "text.page")
             }
         }
         if canReply {
@@ -95,17 +95,17 @@ struct MessageBubble: View {
                 onForward?(forwarded)
                 Haptics.tap()
             } label: {
-                Label("Forward to Familiar", systemImage: "arrowshape.turn.up.right")
+                Label("Forward to familiar", systemImage: "arrowshape.turn.up.right")
             }
         }
         if let onRetry {
             Button(action: onRetry) {
-                Label("Retry", systemImage: "arrow.clockwise")
+                Label(message.isError ? "Retry reply" : "Regenerate reply", systemImage: "arrow.clockwise")
             }
         }
         if let onDelete {
             Button(role: .destructive, action: onDelete) {
-                Label("Delete Message", systemImage: "trash")
+                Label("Delete message", systemImage: "trash")
             }
         }
     }
@@ -300,14 +300,14 @@ struct MessageBubble: View {
                 // red bubble. (Retry re-streams just this bubble's familiar.)
                 if !isUser, message.isError, let onRetry {
                     Button(action: onRetry) {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Label("Retry reply", systemImage: "arrow.clockwise")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .tint(.red)
                     .padding(.leading, 2)
-                    .accessibilityLabel("Retry sending this message")
+                    .accessibilityLabel("Retry generating this reply")
                 }
 
                 // Durable online sends remain replay-eligible until every

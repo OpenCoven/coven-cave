@@ -14,6 +14,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -69,14 +70,13 @@ import {
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
-import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
+import { DESTINATIONS, homeSubmitLabel, placeholderFor, type Destination } from "@/components/home/home-destinations";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   cancelSystemBrowserUrlWindow,
   openSystemBrowserUrl,
   reserveSystemBrowserUrlWindow,
 } from "@/lib/open-external";
-import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,6 +156,7 @@ export function HomeComposer({
   onOpenSession,
   onStartVoiceCall,
 }: Props) {
+  const guidanceId = useId();
   // Hydrate from the same empty draft SSR emitted, then restore local storage
   // before paint so textarea and Send-button state update in one React commit.
   const [text, setText] = useState("");
@@ -264,6 +265,7 @@ export function HomeComposer({
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
+  const submitLabel = homeSubmitLabel(destination, runtimeHost, text);
   // Carry an explicit Home model intent through the new-chat handoff. This is
   // needed even when the familiar-default PATCH is still in flight: Home
   // unmounts as soon as ChatView takes ownership of the first send.
@@ -445,7 +447,11 @@ export function HomeComposer({
   // Persist the draft so a reload restores it; cleared when the input empties
   // (e.g. after a send), so sent prompts don't reappear. Shared hook —
   // debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS);
+  // Strict Mode replays cleanup before restoration commits; do not flush the
+  // empty SSR draft over the stored message during that replay.
+  const { clearNow: clearDraft } = useDraftPersistence(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS, {
+    enabled: draftRestored,
+  });
 
 
   // Focus on mount — unless a modal dialog (e.g. the onboarding wizard) is
@@ -664,9 +670,8 @@ export function HomeComposer({
       onToast("Add a task title.");
       return;
     }
-    const isOmnigentRun = Boolean(
-      runtimeHost && prompt && isOmnigentHostOptionId(runtimeHost),
-    );
+    const actionLabel = homeSubmitLabel(destination, runtimeHost, prompt);
+    const isOmnigentRun = actionLabel === "Start Omnigent run";
     if (!isOmnigentRun && !project) {
       onToast(
         destination === "board"
@@ -675,12 +680,6 @@ export function HomeComposer({
       );
       return;
     }
-    const actionLabel =
-      destination === "board"
-        ? "Create task"
-        : isOmnigentRun
-          ? "Start Omnigent run"
-          : "Send message";
     const actionFamiliar = await resolveActionFamiliar(actionLabel, !isOmnigentRun);
     if (!actionFamiliar) return;
     const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
@@ -860,6 +859,11 @@ export function HomeComposer({
         </p>
         <h1 className="home-composer-headline">What are we casting today?</h1>
         {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
+        <p className="home-composer-guidance" id={guidanceId}>
+          {destination === "board"
+            ? "Describe a task to add to Tasks. Your familiar can pick it up there."
+            : "Choose a familiar and describe what you want to work on."}
+        </p>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -1027,7 +1031,7 @@ export function HomeComposer({
         <div className="cave-composer-input-wrap">
         <textarea
           ref={textareaRef}
-          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
           placeholder={placeholderFor(destination, selectedFamiliar?.display_name ?? null)}
           rows={1}
           value={text}
@@ -1042,7 +1046,8 @@ export function HomeComposer({
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
-          aria-label="Ask anything"
+          aria-label={destination === "board" ? "Task description" : "Chat message"}
+          aria-describedby={guidanceId}
           aria-autocomplete="list"
           aria-haspopup="listbox"
           aria-expanded={menuOpen}
@@ -1165,7 +1170,7 @@ export function HomeComposer({
                   <button
                     key={d.id}
                     type="button"
-                    className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                    className={`hc-dest-pill focus-ring${destination === d.id ? " active" : ""}`}
                     role="radio"
                     aria-checked={destination === d.id}
                     tabIndex={destination === d.id ? 0 : -1}
@@ -1190,8 +1195,8 @@ export function HomeComposer({
                 }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
-                title={`Send message (${keys.enter})`}
-                aria-label="Send"
+                title={`${submitLabel} (${keys.enter})`}
+                aria-label={submitLabel}
               >
                 {sending ? (
                   <span className="hc-spinner" />
