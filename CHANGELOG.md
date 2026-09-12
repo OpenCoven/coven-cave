@@ -11,8 +11,9 @@ breaking config changes; patch releases stay additive.
 
 > Makes familiar conversations the native iOS app's home.
 
-An iOS-focused release following v0.4.2. This cut targets TestFlight only;
-desktop installers and the desktop updater are not advanced.
+An iOS-focused release following v0.4.2. TestFlight-only delivery requires an
+explicit iOS dispatch after stopping the automatic stable-tag release before
+publication; a stable tag push alone still selects all platforms.
 
 ### Changed
 - Replace native iOS workspace navigation with Conversations and Settings,
