@@ -413,7 +413,9 @@ if (-not (Test-Exclusive $state)) {
   $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
-  $acl.SetOwner($me)
+  if ($state.owner -ne $me.Value) {
+    $acl.SetOwner($me)
+  }
   $acl.SetAccessRuleProtection($true, $false)
   foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
   $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
