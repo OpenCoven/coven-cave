@@ -39,6 +39,7 @@ import {
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
 import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
+import { ChatRowTitle } from "@/components/chat-row-title";
 
 type Props = {
   sessions: SessionRow[];
@@ -330,7 +331,7 @@ function ThreadRow({
         {project ? <span className="sr-only">{`Project ${project.name} `}</span> : null}
         <span className="cnav__thread-copy">
           <span className="cnav__thread-line">
-            <span className="cnav__thread-title" title={title}>{title}</span>
+            <ChatRowTitle className="cnav__thread-title" title={title} />
             {/* Broadcast outcome replaces the timestamp while it shows: a
                 failed target must be visible on its own row, since a
                 broadcast that half-worked and said nothing is worse than one
@@ -453,7 +454,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
         )}
         <span className="cnav__thread-copy">
-          <span className="cnav__thread-title" title={title}>{title}</span>
+          <ChatRowTitle className="cnav__thread-title" title={title} />
           <ThreadAttentionCue label={attentionLabel} />
         </span>
       </button>

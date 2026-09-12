@@ -1772,6 +1772,7 @@ export const SUITES = {
     "src/lib/cave-conversations.test.ts",
     "src/lib/openclaw-conversation.test.ts",
     "src/lib/session-initiator.test.ts",
+    "src/lib/chat-title-parts.test.ts",
     "src/lib/chat-runtime-scope.test.ts",
     "src/lib/chat-boundary-sentinel.test.ts",
     "src/lib/chat-project-access.test.ts",
