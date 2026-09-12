@@ -1,4 +1,5 @@
 import type { IconName } from "@/lib/icon";
+import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 
 export type Destination = "chat" | "board";
 
@@ -6,6 +7,12 @@ export const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] 
   { id: "chat", label: "Chat", icon: "ph:chat-circle-dots" },
   { id: "board", label: "Task", icon: "ph:kanban" },
 ];
+
+export function homeSubmitLabel(destination: Destination, runtimeHost: string | null, prompt: string) {
+  if (destination === "board") return "Create task";
+  if (runtimeHost && prompt.trim() && isOmnigentHostOptionId(runtimeHost)) return "Start Omnigent run";
+  return "Send message";
+}
 
 /**
  * Placeholder copy for the Home composer textarea.

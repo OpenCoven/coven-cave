@@ -70,14 +70,13 @@ import {
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
-import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
+import { DESTINATIONS, homeSubmitLabel, placeholderFor, type Destination } from "@/components/home/home-destinations";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   cancelSystemBrowserUrlWindow,
   openSystemBrowserUrl,
   reserveSystemBrowserUrlWindow,
 } from "@/lib/open-external";
-import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -170,7 +169,6 @@ export function HomeComposer({
     setDraftRestored(true);
   }, []);
   const [destination, setDestination] = useState<Destination>("chat");
-  const submitLabel = destination === "board" ? "Create task" : "Send message";
   const [sending, setSending] = useState(false);
   // In-flight guard for the voice-call mint: onStartVoiceCall is an async
   // network round-trip with no guard of its own, so N rapid clicks would mint
@@ -267,6 +265,7 @@ export function HomeComposer({
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
+  const submitLabel = homeSubmitLabel(destination, runtimeHost, text);
   // Carry an explicit Home model intent through the new-chat handoff. This is
   // needed even when the familiar-default PATCH is still in flight: Home
   // unmounts as soon as ChatView takes ownership of the first send.
@@ -448,7 +447,11 @@ export function HomeComposer({
   // Persist the draft so a reload restores it; cleared when the input empties
   // (e.g. after a send), so sent prompts don't reappear. Shared hook —
   // debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS);
+  // Strict Mode replays cleanup before restoration commits; do not flush the
+  // empty SSR draft over the stored message during that replay.
+  const { clearNow: clearDraft } = useDraftPersistence(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS, {
+    enabled: draftRestored,
+  });
 
 
   // Focus on mount — unless a modal dialog (e.g. the onboarding wizard) is
@@ -667,9 +670,8 @@ export function HomeComposer({
       onToast("Add a task title.");
       return;
     }
-    const isOmnigentRun = Boolean(
-      runtimeHost && prompt && isOmnigentHostOptionId(runtimeHost),
-    );
+    const actionLabel = homeSubmitLabel(destination, runtimeHost, prompt);
+    const isOmnigentRun = actionLabel === "Start Omnigent run";
     if (!isOmnigentRun && !project) {
       onToast(
         destination === "board"
@@ -678,12 +680,6 @@ export function HomeComposer({
       );
       return;
     }
-    const actionLabel =
-      destination === "board"
-        ? "Create task"
-        : isOmnigentRun
-          ? "Start Omnigent run"
-          : "Send message";
     const actionFamiliar = await resolveActionFamiliar(actionLabel, !isOmnigentRun);
     if (!actionFamiliar) return;
     const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;

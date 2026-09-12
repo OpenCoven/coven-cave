@@ -61,7 +61,8 @@ assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS i
 // The bespoke home send pill is gone — the button reuses the chat composer's
 // circular accent-outline send (chat revamp 1d), keeping an aria-label for
 // screen readers.
-assert.match(source, /const submitLabel = destination === "board" \? "Create task" : "Send message"/, "submit names the selected destination's action");
+assert.match(source, /const submitLabel = homeSubmitLabel\(destination, runtimeHost, text\)/, "submit names the selected destination and runtime action");
+assert.match(source, /const actionLabel = homeSubmitLabel\(destination, runtimeHost, prompt\)/, "dispatch shares the button's action semantics");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
 assert.doesNotMatch(css, /\.hc-send-btn\s*\{/, "bespoke .hc-send-btn CSS removed (chat composer button styles apply)");

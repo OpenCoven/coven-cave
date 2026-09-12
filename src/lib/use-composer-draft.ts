@@ -46,18 +46,20 @@ export function useDraftPersistence(
   key: string,
   value: string,
   delayMs = 250,
+  { enabled = true }: { enabled?: boolean } = {},
 ): { clearNow: () => void } {
   // Latest key/value for the unmount flush below, kept current by the
   // debounce effect (which runs after every value change) and by clearNow.
-  const latestRef = useRef({ key, value });
+  const latestRef = useRef<{ key: string; value: string } | null>(enabled ? { key, value } : null);
 
   useEffect(() => {
-    latestRef.current = { key, value };
+    latestRef.current = enabled ? { key, value } : null;
+    if (!enabled) return;
     const timer = window.setTimeout(() => {
       writeComposerDraft(key, value);
     }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [key, value, delayMs]);
+  }, [key, value, delayMs, enabled]);
 
   // Flush on unmount: the debounce cleanup above CANCELS a pending write, so
   // unmounting within delayMs of the last keystroke dropped the draft's tail
@@ -65,7 +67,9 @@ export function useDraftPersistence(
   // resurrection: send paths call clearNow before any same-tick unmount, and
   // clearNow updates latestRef, so the flush writes "" — never pre-send text.
   useEffect(
-    () => () => writeComposerDraft(latestRef.current.key, latestRef.current.value),
+    () => () => {
+      if (latestRef.current) writeComposerDraft(latestRef.current.key, latestRef.current.value);
+    },
     [],
   );
 
