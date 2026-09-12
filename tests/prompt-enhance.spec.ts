@@ -105,7 +105,7 @@ async function seed(page: Page) {
 
 async function openHome(page: Page) {
   await page.goto("/?mode=home");
-  const draft = page.getByRole("textbox", { name: "Ask anything" });
+  const draft = page.getByRole("textbox", { name: "Chat message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
   return draft;
 }
