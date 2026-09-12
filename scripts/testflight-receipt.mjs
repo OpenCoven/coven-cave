@@ -230,9 +230,11 @@ export async function collectReceipt(receipt, api) {
   requireValue(Number.isFinite(expiration), "INVALID_RESPONSE");
   receipt.expirationDate = new Date(expiration).toISOString();
   // The inverse build relationship is optional; bind the detail through the exact build instead.
-  const detailLink = resource((await api.get(
+  const detailLinkResponse = await api.get(
     `/v1/builds/${build.id}/relationships/buildBetaDetail`,
-  )).data, "buildBetaDetails");
+  );
+  requireValue(detailLinkResponse?.data !== undefined, "MISSING_RELATIONSHIP_DATA");
+  const detailLink = resource(detailLinkResponse.data, "buildBetaDetails");
   const detail = resource((await api.get(`/v1/builds/${build.id}/buildBetaDetail?${new URLSearchParams({
     include: "build", "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
     "fields[builds]": "version",

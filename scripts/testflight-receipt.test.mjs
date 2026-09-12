@@ -151,7 +151,7 @@ test("beta details bind to the exact build even when inverse linkage is omitted"
 });
 
 test("missing, malformed or conflicting forward beta-detail linkage fails closed", async () => {
-  for (const linkage of [null, {}, [], { type: "builds", id: "detail-1" },
+  for (const linkage of [undefined, null, {}, [], { type: "builds", id: "detail-1" },
     { type: "buildBetaDetails", id: "other-detail" }, { type: "buildBetaDetails", id: "PRIVATE\nID" }]) {
     const f = fixture();
     f.data.buildBetaDetailLinkage = linkage;
@@ -159,6 +159,8 @@ test("missing, malformed or conflicting forward beta-detail linkage fails closed
     const receipt = await runReceipt(env, { api: f.api });
     assert.equal(receipt.verdict, "UNKNOWN");
     assert.ok(receipt.error);
+    if (linkage === undefined) assert.equal(receipt.error.code, "MISSING_RELATIONSHIP_DATA");
+    if (linkage === null) assert.equal(receipt.error.code, "INVALID_RESOURCE_TYPE");
     assert.deepEqual(receipt.groups, []);
     assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE/);
   }
