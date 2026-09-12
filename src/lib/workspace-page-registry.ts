@@ -170,6 +170,17 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     split: "always",
     landmark: "Marketplace / Roles",
   },
+  canvas: {
+    id: "canvas",
+    title: "Canvas",
+    canonicalId: "canvas",
+    variant: "default",
+    nav: "quiet",
+    palette: "secondary",
+    statusContext: "contextual",
+    split: "always",
+    landmark: "Canvas",
+  },
   marketplace: {
     id: "marketplace",
     title: "Marketplace",
