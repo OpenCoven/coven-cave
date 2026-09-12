@@ -326,7 +326,7 @@ struct ChatView: View {
             }
         }
         .sheet(item: $forwardingMessage) { message in
-            FamiliarPickerSheet(title: "Forward to Familiar") { familiar in
+            FamiliarPickerSheet(title: "Forward to familiar") { familiar in
                 forwardingMessage = nil
                 forward(message, to: familiar)
             }
@@ -2645,7 +2645,7 @@ struct ResponseReaderView: View {
                 UIPasteboard.general.string = item.markdown
                 Haptics.tap()
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label("Copy response", systemImage: "doc.on.doc")
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {

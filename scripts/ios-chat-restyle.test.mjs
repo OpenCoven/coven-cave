@@ -31,6 +31,8 @@ assert.match(newChat, /Section\("Group name \(Optional\)"\)/);
 assert.match(newChat, /TextField\("e\.g\., Research crew"[\s\S]{0,120}\.accessibilityLabel\("Group name"\)/);
 assert.match(bubble, /Label\("Open in reader",/);
 assert.match(bubble, /Label\("Forward to familiar",/);
+assert.match(chatView, /FamiliarPickerSheet\(title: "Forward to familiar"\)/);
+assert.match(chatView, /Label\("Copy response", systemImage: "doc\.on\.doc"\)/);
 assert.match(bubble, /Label\("Delete message",/);
 assert.match(bubble, /Label\(message\.isError \? "Retry reply" : "Regenerate reply",/);
 
