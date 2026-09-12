@@ -23,6 +23,7 @@ import {
 import type { CaveState } from "../../cave-config.ts";
 import { flowSessionReferenceFor } from "../../flow-session.ts";
 import { loadProjects } from "../../cave-projects.ts";
+import { loadState } from "../../cave-config.ts";
 import type { CaveProject } from "../../cave-projects-types.ts";
 import type { FamiliarExecutionAnalytics } from "../../familiar-execution-analytics.ts";
 import {
@@ -94,8 +95,19 @@ export function clientV1ReadSources(): ClientV1ReadSources {
   return Object.freeze({
     listFamiliars: loadVisibleFamiliarRoster,
     listProjects: loadProjects,
-    listConversations: () => listClientV1Conversations(),
-    loadConversation,
+    listConversations: async () => {
+      const [conversations, state] = await Promise.all([listClientV1Conversations(), loadState()]);
+      return conversations.map((conversation) => ({
+        ...conversation,
+        title: state.sessionTitles[conversation.sessionId] ?? conversation.title,
+      }));
+    },
+    loadConversation: async (id: string) => {
+      const conversation = await loadConversation(id);
+      if (!conversation) return null;
+      const state = await loadState();
+      return { ...conversation, title: state.sessionTitles[id] ?? conversation.title };
+    },
     loadFamiliarContract: readFamiliarContractFiles,
     readFamiliarAnalytics: (args: { familiarId: string; recentLimit: number }) =>
       readFamiliarExecutionAnalytics(args),
