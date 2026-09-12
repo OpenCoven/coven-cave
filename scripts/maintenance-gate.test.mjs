@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -319,6 +319,8 @@ test("lifecycle fixtures replace host discovery inputs before importing producti
     );
   }
   const hostileHome = mkdtempSync(path.join(tmpdir(), "cave-host-profile-"));
+  const hostileVault = path.join(hostileHome, "vault.yaml");
+  writeFileSync(hostileVault, "HOST_FIXTURE_SENTINEL:\n  ref: op://fixture/host/secret\n");
   try {
     runIsolatedDiscovery(`
       import assert from "node:assert/strict";
@@ -337,22 +339,34 @@ test("lifecycle fixtures replace host discovery inputs before importing producti
       };
       syncBuiltinESMExports();
       assert.notEqual(homedir(), hostile);
-      for (const key of ["COVEN_HOME", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL"]) {
+      for (const key of ["COVEN_HOME", "COVEN_VAULT_FILE", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL"]) {
         assert.equal(process.env[key].startsWith(homedir() + path.sep), true, key);
       }
       assert.equal(process.env.USERPROFILE, homedir());
+      assert.deepEqual(process.env.PATH.split(path.delimiter), [
+        path.join(homedir(), "bin"), "/usr/bin", "/bin",
+      ]);
       // If coven-bin captured the host home before isolation, this candidate
       // would be probed even though HOME now names the fixture.
       const nvm = path.join(hostile, ".nvm", "versions", "node", "v99.0.0", "bin");
       mkdirSync(nvm, { recursive: true });
       for (const name of ["node", "npm"]) writeFileSync(path.join(nvm, name), "");
-      const { covenSpawnEnv } = await import("./src/lib/coven-bin.ts");
+      const { covenBin, covenSpawnEnv } = await import("./src/lib/coven-bin.ts");
+      const { loadVaultMap } = await import("./src/lib/vault.ts");
+      assert.deepEqual(loadVaultMap(true), {}, "inherited vault configuration is not loaded");
+      assert.equal(covenBin(), process.execPath, "idle resolver cannot select a host Coven");
       const env = covenSpawnEnv();
       assert.ok(env.PATH);
+      assert.equal(env.PATH.includes(hostile), false);
       assert.deepEqual(calls, [{ command: process.env.SHELL, args: ["-ilc", "echo $PATH"] }]);
-    `, Object.fromEntries([
-      "HOME", "USERPROFILE", "COVEN_HOME", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL",
-    ].map((key) => [key, hostileHome])));
+    `, {
+      ...Object.fromEntries([
+        "HOME", "USERPROFILE", "COVEN_HOME", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL",
+      ].map((key) => [key, hostileHome])),
+      COVEN_VAULT_FILE: hostileVault,
+      COVEN_BIN: path.join(hostileHome, "coven"),
+      PATH: [hostileHome, process.env.PATH].join(path.delimiter),
+    });
   } finally {
     rmSync(hostileHome, { recursive: true, force: true });
   }
