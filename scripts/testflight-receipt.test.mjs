@@ -24,6 +24,7 @@ function fixture() {
     buildBetaDetail: resource("buildBetaDetails", "detail-1", {
       internalBuildState: "IN_BETA_TESTING", externalBuildState: "READY_FOR_BETA_SUBMISSION",
     }, { build: relation("builds", "build-1") }),
+    buildBetaDetailLinkage: { type: "buildBetaDetails", id: "detail-1" },
     betaGroups: [resource("betaGroups", "group-1", { isInternalGroup: true, name: "PRIVATE GROUP NAME" },
       { app: relation("apps", "app-1") })],
     betaTesters: [{ type: "betaTesters", id: "private-tester-id" }],
@@ -36,7 +37,8 @@ function fixture() {
       assert.equal(options.method, "GET");
       assert.equal(options.redirect, "error");
       assert.ok(options.signal instanceof AbortSignal);
-      const key = url.pathname.split("/").at(-1);
+      const key = url.pathname.endsWith("/relationships/buildBetaDetail")
+        ? "buildBetaDetailLinkage" : url.pathname.split("/").at(-1);
       assert.ok(Object.hasOwn(data, key), `Unexpected endpoint ${key}`);
       return Response.json({ data: data[key], links: { next: null } });
     },
@@ -119,6 +121,8 @@ test("availability requires exact identity, matching beta lane and populated ass
   assert.equal(receipt.verdict, "TESTER_AVAILABLE");
   assert.equal(receipt.buildId, "build-1");
   assert.equal(receipt.processingState, "VALID");
+  assert.equal(receipt.buildBetaDetailId, "detail-1");
+  assert.equal(receipt.buildBetaDetailHasBuildLinkage, true);
   assert.deepEqual(receipt.groups, [{
     id: "group-1", isInternalGroup: true, buildState: "IN_BETA_TESTING", testerCount: 1, testerAvailable: true,
   }]);
@@ -130,7 +134,41 @@ test("availability requires exact identity, matching beta lane and populated ass
   assert.equal(groups.searchParams.get("filter[app]"), "app-1");
   assert.equal(groups.searchParams.get("filter[builds]"), "build-1");
   assert.ok(f.calls.some(({ url }) => url.pathname === "/v1/betaGroups/group-1/relationships/betaTesters"));
+  assert.ok(f.calls.some(({ url }) => url.pathname === "/v1/builds/build-1/relationships/buildBetaDetail"));
   assert.doesNotMatch(receiptSummary(receipt), /PRIVATE GROUP NAME|private-tester-id|private-token/);
+});
+
+test("beta details bind to the exact build even when inverse linkage is omitted", async () => {
+  for (const relationships of [undefined, {}, { build: { links: { related: "https://example.test/unused" } } }]) {
+    const f = fixture();
+    f.data.buildBetaDetail.relationships = relationships;
+    const receipt = await runReceipt(env, { api: f.api });
+    assert.equal(receipt.verdict, "TESTER_AVAILABLE");
+    assert.equal(receipt.buildBetaDetailId, "detail-1");
+    assert.equal(receipt.buildBetaDetailHasBuildLinkage, false);
+    assert.equal(f.calls.filter(({ url }) => url.pathname.endsWith("/relationships/buildBetaDetail")).length, 1);
+  }
+});
+
+test("missing, malformed or conflicting forward beta-detail linkage fails closed", async () => {
+  for (const linkage of [undefined, null, {}, [], { type: "builds", id: "detail-1" },
+    { type: "buildBetaDetails", id: "other-detail" }, { type: "buildBetaDetails", id: "PRIVATE\nID" }]) {
+    const f = fixture();
+    f.data.buildBetaDetailLinkage = linkage;
+    delete f.data.buildBetaDetail.relationships;
+    const receipt = await runReceipt(env, { api: f.api });
+    assert.equal(receipt.verdict, "UNKNOWN");
+    assert.ok(receipt.error);
+    if (linkage === undefined) assert.equal(receipt.error.code, "MISSING_RELATIONSHIP_DATA");
+    if (linkage === null) assert.equal(receipt.error.code, "INVALID_RESOURCE_TYPE");
+    assert.deepEqual(receipt.groups, []);
+    assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE/);
+  }
+  const f = fixture();
+  f.data.buildBetaDetail.relationships.build.data = null;
+  const receipt = await runReceipt(env, { api: f.api });
+  assert.equal(receipt.verdict, "UNKNOWN");
+  assert.equal(receipt.error.code, "INVALID_RESOURCE_TYPE");
 });
 
 test("processing, absent, blocked, unknown and merely ready states are not success", async () => {
@@ -203,6 +241,8 @@ test("requests refuse foreign origins, redirects and unsafe or unbounded paginat
     "https://attacker.example/v1/apps", "http://api.appstoreconnect.apple.com/v1/apps",
     "//attacker.example/v1/apps", "https://user:pass@api.appstoreconnect.apple.com/v1/apps",
     "https://api.appstoreconnect.apple.com:444/v1/apps", "/v1/apps#fragment", "/v1/users",
+    "/v1/apps/app-1/relationships/buildBetaDetail",
+    "/v1/builds/build-1/relationships/other",
   ]) assert.throws(() => appleUrl(url), /UNSAFE_API_URL/);
   for (const next of [
     "https://attacker.example/v1/apps?limit=200",

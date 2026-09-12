@@ -46,7 +46,8 @@ export function appleUrl(value) {
     throw new ReceiptError("UNSAFE_API_URL");
   }
   requireValue(url.origin === ORIGIN && !url.username && !url.password && !url.hash
-    && /^\/v1\/(?:apps|preReleaseVersions|builds|betaGroups)(?:\/[A-Za-z0-9-]+(?:\/(?:buildBetaDetail|relationships\/betaTesters))?)?$/.test(url.pathname),
+    && (/^\/v1\/(?:apps|preReleaseVersions|builds|betaGroups)(?:\/[A-Za-z0-9-]+(?:\/(?:buildBetaDetail|relationships\/betaTesters))?)?$/.test(url.pathname)
+      || /^\/v1\/builds\/[A-Za-z0-9-]+\/relationships\/buildBetaDetail$/.test(url.pathname)),
   "UNSAFE_API_URL");
   return url;
 }
@@ -171,12 +172,14 @@ export function appleClient(signer, { fetchImpl = fetch, pause = sleep, now = Da
 }
 
 function resource(value, type) {
-  requireValue(value?.type === type && typeof value.id === "string"
-    && /^[A-Za-z0-9-]{1,100}$/.test(value.id));
+  requireValue(value?.type === type, "INVALID_RESOURCE_TYPE");
+  requireValue(typeof value.id === "string"
+    && /^[A-Za-z0-9-]{1,100}$/.test(value.id), "INVALID_RESOURCE_ID");
   return value;
 }
 
 function relationship(value, name, type, id) {
+  requireValue(value.relationships?.[name]?.data !== undefined, "MISSING_RELATIONSHIP_DATA");
   requireValue(resource(value.relationships?.[name]?.data, type).id === id, "IDENTITY_MISMATCH");
 }
 
@@ -226,11 +229,19 @@ export async function collectReceipt(receipt, api) {
   const expiration = Date.parse(build.attributes.expirationDate);
   requireValue(Number.isFinite(expiration), "INVALID_RESPONSE");
   receipt.expirationDate = new Date(expiration).toISOString();
+  // The inverse build relationship is optional; bind the detail through the exact build instead.
+  const detailLinkResponse = await api.get(
+    `/v1/builds/${build.id}/relationships/buildBetaDetail`,
+  );
+  requireValue(detailLinkResponse?.data !== undefined, "MISSING_RELATIONSHIP_DATA");
+  const detailLink = resource(detailLinkResponse.data, "buildBetaDetails");
   const detail = resource((await api.get(`/v1/builds/${build.id}/buildBetaDetail?${new URLSearchParams({
     include: "build", "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
     "fields[builds]": "version",
   })}`)).data, "buildBetaDetails");
-  relationship(detail, "build", "builds", build.id);
+  requireValue(detail.id === detailLink.id, "IDENTITY_MISMATCH");
+  receipt.buildBetaDetailHasBuildLinkage = detail.relationships?.build?.data !== undefined;
+  if (receipt.buildBetaDetailHasBuildLinkage) relationship(detail, "build", "builds", build.id);
   receipt.buildBetaDetailId = detail.id;
   receipt.internalBuildState = state(detail.attributes?.internalBuildState, INTERNAL);
   receipt.externalBuildState = state(detail.attributes?.externalBuildState, EXTERNAL);

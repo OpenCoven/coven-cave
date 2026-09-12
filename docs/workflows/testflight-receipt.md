@@ -35,6 +35,15 @@ assigned group IDs/types, and tester counts. Tester membership is read using the
 IDs-only relationship endpoint; tester IDs, names and emails are never emitted.
 Apple response bodies and arbitrary error messages are never logged.
 
+Beta-detail identity is proven by reading the exact build's
+`relationships/buildBetaDetail` ID and matching it to the returned detail.
+Apple defines the inverse `build` relationship and its inline linkage as optional;
+a links-only inverse is not an identity failure. When inverse linkage is supplied,
+it must still match the exact build. Missing or mismatched forward linkage remains
+an error. `buildBetaDetailHasBuildLinkage` records only whether the inverse linkage
+was supplied; it does not replace the forward identity proof. Resource-type,
+resource-ID and missing-linkage failures have distinct sanitized error codes.
+
 | Verdict | Meaning |
 | --- | --- |
 | `ABSENT` | No exact app, iOS pre-release version, or build is visible. |
@@ -64,6 +73,8 @@ has not finished processing; this workflow does not poll indefinitely.
 - [Pre-release versions](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-prereleaseversions)
 - [Builds](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-builds)
 - [Build beta detail](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-builds-_id_-buildbetadetail)
+- [Build beta detail ID linkage](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-builds-_id_-relationships-buildbetadetail)
+- [Build beta detail resource](https://developer.apple.com/documentation/appstoreconnectapi/buildbetadetail)
 - [Internal states](https://developer.apple.com/documentation/appstoreconnectapi/internalbetastate) and [external states](https://developer.apple.com/documentation/appstoreconnectapi/externalbetastate)
 - [Beta groups filtered by app and build](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-betagroups)
 - [Tester relationship IDs](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-betagroups-_id_-relationships-betatesters)
