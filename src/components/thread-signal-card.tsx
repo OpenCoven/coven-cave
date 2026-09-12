@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { subscribeRightChatFailures, requestAgentsNewChat } from "@/lib/agents-new-chat";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
@@ -60,6 +60,8 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
 
   const [selectedTile, setSelectedTile] = useState<string | null>(() => weakestTileId(tiles));
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const requestedRows = useRef({ reportId: report.id, keys: new Set<string>(), requests: new Map<string, string[]>() });
+  const [launchRequested, setLaunchRequested] = useState<Set<string>>(() => new Set());
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [tasked, setTasked] = useState<Set<string>>(() => new Set());
   const [taskPending, setTaskPending] = useState<Set<string>>(() => new Set());
@@ -78,6 +80,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     setSelectedTile(weakestTileId(tiles));
     setOpenRow(null);
     setLaunchError(null);
+    setLaunchRequested(new Set());
     setTasked(new Set());
     setTaskPending(new Set());
     setDismissed(false);
@@ -101,29 +104,50 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     announce(`Reflection saved to ${name}'s growth analytics. Open the daily note to continue it.`);
   }, [announce, name, report.id]);
 
+  useEffect(() => {
+    return subscribeRightChatFailures((detail) => {
+      if (!detail || requestedRows.current.reportId !== report.id) return;
+      const keys = requestedRows.current.requests.get(detail.requestId);
+      if (!keys) return;
+      requestedRows.current.requests.delete(detail.requestId);
+      for (const key of keys) requestedRows.current.keys.delete(key);
+      setLaunchRequested(new Set(requestedRows.current.keys));
+      setLaunchError(detail.error);
+    });
+  }, [report.id]);
+
   const selected = tiles.find((tile) => tile.id === selectedTile) ?? null;
   const criticals = rows.filter((row) => row.severity === "critical");
-  const openCriticals = criticals;
+  const openCriticals = criticals.filter((row) => !launchRequested.has(rowKey(row)));
   const warnings = rows.filter((row) => row.severity === "warning").length;
 
   const launch = useCallback(
     (targets: ThreadSignalRow[], label: string) => {
+      if (requestedRows.current.reportId !== report.id) requestedRows.current = { reportId: report.id, keys: new Set(), requests: new Map() };
+      targets = targets.filter((row) => !requestedRows.current.keys.has(rowKey(row)));
       if (targets.length === 0) return;
       const prompt =
         targets.length === 1
           ? buildThreadSignalResolutionPrompt(targets[0])
           : buildThreadSignalBatchResolutionPrompt(targets);
+      const requestId = crypto.randomUUID();
       const result = requestAgentsNewChat({
+        requestId,
         destination: "right-panel",
         familiarId: report.familiarId,
         sourceSessionId: report.sessionId,
         initialPrompt: `${prompt}\n\nSource: self-report from thread ${report.sessionId}.`,
         origin: "chat" as const,
       });
+      if (result.ok) {
+        requestedRows.current.requests.set(requestId, targets.map(rowKey));
+        for (const row of targets) requestedRows.current.keys.add(rowKey(row));
+        setLaunchRequested(new Set(requestedRows.current.keys));
+      }
       setLaunchError(result.ok ? null : result.error);
       announce(result.ok ? label : result.error, result.ok ? "polite" : "assertive");
     },
-    [announce, report.familiarId, report.sessionId],
+    [announce, report.id, report.familiarId, report.sessionId],
   );
 
   const createTask = useCallback(
@@ -320,6 +344,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
                             size="xs"
                             variant="secondary"
                             leadingIcon="ph:lightning-fill"
+                            disabled={launchRequested.has(rowKey(row))}
                             onClick={() => launch([row], `Requested a Chat panel thread to fix ${row.title}.`)}
                           >
                             Fix in new thread

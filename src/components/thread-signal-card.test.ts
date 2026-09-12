@@ -80,6 +80,11 @@ describe("thread-signal-card module wiring", () => {
 
   it("launches resolution threads through the shared prompt + cross-page launcher", () => {
     assert.match(source, /requestAgentsNewChat\(/);
+    assert.match(source, /requestedRows\.current\.keys\.has/);
+    assert.match(source, /if \(result\.ok\) \{/);
+    assert.match(source, /subscribeRightChatFailures\(\(detail\)/);
+    assert.match(source, /requestedRows\.current\.requests\.get\(detail\.requestId\)/);
+    assert.match(source, /disabled=\{launchRequested\.has\(rowKey\(row\)\)\}/);
     assert.match(source, /destination: "right-panel"/);
     assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/);
     assert.doesNotMatch(source, /Thread launched/, "an acknowledged request is not yet a launched thread");
@@ -167,13 +172,25 @@ describe("thread-signal-card module wiring", () => {
   it("floats the complete card above chat content without changing transcript height", () => {
     assert.match(
       styles,
-      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?z-index:\s*6;[\s\S]*?pointer-events:\s*none;/,
+      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?z-index:\s*6;[\s\S]*?pointer-events:\s*none;[\s\S]*?container-name:\s*thread-signal-overlay;/,
     );
     assert.match(
       styles,
       /\.cave-thread-signal-overlay\s*>\s*\*\s*\{[\s\S]*?pointer-events:\s*auto;/,
       "the non-flow host stays transparent while the card remains interactive",
     );
+    assert.match(
+      styles,
+      /\.cave-thread-signal-overlay\s*>\s*\*\s*\{[\s\S]*?width:\s*min\(100%,\s*60rem\);/,
+      "the Thread Signal uses the wider review-dialog measure",
+    );
+    assert.match(
+      styles,
+      /@container thread-signal-overlay \(min-width:\s*48rem\)\s*\{\s*\.cave-thread-signal-overlay > \.tsc-card\s*\{\s*display:\s*grid;[\s\S]*?"tiles section"[\s\S]*?"why queue"/,
+      "wide Thread Signals actually enable the two-column grid",
+    );
+    const wideCard = styles.match(/@container thread-signal-overlay \(min-width:\s*48rem\)\s*\{\s*\.cave-thread-signal-overlay > \.tsc-card\s*\{([^}]+)\}/)?.[1] ?? "";
+    assert.doesNotMatch(wideCard, /max-height:\s*none|overflow:\s*visible/, "wide short panes retain the overlay's bounded scrolling fallback");
   });
 
   it("carries severity on shared tone utilities rather than per-element colors", () => {

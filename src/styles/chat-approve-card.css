@@ -1,0 +1,90 @@
+.cave-approve {
+  container-type: inline-size;
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+}
+
+.cave-approve__title,
+.cave-approve__question legend {
+  font-weight: 600;
+}
+
+.cave-approve__help,
+.cave-approve__summary {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.cave-approve__summary {
+  white-space: pre-wrap;
+}
+
+.cave-approve__question {
+  min-width: 0;
+  margin-block: var(--space-3);
+  padding: 0;
+  border: 0;
+}
+
+.cave-approve__options,
+.cave-approve__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.cave-approve__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.cave-approve__option:has(input:checked) {
+  background: var(--bg-hover);
+}
+
+.cave-approve__option:has(input:disabled) {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.cave-approve__other {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.cave-approve__error {
+  color: var(--danger-text);
+}
+
+@container (max-width: 400px) {
+  .cave-approve__option {
+    width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .cave-approve .ui-input {
+    font-size: var(--text-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-approve .ui-btn-spinner {
+    animation: none;
+  }
+}

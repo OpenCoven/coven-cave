@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   AGENTS_NEW_CHAT_EVENT,
+  publishRightChatFailure,
+  subscribeRightChatFailures,
   AGENTS_NEW_RIGHT_CHAT_EVENT,
   PENDING_AGENTS_NEW_CHAT_KEY,
   clearPendingAgentsNewChat,
@@ -176,8 +178,9 @@ describe("consumePendingAgentsNewChat", () => {
     it("resolves the popup's actual source project through the actor-scoped session list", async () => {
       const previous = globalThis.fetch;
       globalThis.fetch = async (url) => {
-        assert.equal(String(url), "/api/sessions/list?familiarId=cody");
-        return Response.json({ ok: true, sessions: [{ id: "source", familiarId: "cody", project_root: "/repo/alpha" }] });
+        assert.equal(new URL(String(url), "http://localhost").searchParams.get("familiarId"), "cody");
+        assert.equal(new URL(String(url), "http://localhost").searchParams.get("includeArchived"), "1");
+        return Response.json({ ok: true, sessions: [{ id: "source", familiarId: "cody", project_root: "/repo/alpha", archived_at: "2026-09-01" }] });
       };
       try {
         assert.equal(await resolveRightChatProjectRoot({ familiarId: "cody", sourceSessionId: "source" }), "/repo/alpha");
@@ -244,5 +247,46 @@ describe("consumePendingAgentsNewChat", () => {
     store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ destination: "unknown" }));
     assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
     assert.equal(store.size, 0);
+  });
+});
+
+
+describe("right chat failure acknowledgements", () => {
+  it("delivers failures across windows and removes a disposed subscription", () => {
+    const channels = new Set<FakeChannel>();
+    class FakeChannel extends EventTarget {
+      readonly name: string;
+      constructor(name: string) { super(); this.name = name; channels.add(this); }
+      postMessage(data: unknown) {
+        for (const channel of channels) {
+          if (channel !== this && channel.name === this.name) {
+            channel.dispatchEvent(new MessageEvent("message", { data }));
+          }
+        }
+      }
+      close() { channels.delete(this); }
+    }
+    function context() {
+      const events = new EventTarget();
+      return Object.assign(makeWindow("/").win, {
+        BroadcastChannel: FakeChannel,
+        addEventListener: events.addEventListener.bind(events),
+        removeEventListener: events.removeEventListener.bind(events),
+        dispatchEvent: events.dispatchEvent.bind(events),
+      });
+    }
+    const source = context();
+    const target = new FakeChannel("cave:agents-right-chat-failed");
+    const failures: unknown[] = [];
+    const unsubscribe = withWindow(source, () => subscribeRightChatFailures((detail) => failures.push(detail)));
+    target.postMessage({ requestId: "first", error: "Superseded. Retry." });
+    assert.deepEqual(failures, [{ requestId: "first", error: "Superseded. Retry." }]);
+    withWindow(source, () => publishRightChatFailure({ requestId: "second", destination: "right-panel" }, "Unavailable"));
+    assert.equal(failures.length, 2, "same-window failure is delivered once");
+    unsubscribe();
+    target.postMessage({ requestId: "third", error: "Unavailable" });
+    target.close();
+    assert.equal(failures.length, 2);
+    assert.equal(channels.size, 0, "no channels survive unsubscribe/publish");
   });
 });

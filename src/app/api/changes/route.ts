@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs, { writeFileSync } from "node:fs";
 import os from "node:os";
+import { stampChangedFiles } from "@/lib/server/change-file-versions";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
@@ -284,6 +285,22 @@ function resolveContainedFile(repoRoot: string, relPath: string): string | null 
   return resolved;
 }
 
+/** Async containment for the polling loop; filesystem checks share its bound. */
+async function resolveContainedFileMetadata(repoRoot: string, relPath: string): Promise<string | null> {
+  if (!relPath || relPath.includes("\0") || path.isAbsolute(relPath)) return null;
+  if (relPath.split(/[\\/]+/).includes("..")) return null;
+  const resolved = path.resolve(repoRoot, relPath);
+  if (!resolved.startsWith(repoRoot + path.sep)) return null;
+  try {
+    const real = await fs.promises.realpath(resolved);
+    return real.startsWith(repoRoot + path.sep) ? resolved : null;
+  } catch (error) {
+    // Missing paths still receive the helper's stable "missing" stamp.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return resolved;
+    throw error;
+  }
+}
+
 function pathNotAllowed(): NextResponse {
   return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
 }
@@ -328,13 +345,7 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
   const files = parsePorcelainZ(stdout);
   // A rewrite can keep the same path/status/diffstat. Cheap filesystem stamps
   // let the collapsed Code tab notice it without fetching full diffs on polls.
-  for (const file of files) {
-    const absolutePath = resolveContainedFile(repoRoot, file.path);
-    if (absolutePath) {
-      const stat = fs.lstatSync(absolutePath, { throwIfNoEntry: false });
-      file.changeVersion = stat ? `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}` : "missing";
-    }
-  }
+  await stampChangedFiles(files, (filePath) => resolveContainedFileMetadata(repoRoot, filePath));
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.

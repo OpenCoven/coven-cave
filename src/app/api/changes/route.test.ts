@@ -3,10 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-assert.match(source, /resolveContainedFile\(repoRoot, file\.path\)/, "change versions respect file containment");
-assert.match(source, /fs\.lstatSync\(absolutePath, \{ throwIfNoEntry: false \}\)/, "missing files do not fail the summary");
-assert.match(source, /file\.changeVersion = stat \? `\$\{stat\.mtimeMs\}:\$\{stat\.ctimeMs\}:\$\{stat\.size\}` : "missing"/,
-  "same-size rewrites get a new version even when their diffstats match");
+assert.match(source, /await stampChangedFiles\(files, \(filePath\) => resolveContainedFileMetadata\(repoRoot, filePath\)\)/, "metadata reads are awaited through the bounded, failure-isolated helper");
+
 
 assert.match(
   source,

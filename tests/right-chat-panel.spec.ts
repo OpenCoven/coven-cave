@@ -403,6 +403,7 @@ test("fix-thread popup opens sidechat and sends once without replacing main Chat
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: /Broken lookup/ }).click();
   await card.getByRole("button", { name: "Fix in new thread", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Fix in new thread", exact: true })).toBeDisabled();
 
   const panel = page.locator(".right-chat").first();
   await expect(panel).toHaveAttribute("aria-hidden", "false");
@@ -518,4 +519,118 @@ test("tablet-width right drawer keeps a genuinely pointer-reachable backdrop", a
   await expect(drawer).toBeHidden();
   await expect(backdrop).toHaveCount(0);
   await expect(toggle).toBeFocused();
+});
+
+
+test("mobile fix handoff opens the Chat drawer and restores the main draft on close", async ({ page }, testInfo) => {
+  test.skip(!["pixel-5", "iphone-13", "tablet"].includes(testInfo.project.name));
+  const fixture = await bootFixThread(page, { selectedProjectId: null });
+  await page.evaluate(() => {
+    const event = new CustomEvent("cave:agents-new-right-chat", {
+      cancelable: true,
+      detail: { destination: "right-panel", familiarId: "cody", sourceSessionId: "cody-new", initialPrompt: "Repair the mobile source.", origin: "chat" },
+    });
+    window.dispatchEvent(event);
+    if (!event.defaultPrevented) throw new Error("Mobile handoff was not acknowledged");
+  });
+  const drawer = page.locator(".mobile-right-chat-drawer");
+  await expect(drawer).toBeVisible();
+  await expect.poll(() => fixture.sends.length).toBe(1);
+  expect(fixture.sends[0]).toMatchObject({ familiarId: "cody", projectRoot: "/repo" });
+  await expect(drawer.getByText(fixture.fixtureReply, { exact: true })).toBeVisible();
+  await expect.poll(() => drawer.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+  await drawer.getByRole("button", { name: "Close Chat panel", exact: true }).click();
+  await expect(drawer).not.toBeVisible();
+  await expect(fixture.main.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Unsent main draft");
+  await expect(page).toHaveURL(/#chat-cody-new$/);
+  expect(fixture.sends).toHaveLength(1);
+});
+
+test("fix-thread source lookup failure releases only its launch guard for retry", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const fixture = await bootFixThread(page, { selectedProjectId: null });
+  let rejectSource = true;
+  await page.route("**/api/sessions/list**", async (route) => {
+    if (rejectSource && new URL(route.request().url()).searchParams.get("includeArchived") === "1") {
+      rejectSource = false;
+      return route.fulfill({ status: 503, json: { ok: false } });
+    }
+    return route.fallback();
+  });
+  await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
+  const card = page.getByRole("article", { name: "Thread Signal" });
+  await card.getByRole("button", { name: /Broken lookup/ }).click();
+  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  await fix.click();
+  await expect(card.getByText("Couldn't open the Chat panel", { exact: true })).toBeVisible();
+  await expect(fix).toBeEnabled();
+  expect(fixture.sends).toHaveLength(0);
+  await fix.click();
+  await expect.poll(() => fixture.sends.length).toBe(1);
+  await expect(fix).toBeDisabled();
+});
+
+
+test("superseding a pending fix request makes its original action retryable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const fixture = await bootFixThread(page, { selectedProjectId: null });
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  let intercepted = false;
+  await page.route("**/api/sessions/list**", async (route) => {
+    if (!intercepted && new URL(route.request().url()).searchParams.get("includeArchived") === "1") {
+      intercepted = true;
+      await pending;
+    }
+    return route.fallback();
+  });
+  try {
+    await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
+    const card = page.getByRole("article", { name: "Thread Signal" });
+    await card.getByRole("button", { name: /Broken lookup/ }).click();
+    const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+    await fix.click();
+    await expect(fix).toBeDisabled();
+    await expect.poll(() => intercepted).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-right-chat", {
+      cancelable: true,
+      detail: { destination: "right-panel", requestId: "replacement", familiarId: "cody", projectRoot: "/unavailable" },
+    })));
+    await expect(fix).toBeEnabled();
+    expect(fixture.sends).toHaveLength(0);
+  } finally { release(); }
+});
+
+test("failure from another window releases the originating fix action", async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const fixture = await bootFixThread(page);
+  await fixture.main.getByRole("button", { name: "Session options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
+  const card = page.getByRole("article", { name: "Thread Signal" });
+  await card.getByRole("button", { name: /Broken lookup/ }).click();
+  await page.evaluate(() => {
+    window.addEventListener("cave:agents-new-right-chat", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      document.documentElement.dataset.fixRequest = (event as CustomEvent<{ requestId: string }>).detail.requestId;
+    }, { capture: true, once: true });
+  });
+  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  await fix.click();
+  await expect(fix).toBeDisabled();
+  const requestId = await page.evaluate(() => document.documentElement.dataset.fixRequest!);
+  const other = await context.newPage();
+  try {
+    await other.route("**/failure-fixture", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Failure fixture</title>" }));
+    await other.goto(new URL("/failure-fixture", page.url()).href);
+    await other.evaluate((id) => {
+      const channel = new BroadcastChannel("cave:agents-right-chat-failed");
+      channel.postMessage({ requestId: id, error: "Project access is unavailable. Try again." });
+      channel.close();
+    }, requestId);
+    await expect(fix).toBeEnabled();
+    expect(fixture.sends).toHaveLength(0);
+  } finally { await other.close(); }
 });

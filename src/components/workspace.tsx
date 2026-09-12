@@ -241,6 +241,7 @@ import {
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import {
   AGENTS_NEW_RIGHT_CHAT_EVENT,
+  publishRightChatFailure,
   clearPendingAgentsNewChat,
   hasIndependentRightChatProject,
   readPendingAgentsNewChat,
@@ -629,6 +630,7 @@ export function Workspace() {
   const workspaceChatLaunchOwnerRef = useRef<{
     generation: number;
     kind: "live" | "persisted";
+    request?: AgentsNewChatRequest;
   } | null>(null);
   const workspaceMountedRef = useRef(true);
   const projectAccessGenerationRef = useRef({
@@ -681,6 +683,7 @@ export function Workspace() {
     return () => {
       workspaceMountedRef.current = false;
       workspaceChatRequestGenerationRef.current += 1;
+      publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "The workspace closed before opening the chat. Try again.");
       workspaceChatLaunchOwnerRef.current = null;
       homeActionAuthorityRef.current = null;
       homeActionRequestGenerationRef.current += 1;
@@ -2916,6 +2919,7 @@ export function Workspace() {
     } catch (error) {
       if (workspaceMountedRef.current && workspaceChatLaunchOwnerRef.current?.generation === generation) {
         const message = error instanceof Error ? error.message : "Couldn't open the Chat panel. Try again.";
+        publishRightChatFailure(request, message);
         announce(message, "assertive");
         pushToast(message);
       }
@@ -2999,7 +3003,8 @@ export function Workspace() {
     clearPendingAgentsNewChat();
     setPendingAgentsNewChat(null);
     const generation = ++workspaceChatRequestGenerationRef.current;
-    workspaceChatLaunchOwnerRef.current = { generation, kind: "live" };
+    publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "Another chat request replaced this one. Try again.");
+    workspaceChatLaunchOwnerRef.current = { generation, kind: "live", request };
     const pendingActorRequest = actingFamiliarRequestRef.current;
     if (pendingActorRequest) {
       actingFamiliarRequestRef.current = null;
@@ -3244,14 +3249,14 @@ export function Workspace() {
     ) return;
     if (hasIndependentRightChatProject(pending)) {
       const generation = ++workspaceChatRequestGenerationRef.current;
-      workspaceChatLaunchOwnerRef.current = { generation, kind: "persisted" };
+      workspaceChatLaunchOwnerRef.current = { generation, kind: "persisted", request: pending };
       pendingAgentsNewChatAttemptRef.current = true;
-      void startIndependentRightChat(pending, generation).then((launched) => {
+      void startIndependentRightChat(pending, generation).then(() => {
         if (workspaceChatLaunchOwnerRef.current?.generation !== generation) return;
-        if (launched) {
-          clearPendingAgentsNewChat();
-          setPendingAgentsNewChat(null);
-        }
+        // A terminal failure is reported by the launcher. Drop the stale
+        // handoff so a fresh request can retry without a reload/access event.
+        clearPendingAgentsNewChat();
+        setPendingAgentsNewChat(null);
       }).finally(() => {
         pendingAgentsNewChatAttemptRef.current = false;
         if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
@@ -4755,6 +4760,7 @@ export function Workspace() {
   const rightChat = (
     <RightChatPanel
       launchRequest={rightChatLaunchRequest}
+      onFollowMainChat={() => setRightChatLaunchRequest(null)}
       open={rightChatOpen}
       familiars={familiars}
       activeFamiliar={active}

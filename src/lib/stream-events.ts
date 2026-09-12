@@ -40,6 +40,8 @@ export type StreamEvent =
       usage?: TurnUsage;
       costUsd?: number;
       responseMetadata?: ChatResponseMetadata;
+      /** Assistant identity confirmed by the transcript store, not the harness. */
+      persistedTurnId?: string;
     }
   | { kind: "error"; message: string; code?: string };
 

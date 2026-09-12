@@ -172,6 +172,19 @@ describe("authorized fix-thread handoffs", () => {
     await act(async () => renderer.unmount());
   });
 
+  test("explicitly follows the main familiar after a scoped fix without launching twice", async () => {
+    const onFollowMainChat = vi.fn();
+    const props = launchProps({ onFollowMainChat });
+    const renderer = await renderPanel(props);
+    await act(async () => renderer.root.findByProps({ "aria-label": "Follow main chat" }).props.onClick());
+    expect(onFollowMainChat).toHaveBeenCalledTimes(1);
+    await update(renderer, { ...props, launchRequest: null });
+    expect(router.latestProps.familiar.id).toBe("cody");
+    expect(router.calls.newChat).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "aria-label": "Follow main chat" })).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
   test("waits for its own roster and surfaces failure with retry instead of sending to a fallback", async () => {
     const pending = deferred();
     vi.mocked(fetch).mockImplementationOnce(() => pending.promise);

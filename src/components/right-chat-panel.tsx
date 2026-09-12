@@ -102,6 +102,7 @@ function RightChatPanelFrame({
 
 type Props = {
   launchRequest?: RightChatLaunchRequest | null;
+  onFollowMainChat?: () => void;
   open: boolean;
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
@@ -762,6 +763,17 @@ function RightChatPanelContent(props: Props & { consumedLaunchRef: RefObject<num
         >
           <Icon name="ph:plus" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
+        {props.launchRequest && props.onFollowMainChat ? (
+          <button
+            type="button"
+            className="focus-ring right-chat__icon-button"
+            aria-label="Follow main chat"
+            title="Follow main chat"
+            onClick={() => { props.onFollowMainChat?.(); announce("Chat panel follows the main familiar"); }}
+          >
+            <Icon name="ph:arrow-left" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+          </button>
+        ) : null}
         <span className="right-chat__rail-spacer" aria-hidden />
         <button
           type="button"

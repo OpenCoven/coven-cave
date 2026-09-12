@@ -358,3 +358,10 @@ assert.match(independentLaunch, /projectAccessGenerationRef\.current\.byProject\
 assert.doesNotMatch(independentLaunch, /selectWorkspaceProject|setActiveId|setMode\(/, "independent authorization cannot change the main scope");
 assert.match(workspace, /hasIndependentRightChatProject\(pending\)[\s\S]*startIndependentRightChat\(pending, generation\)/, "standalone durable handoffs use identical target authority");
 assert.match(workspace, /projectId !== null && projectRoot === undefined/, "only already crew-verified selected-project requests may skip a grant lookup");
+
+assert.match(workspace, /onFollowMainChat=\{\(\) => setRightChatLaunchRequest\(null\)\}/, "scoped fixes can return to the main familiar");
+assert.match(workspace, /startIndependentRightChat\(pending, generation\)\.then\(\(\) => \{[\s\S]*?clearPendingAgentsNewChat\(\);[\s\S]*?setPendingAgentsNewChat\(null\);/, "terminal independent launch failures clear stale persisted requests");
+
+assert.match(workspace, /publishRightChatFailure\(request, message\)/, "async launch failures release only the requesting row guard");
+
+assert.match(workspace, /publishRightChatFailure\(workspaceChatLaunchOwnerRef\.current\?\.request,[\s\S]*?workspaceChatLaunchOwnerRef\.current = \{ generation, kind: "live", request \}/, "superseding a request releases its originating action immediately");

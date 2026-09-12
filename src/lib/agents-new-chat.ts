@@ -3,11 +3,14 @@ import type { SessionOrigin } from "@/lib/types";
 
 export const AGENTS_NEW_CHAT_EVENT = "cave:agents-new-chat";
 export const AGENTS_NEW_RIGHT_CHAT_EVENT = "cave:agents-new-right-chat";
+export const AGENTS_RIGHT_CHAT_FAILED_EVENT = "cave:agents-right-chat-failed";
 export const PENDING_AGENTS_NEW_CHAT_KEY = "cave:pending-agents-new-chat";
 
 export type AgentsNewChatRequest = {
   /** Omitted for the ordinary main Chat destination. */
   destination?: "main" | "right-panel";
+  /** Correlates a live handoff failure with its originating action. */
+  requestId?: string;
   familiarId?: string | null;
   projectRoot?: string | null;
   /** Resolve the source thread's project without changing the workspace scope. */
@@ -60,6 +63,7 @@ function isAgentsNewChatRequest(value: unknown): value is AgentsNewChatRequest {
   const request = value as Record<string, unknown>;
   return (
     (request.destination === undefined || request.destination === "main" || request.destination === "right-panel")
+    && (request.requestId === undefined || typeof request.requestId === "string")
     && (request.familiarId === undefined || isNullableString(request.familiarId))
     && (request.projectRoot === undefined || isNullableString(request.projectRoot))
     && (request.sourceSessionId === undefined || isNullableString(request.sourceSessionId))
@@ -99,7 +103,7 @@ export function hasIndependentRightChatProject(request: AgentsNewChatRequest): b
 export async function resolveRightChatProjectRoot(request: AgentsNewChatRequest): Promise<string> {
   if (request.projectRoot) return request.projectRoot;
   if (!request.sourceSessionId || !request.familiarId) throw new Error("Choose a project for this fix thread.");
-  const params = new URLSearchParams({ familiarId: request.familiarId });
+  const params = new URLSearchParams({ familiarId: request.familiarId, includeArchived: "1" });
   const response = await fetch(`/api/sessions/list?${params}`, { cache: "no-store" });
   const payload = await response.json();
   if (!response.ok || !payload.ok || !Array.isArray(payload.sessions)) {
@@ -192,4 +196,53 @@ export function consumePendingAgentsNewChat(): AgentsNewChatRequest | null {
   const pending = readPendingAgentsNewChat();
   if (pending) clearPendingAgentsNewChat();
   return pending;
+}
+
+
+type RightChatFailure = { requestId: string; error: string };
+let failureChannel: BroadcastChannel | null = null;
+let failureSubscribers = 0;
+
+function rightChatFailureChannel(): BroadcastChannel | null {
+  if (typeof window === "undefined" || typeof window.BroadcastChannel === "undefined") return null;
+  failureChannel ??= new window.BroadcastChannel(AGENTS_RIGHT_CHAT_FAILED_EVENT);
+  return failureChannel;
+}
+
+/** Acknowledge failed or superseded launches to the source card in any window. */
+export function publishRightChatFailure(request: AgentsNewChatRequest | undefined, error: string): void {
+  if (typeof window === "undefined" || request?.destination !== "right-panel" || !request.requestId) return;
+  const detail: RightChatFailure = { requestId: request.requestId, error };
+  window.dispatchEvent(new CustomEvent(AGENTS_RIGHT_CHAT_FAILED_EVENT, { detail }));
+  rightChatFailureChannel()?.postMessage(detail);
+  if (failureSubscribers === 0) {
+    failureChannel?.close();
+    failureChannel = null;
+  }
+}
+
+export function subscribeRightChatFailures(listener: (failure: RightChatFailure) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const sourceWindow = window;
+  const receive = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const detail = value as Partial<RightChatFailure>;
+    if (typeof detail.requestId === "string" && typeof detail.error === "string") {
+      listener({ requestId: detail.requestId, error: detail.error });
+    }
+  };
+  const onLocal = (event: Event) => receive((event as CustomEvent<unknown>).detail);
+  const onMessage = (event: MessageEvent<unknown>) => receive(event.data);
+  sourceWindow.addEventListener(AGENTS_RIGHT_CHAT_FAILED_EVENT, onLocal);
+  const channel = rightChatFailureChannel();
+  channel?.addEventListener("message", onMessage);
+  failureSubscribers++;
+  return () => {
+    sourceWindow.removeEventListener(AGENTS_RIGHT_CHAT_FAILED_EVENT, onLocal);
+    channel?.removeEventListener("message", onMessage);
+    if (--failureSubscribers === 0) {
+      failureChannel?.close();
+      failureChannel = null;
+    }
+  };
 }
