@@ -18,7 +18,9 @@ export function placeholderFor(
   destination: Destination,
   familiarName: string | null,
 ): string {
-  if (destination === "chat") return "Summon something magical";
+  if (destination === "chat") {
+    return familiarName?.trim() ? `Message ${familiarName.trim()}…` : "Describe the work…";
+  }
   const who = familiarName?.trim() || "a familiar";
   return `Describe what you want ${who} to complete…`;
 }

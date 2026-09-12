@@ -14,6 +14,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -156,6 +157,7 @@ export function HomeComposer({
   onOpenSession,
   onStartVoiceCall,
 }: Props) {
+  const guidanceId = useId();
   // Hydrate from the same empty draft SSR emitted, then restore local storage
   // before paint so textarea and Send-button state update in one React commit.
   const [text, setText] = useState("");
@@ -168,6 +170,7 @@ export function HomeComposer({
     setDraftRestored(true);
   }, []);
   const [destination, setDestination] = useState<Destination>("chat");
+  const submitLabel = destination === "board" ? "Create task" : "Send message";
   const [sending, setSending] = useState(false);
   // In-flight guard for the voice-call mint: onStartVoiceCall is an async
   // network round-trip with no guard of its own, so N rapid clicks would mint
@@ -860,6 +863,11 @@ export function HomeComposer({
         </p>
         <h1 className="home-composer-headline">What are we casting today?</h1>
         {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
+        <p className="home-composer-guidance" id={guidanceId}>
+          {destination === "board"
+            ? "Describe a task to add to Tasks. Your familiar can pick it up there."
+            : "Choose a familiar and describe what you want to work on."}
+        </p>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -1027,7 +1035,7 @@ export function HomeComposer({
         <div className="cave-composer-input-wrap">
         <textarea
           ref={textareaRef}
-          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
           placeholder={placeholderFor(destination, selectedFamiliar?.display_name ?? null)}
           rows={1}
           value={text}
@@ -1042,7 +1050,8 @@ export function HomeComposer({
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
-          aria-label="Ask anything"
+          aria-label={destination === "board" ? "Task description" : "Chat message"}
+          aria-describedby={guidanceId}
           aria-autocomplete="list"
           aria-haspopup="listbox"
           aria-expanded={menuOpen}
@@ -1165,7 +1174,7 @@ export function HomeComposer({
                   <button
                     key={d.id}
                     type="button"
-                    className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                    className={`hc-dest-pill focus-ring${destination === d.id ? " active" : ""}`}
                     role="radio"
                     aria-checked={destination === d.id}
                     tabIndex={destination === d.id ? 0 : -1}
@@ -1190,8 +1199,8 @@ export function HomeComposer({
                 }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
-                title={`Send message (${keys.enter})`}
-                aria-label="Send"
+                title={`${submitLabel} (${keys.enter})`}
+                aria-label={submitLabel}
               >
                 {sending ? (
                   <span className="hc-spinner" />

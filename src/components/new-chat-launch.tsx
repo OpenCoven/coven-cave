@@ -1,10 +1,12 @@
 "use client";
 
 import "@/styles/cave-chat.css";
+import "@/styles/new-chat-launch.css";
 
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
@@ -52,24 +54,37 @@ export function NewChatLaunch({
           <h2 className="cave-launch__title">Start a new chat</h2>
           <p className="cave-launch__subtitle">
             {pendingProjectRoot
-              ? "Choose a familiar to start this chat in the pending project."
-              : "Choose a familiar to handle the conversation."}
+              ? "Choose a familiar to work in this project."
+              : "Choose who to work with. You can write your message next."}
           </p>
+          {pendingProjectRoot ? (
+            <p className="cave-launch__project">
+              <Icon name="ph:folder" width={14} aria-hidden />
+              <span>{pendingProjectRoot}</span>
+            </p>
+          ) : null}
         </header>
 
         <div className="cave-launch__section" aria-label="Familiars">
           <p className="cave-launch__label">Familiars</p>
           {onRequestActor ? (
-            <Button variant="primary" onClick={onRequestActor}>
+            <Button className="cave-launch__choose" variant="primary" onClick={() => onRequestActor()}>
               Choose familiar
             </Button>
+          ) : resolved.length === 0 ? (
+            <EmptyState
+              compact
+              headline="No familiars yet"
+              subtitle="Add a familiar in Familiars, then return to start a chat."
+            />
           ) : (
             <div className="cave-launch__grid">
               {resolved.map((f) => (
                 <button
                   key={f.id}
                   type="button"
-                  className="cave-launch__card"
+                  className="cave-launch__card focus-ring reveal-scope"
+                  aria-label={`Start a chat with ${f.display_name}`}
                   onClick={() => onPick(f.id)}
                 >
                   <FamiliarAvatar familiar={f} size="md" />
@@ -81,7 +96,7 @@ export function NewChatLaunch({
                       </span>
                     ) : null}
                   </span>
-                  <Icon name="ph:arrow-right-bold" width={13} className="cave-launch__card-go" aria-hidden />
+                  <Icon name="ph:arrow-right-bold" width={13} className="cave-launch__card-go reveal-on-hover" aria-hidden />
                 </button>
               ))}
             </div>
@@ -89,7 +104,7 @@ export function NewChatLaunch({
         </div>
 
         {recents.length > 0 ? (
-          <div className="cave-launch__section" aria-label="Recent threads">
+          <div className="cave-launch__section" aria-label="Recent chats">
             <p className="cave-launch__label">Pick up where you left off</p>
             <div className="cave-launch__recents">
               {recents.map((s) => {
@@ -98,7 +113,8 @@ export function NewChatLaunch({
                 <button
                   key={s.id}
                   type="button"
-                  className="cave-launch__recent"
+                  className="cave-launch__recent focus-ring reveal-scope"
+                  aria-label={`Resume ${s.title || "New chat"}`}
                   onClick={() => onResume(s.id)}
                 >
                   {fam ? (
@@ -116,7 +132,7 @@ export function NewChatLaunch({
                       {relativeTime(s.updated_at)}
                     </span>
                   </span>
-                  <Icon name="ph:arrow-right-bold" width={12} className="cave-launch__recent-go" aria-hidden />
+                  <Icon name="ph:arrow-right-bold" width={12} className="cave-launch__recent-go reveal-on-hover" aria-hidden />
                 </button>
                 );
               })}

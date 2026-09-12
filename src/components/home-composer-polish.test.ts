@@ -61,13 +61,13 @@ assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS i
 // The bespoke home send pill is gone — the button reuses the chat composer's
 // circular accent-outline send (chat revamp 1d), keeping an aria-label for
 // screen readers.
-assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
+assert.match(source, /const submitLabel = destination === "board" \? "Create task" : "Send message"/, "submit names the selected destination's action");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
 assert.doesNotMatch(css, /\.hc-send-btn\s*\{/, "bespoke .hc-send-btn CSS removed (chat composer button styles apply)");
 assert.match(
   source,
-  /cave-composer-send[\s\S]{0,400}?aria-label="Send"/,
+  /cave-composer-send[\s\S]{0,400}?aria-label=\{submitLabel\}/,
   "send button uses the chat composer's circular accent-outline send chrome",
 );
 
@@ -88,7 +88,7 @@ assert.match(
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?aria-label="Send"/,
+  /cave-composer-submit-row[\s\S]*?aria-label=\{submitLabel\}/,
   "the submit cluster is the circular send alone (enhance moved into the + menu)",
 );
 assert.doesNotMatch(
