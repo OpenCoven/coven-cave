@@ -66,3 +66,4 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 
 sync.remote: "git+https://github.com/OpenCoven/coven-cave.git"
+no-git-ops: false
