@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   COVEN_MAINTENANCE_MINIMUM_VERSION,
   COVEN_OWNER_LEASE_MS,
   createCovenMaintenanceClient,
-  defaultRunCoven,
   createRepositoryMaintenanceCoordinator,
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   repositoryMaintenanceCapabilities,
@@ -272,21 +276,148 @@ test("Coven client rejects maintenance protocols below the reviewed release", ()
   assert.equal(noBinary.covenMinimumVersion, COVEN_MAINTENANCE_MINIMUM_VERSION);
 });
 
-// Every other test in this file injects `run`, so the one runner that actually
-// spawns Coven is the one place the reported binary could quietly go missing —
-// and then every downstream assertion below would still pass while the real
-// refusal named nothing. Resolution may legitimately fail (no CLI installed,
-// as on CI); what must never happen is a successful spawn that does not say
-// what it spawned.
+const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
+
+function runIsolatedDiscovery(source, env = {}) {
+  const result = spawnSync(process.execPath, [
+    "--experimental-strip-types",
+    "--import", "./scripts/lifecycle-fixture-env.mjs",
+    "--input-type=module",
+    "--eval", source,
+  ], {
+    cwd: sourceRoot,
+    env: { ...process.env, COVEN_BIN: process.execPath, ...env },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  return result.stdout;
+}
+
 test("the real runner reports the argv it executed", () => {
-  let result;
-  try {
-    result = defaultRunCoven({ args: ["--version"], cwd: process.cwd() });
-  } catch {
-    return; // no resolvable Coven CLI on this host; nothing was executed
+  const stdout = runIsolatedDiscovery(`
+    import assert from "node:assert/strict";
+    import { realpathSync } from "node:fs";
+    import { defaultRunCoven } from "./scripts/maintenance-gate.mjs";
+    const result = defaultRunCoven({ args: ["--version"], cwd: process.cwd() });
+    assert.equal(result.ok, true);
+    assert.equal(result.binary, realpathSync(process.execPath));
+    assert.equal(result.stdout.trim(), process.version);
+    console.log(process.env.HOME);
+  `);
+  assert.equal(existsSync(stdout.trim()), false, "the fixture home is removed on exit");
+});
+
+test("lifecycle fixtures replace host discovery inputs before importing production modules", {
+  skip: process.platform === "win32",
+}, () => {
+  for (const suite of ["create", "patrol", "retirement"]) {
+    assert.match(
+      readFileSync(path.join(sourceRoot, "scripts", `worktree-lifecycle-${suite}.test.mjs`), "utf8"),
+      /^import "\.\/lifecycle-fixture-env\.mjs";/,
+      `${suite} must isolate HOME before coven-bin captures it`,
+    );
   }
-  assert.equal(typeof result.binary, "string");
-  assert.ok(result.binary.length > 0, "a spawn attempt always names its command");
+  const hostileHome = mkdtempSync(path.join(tmpdir(), "cave-host-profile-"));
+  try {
+    runIsolatedDiscovery(`
+      import assert from "node:assert/strict";
+      import cp from "node:child_process";
+      import { mkdirSync, writeFileSync } from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      import { homedir } from "node:os";
+      import path from "node:path";
+      const hostile = ${JSON.stringify(hostileHome)};
+      const originalExec = cp.execFileSync;
+      const calls = [];
+      cp.execFileSync = (command, args, options) => {
+        calls.push({ command, args });
+        assert.equal(command.startsWith(hostile), false, "host helper must never execute");
+        return originalExec(command, args, options);
+      };
+      syncBuiltinESMExports();
+      assert.notEqual(homedir(), hostile);
+      for (const key of ["COVEN_HOME", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL"]) {
+        assert.equal(process.env[key].startsWith(homedir() + path.sep), true, key);
+      }
+      assert.equal(process.env.USERPROFILE, homedir());
+      // If coven-bin captured the host home before isolation, this candidate
+      // would be probed even though HOME now names the fixture.
+      const nvm = path.join(hostile, ".nvm", "versions", "node", "v99.0.0", "bin");
+      mkdirSync(nvm, { recursive: true });
+      for (const name of ["node", "npm"]) writeFileSync(path.join(nvm, name), "");
+      const { covenSpawnEnv } = await import("./src/lib/coven-bin.ts");
+      const env = covenSpawnEnv();
+      assert.ok(env.PATH);
+      assert.deepEqual(calls, [{ command: process.env.SHELL, args: ["-ilc", "echo $PATH"] }]);
+    `, Object.fromEntries([
+      "HOME", "USERPROFILE", "COVEN_HOME", "XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA", "SHELL",
+    ].map((key) => [key, hostileHome])));
+  } finally {
+    rmSync(hostileHome, { recursive: true, force: true });
+  }
+});
+
+test("production discovery retains success, failure, cache recovery, and deadline controls", {
+  skip: process.platform === "win32",
+}, () => {
+  runIsolatedDiscovery(`
+    import assert from "node:assert/strict";
+    import cp from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const calls = [];
+    let failure;
+    cp.execFileSync = (command, args, options) => {
+      assert.equal(command, process.env.SHELL);
+      assert.deepEqual(args, ["-ilc", "echo $PATH"]);
+      calls.push(options.timeout);
+      if (failure) throw Object.assign(new Error("fixture discovery failure"), { code: failure });
+      return "/fixture/discovered";
+    };
+    syncBuiltinESMExports();
+    const { covenSpawnEnv, refreshCovenSpawnEnv, refreshCovenBin } =
+      await import("./src/lib/coven-bin.ts");
+    let clock = 1000;
+    const options = { discoveryDeadline: 1250, now: () => clock };
+    assert.ok(covenSpawnEnv(options).PATH.includes("/fixture/discovered"));
+    assert.deepEqual(calls, [250], "shell receives only the remaining discovery budget");
+    covenSpawnEnv(options);
+    assert.equal(calls.length, 1, "healthy discovery is cached");
+    clock = 1250;
+    refreshCovenSpawnEnv(options);
+    assert.equal(calls.length, 1, "expired discovery starts no subprocess");
+    clock = 1000;
+    covenSpawnEnv(options);
+    assert.equal(calls.length, 2, "expired discovery did not poison the cache");
+    for (failure of ["EACCES", "ETIMEDOUT"]) {
+      assert.equal(refreshCovenSpawnEnv(options).PATH.includes("/fixture/discovered"), false);
+    }
+    failure = undefined;
+    assert.ok(refreshCovenSpawnEnv(options).PATH.includes("/fixture/discovered"));
+
+    const { defaultRunCoven } = await import("./scripts/maintenance-gate.mjs");
+    const spawns = [];
+    cp.spawnSync = (command, args, options) => {
+      spawns.push({ command, args, options });
+      return { status: null, error: Object.assign(new Error("fixture spawn failure"), { code: failure }) };
+    };
+    syncBuiltinESMExports();
+    // 4500ms of the runner's 5000ms env budget has elapsed before discovery.
+    Date.now = () => 5500;
+    for (failure of ["ETIMEDOUT", "EACCES"]) {
+      refreshCovenBin();
+      const result = defaultRunCoven({ args: ["--version"], cwd: process.cwd(), now: () => 1000 });
+      assert.equal(calls.at(-1), 500, "runner still imposes its absolute env deadline");
+      assert.equal(result.ok, false);
+      assert.equal(result.spawnFailure.kind, failure === "ETIMEDOUT" ? "timeout" : "spawn-error");
+      assert.equal(result.spawnFailure.code, failure);
+      assert.equal(result.spawnFailure.timeoutMs, 35000);
+      assert.equal(result.binary, spawns.at(-1).command);
+      assert.deepEqual(spawns.at(-1).args, ["--version"]);
+      assert.equal(spawns.at(-1).options.timeout, 35000);
+      assert.equal(spawns.at(-1).options.shell, false);
+    }
+  `);
 });
 
 // The composite coordinator prefixes the Coven reason and used to interpolate
