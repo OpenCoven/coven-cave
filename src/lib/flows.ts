@@ -38,6 +38,9 @@ export type FlowRunRecord = {
   source: "cave" | "daemon";
   /** Live agent session id when the session executor ran the flow. */
   sessionId?: string;
+  /** Owning Research mission; iterations remain executions, not Chat threads. */
+  missionId?: string;
+  iteration?: number;
   /** Exact workflow document used for this execution, for original-workflow retry. */
   flowSnapshot?: FlowDoc;
 };

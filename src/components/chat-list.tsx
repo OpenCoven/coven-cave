@@ -2,7 +2,7 @@
 
 import "@/styles/chat-list.css";
 
-import { Fragment, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, Suspense, lazy, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
@@ -119,6 +119,10 @@ import {
   type ChatSessionSort,
 } from "@/lib/chat-session-sort";
 
+const FlowExecutionsDialog = lazy(() => import("./flow-executions-dialog").then((module) => ({
+  default: module.FlowExecutionsDialog,
+})));
+
 type Props = {
   familiar: Familiar | null;
   familiars?: Familiar[];
@@ -210,6 +214,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
   const projectOverrides = useProjectOverrides();
   const dtPrefs = useDateTimePrefs();
   const [error, setError] = useState<string | null>(null);
+  const [flowRunsOpen, setFlowRunsOpen] = useState(false);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -1065,6 +1070,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                 size="sm"
                 minWidth={216}
               >
+                <PopoverItem onSelect={() => setFlowRunsOpen(true)}>
+                  Flow runs
+                </PopoverItem>
+                <PopoverSeparator />
                 {CHAT_SESSION_KIND_ORDER.map((key) => {
                   const presentation = CHAT_SESSION_KIND[key];
                   return (
@@ -1987,6 +1996,19 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
         <kbd className="chat-list-kbd">{keys.mod}K</kbd> palette
       </footer>
       </section>
+      {flowRunsOpen ? (
+        <Suspense fallback={<p role="status">Loading Flow runs…</p>}>
+          <FlowExecutionsDialog
+            open
+            sessions={sessions}
+            onClose={() => setFlowRunsOpen(false)}
+            onOpenSession={(sessionId, familiarId) => {
+              onSessionsChanged?.();
+              onOpen(sessionId, familiarId);
+            }}
+          />
+        </Suspense>
+      ) : null}
       {deletePending ? (
         <UndoToast
           key={deletePending.id}

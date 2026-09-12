@@ -261,7 +261,7 @@ try {
   );
 
   const { saveConfig } = await import("@/lib/cave-config");
-  const { loadConversation } = await import("@/lib/cave-conversations");
+  const { loadConversation, saveConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { __postChatForTests } = await import("./route.ts");
@@ -276,6 +276,14 @@ try {
   });
 
   const sessionId = "openclaw-gateway-route-session";
+  const now = new Date().toISOString();
+  await saveConversation({
+    sessionId, familiarId: "wren", harness: "openclaw", origin: "chat",
+    flowDiscussion: { sessionId: "flow-source", flowId: "flow", runId: "run" },
+    createdAt: now, updatedAt: now,
+    turns: [{ id: "seed", role: "assistant", text: "Gateway discussion source evidence", createdAt: now }],
+    activeLeafId: "seed",
+  });
   const response = await __postChatForTests(
     new Request("http://localhost/api/chat/send", {
       method: "POST",
@@ -320,6 +328,11 @@ try {
   );
 
   const conversation = await loadConversation(sessionId);
+  assert.equal(conversation?.harnessSessionId, `cave-${sessionId}`);
+  assert.equal(conversation?.turns.length, 3);
+  const gatewayPrompt = requests.find((request) => request.method === "chat.send")?.params?.message;
+  assert.match(gatewayPrompt, /Gateway discussion source evidence/);
+  assert.equal(gatewayPrompt.split("exercise the direct Gateway route").length - 1, 1);
   const assistant = conversation?.turns.at(-1);
   assert.equal(events.findLast((event) => event.kind === "done")?.persistedTurnId, assistant?.id);
   assert.equal(typeof assistant?.id, "string");

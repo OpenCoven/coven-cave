@@ -166,6 +166,10 @@ export type ConversationFile = {
   activeLeafId?: string;
   /** Branching lineage (set by fork-to-new-thread in a later PR). */
   parentSessionId?: string;
+  /** An intentional discussion links to, but never resumes, a Flow execution. */
+  flowDiscussion?: import("./flow-session.ts").FlowSessionReference & { sessionId: string };
+  /** Written only after a direct Flow process closes; safe completion retry evidence. */
+  flowOutcome?: { status: "completed" | "failed" | "cancelled"; exitCode: number | null };
   branchedFromTurnId?: string;
   /**
    * First-turn stub marker (cave-0g2x): id of the pending user turn written by
@@ -189,6 +193,7 @@ export type ConversationSummary = {
   origin?: SessionOrigin;
   branch?: string;
   prUrl?: string;
+  flowOutcome?: ConversationFile["flowOutcome"];
   status?: string;
   exitCode?: number | null;
   /** True while the first-turn stub marker is set (see
@@ -956,6 +961,7 @@ async function readConversationSummary(
         runtime: conv.runtime,
         title: conv.title,
         origin: conv.origin,
+        ...(conv.flowOutcome ? { flowOutcome: conv.flowOutcome } : {}),
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
         ...(signals.terminal

@@ -19,9 +19,10 @@
  * missing are omitted rather than invented.
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { CitationSources } from "@/components/ui/citation";
@@ -30,6 +31,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { sourcesToCitations } from "@/lib/citations";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
+import { useFlowDiscussion } from "@/lib/flow-discussion";
 import {
   allowedResearchActions,
   describeResearchSchedule,
@@ -54,6 +56,10 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
 import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evidence-ledger";
 
+const FlowExecutionsDialog = lazy(() => import("@/components/flow-executions-dialog").then((module) => ({
+  default: module.FlowExecutionsDialog,
+})));
+
 type Props = {
   mission: ResearchMission | null;
   /** Canonical ResearchRun state when the gateway has connected. */
@@ -75,7 +81,7 @@ type Props = {
   railWidth?: number;
   /** Drag/keyboard separator bindings; absent means the rail is not resizable. */
   railSeparatorProps?: Record<string, unknown>;
-  onOpenSession(sessionId: string): void;
+  onOpenSession(sessionId: string, familiarId?: string): void;
   onOpenUrl(url: string): void;
   /** Quick link to the Resources tab (Saved resources). */
   onShowResources(): void;
@@ -417,6 +423,8 @@ export function ResearchMissionDetail({
   const [directionDrafting, setDirectionDrafting] = useState(false);
   const [directionSuggestion, setDirectionSuggestion] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [transcriptSessionId, setTranscriptSessionId] = useState<string | null>(null);
+  const discussion = useFlowDiscussion(onOpenSession, mission?.id);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [diagnosticsCopiedFor, setDiagnosticsCopiedFor] = useState<string | null>(null);
   // null = untouched; the retry payload then adapts to the failure instead.
@@ -487,6 +495,7 @@ export function ResearchMissionDetail({
   // selection.
   useEffect(() => {
     setDiagnosticsOpen(false);
+    setTranscriptSessionId(null);
     setDiagnosticsCopiedFor(null);
   }, [missionId]);
 
@@ -916,9 +925,9 @@ export function ResearchMissionDetail({
                     size="xs"
                     variant="secondary"
                     leadingIcon="ph:chat-circle-dots"
-                    onClick={() => onOpenSession(sessionId)}
+                    onClick={() => setTranscriptSessionId(sessionId)}
                   >
-                    Open session
+                    View transcript
                   </Button>
                 ) : null}
               </div>
@@ -1626,7 +1635,8 @@ export function ResearchMissionDetail({
                 <button
                   type="button"
                   className="research-desk-rail__link focus-ring"
-                  onClick={() => onOpenSession(sessionId)}
+                  disabled={discussion.busy}
+                  onClick={() => void discussion.discuss(sessionId)}
                 >
                   <Icon name="ph:chat-circle-dots" width={14} height={14} aria-hidden />
                   <span>Discuss this run in chat</span>
@@ -1658,6 +1668,19 @@ export function ResearchMissionDetail({
           </button>
         ) : null}
       </div>
+      {discussion.error ? (
+        <ErrorState compact live={false} headline="Couldn’t open discussion" subtitle={discussion.error} />
+      ) : null}
+      {transcriptSessionId ? (
+        <Suspense fallback={<div role="status" aria-label="Loading transcript…"><SkeletonRows count={3} /></div>}>
+          <FlowExecutionsDialog
+            open
+            initialSessionId={transcriptSessionId}
+            onClose={() => setTranscriptSessionId(null)}
+            onOpenSession={onOpenSession}
+          />
+        </Suspense>
+      ) : null}
     </section>
   );
 }

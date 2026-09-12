@@ -20,6 +20,8 @@ import {
   type ConversationFile,
   type ConversationSummary,
 } from "../../cave-conversations.ts";
+import type { CaveState } from "../../cave-config.ts";
+import { flowSessionReferenceFor } from "../../flow-session.ts";
 import { loadProjects } from "../../cave-projects.ts";
 import { loadState } from "../../cave-config.ts";
 import type { CaveProject } from "../../cave-projects-types.ts";
@@ -33,6 +35,25 @@ import {
   loadVisibleFamiliarRoster,
   type VisibleFamiliarRosterResult,
 } from "../familiar-roster.ts";
+import { loadFlowSessionState } from "../flow-store.ts";
+import type { ClientV1ConversationSummary } from "./reads.ts";
+
+/** Keep the complete ledger; Chat clients use the exact provenance to hide executions. */
+export async function listClientV1Conversations(
+  sources: {
+    listConversations(): Promise<ConversationSummary[]>;
+    loadFlowSessionState(persist: boolean): Promise<Pick<CaveState, "sessionFlow">>;
+  } = { listConversations, loadFlowSessionState },
+): Promise<ClientV1ConversationSummary[]> {
+  const [summaries, state] = await Promise.all([
+    sources.listConversations(),
+    sources.loadFlowSessionState(false),
+  ]);
+  return summaries.map((summary) => {
+    const flow = flowSessionReferenceFor(state.sessionFlow, summary.sessionId);
+    return flow ? { ...summary, origin: "flow", flow } : summary;
+  });
+}
 
 export interface ClientV1ReadSources {
   /**
@@ -44,7 +65,7 @@ export interface ClientV1ReadSources {
    */
   listFamiliars(): Promise<VisibleFamiliarRosterResult>;
   listProjects(): Promise<CaveProject[]>;
-  listConversations(): Promise<ConversationSummary[]>;
+  listConversations(): Promise<ClientV1ConversationSummary[]>;
   /**
    * One transcript, or null.
    *
@@ -75,7 +96,7 @@ export function clientV1ReadSources(): ClientV1ReadSources {
     listFamiliars: loadVisibleFamiliarRoster,
     listProjects: loadProjects,
     listConversations: async () => {
-      const [conversations, state] = await Promise.all([listConversations(), loadState()]);
+      const [conversations, state] = await Promise.all([listClientV1Conversations(), loadState()]);
       return conversations.map((conversation) => ({
         ...conversation,
         title: state.sessionTitles[conversation.sessionId] ?? conversation.title,

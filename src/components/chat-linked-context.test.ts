@@ -158,8 +158,8 @@ assert.match(
 
 assert.match(
   chatView,
-  /function isFlowBackedSession\(session: SessionRow \| null \| undefined\)/,
-  "ChatView should explicitly detect sessions created by flow execution",
+  /const flowBackedSession = isFlowSession\(session\) \|\| origin === "flow"/,
+  "ChatView should use shared Flow ownership detection and preserve the explicit Flow origin",
 );
 
 assert.match(

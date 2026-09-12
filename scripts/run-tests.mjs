@@ -31,6 +31,17 @@ export const SUITES = {
     "src/lib/array-content-equal.test.ts",
     "src/lib/native-notify.test.ts",
     "src/lib/session-list-equal.test.ts",
+    "src/lib/server/flow-session-ownership.test.ts",
+    "src/lib/server/flow-attention.test.ts",
+    "src/lib/server/flow-session-reconcile.test.ts",
+    "src/components/flow-executions-dialog.test.tsx",
+    "src/components/flow-execution-link.test.tsx",
+    "src/components/role-surfaces/researcher-surface-link.test.tsx",
+    "src/components/role-surfaces/research-tab-desk.behavior.test.tsx",
+    "src/lib/flow-session.test.ts",
+    "src/lib/server/flow-discussion.test.ts",
+    "src/app/api/flows/discussion/route.test.ts",
+    "src/app/api/chat/send/flow-read-only.test.ts",
     "src/lib/familiar-workspace-sessions.test.ts",
     "src/components/code-work-scheduler.test.ts",
     "src/lib/session-list-deletes.test.ts",
@@ -1051,6 +1062,7 @@ export const SUITES = {
     "src/app/daily-report-page.test.ts",
     "src/components/shipped-table.test.ts",
     "src/components/reminder-link-field.test.ts",
+    "src/components/reminder-link-field.behavior.test.tsx",
     "src/components/new-reminder-modal.test.ts",
     "src/components/board-enrich-steps.test.ts",
     "src/components/board-table-familiar-select.test.ts",
@@ -1568,6 +1580,7 @@ export const SUITES = {
     "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/lib/server/client-v1/pagination.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
+    "src/lib/server/client-v1/read-sources.test.ts",
     "src/lib/server/client-v1/read-guard.test.ts",
     "src/lib/server/client-v1/familiar-reads.test.ts",
     "src/app/api/client/v1/familiars/route.test.ts",
@@ -2091,6 +2104,18 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/flows/runs/route.test.ts",
+  "src/lib/server/flow-session-ownership.test.ts",
+  "src/lib/server/flow-attention.test.ts",
+  "src/lib/server/flow-session-reconcile.test.ts",
+  "src/app/api/flows/discussion/route.test.ts",
+  "src/app/api/chat/send/flow-read-only.test.ts",
+  "src/lib/server/client-v1/read-sources.test.ts",
+  // flow-copilot-session.ts and research-mission-runner.ts both reach
+  // cave-inbox.ts, which imports "@/lib/inbox-recurrence" as a runtime
+  // value; neither suite loads without the alias resolver.
+  "src/lib/server/flow-copilot-session.test.ts",
+  "src/lib/server/research-mission-runner-lifecycle-actions.test.ts",
   // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",
@@ -2475,6 +2500,11 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/reminder-link-field.behavior.test.tsx",
+  "src/components/flow-execution-link.test.tsx",
+  "src/components/role-surfaces/researcher-surface-link.test.tsx",
+  "src/components/flow-executions-dialog.test.tsx",
+  "src/components/role-surfaces/research-tab-desk.behavior.test.tsx",
   "src/components/code-rail-reopen.test.tsx",
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",

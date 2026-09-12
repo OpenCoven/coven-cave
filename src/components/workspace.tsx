@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { ActingFamiliarGate } from "@/components/acting-familiar-gate";
@@ -313,6 +313,10 @@ function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMod
 // the four-second session poll (~900/hour). usePausablePoll also pauses this in
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
+
+const FlowExecutionLink = lazy(() => import("./flow-execution-link").then((module) => ({
+  default: module.FlowExecutionLink,
+})));
 
 function requestedWorkspaceProjectId(
   projectRoot: string | null,
@@ -1623,6 +1627,8 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
+    const linkParams = new URLSearchParams(window.location.search);
+    const executionOwnerLink = linkParams.has("flowRun") || linkParams.has("flowSession") || linkParams.has("researchMission");
     const target = readModeParam();
     const splitTarget = readSplitPageParam();
     if (!target && !splitTarget) return;
@@ -1630,7 +1636,7 @@ export function Workspace() {
     const primary = target
       ? normalizeWorkspacePaneRequest("workspace-primary-link", target)
       : null;
-    if (primary && target) {
+    if (primary && target && !executionOwnerLink) {
       if (isWorkspaceMode(target) || isRoleSurfaceMode(target)) setMode(target);
       else {
         primaryPaneRequestRef.current = primary;
@@ -4790,6 +4796,17 @@ export function Workspace() {
   return (
     <FamiliarStudioProvider redirectToChat>
       <AutoMissionSupervisor />
+      <Suspense fallback={null}>
+        <FlowExecutionLink
+          familiars={visibleFamiliars}
+          familiarsLoaded={familiarsLoaded}
+          activeFamiliarId={activeId}
+          sessions={sessions}
+          onSelectFamiliar={setActiveId}
+          onNavigate={setMode}
+          onOpenSession={openFamiliarSession}
+        />
+      </Suspense>
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
           store (cave-backdrop.ts). In chat, a single-familiar scope with its
