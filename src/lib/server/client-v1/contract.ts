@@ -13,7 +13,9 @@ import {
 import { clientV1OperationRecords } from "./operations.ts";
 
 export const CLIENT_V1_API_VERSION = "1.0";
-export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
+// SDK 0.0.1 is the first public release of the existing Client v1 implementation,
+// not a different wire protocol. Existing 0.1.0 clients remain above this floor.
+export const CLIENT_V1_MIN_CLIENT_VERSION = "0.0.1";
 export const CLIENT_V1_PAIRING_SECRET_HEADER = "x-coven-pairing-secret";
 
 /**

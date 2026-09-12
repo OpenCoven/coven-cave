@@ -17,13 +17,13 @@ import {
   readHealth,
 } from "./client-v1-release-smoke.mjs";
 
-const expected = { apiVersion: "1.0", minimumClientVersion: "0.1.0", releaseVersion: "0.3.6" };
+const expected = { apiVersion: "1.0", minimumClientVersion: "0.0.1", releaseVersion: "0.3.6" };
 const scratchPrefix = path.resolve(process.cwd(), ".scratch-client-v1-release-smoke-");
 
 function healthEnvelope(overrides = {}, dataOverrides = {}) {
   return {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: ["pairing"],
     operations: ["pairing.create"],
     data: {
@@ -57,10 +57,19 @@ test("catches a release that admits clients the contract rejects", () => {
   // A non-empty check passed this: minimumClientVersion decides whether a
   // client may pair at all, so a build carrying a lower one lets every too-old
   // client through while the smoke reports ok.
-  const failures = checkHealthEnvelope(healthEnvelope({ minimumClientVersion: "0.0.1" }), expected);
+  const failures = checkHealthEnvelope(healthEnvelope({ minimumClientVersion: "0.0.0" }), expected);
   assert.equal(failures.length, 1);
-  assert.match(failures[0], /minimumClientVersion is "0\.0\.1", expected "0\.1\.0"/);
+  assert.match(failures[0], /minimumClientVersion is "0\.0\.0", expected "0\.0\.1"/);
   assert.equal(checkHealthEnvelope(healthEnvelope({ minimumClientVersion: "" }), expected).length, 1);
+});
+
+test("catches a stale release that excludes the first public SDK version", () => {
+  const failures = checkHealthEnvelope(
+    healthEnvelope({ minimumClientVersion: "0.1.0" }),
+    { ...contractExpectations(), releaseVersion: "0.3.6" },
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /minimumClientVersion is "0\.1\.0", expected "0\.0\.1"/);
 });
 
 test("reads the expected versions from the reviewed contract fixture", () => {
