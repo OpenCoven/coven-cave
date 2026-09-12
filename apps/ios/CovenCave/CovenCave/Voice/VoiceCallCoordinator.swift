@@ -35,11 +35,13 @@ final class VoiceCallCoordinator {
     private let transport: VoiceCallTransport
     private let mediaSession: VoiceMediaSessionManaging
     private let context: VoiceCallTransportContext
+    private let liveAuthorityIsCurrent: () -> Bool
     private var didCleanUp = false
 
     init(mode: VoiceCallMode, transport: VoiceCallTransport,
          mediaSession: VoiceMediaSessionManaging,
-         context: VoiceCallTransportContext) {
+         context: VoiceCallTransportContext,
+         liveAuthorityIsCurrent: @escaping () -> Bool = { true }) {
         state = VoiceCallState(
             mode: mode,
             sessionId: context.sessionId,
@@ -48,27 +50,34 @@ final class VoiceCallCoordinator {
         self.transport = transport
         self.mediaSession = mediaSession
         self.context = context
+        self.liveAuthorityIsCurrent = liveAuthorityIsCurrent
         transport.onEvent = { [weak self] event in self?.receive(event) }
         mediaSession.onInterruption = { [weak self] in self?.receive(.failed("audio_interrupted")) }
         mediaSession.onRouteChange = { [weak self] in self?.receive(.failed("audio_route_changed")) }
     }
 
     func start() async {
-        guard state.phase == .idle else { return }
+        guard state.phase == .idle, liveAuthorityIsCurrent() else { return }
         state.send(.start)
         publish()
         do {
             try await mediaSession.prepare(mode: state.mode, needsSpeechRecognition: state.mode == .native)
-            guard !state.phase.isTerminal else {
+            guard liveAuthorityIsCurrent(), !state.phase.isTerminal else {
                 // `end()` may have run while permission was pending. A real
                 // media session can become active immediately before its async
                 // prepare returns, so deactivate it again after that late return.
+                end()
                 mediaSession.stop()
                 return
             }
             state.receive(.permissionGranted)
             publish()
             try await transport.start(with: context)
+            if !liveAuthorityIsCurrent() || state.phase.isTerminal {
+                end()
+                transport.stop()
+                mediaSession.stop()
+            }
         } catch {
             if state.phase.isTerminal {
                 mediaSession.stop()

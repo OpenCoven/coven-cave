@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Mirrors the applicable web/TUI vocabulary (`src/lib/slash-commands.ts` →
 /// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
-/// or `/board` does the same thing on the phone as on the desktop. Terminal
+/// does the same thing on the phone as on the desktop. Terminal
 /// commands are intentionally absent because iOS has no terminal surface.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.
 ///
@@ -38,7 +38,6 @@ struct SlashCommand: Identifiable, Hashable {
         case newChat               // start a fresh chat with the same familiar(s)
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
-        case openBoard             // switch to the Tasks destination
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
@@ -57,6 +56,13 @@ struct SlashCommand: Identifiable, Hashable {
     let action: Action
 
     var id: String { name }
+
+    var sendsChatMessage: Bool {
+        switch action {
+        case .sendAsPrompt, .startDiagram: return true
+        default: return false
+        }
+    }
 
     /// Every typeable token for this command (canonical name + aliases).
     var tokens: [String] { [name] + aliases }
@@ -135,9 +141,9 @@ enum SlashCatalog {
         SlashCommand(name: "/chats", aliases: ["/agents", "/chat"], hint: "Chats",
                      description: "Switch back to the Chats view.",
                      section: .view, availability: .native, action: .openSessions),
-        SlashCommand(name: "/board", hint: "Tasks",
-                     description: "Open the Tasks board.",
-                     section: .view, availability: .native, action: .openBoard),
+        SlashCommand(name: "/board", aliases: ["/tasks", "/task"], hint: "Tasks",
+                     description: "Manage tasks on the desktop.",
+                     section: .view, availability: .desktopOnly, action: .desktopOnly("Tasks")),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),
@@ -168,17 +174,17 @@ enum SlashCatalog {
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Eval Loops")),
 
         // MARK: Launch
-        SlashCommand(name: "/run", hint: "run task",
-                     description: "Run a task through the active familiar.",
-                     argPlaceholder: "task…", section: .launch,
+        SlashCommand(name: "/run", hint: "send a prompt",
+                     description: "Send a prompt to the active familiar.",
+                     argPlaceholder: "message…", section: .launch,
                      availability: .native, action: .sendAsPrompt),
         SlashCommand(name: "/codex", hint: "codex runtime",
-                     description: "Send a task (runs through the active familiar on mobile).",
-                     argPlaceholder: "task…", section: .launch,
+                     description: "Send a prompt through the active familiar on mobile.",
+                     argPlaceholder: "message…", section: .launch,
                      availability: .native, action: .sendAsPrompt),
         SlashCommand(name: "/claude", hint: "claude runtime",
-                     description: "Send a task (runs through the active familiar on mobile).",
-                     argPlaceholder: "task…", section: .launch,
+                     description: "Send a prompt through the active familiar on mobile.",
+                     argPlaceholder: "message…", section: .launch,
                      availability: .native, action: .sendAsPrompt),
     ]
 

@@ -4,11 +4,17 @@ import XCTest
 
 private final class LiveVoiceCallModelURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    static var pause: ((LiveVoiceCallModelURLProtocol) -> Bool)?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        if Self.pause?(self) == true { return }
+        resumeResponse()
+    }
+
+    func resumeResponse() {
         do {
             let handler = try XCTUnwrap(Self.handler)
             let (response, data) = try handler(request)
@@ -27,6 +33,7 @@ private final class LiveVoiceCallModelURLProtocol: URLProtocol {
 final class LiveVoiceCallModelTests: XCTestCase {
     override func tearDown() {
         LiveVoiceCallModelURLProtocol.handler = nil
+        LiveVoiceCallModelURLProtocol.pause = nil
         super.tearDown()
     }
 
@@ -79,6 +86,193 @@ final class LiveVoiceCallModelTests: XCTestCase {
           }
         }
         """
+    }
+
+    func testStablePresentationStartsOnceAndDismissalCleansUpIdempotently() async {
+        let transport = RecordingVoiceTransport()
+        let media = RecordingVoiceMediaSession()
+        let model = LiveVoiceCallModel(
+            familiar: familiar(voiceProvider: "anthropic"),
+            sessionId: "existing",
+            projectRoot: "/repos/cave",
+            client: CaveClient(connection: CaveConnection(host: "http://cave.test:3000")),
+            makeNativeTransport: { _ in transport },
+            makeMediaSession: { media }
+        )
+        let presentationId = model.id
+        await model.start()
+        await model.start()
+        XCTAssertEqual(transport.startCalls, 1)
+        model.end()
+        model.end()
+        await model.start()
+        XCTAssertEqual(model.id, presentationId)
+        XCTAssertEqual(transport.startCalls, 1)
+        XCTAssertEqual(transport.stopCalls, 1)
+        XCTAssertEqual(media.stopCalls, 1)
+    }
+
+    func testAuthorityRecoveryNeverRestartsARevokedPresentation() async {
+        let transport = RecordingVoiceTransport()
+        let media = RecordingVoiceMediaSession()
+        var authorized = true
+        let model = LiveVoiceCallModel(
+            familiar: familiar(voiceProvider: "anthropic"),
+            sessionId: "existing",
+            projectRoot: "/repos/cave",
+            client: CaveClient(connection: CaveConnection(host: "http://cave.test:3000")),
+            authorityIsCurrent: { authorized },
+            makeNativeTransport: { _ in transport },
+            makeMediaSession: { media }
+        )
+        await model.start()
+        authorized = false
+        XCTAssertFalse(model.refreshAuthority())
+        XCTAssertEqual(model.state.phase, .ended)
+        XCTAssertEqual(transport.stopCalls, 1)
+        XCTAssertEqual(media.stopCalls, 1)
+        authorized = true
+        XCTAssertFalse(model.refreshAuthority())
+        await model.start()
+        await model.retry()
+        await model.acceptOnDeviceFallback()
+        XCTAssertEqual(transport.startCalls, 1)
+        XCTAssertTrue(model.authorityRevoked)
+        XCTAssertEqual(model.launch, .unavailable(VoiceCallCopy.authorityChanged))
+    }
+
+    func testAuthorityIsRecheckedAfterSuspendedMicrophonePermission() async throws {
+        let permissionRequested = expectation(description: "permission requested")
+        var permission: CheckedContinuation<Void, Never>?
+        let transport = RecordingVoiceTransport()
+        let media = RecordingVoiceMediaSession()
+        media.prepareHook = {
+            await withCheckedContinuation { continuation in
+                permission = continuation
+                permissionRequested.fulfill()
+            }
+        }
+        var authorized = true
+        let model = LiveVoiceCallModel(
+            familiar: familiar(voiceProvider: "anthropic"),
+            sessionId: "existing",
+            projectRoot: "/repos/cave",
+            client: CaveClient(connection: CaveConnection(host: "http://cave.test:3000")),
+            authorityIsCurrent: { authorized },
+            makeNativeTransport: { _ in transport },
+            makeMediaSession: { media }
+        )
+        let start = Task { await model.start() }
+        await fulfillment(of: [permissionRequested], timeout: 3)
+        authorized = false
+        try XCTUnwrap(permission).resume()
+        await start.value
+        XCTAssertTrue(model.authorityRevoked)
+        XCTAssertEqual(model.state.phase, .ended)
+        XCTAssertEqual(transport.startCalls, 0)
+        XCTAssertGreaterThanOrEqual(media.stopCalls, 1)
+    }
+
+    func testDismissalDuringTransportStartupStopsLateActivation() async throws {
+        let transportStarting = expectation(description: "transport starting")
+        var ready: CheckedContinuation<Void, Never>?
+        let transport = RecordingVoiceTransport()
+        transport.startHook = {
+            await withCheckedContinuation { continuation in
+                ready = continuation
+                transportStarting.fulfill()
+            }
+        }
+        let media = RecordingVoiceMediaSession()
+        let model = LiveVoiceCallModel(
+            familiar: familiar(voiceProvider: "anthropic"),
+            sessionId: "existing",
+            projectRoot: "/repos/cave",
+            client: CaveClient(connection: CaveConnection(host: "http://cave.test:3000")),
+            makeNativeTransport: { _ in transport },
+            makeMediaSession: { media }
+        )
+        let start = Task { await model.start() }
+        await fulfillment(of: [transportStarting], timeout: 3)
+        model.end()
+        try XCTUnwrap(ready).resume()
+        await start.value
+        XCTAssertEqual(model.state.phase, .ended)
+        XCTAssertFalse(transport.active)
+        XCTAssertGreaterThanOrEqual(transport.stopCalls, 2)
+    }
+
+    func testRevocationDuringSessionCreationCleansUpWithoutMintingOrStarting() async throws {
+        let creationStarted = expectation(description: "session creation started")
+        var pending: LiveVoiceCallModelURLProtocol?
+        LiveVoiceCallModelURLProtocol.pause = { request in
+            guard request.request.url?.path == "/api/chat/conversation" else { return false }
+            pending = request
+            creationStarted.fulfill()
+            return true
+        }
+        var requests: [String] = []
+        let client = client { [self] request in
+            let path = request.url?.path ?? ""
+            requests.append(path)
+            switch path {
+            case "/api/chat/conversation":
+                return try response(for: request, status: 200, body: #"{"ok":true,"sessionId":"late-empty"}"#)
+            case "/api/chat/conversation/late-empty":
+                return try response(for: request, status: 200, body: #"{"ok":true,"deleted":true}"#)
+            default:
+                XCTFail("A revoked call must not mint a grant: \(path)")
+                return try response(for: request, status: 500, body: #"{"ok":false}"#)
+            }
+        }
+        let transport = RecordingVoiceTransport()
+        var authorized = true
+        let model = LiveVoiceCallModel(
+            familiar: familiar(), sessionId: nil, projectRoot: "/repos/cave",
+            client: client,
+            authorityIsCurrent: { authorized },
+            makeRealtimeTransport: { transport },
+            makeMediaSession: { RecordingVoiceMediaSession() }
+        )
+        let start = Task { await model.start() }
+        await fulfillment(of: [creationStarted], timeout: 3)
+        authorized = false
+        model.refreshAuthority()
+        try XCTUnwrap(pending).resumeResponse()
+        await start.value
+        await model.waitForPendingCleanup()
+        XCTAssertEqual(requests, ["/api/chat/conversation", "/api/chat/conversation/late-empty"])
+        XCTAssertEqual(transport.startCalls, 0)
+        XCTAssertNil(model.state.sessionId)
+        XCTAssertEqual(model.launch, .unavailable(VoiceCallCopy.authorityChanged))
+    }
+
+    func testEndDuringGrantMintingCannotStartALateTransport() async throws {
+        let mintStarted = expectation(description: "grant mint started")
+        var pending: LiveVoiceCallModelURLProtocol?
+        LiveVoiceCallModelURLProtocol.pause = { request in
+            guard request.request.url?.path == "/api/voice/session" else { return false }
+            pending = request
+            mintStarted.fulfill()
+            return true
+        }
+        let client = client { [self] request in
+            try response(for: request, status: 200, body: grantResponseBody)
+        }
+        let transport = RecordingVoiceTransport()
+        let model = LiveVoiceCallModel(
+            familiar: familiar(), sessionId: "existing", projectRoot: "/repos/cave",
+            client: client,
+            makeRealtimeTransport: { transport },
+            makeMediaSession: { RecordingVoiceMediaSession() }
+        )
+        let start = Task { await model.start() }
+        await fulfillment(of: [mintStarted], timeout: 3)
+        model.end()
+        try XCTUnwrap(pending).resumeResponse()
+        await start.value
+        XCTAssertEqual(transport.startCalls, 0)
+        XCTAssertEqual(model.state.phase, .ended)
     }
 
     func testEndingAnAutoCreatedCallWithoutTranscriptDiscardsTheEmptySession() async throws {
@@ -457,15 +651,23 @@ private final class RecordingVoiceTransport: VoiceCallTransport {
     var onEvent: (@MainActor (VoiceCallEvent) -> Void)?
     private(set) var startCalls = 0
     private(set) var startedContexts: [VoiceCallTransportContext] = []
+    private(set) var stopCalls = 0
+    private(set) var active = false
+    var startHook: (() async -> Void)?
 
     func start(with context: VoiceCallTransportContext) async throws {
         startCalls += 1
         startedContexts.append(context)
+        await startHook?()
+        active = true
     }
 
     func setMuted(_ muted: Bool) {}
 
-    func stop() {}
+    func stop() {
+        stopCalls += 1
+        active = false
+    }
 
     func emit(_ event: VoiceCallEvent) {
         onEvent?(event)
@@ -477,10 +679,13 @@ private final class RecordingVoiceMediaSession: VoiceMediaSessionManaging {
     var onInterruption: (@MainActor () -> Void)?
     var onRouteChange: (@MainActor () -> Void)?
     var prepareError: Error?
+    var prepareHook: (() async -> Void)?
+    private(set) var stopCalls = 0
 
     func prepare(mode: VoiceCallMode, needsSpeechRecognition: Bool) async throws {
+        await prepareHook?()
         if let prepareError { throw prepareError }
     }
 
-    func stop() {}
+    func stop() { stopCalls += 1 }
 }

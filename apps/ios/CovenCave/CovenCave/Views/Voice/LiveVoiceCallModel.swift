@@ -12,7 +12,8 @@ import Observation
 /// engine and the network.
 @MainActor
 @Observable
-final class LiveVoiceCallModel {
+final class LiveVoiceCallModel: Identifiable {
+    let id = UUID()
     /// The pre-call / call lifecycle the surface renders around the engine's
     /// own `VoiceCallState`.
     enum Launch: Equatable {
@@ -35,25 +36,33 @@ final class LiveVoiceCallModel {
 
     private(set) var launch: Launch = .idle
     private(set) var state: VoiceCallState
+    private(set) var authorityRevoked = false
 
     private let onSessionEstablished: ((String) -> Void)?
     private let onSessionDiscarded: ((String) -> Void)?
     private let onCleanupWarning: ((String) -> Void)?
     private let client: CaveClient?
-    private let makeRealtimeTransport: () -> any VoiceCallTransport
-    private let makeNativeTransport: (CaveClient) -> any VoiceCallTransport
+    private let authorityValidator: () -> Bool
+    private let makeRealtimeTransport: (() -> any VoiceCallTransport)?
+    private let makeNativeTransport: ((CaveClient) -> any VoiceCallTransport)?
     private let makeMediaSession: () -> any VoiceMediaSessionManaging
     private var coordinator: VoiceCallCoordinator?
     private var didBindThreadSession = false
     private var autoCreatedSessionId: String?
     private var hasCommittedConversationContent = false
     @ObservationIgnored private var cleanupTask: Task<Void, Never>?
+    @ObservationIgnored private var startupTask: Task<Void, Never>?
+    private var hasStarted = false
+    private var hasEnded = false
+    private var launchGeneration = 0
+    private var restartInFlight = false
 
     init(
         familiar: Familiar,
         sessionId: String?,
         projectRoot: String?,
         client: CaveClient?,
+        authorityIsCurrent: @escaping () -> Bool = { true },
         onSessionEstablished: ((String) -> Void)? = nil,
         onSessionDiscarded: ((String) -> Void)? = nil,
         onCleanupWarning: ((String) -> Void)? = nil,
@@ -66,10 +75,9 @@ final class LiveVoiceCallModel {
         self.onSessionDiscarded = onSessionDiscarded
         self.onCleanupWarning = onCleanupWarning
         self.client = client
-        self.makeRealtimeTransport = makeRealtimeTransport ?? { OpenAIRealtimeTransport() }
-        self.makeNativeTransport = makeNativeTransport ?? {
-            AppleVoiceTransport(turnSender: CaveVoiceTurnSender(client: $0))
-        }
+        self.authorityValidator = authorityIsCurrent
+        self.makeRealtimeTransport = makeRealtimeTransport
+        self.makeNativeTransport = makeNativeTransport
         self.makeMediaSession = makeMediaSession ?? { VoiceMediaSession() }
         let mode = VoiceTransportPlanner.plan(for: familiar)
         self.plannedMode = mode
@@ -85,20 +93,23 @@ final class LiveVoiceCallModel {
     var activeMode: VoiceCallMode { state.mode }
 
     var isMuted: Bool { state.isMuted }
+    var authorityIsCurrent: Bool { authorityValidator() }
 
     func start() async {
-        switch plannedMode {
-        case .realtime: await startRealtime()
-        case .native: await startOnDevice()
-        }
+        guard !hasStarted, !hasEnded, refreshAuthority() else { return }
+        hasStarted = true
+        await runStartup(mode: plannedMode)
     }
 
     func toggleMute() {
-        guard let coordinator, !state.phase.isTerminal else { return }
+        guard refreshAuthority(), let coordinator, !state.phase.isTerminal else { return }
         coordinator.setMuted(!state.isMuted)
     }
 
     func end() {
+        launchGeneration += 1
+        guard !hasEnded else { return }
+        hasEnded = true
         if let coordinator {
             coordinator.end()
         } else if !state.phase.isTerminal {
@@ -107,22 +118,43 @@ final class LiveVoiceCallModel {
         scheduleAutoCreatedSessionCleanupIfNeeded()
     }
 
+    @discardableResult
+    func refreshAuthority() -> Bool {
+        guard !authorityRevoked else { return false }
+        guard authorityIsCurrent else {
+            authorityRevoked = true
+            end()
+            launch = .unavailable(VoiceCallCopy.authorityChanged)
+            return false
+        }
+        return true
+    }
+
     /// Rebuild a fresh coordinator and retry the transport that just failed.
     func retry() async {
+        guard !restartInFlight, refreshAuthority() else { return }
+        restartInFlight = true
+        defer { restartInFlight = false }
+        let requestedGeneration = launchGeneration
+        await startupTask?.value
         await waitForPendingCleanup()
+        guard launchGeneration == requestedGeneration, refreshAuthority() else { return }
         let mode = state.mode
         resetForRestart(mode: mode)
-        switch mode {
-        case .realtime: await startRealtime()
-        case .native: await startOnDevice()
-        }
+        await runStartup(mode: mode)
     }
 
     /// Accept the on-device fallback after a Realtime grant couldn't be minted.
     func acceptOnDeviceFallback() async {
+        guard !restartInFlight, refreshAuthority() else { return }
+        restartInFlight = true
+        defer { restartInFlight = false }
+        let requestedGeneration = launchGeneration
+        await startupTask?.value
         await waitForPendingCleanup()
+        guard launchGeneration == requestedGeneration, refreshAuthority() else { return }
         resetForRestart(mode: .native)
-        await startOnDevice()
+        await runStartup(mode: .native)
     }
 
     func waitForPendingCleanup() async {
@@ -131,7 +163,30 @@ final class LiveVoiceCallModel {
 
     // MARK: - Transport startup
 
-    private func startRealtime() async {
+    private func runStartup(mode: VoiceCallMode) async {
+        let generation = launchGeneration
+        let task = Task {
+            switch mode {
+            case .realtime: await startRealtime(generation: generation)
+            case .native: await startOnDevice(generation: generation)
+            }
+        }
+        startupTask = task
+        await task.value
+        if launchGeneration == generation { startupTask = nil }
+    }
+
+    private func canContinueLaunch(_ generation: Int) -> Bool {
+        guard !hasEnded, launchGeneration == generation, !Task.isCancelled,
+              refreshAuthority() else {
+            scheduleAutoCreatedSessionCleanupIfNeeded()
+            return false
+        }
+        return true
+    }
+
+    private func startRealtime(generation: Int) async {
+        guard canContinueLaunch(generation) else { return }
         guard let client else {
             launch = .unavailable(disconnectedCopy)
             return
@@ -143,9 +198,11 @@ final class LiveVoiceCallModel {
         launch = .minting
         do {
             let sessionId = try await realtimeSessionID(client: client, projectRoot: projectRoot)
+            guard canContinueLaunch(generation) else { return }
             let response = try await client.mintVoiceSession(
                 familiarId: familiar.id, sessionId: sessionId
             )
+            guard canContinueLaunch(generation) else { return }
             let context = VoiceCallTransportContext(
                 familiarId: familiar.id,
                 sessionId: sessionId,
@@ -154,21 +211,29 @@ final class LiveVoiceCallModel {
             )
             await launchCoordinator(
                 mode: .realtime,
-                transport: makeRealtimeTransport(),
+                transport: makeRealtimeTransport?() ?? OpenAIRealtimeTransport(
+                    liveAuthorityIsCurrent: { [weak self] in
+                        self?.canContinueLaunch(generation) ?? false
+                    }
+                ),
                 mediaSession: makeMediaSession(),
-                context: context
+                context: context,
+                generation: generation
             )
         } catch let error as CaveError where error.requiresProjectSelection {
+            guard canContinueLaunch(generation) else { return }
             launch = .unavailable(projectRequiredCopy)
             scheduleAutoCreatedSessionCleanupIfNeeded()
         } catch {
+            guard canContinueLaunch(generation) else { return }
             // A grant we couldn't mint is the fallback trigger, not a dead end.
             launch = .fallbackOffer(VoiceCallCopy.mintFailureFallback(error.localizedDescription))
             scheduleAutoCreatedSessionCleanupIfNeeded()
         }
     }
 
-    private func startOnDevice() async {
+    private func startOnDevice(generation: Int) async {
+        guard canContinueLaunch(generation) else { return }
         guard let client else {
             launch = .unavailable(disconnectedCopy)
             return
@@ -185,17 +250,28 @@ final class LiveVoiceCallModel {
         )
         await launchCoordinator(
             mode: .native,
-            transport: makeNativeTransport(client),
+            transport: makeNativeTransport?(client) ?? AppleVoiceTransport(
+                turnSender: CaveVoiceTurnSender(
+                    client: client,
+                    liveDispatchLeaseIsCurrent: { [weak self] in
+                        self?.canContinueLaunch(generation) ?? false
+                    }
+                )
+            ),
             mediaSession: makeMediaSession(),
-            context: context
+            context: context,
+            generation: generation
         )
     }
 
     private func launchCoordinator(mode: VoiceCallMode, transport: VoiceCallTransport,
                                    mediaSession: VoiceMediaSessionManaging,
-                                   context: VoiceCallTransportContext) async {
+                                   context: VoiceCallTransportContext, generation: Int) async {
         let coordinator = VoiceCallCoordinator(
-            mode: mode, transport: transport, mediaSession: mediaSession, context: context
+            mode: mode, transport: transport, mediaSession: mediaSession, context: context,
+            liveAuthorityIsCurrent: { [weak self] in
+                self?.canContinueLaunch(generation) ?? false
+            }
         )
         coordinator.onStateChange = { [weak self] state in
             self?.handleCoordinatorStateChange(state)
@@ -208,7 +284,11 @@ final class LiveVoiceCallModel {
 
     private func resetForRestart(mode: VoiceCallMode) {
         let retryableAutoCreatedSessionId = pendingAutoCreatedSessionIdForRestart()
+        coordinator?.end()
         coordinator = nil
+        hasStarted = true
+        hasEnded = false
+        launchGeneration += 1
         didBindThreadSession = false
         hasCommittedConversationContent = false
         autoCreatedSessionId = retryableAutoCreatedSessionId

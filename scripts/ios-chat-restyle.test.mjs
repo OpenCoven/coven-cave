@@ -19,14 +19,16 @@ const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swif
 
 // Copy uses the live design-language contract, not the prototype's terminology.
 assert.match(chatView, /Text\("Start a chat"\)/);
-assert.match(chatView, /Describe a task or choose a suggestion below\./);
-assert.match(chatView, /"What tasks need attention\?"/);
-assert.match(chatView, /"Work on the next priority"/);
+assert.match(chatView, /Write a message or choose a suggestion below\./);
+assert.match(chatView, /"Help me explore an idea"/);
+assert.match(chatView, /"Explain something to me"/);
+assert.doesNotMatch(chatView, /"What tasks need attention\?"|"Work on the next priority"|app\.tasks/,
+  "conversation starters do not depend on task dashboards");
 assert.doesNotMatch(chatView, /"Board unavailable"|"Load the live board"|"New Messages"/);
 assert.match(chatView, /TextField\("Write a message…", text: \$draft, axis: \.vertical\)/);
 assert.match(chatView, /TextField\("Write a message…"[\s\S]{0,120}\.accessibilityLabel\("Message"\)/);
 assert.match(newChat, /Button\(isGroup \? "Create group" : "Start chat"\)/);
-assert.match(newChat, /Button\("Refresh chats"\)/);
+assert.match(newChat, /Button\("Refresh access"\)/);
 assert.match(newChat, /Section\("Group name \(Optional\)"\)/);
 assert.match(newChat, /TextField\("e\.g\., Research crew"[\s\S]{0,120}\.accessibilityLabel\("Group name"\)/);
 assert.match(bubble, /Label\("Open in reader",/);

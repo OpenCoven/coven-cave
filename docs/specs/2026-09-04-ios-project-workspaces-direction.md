@@ -1,6 +1,14 @@
 # Native iOS project workspaces direction
 
-Status: **approved direction for implementation**
+Status: **historical; workspace expansion superseded**
+
+The maintainer replaced this roadmap with the chat-only direction on
+2026-09-12 (`cave-iusli`). See
+[`../ios-current-direction.md`](../ios-current-direction.md) for the current
+authority. The original decision below is retained as historical evidence;
+its Tasks, Projects, Needs You, and operational Familiar destinations no
+longer authorize implementation. Exact conversation ownership, fail-closed
+writes, cached reads, migration, and real-device quality requirements remain.
 
 Date: 2026-09-04
 

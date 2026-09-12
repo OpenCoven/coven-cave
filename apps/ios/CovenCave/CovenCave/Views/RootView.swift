@@ -14,12 +14,6 @@ struct RootView: View {
                     ConnectionView()
                 case .checking where app.connection != nil && !app.hasLoadedSurfaces:
                     ConnectingView()
-                case .projectContextRequired where !app.hasLoadedSurfaces:
-                    // The desktop is reachable, but project context is still
-                    // unresolved. Keep destinations unmounted and offer the
-                    // dedicated context gate instead of mislabeling this as
-                    // offline or pairing.
-                    ProjectContextGateView()
                 case .unreachable where !app.hasLoadedSurfaces:
                     // Never got in this session — nothing to keep on screen.
                     ConnectionView()
@@ -152,18 +146,6 @@ private struct ReconnectPill: View {
 struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
-    @State private var presentedOverlay: MainOverlay? = {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
-            return .search
-        }
-        if ProcessInfo.processInfo.arguments.contains("--ui-open-projects") {
-            return .projectSwitcher
-        }
-        #endif
-        return nil
-    }()
-    @State private var overlayDismissalAction: (() -> Void)?
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -181,71 +163,27 @@ struct MainShellView: View {
                         get: { app.navigationDrawerOpen },
                         set: { app.navigationDrawerOpen = $0 }
                     ),
-                    openProjectSwitcher: { presentedOverlay = .projectSwitcher },
-                    openFamiliars: { presentedOverlay = .familiars },
                     openThread: { _ = app.requestOpen($0) },
                     newChat: {
                         app.selectedTab = .chats
                         app.newChatRequested = true
                     },
-                    openSearch: { presentedOverlay = .search }
+                    openSearch: {
+                        app.selectedTab = .chats
+                        app.chatSearchRequested = true
+                    }
                 )
                 .zIndex(100)
             }
         }
-        .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
-            switch overlay {
-            case .projectSwitcher:
-                ProjectSwitcherView()
-            case .familiars: FamiliarsListView { familiar in
-                dismissOverlay {
-                    if let thread = app.openFamiliarLandingThread(
-                        for: familiar.id,
-                        in: app.projectContext
-                    ) {
-                        _ = app.requestOpen(thread)
-                    } else {
-                        app.showToast(
-                            "Switch to a registered project to start a new chat.",
-                            systemImage: "folder.badge.questionmark",
-                            style: .warning
-                        )
-                    }
-                }
-            }
-            case .search:
-                GlobalSearchView(
-                    dismiss: { presentedOverlay = nil },
-                    openThread: { thread in
-                        dismissOverlay { _ = app.requestOpen(thread) }
-                    },
-                    openServerSession: { session, familiarId in
-                        dismissOverlay {
-                            _ = app.requestOpenServerSession(
-                                session,
-                                fallbackFamiliarId: familiarId
-                            )
-                        }
-                    },
-                    openProject: { project in
-                        dismissOverlay { _ = app.requestOpenProjectSearchResult(project) }
-                    },
-                    openFamiliar: { familiar in
-                        dismissOverlay {
-                            _ = app.requestOpenGlobalFamiliarLandingThread(for: familiar.id)
-                        }
-                    },
-                    openTask: { card in
-                        dismissOverlay { app.requestOpenTask(card) }
-                    }
-                )
-            }
-        }
-        // Command confirmations float above the whole shell so they're visible
-        // whether a command stays in chat or jumps to the Tasks destination.
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
-        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–3.
-        // Hidden buttons keep the shortcuts active without affecting layout.
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
+                app.chatSearchRequested = true
+            }
+            #endif
+        }
         .background {
             ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
                 Button {
@@ -276,44 +214,17 @@ struct MainShellView: View {
         }
     }
 
-    private func dismissOverlay(then action: @escaping () -> Void) {
-        overlayDismissalAction = action
-        presentedOverlay = nil
-    }
-
-    private func runOverlayDismissalAction() {
-        let action = overlayDismissalAction
-        overlayDismissalAction = nil
-        Task { @MainActor in
-            await Task.yield()
-            action?()
-        }
-    }
-
-    @ViewBuilder
     private var shellContent: some View {
-        if app.selectedTab == .settings {
-            SettingsView()
-        } else {
-            switch app.projectContextGateState {
-            case .ready:
-                selectedDestination
-                    .id(app.projectContext?.id ?? "__project-context-unset__")
-            case .loading, .retryableError, .noProjects:
-                ProjectContextGateView()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var selectedDestination: some View {
-        switch app.selectedTab {
-        case .chats:
+        ZStack {
+            // Settings and access refreshes must not discard the active draft,
+            // conversation selection, or scroll position.
             ChatsHomeView()
-        case .tasks:
-            TasksView()
-        case .settings:
-            SettingsView()
+                .opacity(app.selectedTab == .settings ? 0 : 1)
+                .allowsHitTesting(app.selectedTab != .settings)
+                .accessibilityHidden(app.selectedTab == .settings)
+            if app.selectedTab == .settings {
+                SettingsView()
+            }
         }
     }
 }
@@ -351,20 +262,6 @@ private struct DrawerDestinationStage: ViewModifier {
             .allowsHitTesting(!isOpen)
             .accessibilityHidden(isOpen)
             .animation(reduceMotion ? nil : .snappy(duration: 0.26), value: isOpen)
-    }
-}
-
-private enum MainOverlay: Identifiable {
-    case projectSwitcher
-    case familiars
-    case search
-
-    var id: String {
-        switch self {
-        case .projectSwitcher: "project-switcher"
-        case .familiars: "familiars"
-        case .search: "search"
-        }
     }
 }
 

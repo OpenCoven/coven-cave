@@ -53,8 +53,8 @@ assert.match(
 );
 assert.match(
   client,
-  /Self\.streamSession\.bytes\(for: req\)/,
-  "sendStream should use the dedicated streaming session",
+  /\(injectedSession \?\? Self\.streamSession\)\.bytes\(for: req\)/,
+  "sendStream defaults to the dedicated streaming session while honoring an explicitly supplied transport",
 );
 assert.doesNotMatch(
   client,

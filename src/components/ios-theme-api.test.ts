@@ -21,12 +21,12 @@ assert.match(theme, /extension EnvironmentValues[\s\S]*var chrome:\s*ChromePalet
 
 assert.match(appModel, /var chrome:\s*ChromePalette = \.fallback/, "AppModel owns the current chrome palette");
 assert.match(appModel, /func loadTheme\(\) async[\s\S]*client\.fetchTheme\(\)[\s\S]*adopt\(snapshot\)/, "AppModel fetches and adopts the desktop palette");
-// Project-context bootstrap keeps theme/profile best-effort while the required
-// project scope loads through the same core-resource entry point.
+// Cached chats no longer gate the shell on catalog loading. Stale chat access
+// still refreshes through the core-resource entry point before dispatch.
 assert.match(
   appModel,
-  /let shouldGateShell = !hasLoadedSurfaces[\s\S]*await (?:loadCoreResources|refreshLoadedSurfaces)\([\s\S]*connectionState = \.connected/,
-  "AppModel gates the connected state on its initial core-resource load",
+  /let shouldLoadCoreBeforeDispatch = !chatAccessIsCurrent[\s\S]*if shouldLoadCoreBeforeDispatch \{[\s\S]*await (?:loadCoreResources|refreshLoadedSurfaces)\([\s\S]*guard refreshLeaseIsCurrent\([\s\S]*if case \.needsAuth = connectionState \{[\s\S]*return[\s\S]*connectionState = \.connected/,
+  "AppModel refreshes stale chat access before connecting and preserves lease and authentication guards",
 );
 assert.match(
   appModel,

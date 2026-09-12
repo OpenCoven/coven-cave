@@ -8,6 +8,20 @@ const profile = await read("apps/ios/CovenCave/CovenCave/Views/FamiliarsListView
 const dashboard = await read("apps/ios/CovenCave/CovenCave/Models/FamiliarDashboard.swift");
 const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
 
+const picker = profile.slice(0, profile.indexOf("struct FamiliarDetailView: View"));
+assert.doesNotMatch(picker, /FamiliarHubView|NavigationLink|FamiliarDetailStatsModel/,
+  "New chat selects a participant without entering an operational hub");
+assert.doesNotMatch(picker, /app\.projectFamiliars|app\.projectMembershipLoaded|app\.projectContext/,
+  "choosing a participant does not browse or switch an ambient project workspace");
+assert.match(picker, /visibleFamiliars = app\.familiars/);
+assert.match(picker, /guard app\.familiarsLoaded else/);
+assert.match(picker, /Button \{\s*dismiss\(\)\s*openFamiliar\(familiar\)/,
+  "choosing a participant returns it directly to the chat caller");
+assert.match(picker, /FamiliarPermissionsSheet\(familiar: familiar\)/,
+  "participant permissions stay reachable without loading dashboard data");
+assert.doesNotMatch(profile, /app\.tasks|app\.loadTasks\(/,
+  "participant selection and profile configuration never read or eagerly load task summaries");
+
 assert.match(
   hub,
   /if let profile = section\.data[\s\S]{0,600}FamiliarDetailView\([\s\S]{0,260}identity: snapshot\.identity[\s\S]{0,180}profile: profile[\s\S]{0,180}overview: snapshot\.overview/,

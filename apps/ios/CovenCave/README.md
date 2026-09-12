@@ -1,12 +1,30 @@
 # Coven Cave — Native iOS app
 
-A genuinely native SwiftUI client for Coven Cave. It connects to your desktop over
-your **Tailscale** network — **no token, no password**; tailnet membership is the
-trust boundary. This is *not* a webview wrapper around the web app.
+A native, chat-only SwiftUI client for Coven Cave. It connects to your desktop
+over your **Tailscale** network using a paired Cave access credential stored in
+the Keychain and scoped to the desktop endpoint. Tailnet reachability does not
+replace authorization. This is *not* a webview wrapper around the web app.
 
 See [`docs/ios-current-direction.md`](../../../docs/ios-current-direction.md)
 for the canonical active product direction. The older native rebuild and dated
 implementation plans are historical lineage, not active priority queues.
+
+## Chat-only experience
+
+Chats lists direct and group conversations across projects and devices, with
+pinning, archives, unread state, and chat search. An imported server session
+appears once, alongside locally created chats. iPhone starts at the conversation
+list; iPad keeps a conversation sidebar and detail pane.
+
+The drawer contains Chats, recent conversations, New chat, Search chats, and
+Settings. There are no Tasks, Projects, Automations, standalone Familiar hub,
+terminal, or global project filter. Familiar selection, permissions, appearance,
+connection, and security settings serve the chat experience.
+
+Project access is selected for a new conversation, not for the application.
+Existing chats keep their exact project root, participants, session IDs, drafts,
+and queued recipients. Cached history remains available during access-catalog
+recovery; sending requires current grants for the conversation's actual targets.
 
 ### Flow execution visibility
 
@@ -19,8 +37,8 @@ with a similar title remains a normal conversation.
 
 Directly opened execution transcripts replace the composer with a read-only
 notice, disable continuation/queued sends and voice calls, and omit reply, retry,
-and message-delete actions. Start a discussion from the Flow on desktop; native
-discussion creation still needs project-selection support for the new chat.
+and message-delete actions. Start a discussion from the Flow on desktop; Flow
+management is not part of native chat-only navigation.
 
 Client v1's canonical conversation inventory remains unfiltered. It publishes
 the same exact execution provenance without changing pagination, and both
@@ -81,13 +99,10 @@ sources as the whole `CovenCave` directory, so regeneration always picks new
 files up. CI regenerates before every iOS build (`ci.yml`), which is why `main`
 stays green while one laptop fails (`cave-bkp0o`).
 
-On first launch, enter your desktop's Tailscale MagicDNS name (e.g.
-`my-mac.tailnet.ts.net`) or its `100.x` address. `.ts.net` hosts use HTTPS; bare
-hosts/IPs default to `http://<host>:3000`.
-
-> The desktop must serve the mobile API tokenlessly over its Tailscale interface
-> (Phase 1b server change). Until that lands, point the app at a mock or a dev
-> server with the gate relaxed.
+On first launch, pair with the address and credential provided by your desktop.
+`.ts.net` MagicDNS hosts use HTTPS; bare hosts/IPs default to the packaged
+desktop's dedicated production port. An explicit URL can include a different
+port. Keep the desktop's access gate enabled.
 
 ## Layout
 
@@ -95,7 +110,7 @@ hosts/IPs default to `http://<host>:3000`.
 CovenCave/
   Models/        Familiar, SessionRow, ChatTurn, StreamEvent (SSE decoding),
                  PermissionModels (grants, proposals, effective access)
-  Networking/    CaveConnection (host/no-token), CaveClient (REST + SSE stream),
+  Networking/    CaveConnection (host/scoped credential), CaveClient (REST + SSE stream),
                  CaveClient+Permissions (grants console API)
   State/         AppModel (connection, familiars, threads), ChatThread (1:1 + group fan-out)
   Views/         Connection, ChatsHome, NewChat (group picker), Chat, MessageBubble,
@@ -109,12 +124,11 @@ Settings → **Familiar permissions** opens the same permissions console the
 desktop has: per-familiar project access (read/write, including "via group"
 levels inherited from access groups), the grant-request inbox (accept/reject
 with the 30-second undo window), and the recent allow/deny audit log. Each
-familiar's screen also has a key toolbar button scoped to just that familiar.
+familiar's access remains associated with its authoritative ID.
 
 Changing anything from the phone is **off by default**. The desktop's
-Settings → Phone section has two opt-ins — "Allow permission changes from
-phone" and "Allow file edits from phone" (the Code tab's Save) — and they can
-only be flipped on the desktop itself: the server refuses the toggles' PATCH
+Settings → Phone section has an "Allow permission changes from phone" opt-in,
+which can only be enabled on the desktop itself: the server refuses its PATCH
 from any non-loopback origin, so a phone (or anything else on the tailnet) can
 never widen its own authority. Until the opt-in is enabled the iOS console
 renders read-only with a banner pointing at the desktop setting.

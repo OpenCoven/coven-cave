@@ -54,7 +54,11 @@ export function appleUrl(value) {
 export function tokenSigner(env) {
   const keyId = env.APPLE_API_KEY;
   const subject = env.APPLE_API_KEY_SUBJECT || "";
-  requireValue(typeof keyId === "string" && /^[A-Z0-9]{10}$/.test(keyId), "INVALID_KEY_ID");
+  // Apple's example is ten characters, not a key-ID length contract.
+  requireValue(
+    typeof keyId === "string" && keyId.length > 0 && keyId.length <= 128 && !/[^A-Za-z0-9_-]/.test(keyId),
+    "INVALID_KEY_ID",
+  );
   requireValue(subject === "" || subject === "user", "INVALID_KEY_SUBJECT");
   requireValue(subject === "user" || /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(env.APPLE_API_ISSUER || ""),
     "INVALID_TEAM_ISSUER");

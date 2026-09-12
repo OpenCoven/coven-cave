@@ -3,27 +3,19 @@ import XCTest
 final class DrawerNavigationUITests: XCTestCase {
 
     @MainActor
-    func testLaunchThreadIntentDoesNotReopenAfterChatsRemounts() {
+    func testSettingsRoundTripPreservesSelectedConversation() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-empty-chat", "--ui-preview-second-thread"]
         app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
         app.launch()
 
         let launchThreadTitle = "Chat with Nyx on Jul 26"
-        let newestThreadTitle = "Chat with Nyx on Jul 27"
         XCTAssertTrue(app.navigationBars[launchThreadTitle].waitForExistence(timeout: 10),
                       "the launch thread opens on the first Chats mount")
 
-        let back = app.navigationBars.buttons["BackButton"].firstMatch
-        if back.waitForExistence(timeout: 3) {
-            back.tap()
-        } else {
-            app.swipeRight()
-        }
-
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "leaving the launch thread returns to Chats home")
+                      "the conversation exposes navigation")
         openNavigation.tap()
         app.buttons["Profile and settings"].tap()
 
@@ -32,21 +24,19 @@ final class DrawerNavigationUITests: XCTestCase {
         openNavigation.tap()
         app.buttons["Chats"].tap()
 
-        XCTAssertTrue(app.navigationBars[newestThreadTitle].waitForExistence(timeout: 10),
-                      "remounted Chats selects the current default conversation")
-        XCTAssertFalse(app.navigationBars[launchThreadTitle].exists,
-                       "the consumed launch thread does not override the newer default")
+        XCTAssertTrue(app.navigationBars[launchThreadTitle].waitForExistence(timeout: 10),
+                      "Settings does not remount Chats or select a different conversation")
     }
 
     @MainActor
     func testDrawerRecentThreadOpensAfterChatsIsMounted() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "tasks"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "settings"]
         app.launch()
 
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "Tasks exposes the navigation drawer")
+                      "Settings exposes the navigation drawer")
         openNavigation.tap()
 
         let recentThread = app.buttons["Chat with Nyx on Jul 26"]
@@ -61,7 +51,7 @@ final class DrawerNavigationUITests: XCTestCase {
     @MainActor
     func testDrawerRoutesBetweenPrimaryDestinationsWithoutATabBar() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "tasks"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-preview-chats-home"]
         app.launch()
 
         XCTAssertFalse(app.tabBars.firstMatch.exists, "the app has no native tab bar")
@@ -71,34 +61,20 @@ final class DrawerNavigationUITests: XCTestCase {
                       "a primary destination exposes the navigation drawer")
         openNavigation.tap()
 
-        for destination in ["Chats", "Tasks"] {
+        for destination in ["Chats", "Search chats"] {
             XCTAssertTrue(app.buttons[destination].waitForExistence(timeout: 5),
                           "drawer includes primary destination \(destination)")
         }
-        for resource in ["Projects", "Familiars"] {
-            XCTAssertTrue(app.buttons[resource].waitForExistence(timeout: 5),
-                          "drawer includes contextual resource \(resource)")
+        for retired in ["Tasks", "Projects", "Familiars", "Automations", "Terminal", "Project context button"] {
+            XCTAssertFalse(app.buttons[retired].exists,
+                           "chat-only navigation must not expose \(retired)")
         }
-        XCTAssertTrue(app.staticTexts["Workspace"].waitForExistence(timeout: 5),
-                      "drawer groups contextual resources below primary navigation")
+        XCTAssertFalse(app.staticTexts["Workspace"].exists)
         XCTAssertTrue(app.buttons["Profile and settings"].waitForExistence(timeout: 5),
                       "the profile avatar is the Settings entry point")
         XCTAssertFalse(app.buttons["Settings"].exists,
                        "Settings is not duplicated as a primary drawer row")
         XCTAssertFalse(app.buttons["Terminal"].exists, "the retired iOS terminal stays out of the drawer")
-
-        let projectContext = app.buttons["Project context button"]
-        XCTAssertTrue(projectContext.waitForExistence(timeout: 5),
-                      "drawer exposes the active project switcher")
-        projectContext.tap()
-
-        XCTAssertTrue(app.navigationBars["Switch project"].waitForExistence(timeout: 10),
-                      "the drawer project control opens the switcher")
-        app.buttons["Done"].tap()
-
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "closing the switcher returns to the current destination")
-        openNavigation.tap()
 
         app.buttons["Profile and settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10),
@@ -111,98 +87,136 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "Chats is mounted after drawer routing")
 
-        openNavigation.tap()
-        app.buttons["Tasks"].tap()
-        XCTAssertTrue(app.navigationBars["Tasks"].waitForExistence(timeout: 10),
-                      "Tasks is mounted after drawer routing")
         XCTAssertFalse(app.tabBars.firstMatch.exists, "routing does not introduce a native tab bar")
     }
 
     @MainActor
-    func testSwitchingProjectsClearsStaleChatDetail() {
+    func testChatsIncludesBothProjectsWithoutAGlobalFilter() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-design-closeout"]
+        app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
         app.launch()
 
-        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10),
-                      "the current project's default chat opens first")
-
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
-        openNavigation.tap()
-
-        let projectContext = app.buttons["Project context button"]
-        XCTAssertTrue(projectContext.waitForExistence(timeout: 5),
-                      "drawer exposes the shared project switcher")
-        projectContext.tap()
-
-        let designLibrary = app.descendants(matching: .any)["Project row project:design-library"].firstMatch
-        XCTAssertTrue(designLibrary.waitForExistence(timeout: 10),
-                      "the alternate project is listed in the switcher")
-        designLibrary.tap()
-
-        XCTAssertTrue(app.navigationBars["Lyra design review"].waitForExistence(timeout: 10),
-                      "changing projects reseeds Chats with the new project's detail")
-        XCTAssertFalse(app.navigationBars["Chat with Nyx on Jul 26"].exists,
-                       "the previous project's detail cannot survive the context switch")
+        let nyx = app.descendants(matching: .any)["Chat row local:ui-preview-empty-chat"].firstMatch
+        let lyra = app.descendants(matching: .any)["Chat row local:ui-preview-lyra-chat"].firstMatch
+        XCTAssertTrue(nyx.waitForExistence(timeout: 10))
+        XCTAssertTrue(lyra.waitForExistence(timeout: 10),
+                      "a different project's chat is visible without switching global context")
+        lyra.tap()
+        XCTAssertTrue(app.navigationBars["Lyra design review"].waitForExistence(timeout: 10))
     }
 
     @MainActor
-    func testFamiliarDetailOffersAvatarEditing() {
+    func testDrawerSearchSearchesChatsOnly() {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-preview-design-closeout",
-            "--ui-preview-avatar-editing",
+            "--ui-preview-chats-home",
             "--ui-open-drawer",
         ]
         app.launch()
 
-        let familiars = app.buttons["Familiars"]
-        XCTAssertTrue(familiars.waitForExistence(timeout: 10))
-        familiars.tap()
-
-        let nyx = app.collectionViews.buttons
-            .matching(NSPredicate(format: "label CONTAINS[c] %@", "Nyx"))
-            .firstMatch
-        XCTAssertTrue(nyx.waitForExistence(timeout: 10), "the preview familiar is listed")
-        nyx.tap()
-
-        let profile = app.segmentedControls["Familiar hub section"].buttons["Profile"]
-        XCTAssertTrue(profile.waitForExistence(timeout: 10), "familiar details expose the Profile tab")
-        profile.tap()
-
-        let editAvatar = app.descendants(matching: .any)["Edit Nyx’s avatar"].firstMatch
-        XCTAssertTrue(editAvatar.waitForExistence(timeout: 10), "familiar details expose avatar editing")
-        editAvatar.tap()
-
-        XCTAssertTrue(app.buttons["Choose photo"].waitForExistence(timeout: 5))
+        let search = app.buttons["Search chats"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.tap()
+        let field = app.textFields["Search chats…"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("Lyra")
+        XCTAssertTrue(app.descendants(matching: .any)["Chat row local:ui-preview-lyra-chat"].firstMatch
+            .waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["Chat row local:ui-preview-empty-chat"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["Tasks"].exists)
+        XCTAssertFalse(app.buttons["Projects"].exists)
     }
 
     @MainActor
-    func testProjectContextGateOffersSettingsEscapeBeforeShellMounts() {
+    func testDrawerSearchRevealsTheListFromAnOpenConversation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-design-closeout"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
+        app.buttons["Open navigation"].tap()
+        app.buttons["Search chats"].tap()
+
+        let field = app.textFields["Search chats…"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        let visible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: field
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed,
+                       "search must leave the collapsed conversation detail")
+        field.tap()
+        field.typeText("Lyra")
+        XCTAssertTrue(app.descendants(matching: .any)["Chat row local:ui-preview-lyra-chat"]
+            .firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testRecentChatReopensTheSameConversationAfterDrawerSearch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-empty-chat"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
+        app.buttons["Open navigation"].tap()
+        app.buttons["Search chats"].tap()
+        XCTAssertTrue(app.textFields["Search chats…"].waitForExistence(timeout: 10))
+
+        app.buttons["Open navigation"].tap()
+        app.buttons["Chat with Nyx on Jul 26"].tap()
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        let visible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: composer
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed,
+                       "an explicit same-chat open must reveal detail without resetting its state")
+    }
+
+    @MainActor
+    func testSwitchingProjectsKeepsEachConversationsDraftSeparate() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-design-closeout"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        composer.typeText("Draft only for Nyx")
+
+        app.buttons["Open navigation"].tap()
+        app.buttons["Lyra design review"].tap()
+        XCTAssertTrue(app.navigationBars["Lyra design review"].waitForExistence(timeout: 10))
+        XCTAssertFalse((composer.value as? String ?? "").contains("Draft only for Nyx"))
+        composer.tap()
+        composer.typeText("Draft only for Lyra")
+
+        app.buttons["Open navigation"].tap()
+        app.buttons["Chat with Nyx on Jul 26"].tap()
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10))
+        XCTAssertTrue((composer.value as? String ?? "").contains("Draft only for Nyx"))
+        XCTAssertFalse((composer.value as? String ?? "").contains("Draft only for Lyra"),
+                       "a different project's composer must never overwrite or inherit this draft")
+    }
+
+    @MainActor
+    func testMissingProjectCatalogDoesNotHideChatOrSettings() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-project-context-gate"]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Couldn’t load project access"].waitForExistence(timeout: 10),
-                      "the cold project-context gate is visible")
-        XCTAssertFalse(app.buttons["Open navigation"].exists,
-                       "the cold gate does not mount the primary shell")
-
-        let settings = app.buttons["Settings"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 5),
-                      "the gate exposes a settings escape hatch")
-        settings.tap()
+        let navigation = app.buttons["Open navigation"]
+        XCTAssertTrue(navigation.waitForExistence(timeout: 10),
+                      "access failure must not replace the chat shell with a global project gate")
+        navigation.tap()
+        app.buttons["Profile and settings"].tap()
 
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10),
-                      "the escape hatch opens settings recovery")
-
-        let close = app.buttons["Close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5),
-                      "modal settings expose a close control")
-        close.tap()
-
-        XCTAssertTrue(app.buttons["Retry"].waitForExistence(timeout: 10),
-                      "dismissing settings returns to the gate retry state")
+                      "Settings remains reachable for permission and connection recovery")
+        XCTAssertFalse(app.staticTexts["Community"].exists)
     }
 }

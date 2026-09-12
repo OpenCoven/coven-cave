@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// The authoritative Claude Design handoff is broader than a palette pass. This
-// contract pins the iOS seams that previously regressed or shipped as static
-// mock state: the supplied empty-session start page, global navigation,
-// familiar discovery/detail, real response controls, live plugins, and the
-// authored task/table affordances.
+// Retain the handoff's visual, accessibility, and truthful-state contracts.
+// The current chat-only direction supersedes its operational destinations.
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -59,15 +56,11 @@ assert.match(
 );
 assert.match(chat, /"each familiar’s"/, "group ward copy describes every member’s access boundary");
 assert.match(chat, /\.disabled\(!canInspectWard\)/, "the group ward picker remains interactive");
-assert.match(chat, /"Review my open PRs"/, "first quick action follows the supplied start page");
-assert.match(
-  chat,
-  /Set\(app\.tasks\.flatMap\(\\\.githubLinks\)[\s\S]*?\$0\.state\?\.lowercased\(\) == "open"[\s\S]*?map \{ \$0\.url\.lowercased\(\) \}\)/,
-  "the open-PR starter count is deduplicated and excludes closed or unknown links",
-);
-assert.match(chat, /"What tasks need attention\?"/, "second quick action uses the canonical Tasks vocabulary");
-assert.match(chat, /"Work on \\\(\$0\.title\)"/, "third quick action is grounded in a real priority task");
-assert.match(chat, /icon: "arrow\.triangle\.branch"/, "the PR starter uses a valid native branch glyph");
+for (const suggestion of ["Help me explore an idea", "Explain something to me", "Help me draft a message"]) {
+  assert.ok(chat.includes(suggestion), "empty chat offers a conversational starting point");
+}
+assert.doesNotMatch(chat, /app\.tasks|app\.loadTasks|openPRCount/,
+  "chat starters do not fetch or summarize task dashboards");
 assert.match(
   chat,
   /private var emptyState:[\s\S]*?VStack\(spacing: 18\)/,
@@ -137,15 +130,15 @@ assert.match(
 );
 assert.match(
   home,
-  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.pendingProjectNavigationIntent == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,700}projectThreads[\s\S]{0,220}projectLastActivity[\s\S]{0,220}open\(\.familiar\(familiar\)\)|open\(\.thread\(mostRecentGroupThread\)\)/,
-  "the default never overrides a pending explicit navigation and only picks active-project familiar or group activity",
+  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard sizeClass == \.regular,[\s\S]{0,100}selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.pendingProjectNavigationIntent == nil,[\s\S]{0,500}!app\.newChatRequested[\s\S]{0,700}app\.chatThreads[\s\S]{0,220}open\(\.thread\(thread\)\)/,
+  "only an empty wide detail gets a default; explicit navigation and the iPhone list are preserved",
 );
 
 // Authored navigation and discovery surfaces.
 assert.match(
   home,
-  /List\(selection: \$selection\) \{\s*ForEach\(filteredFamiliars\) \{ familiar in\s*FamiliarConversationRow\(familiar: familiar\)/s,
-  "Chats renders the familiar list it defines",
+  /List\(selection: \$selection\) \{\s*ForEach\(snapshot\.entries\)/s,
+  "Chats renders its shared conversation projection",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
 assert.match(
@@ -169,15 +162,12 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
-  "the shell mounts exactly the selected application destination",
+  /ChatsHomeView\(\)[\s\S]*accessibilityHidden\(app\.selectedTab == \.settings\)[\s\S]*if app\.selectedTab == \.settings \{\s*SettingsView\(\)/s,
+  "Settings preserves the mounted conversation while hiding it from interaction and accessibility",
 );
-assert.match(
-  root,
-  /if app\.selectedTab == \.settings \{\s*SettingsView\(\)\s*\} else \{[\s\S]*switch app\.projectContextGateState/s,
-  "settings stays reachable even when the project context is gated",
-);
-for (const label of ["Chats", "Tasks"]) {
+assert.doesNotMatch(root, /switch app\.projectContextGateState/,
+  "chat and Settings remain reachable without an ambient project gate");
+for (const label of ["Chats"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
   assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
 }
@@ -186,14 +176,11 @@ assert.doesNotMatch(
   /DrawerNavRow\([\s\S]*?label: "Settings"/,
   "Settings is not duplicated as a primary drawer row",
 );
+assert.doesNotMatch(drawer, /sectionLabel\("Workspace"\)|label: "Tasks"|label: "Familiars"/,
+  "the drawer does not expose unrelated workspaces or operational hubs");
 assert.match(
   drawer,
-  /sectionLabel\("Workspace"\)[\s\S]*ProjectContextButton[\s\S]*label: "Familiars"/,
-  "Projects and Familiars are grouped as contextual workspace resources",
-);
-assert.match(
-  drawer,
-  /Label\("New Chat", systemImage: "square\.and\.pencil"\)[\s\S]*Button \{ go\(\.settings\) \}[\s\S]*accessibilityLabel\("Profile and settings"\)/,
+  /Label\("New chat", systemImage: "square\.and\.pencil"\)[\s\S]*Button \{ go\(\.settings\) \}[\s\S]*accessibilityLabel\("Profile and settings"\)/,
   "the footer pairs New Chat with the sole profile-driven Settings entry",
 );
 assert.match(
@@ -201,11 +188,8 @@ assert.match(
   /geo\.size\.width \* 0\.70/,
   "the drawer keeps enough of the active destination visible to preserve spatial context",
 );
-assert.match(
-  drawer,
-  /sectionLabel\("Workspace"\)[\s\S]{0,180}ProjectContextButton/,
-  "the project selector follows the contextual workspace heading",
-);
+assert.match(drawer, /accessibilityLabel\("Search chats"\)/,
+  "drawer search names its chat-only scope");
 assert.match(
   projectSwitcher,
   /PillSelector\([\s\S]{0,180}fillsWidth: true/,
@@ -241,7 +225,7 @@ assert.doesNotMatch(root, /TerminalView|PtyTerminal|case \.terminal/,
   "the connected shell cannot mount the retired iOS terminal");
 assert.match(
   home,
-  /EditorialSurfaceTitle\(\s*title: "Chats",\s*detail: visibleConversationLabel,\s*large: true/,
+  /EditorialSurfaceTitle\(\s*title: "Chats",\s*detail: visibleConversationLabel\(snapshot\.entries\.count\),\s*large: true/,
   "the Chats title uses the restrained editorial hierarchy",
 );
 assert.match(
@@ -274,22 +258,11 @@ assert.doesNotMatch(
   /private var homeSearchBar[\s\S]*?glassChrome\(\.bottom\)/,
   "the Chats footer no longer paints an edge-to-edge chrome bar",
 );
-assert.match(home, /private var lowDensityActions[\s\S]*?"New chat"[\s\S]*?"All familiars"/,
-  "low-density Chats lists offer truthful next actions without restoring recents");
+assert.match(home, /private var emptyState[\s\S]*?Button\("New chat"\)/,
+  "empty Chats offers a truthful conversation action");
 assert.match(home, /ViewThatFits\(in: \.horizontal\)/,
   "familiar rows protect name and timestamp hierarchy at large text sizes");
-assert.match(
-  settings,
-  /Section\("Community"\) \{\s*HStack\(spacing: 0\)/,
-  "Community presents its destinations as one icon shelf",
-);
-for (const label of ["Discord", "X", "Docs", "Podcast", "Blog"]) {
-  assert.match(
-    settings,
-    new RegExp(`iconShelfLink\\("${label}"|iconShelfLink\\(\\s*"${label}"`),
-    `Community keeps an accessible ${label} icon`,
-  );
-}
+assert.doesNotMatch(settings, /Section\("Community"\)/, "chat-only Settings excludes promotional browsing");
 assert.match(
   settings,
   /private var legalSection[\s\S]*?HStack\(spacing: 0\)[\s\S]*?Terms of Service[\s\S]*?Privacy/,
@@ -298,7 +271,7 @@ assert.match(
 assert.match(
   settings,
   /private func iconShelfLink[\s\S]*?\.frame\(maxWidth: \.infinity, minHeight: 52\)/,
-  "Community and Legal shelf controls share a full-width row-height contract",
+  "Legal shelf controls keep a full-width row-height contract",
 );
 assert.match(
   settings,
@@ -348,21 +321,14 @@ assert.match(
   /Color\.black\.opacity\(isOpen \? 0\.\d+ : 0\)/,
   "the closed drawer does not leave its dimming scrim over the app",
 );
-assert.match(
-  root,
-  /case \.projectSwitcher:\s*ProjectSwitcherView\(\)/,
-  "the project switcher is a real shell overlay destination",
-);
-assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
+assert.doesNotMatch(root, /ProjectSwitcherView\(\)|case \.familiars:/,
+  "global workspace and Familiar hub overlays are retired");
+assert.doesNotMatch(drawer, /ProjectContextButton|openProjectSwitcher/,
+  "there is no global project switcher in the drawer");
 assert.match(
   drawer,
-  /ProjectContextButton \{[\s\S]{0,120}close\(\)[\s\S]{0,120}openProjectSwitcher\(\)/,
-  "the drawer header opens the project switcher from the current shell context",
-);
-assert.match(
-  drawer,
-  /private var recentThreads: \[ChatThread\] \{\s*app\.projectRecentThreads\(limit: 5\)\s*\}/,
-  "drawer recents come from the active project only",
+  /private var recentThreads: \[ChatThread\] \{[\s\S]*app\.chatThreads[\s\S]*prefix\(5\)/,
+  "drawer recents span conversations rather than a global project",
 );
 assert.match(
   projectSwitcher,
@@ -382,8 +348,8 @@ assert.match(
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
 assert.match(
   home,
-  /FamiliarsListView \{ familiar in[\s\S]*fixedNewChatFamiliarId = familiar\.id[\s\S]*showNewChat = true/,
-  "the familiar detail chat action opens project-aware New Chat",
+  /NewChatView\(\s*fixedFamiliarId: fixedNewChatFamiliarId/,
+  "contextual New chat preserves the familiar without an operational hub",
 );
 assert.match(
   familiars,
@@ -525,11 +491,8 @@ assert.match(
   /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,18000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
   "familiar-default model PATCHes are serialized in selection order",
 );
-assert.match(
-  familiars,
-  /static func activityValue\(for lastActivity: Date\?\) -> String \{[\s\S]*return "No activity yet"[\s\S]*lastActivity\.formatted\(date: \.abbreviated, time: \.shortened\)/,
-  "missing familiar activity falls back cleanly while real activity stays explicit and scoped",
-);
+assert.doesNotMatch(familiars, /FamiliarDetailStatsModel/,
+  "participant selection does not reconstruct an operational statistics hub");
 for (const section of ["Identity", "Defaults", "Access"]) {
   assert.match(familiars, new RegExp(`Text\\("${section}"\\)`), `familiar detail includes ${section}`);
 }
@@ -561,14 +524,15 @@ assert.match(
   /modelOverride: queuedMessage\.modelOverride/,
   "offline replay restores the queued model selection",
 );
+const threadRetry = thread.slice(thread.indexOf("func retry("), thread.indexOf("func appendSystem("));
 assert.match(
-  thread,
-  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,300}ChatModelTurnBinding\.resolveRetry\([\s\S]{0,900}modelOverride: modelBinding\.modelOverride/,
+  threadRetry,
+  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]*ChatModelTurnBinding\.resolveRetry\([\s\S]*modelOverride: modelBinding\.modelOverride/,
   "retry restores the original per-familiar model selection",
 );
 assert.match(
-  thread,
-  /originalScope: source\?\.modelOverrideScope[\s\S]{0,900}modelOverrideScope: modelBinding\.scope/,
+  threadRetry,
+  /originalScope: source\?\.modelOverrideScope[\s\S]*modelOverrideScope: modelBinding\.scope/,
   "retry preserves explicit runtime-default intent without changing the chat's current model",
 );
 assert.match(
@@ -684,26 +648,19 @@ assert.doesNotMatch(
   "a new-chat model choice never mutates the familiar default",
 );
 assert.doesNotMatch(chat, /TODO\(no backend\)/, "session details no longer present known-fake controls");
-assert.match(chat, /linkedContextStrip/, "real linked task context is visible in the conversation");
-assert.match(
-  chat,
-  /FloatingAction\(id: "tasks", systemImage: "checklist", label: "Link a task"\) \{ showTasks = true \}/,
-  "an unlinked conversation can link its first task",
-);
+assert.doesNotMatch(chat, /linkedContextStrip|showTasks|LinkedTasksSheet/,
+  "chat does not expose task linking or task destinations");
 assert.match(
   chat,
   /case \.checking, \.degraded: return \(Color\.orange, "reconnecting"\)/,
   "the chat header reports reconnecting state instead of claiming readiness",
 );
-assert.match(
-  chat,
-  /app\.tasksError != nil\s*\?\s*"Tasks unavailable — open Tasks to retry"/,
-  "the start page does not report zero board work after a failed first load",
-);
+assert.match(chat, /if !chatAccessLoaded[\s\S]{0,350}Button\("Refresh access"\)/,
+  "readable history offers access recovery without implying that sends are authorized");
 assert.match(
   home,
-  /if app\.projectFamiliars\.isEmpty[\s\S]{0,80}app\.projectThreads\.isEmpty[\s\S]{0,80}app\.projectServerSessions\.isEmpty[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
-  "Chats renders first-load failure before the no-familiars empty state",
+  /if snapshot\.entries\.isEmpty && query\.isEmpty && snapshot\.archivedCount == 0[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
+  "Chats renders first-load failure without hiding cached or archived conversations",
 );
 assert.match(
   home,
@@ -727,14 +684,11 @@ assert.match(
 );
 assert.match(
   familiars,
-  /guard app\.projectMembershipLoaded else \{[\s\S]{0,200}if let error = app\.familiarsError \{[\s\S]{0,120}mode = \.firstLoadError\(error\)/,
+  /guard app\.familiarsLoaded else \{[\s\S]{0,200}if let error = app\.familiarsError \{[\s\S]{0,120}mode = \.firstLoadError\(error\)/,
   "the familiar roster renders first-load failure before empty state",
 );
-assert.match(
-  familiars,
-  /let taskValue = app\.tasksError == nil[\s\S]{0,120}\? "\\\(assignedTasks\.count\)"[\s\S]{0,160}app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
-  "familiar task stats distinguish live, unavailable, and cached counts",
-);
+assert.match(familiars, /visibleFamiliars = app\.familiars/,
+  "participant selection does not inherit an ambient project filter");
 for (const [name, source] of [["projects", projects], ["familiars", familiars]]) {
   assert.match(
     source,
@@ -812,21 +766,8 @@ assert.match(
   /Button\(action: \{ tryInChat\(plugin\) \}\)[\s\S]*?\.disabled\(!canTryInChat\)/,
   "the detail action hands the usable plugin to chat",
 );
-assert.match(
-  chat,
-  /PluginsPanel \{ plugin in\s*prefillPlugin\(plugin\)\s*\}/,
-  "the marketplace handoff delegates the selected plugin to the draft-preserving prefill helper",
-);
-assert.match(
-  chat,
-  /private func prefillPlugin\(_ plugin: MarketplacePlugin\) \{[\s\S]*?let prompt = "Use \\\(plugin\.displayName\) to "/,
-  "the marketplace handoff builds the exact plugin prompt in a private helper",
-);
-assert.match(
-  chat,
-  /draft = draft\.isEmpty \? prompt : "\\\(draft\)\\n\\\(prompt\)"/,
-  "plugin prefill replaces only a blank draft and otherwise preserves it before a newline prompt",
-);
+assert.doesNotMatch(chat, /PluginsPanel|prefillPlugin/,
+  "chat no longer opens marketplace management");
 const composerBar = chat.slice(
   chat.indexOf("private var composerBar"),
   chat.indexOf("\n    private var composerBorderColor"),
@@ -852,7 +793,8 @@ assert.match(
   "the global drawer exposes app-wide search instead of a chat-only request",
 );
 assert.match(drawer, /openSearch\(\)/, "the drawer search control opens global search");
-assert.match(root, /case \.search:\s*GlobalSearchView\(/, "the root presents global search");
+assert.match(root, /openSearch: \{[\s\S]{0,140}app\.chatSearchRequested = true/,
+  "the drawer opens the chat list's search rather than a global operational search");
 assert.match(
   globalSearch,
   /\.searchable\(text: \$query, prompt: "Search everything…"\)/,
@@ -925,44 +867,8 @@ assert.match(
   /Text\(updated, format: \.relative\(presentation: \.numeric\)\)[\s\S]*?\.font\(\.caption\)\.foregroundStyle\(chrome\.textSecondary\)/,
   "project recency metadata remains legible in dark mode",
 );
-assert.match(
-  chat,
-  /private func validGitHubURL\(for link: CardGitHubLink\) -> URL\?/,
-  "linked chat context validates a real GitHub PR or issue URL",
-);
-assert.match(chat, /url\.host\?\.lowercased\(\) == "github\.com"/, "linked GitHub context stays on GitHub");
-assert.match(chat, /Link\(destination: context\.url\)/, "linked GitHub context opens its validated URL");
-assert.match(chat, /githubContextLabel/, "linked GitHub context has a concise visible label");
-assert.match(
-  chat,
-  /dynamicTypeSize\.isAccessibilitySize[\s\S]*?AnyLayout\(VStackLayout/,
-  "linked GitHub and task context stacks at accessibility text sizes",
-);
-assert.match(
-  chat,
-  /\.lineLimit\(dynamicTypeSize\.isAccessibilitySize \? nil : 1\)/,
-  "linked task titles can fully wrap at accessibility text sizes",
-);
-assert.match(
-  chat,
-  /Text\(cards\.count == 1 \? "Linked task"[\s\S]{0,260}\.fixedSize\(horizontal: false, vertical: true\)/,
-  "linked task context labels can wrap at accessibility text sizes",
-);
-assert.match(
-  chat,
-  /\.padding\(\.top, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
-  "accessibility-sized linked context clears the navigation bar",
-);
-assert.match(
-  chat,
-  /\.padding\(\.bottom, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
-  "accessibility-sized linked task text clears the context divider",
-);
-assert.match(
-  chat,
-  /private var linkedContextStrip:[\s\S]{0,2200}showTasks = true/,
-  "the GitHub affordance remains paired with the linked-task action",
-);
+assert.doesNotMatch(chat, /linkedContextStrip|githubContextLabel/,
+  "the retired task/PR summary strip cannot return to chat");
 assert.match(
   appModel,
   /--ui-preview-design-closeout/,
@@ -990,13 +896,13 @@ assert.match(
 );
 assert.match(
   home,
-  /private var filteredFamiliars: \[Familiar\] \{[\s\S]{0,220}app\.projectFamiliars/,
-  "Chats uses the active project's familiar roster",
+  /ChatListSnapshot\([\s\S]{0,220}familiars: app\.familiars/,
+  "global Chats keeps exact familiar identity without a project filter",
 );
 assert.match(
   home,
-  /private func familiarChat[\s\S]{0,260}app\.projectLandingDirectThread\(for: familiar\.id\)/,
-  "Chats resolves the visible conversation through the active project's landing thread",
+  /private func familiarChat[\s\S]{0,260}app\.globalLandingDirectThread\(for: familiar\.id\)/,
+  "familiar continuity finds existing history independently of an ambient project",
 );
 assert.match(
   familiars,
@@ -1004,7 +910,7 @@ assert.match(
   "the Familiar Profile is driven by the coherent dashboard snapshot",
 );
 assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
-assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");
+assert.doesNotMatch(root, /--ui-open-projects/, "a debug launch cannot resurrect project navigation");
 assert.match(
   globalSearch,
   /--ui-search-query/,

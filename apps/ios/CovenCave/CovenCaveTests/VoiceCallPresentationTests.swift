@@ -37,6 +37,13 @@ final class VoiceCallPresentationTests: XCTestCase {
 
     // MARK: - Error → recovery mapping
 
+    func testAuthorityLossRequiresClosingThePresentationWithoutRetryOrFallback() {
+        let copy = VoiceCallCopy.authorityChanged
+        XCTAssertEqual(copy.recovery, .dismiss)
+        XCTAssertFalse(copy.offersOnDeviceFallback)
+        XCTAssertTrue(copy.message.contains("start a new one"))
+    }
+
     func testDeniedPermissionsRouteToSettingsWithNoFallback() {
         let mic = VoiceCallCopy.error(for: "microphone_denied", mode: .realtime)
         XCTAssertEqual(mic.recovery, .openSettings)

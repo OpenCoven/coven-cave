@@ -45,7 +45,7 @@ struct CommandsSheet: View {
             .navigationTitle("Commands")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: "Search commands")
+                        prompt: "Search commands…")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

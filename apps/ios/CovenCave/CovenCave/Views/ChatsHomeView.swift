@@ -25,15 +25,14 @@ enum ChatNewConversationContext {
     }
 }
 
-/// The Chats destination, shaped like Messages: one vertical list of
-/// *familiars*, each row previewing the last thing said in that familiar's
-/// landing chat. There is no cross-familiar "Recent" list — a familiar is the
-/// conversation, and its other sessions live one level down.
+/// Global, resumable conversations. A chat owns its project binding; the
+/// sidebar's search, archive filter, and selection never change that binding.
 struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showNewChat = false
     @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
@@ -44,37 +43,52 @@ struct ChatsHomeView: View {
     /// fills the pane beside the list; on iPhone `NavigationSplitView` collapses
     /// and selecting pushes, so the drill-down behaviour is unchanged.
     @State private var selection: ChatRoute?
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .sidebar
     /// Navigation *within* the detail column — e.g. a familiar's thread list
     /// pushing a conversation. Reset whenever the sidebar selection changes.
     @State private var detailPath: [ChatRoute] = []
-    /// All-familiars roster sheet.
-    @State private var showFamiliars = false
+    @State private var showArchived = false
+    @State private var renamingThread: ChatThread?
+    @State private var pendingDelete: ChatThread?
+    @State private var exportArchive: ExportArchive?
     @State private var appliedPreviewLaunchIntent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
     @Namespace private var zoomNamespace
 
-    private var activeProjectContext: ProjectContext {
-        app.projectContext ?? .unassigned
-    }
-
     var body: some View {
         splitView
-        .sheet(isPresented: $showFamiliars) {
-            FamiliarsListView { familiar in
-                showFamiliars = false
-                fixedNewChatFamiliarId = familiar.id
-                Task { @MainActor in
-                    await Task.yield()
-                    showNewChat = true
+        .threadRenameAlert($renamingThread) { thread, name in
+            app.renameThread(thread, to: name)
+        }
+        .confirmationDialog(
+            "Delete this chat?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { thread in
+            Button("Delete", role: .destructive) {
+                if lastThreadId == thread.id {
+                    detailPath = []
+                    selection = nil
                 }
+                app.deleteThread(thread)
             }
+            Button("Cancel", role: .cancel) {}
+        } message: { thread in
+            Text(thread.title)
+        }
+        .sheet(item: $exportArchive) { archive in
+            ActivityView(items: [archive.url])
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
-                showFamiliars = true
+                presentGeneralNewChat()
             }
             applyPreviewLaunchIntent()
             #endif
@@ -82,29 +96,34 @@ struct ChatsHomeView: View {
     }
 
     private var splitView: some View {
-        NavigationSplitView {
+        let snapshot = ChatListSnapshot(
+            threads: app.chatThreads,
+            sessions: app.chatServerSessions,
+            familiars: app.familiars,
+            query: query,
+            includeArchived: showArchived
+        )
+        return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
-                if app.projectFamiliars.isEmpty
-                    && app.projectThreads.isEmpty
-                    && app.projectServerSessions.isEmpty
-                {
+                if snapshot.entries.isEmpty && query.isEmpty && snapshot.archivedCount == 0 {
                     if let error = app.familiarsError ?? app.sessionsError {
                         loadFailure(error)
                     } else {
                         emptyState
                     }
-                } else if filteredFamiliars.isEmpty {
+                } else if snapshot.entries.isEmpty && !query.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
-                    homeList
+                    homeList(snapshot)
                 }
             }
-            // Flush large-title header at the very top, matching Read / Tasks
-            // (which hide the nav bar and supply their own top inset) so
-            // every destination's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) { header }
-            .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if app.selectedTab != .settings { header(snapshot) }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if app.selectedTab != .settings { homeSearchBar }
+            }
             .sheet(
                 isPresented: $showNewChat,
                 onDismiss: {
@@ -134,7 +153,7 @@ struct ChatsHomeView: View {
                 _ = app.resolvePendingProjectNavigationIntent()
                 selectMostRecentThreadIfNeeded()
             }
-            // A slash command (`/new`, `/familiar <name>`) or a task link asked to
+            // A slash command (`/new`, `/familiar <name>`) or a chat link asked to
             // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
                 consumeThreadRequest(thread)
@@ -146,8 +165,7 @@ struct ChatsHomeView: View {
             }
             .onChange(of: app.chatSearchRequested) { _, requested in
                 guard requested else { return }
-                searchFocused = true
-                app.chatSearchRequested = false
+                revealChatSearch()
             }
             .sidebarColumn()
         } detail: {
@@ -158,10 +176,9 @@ struct ChatsHomeView: View {
         .navigationSplitViewStyle(.balanced)
         // A new sidebar selection starts a fresh detail navigation (so a familiar
         // opens at its thread list, not a stale pushed conversation).
-        .onChange(of: selection) { _, _ in detailPath = [] }
-        .onChange(of: activeProjectContext.id) { oldID, newID in
-            guard oldID != newID else { return }
-            handleProjectContextChange()
+        .onChange(of: selection) { _, selected in
+            detailPath = []
+            preferredCompactColumn = selected == nil ? .sidebar : .detail
         }
     }
 
@@ -180,17 +197,14 @@ struct ChatsHomeView: View {
                     ContentUnavailableView {
                         Label("Select a chat", systemImage: "bubble.left.and.bubble.right")
                     } description: {
-                        Text("Pick a familiar or conversation to start.")
+                        Text("Choose a conversation, or start a new chat.")
                     }
                 }
             }
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case .familiar(let familiar):
-                    FamiliarThreadsView(familiar: familiar,
-                                        projectContext: activeProjectContext,
-                                        path: $detailPath,
-                                        zoomNamespace: zoomNamespace)
+                    familiarChat(familiar)
                 case .thread(let thread):
                     chatDestination(thread)
                 }
@@ -219,10 +233,13 @@ struct ChatsHomeView: View {
         case nil:
             if !applyZoom {
                 ChatView(thread: thread)
+                    .id(thread.id)
             } else if reduceMotion {
                 ChatView(thread: thread)
+                    .id(thread.id)
             } else {
                 ChatView(thread: thread)
+                    .id(thread.id)
                     .navigationTransition(.zoom(sourceID: thread.id, in: zoomNamespace))
             }
         case .projectCatalogUnavailable?:
@@ -240,13 +257,13 @@ struct ChatsHomeView: View {
     /// one. Session switching happens in ChatView's config card, not here.
     @ViewBuilder
     private func familiarChat(_ familiar: Familiar) -> some View {
-        if let thread = app.projectLandingDirectThread(for: familiar.id) {
+        if let thread = app.globalLandingDirectThread(for: familiar.id) {
             chatDestination(
                 thread,
                 applyZoom: false,
                 recoveryAction: { detailPath = [.familiar(familiar)] }
             )
-        } else if let session = app.projectServerOnlySessions(for: familiar.id).first {
+        } else if let session = app.globalServerOnlySessions(for: familiar.id).first {
             FamiliarServerLandingView(
                 familiar: familiar,
                 session: session,
@@ -256,15 +273,9 @@ struct ChatsHomeView: View {
             ContentUnavailableView {
                 Label("No chats with \(familiar.displayName)", systemImage: "bubble.left.and.bubble.right")
             } description: {
-                if app.canStartProjectChats {
-                    Text("Start one to begin.")
-                } else {
-                    Text("Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.")
-                }
+                Text("Choose this familiar and its chat access to begin.")
             } actions: {
-                if app.canStartProjectChats {
-                    Button("New chat") { startNewChat(with: familiar) }
-                }
+                Button("New chat") { startNewChat(with: familiar) }
             }
         }
     }
@@ -291,14 +302,6 @@ struct ChatsHomeView: View {
     }
 
     private func presentNewChat(fixedFamiliarId: String? = nil) {
-        guard app.canStartProjectChats else {
-            app.showToast(
-                "Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.",
-                systemImage: "folder.badge.questionmark",
-                style: .warning
-            )
-            return
-        }
         self.fixedNewChatFamiliarId = fixedFamiliarId
         showNewChat = true
     }
@@ -316,20 +319,48 @@ struct ChatsHomeView: View {
         presentNewChat()
     }
 
-    /// Large-title header pinned to the top, mirroring the Read / Tasks
-    /// destinations so every destination title aligns at the same flush position.
-    private var header: some View {
-        HStack(spacing: 12) {
-            CircularIconButton(systemImage: "line.3.horizontal",
-                               label: "Open navigation") {
-                app.navigationDrawerOpen = true
+    private func header(_ snapshot: ChatListSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   label: "Open navigation") {
+                    app.navigationDrawerOpen = true
+                }
+                if dynamicTypeSize.isAccessibilitySize {
+                    Text("Chats")
+                        .font(.system(.title2, design: .serif).weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                } else if sizeClass == .regular {
+                    EditorialSurfaceTitle(title: "Chats", large: true)
+                } else {
+                    EditorialSurfaceTitle(
+                        title: "Chats",
+                        detail: visibleConversationLabel(snapshot.entries.count),
+                        large: true
+                    )
+                }
+                Spacer(minLength: 0)
+                Menu {
+                    Button { showArchived.toggle() } label: {
+                        Label(
+                            showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
+                            systemImage: "archivebox"
+                        )
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Chat list options")
             }
-            EditorialSurfaceTitle(
-                title: "Chats",
-                detail: visibleConversationLabel,
-                large: true
-            )
-            Spacer()
+            if dynamicTypeSize.isAccessibilitySize || sizeClass == .regular,
+               let detail = visibleConversationLabel(snapshot.entries.count) {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(chrome.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)
@@ -341,6 +372,7 @@ struct ChatsHomeView: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18))
                     .foregroundStyle(searchFocused ? chrome.accent : chrome.textSecondary)
                 TextField("Search chats…", text: $query)
                     .textInputAutocapitalization(.never)
@@ -350,7 +382,10 @@ struct ChatsHomeView: View {
                     Button {
                         query = ""
                     } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -384,15 +419,11 @@ struct ChatsHomeView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var visibleConversationCount: Int {
-        app.chatThreads.lazy.filter { !$0.archived }.count
-    }
-
-    private var visibleConversationLabel: String? {
-        guard visibleConversationCount > 0 else { return nil }
-        return visibleConversationCount == 1
+    private func visibleConversationLabel(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return count == 1
             ? "1 conversation"
-            : "\(visibleConversationCount) conversations"
+            : "\(count) conversations"
     }
 
     private var dockControlSize: CGFloat {
@@ -403,83 +434,94 @@ struct ChatsHomeView: View {
         verticalSizeClass == .compact ? 14 : 16
     }
 
-    private var homeList: some View {
+    private func homeList(_ snapshot: ChatListSnapshot) -> some View {
         List(selection: $selection) {
-            ForEach(filteredFamiliars) { familiar in
-                FamiliarConversationRow(familiar: familiar)
-                    .tag(ChatRoute.familiar(familiar))
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                    // Rows sit flush on the themed floor (design 1a); iPad keeps
-                    // the default cell background so the sidebar selection
-                    // highlight stays visible.
-                    .listRowBackground(sizeClass == .compact ? Color.clear : nil)
-                    .swipeActions(edge: .leading) {
-                        Button { startNewChat(with: familiar) } label: {
-                            Label("New chat", systemImage: "square.and.pencil")
-                        }
-                        .tint(.accentColor)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if app.projectHasUnread(familiar.id) {
-                            Button { app.markFamiliarViewed([familiar.id]) } label: {
-                                Label("Mark all read", systemImage: "checkmark.circle")
+            ForEach(snapshot.entries) { entry in
+                Group {
+                    switch entry.conversation {
+                    case .local(let thread):
+                        ThreadRow(
+                            thread: thread,
+                            activityAt: entry.updatedAt,
+                            isSelected: sizeClass == .regular && selection == .thread(thread)
+                        )
+                            .tag(ChatRoute.thread(thread))
+                            .matchedTransitionSource(id: thread.id, in: zoomNamespace)
+                            .contextMenu { threadActions(thread, activityAt: entry.updatedAt) }
+                            .swipeActions(edge: .leading) {
+                                Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                    Label(thread.pinned ? "Unpin" : "Pin", systemImage: "pin")
+                                }
+                                .tint(chrome.accent)
                             }
-                            .tint(.indigo)
-                        }
-                    }
-                    .contextMenu {
-                        Button { startNewChat(with: familiar) } label: {
-                            Label("New chat", systemImage: "square.and.pencil")
-                        }
-                        if app.projectHasUnread(familiar.id) {
-                            Button { app.markFamiliarViewed([familiar.id]) } label: {
-                                Label("Mark all read", systemImage: "checkmark.circle")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { pendingDelete = thread } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                    Label(thread.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
+                                }
+                                .tint(chrome.accent)
                             }
+                    case .server(let session):
+                        Button {
+                            _ = app.requestOpenServerSession(session, fallbackFamiliarId: session.familiarId)
+                        } label: {
+                            ServerSessionRow(session: session)
                         }
+                        .buttonStyle(.plain)
                     }
+                }
+                .accessibilityIdentifier("Chat row \(entry.id)")
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(sizeClass == .compact ? Color.clear : nil)
             }
-            if showsLowDensityActions {
-                lowDensityActions
-                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+            if snapshot.entries.isEmpty && snapshot.archivedCount > 0 {
+                Button("Show archived chats (\(snapshot.archivedCount))") { showArchived = true }
+                    .frame(minHeight: 44)
             }
         }
         .listStyle(.plain)
         .themedListBackground()
     }
 
-    private var showsLowDensityActions: Bool {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && filteredFamiliars.count <= 2
-    }
-
-    private var lowDensityActions: some View {
-        HStack(spacing: 10) {
-            lowDensityAction("New chat", systemImage: "square.and.pencil") {
-                presentContextualNewChat()
-            }
-            lowDensityAction("All familiars", systemImage: "person.2") {
-                showFamiliars = true
+    @ViewBuilder
+    private func threadActions(_ thread: ChatThread, activityAt: Date) -> some View {
+        Button { renamingThread = thread } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        if !app.isRecoveryOnlyThread(thread) {
+            Button { _ = app.duplicateThread(thread) } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Chat shortcuts")
-    }
-
-    private func lowDensityAction(
-        _ label: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Label(label, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(chrome.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .glass(.raised, cornerRadius: 14)
+        Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+            Label(thread.pinned ? "Unpin" : "Pin", systemImage: "pin")
         }
-        .buttonStyle(.glassPress)
+        Button { app.setThreadMuted(thread, !thread.muted) } label: {
+            Label(thread.muted ? "Unmute" : "Mute", systemImage: "bell")
+        }
+        Button { app.setThreadArchived(thread, !thread.archived) } label: {
+            Label(thread.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
+        }
+        Button {
+            app.markThreadViewed(thread, through: activityAt)
+        } label: {
+            Label("Mark read", systemImage: "checkmark.circle")
+        }
+        Button {
+            do {
+                exportArchive = ExportArchive(url: try app.exportThreadsZip([thread]))
+            } catch {
+                app.showToast("Could not export chat: \(error.localizedDescription)",
+                              systemImage: "exclamationmark.triangle", style: .warning)
+            }
+        } label: {
+            Label("Export chat", systemImage: "square.and.arrow.up")
+        }
+        Button(role: .destructive) { pendingDelete = thread } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     private func consumeGlobalRequests() {
@@ -489,54 +531,36 @@ struct ChatsHomeView: View {
             app.newChatRequested = false
         }
         if app.chatSearchRequested {
-            searchFocused = true
-            app.chatSearchRequested = false
+            revealChatSearch()
         }
     }
 
-    private func handleProjectContextChange() {
-        detailPath = []
-        selection = nil
-        _ = app.resolvePendingProjectNavigationIntent()
-        consumeGlobalRequests()
-        selectMostRecentThreadIfNeeded()
+    private func revealChatSearch() {
+        if sizeClass == .compact {
+            detailPath = []
+            selection = nil
+            preferredCompactColumn = .sidebar
+        }
+        searchFocused = true
+        app.chatSearchRequested = false
     }
 
-    /// Open Chats at the latest active conversation without stealing focus from
-    /// a deep link, cross-view handoff, New Chat, or an existing selection.
+    /// Fill an empty iPad detail without stealing the iPhone's conversation list.
     private func selectMostRecentThreadIfNeeded() {
         #if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("--ui-preview-chats-home") else { return }
         #endif
-        guard selection == nil,
+        guard sizeClass == .regular,
+              selection == nil,
               !showNewChat,
               app.threadToOpen == nil,
               app.pendingProjectNavigationIntent == nil,
               !app.newChatRequested
         else { return }
 
-        let mostRecentGroupThread = app.projectThreads
-            .filter(\.isGroup)
-            .filter { !$0.archived }
-            .max { $0.updatedAt < $1.updatedAt }
-        let mostRecentFamiliar = app.projectFamiliars.max { lhs, rhs in
-            let leftActivity = app.projectLastActivity(for: lhs.id) ?? .distantPast
-            let rightActivity = app.projectLastActivity(for: rhs.id) ?? .distantPast
-            if leftActivity == rightActivity {
-                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
-                    == .orderedAscending
-            }
-            return leftActivity < rightActivity
-        }
-
-        if let familiar = mostRecentFamiliar,
-           let familiarActivity = app.projectLastActivity(for: familiar.id),
-           familiarActivity > (mostRecentGroupThread?.updatedAt ?? .distantPast) {
-            open(.familiar(familiar))
-        } else if let mostRecentGroupThread {
-            open(.thread(mostRecentGroupThread))
-        } else if let familiar = mostRecentFamiliar {
-            open(.familiar(familiar))
+        if let thread = app.chatThreads.filter({ !$0.archived })
+            .max(by: { $0.updatedAt < $1.updatedAt }) {
+            open(.thread(thread))
         }
     }
 
@@ -546,32 +570,18 @@ struct ChatsHomeView: View {
     private func consumeThreadRequest(_ thread: ChatThread?) {
         guard let thread else { return }
         if lastThreadId != thread.id { open(.thread(thread)) }
+        preferredCompactColumn = .detail
         app.threadToOpen = nil
-    }
-
-    /// Familiars matching the search query (name or role). Empty query → all.
-    private var filteredFamiliars: [Familiar] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return app.projectFamiliars }
-        return app.projectFamiliars.filter {
-            $0.displayName.lowercased().contains(q) || ($0.role?.lowercased().contains(q) ?? false)
-        }
     }
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No familiars yet", systemImage: "bubble.left.and.bubble.right")
+            Label("Start a conversation", systemImage: "bubble.left.and.bubble.right")
         } description: {
-            if app.canStartProjectChats {
-                Text("Pull to refresh once your desktop is connected, or start a group chat.")
-            } else {
-                Text("Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.")
-            }
+            Text("Choose a familiar for a new chat. Your conversations will stay here.")
         } actions: {
-            if app.canStartProjectChats {
-                Button("New chat") { presentGeneralNewChat() }
-                    .buttonStyle(.borderedProminent)
-            }
+            Button("New chat") { presentGeneralNewChat() }
+                .buttonStyle(.borderedProminent)
         }
     }
 
@@ -583,7 +593,8 @@ struct ChatsHomeView: View {
         else { return }
 
         appliedPreviewLaunchIntent = true
-        if let thread = app.projectMostRecentThread {
+        if let thread = app.chatThreads.filter({ !$0.archived })
+            .max(by: { $0.updatedAt < $1.updatedAt }) {
             selection = .thread(thread)
         }
         presentContextualNewChat()
@@ -607,112 +618,6 @@ struct ChatsHomeView: View {
     }
 }
 
-/// One familiar as an iMessage-style conversation row: avatar, name, a preview
-/// of the last thing said in its landing chat, and when. Selection is driven by
-/// the enclosing `List` tag, so the row itself is not a Button — that would
-/// swallow the sidebar selection on iPad.
-struct FamiliarConversationRow: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.chrome) private var chrome
-    let familiar: Familiar
-
-    private var thread: ChatThread? { app.projectLandingDirectThread(for: familiar.id) }
-    private var serverSession: SessionRow? { app.projectServerOnlySessions(for: familiar.id).first }
-
-    private enum ActivitySource {
-        case local(ChatThread)
-        case server(SessionRow)
-        case none
-    }
-
-    private var activitySource: ActivitySource {
-        let localDate = thread?.updatedAt ?? .distantPast
-        let serverDate = serverSession.flatMap { caveParseISO($0.updatedAt) } ?? .distantPast
-        if let thread, localDate >= serverDate { return .local(thread) }
-        if let serverSession { return .server(serverSession) }
-        return .none
-    }
-
-    private var preview: String {
-        switch activitySource {
-        case .local(let thread):
-            guard let text = thread.messages.last?.text, !text.isEmpty else {
-                return "No messages yet"
-            }
-            return text.replacingOccurrences(of: "\n", with: " ")
-        case .server(let session):
-            let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            return title.isEmpty ? "Chat available on another device" : title
-        case .none:
-            return "No messages yet"
-        }
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            AvatarView(familiar: familiar,
-                       url: app.client?.avatarURL(for: familiar),
-                       size: 52, showStatus: true)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 4) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        familiarName
-                        Spacer(minLength: 8)
-                        relativeTime
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        familiarName
-                        relativeTime
-                    }
-                }
-                Text(preview)
-                    .font(.subheadline)
-                    .foregroundStyle(chrome.textSecondary)
-                    .lineLimit(2)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
-    }
-
-    private var familiarName: some View {
-        HStack(spacing: 6) {
-            Text(familiar.displayName)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(chrome.textPrimary)
-                .lineLimit(1)
-                .layoutPriority(1)
-            if app.projectHasUnread(familiar.id) {
-                Circle().fill(chrome.accent).frame(width: 8, height: 8)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var relativeTime: some View {
-        if let updated = app.projectLastActivity(for: familiar.id) {
-            Text(updated, format: .relative(presentation: .numeric))
-                .font(.caption2)
-                .foregroundStyle(chrome.textMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
-    }
-
-    /// VoiceOver hears the name, whether anything is unread, and the preview —
-    /// the unread state is a coloured dot otherwise, which announces nothing.
-    private var accessibilityText: String {
-        var parts: [String] = [familiar.displayName]
-        if app.projectHasUnread(familiar.id) { parts.append("unread") }
-        parts.append(preview)
-        return parts.joined(separator: ". ")
-    }
-}
-
 private struct FamiliarServerLandingView: View {
     @Environment(AppModel.self) private var app
     let familiar: Familiar
@@ -727,6 +632,7 @@ private struct FamiliarServerLandingView: View {
                 switch app.threadOpenFailure(for: thread) {
                 case nil:
                     ChatView(thread: thread)
+                        .id(thread.id)
                 case .projectCatalogUnavailable?:
                     ProgressView("Loading project context…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -757,7 +663,7 @@ private struct ThreadOpenRecoveryView: View {
             Label("This chat needs recovery", systemImage: "folder.badge.questionmark")
         } description: {
             Text(
-                "Its project metadata could not be resolved. It stays visible in Unassigned so you can inspect, export, or delete it, but it can’t open as a sendable chat."
+                "Its project metadata could not be resolved. It stays in your chat list so you can export or delete it, but sending is unavailable."
             )
         } actions: {
             if let actionTitle, let action {
@@ -770,60 +676,67 @@ private struct ThreadOpenRecoveryView: View {
 
 struct ThreadRow: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let thread: ChatThread
+    var activityAt: Date? = nil
+    var isSelected = false
 
     private var familiars: [Familiar] { thread.familiarIds.compactMap(app.familiar) }
     private var lastMessage: DisplayMessage? { thread.messages.last }
+    private var activityDate: Date { max(activityAt ?? thread.updatedAt, thread.updatedAt) }
+    private var primaryColor: Color { isSelected ? chrome.accentForeground : chrome.textPrimary }
+    private var secondaryColor: Color { isSelected ? chrome.accentForeground : chrome.textSecondary }
+    private var accentColor: Color { isSelected ? chrome.accentForeground : chrome.accent }
+    private var hasUnread: Bool {
+        guard let seen = app.seenBoundary(for: thread) else { return false }
+        return activityDate > seen
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             if thread.isGroup {
                 AvatarClusterView(familiars: familiars, size: 48)
             } else {
                 AvatarView(familiar: familiars.first,
                            url: familiars.first.flatMap { app.client?.avatarURL(for: $0) },
-                           size: 48)
+                           size: 48, showStatus: true)
             }
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(thread.title).font(.headline).lineLimit(1)
-                    if thread.pinned {
-                        Image(systemName: "pin.fill")
-                            .font(.caption2).foregroundStyle(.orange)
-                            .accessibilityLabel("Pinned")
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        title
+                        Spacer(minLength: 8)
+                        relativeTime
                     }
-                    if thread.muted {
-                        Image(systemName: "bell.slash.fill")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .accessibilityLabel("Muted")
+                    VStack(alignment: .leading, spacing: 2) {
+                        title
+                        relativeTime
                     }
-                    if thread.isGroup {
-                        Image(systemName: "person.2.fill")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .accessibilityLabel("Group chat")
-                    }
-                    Spacer()
-                    Text(thread.updatedAt, format: .relative(presentation: .numeric))
-                        .font(.caption).foregroundStyle(.tertiary)
                 }
+                Text(familiars.map(\.displayName).joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundStyle(secondaryColor)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 if let draftText = app.threadDrafts[thread.id] {
                     // A persisted unsent draft outranks the last-message
                     // preview (standard messenger affordance — makes drafts
                     // discoverable from the list).
-                    (Text("Draft: ").foregroundStyle(Color.accentColor)
+                    (Text("Draft: ").foregroundStyle(accentColor)
                         + Text(draftText.replacingOccurrences(of: "\n", with: " ")))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryColor)
                         .lineLimit(2)
                 } else {
                     Text(previewText)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(secondaryColor)
                         .lineLimit(2)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .frame(minHeight: 44)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         // Collapse title, status glyphs, time, and preview into one spoken element.
         .accessibilityElement(children: .combine)
@@ -833,10 +746,13 @@ struct ThreadRow: View {
     /// One spoken summary of the row: title, status, last activity, preview.
     private var accessibilityText: String {
         var parts: [String] = [thread.title]
+        parts.append(contentsOf: familiars.map(\.displayName))
+        if hasUnread { parts.append("unread") }
+        if thread.archived { parts.append("archived") }
         if thread.isGroup { parts.append("group chat") }
         if thread.pinned { parts.append("pinned") }
         if thread.muted { parts.append("muted") }
-        parts.append("last active " + Self.relativeFormatter.localizedString(for: thread.updatedAt, relativeTo: Date()))
+        parts.append("last active " + Self.relativeFormatter.localizedString(for: activityDate, relativeTo: Date()))
         if let draftText = app.threadDrafts[thread.id] {
             parts.append("draft: " + draftText)
         } else {
@@ -847,7 +763,41 @@ struct ThreadRow: View {
 
     private static let relativeFormatter = RelativeDateTimeFormatter()
 
+    private var title: some View {
+        HStack(spacing: 6) {
+            Text(thread.title)
+                .font(.headline)
+                .foregroundStyle(primaryColor)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .layoutPriority(1)
+            if hasUnread {
+                Circle().fill(accentColor).frame(width: 8, height: 8)
+            }
+            if thread.pinned {
+                Image(systemName: "pin.fill").foregroundStyle(accentColor)
+            }
+            if thread.muted {
+                Image(systemName: "bell.slash.fill").foregroundStyle(secondaryColor)
+            }
+            if thread.isGroup {
+                Image(systemName: "person.2.fill").foregroundStyle(secondaryColor)
+            }
+            if thread.archived {
+                Image(systemName: "archivebox").foregroundStyle(secondaryColor)
+            }
+        }
+        .font(.caption2)
+    }
+
+    private var relativeTime: some View {
+        Text(activityDate, format: .relative(presentation: .numeric))
+            .font(.caption)
+            .foregroundStyle(secondaryColor)
+            .lineLimit(1)
+    }
+
     private var previewText: String {
+        if activityDate > thread.updatedAt { return "New activity on another device" }
         guard let last = lastMessage else { return "Tap to start chatting" }
         if last.streaming && last.text.isEmpty { return "…" }
         let prefix = last.role == .user ? "\(app.operatorDisplayName): " : ""

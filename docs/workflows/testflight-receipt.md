@@ -22,6 +22,13 @@ in memory. Each five-minute ES256 JWT is scoped to one GET request. Neither
 tokens nor keys are printed, written to disk, or included in artifacts.
 Do not retrieve CI secrets or use local keys to work around authorization errors.
 
+The key ID is a bounded identifier, not a fixed ten-character value: Apple's
+JWT documentation gives an example, not a length requirement. The receipt
+preserves the configured ID and accepts 1-128 ASCII letters, digits, underscores,
+or hyphens; Apple remains responsible for authenticating that ID and signature.
+`INVALID_KEY_ID` is a local configuration failure before any Apple request,
+not an Apple authorization denial or a statement about build availability.
+
 The job summary and `testflight-receipt` JSON artifact (90-day retention) contain
 query timestamps, exact selectors, resource IDs, processing and beta states,
 assigned group IDs/types, and tester counts. Tester membership is read using the

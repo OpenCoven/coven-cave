@@ -26,6 +26,7 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
 
     private let factory = RTCPeerConnectionFactory()
     private let urlSession: URLSession
+    private let liveAuthorityIsCurrent: () -> Bool
     private var peerConnection: RTCPeerConnection?
     private var dataChannel: RTCDataChannel?
     private var localAudioSource: RTCAudioSource?
@@ -33,13 +34,14 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
     private var decoder = OpenAIRealtimeEventDecoder()
     private var stopped = false
 
-    init(urlSession: URLSession = .shared) {
+    init(urlSession: URLSession = .shared, liveAuthorityIsCurrent: @escaping () -> Bool = { true }) {
         self.urlSession = urlSession
+        self.liveAuthorityIsCurrent = liveAuthorityIsCurrent
         super.init()
     }
 
     func start(with context: VoiceCallTransportContext) async throws {
-        guard !stopped else { return }
+        try requireActiveAuthority()
         guard let grant = context.grant, grant.provider == "openai" else {
             throw OpenAIRealtimeTransportError.missingGrant
         }
@@ -67,11 +69,14 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
         dataChannel = channel
 
         let offer = try await createOffer(connection: connection, constraints: constraints)
+        try requireActiveAuthority()
         try await setLocalDescription(offer, on: connection)
+        try requireActiveAuthority()
         let answerSDP = try await sendOffer(offer.sdp, to: url, clientSecret: grant.clientSecret)
+        try requireActiveAuthority()
         guard !answerSDP.isEmpty else { throw OpenAIRealtimeTransportError.emptyAnswer }
         try await setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answerSDP), on: connection)
-        guard !stopped else { return }
+        try requireActiveAuthority()
         onEvent?(.connected)
     }
 
@@ -119,6 +124,7 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
     }
 
     private func sendOffer(_ sdp: String, to url: URL, clientSecret: String) async throws -> String {
+        try requireActiveAuthority()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = Data(sdp.utf8)
@@ -130,6 +136,13 @@ final class OpenAIRealtimeTransport: NSObject, VoiceCallTransport {
             throw OpenAIRealtimeTransportError.signalingFailed((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private func requireActiveAuthority() throws {
+        guard !stopped, !Task.isCancelled, liveAuthorityIsCurrent() else {
+            stop()
+            throw CancellationError()
+        }
     }
 }
 

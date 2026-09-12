@@ -175,7 +175,7 @@ assert.match(
 );
 assert.match(
   picker,
-  /else if projects\.isEmpty \{[\s\S]*(?:if\s+let\s+onManageAccess\s*\{\s*Button\(\s*"Project access"\s*,\s*action:\s*onManageAccess\s*\)\s*\}|guard\s+let\s+onManageAccess\s*=\s*onManageAccess\s*else\s*\{[\s\S]*?\}\s*Button\(\s*"Project access"\s*,\s*action:\s*onManageAccess\s*\))/,
+  /else if projects\.isEmpty \{[\s\S]*if let onManageAccess \{[\s\S]*Button\("Project access", action: onManageAccess\)/,
   "the empty project list must guard the Project access button behind a non-nil manage-access action",
 );
 assert.match(
@@ -195,13 +195,13 @@ assert.match(
 );
 assert.match(
   picker,
-  /ChatProjectSelection\.resolvedRoot\([\s\S]*current: selectedRoot,[\s\S]*recent: recentRoots,[\s\S]*projects: loaded/,
-  "new chats must resolve current, recent, then stable project fallback",
+  /if selectedRoot == nil, !requiresExplicitSelection \{[\s\S]*ChatProjectSelection\.resolvedRoot\([\s\S]*current: nil,[\s\S]*recent: recentRoots,[\s\S]*projects: loaded/,
+  "optional defaults may seed only an untouched selection",
 );
 assert.match(
   picker,
-  /requiresExplicitSelection[\s\S]*\\? nil[\s\S]*ChatProjectSelection\.resolvedRoot/,
-  "a rejected project must require an explicit replacement instead of silently retrying",
+  /isResolved = loaded\.contains \{ \$0\.root == selectedRoot \}/,
+  "a revoked selection must become unresolved rather than silently switching projects",
 );
 assert.doesNotMatch(
   picker,
@@ -227,13 +227,13 @@ assert.doesNotMatch(
 // All user-visible constructors route through selection and preserve the root.
 assert.match(
   newChat,
-  /private var activeProject: ProjectInfo\? \{ app\.activeProject \}/,
-  "New Chat must derive its root from the active project context",
+  /@State private var selectedProject: ProjectInfo\?/,
+  "New Chat must own its selected registered project",
 );
 assert.match(
   newChat,
-  /private var canLaunchChat: Bool \{[\s\S]*activeProjectRoot != nil[\s\S]*!selectedFamiliarIds\.isEmpty[\s\S]*unavailableSelectedFamiliarIDs\.isEmpty[\s\S]*\}/,
-  "launch gating must require the active project root and only active-project familiars",
+  /private var canLaunchChat: Bool \{[\s\S]*projectResolved && selectedProject != nil[\s\S]*!selectedFamiliarIds\.isEmpty && !isLaunching/,
+  "launch gating must require a resolved local project and stable nonempty roster",
 );
 assert.match(
   newChat,
@@ -242,28 +242,28 @@ assert.match(
 );
 assert.match(
   newChat,
-  /Section\("Project"\) \{[\s\S]*Label\(activeProject\.name, systemImage: "folder"\)[\s\S]*Switch projects from Chats to use a different project\./,
-  "New Chat must describe the fixed active project instead of offering a picker",
+  /Section\("Chat access"\) \{[\s\S]*ChatProjectPicker\([\s\S]*requiresExplicitSelection: true/,
+  "New Chat must offer explicit chat-local project access",
 );
 assert.match(
   newChat,
-  /let fixedFamiliarId: String\?[\s\S]*if fixedFamiliarId == nil[\s\S]*Section\(selected\.isEmpty \? "Choose familiars" :/,
-  "fixed familiar mode must hide the editable familiar roster",
+  /fixedFamiliarId == nil \|\| \$0\.id == fixedFamiliarId[\s\S]*\.disabled\(fixedFamiliarId != nil\)/,
+  "fixed familiar mode must preserve its immutable familiar roster",
+);
+assert.doesNotMatch(
+  newChat,
+  /app\.(?:activeProject|activeProjectRoot|projectContext|projectFamiliars)\b/,
+  "New Chat must never depend on the ambient project filter",
 );
 assert.match(
   newChat,
-  /private var blockedMessage: \(title: String, body: String, systemImage: String\)\? \{[\s\S]*Unassigned chats are recovery-only\./,
-  "Unassigned New Chat must surface recovery-only guidance",
+  /case \.familiarAccessRevoked\(let ids\):[\s\S]*Project access was revoked/,
+  "launch must surface revoked participant access",
 );
 assert.match(
   newChat,
-  /private var blockedMessage: \(title: String, body: String, systemImage: String\)\? \{[\s\S]*This familiar is no longer in/,
-  "fixed familiar launches must explain when the selected familiar leaves the active project",
-);
-assert.match(
-  newChat,
-  /private var selectedFamiliarIds: \[String\] \{[\s\S]*availableFamiliars\.map\(\\\.id\)\.filter \{ selected\.contains\(\$0\) \}[\s\S]*\}/,
-  "selectedFamiliarIds must stay inside the active project roster",
+  /private var selectedFamiliarIds: \[String\] \{[\s\S]*ChatProjectSelection\.familiarKey\(Array\(selected\)\)/,
+  "roster refresh must not silently remove chosen participants",
 );
 assert.match(
   newChat,
@@ -272,23 +272,23 @@ assert.match(
 );
 assert.match(
   newChat,
-  /startFreshThread\([\s\S]*projectRoot: activeProjectRoot[\s\S]*createGroup\([\s\S]*projectRoot: activeProjectRoot/,
-  "direct and group constructors must always persist the active project root",
+  /startFreshThread\([\s\S]*projectRoot: context\.projectRoot[\s\S]*createGroup\([\s\S]*projectRoot: context\.projectRoot/,
+  "direct and group constructors must always persist the captured project root",
 );
 assert.match(
   newChat,
-  /let launchContext = NewChatImportLaunchContext\([\s\S]*activeProject: activeProject,[\s\S]*selectedFamiliarIds: selectedFamiliarIds[\s\S]*\)[\s\S]*importLaunchContext = launchContext[\s\S]*importingFile = true/,
-  "imports must freeze the active project context before opening the picker",
+  /let context = NewChatImportLaunchContext\([\s\S]*selectedProject: selectedProject,[\s\S]*selectedFamiliarIds: selectedFamiliarIds[\s\S]*\)[\s\S]*importLaunchContext = context[\s\S]*importConnectionLease = app\.captureConnectionDispatchLease\(\)[\s\S]*importingFile = true/,
+  "imports must freeze the local project, roster, and connection before opening the picker",
 );
 assert.match(
   newChat,
-  /switch launchContext\.validate\([\s\S]*projectContext: app\.projectContext,[\s\S]*activeProject: activeProject,[\s\S]*projectMembership: app\.projectMembership[\s\S]*\)[\s\S]*importMarkdown\([\s\S]*familiarIds: launchContext\.familiarIds,[\s\S]*projectRoot: launchContext\.projectRoot/,
-  "imports must revalidate the frozen project context before opening the imported thread",
+  /guard await validate\(context, lease: lease\) else \{ return \}[\s\S]*importMarkdown\([\s\S]*familiarIds: context\.familiarIds,[\s\S]*projectRoot: context\.projectRoot/,
+  "imports must revalidate captured access before committing the imported thread",
 );
-assert.doesNotMatch(
+assert.match(
   newChat,
-  /ChatProjectPicker\(|showProjectAccess|projectRefreshToken|FamiliarPermissionsSheet/,
-  "normal New Chat must not offer an independent project picker or access sheet",
+  /await app\.refreshChatAccess\(\)[\s\S]*app\.loadChatProjects\(familiarIds: context\.familiarIds\)[\s\S]*connectionDispatchLeaseIsCurrent\(lease\)[\s\S]*membershipLoaded: app\.projectMembershipLoaded && app\.projectContextError == nil/,
+  "every commit must freshly verify exact local selection and membership on the captured connection",
 );
 assert.match(
   appModel,
@@ -312,8 +312,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /func startFreshThreadInActiveProject\([\s\S]*guard let activeProject, let activeProjectRoot else \{ return nil \}[\s\S]*guard projectMembershipLoaded else \{[\s\S]*Refresh Chats to load project access[\s\S]*\}[\s\S]*let invalidFamiliarIDs = familiarIds\.filter \{[\s\S]*projectMembership\.contains\(\$0, in: activeProject\)[\s\S]*Open New Chat to choose a valid roster or switch projects/,
-  "/new and replacement flows must validate every participant against the active project roster",
+  /func startFreshThread\(\s*in context: ProjectContext\?[\s\S]*guard projectMembershipLoaded, projectContextError == nil[\s\S]*projectMembership\.contains\(\$0, in: boundProject\)/,
+  "/new and replacement helpers must validate every participant against the supplied object's project",
 );
 assert.match(
   appModel,
@@ -387,8 +387,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /startFreshThreadInActiveProject\([\s\S]*familiarIds: thread\.familiarIds/,
-  "/new and replacement flows must start in the active project",
+  /\.sheet\(isPresented: \$showNewChat\) \{\s*NewChatView\(initialFamiliarIds: thread\.familiarIds\)/,
+  "/new and replacement flows must preserve participants in explicit New Chat configuration",
 );
 assert.match(
   chat,
@@ -397,13 +397,18 @@ assert.match(
 );
 assert.match(
   chat,
-  /private var recoveryOnlyComposer: some View[\s\S]*Start replacement chat/,
-  "recovery-only chats must offer a start-replacement affordance when a project is active",
+  /private var recoveryOnlyComposer: some View[\s\S]*Button\("Start replacement chat", action: startReplacementChat\)[\s\S]*private func startReplacementChat\(\) \{\s*showNewChat = true\s*\}/,
+  "recovery-only chats must open local project selection without requiring an ambient project",
 );
 assert.match(
   chat,
-  /app\.markFamiliarViewed\(\s*thread\.familiarIds,\s*in:\s*app\.projectContext\(for: thread\)\s*\)/,
-  "opening a chat must clear unread state in that thread's own project context",
+  /app\.markThreadViewed\(thread\)/,
+  "opening a chat must clear only that thread's unread state",
+);
+assert.doesNotMatch(
+  chat,
+  /app\.markFamiliarViewed\(/,
+  "opening one chat must not clear unread state for sibling conversations",
 );
 assert.match(
   chat,
@@ -417,18 +422,18 @@ assert.match(
 );
 assert.match(
   chat,
-  /LiveVoiceCallView\([\s\S]*sessionId: voiceCallLaunch\.sessionId,[\s\S]*projectRoot: voiceCallLaunch\.projectRoot,[\s\S]*onSessionEstablished: \{ sessionId in[\s\S]*bindVoiceCallSession\(sessionId, for: voiceCallLaunch\.familiar\.id\)[\s\S]*onSessionDiscarded: \{ sessionId in[\s\S]*unbindVoiceCallSession\(sessionId, for: voiceCallLaunch\.familiar\.id\)[\s\S]*onCleanupWarning: \{ message in[\s\S]*app\.showToast\(message,[\s\S]*style: \.warning\)/,
-  "ChatView must pass thread project provenance into live voice calls, bind new server sessions, clear discarded bindings, and surface cleanup failures through app toasts",
+  /private func beginVoiceCall\(\) \{[\s\S]*let callThread = thread[\s\S]*voiceCall = LiveVoiceCallModel\([\s\S]*sessionId: launch\.sessionId,[\s\S]*projectRoot: launch\.projectRoot,[\s\S]*onSessionEstablished: \{ sessionId in[\s\S]*app\.bindThreadSession\(sessionId, to: callThread, for: familiarId\)[\s\S]*onSessionDiscarded: \{ sessionId in[\s\S]*callThread\.sessionIds\.removeValue\(forKey: familiarId\)[\s\S]*onCleanupWarning: \{ message in[\s\S]*app\.showToast\(message,[\s\S]*style: \.warning\)/,
+  "ChatView must freeze voice provenance and keep session binding, orphan cleanup, and warnings on the captured conversation",
 );
 assert.match(
   chat,
-  /private func bindVoiceCallSession\(_ sessionId: String, for familiarId: String\) \{[\s\S]*app\.bindThreadSession\(sessionId, to: thread, for: familiarId\)/,
-  "voice-session binding should flow through AppModel so task-linked voice chats reconcile their card session ids immediately",
+  /onSessionEstablished: \{ sessionId in[\s\S]*guard app\.connectionDispatchLeaseIsCurrent\(dispatchLease\),\s*binding\.matches\(callThread, includingSessions: true\) else \{ return \}[\s\S]*app\.bindThreadSession\(sessionId, to: callThread, for: familiarId\)/,
+  "voice-session binding must verify the captured connection and session identity before persisting",
 );
 assert.match(
   chat,
-  /private func unbindVoiceCallSession\(_ sessionId: String, for familiarId: String\) \{[\s\S]*thread\.sessionIds\.removeValue\(forKey: familiarId\)[\s\S]*app\.touch\(thread\)/,
-  "discarded auto-created voice sessions must remove their local thread binding",
+  /onSessionDiscarded: \{ sessionId in[\s\S]*guard app\.connectionDispatchLeaseIsCurrent\(dispatchLease\),\s*binding\.matches\(callThread, includingSessions: true\),\s*callThread\.sessionIds\[familiarId\] == sessionId else \{ return \}[\s\S]*callThread\.sessionIds\.removeValue\(forKey: familiarId\)[\s\S]*app\.touch\(callThread\)/,
+  "discarded auto-created voice sessions must remove only the matching captured local binding",
 );
 assert.match(
   appModel,
@@ -452,8 +457,13 @@ assert.match(
 );
 assert.match(
   appModel,
-  /private func completeProjectNavigation\([\s\S]*if let context, didSwitchProject \{[\s\S]*switchProject\(to: context\)[\s\S]*selectedTab = intent\.resolvedDestination[\s\S]*if let thread \{[\s\S]*threadToOpen = thread[\s\S]*if let card \{[\s\S]*cardToOpen = card/,
-  "the shared resolver must switch project first, then select the destination, then publish thread/task opens",
+  /private func completeProjectNavigation\([\s\S]*selectedTab = intent\.resolvedDestination[\s\S]*if let thread \{[\s\S]*threadToOpen = thread/,
+  "the shared resolver must publish the chosen chat object",
+);
+assert.doesNotMatch(
+  appModel.split("private func completeProjectNavigation(")[1].split("private func announceProjectNavigationSwitch")[0],
+  /switchProject|projectContext\s*=/,
+  "opening an object must not rescope the shell",
 );
 assert.match(
   appModel,
@@ -477,8 +487,8 @@ assert.match(
 );
 assert.match(
   voiceModel,
-  /private func startRealtime\(\) async \{[\s\S]*guard let projectRoot = state\.projectRoot else \{[\s\S]*projectRequiredCopy[\s\S]*\}[\s\S]*let sessionId = try await realtimeSessionID\(client: client, projectRoot: projectRoot\)[\s\S]*mintVoiceSession\([\s\S]*familiarId: familiar\.id,\s*sessionId: sessionId/,
-  "realtime voice must keep server-side grant minting while bootstrapping fresh calls through a project-scoped session",
+  /private func startRealtime\(generation: Int\) async \{[\s\S]*guard let projectRoot = state\.projectRoot else \{[\s\S]*projectRequiredCopy[\s\S]*\}[\s\S]*let sessionId = try await realtimeSessionID\(client: client, projectRoot: projectRoot\)\s*guard canContinueLaunch\(generation\) else \{ return \}[\s\S]*mintVoiceSession\([\s\S]*familiarId: familiar\.id,\s*sessionId: sessionId\s*\)\s*guard canContinueLaunch\(generation\) else \{ return \}/,
+  "realtime voice must mint project-scoped grants only while its captured launch remains current across suspensions",
 );
 assert.match(
   voiceModel,
@@ -547,28 +557,18 @@ assert.doesNotMatch(
 );
 assert.match(
   appModel,
-  /@discardableResult\s*func requestOpenGlobalFamiliarLandingThread\(for familiarId: String\) -> Bool \{[\s\S]*globalLandingDirectThread\(for: familiarId\)[\s\S]*globalServerOnlySessions\(for: familiarId\)\.first[\s\S]*openServerSession\([\s\S]*projectMembership\.contains\(familiarId, in: activeProject\)[\s\S]*directThread\(for: familiarId, in: \.project\(activeProject\)\)[\s\S]*requestOpen\(/,
-  "global familiar opens must prefer existing chats across contexts, then server-only sessions, and only synthesize a fresh active-project chat as a last resort",
+  /func requestOpenGlobalFamiliarLandingThread\(for familiarId: String\)[\s\S]*globalLandingDirectThread\(for: familiarId\)[\s\S]*globalServerOnlySessions\(for: familiarId\)[\s\S]*Open New chat to choose this familiar and its project access/,
+  "global familiar opens may reuse history but cannot silently synthesize an ambient-project chat",
 );
-assert.match(
+assert.doesNotMatch(
   root,
-  /case \.familiars: FamiliarsListView \{ familiar in[\s\S]*openFamiliarLandingThread\(\s*for:\s*familiar\.id,\s*in:\s*app\.projectContext\s*\)/,
-  "the root familiars sheet must route familiar opens through the shared landing-chat helper",
+  /case \.familiars: FamiliarsListView/,
+  "the retired global familiar hub must not remain in the root shell",
 );
-assert.match(
+assert.doesNotMatch(
   root,
-  /openFamiliar: \{ familiar in[\s\S]*requestOpenGlobalFamiliarLandingThread\(for: familiar\.id\)/,
-  "global search familiar opens must route through the global landing-chat helper",
-);
-assert.match(
-  root,
-  /openServerSession: \{ session, familiarId in[\s\S]*requestOpenServerSession\(\s*session,\s*fallbackFamiliarId: familiarId\s*\)/,
-  "global search server-session opens must route through the central project-aware session helper",
-);
-assert.match(
-  root,
-  /openProject: \{ project in[\s\S]*requestOpenProjectSearchResult\(project\)/,
-  "global search project opens must route through the central project-aware destination helper",
+  /GlobalSearchView\(/,
+  "the root must not mount retired global search",
 );
 assert.match(
   appModel,
@@ -577,13 +577,52 @@ assert.match(
 );
 assert.match(
   chat,
-  /case \.command\(let command, let args\):[\s\S]*case \.sendAsPrompt = command\.action,[\s\S]*!thread\.canSendMessages[\s\S]*thread\.needsProjectSelection = true[\s\S]*return[\s\S]*draft = ""/,
-  "prompt-like slash commands must preserve their draft until project context resolves",
+  /case \.command\(let command, let args\):[\s\S]*if command\.sendsChatMessage \{[\s\S]*guard requireChatAccess\(\) else \{ return \}[\s\S]*guard thread\.canSendMessages else \{[\s\S]*thread\.needsProjectSelection = true[\s\S]*return[\s\S]*draft = ""/,
+  "message-producing commands must preserve drafts until access and provenance resolve",
 );
+const chatBootstrap = appModel.split("private func resolveProjectContextSelection(")[1]
+  .split("private func applyProjectContextSelection(")[0];
+assert.doesNotMatch(chatBootstrap, /coordinatedTasksLoad|client\.tasks\(/,
+  "chat bootstrap must not hydrate retired tasks");
+assert.match(appModel, /func resolvePendingProjectNavigationIntent[\s\S]*guard intent\.resolvedDestination != \.tasks else \{[\s\S]*showDesktopOnlyDestination\(\)[\s\S]*if attemptHydrationIfNeeded/,
+  "retired task navigation must reject before any hydration");
+assert.match(appModel, /var chatAccessIsCurrent: Bool \{[\s\S]*projectsLoaded && projectMembershipLoaded && projectContextError == nil/,
+  "cached history cannot stand in for current send access");
+assert.match(appModel, /func chatAccessIsCurrent\(projectRoot: String\?, familiarIds: \[String\]\) -> Bool \{[\s\S]*let targets = Set\(familiarIds\)[\s\S]*guard chatAccessIsCurrent,[\s\S]*!targets\.isEmpty,[\s\S]*ProjectContext\.openContext\(for: projectRoot, in: projects\),\s*project\.root == projectRoot[\s\S]*targets\.allSatisfy \{ projectMembership\.contains\(\$0, in: project\) \}/,
+  "write access must resolve the bound project and require current membership for every exact recipient");
+const queuedReplay = appModel.split("func flushQueuedMessages() {")[1]
+  .split("/// Rolling renewal:")[0];
+assert.match(queuedReplay, /targetAccessIsCurrent: \{ \[weak self\] projectRoot, familiarId in[\s\S]*chatAccessIsCurrent\(\s*projectRoot: projectRoot,\s*familiarIds: \[familiarId\]/,
+  "queue dispatch must authorize the frozen recipient supplied by replay, not the current roster");
+assert.match(queuedReplay, /onAccessRefused:[\s\S]*showToast\([\s\S]*original recipients have been kept/,
+  "revoked queued access must be explained without discarding or retargeting the message");
+const targetReplay = thread.split("func replayQueued(client: CaveClient,")[1]
+  .split("/// Remove one message")[0];
+assert.match(targetReplay, /targetAccessIsCurrent: @escaping \(String\?, String\) -> Bool/,
+  "queued replay requires a per-target authorization callback");
+assert.match(targetReplay, /let targets = queuedMessage\.queuedTargetFamiliarIds[\s\S]*let queuedProjectRoot = queuedContext\.projectRoot[\s\S]*for familiarId in targets where !completed\.contains\(familiarId\)[\s\S]*let queuedSessionId = queuedContext\.sessionIds\[familiarId\] \?\? sessionIds\[familiarId\][\s\S]*targetAccessIsCurrent\(queuedProjectRoot, familiarId\)[\s\S]*guard mayDispatchTarget\(\) else \{ continue \}[\s\S]*let existingPlaceholder/,
+  "every frozen queued recipient must pass authorization before a placeholder, reconciliation, or write checkpoint");
+assert.match(targetReplay, /await persistBeforeDispatch\(\)[\s\S]*guard !Task\.isCancelled, dispatchLeaseIsCurrent\(\), mayDispatchTarget\(\) else[\s\S]*liveDispatchLeaseIsCurrent: mayDispatchTarget/,
+  "recipient/root authorization must run after persistence and inside the actual stream preflight");
+assert.match(targetReplay, /guard targets\.allSatisfy\(\{ completed\.contains\(\$0\) \}\) else \{ return \}\s*mutate\(queuedId\)/,
+  "a refused group target must keep the queue pending after allowed recipients finish");
+assert.match(nativeAppContextTests, /testChatWriteAccessUsesBoundProjectAndExactRosterNotReadability[\s\S]*testRevokedQueuedRecipientCannotBeReplacedByCurrentRosterAccess[\s\S]*testQueuedAccessPreservesLegacyRunRecipientFallback/,
+  "native tests must distinguish readable history, exact write access, and frozen legacy queue targets");
+assert.match(nativeAppContextTests, /testSuccessfulGrantRefreshRevocationLeavesQueuedRecipientUnsent[\s\S]*testFrozenQueuedGroupSkipsRevokedTargetWithoutStarvingAllowedRecipient[\s\S]*testGrantRevocationDuringQueuedPersistenceRollsBackWithoutPost[\s\S]*testQueuedGrantRevocationAtNetworkPreflightPreservesPendingLeg/,
+  "native tests must cover successful grant revocation, allowed siblings, checkpoint races, and final network preflight");
+assert.doesNotMatch(nativeAppContextTests, /FamiliarDetailStatsModel/,
+  "state tests must not retain the removed familiar task-analytics model");
+const shellReadiness = appModel.split("var hasLoadedSurfaces: Bool {")[1].split("\n    }")[0];
+assert.match(shellReadiness, /!chatThreads\.isEmpty \|\| !chatServerSessions\.isEmpty/,
+  "cold cached history must keep the shell readable without a live project catalog");
+assert.doesNotMatch(shellReadiness, /tasksLoaded|remindersLoaded/,
+  "retired non-chat data cannot make the chat shell ready");
+assert.match(appModel, /let shouldLoadCoreBeforeDispatch = !chatAccessIsCurrent[\s\S]*if shouldLoadCoreBeforeDispatch/,
+  "readable cached history must not skip access bootstrap before queued dispatch");
 assert.match(
   home,
-  /NewChatView\([\s\S]*fixedFamiliarId: fixedNewChatFamiliarId[\s\S]*presentNewChat\(fixedFamiliarId: familiar\.id\)/,
-  "home familiar shortcuts must open fixed-familiar New Chat from familiar rows",
+  /NewChatView\([\s\S]*fixedFamiliarId: fixedNewChatFamiliarId/,
+  "home must preserve fixed-familiar New Chat support",
 );
 assert.match(
   home,
@@ -592,8 +631,8 @@ assert.match(
 );
 assert.match(
   nativeAppContextTests,
-  /testRequestOpenSwitchesToThreadProjectBeforeOpening[\s\S]*testRequestOpenSwitchesToUnassignedForProjectlessThread[\s\S]*testRequestOpenCanonicalizesNestedWorktreeRootToRegisteredProject[\s\S]*testRequestOpenTreatsUnknownAndDeletedRootsAsUnassigned[\s\S]*testRequestOpenTaskSwitchesToTaskProjectBeforeOpening[\s\S]*testRequestOpenTaskSwitchesToUnassignedForProjectlessTask[\s\S]*testRequestOpenProjectSearchResultKeepsProjectScopedDestination[\s\S]*testRequestOpenProjectSearchResultFallsBackToChatsFromSettings[\s\S]*testRequestOpenServerSessionSwitchesToSessionProjectBeforeOpening[\s\S]*testRequestOpenTaskTreatsUnknownProjectAsUnassignedRecovery[\s\S]*testRequestOpenTaskFailsExplicitlyWhenProjectIDIsMalformed[\s\S]*testRequestOpenFailsExplicitlyWhenProjectMetadataIsInvalid[\s\S]*testRequestOpenDoesNotSwitchProjectWhenContextAlreadyMatches[\s\S]*testEntityMetadataWinsWhenAdvisoryProjectDisagrees[\s\S]*testProjectDeepLinkFailsExplicitlyWhenProjectIsUnknown[\s\S]*testProjectChatsDeepLinkSwitchesProjectAndPreservesDestination[\s\S]*testPendingTaskNavigationSurvivesFailedHydration/,
-  "native app-context tests must cover cross-project thread/task/session opens, project-search destination policy, unassigned recovery, unknown-project recovery tasks, malformed task ids, same-context no-ops, redundant-project mismatches, and pending intents that survive failed hydration",
+  /testRequestOpenPreservesAmbientProjectBeforeOpening[\s\S]*testRequestOpenPreservesAmbientProjectForProjectlessThread[\s\S]*testRequestOpenTaskRejectsDesktopOnlyDestination[\s\S]*testRequestOpenServerSessionPreservesAmbientProjectBeforeOpening[\s\S]*testPendingTaskNavigationIsRejectedBeforeHydration/,
+  "native app-context tests must cover non-rescoping object opens and fail-fast retired navigation",
 );
 assert.match(
   home,
@@ -657,8 +696,8 @@ assert.match(
 );
 assert.match(
   nativeAppContextTests,
-  /testRequestOpenGlobalFamiliarLandingThreadPrefersMostRecentLocalLandingAcrossContexts[\s\S]*testRequestOpenGlobalFamiliarLandingThreadMaterializesMostRecentServerOnlySessionAcrossContexts[\s\S]*testRequestOpenGlobalFamiliarLandingThreadCreatesFreshChatInActiveProjectWhenNoHistoryExists[\s\S]*testRequestOpenGlobalFamiliarLandingThreadShowsGuidanceWhenFamiliarBelongsToDifferentProject/,
-  "native AppModel tests must cover global familiar opens for existing local chats, server-only history, fresh active-project starts, and off-project guidance",
+  /testRequestOpenGlobalFamiliarLandingThreadPrefersMostRecentLocalLandingAcrossContexts[\s\S]*testRequestOpenGlobalFamiliarLandingThreadMaterializesMostRecentServerOnlySessionAcrossContexts[\s\S]*testGlobalFamiliarWithoutHistoryRequiresChatLocalConfiguration/,
+  "native AppModel tests must cover global history reuse and explicit new-chat configuration",
 );
 assert.match(
   nativeAppContextTests,
@@ -672,8 +711,8 @@ assert.match(
 );
 assert.match(
   uiTests,
-  /testContextualNewChatUsesActiveProjectWithoutIndependentPicker[\s\S]*testContextualNewChatBlocksStartWhenFixedFamiliarLeavesActiveProject[\s\S]*testContextualNewChatShowsRecoveryOnlyGuidanceForUnassigned/,
-  "simulator tests must cover the fixed active root, revoked access, and Unassigned recovery-only states",
+  /testContextualNewChatRequiresLocalProjectSelection[\s\S]*testContextualNewChatBlocksCommitWhenAccessIsRevoked[\s\S]*testNewChatCanConfigureAccessWithoutAmbientProject/,
+  "simulator tests must cover explicit selection, revoked access, and a missing ambient project",
 );
 assert.match(
   snapshotTests,

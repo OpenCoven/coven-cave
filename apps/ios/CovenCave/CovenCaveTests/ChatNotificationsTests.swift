@@ -85,9 +85,8 @@ final class ChatNotificationsTests: XCTestCase {
         }
     }
 
-    func testReminderDeepLinkUsesTaskEntityWhenIDExists() throws {
-        let url = try XCTUnwrap(ReminderNotifications.deepLinkURL(taskId: "card-123"))
-        XCTAssertEqual(url.absoluteString, "covencave://task/card-123")
+    func testReminderDeepLinkDoesNotOfferRetiredTaskEntity() {
+        XCTAssertNil(ReminderNotifications.deepLinkURL(taskId: "card-123"))
     }
 
     func testReminderDeepLinkUsesThreadEntityForLinkedSessionOrThread() throws {
@@ -101,19 +100,25 @@ final class ChatNotificationsTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "covencave://thread/thread-123")
     }
 
-    func testReminderDeepLinkUsesTaskEntityForLinkedCard() throws {
-        let url = try XCTUnwrap(
+    func testReminderDeepLinkDoesNotOfferLinkedCard() {
+        XCTAssertNil(
             ReminderNotifications.deepLinkURL(for: reminder(link: Reminder.Link(
                 kind: .card,
                 taskId: "card-123"
             )))
         )
-        XCTAssertEqual(url.absoluteString, "covencave://task/card-123")
     }
 
-    func testReminderDeepLinkFallsBackToGenericTasksDestination() throws {
-        let url = try XCTUnwrap(ReminderNotifications.deepLinkURL(for: reminder()))
-        XCTAssertEqual(url.absoluteString, "covencave://tasks")
+    func testReminderDeepLinkDoesNotFallBackToTasks() {
+        XCTAssertNil(ReminderNotifications.deepLinkURL(for: reminder()))
+        XCTAssertNil(ReminderNotifications.deepLinkURL())
+    }
+
+    func testRetirementOnlyMatchesReminderNotificationIdentifiers() {
+        XCTAssertTrue(ReminderNotifications.isRetiredRequest(identifier: "cave.reminder.rem-1"))
+        for identifier in ["cave.chat.thread-1", "cave.connection.reconnected", "other.reminder.1"] {
+            XCTAssertFalse(ReminderNotifications.isRetiredRequest(identifier: identifier), identifier)
+        }
     }
 
     @MainActor

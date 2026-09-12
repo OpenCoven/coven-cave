@@ -57,25 +57,10 @@ assert.match(
   /return trimmedQuery\.isEmpty \|\| card\.title\.lowercased\(\)\.contains\(trimmedQuery\)/,
   "the search query should still narrow the already project-and-familiar-scoped task set",
 );
-assert.match(
-  chat,
-  /if !app\.projectLinkedTasks\(for: thread\)\.isEmpty \{/,
-  "chat should only advertise linked tasks that still belong to the active project scope",
-);
-assert.match(
-  chat,
-  /private var linkedGitHubContext: \(link: CardGitHubLink, url: URL\)\? \{[\s\S]*app\.projectLinkedTasks\(for: thread\)/,
-  "linked GitHub context should come from the same project-scoped task set as the sheet",
-);
-assert.match(
-  chat,
-  /private var linkedContextStrip: some View \{[\s\S]*let cards = app\.projectLinkedTasks\(for: thread\)/,
-  "linked task count and header should use the same project-scoped helper as the sheet",
-);
 assert.doesNotMatch(
   chat,
-  /app\.linkedTasks\(for: thread\)/,
-  "chat should not advertise out-of-scope linked tasks once project scoping is active",
+  /app\.(?:projectLinkedTasks|linkedTasks)\(for: thread\)|linkedContextStrip|LinkedTasksSheet/,
+  "retained legacy task links are not a reachable native chat surface",
 );
 assert.match(
   tasks,
