@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   messageBubble,
-  /Label\("Open in Reader", systemImage: "text\.page"\)/,
+  /Label\("Open in reader", systemImage: "text\.page"\)/,
   "reader action should be exposed from the message context menu",
 );
 

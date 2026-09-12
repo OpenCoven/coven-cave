@@ -39,15 +39,15 @@ const globalSearch = await read(
 ).catch(() => "");
 
 // Supplied device reference: this is the canonical first empty conversation.
-assert.match(chat, /Text\("Start a new session"\)/, "empty chat keeps the authored serif heading");
+assert.match(chat, /Text\("Start a chat"\)/, "empty chat keeps its heading with canonical chat terminology");
 assert.match(
   chat,
-  /Speak your intent — a familiar answers from the desktop\./,
+  /Your familiar works from the desktop\./,
   "empty chat explains the desktop-backed familiar",
 );
 assert.match(
   chat,
-  /Repo access follows \\\(wardScope\) active/,
+  /Project access follows \\\(wardScope\) active/,
   "empty chat describes the real ward boundary without promising an unavailable mode",
 );
 assert.match(chat, /permissionsFamiliar = familiar/, "the ward copy opens the real permission controls");
@@ -65,8 +65,8 @@ assert.match(
   /Set\(app\.tasks\.flatMap\(\\\.githubLinks\)[\s\S]*?\$0\.state\?\.lowercased\(\) == "open"[\s\S]*?map \{ \$0\.url\.lowercased\(\) \}\)/,
   "the open-PR starter count is deduplicated and excludes closed or unknown links",
 );
-assert.match(chat, /"What's on the board\?"/, "second quick action follows the supplied start page");
-assert.match(chat, /"Chase the [^"]+"/, "third quick action is grounded in a real priority task");
+assert.match(chat, /"What tasks need attention\?"/, "second quick action uses the canonical Tasks vocabulary");
+assert.match(chat, /"Work on \\\(\$0\.title\)"/, "third quick action is grounded in a real priority task");
 assert.match(chat, /icon: "arrow\.triangle\.branch"/, "the PR starter uses a valid native branch glyph");
 assert.match(
   chat,
@@ -697,7 +697,7 @@ assert.match(
 );
 assert.match(
   chat,
-  /app\.tasksError != nil\s*\?\s*"Board unavailable"/,
+  /app\.tasksError != nil\s*\?\s*"Tasks unavailable — open Tasks to retry"/,
   "the start page does not report zero board work after a failed first load",
 );
 assert.match(

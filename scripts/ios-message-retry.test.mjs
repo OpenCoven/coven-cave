@@ -16,12 +16,12 @@ const thread = await read(`${base}/State/ChatThread.swift`);
 // --- Visible retry button on error bubbles ----------------------------------
 assert.match(
   bubble,
-  /if !isUser, message\.isError, let onRetry \{[\s\S]*?Label\("Retry", systemImage: "arrow\.clockwise"\)/,
+  /if !isUser, message\.isError, let onRetry \{[\s\S]*?Label\("Retry reply", systemImage: "arrow\.clockwise"\)/,
   "MessageBubble should render a visible Retry button on a failed (isError) reply",
 );
 assert.match(
   bubble,
-  /\.accessibilityLabel\("Retry sending this message"\)/,
+  /\.accessibilityLabel\("Retry generating this reply"\)/,
   "the visible Retry button should carry an accessibility label",
 );
 

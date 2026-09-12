@@ -20,8 +20,8 @@ assert.match(
 
 assert.match(
   bubble,
-  /Label\("Forward to Familiar", systemImage: "arrowshape\.turn\.up\.right"\)/,
-  "message context menu should offer Forward to Familiar",
+  /Label\("Forward to familiar", systemImage: "arrowshape\.turn\.up\.right"\)/,
+  "message context menu should offer Forward to familiar",
 );
 
 assert.match(
