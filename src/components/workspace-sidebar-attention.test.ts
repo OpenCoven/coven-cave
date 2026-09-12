@@ -353,8 +353,8 @@ function sectionCount(section: ReturnType<typeof sectionByLabel>) {
 
 function sectionThreadTitles(section: ReturnType<typeof sectionByLabel>) {
   return section
-    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
-    .map((node) => textContent(node.children));
+    .findAll((node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title"))
+    .map((node) => textContent(node.findByProps({ className: "sr-only" }).children));
 }
 
 function attentionCueLabels(section: ReturnType<typeof sectionByLabel>) {
@@ -429,7 +429,7 @@ test("legacy sessions without attention render as neutral rows", async () => {
 
   expect(
     renderer.root.findAll(
-      (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === "Legacy chat",
+      (node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title") && node.props.title === "Legacy chat",
     ),
   ).toHaveLength(1);
   expect(sectionsByLabel(renderer).some((section) => section.props["aria-label"] === "Awaiting you")).toBe(false);
@@ -705,7 +705,7 @@ test("attention show-more keeps the flat modifier, focus ring, and click handler
  *  renderer root) so duplicate titles across sections resolve unambiguously. */
 function rowContainerFor(scope: ReturnType<typeof sectionByLabel> | ReactTestRenderer["root"], title: string) {
   const titleNode = scope.find(
-    (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === title,
+    (node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title") && node.props.title === title,
   );
   let node = titleNode;
   while (
@@ -1015,8 +1015,8 @@ test("the embedded chat list never surfaces archived sessions", async () => {
   ).toHaveLength(0);
 
   const titles = renderer.root
-    .findAll((node) => typeof node.type === "string" && node.props.className === "cnav__thread-title")
-    .map((node) => textContent(node.children));
+    .findAll((node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title"))
+    .map((node) => textContent(node.findByProps({ className: "sr-only" }).children));
   expect(titles).not.toContain("Archived but pinned");
 
   await act(async () => renderer.unmount());
