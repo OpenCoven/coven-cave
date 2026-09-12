@@ -163,6 +163,7 @@ import {
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
+  ChatCanvasView,
   MobileHandoffModal,
   NewReminderModal,
   OnboardingOverlay,
@@ -4516,6 +4517,10 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
+    ) : mode === "canvas" ? (
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ChatCanvasView familiarId={activeId} />
+      </div>
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
       // modes still resolve here (deep links / navigate-mode) but land on

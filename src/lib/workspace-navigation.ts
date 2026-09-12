@@ -23,6 +23,7 @@ export const WORKSPACE_NAV_ITEMS: readonly WorkspaceNavItem[] = [
   { id: "grimoire", label: "Memories", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", group: "explore", quiet: true },
   { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", group: "work", navHidden: true },
   { id: "salem", label: "Ask Salem", iconName: "ph:cat", description: "Ask the docs familiar — grounded answers from the Coven index and your Cave", group: "explore", navHidden: true },
+  { id: "canvas", label: "Canvas", iconName: "ph:squares-four", description: "Browse and edit saved sketches", group: "explore", quiet: true },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", group: "explore", quiet: true },
 ];
 

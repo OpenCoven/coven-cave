@@ -82,21 +82,8 @@ async function openGitHubImport(
     }),
   );
 
-  await page.goto("/?mode=chat");
-  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
-  const canvasTab = page.getByRole("tab", { name: "Canvas" });
-  await canvasTab.click();
-  // The Canvas scope mounts asynchronously (surface history navigation), and
-  // the add tile is its empty state. Wait for the surface itself before
-  // looking for the composer controls. A click can land before hydration
-  // completes on a cold server, so retry the tab once.
-  const canvasView = page.locator(".chat-canvas-view");
-  try {
-    await canvasView.waitFor({ state: "visible", timeout: 10_000 });
-  } catch {
-    await canvasTab.click();
-    await canvasView.waitFor({ state: "visible", timeout: 15_000 });
-  }
+  await page.goto("/?mode=canvas");
+  await expect(page.locator(".chat-canvas-view")).toBeVisible({ timeout: 60_000 });
 
   const startFromCode = page.getByRole("button", {
     name: "Start from code",
@@ -117,6 +104,9 @@ async function openGitHubImport(
 }
 
 test.describe("Canvas GitHub file import", () => {
+  // A standalone Canvas visit can pay the lazy gallery's cold dev compilation.
+  test.slow();
+
   test("reveals details after a valid URL and prefers the linked project", async ({
     page,
   }) => {
