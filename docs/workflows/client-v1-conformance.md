@@ -219,6 +219,44 @@ own diagnostic strings; if you add an assertion, keep secrets out of its detail
 text. Bearers and pairing secrets are 43 base64url characters and are trivially
 recognisable — but the rule is to not write them, not to scan for them.
 
+### Bounded startup discovery diagnostics
+
+A missing-discovery readiness outcome does not prove the file is absent.
+The startup reader distinguishes one filesystem read from JSON parsing and
+the existing object-shape check. Its final failure line is:
+
+```text
+client-v1-conformance: Client v1 discovery record is not published. [read=<READ>; publication=<PUBLICATION>]
+```
+
+`READ` is one of `not-found` (ENOENT), `access-denied` (EACCES),
+`operation-not-permitted` (EPERM), `not-directory` (ENOTDIR),
+`other-read-error`, `invalid-json`, or `invalid-shape`. Object records still
+pass through the existing endpoint and PID readiness checks; the diagnostic
+does not add or relax a discovery acceptance rule.
+
+The standalone publisher emits one fixed stderr line on refusal:
+`[cave] client-v1 discovery publication refused: <PUBLICATION>`.
+Its categories are `disabled-other`, `root-owner-unverified`,
+`root-owner-shared`, `target-owner-unverified`, `target-owner-shared`,
+`root-not-directory`, `root-symlink`, `target-not-file`, `endpoint-invalid`,
+and `authority-init`. These identify the refusal site, not its underlying
+Windows cause. Other filesystem or publication failures are `disabled-other`.
+Raw exception text and causes are not part of this line or the disabled banner.
+
+The harness observes at most 32 KiB of stderr, handles fragmented lines, and
+keeps the first complete recognized refusal. Without one, it reports
+`not-observed`, or `output-limit` if the observation budget is exhausted.
+It continues draining both output streams without forwarding raw output.
+The 120-second readiness deadline, polling, health/endpoint/PID precedence,
+and teardown are unchanged. Only the final missing-discovery outcome gains
+the suffix; there is no earlier generic missing line to mask it.
+
+These observations are diagnostic evidence only. They do not establish a
+repair, change ownership checks or waivers, infer reader/publisher path
+equality, or authorize publication. Coordinated consumers must bind reviewed
+Cave and Chat sources before the next protected OpenCoven/sdk#38 run.
+
 ## Findings a green run still reports
 
 The harness is written against what the wire does, not against what the

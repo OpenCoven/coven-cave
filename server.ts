@@ -446,7 +446,30 @@ const standaloneVerifiedWindowsPaths = new Set<string>();
 // would then read.
 const standaloneWaivedWindowsPaths = new Set<string>();
 
-function assertStandaloneWindowsExclusive(path: string, label: string): void {
+type StandaloneDiscoveryPublicationFailure =
+  | "root-owner-unverified"
+  | "root-owner-shared"
+  | "target-owner-unverified"
+  | "target-owner-shared"
+  | "root-not-directory"
+  | "root-symlink"
+  | "target-not-file"
+  | "endpoint-invalid"
+  | "authority-init";
+
+// Keep diagnostic attribution separate from raw exception text and causes.
+const standaloneDiscoveryPublicationFailures =
+  new WeakMap<object, StandaloneDiscoveryPublicationFailure>();
+
+function discoveryPublicationFailure(
+  category: StandaloneDiscoveryPublicationFailure,
+  error: Error,
+): Error {
+  standaloneDiscoveryPublicationFailures.set(error, category);
+  return error;
+}
+
+function assertStandaloneWindowsExclusive(path: string, label: "root" | "target"): void {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   if (standaloneWaivedWindowsPaths.has(path)) return;
   const subject = `Client v1 discovery ${label}`;
@@ -521,10 +544,10 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
     // The ONE condition the waiver covers: the host cannot answer the
     // question. Everything below this point had an answer.
     if (!waiver.granted) {
-      throw new Error(
+      throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
         unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
         { cause },
-      );
+      ));
     }
     standaloneWaivedWindowsPaths.add(path);
     console.warn(
@@ -546,7 +569,10 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
-    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
+    throw discoveryPublicationFailure(
+      `${label}-owner-shared`,
+      new Error(sharedOwnershipRefusal(subject, path, findings, waiver)),
+    );
   }
   if (report.repaired) {
     console.warn(
@@ -561,7 +587,7 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
 function requireStandaloneOwner(
   path: string,
   metadata: NonNullable<ReturnType<typeof lstatSync>>,
-  label: string,
+  label: "root" | "target",
 ): void {
   // The uid comparison alone was inert on win32 — `process.getuid` is undefined
   // there and `lstat` reports uid 0 for every path — so the discovery record
@@ -569,15 +595,18 @@ function requireStandaloneOwner(
   // that can answer neither question is refused rather than waved through.
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
-      throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+      throw discoveryPublicationFailure(
+        `${label}-owner-shared`,
+        new Error(`Client v1 discovery ${label} must be owned by the current user.`),
+      );
     }
     return;
   }
   if (process.platform !== "win32") {
-    throw new Error(
+    throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
       `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: `
       + `this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`,
-    );
+    ));
   }
   assertStandaloneWindowsExclusive(path, label);
 }
@@ -586,7 +615,10 @@ function assertStandaloneDiscoveryTarget(path: string): void {
   try {
     const metadata = lstatSync(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
+      throw discoveryPublicationFailure(
+        "target-not-file",
+        new Error(`Client v1 discovery target must be a regular file: ${path}.`),
+      );
     }
     requireStandaloneOwner(path, metadata, "target");
   } catch (error) {
@@ -600,16 +632,30 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const rootMetadata = lstatSync(root);
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
-    throw new Error("Client v1 discovery root must be a real directory.");
+    throw discoveryPublicationFailure(
+      rootMetadata.isSymbolicLink() ? "root-symlink" : "root-not-directory",
+      new Error("Client v1 discovery root must be a real directory."),
+    );
   }
   requireStandaloneOwner(root, rootMetadata, "root");
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
-    throw new Error("Client v1 discovery root must not resolve through a symlink.");
+    throw discoveryPublicationFailure(
+      "root-symlink",
+      new Error("Client v1 discovery root must not resolve through a symlink."),
+    );
   }
   chmodSync(root, 0o700);
 
-  const url = new URL(endpoint);
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch (cause) {
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.", { cause }),
+    );
+  }
   const loopback = url.hostname === "127.0.0.1"
     || url.hostname === "localhost"
     || url.hostname === "[::1]";
@@ -624,7 +670,10 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     || url.hash
     || /%(?:2f|5c)/i.test(endpoint)
   ) {
-    throw new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.");
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL."),
+    );
   }
 
   const path = clientV1DiscoveryFile();
@@ -661,11 +710,17 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     };
   } else {
     if (CLIENT_V1_AUTHORITY_BOOTSTRAP === undefined) {
-      throw new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        new Error("Client v1 HPKE authority initialization failed."),
+      );
     }
     if ("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP) {
-      throw clientV1AuthorityInitializationError
-        ?? new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        clientV1AuthorityInitializationError
+          ?? new Error("Client v1 HPKE authority initialization failed."),
+      );
     }
     const bootstrap = CLIENT_V1_AUTHORITY_BOOTSTRAP;
     record = {
@@ -1960,9 +2015,11 @@ server.headersTimeout = 80_000;
  */
 function reportClientV1DiscoveryUnavailable(error: unknown): void {
   clientV1DiscoveryPublished = false;
-  const detail = error instanceof Error ? error.message : String(error);
+  const category = typeof error === "object" && error !== null
+    ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other"
+    : "disabled-other";
   console.error("[cave] ─────────────── CLIENT V1 DISABLED ───────────────");
-  console.error(`[cave] ${detail}`);
+  console.error(`[cave] client-v1 discovery publication refused: ${category}`);
   console.error(
     "[cave] The client v1 discovery record was NOT published, so paired clients"
     + " cannot find this server and every client v1 request stays refused."

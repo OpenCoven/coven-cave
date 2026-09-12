@@ -4,6 +4,7 @@ import { readFile, readdir, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import {
   AUTHORITY_TAKEOVER_ASSERTION_IDS,
@@ -24,7 +25,10 @@ import {
   checkRecordShape,
   checkRecordValues,
   buildCaveEnvironment,
+  CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT,
+  caveDiscoveryReadinessDiagnostic,
   caveReadinessFailure,
+  createCaveDiscoveryPublicationObserver,
   createConformanceFixtureRoot,
   createRecorder,
   expectedAssertionIds,
@@ -36,6 +40,7 @@ import {
   parseConformanceArgs,
   parseRawResponse,
   recordAuthorityTakeoverResult,
+  readCaveDiscovery,
   requestOnce,
   renderConformanceRecord,
   stopCave,
@@ -298,6 +303,223 @@ test("bounded readiness requests reject a stalled HTTP response", async () => {
     await new Promise((resolve, reject) =>
       server.close((error) => error ? reject(error) : resolve()),
     );
+  }
+});
+
+test("classifies discovery read failures without copying raw exceptions or causes", async () => {
+  for (const [code, readFailure] of [
+    ["ENOENT", "not-found"],
+    ["EACCES", "access-denied"],
+    ["EPERM", "operation-not-permitted"],
+    ["ENOTDIR", "not-directory"],
+    ["EIO", "other-read-error"],
+    ["private-code", "other-read-error"],
+  ]) {
+    const error = Object.assign(new Error("private path, secret, ACL and contents", {
+      cause: new Error("private cause"),
+    }), { code, stdout: "private stdout", stderr: "private stderr" });
+    let reads = 0;
+    assert.deepEqual(await readCaveDiscovery("private-path", async (file, encoding) => {
+      reads += 1;
+      assert.equal(file, "private-path");
+      assert.equal(encoding, "utf8");
+      throw error;
+    }), { discovery: null, readFailure });
+    assert.equal(reads, 1);
+  }
+  for (const error of [
+    "ENOENT private string",
+    null,
+    Object.create({ code: "ENOENT" }),
+    Object.defineProperty({}, "code", { get() { throw new Error("must not inspect getters"); } }),
+  ]) {
+    assert.deepEqual(
+      await readCaveDiscovery("unused", async () => { throw error; }),
+      { discovery: null, readFailure: "other-read-error" },
+    );
+  }
+});
+
+test("distinguishes invalid discovery JSON and shape without adding readiness gates", async () => {
+  assert.deepEqual(
+    await readCaveDiscovery("unused", async () => "{ private malformed JSON"),
+    { discovery: null, readFailure: "invalid-json" },
+  );
+  for (const text of ["null", "false", "42", '"private contents"', "[]"]) {
+    assert.deepEqual(
+      await readCaveDiscovery("unused", async () => text),
+      { discovery: null, readFailure: "invalid-shape" },
+    );
+  }
+  for (const discovery of [{}, { endpoint: "http://127.0.0.1:4310", pid: 4310 }]) {
+    assert.deepEqual(
+      await readCaveDiscovery("unused", async () => JSON.stringify(discovery)),
+      { discovery, readFailure: null },
+    );
+  }
+});
+
+test("observes only fixed publisher refusal lines across fragmented stderr", () => {
+  const line = "[cave] client-v1 discovery publication refused: root-owner-unverified\r\n";
+  for (let split = 0; split <= line.length; split += 1) {
+    const observer = createCaveDiscoveryPublicationObserver();
+    observer.observe(Buffer.from("private unrelated output\n"));
+    observer.observe(Buffer.from(line.slice(0, split)));
+    observer.observe(Buffer.from(line.slice(split)));
+    observer.observe(Buffer.from("[cave] client-v1 discovery publication refused: target-owner-shared\n"));
+    observer.finish();
+    assert.equal(observer.category(), "root-owner-unverified", `split ${split}`);
+  }
+  for (const invalid of [
+    "root-owner-unverified private-path",
+    "unknown",
+    "not-observed",
+    "output-limit",
+  ]) {
+    const observer = createCaveDiscoveryPublicationObserver();
+    observer.observe(`[cave] client-v1 discovery publication refused: ${invalid}\n`);
+    observer.observe("prefix [cave] client-v1 discovery publication refused: root-owner-shared\n");
+    observer.finish();
+    assert.equal(observer.category(), "not-observed");
+  }
+  const observer = createCaveDiscoveryPublicationObserver();
+  observer.observe("[cave] client-v1 discovery publication refused: disabled-other");
+  observer.finish();
+  assert.equal(observer.category(), "disabled-other");
+});
+
+test("caps publisher stderr observation and preserves the first complete refusal", () => {
+  const line = "[cave] client-v1 discovery publication refused: root-symlink\n";
+  const limited = createCaveDiscoveryPublicationObserver();
+  limited.observe(Buffer.alloc(CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT, 120));
+  limited.observe(line);
+  limited.observe(Buffer.alloc(CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT * 4));
+  limited.finish();
+  assert.equal(limited.category(), "output-limit");
+
+  const observed = createCaveDiscoveryPublicationObserver();
+  observed.observe(Buffer.concat([
+    Buffer.from(line),
+    Buffer.alloc(CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT * 2, 120),
+  ]));
+  observed.finish();
+  assert.equal(observed.category(), "root-symlink");
+
+  const truncated = createCaveDiscoveryPublicationObserver();
+  truncated.observe(Buffer.alloc(CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT - 8, 120));
+  truncated.observe(`\n${line}`);
+  truncated.finish();
+  assert.equal(truncated.category(), "output-limit");
+});
+
+test("formats exactly the coordinated finite read/publication contract", () => {
+  const missing = "Client v1 discovery record is not published.";
+  const reads = [
+    "not-found", "access-denied", "operation-not-permitted", "not-directory",
+    "other-read-error", "invalid-json", "invalid-shape",
+  ];
+  const publications = [
+    "not-observed", "output-limit", "disabled-other", "root-owner-unverified",
+    "root-owner-shared", "target-owner-unverified", "target-owner-shared",
+    "root-not-directory", "root-symlink", "target-not-file", "endpoint-invalid",
+    "authority-init",
+  ];
+  for (const read of reads) {
+    for (const publication of publications) {
+      assert.equal(
+        caveDiscoveryReadinessDiagnostic(missing, read, publication),
+        `${missing} [read=${read}; publication=${publication}]`,
+      );
+    }
+  }
+  for (const failure of [
+    "Cave readiness timed out after 120 seconds.",
+    "Cave exited before readiness.",
+    "Cave health is not ready.",
+    "Client v1 discovery endpoint does not match the listening Cave.",
+    "Client v1 discovery pid does not match the launched Cave.",
+    null,
+  ]) {
+    assert.equal(caveDiscoveryReadinessDiagnostic(failure, "not-found", "disabled-other"), failure);
+  }
+  assert.equal(caveDiscoveryReadinessDiagnostic(missing, "private", "disabled-other"), missing);
+  assert.equal(caveDiscoveryReadinessDiagnostic(missing, "not-found", "private"), missing);
+  assert.equal(caveDiscoveryReadinessDiagnostic(missing), missing);
+});
+
+test("startup drains stderr and emits only the final diagnostic after unchanged readiness gates and teardown", async () => {
+  const source = await readFile(new URL("./client-v1-conformance.mjs", import.meta.url), "utf8");
+  const startSource = /export async function startCave\(input\) \{[\s\S]*?\n\}/u.exec(source);
+  assert.ok(startSource);
+  const origin = "http://127.0.0.1:4310";
+  const missing = "Client v1 discovery record is not published.";
+  for (const [healthStatus, discovery, expected, requestFails, exits] of [
+    [200, null, `${missing} [read=access-denied; publication=root-owner-unverified]`],
+    [503, null, "Cave health is not ready."],
+    [200, { endpoint: "http://127.0.0.1:4311", pid: 4310 }, "Client v1 discovery endpoint does not match the listening Cave."],
+    [200, { endpoint: origin, pid: 9999 }, "Client v1 discovery pid does not match the launched Cave."],
+    [200, null, "Cave readiness timed out after 120 seconds.", true],
+    [200, null, "Cave exited before readiness.", true, true],
+    [200, { endpoint: origin, pid: 4310 }, null],
+  ]) {
+    const child = new EventEmitter();
+    child.pid = 4310;
+    let drains = 0;
+    let reads = 0;
+    let stops = 0;
+    let now = 0;
+    child.stdout = { resume() { drains += 1; } };
+    child.stderr = new EventEmitter();
+    child.stderr.resume = () => {
+      drains += 1;
+      child.stderr.emit("data", Buffer.from("private stderr\n[cave] client-v1 discovery publi"));
+      child.stderr.emit("data", Buffer.from("cation refused: root-owner-unverified\n"));
+      child.stderr.emit("data", Buffer.from("private late stderr\n"));
+      child.stderr.emit("end");
+    };
+    const start = runInNewContext(`(${startSource[0].replace(/^export /u, "")})`, {
+      buildCaveEnvironment: () => ({}),
+      spawn: () => child,
+      process: { execPath: "unused-node" },
+      repositoryRoot: "unused-root",
+      path,
+      CLIENT_V1_PREFIX: "/api/client/v1",
+      Date: { now: () => now },
+      setTimeout: (resolve, delay) => {
+        assert.equal(delay, 250);
+        now += exits ? delay : 120_000;
+        resolve();
+      },
+      requestOnce: async (_origin, options) => {
+        assert.equal(options.timeoutMs, 1_000);
+        if (exits) child.emit("exit");
+        if (requestFails) throw new Error("private HTTP failure");
+        return { status: healthStatus };
+      },
+      readCaveDiscovery: async () => {
+        reads += 1;
+        return { discovery, readFailure: discovery === null ? "access-denied" : null };
+      },
+      caveReadinessFailure,
+      caveDiscoveryReadinessDiagnostic,
+      createCaveDiscoveryPublicationObserver,
+      stopCave: async () => { stops += 1; },
+    });
+    if (expected === null) {
+      const result = await start({ port: 4310, caveHomeDir: "unused-home" });
+      assert.equal(result.child, child);
+      assert.equal(stops, 0);
+    } else {
+      await assert.rejects(start({ port: 4310, caveHomeDir: "unused-home" }), (error) => {
+        assert.equal(error.message, expected);
+        assert.equal(Object.hasOwn(error, "cause"), false);
+        assert.doesNotMatch(String(error), /private/);
+        return true;
+      });
+      assert.equal(stops, 1);
+    }
+    assert.equal(drains, 2);
+    assert.equal(reads, requestFails ? 0 : 1);
   }
 });
 
