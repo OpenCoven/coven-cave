@@ -16,8 +16,8 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 
 assert.match(
   surface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "canvas"/,
-  "chat surface keeps the Familiar scope and Canvas scope",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar";/,
+  "chat surface keeps the Familiar scope while Canvas lives in Explore",
 );
 assert.doesNotMatch(
   surface,
