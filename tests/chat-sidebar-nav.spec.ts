@@ -246,6 +246,18 @@ test.describe("chat threads rail", () => {
       actionsLeft: element.querySelector(".cnav__row-actions")!.getBoundingClientRect().left,
     }));
     expect(titleAndActions.titleRight).toBeLessThanOrEqual(titleAndActions.actionsLeft);
+
+    await actions.first().click();
+    const pinnedUnpin = page.locator(RAIL).locator('button[title="Unpin chat"]')
+      .and(page.getByRole("button", { name: "Unpin Refactor auth flow", exact: true }));
+    await expect(pinnedUnpin).toBeVisible();
+    const pinnedBox = await renderedBox(pinnedUnpin);
+    expect(pinnedBox.width).toBeGreaterThanOrEqual(32);
+    expect(pinnedBox.height).toBeGreaterThanOrEqual(32);
+    await page.keyboard.press("Tab");
+    await pinnedUnpin.focus();
+    await expect(pinnedUnpin).toHaveCSS("outline-style", "solid");
+    await expect(pinnedUnpin).toHaveCSS("outline-width", "2px");
   });
 
   test("is docked in the chat surface, leaving the app sidebar unchanged", async ({ page }) => {

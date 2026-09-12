@@ -669,7 +669,7 @@
   padding-right: 76px;
 }
 @media (min-width: 1024px) {
-  .cnav__row-actions .cnav__icon-btn {
+  .cnav__thread .cnav__icon-btn {
     width: var(--space-8);
     height: var(--space-8);
   }
