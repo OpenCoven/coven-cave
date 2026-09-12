@@ -180,6 +180,86 @@ async function gotoChat(page: Page, { expectRail = true } = {}) {
 }
 
 test.describe("chat threads rail", () => {
+  test("desktop session-list actions have 32px targets and keyboard focus rings", async ({ page }, testInfo) => {
+    await gotoChat(page);
+    await page.getByRole("tab", { name: "Projects", exact: true }).click();
+    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    const row = page.locator(".chat-list-row").filter({ hasText: "Refactor auth flow" });
+    await row.hover();
+    const actions = row.locator(".chat-list-row-actions button");
+    await expect(actions).toHaveCount(5);
+    const boxes = await Promise.all((await actions.all()).map(renderedBox));
+    await testInfo.attach("session-list-target-boxes", { body: JSON.stringify(boxes), contentType: "application/json" });
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await page.mouse.move(0, 0);
+    for (const action of await actions.all()) {
+      await page.keyboard.press("Tab");
+      await action.focus();
+      await expect(action).toHaveCSS("opacity", "1");
+      await expect(action).toHaveCSS("outline-style", "solid");
+      await expect(action).toHaveCSS("outline-width", "2px");
+    }
+    await actions.first().click();
+    const sectionToggle = page.getByRole("button", { name: "Collapse Pinned", exact: true });
+    await expect(sectionToggle).toBeVisible();
+    const sectionBox = await renderedBox(sectionToggle);
+    expect(sectionBox.width).toBeGreaterThanOrEqual(32);
+    expect(sectionBox.height).toBeGreaterThanOrEqual(32);
+    await page.keyboard.press("Tab");
+    await sectionToggle.focus();
+    await expect(sectionToggle).toHaveCSS("outline-style", "solid");
+    await expect(sectionToggle).toHaveCSS("outline-width", "2px");
+  });
+
+  test("desktop row controls have 32px targets and visible keyboard focus", async ({ page }, testInfo) => {
+    await gotoChat(page);
+    const row = page.locator(RAIL).locator(".cnav__thread").filter({ hasText: "Refactor auth flow" });
+    await row.hover();
+    const actions = row.locator(".cnav__row-actions > button");
+    await expect(actions).toHaveCount(3);
+    const targets = [...await actions.all(), page.getByRole("button", { name: "Collapse chat list" })];
+    const boxes = await Promise.all(targets.map(renderedBox));
+    await testInfo.attach("desktop-target-boxes", { body: JSON.stringify(boxes), contentType: "application/json" });
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await page.mouse.move(0, 0);
+    await row.locator(".cnav__thread-main").focus();
+    await page.keyboard.press("Tab");
+    await expect(actions.first()).toBeFocused();
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await expect(actions.first()).toHaveCSS("opacity", "1");
+      await expect(actions.first()).toHaveCSS("outline-style", "solid");
+      await expect(actions.first()).toHaveCSS("outline-width", "2px");
+    }
+    await narrowChatRail(page);
+    const titleAndActions = await row.evaluate((element) => ({
+      titleRight: element.querySelector(".cnav__thread-copy")!.getBoundingClientRect().right,
+      actionsLeft: element.querySelector(".cnav__row-actions")!.getBoundingClientRect().left,
+    }));
+    expect(titleAndActions.titleRight).toBeLessThanOrEqual(titleAndActions.actionsLeft);
+
+    await actions.first().click();
+    const pinnedUnpin = page.locator(RAIL).locator('button[title="Unpin chat"]')
+      .and(page.getByRole("button", { name: "Unpin Refactor auth flow", exact: true }));
+    await expect(pinnedUnpin).toBeVisible();
+    const pinnedBox = await renderedBox(pinnedUnpin);
+    expect(pinnedBox.width).toBeGreaterThanOrEqual(32);
+    expect(pinnedBox.height).toBeGreaterThanOrEqual(32);
+    await page.keyboard.press("Tab");
+    await pinnedUnpin.focus();
+    await expect(pinnedUnpin).toHaveCSS("outline-style", "solid");
+    await expect(pinnedUnpin).toHaveCSS("outline-width", "2px");
+  });
+
   test("is docked in the chat surface, leaving the app sidebar unchanged", async ({ page }) => {
     await gotoChat(page);
     const nav = page.locator('aside[aria-label="Sidebar"]');
