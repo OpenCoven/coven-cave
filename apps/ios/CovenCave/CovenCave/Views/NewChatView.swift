@@ -73,8 +73,9 @@ struct NewChatView: View {
                 }
 
                 if isGroup {
-                    Section("Group name (optional)") {
-                        TextField("e.g. Research crew", text: $groupName)
+                    Section("Group name (Optional)") {
+                        TextField("e.g., Research crew", text: $groupName)
+                            .accessibilityLabel("Group name")
                     }
                 }
 
@@ -90,7 +91,7 @@ struct NewChatView: View {
                         Text(blockedMessage.body)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                        Button("Refresh Chats") {
+                        Button("Refresh chats") {
                             Task {
                                 await app.loadFamiliars()
                                 await app.loadSessions()
@@ -107,7 +108,7 @@ struct NewChatView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isGroup ? "Create" : "Start") { start() }
+                    Button(isGroup ? "Create group" : "Start chat") { start() }
                         .disabled(!canLaunchChat)
                 }
             }
@@ -130,7 +131,7 @@ struct NewChatView: View {
                 Text(activeProject.root)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("New chats always start in the active project. Switch projects from Chats to use another root.")
+                Text("New chats start in the active project. Switch projects from Chats to use a different project.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -150,7 +151,7 @@ struct NewChatView: View {
         if fixedFamiliarId == nil {
             Section(selected.isEmpty ? "Choose familiars" : "\(selectedFamiliarIds.count) selected") {
                 if availableFamiliars.isEmpty {
-                    Text("No familiars are available in \(activeProject?.name ?? "the active project"). Refresh Chats or switch projects.")
+                    Text("No familiars are available in \(activeProject?.name ?? "the active project"). Refresh chats or switch projects.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -201,7 +202,7 @@ struct NewChatView: View {
            !availableFamiliarIDs.contains(fixedFamiliar.id) {
             return (
                 "This familiar is no longer in \(activeProject?.name ?? "the active project").",
-                "Refresh Chats or switch projects, then try again.",
+                "Refresh chats or switch projects, then try again.",
                 "person.crop.circle.badge.exclamationmark"
             )
         }
@@ -211,8 +212,8 @@ struct NewChatView: View {
                 ? "Selected familiar"
                 : "Selected familiars"
             return (
-                "\(noun) no longer belong to \(activeProject?.name ?? "the active project").",
-                "Refresh Chats or switch projects, then choose again. \(unavailableSelectedFamiliarNames)",
+                "\(noun) unavailable in \(activeProject?.name ?? "the active project").",
+                "Refresh chats or switch projects, then choose again. \(unavailableSelectedFamiliarNames)",
                 "person.crop.circle.badge.exclamationmark"
             )
         }
@@ -253,9 +254,9 @@ struct NewChatView: View {
             let projectName = activeProject?.name ?? "the active project"
             let message: String
             if revokedNames.count == 1, let revokedName = revokedNames.first {
-                message = "\(revokedName) can’t access \(projectName) anymore. Refresh Chats or switch projects, then choose again."
+                message = "\(revokedName) can’t access \(projectName) anymore. Refresh chats or switch projects, then choose again."
             } else {
-                message = "Some selected familiars can’t access \(projectName) anymore. Refresh Chats or switch projects, then choose again. \(revokedNames.joined(separator: ", "))"
+                message = "Some selected familiars can’t access \(projectName) anymore. Refresh chats or switch projects, then choose again. \(revokedNames.joined(separator: ", "))"
             }
             app.showToast(
                 message,

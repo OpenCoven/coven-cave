@@ -14,6 +14,27 @@ const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift")
 const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const camera = await read("apps/ios/CovenCave/CovenCave/Views/CameraPicker.swift");
+const newChat = await read("apps/ios/CovenCave/CovenCave/Views/NewChatView.swift");
+const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+
+// Copy uses the live design-language contract, not the prototype's terminology.
+assert.match(chatView, /Text\("Start a chat"\)/);
+assert.match(chatView, /Describe a task or choose a suggestion below\./);
+assert.match(chatView, /"What tasks need attention\?"/);
+assert.match(chatView, /"Work on the next priority"/);
+assert.doesNotMatch(chatView, /"Board unavailable"|"Load the live board"|"New Messages"/);
+assert.match(chatView, /TextField\("Write a message…", text: \$draft, axis: \.vertical\)/);
+assert.match(chatView, /TextField\("Write a message…"[\s\S]{0,120}\.accessibilityLabel\("Message"\)/);
+assert.match(newChat, /Button\(isGroup \? "Create group" : "Start chat"\)/);
+assert.match(newChat, /Button\("Refresh chats"\)/);
+assert.match(newChat, /Section\("Group name \(Optional\)"\)/);
+assert.match(newChat, /TextField\("e\.g\., Research crew"[\s\S]{0,120}\.accessibilityLabel\("Group name"\)/);
+assert.match(bubble, /Label\("Open in reader",/);
+assert.match(bubble, /Label\("Forward to familiar",/);
+assert.match(chatView, /FamiliarPickerSheet\(title: "Forward to familiar"\)/);
+assert.match(chatView, /Label\("Copy response", systemImage: "doc\.on\.doc"\)/);
+assert.match(bubble, /Label\("Delete message",/);
+assert.match(bubble, /Label\(message\.isError \? "Retry reply" : "Regenerate reply",/);
 
 // ── Reusable chrome: every icon-only control is labelled; accent is scarce ──
 assert.match(chrome, /struct CircularIconButton: View/, "circular icon button is a shared component");

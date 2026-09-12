@@ -71,7 +71,7 @@ struct ChatView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
     @State private var draftPersistenceTask: Task<Void, Never>?
-    /// "New Messages" divider: computed once per visit, *before*
+    /// "New messages" divider: computed once per visit, *before*
     /// `markFamiliarViewed` moves the seen boundary, then left in place for
     /// the whole visit (re-appears from pushes must not dissolve it).
     @State private var unreadDividerId: String?
@@ -326,7 +326,7 @@ struct ChatView: View {
             }
         }
         .sheet(item: $forwardingMessage) { message in
-            FamiliarPickerSheet(title: "Forward to Familiar") { familiar in
+            FamiliarPickerSheet(title: "Forward to familiar") { familiar in
                 forwardingMessage = nil
                 forward(message, to: familiar)
             }
@@ -394,7 +394,7 @@ struct ChatView: View {
             if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
                 draft = saved
             }
-            // Place the "New Messages" divider from the seen boundary BEFORE
+            // Place the "New messages" divider from the seen boundary BEFORE
             // marking viewed moves it.
             computeUnreadDividerIfNeeded()
             // Opening the chat clears the unread badge for its familiar(s) and
@@ -850,7 +850,7 @@ struct ChatView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(cards.first?.title ?? "Open Tasks")
+                        Text(cards.first?.title ?? "Open tasks")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -1135,7 +1135,7 @@ struct ChatView: View {
 
     // MARK: - Empty state
 
-    /// Cold-start state per the design's "Start a new session" screen: a
+    /// Cold-start state per the design's "Start a chat" screen: a
     /// rotated-square sigil with a soft glow, serif headline, a short warded
     /// line, and "Conjure something" starter cards. Cards FILL the composer
     /// (focused, ready to tweak) rather than firing a send — same convention
@@ -1144,7 +1144,7 @@ struct ChatView: View {
         VStack(spacing: 18) {
             sigil
             VStack(spacing: 8) {
-                Text("Start a new session")
+                Text("Start a chat")
                     .font(.system(size: 26, weight: .medium, design: .serif))
                     .italic()
                     .foregroundStyle(.primary)
@@ -1157,7 +1157,7 @@ struct ChatView: View {
                     permissionsFamiliar = familiar
                 } label: {
                     (
-                        Text("Speak your intent — a familiar answers from the desktop. Repo access follows \(wardScope) active ")
+                        Text("Describe a task or choose a suggestion below. Your familiar works from the desktop. Project access follows \(wardScope) active ")
                             .foregroundStyle(.secondary)
                         + Text("ward.")
                             .foregroundStyle(chrome.accent)
@@ -1248,17 +1248,17 @@ struct ChatView: View {
             if $0.priority.rank != $1.priority.rank { return $0.priority.rank < $1.priority.rank }
             return (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
         }.first
-        let nextLabel = next.map { "Chase the \($0.title)" } ?? "Chase the next priority"
+        let nextLabel = next.map { "Work on \($0.title)" } ?? "Work on the next priority"
         let nextHint = next.map {
             [$0.projectId, $0.githubLinks.first?.number.map { "#\($0)" }]
                 .compactMap { $0 }
                 .joined(separator: " · ")
         }.flatMap { $0.isEmpty ? nil : $0 } ?? "Ask your familiar to choose"
         let boardHint = app.tasksError != nil
-            ? "Board unavailable"
+            ? "Tasks unavailable — open Tasks to retry"
             : app.tasksLoaded
                 ? "\(running) running · \(blocked) blocked"
-                : "Load the live board"
+                : "Open Tasks to load tasks"
         let priorityHint = app.tasksError != nil && !app.tasks.isEmpty
             ? "Cached · \(nextHint)"
             : nextHint
@@ -1272,7 +1272,7 @@ struct ChatView: View {
                     : "\(openPullRequestURLs.count) open"),
             EmptyChatSuggestion(
                 icon: "checkmark.square",
-                label: "What's on the board?",
+                label: "What tasks need attention?",
                 hint: boardHint),
             EmptyChatSuggestion(
                 icon: "scope",
@@ -1475,7 +1475,8 @@ struct ChatView: View {
             .buttonStyle(.glassPress)
             .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
-            TextField("Ask something…", text: $draft, axis: .vertical)
+            TextField("Write a message…", text: $draft, axis: .vertical)
+                .accessibilityLabel("Message")
                 .font(isEmptyThread ? .body : .callout)
                 .lineLimit(1...6)
                 .padding(.vertical, isEmptyThread ? 8 : 6)
@@ -2590,7 +2591,7 @@ private struct UnreadDividerView: View {
     var body: some View {
         HStack(spacing: 10) {
             hairline
-            Text("New Messages")
+            Text("New messages")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
                 .fixedSize()
@@ -2644,7 +2645,7 @@ struct ResponseReaderView: View {
                 UIPasteboard.general.string = item.markdown
                 Haptics.tap()
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label("Copy response", systemImage: "doc.on.doc")
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
@@ -2720,7 +2721,7 @@ struct FamiliarPickerSheet: View {
         NavigationStack {
             List {
                 if familiars.isEmpty {
-                    Text("No familiars found. Pull to refresh on the Chats screen.")
+                    Text("No familiars are available. Return to Chats and refresh, or check your connection.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(familiars) { familiar in

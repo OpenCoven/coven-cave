@@ -20,7 +20,7 @@ final class NewChatUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Coven Cave"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["New chat project"].exists)
-        XCTAssertTrue(app.buttons["Start"].isEnabled)
+        XCTAssertTrue(app.buttons["Start chat"].isEnabled)
     }
 
     @MainActor
@@ -33,7 +33,7 @@ final class NewChatUITests: XCTestCase {
             app.staticTexts["This familiar is no longer in Coven Cave."]
                 .waitForExistence(timeout: 10)
         )
-        XCTAssertFalse(app.buttons["Start"].isEnabled)
+        XCTAssertFalse(app.buttons["Start chat"].isEnabled)
         XCTAssertFalse(app.buttons["New chat project"].exists)
     }
 
@@ -58,5 +58,23 @@ final class NewChatUITests: XCTestCase {
         XCTAssertTrue(
             projectContext.waitForExistence(timeout: 10) && projectContext.isHittable
         )
+    }
+
+    @MainActor
+    func testEmptyChatUsesCanonicalCopyAndPersistentComposerLabel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-empty-chat"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Start a chat"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Start a new session"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Message"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["Session controls"].exists,
+                      "execution controls retain their precise session terminology")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Native chat copy"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 }
