@@ -13,24 +13,8 @@ struct LiveVoiceCallView: View {
 
     @State private var model: LiveVoiceCallModel
 
-    init(
-        familiar: Familiar,
-        sessionId: String?,
-        projectRoot: String?,
-        client: CaveClient?,
-        onSessionEstablished: ((String) -> Void)? = nil,
-        onSessionDiscarded: ((String) -> Void)? = nil,
-        onCleanupWarning: ((String) -> Void)? = nil
-    ) {
-        _model = State(initialValue: LiveVoiceCallModel(
-            familiar: familiar,
-            sessionId: sessionId,
-            projectRoot: projectRoot,
-            client: client,
-            onSessionEstablished: onSessionEstablished,
-            onSessionDiscarded: onSessionDiscarded,
-            onCleanupWarning: onCleanupWarning
-        ))
+    init(model: LiveVoiceCallModel) {
+        _model = State(initialValue: model)
     }
 
     var body: some View {
@@ -44,9 +28,13 @@ struct LiveVoiceCallView: View {
             .padding(20)
         }
         .task { await model.start() }
-        .onChange(of: model.state.phase) { _, phase in
-            if phase == .ended { dismiss() }
+        .onChange(of: model.authorityIsCurrent, initial: true) { _, _ in
+            model.refreshAuthority()
         }
+        .onChange(of: model.state.phase) { _, phase in
+            if phase == .ended, !model.authorityRevoked { dismiss() }
+        }
+        .onDisappear { model.end() }
     }
 
     // MARK: - Header

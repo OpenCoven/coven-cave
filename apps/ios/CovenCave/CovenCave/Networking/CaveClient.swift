@@ -1030,7 +1030,7 @@ struct CaveClient {
                     req.timeoutInterval = 600
 
                     onRequestStarted()
-                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {
                         let data = try await Self.readServerErrorBody(from: bytes)
@@ -1076,7 +1076,7 @@ struct CaveClient {
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
-                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
                     if (resp as? HTTPURLResponse)?.statusCode == 404 {
                         throw NoResumableRun()
                     }

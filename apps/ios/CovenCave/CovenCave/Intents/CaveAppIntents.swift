@@ -1,11 +1,12 @@
 import AppIntents
 import Foundation
 
-/// Create a reminder by voice / Spotlight / Shortcuts — e.g. "New Coven reminder".
-/// Requires local device authentication, then uses the saved connection directly.
+/// Retained only so a saved shortcut explains the retirement without writing
+/// reminders or reopening a retired destination.
 struct NewReminderIntent: AppIntent {
     static var title: LocalizedStringResource = "New Reminder"
-    static var description = IntentDescription("Create a reminder in Coven Cave.")
+    static var description = IntentDescription("Reminders are available on desktop.")
+    static var isDiscoverable: Bool = false
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @Parameter(title: "Reminder", requestValueDialog: "What's the reminder?")
@@ -20,63 +21,45 @@ struct NewReminderIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let connection = CaveConnection.load() else {
-            return .result(dialog: "Open Coven Cave and connect to your desktop first.")
-        }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .result(dialog: "I need something to remind you about.") }
-        let fireAt = when ?? Date().addingTimeInterval(3600)
-        do {
-            try await CaveClient(connection: connection).createReminder(title: trimmed, fireAt: fireAt)
-            return .result(dialog: "Reminder set: \(trimmed)")
-        } catch {
-            return .result(dialog: "Couldn't reach your desktop to set that reminder.")
-        }
+        .result(dialog: "Reminders are available in Coven Cave on your desktop.")
     }
 }
 
-/// Authenticated task summary — e.g. "What's running in Coven Cave".
+/// A compatibility response for previously saved task-summary shortcuts.
 struct RunningTasksIntent: AppIntent {
     static var title: LocalizedStringResource = "Running Tasks"
-    static var description = IntentDescription("Summarize the tasks currently running.")
+    static var description = IntentDescription("Tasks are available on desktop.")
+    static var isDiscoverable: Bool = false
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let connection = CaveConnection.load() else {
-            return .result(dialog: "Open Coven Cave and connect to your desktop first.")
-        }
-        let running = ((try? await CaveClient(connection: connection).tasks()) ?? [])
-            .filter { $0.status == .running }
-        guard !running.isEmpty else { return .result(dialog: "Nothing is running right now.") }
-        let names = running.prefix(3).map(\.title).joined(separator: ", ")
-        let more = running.count > 3 ? ", and \(running.count - 3) more" : ""
-        let count = running.count
-        return .result(dialog: "\(count) task\(count == 1 ? "" : "s") running: \(names)\(more).")
+        .result(dialog: "Tasks are available in Coven Cave on your desktop.")
     }
 }
 
-/// Surfaces the intents to Siri, Spotlight, and the Shortcuts app with spoken
-/// phrases. Discovered automatically once the app has launched at least once.
+struct OpenChatsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Open Chats"
+    static var description = IntentDescription("Open your Coven Cave conversations.")
+    static var openAppWhenRun: Bool = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenURLIntent(URL(string: "covencave://chats")!))
+    }
+}
+
+/// Only chat is offered to Siri, Spotlight, and the Shortcuts app.
 struct CaveShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: NewReminderIntent(),
+            intent: OpenChatsIntent(),
             phrases: [
-                "New \(.applicationName) reminder",
-                "Set a reminder in \(.applicationName)",
+                "Open \(.applicationName) chats",
+                "Open chats in \(.applicationName)",
             ],
-            shortTitle: "New Reminder",
-            systemImageName: "bell.badge"
-        )
-        AppShortcut(
-            intent: RunningTasksIntent(),
-            phrases: [
-                "What's running in \(.applicationName)",
-                "\(.applicationName) running tasks",
-            ],
-            shortTitle: "Running Tasks",
-            systemImageName: "play.circle"
+            shortTitle: "Open Chats",
+            systemImageName: "bubble.left.and.bubble.right"
         )
     }
 }

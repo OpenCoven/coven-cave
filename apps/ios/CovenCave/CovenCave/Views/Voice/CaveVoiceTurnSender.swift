@@ -20,8 +20,14 @@ enum VoiceTurnSendError: LocalizedError {
 final class CaveVoiceTurnSender: VoiceTurnSending {
     private let sendStream: (CaveClient.SendBody) -> AsyncThrowingStream<CaveClient.StreamFrame, Error>
 
-    init(client: CaveClient) {
-        self.sendStream = client.sendStream
+    init(client: CaveClient, liveDispatchLeaseIsCurrent: @escaping () -> Bool) {
+        self.sendStream = { body in
+            client.sendStream(
+                body,
+                preflight: liveDispatchLeaseIsCurrent,
+                onRequestStarted: {}
+            )
+        }
     }
 
     init(

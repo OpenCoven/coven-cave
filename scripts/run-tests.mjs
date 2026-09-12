@@ -1964,6 +1964,8 @@ export const SUITES = {
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
     "scripts/ios-chat-familiars-home.test.mjs",
+    "scripts/ios-chat-only.test.mjs",
+    "scripts/ios-chat-entrypoints.test.mjs",
     "scripts/ios-familiar-profile.test.mjs",
     "scripts/ios-project-generation.test.mjs",
     "scripts/ios-markdown-bundle.test.mjs",

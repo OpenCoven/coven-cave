@@ -156,18 +156,23 @@ assert.match(
 );
 assert.match(
   model,
-  /func persistThreadsBeforeDispatch\(for lease: ConnectionDispatchLease\) async -> Bool \{[\s\S]{0,160}guard connectionDispatchLeaseIsCurrent\(lease\) else \{ return false \}[\s\S]{0,160}let persisted = await flushThreadsAndWait\(\)[\s\S]{0,120}return persisted && connectionDispatchLeaseIsCurrent\(lease\)/,
-  "checkpoint persistence must prove the same endpoint epoch before and after disk suspension",
+  /func persistThreadsBeforeDispatch\(for lease: ConnectionDispatchLease\) async -> Bool \{[\s\S]{0,160}guard connectionDispatchLeaseIsCurrent\(lease\),\s*requireCurrentChatAccess\(\) else \{ return false \}[\s\S]{0,160}let persisted = await flushThreadsAndWait\(\)[\s\S]{0,120}return persisted && connectionDispatchLeaseIsCurrent\(lease\) && requireCurrentChatAccess\(\)/,
+  "checkpoint persistence must prove the endpoint epoch and current chat access before and after disk suspension",
 );
 assert.equal(
   (chatView.match(/let dispatchLease = app\.captureConnectionDispatchLease\(\)/g) ?? []).length,
-  5,
-  "every live prose, suggestion, command, diagram, and forward send captures an endpoint lease",
+  7,
+  "the five live send paths, retry, and voice each capture an endpoint lease",
 );
 assert.equal(
-  (chatView.match(/liveDispatchLeaseIsCurrent: \{\s*app\.connectionDispatchLeaseIsCurrent\(dispatchLease\)\s*\}/g) ?? []).length,
-  5,
-  "every live send passes its lease into each fan-out child",
+  (chatView.match(/liveDispatchLeaseIsCurrent: \{\s*dispatchIsCurrent\((?:dispatchBinding|destinationBinding), in: (?:thread|destination), lease: dispatchLease\)\s*\}/g) ?? []).length,
+  6,
+  "every live send and retry passes its frozen target and endpoint through transport preflight",
+);
+assert.match(
+  chatView,
+  /private func dispatchIsCurrent\([\s\S]*?app\.connectionDispatchLeaseIsCurrent\(lease\)[\s\S]*?binding\.matches\(target\)[\s\S]*?app\.chatAccessIsCurrent\(projectRoot: binding\.projectRoot, familiarIds: binding\.familiarIds\)/,
+  "dispatch requires the exact frozen conversation and recipient grants, not just loaded catalogs",
 );
 assert.equal(
   (chatView.match(/persistBeforeDispatch: \{\s*await app\.persistThreadsBeforeDispatch\(for: dispatchLease\)\s*\}/g) ?? []).length,
@@ -208,7 +213,7 @@ const deferredSend = deferredSendStart >= 0 && deferredSendEnd > deferredSendSta
 const deferredPreflight = deferredSend.indexOf("guard preflight() else");
 const deferredRequest = deferredSend.indexOf('var req = try request("api/chat/send"');
 const deferredStarted = deferredSend.indexOf("onRequestStarted()");
-const deferredURLSession = deferredSend.indexOf("Self.streamSession.bytes(for: req)");
+const deferredURLSession = deferredSend.indexOf("(injectedSession ?? Self.streamSession).bytes(for: req)");
 assert.ok(
   deferredSend.includes("let task = Task { @MainActor in")
     && deferredPreflight >= 0
@@ -234,7 +239,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /private func forward\([\s\S]{0,260}guard let client = app\.client else \{ return \}\s*\n\s*let dispatchLease = app\.captureConnectionDispatchLease\(\)[\s\S]*?Task \{ @MainActor in[\s\S]*?destination\.send\([\s\S]*?liveDispatchLeaseIsCurrent:[\s\S]*?dispatchLease[\s\S]*?client: client/,
+  /private func forward\([\s\S]{0,260}guard let client = app\.client else \{ return \}\s*guard requireChatAccess\(\) else \{ return \}\s*guard app\.requireCurrentChatAccess\(projectRoot: thread\.projectRoot, familiarIds: \[familiar\.id\]\)\s*else \{ return \}\s*let dispatchLease = app\.captureConnectionDispatchLease\(\)[\s\S]*?Task \{ @MainActor in[\s\S]*?destination\.send\([\s\S]*?liveDispatchLeaseIsCurrent:[\s\S]*?dispatchLease[\s\S]*?client: client/,
   "forwarding must capture its CaveClient and matching epoch lease in the same actor turn before deferring work",
 );
 const queueFlushStart = model.indexOf("func flushQueuedMessages()");
@@ -265,10 +270,10 @@ assert.ok(
   replayImplementation.includes("dispatchLeaseIsCurrent: @escaping () -> Bool")
     && replayStream >= 0
     && replayImplementation.indexOf(
-      "liveDispatchLeaseIsCurrent: dispatchLeaseIsCurrent",
+      "liveDispatchLeaseIsCurrent: mayDispatchTarget",
       replayStream,
     ) > replayStream,
-  "fresh queued runs must not fall back to an unconditional deferred send preflight",
+  "fresh queued runs must carry both endpoint and exact-target authority into deferred send preflight",
 );
 
 console.log("ios-auto-reconnect: OK");

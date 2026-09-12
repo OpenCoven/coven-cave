@@ -88,6 +88,31 @@ test("exact input validation does not echo arbitrary inputs", async () => {
   }
 });
 
+test("key IDs are bounded identifiers, not restricted to Apple's example length", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const base = {
+    APPLE_API_KEY_SUBJECT: "user",
+    APPLE_API_KEY_BASE64: Buffer.from(privateKey.export({ type: "pkcs8", format: "pem" })).toString("base64"),
+  };
+  for (const keyId of ["TESTKEY123", "TESTKEY12345", "Test_Key-123", "A".repeat(128)]) {
+    const token = tokenSigner({ ...base, APPLE_API_KEY: keyId })("/v1/apps?limit=200", 1000);
+    const [header, payload, signature] = token.split(".");
+    assert.equal(JSON.parse(Buffer.from(header, "base64url")).kid, keyId);
+    assert.ok(verify("sha256", Buffer.from(`${header}.${payload}`),
+      { key: publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(signature, "base64url")));
+  }
+  for (const keyId of [
+    undefined, null, 123, "", "A".repeat(129), "PRIVATE KEY", "PRIVATE\nKEY",
+    "PRIVATE\n", "PRIVATE\r\n", "PRIVATE\u0000", "PRIVATE\u2028", "\"PRIVATE\"",
+  ]) {
+    const receipt = await runReceipt({ ...env, ...base, APPLE_API_KEY: keyId });
+    assert.equal(receipt.verdict, "UNKNOWN");
+    assert.equal(receipt.error.code, "INVALID_KEY_ID");
+    assert.equal(receipt.error.httpStatus, null);
+    assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE/);
+  }
+});
+
 test("availability requires exact identity, matching beta lane and populated assigned group", async () => {
   const f = fixture();
   const receipt = await runReceipt(env, { api: f.api });

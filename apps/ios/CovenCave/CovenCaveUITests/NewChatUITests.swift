@@ -15,49 +15,40 @@ final class NewChatUITests: XCTestCase {
     }
 
     @MainActor
-    func testContextualNewChatUsesActiveProjectWithoutIndependentPicker() {
+    func testContextualNewChatRequiresLocalProjectSelection() {
         let app = launchContextualNewChat()
 
-        XCTAssertTrue(app.staticTexts["Coven Cave"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["New chat project"].exists)
+        let picker = app.buttons["New chat project"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Start chat"].isEnabled)
+        picker.tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Coven Cave")).firstMatch.tap()
         XCTAssertTrue(app.buttons["Start chat"].isEnabled)
     }
 
     @MainActor
-    func testContextualNewChatBlocksStartWhenFixedFamiliarLeavesActiveProject() {
+    func testContextualNewChatBlocksCommitWhenAccessIsRevoked() {
         let app = launchContextualNewChat(
             extraArguments: ["--ui-preview-new-chat-access-revoked"]
         )
 
-        XCTAssertTrue(
-            app.staticTexts["This familiar is no longer in Coven Cave."]
-                .waitForExistence(timeout: 10)
-        )
-        XCTAssertFalse(app.buttons["Start chat"].isEnabled)
-        XCTAssertFalse(app.buttons["New chat project"].exists)
+        let picker = app.buttons["New chat project"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        picker.tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Coven Cave")).firstMatch.tap()
+        app.buttons["Start chat"].tap()
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Project access was revoked")
+        ).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["New chat"].exists)
     }
 
     @MainActor
-    func testContextualNewChatShowsRecoveryOnlyGuidanceForUnassigned() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--ui-preview-empty-chat",
-            "--ui-preview-new-chat-unassigned",
-            "--ui-open-contextual-new-chat",
-        ]
-        app.launch()
-
-        XCTAssertFalse(
-            app.navigationBars["New chat"].waitForExistence(timeout: 3),
-            "Unassigned recovery mode must not open the New Chat sheet"
-        )
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10))
-        openNavigation.tap()
-        let projectContext = app.descendants(matching: .any)["Project context button"].firstMatch
-        XCTAssertTrue(
-            projectContext.waitForExistence(timeout: 10) && projectContext.isHittable
-        )
+    func testNewChatCanConfigureAccessWithoutAmbientProject() {
+        let app = launchContextualNewChat(extraArguments: ["--ui-preview-new-chat-unassigned"])
+        XCTAssertTrue(app.buttons["New chat project"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Start chat"].isEnabled)
+        XCTAssertTrue(app.buttons["Refresh access"].exists)
     }
 
     @MainActor

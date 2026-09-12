@@ -29,13 +29,13 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
     @State private var showCommands = false
+    @State private var showNewChat = false
     @State private var showFamiliarPicker = false
     @State private var forwardingMessage: DisplayMessage?
     @State private var showModelPicker = false
@@ -50,12 +50,11 @@ struct ChatView: View {
     @State private var modelPresentationScope = ChatModelPresentationScope()
     @State private var modelRequests = ChatModelRequestCoordinator()
     @State private var modelMutationQueue = ChatModelMutationQueue()
-    @State private var showTasks = false
     @State private var permissionsFamiliar: Familiar?
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
     @State private var showSessionPicker = false
-    @State private var showVoiceCall = false
+    @State private var voiceCall: LiveVoiceCallModel?
     /// Inert navigation path handed to the session picker to satisfy its
     /// binding. The picker runs in `onSelect` mode, so it never pushes — a
     /// chosen session is switched to via `switchToSession` instead. Pushing
@@ -72,7 +71,7 @@ struct ChatView: View {
     @State private var pendingImages: [PendingImage] = []
     @State private var draftPersistenceTask: Task<Void, Never>?
     /// "New messages" divider: computed once per visit, *before*
-    /// `markFamiliarViewed` moves the seen boundary, then left in place for
+    /// `markThreadViewed` moves the seen boundary, then left in place for
     /// the whole visit (re-appears from pushes must not dissolve it).
     @State private var unreadDividerId: String?
     @State private var unreadRunLength = 0
@@ -92,7 +91,6 @@ struct ChatView: View {
     @State private var showPhotosPicker = false
     @State private var showCamera = false
     @State private var showFileImporter = false
-    @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
     @State private var projectResolved = false
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
@@ -151,6 +149,7 @@ struct ChatView: View {
         guard !thread.isFlowRun else { return nil }
         guard let familiar = voiceCallFamiliar else { return nil }
         guard !isRecoveryOnlyThread else { return nil }
+        guard chatAccessLoaded else { return nil }
         guard app.threadOpenFailure(for: thread) == nil else { return nil }
         guard visibleThreadContext != .unassigned else { return nil }
         guard let projectRoot = thread.projectRoot?
@@ -170,6 +169,24 @@ struct ChatView: View {
 
     private var visibleThreadContext: ProjectContext {
         app.projectContext(for: thread)
+    }
+
+    private var chatAccessLoaded: Bool {
+        app.chatAccessIsCurrent(projectRoot: thread.projectRoot, familiarIds: thread.familiarIds)
+    }
+
+    private func requireChatAccess() -> Bool {
+        app.requireCurrentChatAccess(projectRoot: thread.projectRoot, familiarIds: thread.familiarIds)
+    }
+
+    private func dispatchIsCurrent(
+        _ binding: ChatDispatchBinding,
+        in target: ChatThread,
+        lease: AppModel.ConnectionDispatchLease
+    ) -> Bool {
+        app.connectionDispatchLeaseIsCurrent(lease)
+            && binding.matches(target)
+            && app.chatAccessIsCurrent(projectRoot: binding.projectRoot, familiarIds: binding.familiarIds)
     }
 
     private func writeDraftPersistence(_ value: String, key: String) {
@@ -211,9 +228,6 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !app.projectLinkedTasks(for: thread).isEmpty {
-                linkedContextStrip
-            }
             messageScroll
                 // While the "+" menu is up, the transcript becomes its scrim:
                 // a light dim signals the mode and any outside tap dismisses.
@@ -270,7 +284,7 @@ struct ChatView: View {
                 if let voiceCallLaunch, app.client != nil {
                     Button {
                         Haptics.tap()
-                        showVoiceCall = true
+                        beginVoiceCall()
                     } label: {
                         Image(systemName: "phone.fill")
                     }
@@ -303,9 +317,11 @@ struct ChatView: View {
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
-        .fullScreenCover(isPresented: $showPlugins) {
-            PluginsPanel { plugin in
-                prefillPlugin(plugin)
+        .sheet(isPresented: $showNewChat) {
+            NewChatView(initialFamiliarIds: thread.familiarIds) { fresh in
+                showNewChat = false
+                flushDraftPersistence()
+                _ = app.requestOpen(fresh)
             }
         }
         .sheet(isPresented: $showModelPicker) {
@@ -331,9 +347,6 @@ struct ChatView: View {
                 forward(message, to: familiar)
             }
         }
-        .sheet(isPresented: $showTasks) {
-            LinkedTasksSheet(thread: thread)
-        }
         .sheet(item: $permissionsFamiliar) { familiar in
             FamiliarPermissionsSheet(familiar: familiar)
         }
@@ -349,29 +362,9 @@ struct ChatView: View {
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
         }
-        .fullScreenCover(isPresented: $showVoiceCall) {
-            if let voiceCallLaunch {
-                LiveVoiceCallView(
-                    familiar: voiceCallLaunch.familiar,
-                    sessionId: voiceCallLaunch.sessionId,
-                    projectRoot: voiceCallLaunch.projectRoot,
-                    client: app.client,
-                    onSessionEstablished: { sessionId in
-                        bindVoiceCallSession(sessionId, for: voiceCallLaunch.familiar.id)
-                    },
-                    onSessionDiscarded: { sessionId in
-                        unbindVoiceCallSession(sessionId, for: voiceCallLaunch.familiar.id)
-                    },
-                    onCleanupWarning: { message in
-                        app.showToast(message,
-                                      systemImage: "exclamationmark.triangle.fill",
-                                      style: .warning)
-                    }
-                )
-            }
+        .fullScreenCover(item: $voiceCall) { model in
+            LiveVoiceCallView(model: model)
         }
-        // A new chat linked to a task acquires its server session only after the
-        // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
             if !streaming {
                 // A reply just finished streaming — a subtle "done" haptic so you
@@ -382,7 +375,6 @@ struct ChatView: View {
                     Haptics.success()
                 }
                 Task {
-                    await app.reconcileCardLinks(for: thread)
                     _ = await loadSessionModelState()
                 }
             }
@@ -397,19 +389,13 @@ struct ChatView: View {
             // Place the "New messages" divider from the seen boundary BEFORE
             // marking viewed moves it.
             computeUnreadDividerIfNeeded()
-            // Opening the chat clears the unread badge for its familiar(s) and
-            // any delivered reply banner for this thread.
-            app.markFamiliarViewed(
-                thread.familiarIds,
-                in: app.projectContext(for: thread)
-            )
+            // Opening the chat clears only this thread's unread state and
+            // delivered reply banners, not other chats with these participants.
+            app.markThreadViewed(thread)
             ChatNotifications.removeDelivered(threadId: thread.id)
         }
         .task(id: modelStateLoadKey) {
             await loadSessionModelState()
-        }
-        .task {
-            if !app.tasksLoaded { await app.loadTasks() }
         }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce
@@ -597,10 +583,8 @@ struct ChatView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            if app.canStartProjectChats {
-                Button("Start replacement chat", action: startReplacementChat)
-                    .buttonStyle(.borderedProminent)
-            }
+            Button("Start replacement chat", action: startReplacementChat)
+                .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
@@ -609,10 +593,7 @@ struct ChatView: View {
     }
 
     private var recoveryOnlyCopy: String {
-        if let activeProject = app.activeProject {
-            return "This conversation was created without a registered project. Inspect, export, or delete it here, or start a replacement chat in \(activeProject.name)."
-        }
-        return "This conversation was created without a registered project. Switch to a registered project in Chats to start a replacement chat."
+        "This conversation has no registered project access. Inspect, export, or delete it here, or choose access for a replacement chat in New chat."
     }
 
     private func sessionControlRow<Control: View>(
@@ -769,113 +750,6 @@ struct ChatView: View {
 
     private func conciseModelName(_ id: String) -> String {
         id.split(separator: "/").last.map(String.init) ?? id
-    }
-
-    private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
-        app.projectLinkedTasks(for: thread)
-            .flatMap(\.githubLinks)
-            .compactMap { link in
-                validGitHubURL(for: link).map { (link, $0) }
-            }
-            .first
-    }
-
-    private func validGitHubURL(for link: CardGitHubLink) -> URL? {
-        let kind = link.kind.lowercased()
-        guard ["pr", "review_request", "issue"].contains(kind),
-              let number = link.number,
-              let url = URL(string: link.url),
-              url.scheme?.lowercased() == "https",
-              url.host?.lowercased() == "github.com",
-              url.user == nil,
-              url.password == nil,
-              url.port == nil
-        else { return nil }
-
-        let repo = link.repo.split(separator: "/", omittingEmptySubsequences: true)
-        let path = url.pathComponents.filter { $0 != "/" }
-        let expectedKind = kind == "issue" ? "issues" : "pull"
-        guard repo.count == 2,
-              path.count >= 4,
-              path[0].caseInsensitiveCompare(String(repo[0])) == .orderedSame,
-              path[1].caseInsensitiveCompare(String(repo[1])) == .orderedSame,
-              path[2].lowercased() == expectedKind,
-              path[3] == String(number)
-        else { return nil }
-        return url
-    }
-
-    private func githubContextLabel(_ link: CardGitHubLink) -> String {
-        let kind = link.kind.lowercased() == "issue" ? "Issue" : "PR"
-        guard let number = link.number else { return kind }
-        return "\(kind) #\(number)"
-    }
-
-    private var linkedContextStrip: some View {
-        let cards = app.projectLinkedTasks(for: thread)
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
-        return layout {
-            if let context = linkedGitHubContext {
-                Link(destination: context.url) {
-                    HStack(spacing: 6) {
-                        Image(systemName: context.link.kind.lowercased() == "issue"
-                              ? "smallcircle.filled.circle" : "arrow.triangle.branch")
-                        Text(githubContextLabel(context.link))
-                            .lineLimit(1)
-                        Image(systemName: "arrow.up.right")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(chrome.accent)
-                    .padding(.horizontal, 10)
-                    .frame(minHeight: 36)
-                    .background(chrome.accent.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().stroke(chrome.accent.opacity(0.35), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open \(githubContextLabel(context.link)) on GitHub")
-            }
-
-            Button {
-                showTasks = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "checklist")
-                        .foregroundStyle(chrome.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(cards.first?.title ?? "Open tasks")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityHint("Opens tasks linked to this conversation")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
-        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
-        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
-        .frame(minHeight: 52)
-        .background(chrome.bgRaised)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(chrome.border).frame(height: 1)
-        }
     }
 
     private func sessionDetailRow(
@@ -1157,7 +1031,7 @@ struct ChatView: View {
                     permissionsFamiliar = familiar
                 } label: {
                     (
-                        Text("Describe a task or choose a suggestion below. Your familiar works from the desktop. Project access follows \(wardScope) active ")
+                        Text("Write a message or choose a suggestion below. Your familiar works from the desktop. Project access follows \(wardScope) active ")
                             .foregroundStyle(.secondary)
                         + Text("ward.")
                             .foregroundStyle(chrome.accent)
@@ -1235,49 +1109,19 @@ struct ChatView: View {
     }
 
     private var emptySuggestions: [EmptyChatSuggestion] {
-        let openPullRequestURLs = Set(app.tasks.flatMap(\.githubLinks)
-            .filter {
-                ($0.kind == "pr" || $0.kind == "review_request")
-                    && $0.state?.lowercased() == "open"
-            }
-            .map { $0.url.lowercased() })
-        let active = app.tasks.filter { $0.status.isActive }
-        let running = active.filter { $0.status == .running }.count
-        let blocked = active.filter { $0.status == .blocked }.count
-        let next = active.sorted {
-            if $0.priority.rank != $1.priority.rank { return $0.priority.rank < $1.priority.rank }
-            return (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
-        }.first
-        let nextLabel = next.map { "Work on \($0.title)" } ?? "Work on the next priority"
-        let nextHint = next.map {
-            [$0.projectId, $0.githubLinks.first?.number.map { "#\($0)" }]
-                .compactMap { $0 }
-                .joined(separator: " · ")
-        }.flatMap { $0.isEmpty ? nil : $0 } ?? "Ask your familiar to choose"
-        let boardHint = app.tasksError != nil
-            ? "Tasks unavailable — open Tasks to retry"
-            : app.tasksLoaded
-                ? "\(running) running · \(blocked) blocked"
-                : "Open Tasks to load tasks"
-        let priorityHint = app.tasksError != nil && !app.tasks.isEmpty
-            ? "Cached · \(nextHint)"
-            : nextHint
-
-        return [
+        [
             EmptyChatSuggestion(
-                icon: "arrow.triangle.branch",
-                label: "Review my open PRs",
-                hint: openPullRequestURLs.isEmpty
-                    ? "Ask GitHub through your familiar"
-                    : "\(openPullRequestURLs.count) open"),
+                icon: "lightbulb",
+                label: "Help me explore an idea",
+                hint: "Think it through together"),
             EmptyChatSuggestion(
-                icon: "checkmark.square",
-                label: "What tasks need attention?",
-                hint: boardHint),
+                icon: "text.bubble",
+                label: "Explain something to me",
+                hint: "Bring a question or some context"),
             EmptyChatSuggestion(
-                icon: "scope",
-                label: nextLabel,
-                hint: priorityHint),
+                icon: "pencil",
+                label: "Help me draft a message",
+                hint: "Find the words you need"),
         ]
     }
 
@@ -1301,6 +1145,21 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if !chatAccessLoaded {
+                HStack(spacing: 12) {
+                    Label("Chat access unavailable", systemImage: "lock.shield")
+                        .font(.footnote)
+                    Spacer(minLength: 8)
+                    Button("Refresh access") {
+                        Task { await app.refreshChatAccess() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .frame(minHeight: 44)
+                }
+                .foregroundStyle(chrome.textSecondary)
+                .padding(.horizontal, 16)
+                .background(chrome.bgRaised)
+            }
             if showActionMenu {
                 FloatingActionMenu(actions: composerActions) { showActionMenu = false }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1372,8 +1231,6 @@ struct ChatView: View {
             FloatingAction(id: "camera", systemImage: "camera", label: "Camera") { showCamera = true },
             FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
-            FloatingAction(id: "tasks", systemImage: "checklist", label: "Link a task") { showTasks = true },
-            FloatingAction(id: "plugins", systemImage: "puzzlepiece.extension", label: "Plugins") { showPlugins = true },
             FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
         ]
@@ -1567,7 +1424,11 @@ struct ChatView: View {
     private var canSend: Bool {
         let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !pendingImages.isEmpty
-        return !thread.isFlowRun && !isRecoveryOnlyThread && hasContent && (isCommand || thread.canSendMessages)
+        guard !thread.isFlowRun, !isRecoveryOnlyThread, hasContent else { return false }
+        if case .command(let command, _) = SlashInput.parse(draft), !command.sendsChatMessage {
+            return true
+        }
+        return chatAccessLoaded && thread.canSendMessages
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -1593,10 +1454,12 @@ struct ChatView: View {
         let raw = draft
         switch SlashInput.parse(raw) {
         case .command(let command, let args):
-            if case .sendAsPrompt = command.action,
-               !thread.canSendMessages {
-                thread.needsProjectSelection = true
-                return
+            if command.sendsChatMessage {
+                guard requireChatAccess() else { return }
+                guard thread.canSendMessages else {
+                    thread.needsProjectSelection = true
+                    return
+                }
             }
             draft = ""
             dispatch(command, args: args)
@@ -1607,6 +1470,7 @@ struct ChatView: View {
             app.touch(thread)
         case .prose(let text):
             guard let client = app.client else { return }
+            guard requireChatAccess() else { return }
             guard thread.canSendMessages else {
                 thread.needsProjectSelection = true
                 return
@@ -1636,13 +1500,14 @@ struct ChatView: View {
                 return
             }
             let dispatchLease = app.captureConnectionDispatchLease()
+            let dispatchBinding = ChatDispatchBinding(thread: thread)
             thread.send(outgoing, attachments: attachments,
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
                         onConnectionFailure: { app.noteConnectionFailure($0) },
                         liveDispatchLeaseIsCurrent: {
-                            app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                            dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
                         },
                         persistBeforeDispatch: {
                             await app.persistThreadsBeforeDispatch(for: dispatchLease)
@@ -1660,6 +1525,7 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        guard requireChatAccess() else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
             return
@@ -1674,12 +1540,13 @@ struct ChatView: View {
             return
         }
         let dispatchLease = app.captureConnectionDispatchLease()
+        let dispatchBinding = ChatDispatchBinding(thread: thread)
         thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     onConnectionFailure: { app.noteConnectionFailure($0) },
                     liveDispatchLeaseIsCurrent: {
-                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
                     },
                     persistBeforeDispatch: {
                         await app.persistThreadsBeforeDispatch(for: dispatchLease)
@@ -1708,14 +1575,27 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        guard let familiarId = assistant.familiarId,
+              app.requireCurrentChatAccess(projectRoot: thread.projectRoot, familiarIds: [familiarId])
+        else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
             return
         }
         Haptics.tap()
+        let dispatchLease = app.captureConnectionDispatchLease()
+        let dispatchBinding = ChatDispatchBinding(thread: thread, familiarIds: [familiarId])
         thread.retry(
             assistant.id,
             client: client,
+            liveDispatchLeaseIsCurrent: {
+                dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
+            },
+            persistAfterRefusal: { await app.flushThreadsAndWait() },
+            onRefusal: {
+                app.showToast("Retry was not sent because chat access or the connection changed.",
+                              systemImage: "lock.shield", style: .warning)
+            },
             onConnectionFailure: { app.noteConnectionFailure($0) }
         ) { app.touch(thread) }
     }
@@ -1739,13 +1619,6 @@ struct ChatView: View {
         composerFocused = true
     }
 
-    private func prefillPlugin(_ plugin: MarketplacePlugin) {
-        let prompt = "Use \(plugin.displayName) to "
-        draft = draft.isEmpty ? prompt : "\(draft)\n\(prompt)"
-        showPlugins = false
-        composerFocused = true
-    }
-
     private func dispatch(_ command: SlashCommand, args: String) {
         switch command.action {
         case .help:
@@ -1757,17 +1630,7 @@ struct ChatView: View {
         case .quitToList:
             dismiss()
         case .newChat:
-            guard let fresh = app.startFreshThreadInActiveProject(
-                familiarIds: thread.familiarIds,
-                title: thread.isGroup ? thread.title : nil
-            ) else {
-                if !app.canStartProjectChats {
-                    showRecoveryOnlyChatGuidance()
-                }
-                return
-            }
-            _ = app.requestOpen(fresh)
-            app.showToast("Started a new chat", systemImage: "square.and.pencil", style: .info)
+            showNewChat = true
         case .familiarPicker:
             if args.isEmpty {
                 showFamiliarPicker = true
@@ -1781,9 +1644,6 @@ struct ChatView: View {
         case .openSessions:
             app.selectedTab = .chats
             dismiss()
-        case .openBoard:
-            app.selectedTab = .tasks
-            app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
         case .daemonStatus:
@@ -1804,6 +1664,7 @@ struct ChatView: View {
 
     private func startDiagram(_ args: String) {
         guard let client = app.client else { return }
+        guard requireChatAccess() else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
             return
@@ -1811,6 +1672,7 @@ struct ChatView: View {
         let brief = args.trimmingCharacters(in: .whitespacesAndNewlines)
         let modelBinding = turnModelBinding
         let dispatchLease = app.captureConnectionDispatchLease()
+        let dispatchBinding = ChatDispatchBinding(thread: thread)
         thread.send(DiagramCommandPrompt.build(brief),
                     displayText: brief.isEmpty ? DiagramCommandPrompt.start : brief,
                     modelControls: modelControlValues,
@@ -1818,7 +1680,7 @@ struct ChatView: View {
                     modelOverrideScope: modelBinding.scope,
                     onConnectionFailure: { app.noteConnectionFailure($0) },
                     liveDispatchLeaseIsCurrent: {
-                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
                     },
                     persistBeforeDispatch: {
                         await app.persistThreadsBeforeDispatch(for: dispatchLease)
@@ -2167,24 +2029,26 @@ struct ChatView: View {
         }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            thread.appendSystem("\(command.name) needs a task — e.g. \(command.name) fix the build",
+            thread.appendSystem("\(command.name) needs a prompt — e.g. \(command.name) explain this code",
                                 isError: true)
             app.touch(thread)
             return
         }
         guard let client = app.client else { return }
+        guard requireChatAccess() else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
             return
         }
         let modelBinding = turnModelBinding
         let dispatchLease = app.captureConnectionDispatchLease()
+        let dispatchBinding = ChatDispatchBinding(thread: thread)
         thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     onConnectionFailure: { app.noteConnectionFailure($0) },
                     liveDispatchLeaseIsCurrent: {
-                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
                     },
                     persistBeforeDispatch: {
                         await app.persistThreadsBeforeDispatch(for: dispatchLease)
@@ -2338,7 +2202,11 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        guard requireChatAccess() else { return }
+        guard app.requireCurrentChatAccess(projectRoot: thread.projectRoot, familiarIds: [familiar.id])
+        else { return }
         let dispatchLease = app.captureConnectionDispatchLease()
+        let sourceBinding = ChatDispatchBinding(thread: thread)
         let activeContext = visibleThreadContext
         let needsDeferredHistoryHydration =
             app.landingDirectThread(for: familiar.id, in: activeContext) == nil
@@ -2349,15 +2217,27 @@ struct ChatView: View {
             loadHistory: false
         ) else {
             app.showToast(
-                "Switch to a registered project before forwarding",
+                "Open New chat to choose project access for this familiar before forwarding",
                 systemImage: "folder.badge.questionmark",
                 style: .warning
             )
             return
         }
+        let destinationBinding = ChatDispatchBinding(thread: destination)
+        guard app.requireCurrentChatAccess(
+            projectRoot: destinationBinding.projectRoot,
+            familiarIds: destinationBinding.familiarIds
+        ) else { return }
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
         Task { @MainActor in
+            guard sourceBinding.matches(thread),
+                  dispatchIsCurrent(destinationBinding, in: destination, lease: dispatchLease)
+            else {
+                app.showToast("Forward was not sent because chat access or the connection changed.",
+                              systemImage: "lock.shield", style: .warning)
+                return
+            }
             switch app.forwardingRouteDisposition(from: thread, to: destination) {
             case .allowed:
                 break
@@ -2397,7 +2277,7 @@ struct ChatView: View {
                     : nil,
                 onConnectionFailure: { app.noteConnectionFailure($0) },
                 liveDispatchLeaseIsCurrent: {
-                    app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    dispatchIsCurrent(destinationBinding, in: destination, lease: dispatchLease)
                 },
                 persistBeforeDispatch: {
                     await app.persistThreadsBeforeDispatch(for: dispatchLease)
@@ -2438,44 +2318,53 @@ struct ChatView: View {
     }
 
     private func startReplacementChat() {
-        guard let replacement = app.startFreshThreadInActiveProject(
-            familiarIds: thread.familiarIds,
-            title: thread.isGroup ? thread.title : nil
-        ) else {
-            if !app.canStartProjectChats {
-                showRecoveryOnlyChatGuidance()
-            }
-            return
-        }
-        _ = app.requestOpen(replacement)
-        app.showToast(
-            "Started a replacement chat",
-            systemImage: "square.and.pencil",
-            style: .info
-        )
+        showNewChat = true
     }
 
     private func showRecoveryOnlyChatGuidance() {
         app.showToast(
-            app.canStartProjectChats
-                ? "Start a replacement chat in the active project"
-                : "Switch to a registered project to start a replacement chat",
+            "Open New chat to choose project access for a replacement chat",
             systemImage: "folder.badge.questionmark",
             style: .warning
         )
     }
 
-    private func bindVoiceCallSession(_ sessionId: String, for familiarId: String) {
-        app.bindThreadSession(sessionId, to: thread, for: familiarId)
-    }
-
-    private func unbindVoiceCallSession(_ sessionId: String, for familiarId: String) {
-        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              thread.sessionIds[familiarId] == trimmed
-        else { return }
-        thread.sessionIds.removeValue(forKey: familiarId)
-        app.touch(thread)
+    private func beginVoiceCall() {
+        guard voiceCall == nil, let client = app.client, requireChatAccess(),
+              let launch = voiceCallLaunch else { return }
+        let callThread = thread
+        let familiarId = launch.familiar.id
+        let dispatchLease = app.captureConnectionDispatchLease()
+        var binding = ChatDispatchBinding(thread: callThread, familiarIds: [familiarId])
+        voiceCall = LiveVoiceCallModel(
+            familiar: launch.familiar,
+            sessionId: launch.sessionId,
+            projectRoot: launch.projectRoot,
+            client: client,
+            authorityIsCurrent: {
+                dispatchIsCurrent(binding, in: callThread, lease: dispatchLease)
+                    && binding.matches(callThread, includingSessions: true)
+            },
+            onSessionEstablished: { sessionId in
+                // Accepted first turns can bind after hangup. Only this call
+                // may advance its captured session, never a replacement endpoint.
+                guard app.connectionDispatchLeaseIsCurrent(dispatchLease),
+                      binding.matches(callThread, includingSessions: true) else { return }
+                app.bindThreadSession(sessionId, to: callThread, for: familiarId)
+                binding = ChatDispatchBinding(thread: callThread, familiarIds: [familiarId])
+            },
+            onSessionDiscarded: { sessionId in
+                guard app.connectionDispatchLeaseIsCurrent(dispatchLease),
+                      binding.matches(callThread, includingSessions: true),
+                      callThread.sessionIds[familiarId] == sessionId else { return }
+                callThread.sessionIds.removeValue(forKey: familiarId)
+                binding = ChatDispatchBinding(thread: callThread, familiarIds: [familiarId])
+                app.touch(callThread)
+            },
+            onCleanupWarning: { message in
+                app.showToast(message, systemImage: "exclamationmark.triangle.fill", style: .warning)
+            }
+        )
     }
 
     private func forwardSenderName(for message: DisplayMessage) -> String {

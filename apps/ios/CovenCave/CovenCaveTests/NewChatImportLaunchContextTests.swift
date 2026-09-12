@@ -2,150 +2,88 @@ import XCTest
 @testable import CovenCave
 
 final class NewChatImportLaunchContextTests: XCTestCase {
-    private func project(
-        _ id: String,
-        _ name: String,
-        root: String? = nil
-    ) -> ProjectInfo {
-        ProjectInfo(
-            id: id,
-            name: name,
-            root: root ?? "/repos/\(id)",
-            color: nil,
-            updatedAt: nil,
-            access: nil
-        )
+    private func project(_ id: String, root: String? = nil) -> ProjectInfo {
+        ProjectInfo(id: id, name: id, root: root ?? "/repos/\(id)", color: nil, updatedAt: nil, access: .write)
     }
 
-    private func membership(_ rows: [String: Set<String>]) -> ProjectMembershipIndex {
-        ProjectMembershipIndex(familiarIDsByProjectID: rows)
+    private func context() throws -> NewChatImportLaunchContext {
+        try XCTUnwrap(NewChatImportLaunchContext(
+            selectedProject: project("alpha"),
+            selectedFamiliarIds: ["sage", "nova", "sage", ""]
+        ))
     }
 
-    func testCaptureRequiresActiveProjectAndNonEmptyRoster() {
-        let alpha = project("alpha", "Alpha")
-
-        XCTAssertNil(
-            NewChatImportLaunchContext(
-                activeProject: nil,
-                selectedFamiliarIds: ["nova"]
-            )
-        )
-        XCTAssertNil(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: []
-            )
-        )
+    func testCaptureRequiresLocalProjectAndNonEmptyRoster() {
+        XCTAssertNil(NewChatImportLaunchContext(selectedProject: nil, selectedFamiliarIds: ["nova"]))
+        XCTAssertNil(NewChatImportLaunchContext(selectedProject: project("alpha"), selectedFamiliarIds: []))
+        XCTAssertNil(NewChatImportLaunchContext(
+            selectedProject: project("alpha", root: "/repos/../alpha"),
+            selectedFamiliarIds: ["nova"]
+        ))
     }
 
-    func testCaptureNormalizesStablePreferredRoster() throws {
-        let alpha = project("alpha", "Alpha")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["sage", "nova", "sage", ""]
-            )
-        )
-
-        XCTAssertEqual(context.projectId, "alpha")
-        XCTAssertEqual(context.projectRoot, "/repos/alpha")
-        XCTAssertEqual(context.familiarIds, ["nova", "sage"])
+    func testCaptureKeepsStablePreferredRoster() throws {
+        let captured = try context()
+        XCTAssertEqual(captured.projectId, "alpha")
+        XCTAssertEqual(captured.projectRoot, "/repos/alpha")
+        XCTAssertEqual(captured.familiarIds, ["nova", "sage"])
     }
 
-    func testValidationSucceedsWhenProjectAndRosterStayActive() throws {
-        let alpha = project("alpha", "Alpha")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["nova", "sage"]
-            )
-        )
-
-        XCTAssertEqual(
-            context.validate(
-                projectContext: .project(alpha),
-                activeProject: alpha,
-                projectMembership: membership(["alpha": Set(["nova", "sage"])])
-            ),
-            .valid
-        )
-    }
-
-    func testValidationRejectsProjectSwitchWhilePickerIsOpen() throws {
-        let alpha = project("alpha", "Alpha")
-        let beta = project("beta", "Beta")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["nova"]
-            )
-        )
-
-        XCTAssertEqual(
-            context.validate(
-                projectContext: .project(beta),
-                activeProject: beta,
-                projectMembership: membership(["beta": Set(["nova"])])
-            ),
-            .projectChanged
-        )
+    func testLocalSelectionSurvivesAmbientProjectChangesAndGrantReordering() throws {
+        let captured = try context()
+        let membership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]])
+        for catalog in [[project("beta"), project("alpha")], [project("alpha"), project("beta")]] {
+            XCTAssertEqual(captured.validate(
+                registeredProjects: catalog,
+                accessibleProjects: catalog,
+                projectMembership: membership,
+                membershipLoaded: true
+            ), .valid)
+            XCTAssertEqual(captured.projectId, "alpha")
+        }
     }
 
     func testValidationRejectsProjectRootChangesForSameProjectID() throws {
-        let alpha = project("alpha", "Alpha", root: "/repos/alpha")
-        let movedAlpha = project("alpha", "Alpha", root: "/repos/alpha-renamed")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["nova"]
-            )
-        )
-
-        XCTAssertEqual(
-            context.validate(
-                projectContext: .project(movedAlpha),
-                activeProject: movedAlpha,
-                projectMembership: membership(["alpha": Set(["nova"])])
-            ),
-            .projectChanged
-        )
+        XCTAssertEqual(try context().validate(
+            registeredProjects: [project("alpha", root: "/repos/renamed")],
+            accessibleProjects: [project("alpha", root: "/repos/renamed")],
+            projectMembership: ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]]),
+            membershipLoaded: true
+        ), .projectChanged)
     }
 
-    func testValidationRejectsUnassignedWhilePickerIsOpen() throws {
-        let alpha = project("alpha", "Alpha")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["nova"]
-            )
-        )
-
-        XCTAssertEqual(
-            context.validate(
-                projectContext: .unassigned,
-                activeProject: nil,
-                projectMembership: membership(["alpha": Set(["nova"])])
-            ),
-            .unassigned
-        )
+    func testValidationRejectsRemovedProjectWithoutSelectingAnother() throws {
+        XCTAssertEqual(try context().validate(
+            registeredProjects: [project("beta")],
+            accessibleProjects: [project("beta")],
+            projectMembership: ProjectMembershipIndex(familiarIDsByProjectID: ["beta": ["nova", "sage"]]),
+            membershipLoaded: true
+        ), .projectChanged)
     }
 
     func testValidationRejectsAccessRevocationWhilePickerIsOpen() throws {
-        let alpha = project("alpha", "Alpha")
-        let context = try XCTUnwrap(
-            NewChatImportLaunchContext(
-                activeProject: alpha,
-                selectedFamiliarIds: ["nova", "sage"]
-            )
-        )
+        XCTAssertEqual(try context().validate(
+            registeredProjects: [project("alpha")],
+            accessibleProjects: [project("alpha")],
+            projectMembership: ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova"]]),
+            membershipLoaded: true
+        ), .familiarAccessRevoked(["sage"]))
+    }
 
-        XCTAssertEqual(
-            context.validate(
-                projectContext: .project(alpha),
-                activeProject: alpha,
-                projectMembership: membership(["alpha": Set(["nova"])])
-            ),
-            .familiarAccessRevoked(["sage"])
-        )
+    func testValidationRejectsMissingOrStaleGrantsEvenWithCachedMembership() throws {
+        let captured = try context()
+        let membership = ProjectMembershipIndex(familiarIDsByProjectID: ["alpha": ["nova", "sage"]])
+        XCTAssertEqual(captured.validate(
+            registeredProjects: [project("alpha")],
+            accessibleProjects: [],
+            projectMembership: membership,
+            membershipLoaded: true
+        ), .accessUnavailable)
+        XCTAssertEqual(captured.validate(
+            registeredProjects: [project("alpha")],
+            accessibleProjects: [project("alpha")],
+            projectMembership: membership,
+            membershipLoaded: false
+        ), .accessUnavailable)
     }
 }
