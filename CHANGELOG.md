@@ -7,6 +7,39 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-12
+
+> Makes familiar conversations the native iOS app's home.
+
+An iOS-focused release following v0.4.2. TestFlight-only delivery requires an
+explicit iOS dispatch after stopping the automatic stable-tag release before
+publication; a stable tag push alone still selects all platforms.
+
+### Changed
+- Replace native iOS workspace navigation with Conversations and Settings,
+  chat search, and familiar selection inside each conversation (#5379).
+- Remove Tasks, Reminders, and global project navigation from the native app,
+  including their widget and shortcut entrypoints. Project access remains an
+  explicit conversation-level binding.
+- Preserve cached history, conversation drafts and attachments, and per-thread
+  read state across navigation and reconnects.
+- Advance release metadata to 0.4.3 and the iOS build to 2026091214.
+
+### Fixed
+- Recheck exact conversation access before sends, retries, and queued replay;
+  stop active voice when that authority is revoked, without auto-restarting it.
+- Keep cached conversations readable when live catalogs are unavailable.
+- Accept bounded App Store Connect key identifiers without assuming a fixed
+  ten-character length in the read-only TestFlight availability receipt.
+
+### Included source updates
+- Improve desktop Home and chat entry flows, title visibility, automatic
+  conversation naming, and Markdown attachment reading.
+- Separate Flow execution conversations from ordinary Chat and retain research,
+  image, and human-answer commands during chat enhancement.
+- Strengthen cross-thread continuity, standard-user discovery, research run
+  projections, and isolated workflow/runtime fixtures.
+
 ## [0.4.2] - 2026-09-09
 
 > Reduces native iOS chat startup work and releases detached message renderers.
