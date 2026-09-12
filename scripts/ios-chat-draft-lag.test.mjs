@@ -24,8 +24,14 @@ assert.match(
 
 assert.match(
   chatView,
-  /private func scheduleDraftPersistence\(_ value: String\)[\s\S]*draftPersistenceTask\?\.cancel\(\)[\s\S]*Task \{ \[draftKey\] in[\s\S]*try\? await Task\.sleep\(nanoseconds: draftPersistenceDelay\)/,
+  /private func scheduleDraftPersistence\(_ value: String\)[\s\S]*draftPersistenceTask\?\.cancel\(\)[\s\S]*Task \{[\s\S]*try\? await Task\.sleep\(nanoseconds: draftPersistenceDelay\)/,
   "draft edits should schedule one delayed persistence task, replacing older edits",
+);
+
+assert.match(
+  chatView,
+  /app\.persistThreadDraft\(/,
+  "draft persistence should use the AppModel's injected defaults store",
 );
 
 assert.match(

@@ -457,14 +457,22 @@ final class AppModel {
     /// (foreground probe, path monitor, pill tap, retry tickers) collapse
     /// into one discovery sweep instead of stacking probes.
     @ObservationIgnored private let refreshCoordinator = ConnectionRefreshCoordinator()
+    @ObservationIgnored let performanceRecorder: CavePerformanceRecorder
+    @ObservationIgnored let performanceSpans: CavePerformanceSpanLifecycle
+    private(set) var projectProjectionRevision: UInt64 = 0
+    private(set) var projectSwitchMutationPending = false
 
-    var familiars: [Familiar] = []
+    var familiars: [Familiar] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var familiarsError: String?
     var familiarsLoaded = false
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -501,17 +509,26 @@ final class AppModel {
     /// The selected application destination. Mounted by `MainShellView`; set by
     /// drawer actions, deep links, and `/board` / `/chats`.
     var selectedTab: AppTab = {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains(CavePerformanceFixture.launchArgument),
+           args.contains(CavePerformanceFixture.startTasksLaunchArgument) {
+            return .tasks
+        }
         #if DEBUG
         // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
         // into a destination for screenshot automation.
-        let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
            let tab = AppTab(rawValue: args[i + 1]) {
             return tab
         }
         #endif
         return .chats
-    }()
+    }() {
+        willSet {
+            guard newValue != selectedTab else { return }
+            performanceSpans.begin(.destinationStableFrame)
+        }
+    }
 
     /// A thread the central resolver asked Chats to open. `ChatsHomeView`
     /// observes this, pushes the thread, and clears it back to nil.
@@ -531,8 +548,33 @@ final class AppModel {
         return false
         #endif
     }()
+    var navigationDrawerAnimationSettled: Bool = {
+        #if DEBUG
+        return !ProcessInfo.processInfo.arguments.contains("--ui-open-drawer")
+        #else
+        return true
+        #endif
+    }()
     var newChatRequested = false
     var chatSearchRequested = false
+
+    func openNavigationDrawer() {
+        guard !navigationDrawerOpen else { return }
+        performanceSpans.begin(.drawerOpen)
+        navigationDrawerAnimationSettled = false
+        navigationDrawerOpen = true
+    }
+
+    func closeNavigationDrawer() {
+        guard navigationDrawerOpen else { return }
+        navigationDrawerAnimationSettled = false
+        navigationDrawerOpen = false
+    }
+
+    func markNavigationDrawerAnimationSettled() {
+        guard !navigationDrawerOpen else { return }
+        navigationDrawerAnimationSettled = true
+    }
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -762,9 +804,13 @@ final class AppModel {
     }
 
     /// Configured project roots used by chat creation and project browsing.
-    var projects: [ProjectInfo] = []
+    var projects: [ProjectInfo] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var projectsError: String?
-    var projectsLoaded = false
+    var projectsLoaded = false {
+        didSet { invalidateProjectProjection() }
+    }
 
     private func markProjectNavigationConnectionKnownGood(generation: UInt64?) {
         guard let generation else { return }
@@ -1644,7 +1690,9 @@ final class AppModel {
             || $0.id.lowercased().contains(q) }
     }
 
-    var tasks: [BoardCard] = []
+    var tasks: [BoardCard] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var tasksError: String?
     var tasksLoaded = false
 
@@ -1665,9 +1713,15 @@ final class AppModel {
 
     // MARK: - Projects
 
-    var projectContext: ProjectContext?
-    var projectContextError: String?
-    var projectMembership = ProjectMembershipIndex()
+    var projectContext: ProjectContext? {
+        didSet { invalidateProjectProjection() }
+    }
+    var projectContextError: String? {
+        didSet { invalidateProjectProjection() }
+    }
+    var projectMembership = ProjectMembershipIndex() {
+        didSet { invalidateProjectProjection() }
+    }
     var projectMembershipLoaded = false
     @ObservationIgnored private var projectContextSelectionSource: ProjectContextSelectionSource?
 
@@ -2181,7 +2235,10 @@ final class AppModel {
     init(
         defaults: UserDefaults = .standard,
         restoreLocalState: Bool = true,
+        loadPersistedConnection: Bool = true,
         widgetSnapshotDefaults: UserDefaults? = nil,
+        performanceRecorder: CavePerformanceRecorder? = nil,
+        threadStoreURL: URL? = nil,
         threadSnapshotLoader: (@Sendable () async -> [ThreadSnapshot])? = nil,
         coreResourceClientFactory: @escaping @Sendable (CaveConnection) -> any AppModelCoreResourceClient = {
             CaveClient(connection: $0)
@@ -2191,7 +2248,10 @@ final class AppModel {
             await AppModel.discoverBaseURL(candidates)
         }
     ) {
-        let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
+        let performanceRecorder = performanceRecorder ?? .shared
+        let threadStore = ThreadSnapshotStore(url: threadStoreURL ?? AppModel.threadsFileURL)
+        self.performanceRecorder = performanceRecorder
+        self.performanceSpans = CavePerformanceSpanLifecycle(recorder: performanceRecorder)
         self.projectContextDefaults = defaults
         self.widgetSnapshotDefaults = widgetSnapshotDefaults
         self.threadStore = threadStore
@@ -2201,7 +2261,7 @@ final class AppModel {
         self.coreResourceClientFactory = coreResourceClientFactory
         self.reminderNotificationScheduler = reminderNotificationScheduler
         self.baseURLDiscoverer = baseURLDiscoverer
-        connection = CaveConnection.load(defaults: defaults)
+        connection = loadPersistedConnection ? CaveConnection.load(defaults: defaults) : nil
         if connection != nil {
             projectNavigationConnectionGeneration = 1
         }
@@ -2396,6 +2456,7 @@ final class AppModel {
         }
         if arguments.contains("--ui-preview-new-chat-unassigned") {
             threads.first?.projectRoot = nil
+            invalidateProjectProjection()
             projectContext = .unassigned
             projectContextSelectionSource = .user
         }
@@ -2507,6 +2568,7 @@ final class AppModel {
 
         if let currentThread = threads.first {
             currentThread.projectRoot = projectRoot
+            invalidateProjectProjection()
             currentThread.updatedAt = Date(timeIntervalSince1970: 1_000)
             currentThread.messages = [
                 DisplayMessage(
@@ -2817,7 +2879,34 @@ final class AppModel {
     /// Switch the canonical application context without disturbing the current
     /// destination. Later tasks will route surfaces through this state; for now
     /// it persists the chosen context and clears any pending cross-surface handoff.
-    func switchProject(to context: ProjectContext) {
+    @discardableResult
+    func beginProjectSwitchMeasurement(to context: ProjectContext) -> Bool {
+        guard context.id != projectContext?.id else { return false }
+        performanceSpans.begin(.projectSwitch)
+        performanceSpans.begin(.destinationStableFrame)
+        projectSwitchMutationPending = true
+        return true
+    }
+
+    func cancelProjectSwitchMeasurement() {
+        performanceSpans.cancel(.projectSwitch)
+        performanceSpans.cancel(.destinationStableFrame)
+        projectSwitchMutationPending = false
+    }
+
+    func switchProject(
+        to context: ProjectContext,
+        measurementAlreadyStarted: Bool = false
+    ) {
+        guard context.id != projectContext?.id else {
+            if measurementAlreadyStarted {
+                cancelProjectSwitchMeasurement()
+            }
+            return
+        }
+        if !measurementAlreadyStarted {
+            _ = beginProjectSwitchMeasurement(to: context)
+        }
         let preservedTab = selectedTab
         switch context {
         case .project(let selected):
@@ -2839,6 +2928,11 @@ final class AppModel {
             seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
         }
         publishWidgetSnapshot()
+        projectSwitchMutationPending = false
+    }
+
+    private func invalidateProjectProjection() {
+        projectProjectionRevision &+= 1
     }
 
     func loadTasks() async {
@@ -5734,6 +5828,21 @@ final class AppModel {
     /// Per-thread UserDefaults key for the composer's unsent draft.
     static func draftKey(_ threadId: String) -> String { "cave.chat.draft.\(threadId)" }
 
+    func persistedThreadDraft(_ threadId: String) -> String? {
+        projectContextDefaults.string(forKey: Self.draftKey(threadId))
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?) {
+        let key = Self.draftKey(threadId)
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            projectContextDefaults.set(text, forKey: key)
+            setThreadDraft(threadId, text: text)
+        } else {
+            projectContextDefaults.removeObject(forKey: key)
+            setThreadDraft(threadId, text: nil)
+        }
+    }
+
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
@@ -5747,7 +5856,7 @@ final class AppModel {
     /// Load persisted drafts for restored threads into the observable mirror.
     private func seedThreadDrafts() {
         for thread in threads where threadDrafts[thread.id] == nil {
-            if let saved = UserDefaults.standard.string(forKey: Self.draftKey(thread.id)),
+            if let saved = persistedThreadDraft(thread.id),
                !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 threadDrafts[thread.id] = saved
             }
@@ -5775,7 +5884,9 @@ final class AppModel {
     /// Chat sessions known to the server (`GET /api/sessions/list`) — including
     /// conversations started on the desktop/web that have no local thread yet.
     /// Merged with on-device threads to build each familiar's thread list.
-    var serverSessions: [SessionRow] = []
+    var serverSessions: [SessionRow] = [] {
+        didSet { invalidateProjectProjection() }
+    }
     var sessionsError: String?
     var sessionsLoaded = false
 
@@ -5913,6 +6024,7 @@ final class AppModel {
         guard let sessionID = normalizedSessionID(row.id),
               let resolvedFamiliarID else {
             if changed {
+                invalidateProjectProjection()
                 persistThreads()
             }
             return (resolvedFamiliarID, changed)
@@ -5948,6 +6060,7 @@ final class AppModel {
         }
 
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return (resolvedFamiliarID, changed)
@@ -5997,6 +6110,7 @@ final class AppModel {
             changed = true
         }
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return changed
@@ -6065,6 +6179,7 @@ final class AppModel {
             }
         }
         if changed {
+            invalidateProjectProjection()
             persistThreads()
         }
         return changed
@@ -6207,6 +6322,7 @@ final class AppModel {
         }) {
             if thread.projectRoot != nil {
                 thread.projectRoot = nil
+                invalidateProjectProjection()
                 persistThreads()
             }
             return thread
@@ -6363,6 +6479,7 @@ final class AppModel {
         guard !trimmed.isEmpty, thread.sessionIds[familiarId] != trimmed else { return }
         let hadAnySession = primarySessionId(of: thread) != nil
         thread.sessionIds[familiarId] = trimmed
+        invalidateProjectProjection()
         touch(thread)
         if !hadAnySession, cardThreadLinks.values.contains(thread.id) {
             Task { await reconcileCardLinks(for: thread) }
@@ -7235,10 +7352,14 @@ final class AppModel {
         guard let target = threads.first(where: { $0.id == thread.id }),
               target.archived != archived else { return }
         target.archived = archived
+        invalidateProjectProjection()
         persistThreads()
         fanOutThreadFlag(target, verb: archived ? "archive" : "unarchive") { client, sessionId in
             try await client.setSessionFlags(sessionId: sessionId, archived: archived)
-        } rollback: { $0.archived = !archived }
+        } rollback: { [weak self] thread in
+            thread.archived = !archived
+            self?.invalidateProjectProjection()
+        }
         retry: { [weak self] in self?.setThreadArchived(thread, archived) }
     }
 

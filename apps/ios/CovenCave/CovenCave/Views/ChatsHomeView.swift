@@ -322,7 +322,7 @@ struct ChatsHomeView: View {
         HStack(spacing: 12) {
             CircularIconButton(systemImage: "line.3.horizontal",
                                label: "Open navigation") {
-                app.navigationDrawerOpen = true
+                app.openNavigationDrawer()
             }
             EditorialSurfaceTitle(
                 title: "Chats",

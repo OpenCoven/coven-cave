@@ -83,6 +83,10 @@ struct MarkdownWebView: UIViewRepresentable {
     /// `window.caveRender` undefined, or a JS error) so the caller can fall back
     /// to native `Text` instead of leaving the reply as a blank sliver.
     var onFailure: (() -> Void)? = nil
+    /// Measurement callbacks follow actual changed renders and terminal disposal.
+    var onRenderStart: (() -> Void)? = nil
+    var onRenderComplete: (() -> Void)? = nil
+    var onRenderCancelled: (() -> Void)? = nil
     /// Reader TOC: the renderer's headings, in document order.
     var onHeadings: (([ReaderHeading]) -> Void)? = nil
 
@@ -95,6 +99,9 @@ struct MarkdownWebView: UIViewRepresentable {
         guard !c.isInvalidated else { return }
         c.onHeight = { h in if abs(h - height) > 0.5 { height = h } }
         c.onFailure = onFailure
+        c.onRenderStart = onRenderStart
+        c.onRenderComplete = onRenderComplete
+        c.onRenderCancelled = onRenderCancelled
         c.onHeadings = onHeadings
         c.setScrollable(scrollable)
         c.apply(markdown: markdown, streaming: streaming,
@@ -126,6 +133,10 @@ struct MarkdownWebView: UIViewRepresentable {
         let webView: WKWebView
         var onHeight: ((CGFloat) -> Void)?
         var onFailure: (() -> Void)?
+        var onRenderStart: (() -> Void)?
+        var onRenderComplete: (() -> Void)?
+        var onRenderCancelled: (() -> Void)?
+        private var renderStartGeneration: UInt64 = 0
         var onHeadings: (([ReaderHeading]) -> Void)?
 
         private(set) var isInvalidated = false
@@ -194,6 +205,9 @@ struct MarkdownWebView: UIViewRepresentable {
             webView.uiDelegate = nil
             onHeight = nil
             onFailure = nil
+            onRenderStart = nil
+            onRenderComplete = nil
+            onRenderCancelled = nil
             onHeadings = nil
             lastRenderSignature = nil
             lastStyleSignature = nil
@@ -201,6 +215,8 @@ struct MarkdownWebView: UIViewRepresentable {
         }
 
         private func stopPendingWork() {
+            renderStartGeneration &+= 1
+            onRenderCancelled?()
             ready = false
             pending = nil
             rendering = false
@@ -250,6 +266,15 @@ struct MarkdownWebView: UIViewRepresentable {
             }
             lastRenderSignature = renderSignature
             lastStyleSignature = styleSignature
+            renderStartGeneration &+= 1
+            let startGeneration = renderStartGeneration
+            let generation = callbackGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isInvalidated, !self.failed,
+                      self.callbackGeneration == generation,
+                      self.renderStartGeneration == startGeneration else { return }
+                self.onRenderStart?()
+            }
             pending = md
             requestRender()
         }
@@ -328,9 +353,12 @@ struct MarkdownWebView: UIViewRepresentable {
                 case .success(let value):
                     if let h = value as? Double, h.isFinite, h > 0 {
                         self.onHeight?(CGFloat(h))
+                        self.onRenderComplete?()
                     } else if !o.streaming {
                         self.reportFailure()
                         return
+                    } else if self.pending == nil {
+                        self.onRenderCancelled?()
                     }
                 case .failure:
                     // Streaming failures can be transient; the settled render
@@ -339,6 +367,10 @@ struct MarkdownWebView: UIViewRepresentable {
                     if !o.streaming {
                         self.reportFailure()
                         return
+                    } else if self.pending == nil {
+                        // A coalesced newer render shares the first-rich span.
+                        // Cancelling it here would discard that newer request's start.
+                        self.onRenderCancelled?()
                     }
                 }
                 if self.pending != nil { self.requestRender() }

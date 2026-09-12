@@ -14,6 +14,7 @@ struct GlobalSearchView: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
+    @Environment(\.scenePhase) private var scenePhase
     @State private var query: String = {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -23,7 +24,31 @@ struct GlobalSearchView: View {
         #endif
         return ""
     }()
+    @State private var effectiveQuery: String = {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "--ui-search-query"), index + 1 < args.count {
+            return args[index + 1]
+        }
+        #endif
+        return ""
+    }()
     @State private var scope: SearchScope = .project
+    @State private var searchRevision: UInt64 = 0
+    @State private var pendingMeasuredQuery: String?
+    @State private var settledMeasuredQuery = ""
+    @State private var searchMeasurementTask: Task<Void, Never>?
+
+    private struct SearchProjection {
+        let chats: [GlobalChatSearchResult]
+        let projects: [ProjectInfo]
+        let familiars: [Familiar]
+        let tasks: [BoardCard]
+
+        var hasResults: Bool {
+            !chats.isEmpty || !projects.isEmpty || !familiars.isEmpty || !tasks.isEmpty
+        }
+    }
 
     let dismiss: () -> Void
     let openThread: (ChatThread) -> Void
@@ -33,15 +58,16 @@ struct GlobalSearchView: View {
     let openTask: (BoardCard) -> Void
 
     var body: some View {
+        let projection = makeSearchProjection()
         NavigationStack {
             VStack(spacing: 0) {
                 scopePicker
-                content
+                content(projection)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Search everything…")
+            .searchable(text: queryBinding, prompt: "Search everything…")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Close", action: dismiss)
@@ -50,14 +76,54 @@ struct GlobalSearchView: View {
             .task { await preloadSearchData() }
         }
         .themedSheetBackground()
+        .background {
+            CavePerformanceStableFrame(token: "search-\(searchRevision)") {
+                guard let pendingMeasuredQuery else { return }
+                app.performanceSpans.finish(.searchQuery)
+                settledMeasuredQuery = pendingMeasuredQuery
+                self.pendingMeasuredQuery = nil
+            }
+            .frame(width: 0, height: 0)
+        }
+        .overlay(alignment: .topLeading) {
+            if CavePerformanceFixture.shouldEnable(
+                arguments: ProcessInfo.processInfo.arguments
+            ), !settledMeasuredQuery.isEmpty {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityLabel("Performance search settled")
+                    .accessibilityIdentifier(
+                        "Performance search settled \(settledMeasuredQuery)"
+                    )
+            }
+        }
+        .onDisappear {
+            searchMeasurementTask?.cancel()
+            searchMeasurementTask = nil
+            pendingMeasuredQuery = nil
+            app.performanceSpans.cancel(.searchQuery)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                if normalizedInputQuery != normalizedQuery {
+                    scheduleSearchMeasurement(for: query)
+                }
+            } else {
+                searchMeasurementTask?.cancel()
+                searchMeasurementTask = nil
+                pendingMeasuredQuery = nil
+                app.performanceSpans.cancel(.searchQuery)
+            }
+        }
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(_ projection: SearchProjection) -> some View {
         if normalizedQuery.isEmpty {
             emptyQueryState
-        } else if hasResults {
-            results
+        } else if projection.hasResults {
+            results(projection)
         } else if isLoadingSearchData {
             loadingState
         } else if let error = searchError {
@@ -72,7 +138,7 @@ struct GlobalSearchView: View {
             Text("Search scope")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(chrome.textSecondary)
-            Picker("Search scope", selection: $scope) {
+            Picker("Search scope", selection: scopeBinding) {
                 Text(projectScopeLabel).tag(SearchScope.project)
                 Text("Everywhere").tag(SearchScope.everywhere)
             }
@@ -122,11 +188,11 @@ struct GlobalSearchView: View {
         }
     }
 
-    private var results: some View {
+    private func results(_ projection: SearchProjection) -> some View {
         List {
-            if !matchingChats.isEmpty {
+            if !projection.chats.isEmpty {
                 Section("Chats") {
-                    ForEach(matchingChats, id: \.id) { result in
+                    ForEach(projection.chats, id: \.id) { result in
                         Button { open(result) } label: { chatRow(result) }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier(result.accessibilityIdentifier)
@@ -134,9 +200,9 @@ struct GlobalSearchView: View {
                 }
             }
 
-            if scope == .everywhere, !matchingProjects.isEmpty {
+            if scope == .everywhere, !projection.projects.isEmpty {
                 Section("Projects") {
-                    ForEach(matchingProjects) { project in
+                    ForEach(projection.projects) { project in
                         Button { openProject(project) } label: {
                             SearchResultRow(
                                 systemImage: "folder.fill",
@@ -150,9 +216,9 @@ struct GlobalSearchView: View {
                 }
             }
 
-            if !matchingFamiliars.isEmpty {
+            if !projection.familiars.isEmpty {
                 Section("Familiars") {
-                    ForEach(matchingFamiliars) { familiar in
+                    ForEach(projection.familiars) { familiar in
                         Button { openFamiliar(familiar) } label: {
                             HStack(spacing: 12) {
                                 AvatarView(
@@ -183,9 +249,9 @@ struct GlobalSearchView: View {
                 }
             }
 
-            if !matchingTasks.isEmpty {
+            if !projection.tasks.isEmpty {
                 Section("Tasks") {
-                    ForEach(matchingTasks) { card in
+                    ForEach(projection.tasks) { card in
                         Button { openTask(card) } label: {
                             SearchResultRow(
                                 systemImage: card.status.systemImage,
@@ -205,14 +271,72 @@ struct GlobalSearchView: View {
     }
 
     private var normalizedQuery: String {
+        effectiveQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var normalizedInputQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private var hasResults: Bool {
-        !matchingChats.isEmpty
-            || !matchingProjects.isEmpty
-            || !matchingFamiliars.isEmpty
-            || !matchingTasks.isEmpty
+    private var queryBinding: Binding<String> {
+        Binding(
+            get: { query },
+            set: { newValue in
+                guard newValue != query else { return }
+                query = newValue
+                scheduleSearchMeasurement(for: newValue)
+            }
+        )
+    }
+
+    private var scopeBinding: Binding<SearchScope> {
+        Binding(
+            get: { scope },
+            set: { newValue in
+                guard newValue != scope else { return }
+                scope = newValue
+                scheduleSearchMeasurement(for: query)
+            }
+        )
+    }
+
+    private func scheduleSearchMeasurement(for rawQuery: String) {
+        searchMeasurementTask?.cancel()
+        searchMeasurementTask = nil
+        pendingMeasuredQuery = nil
+        app.performanceSpans.cancel(.searchQuery)
+
+        let measuredQuery = rawQuery
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !measuredQuery.isEmpty else {
+            effectiveQuery = ""
+            settledMeasuredQuery = ""
+            searchRevision &+= 1
+            return
+        }
+
+        searchMeasurementTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled,
+                  scenePhase == .active,
+                  normalizedInputQuery == measuredQuery
+            else { return }
+            app.performanceSpans.begin(.searchQuery)
+            pendingMeasuredQuery = measuredQuery
+            effectiveQuery = measuredQuery
+            searchRevision &+= 1
+            searchMeasurementTask = nil
+        }
+    }
+
+    private func makeSearchProjection() -> SearchProjection {
+        SearchProjection(
+            chats: matchingChats,
+            projects: matchingProjects,
+            familiars: matchingFamiliars,
+            tasks: matchingTasks
+        )
     }
 
     private var projectScopeLabel: String {

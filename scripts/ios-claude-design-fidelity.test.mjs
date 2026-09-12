@@ -233,7 +233,7 @@ assert.match(
   "the bottom action dock carries a readable operator identity tile",
 );
 for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Settings", settings]]) {
-  assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
+  assert.match(source, /app\.openNavigationDrawer\(\)/, `${name} exposes Open navigation`);
 }
 assert.doesNotMatch(drawer, /label: "Terminal"|go\(\.terminal\)/,
   "the retired iOS terminal stays out of the drawer");
@@ -350,7 +350,7 @@ assert.match(
 );
 assert.match(
   root,
-  /case \.projectSwitcher:\s*ProjectSwitcherView\(\)/,
+  /case \.projectSwitcher:\s*ProjectSwitcherView \{ context in/,
   "the project switcher is a real shell overlay destination",
 );
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
@@ -371,8 +371,8 @@ assert.match(
 );
 assert.match(
   projectSwitcher,
-  /Button \{[\s\S]{0,180}app\.switchProject\(to: row\.context\)/,
-  "choosing a project row switches the app context in place",
+  /Button \{[\s\S]{0,180}onSwitchProject\(row\.context\)/,
+  "choosing a project row delegates the switch to the shell dismissal boundary",
 );
 assert.match(
   projectSwitcher,
@@ -855,12 +855,12 @@ assert.match(drawer, /openSearch\(\)/, "the drawer search control opens global s
 assert.match(root, /case \.search:\s*GlobalSearchView\(/, "the root presents global search");
 assert.match(
   globalSearch,
-  /\.searchable\(text: \$query, prompt: "Search everything…"\)/,
+  /\.searchable\(text: queryBinding, prompt: "Search everything…"\)/,
   "global search uses the canonical app-wide placeholder",
 );
 assert.match(
   globalSearch,
-  /Picker\("Search scope", selection: \$scope\)[\s\S]*Text\(projectScopeLabel\)\.tag\(SearchScope\.project\)[\s\S]*Text\("Everywhere"\)\.tag\(SearchScope\.everywhere\)/,
+  /Picker\("Search scope", selection: scopeBinding\)[\s\S]*Text\(projectScopeLabel\)\.tag\(SearchScope\.project\)[\s\S]*Text\("Everywhere"\)\.tag\(SearchScope\.everywhere\)/,
   "global search exposes project and everywhere scope options",
 );
 assert.match(

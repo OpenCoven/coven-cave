@@ -2035,6 +2035,7 @@ export const SUITES = {
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
+    "scripts/ios-performance-baseline.test.mjs",
     "scripts/mobile-serve-ownership.test.ts",
     "scripts/mobile-process-ownership.test.ts",
     "scripts/mobile-tailscale.test.mjs",
