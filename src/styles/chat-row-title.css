@@ -1,0 +1,27 @@
+.chat-row-title {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-row-title__head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+/* Reserve the suffix even when the shortened title exceeds the row width. */
+.chat-row-title__tail {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.chat-row-title__tail > span {
+  flex-shrink: 0;
+}
