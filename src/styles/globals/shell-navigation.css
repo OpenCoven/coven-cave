@@ -668,6 +668,16 @@
 .cnav__thread:hover .cnav__thread-main {
   padding-right: 76px;
 }
+@media (min-width: 1024px) {
+  .cnav__row-actions .cnav__icon-btn {
+    width: var(--space-8);
+    height: var(--space-8);
+  }
+  .cnav__thread:hover .cnav__thread-main,
+  .cnav__thread:has(.cnav__row-actions:focus-within) .cnav__thread-main {
+    padding-right: calc(3 * var(--space-8) + var(--space-3));
+  }
+}
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
