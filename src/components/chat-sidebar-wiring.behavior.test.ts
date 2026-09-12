@@ -122,7 +122,7 @@ function sectionByLabel(renderer: ReactTestRenderer, label: string) {
 
 function rowContainerFor(scope: ReturnType<typeof sectionByLabel>, title: string) {
   const titleNode = scope.find(
-    (node) => typeof node.type === "string" && node.props.className === "cnav__thread-title" && textContent(node.children) === title,
+    (node) => typeof node.type === "string" && node.props.className?.split(" ").includes("cnav__thread-title") && node.props.title === title,
   );
   let node = titleNode;
   while (

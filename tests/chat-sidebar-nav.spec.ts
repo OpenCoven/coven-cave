@@ -159,7 +159,7 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
   if (expectRail) await page.waitForSelector(RAIL, { timeout: 30_000 });
 }
 
-async function gotoChat(page: Page, { expectRail = true } = {}) {
+async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
@@ -170,7 +170,7 @@ async function gotoChat(page: Page, { expectRail = true } = {}) {
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
   await page.route("**/api/sessions/list**", (route) =>
-    route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
+    route.fulfill({ json: { ok: true, sessions } }),
   );
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: PROJECTS } }),
@@ -180,6 +180,72 @@ async function gotoChat(page: Page, { expectRail = true } = {}) {
 }
 
 test.describe("chat threads rail", () => {
+  test("middle ellipsis preserves title tails in narrow rail and session rows", async ({ page }) => {
+    const title = "Investigate a shared deployment prefix and keep the distinguishing release suffix";
+    const pinnedTitle = "Review a second shared deployment prefix and preserve the production suffix";
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s2"]));
+    });
+    await gotoChat(page, {
+      sessions: SESSIONS.map((session) => ({
+        ...session,
+        title: session.id === "s1" ? title : session.id === "s2" ? pinnedTitle : session.title,
+      })),
+    });
+    await narrowChatRail(page);
+
+    const assertTailVisible = async (root: Locator, fullTitle: string) => {
+      const renderer = root.locator(`.chat-row-title[title="${fullTitle}"]`).first();
+      await expect(renderer).toBeVisible();
+      await renderer.scrollIntoViewIfNeeded();
+      await expect(renderer.locator(".sr-only")).toHaveText(fullTitle);
+      await expect(renderer.locator(".chat-row-title__tail")).toHaveText(fullTitle.slice(-18));
+      const bounds = await renderer.evaluate((element) => {
+        const tail = element.querySelector(".chat-row-title__tail")!;
+        const text = tail.firstElementChild!.firstChild!;
+        const range = document.createRange();
+        range.setStart(text, text.textContent!.length - 6);
+        range.setEnd(text, text.textContent!.length);
+        const suffix = range.getBoundingClientRect();
+        const clip = tail.getBoundingClientRect();
+        const row = element.getBoundingClientRect();
+        const hit = document.elementFromPoint((suffix.left + suffix.right) / 2, (suffix.top + suffix.bottom) / 2);
+        return { suffixLeft: suffix.left, suffixRight: suffix.right, clipLeft: clip.left, clipRight: clip.right, rowRight: row.right, unobscured: hit !== null && tail.contains(hit) };
+      });
+      expect(bounds.suffixLeft).toBeGreaterThanOrEqual(bounds.clipLeft - 1);
+      expect(bounds.suffixRight).toBeLessThanOrEqual(bounds.clipRight + 1);
+      expect(bounds.clipRight).toBeLessThanOrEqual(bounds.rowRight + 1);
+      expect(bounds.unobscured).toBe(true);
+    };
+
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await assertTailVisible(page.locator(RAIL), title);
+      await assertTailVisible(page.locator(RAIL), pinnedTitle);
+    }
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Projects", exact: true }).click();
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    const list = page.getByTestId("chat-main").locator(".chat-list-surface");
+    await assertTailVisible(list, title);
+    await assertTailVisible(list, pinnedTitle);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(async () => (await list.boundingBox())?.width ?? Infinity).toBeLessThanOrEqual(390);
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await assertTailVisible(list, title);
+      await assertTailVisible(list, pinnedTitle);
+    }
+    await list.getByRole("textbox", { name: "Filter sessions", exact: true }).fill("distinguishing");
+    await assertTailVisible(list, title);
+    await expect(list.locator(`.chat-row-title[title="${pinnedTitle}"]`)).toHaveCount(0);
+  });
+
   test("desktop session-list actions have 32px targets and keyboard focus rings", async ({ page }, testInfo) => {
     await gotoChat(page);
     await page.getByRole("tab", { name: "Projects", exact: true }).click();

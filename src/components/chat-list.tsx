@@ -80,6 +80,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
+import { ChatRowTitle } from "./chat-row-title";
 import { filterChatListRows, visibleChatSessions } from "@/lib/chat-list-model";
 import {
   CHAT_GROUP_BY_KEY,
@@ -1611,10 +1612,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                           {/* Content */}
                           <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">
                             {/* Row 1: session title (bold subject line) + a
-                                neutral project tag + the relative-age column.
-                                Running sessions get full white; others are
-                                slightly muted — mirrors the unread/read
-                                convention in email clients. */}
+                                neutral project tag + the relative-age column. */}
                             <span className="chat-list-row-meta flex items-center justify-between gap-2">
                               <span className="chat-list-row-title flex min-w-0 flex-1 items-center gap-1.5">
                                 {pinned && (
@@ -1625,14 +1623,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                     aria-hidden
                                   />
                                 )}
-                                <span className={[
-                                  "truncate text-[length:var(--text-md)] font-semibold",
-                                  s.status === "running"
-                                    ? "text-white"
-                                    : "text-[var(--text-primary)]",
-                                ].join(" ")}>
-                                  {stripLeadingTrailingEmoji((displayTitles.get(s.id) ?? s.title) || "(untitled chat)")}
-                                </span>
+                                <ChatRowTitle
+                                  className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]"
+                                  title={stripLeadingTrailingEmoji((displayTitles.get(s.id) ?? s.title) || "(untitled chat)")}
+                                />
                               </span>
                               {workBranch ? (
                                 <span className="chat-session-branch hidden sm:inline-flex" title={`Branch ${workBranch}`}>
@@ -1966,9 +1960,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                         className="focus-ring-inset group flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-[var(--bg-raised)]/50"
                       >
                         <span className="flex items-baseline justify-between gap-2">
-                          <span className="min-w-0 truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
-                            {stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
-                          </span>
+                          <ChatRowTitle
+                            className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]"
+                            title={stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
+                          />
                           <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                             {hit.matchCount === 1 ? "1 match" : `${hit.matchCount} matches`}
                           </span>
