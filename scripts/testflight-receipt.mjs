@@ -240,9 +240,12 @@ export async function collectReceipt(receipt, api) {
     "fields[builds]": "version",
   })}`)).data, "buildBetaDetails");
   requireValue(detail.id === detailLink.id, "IDENTITY_MISMATCH");
-  receipt.buildBetaDetailHasBuildLinkage = detail.relationships?.build?.data !== undefined;
-  if (receipt.buildBetaDetailHasBuildLinkage) relationship(detail, "build", "builds", build.id);
   receipt.buildBetaDetailId = detail.id;
+  const inverseBuild = detail.relationships?.build?.data;
+  receipt.buildBetaDetailBuildLinkageState = inverseBuild === null ? "empty"
+    : inverseBuild === undefined ? "omitted" : "present";
+  receipt.buildBetaDetailHasBuildLinkage = inverseBuild !== undefined && inverseBuild !== null;
+  if (receipt.buildBetaDetailHasBuildLinkage) relationship(detail, "build", "builds", build.id);
   receipt.internalBuildState = state(detail.attributes?.internalBuildState, INTERNAL);
   receipt.externalBuildState = state(detail.attributes?.externalBuildState, EXTERNAL);
   const groups = await api.list("/v1/betaGroups", {
