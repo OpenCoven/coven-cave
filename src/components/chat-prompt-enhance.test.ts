@@ -12,8 +12,21 @@ const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.m
 
 assert.match(chatView, /const promptEnhance = usePromptEnhance\(\{/, "ChatView mounts the shared enhance hook");
 assert.match(chatView, /import \{ usePromptEnhance \} from "@\/lib\/use-prompt-enhance"/, "enhance goes through the shared model-backed hook");
+assert.match(
+  chatView,
+  /prepareChatPromptEnhancement\(\s*input,\s*Boolean\(activeProjectRoot\),\s*\)/,
+  "Chat prepares prompt-like slash commands before enhancement",
+);
+assert.match(
+  chatView,
+  /const transformEnhancedPrompt = useCallback\(\s*\(enhanced: string\) => applyChatPromptEnhancement\(\s*\{ commandPrefix: promptEnhancementCommandPrefix \},\s*enhanced,\s*\)/,
+  "Chat snapshots a prefix-aware transform for enhancement apply/suggest",
+);
 assert.doesNotMatch(chatView, /fetch\("\/api\/prompt\/enhance"/, "enhance must not round-trip through the dead API route");
-assert.match(chatView, /mode: activeProjectRoot \? "code" : "chat"/, "enhance request is mode-aware for code/project chats");
+assert.match(chatView, /draft: input/, "enhance settles against the full live composer input");
+assert.match(chatView, /sourceDraft: preparedPromptEnhancement\.draft/, "enhance still rewrites only the prepared draft body");
+assert.match(chatView, /transformEnhanced: transformEnhancedPrompt/, "enhance applies routed rewrites through the captured prefix transform");
+assert.match(chatView, /mode: preparedPromptEnhancement\.mode/, "enhance uses command-aware chat, code, image, or research mode");
 assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments\.map\(\(attachment\) => attachment\.name\)\]/, "enhance request forwards mentioned and attached file context");
 assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance request carries the thread title as context");
 assert.match(chatView, /recentMessages:/, "enhance uses a bounded current conversation window as context");

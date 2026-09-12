@@ -159,7 +159,7 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
   if (expectRail) await page.waitForSelector(RAIL, { timeout: 30_000 });
 }
 
-async function gotoChat(page: Page, { expectRail = true } = {}) {
+async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
@@ -170,7 +170,7 @@ async function gotoChat(page: Page, { expectRail = true } = {}) {
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
   await page.route("**/api/sessions/list**", (route) =>
-    route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
+    route.fulfill({ json: { ok: true, sessions } }),
   );
   await page.route("**/api/projects**", (route) =>
     route.fulfill({ json: { ok: true, projects: PROJECTS } }),
@@ -180,6 +180,152 @@ async function gotoChat(page: Page, { expectRail = true } = {}) {
 }
 
 test.describe("chat threads rail", () => {
+  test("middle ellipsis preserves title tails in narrow rail and session rows", async ({ page }) => {
+    const title = "Investigate a shared deployment prefix and keep the distinguishing release suffix";
+    const pinnedTitle = "Review a second shared deployment prefix and preserve the production suffix";
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s2"]));
+    });
+    await gotoChat(page, {
+      sessions: SESSIONS.map((session) => ({
+        ...session,
+        title: session.id === "s1" ? title : session.id === "s2" ? pinnedTitle : session.title,
+      })),
+    });
+    await narrowChatRail(page);
+
+    const assertTailVisible = async (root: Locator, fullTitle: string) => {
+      const renderer = root.locator(`.chat-row-title[title="${fullTitle}"]`).first();
+      await expect(renderer).toBeVisible();
+      await renderer.scrollIntoViewIfNeeded();
+      await expect(renderer.locator(".sr-only")).toHaveText(fullTitle);
+      await expect(renderer.locator(".chat-row-title__tail")).toHaveText(fullTitle.slice(-18));
+      const bounds = await renderer.evaluate((element) => {
+        const tail = element.querySelector(".chat-row-title__tail")!;
+        const text = tail.firstElementChild!.firstChild!;
+        const range = document.createRange();
+        range.setStart(text, text.textContent!.length - 6);
+        range.setEnd(text, text.textContent!.length);
+        const suffix = range.getBoundingClientRect();
+        const clip = tail.getBoundingClientRect();
+        const row = element.getBoundingClientRect();
+        const hit = document.elementFromPoint((suffix.left + suffix.right) / 2, (suffix.top + suffix.bottom) / 2);
+        return { suffixLeft: suffix.left, suffixRight: suffix.right, clipLeft: clip.left, clipRight: clip.right, rowRight: row.right, unobscured: hit !== null && tail.contains(hit) };
+      });
+      expect(bounds.suffixLeft).toBeGreaterThanOrEqual(bounds.clipLeft - 1);
+      expect(bounds.suffixRight).toBeLessThanOrEqual(bounds.clipRight + 1);
+      expect(bounds.clipRight).toBeLessThanOrEqual(bounds.rowRight + 1);
+      expect(bounds.unobscured).toBe(true);
+    };
+
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await assertTailVisible(page.locator(RAIL), title);
+      await assertTailVisible(page.locator(RAIL), pinnedTitle);
+    }
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Projects", exact: true }).click();
+    await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Sessions", exact: true }).click();
+    const list = page.getByTestId("chat-main").locator(".chat-list-surface");
+    await assertTailVisible(list, title);
+    await assertTailVisible(list, pinnedTitle);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(async () => (await list.boundingBox())?.width ?? Infinity).toBeLessThanOrEqual(390);
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await assertTailVisible(list, title);
+      await assertTailVisible(list, pinnedTitle);
+    }
+    await list.getByRole("textbox", { name: "Filter sessions", exact: true }).fill("distinguishing");
+    await assertTailVisible(list, title);
+    await expect(list.locator(`.chat-row-title[title="${pinnedTitle}"]`)).toHaveCount(0);
+  });
+
+  test("desktop session-list actions have 32px targets and keyboard focus rings", async ({ page }, testInfo) => {
+    await gotoChat(page);
+    await page.getByRole("tab", { name: "Projects", exact: true }).click();
+    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    const row = page.locator(".chat-list-row").filter({ hasText: "Refactor auth flow" });
+    await row.hover();
+    const actions = row.locator(".chat-list-row-actions button");
+    await expect(actions).toHaveCount(5);
+    const boxes = await Promise.all((await actions.all()).map(renderedBox));
+    await testInfo.attach("session-list-target-boxes", { body: JSON.stringify(boxes), contentType: "application/json" });
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await page.mouse.move(0, 0);
+    for (const action of await actions.all()) {
+      await page.keyboard.press("Tab");
+      await action.focus();
+      await expect(action).toHaveCSS("opacity", "1");
+      await expect(action).toHaveCSS("outline-style", "solid");
+      await expect(action).toHaveCSS("outline-width", "2px");
+    }
+    await actions.first().click();
+    const sectionToggle = page.getByRole("button", { name: "Collapse Pinned", exact: true });
+    await expect(sectionToggle).toBeVisible();
+    const sectionBox = await renderedBox(sectionToggle);
+    expect(sectionBox.width).toBeGreaterThanOrEqual(32);
+    expect(sectionBox.height).toBeGreaterThanOrEqual(32);
+    await page.keyboard.press("Tab");
+    await sectionToggle.focus();
+    await expect(sectionToggle).toHaveCSS("outline-style", "solid");
+    await expect(sectionToggle).toHaveCSS("outline-width", "2px");
+  });
+
+  test("desktop row controls have 32px targets and visible keyboard focus", async ({ page }, testInfo) => {
+    await gotoChat(page);
+    const row = page.locator(RAIL).locator(".cnav__thread").filter({ hasText: "Refactor auth flow" });
+    await row.hover();
+    const actions = row.locator(".cnav__row-actions > button");
+    await expect(actions).toHaveCount(3);
+    const targets = [...await actions.all(), page.getByRole("button", { name: "Collapse chat list" })];
+    const boxes = await Promise.all(targets.map(renderedBox));
+    await testInfo.attach("desktop-target-boxes", { body: JSON.stringify(boxes), contentType: "application/json" });
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(32);
+      expect(box.height).toBeGreaterThanOrEqual(32);
+    }
+    await page.mouse.move(0, 0);
+    await row.locator(".cnav__thread-main").focus();
+    await page.keyboard.press("Tab");
+    await expect(actions.first()).toBeFocused();
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(([theme, mode]) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, [theme, mode]);
+      await expect(actions.first()).toHaveCSS("opacity", "1");
+      await expect(actions.first()).toHaveCSS("outline-style", "solid");
+      await expect(actions.first()).toHaveCSS("outline-width", "2px");
+    }
+    await narrowChatRail(page);
+    const titleAndActions = await row.evaluate((element) => ({
+      titleRight: element.querySelector(".cnav__thread-copy")!.getBoundingClientRect().right,
+      actionsLeft: element.querySelector(".cnav__row-actions")!.getBoundingClientRect().left,
+    }));
+    expect(titleAndActions.titleRight).toBeLessThanOrEqual(titleAndActions.actionsLeft);
+
+    await actions.first().click();
+    const pinnedUnpin = page.locator(RAIL).locator('button[title="Unpin chat"]')
+      .and(page.getByRole("button", { name: "Unpin Refactor auth flow", exact: true }));
+    await expect(pinnedUnpin).toBeVisible();
+    const pinnedBox = await renderedBox(pinnedUnpin);
+    expect(pinnedBox.width).toBeGreaterThanOrEqual(32);
+    expect(pinnedBox.height).toBeGreaterThanOrEqual(32);
+    await page.keyboard.press("Tab");
+    await pinnedUnpin.focus();
+    await expect(pinnedUnpin).toHaveCSS("outline-style", "solid");
+    await expect(pinnedUnpin).toHaveCSS("outline-width", "2px");
+  });
+
   test("is docked in the chat surface, leaving the app sidebar unchanged", async ({ page }) => {
     await gotoChat(page);
     const nav = page.locator('aside[aria-label="Sidebar"]');

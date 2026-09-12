@@ -1,7 +1,38 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import test from "node:test";
-import { POST } from "./route.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, test } from "node:test";
+
+const testRoot = mkdtempSync(path.join(tmpdir(), "search-route-"));
+const isolatedEnv = {
+  COVEN_CAVE_HOME: path.join(testRoot, "cave"),
+  COVEN_HOME: path.join(testRoot, "coven"),
+  COVEN_CAVE_SEARCH_INDEX: path.join(testRoot, "search.sqlite"),
+  COVEN_SOCKET: process.platform === "win32"
+    ? `\\\\.\\pipe\\${path.basename(testRoot)}`
+    : path.join(testRoot, "coven.sock"),
+};
+const previousEnv = Object.fromEntries(
+  Object.keys(isolatedEnv).map((key) => [key, process.env[key]]),
+);
+Object.assign(process.env, isolatedEnv);
+
+// Store paths are captured at import time; isolate before loading the route.
+const { resetServerSearchIndexForTests } = await import("@/lib/server/search-runtime");
+after(async () => {
+  try {
+    await resetServerSearchIndexForTests();
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(testRoot, { recursive: true, force: true });
+  }
+});
+const { POST } = await import("./route.ts");
 
 const baseQuery = {
   version: 1,
@@ -98,7 +129,7 @@ test("a non-JSON content type is refused", async () => {
 test("a pre-aborted request signal is honored without hanging", async () => {
   const controller = new AbortController();
   controller.abort();
-  const response = await POST(request({ query: baseQuery }), { signal: controller.signal });
+  const response = await POST(request({ query: baseQuery }, { signal: controller.signal }));
   // The route validates before running providers, so an aborted signal on an
   // otherwise valid request still completes the handshake; the coordinator's
   // signal handling is exercised by the coordinator tests.

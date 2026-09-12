@@ -11,6 +11,15 @@ const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.met
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
 
+test("Research discussion commands use an explicit discussion mutation, never open an executor", () => {
+  assert.match(deskTab, /useFlowDiscussion/);
+  assert.match(deskTab, /discussion\.discuss\(selectedSessionId\)/);
+  assert.doesNotMatch(deskTab, /openMissionSession\(selectedSessionId\)/);
+  assert.match(deskTab, /discussion\.error/);
+  assert.match(detail, /discussion\.discuss\(sessionId\)/);
+  assert.doesNotMatch(detail, /onClick=\{\(\) => onOpenSession\(sessionId\)\}/);
+});
+
 // ── Stepper: 6 displayed phases, reconciled statuses ─────────────────────────
 
 test("stepper shows the six phases scope→publish with reconciled statuses", () => {
@@ -427,6 +436,17 @@ test("archived missions gate automation controls like the schedule button", () =
   assert.match(detail, /disabled=\{busy \|\| isArchived \|\| mission\.status === "completed"\}/);
 });
 
+test("lifecycle-mismatched mission overlays remain readable but expose no mutations", () => {
+  assert.match(deskTab, /missionActionsAvailable=\{canonicalRun\.missionActionsAvailable\}/);
+  assert.match(detail, /const actions = missionActionsAvailable \? allowedResearchActions\(mission\) : \[\]/);
+  assert.match(detail, /mission\.automation && missionActionsAvailable/);
+  assert.match(detail, /readOnly=\{!missionActionsAvailable\}/);
+  assert.match(ledger, /!readOnly && artifact\.state !== "rejected"/);
+  assert.match(ledger, /\{!readOnly \? \(\s*<details className="research-source-attach-disclosure">/);
+  assert.match(ledger, /!readOnly && triage &&/);
+  assert.match(ledger, /\{!readOnly \? \(\s*<label className="research-source-revise">/);
+});
+
 // ── Responsive collapses re-declared for the desk-tab overrides ─────────────
 
 test("desk-tab responsive collapses match the existing container breakpoints", () => {
@@ -460,7 +480,7 @@ test("narrow desks bound secondary rails while preserving the run surface", () =
 
 test("rail artifacts render shared artifact actions with publish on settled missions", () => {
   assert.match(ledger, /ResearchArtifactActions/);
-  assert.match(ledger, /onPublish=\{settled \? publishArtifact : undefined\}/);
+  assert.match(ledger, /onPublish=\{settled && !readOnly \? publishArtifact : undefined\}/);
   assert.match(ledger, /action: "publish-artifact"/);
   assert.match(ledger, /Artifact published to the Grimoire\./);
 });

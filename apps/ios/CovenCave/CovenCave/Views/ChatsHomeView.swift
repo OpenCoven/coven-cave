@@ -385,7 +385,7 @@ struct ChatsHomeView: View {
     }
 
     private var visibleConversationCount: Int {
-        app.threads.lazy.filter { !$0.archived }.count
+        app.chatThreads.lazy.filter { !$0.archived }.count
     }
 
     private var visibleConversationLabel: String? {

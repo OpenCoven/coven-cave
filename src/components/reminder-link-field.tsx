@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { StandardSelect } from "@/components/ui/select";
 import type { LinkRef } from "@/lib/cave-inbox";
+import { isGeneratedChatSession } from "@/lib/chat-projects";
+import type { SessionRow } from "@/lib/types";
 
 type LinkKind = "none" | "url" | "card" | "session";
 
@@ -81,9 +83,10 @@ export function ReminderLinkField({
     try {
       const res = await fetch("/api/sessions/list", { cache: "no-store" });
       const json = await res.json();
-      const list: Option[] = (json.sessions ?? []).map(
-        (s: { id: string; title: string }) => ({ id: s.id, title: s.title }),
-      );
+      const rows: SessionRow[] = json.sessions ?? [];
+      const list: Option[] = rows
+        .filter((session) => !isGeneratedChatSession(session))
+        .map((session) => ({ id: session.id, title: session.title }));
       sessionCache = list;
       setSessions(list);
     } catch {

@@ -1,4 +1,5 @@
 import { extractAgentAttachmentMarkers } from "./chat-attachments.ts";
+import { protectApproveMarkers } from "./approve-blocks.ts";
 import { extractAutoStatusMarkers } from "./auto-status-blocks.ts";
 import { extractChatAttentionMarker } from "./chat-attention-marker.ts";
 import { extractChatResultMarkers } from "./chat-result-markers.ts";
@@ -42,7 +43,7 @@ function researchPreviewMarker(run: ResearchRunMarker): string {
 /**
  * Project an assistant turn through the exact control-marker pipeline used by
  * the transcript. `visible` is prose-only; `cardText` retains GitHub, image,
- * and preview markers so the renderer can replace them with rich cards.
+ * preview, and valid questions markers so the renderer can replace them with rich cards.
  * Research markers are control metadata: the projection exposes their run
  * snapshots separately and never lets raw protocol text reach prose/card text.
  */
@@ -50,7 +51,8 @@ export function extractChatRenderedText(
   text: string,
   options: { pending?: boolean } = {},
 ): ChatRenderedTextProjection {
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);
+  const approveSplit = protectApproveMarkers(extractAgentAttachmentMarkers(text).text);
+  const reasoningSplit = splitReasoning(approveSplit.text);
   const skillSplit = extractSkillMarkers(reasoningSplit.visible);
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {
@@ -67,9 +69,12 @@ export function extractChatRenderedText(
     : researchSplit.visible;
 
   return {
-    visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(researchSplit.visible))),
-    cardText: stripIncompletePreviewMarker(cardSource),
-    inlineReasoning: reasoningSplit.reasoning,
+    visible: approveSplit.restore(
+      stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(researchSplit.visible))),
+      false,
+    ),
+    cardText: approveSplit.restore(stripIncompletePreviewMarker(cardSource), true),
+    inlineReasoning: approveSplit.restore(reasoningSplit.reasoning, true),
     skillUpdates: skillSplit.updates,
     researchRuns: researchSplit.runs,
     autoStatusUpdate: autoStatusSplit.update,

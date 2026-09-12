@@ -29,6 +29,7 @@ import {
 } from "../copilot-stream.ts";
 import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
+import { finalizeFlowSession } from "./flow-attention.ts";
 import {
   COVEN_PROCESS_SUPERVISOR_CONTROL_PREFIX,
   COVEN_PROCESS_SUPERVISOR_MAX_REQUEST_BYTES,
@@ -1050,6 +1051,15 @@ export async function startCopilotFlowRun(
           // Transcript persistence is best-effort; the run itself finished.
         }
         conversationPersisted = true;
+        const assistant = payload.turns.findLast((turn) => turn.role === "assistant");
+        await finalizeFlowSession({
+          sessionId,
+          familiarId: payload.familiarId,
+          isError: assistant?.isError,
+          text: assistant?.text,
+          finishedAt: payload.updatedAt,
+          cancelled: payload.flowOutcome?.status === "cancelled",
+        });
       }
       // Publish settled ownership before removing the live handle. Cancel can
       // therefore never observe a gap and fall through to the daemon after
@@ -1137,6 +1147,7 @@ export async function startCopilotFlowRun(
         : protocolReportedFailure
           ? "Copilot reported a failed result."
           : "";
+      const cancelled = active.terminationRequested && forcedFailureDiagnostic === null;
       const finishedAt = new Date().toISOString();
       const text = [
         assistantText,
@@ -1148,6 +1159,8 @@ export async function startCopilotFlowRun(
       const assistantTurnId = randomUUID();
       conversationPayload = {
         sessionId,
+        origin: "flow",
+        flowOutcome: { status: cancelled ? "cancelled" : failed ? "failed" : "completed", exitCode: code },
         harnessSessionId: sessionId,
         familiarId: launch.familiarId ?? "",
         harness: "copilot",
@@ -1163,6 +1176,7 @@ export async function startCopilotFlowRun(
             createdAt: finishedAt,
             ...(persistedTools ? { tools: persistedTools } : {}),
             ...(failed ? { isError: true } : {}),
+            ...(cancelled ? { cancelled: true } : {}),
           },
         ],
         activeLeafId: assistantTurnId,

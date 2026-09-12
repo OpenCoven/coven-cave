@@ -19,7 +19,9 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import { loadConversation, persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
+import { resolveActivePath } from "@/lib/conversation-tree";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -243,7 +245,24 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (attachmentBlock) throw new Error(attachmentBlock);
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
-  const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const userTurnId = stringValue(payload.userTurnId) ?? item.id;
+  const conversation = await loadConversation(sessionId);
+  const attachmentPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
+  let replayPrompt = attachmentPrompt;
+  if (conversation?.flowDiscussion) {
+    const queuedTurn = conversation.turns.find((turn) => turn.id === userTurnId && turn.role === "user");
+    if (!queuedTurn) throw new Error("queued discussion turn is missing from its saved conversation");
+    // Queue acceptance already appended this user turn, and later queued
+    // questions may follow it. Replay only its ancestors into the fresh hub
+    // session, never this prompt twice or a future/sibling branch.
+    const turns = resolveActivePath(conversation.turns, userTurnId)
+      .filter((turn) => turn.id !== userTurnId);
+    replayPrompt = buildResumeRetryPrompt(attachmentPrompt, {
+      turns,
+      activeLeafId: queuedTurn.parentId ?? undefined,
+    }).prompt;
+  }
   const replayTitle =
     chatSummaryTitle({ userText: prompt }) ??
     defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id);
@@ -271,7 +290,6 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     });
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
-  const sessionId = stringValue(payload.sessionId) ?? item.id;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -286,7 +304,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     createdAt: item.createdAt,
     harnessSessionId,
     userTurn: {
-      id: stringValue(payload.userTurnId) ?? item.id,
+      id: userTurnId,
       text: prompt,
       ...(attachments.length ? { attachments } : {}),
       ...(queuedRunId ? { attentionClearOperationId: queuedRunId } : {}),

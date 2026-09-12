@@ -1769,14 +1769,25 @@ final class AppModel {
         return .allowed
     }
 
+    var chatThreads: [ChatThread] {
+        let executionIDs = Set(serverSessions.filter(\.isFlowRun).map(\.id))
+        return threads.filter {
+            !$0.isFlowRun && executionIDs.isDisjoint(with: $0.sessionIds.values)
+        }
+    }
+
+    var chatServerSessions: [SessionRow] {
+        serverSessions.filter { !$0.isGeneratedRun }
+    }
+
     var projectThreads: [ChatThread] {
         guard let projectContext else { return [] }
-        return threads.filter { projectContext.matches(thread: $0, registeredProjects: projects) }
+        return chatThreads.filter { projectContext.matches(thread: $0, registeredProjects: projects) }
     }
 
     var projectServerSessions: [SessionRow] {
         guard let projectContext else { return [] }
-        return serverSessions.filter { projectContext.matches(session: $0, registeredProjects: projects) }
+        return chatServerSessions.filter { projectContext.matches(session: $0, registeredProjects: projects) }
     }
 
     var projectTasks: [BoardCard] {
@@ -1798,8 +1809,8 @@ final class AppModel {
                 uniquingKeysWith: { first, _ in first }
             )
             let ids = ProjectContext.unassignedFamiliarIDs(
-                threads: threads,
-                sessions: serverSessions,
+                threads: chatThreads,
+                sessions: chatServerSessions,
                 tasks: tasks,
                 registeredProjects: projects
             )
@@ -1826,7 +1837,7 @@ final class AppModel {
     }
 
     func directThreads(for familiarId: String, in context: ProjectContext) -> [ChatThread] {
-        threads
+        chatThreads
             .filter { context.matches(thread: $0, registeredProjects: projects) }
             .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
             .sorted { a, b in
@@ -1874,7 +1885,7 @@ final class AppModel {
     }
 
     func globalDirectThreads(for familiarId: String) -> [ChatThread] {
-        threads
+        chatThreads
             .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
             .sorted { a, b in
                 if a.pinned != b.pinned { return a.pinned }
@@ -6144,6 +6155,11 @@ final class AppModel {
         )
         var changed = false
         for thread in threads {
+            let flowIDs = Set(serverSessionIds(thread).filter { sessionsByID[$0]?.isFlowRun == true })
+            if !flowIDs.isSubset(of: thread.flowSessionIds) {
+                thread.flowSessionIds.formUnion(flowIDs)
+                changed = true
+            }
             // Local intent wins while a PATCH is in flight: the fold must not
             // clobber an optimistic flag the fan-out has not yet settled.
             guard threadFlagWrites[thread.id] == nil else { continue }
@@ -6334,6 +6350,9 @@ final class AppModel {
     ) -> ChatThread {
         let changed = backfillThreadProjectRoots(from: [row])
         if let existing = threads.first(where: { $0.sessionIds.values.contains(row.id) }) {
+            if row.isFlowRun && existing.flowSessionIds.insert(row.id).inserted {
+                persistThreads()
+            }
             let repair = repairThreadSessionBinding(
                 existing,
                 with: row,
@@ -6354,6 +6373,7 @@ final class AppModel {
         let thread = ChatThread(title: title, familiarIds: [resolvedFamiliarID],
                                 sessionIds: [resolvedFamiliarID: row.id],
                                 projectRoot: row.projectRoot)
+        if row.isFlowRun { thread.flowSessionIds.insert(row.id) }
         threads.insert(thread, at: 0)
         persistThreads()
         if shouldLoadHistory {

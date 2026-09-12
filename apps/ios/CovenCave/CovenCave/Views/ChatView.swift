@@ -149,6 +149,7 @@ struct ChatView: View {
     }
 
     private var voiceCallLaunch: VoiceCallLaunch? {
+        guard !thread.isFlowRun else { return nil }
         guard let familiar = voiceCallFamiliar else { return nil }
         guard !isRecoveryOnlyThread else { return nil }
         guard app.threadOpenFailure(for: thread) == nil else { return nil }
@@ -229,7 +230,9 @@ struct ChatView: View {
             // Model access moved into the header's agent pill (and /model), so
             // the composer anchors the screen with nothing between it and the
             // transcript.
-            if isRecoveryOnlyThread {
+            if thread.isFlowRun {
+                flowReadOnlyComposer
+            } else if isRecoveryOnlyThread {
                 recoveryOnlyComposer
             } else {
                 composer
@@ -547,6 +550,7 @@ struct ChatView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(thread.archived ? "Unarchive chat" : "Archive chat")
         }
+        .disabled(thread.isFlowRun)
         .padding(.vertical, 4)
         .frame(maxWidth: 420)
         .glass(.raised, cornerRadius: 16)
@@ -572,6 +576,20 @@ struct ChatView: View {
             .padding(.vertical, 8)
             .background(chrome.bgRaised)
         }
+    }
+
+    private var flowReadOnlyComposer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Flow execution · Read-only", systemImage: "lock")
+                .font(.headline)
+            Text("To continue the conversation, use Discuss in Chat from this Flow on desktop.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(chrome.bgRaised)
     }
 
     private var recoveryOnlyComposer: some View {
@@ -1086,15 +1104,18 @@ struct ChatView: View {
                 ? { retryAssistant(message) }
                 : nil
             let bubbleRetryDelete: (() -> Void)? =
-                thread.canRetryPartialDelete(noteId: message.id)
+                thread.canRetryPartialDelete(noteId: message.id) && !thread.isFlowRun
                     ? { retryPartialDelete(noteId: message.id) }
                     : nil
+            let bubbleDelete: (() -> Void)? = thread.isFlowRun ? nil : { deleteMessage(message) }
+            let bubbleReply: ((DisplayMessage) -> Void)? = thread.isFlowRun ? nil : { beginReply($0) }
+            let bubbleSuggestion: ((String) -> Void)? = thread.isFlowRun ? nil : { sendSuggestion($0) }
             MessageBubble(message: message,
                           isGroup: thread.isGroup,
                           familiar: bubbleFamiliar,
                           isLast: message.id == thread.messages.last?.id,
-                          onDelete: { deleteMessage(message) },
-                          onSuggestion: { sendSuggestion($0) },
+                          onDelete: bubbleDelete,
+                          onSuggestion: bubbleSuggestion,
                           onOpenReader: bubbleOpenReader,
                           onForward: { beginForward($0) },
                           onRichRenderStart: {
@@ -1107,7 +1128,7 @@ struct ChatView: View {
                               cancelFirstRichRender(messageID: message.id)
                           },
                           onRetry: bubbleRetry,
-                          onReply: { beginReply($0) },
+                          onReply: bubbleReply,
                           onRetryDelete: bubbleRetryDelete,
                           operatorName: app.operatorDisplayName,
                           operatorAvatarURL: app.operatorAvatarURL)
@@ -1588,7 +1609,7 @@ struct ChatView: View {
     private var canSend: Bool {
         let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !pendingImages.isEmpty
-        return !isRecoveryOnlyThread && hasContent && (isCommand || thread.canSendMessages)
+        return !thread.isFlowRun && !isRecoveryOnlyThread && hasContent && (isCommand || thread.canSendMessages)
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -1605,6 +1626,7 @@ struct ChatView: View {
     // MARK: - Send / dispatch
 
     private func send() {
+        guard !thread.isFlowRun else { return }
         guard !isRecoveryOnlyThread else {
             showRecoveryOnlyChatGuidance()
             return
@@ -1715,6 +1737,7 @@ struct ChatView: View {
     /// for group threads too — only the one bubble's familiar re-runs.
     private func canRetry(_ message: DisplayMessage) -> Bool {
         guard message.role == .assistant, !message.streaming,
+              !thread.isFlowRun,
               let idx = thread.messages.firstIndex(where: { $0.id == message.id }),
               thread.messages[..<idx].contains(where: { $0.role == .user }) else { return false }
         return message.isError || message.id == thread.messages.last?.id

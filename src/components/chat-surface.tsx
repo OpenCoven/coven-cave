@@ -39,6 +39,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+import { CodeRailReopen } from "@/components/code-rail-reopen";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -743,22 +744,13 @@ export function ChatSurface({
           </Group>
         )}
       </div>
-      {/* Collapsed code rail: a transparent full-height edge target with one
-          hover/focus-revealed pull tab. It stays discoverable without leaving
-          a labeled chrome column beside the conversation. */}
-      {rail.available && !rail.open && !isMobile && !paneNarrow && (
-        <button
-          type="button"
-          aria-label="Show code rail"
-          title="Show code rail"
-          data-change-count={changeCount ?? "unknown"}
-          className="workspace-rail-reopen focus-ring"
-          onClick={rail.reopen}
-        >
-          <span className="workspace-rail-reopen__tab" aria-hidden>
-            <Icon name="ph:caret-left" width={10} aria-hidden />
-          </span>
-        </button>
+      {scope === "conversation" && rail.available && !rail.open && !isMobile && !paneNarrow && (
+        <CodeRailReopen
+          key={`${railController.effectiveProjectRoot}:${snapshot.sessionId}`}
+          changeCount={changeCount}
+          changeNonce={railController.changeNonce}
+          onOpen={railController.openChanges}
+        />
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
           a full-height right-edge slide-over sheet over the full-screen chat

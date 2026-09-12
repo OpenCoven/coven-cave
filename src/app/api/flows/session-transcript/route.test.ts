@@ -34,7 +34,8 @@ assert.match(
   /loadConversationFromJsonl\(sessionId, familiarId\)[\s\S]*assistantTranscript\(jsonlConversation\)/,
   "resolver should fall back to OpenClaw JSONL transcripts",
 );
-assert.match(resolver, /callDaemon<\{ events: CovenEvent\[\] \}>/, "resolver should read daemon events for live flow sessions");
+assert.match(resolver, /callDaemon<EventPage>\(request\)/, "resolver should read daemon event pages for live flow sessions");
+assert.match(resolver, /callDaemonTarget<EventPage>\(daemonTarget, request\)/, "resolver should read event pages from the owning daemon when targeted");
 assert.match(resolver, /eventOutputTranscript/, "resolver should convert daemon output events into a pollable transcript");
 assert.match(resolver, /stripAnsi/, "daemon PTY output should be ANSI-stripped before progress parsing");
 assert.match(

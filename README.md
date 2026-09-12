@@ -57,6 +57,26 @@ persist state offline, and hand a live session off to your phone over Tailscale.
 - **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows,
   automations, and marketplace-seeded catalog data.
 
+### Flow executions and Chat
+
+Automated Flow transcripts stay in **Flow runs**, not the ordinary Chat list.
+Research iterations stay grouped under their mission. In Chat's Sessions list,
+choose **Session view options > Flow runs** to inspect execution history and
+read transcripts without creating a chat.
+Use **Discuss in Chat** when you want a separate conversation with the familiar:
+it links back to the execution and starts with a bounded snapshot of its output,
+without resuming the automation or inheriting its runtime permissions.
+
+Execution ownership is retained independently of the capped, clearable run
+history. Older sessions are classified only from exact run/session links, never
+from a title such as "Flow:". Clearing history does not delete transcripts or
+make execution sessions reappear in Chat.
+
+Routine success stays quiet. Failures, approval requests, and checkpoints that
+need human input produce one actionable notification per run or Research
+mission, linking to that exact owner. Its guidance updates as blockers change;
+resolved work clears the notification without generating another completion.
+
 <div align="center">
 <img src="screenshots/canvas-chat.png" alt="Chat canvas" width="405">
 <img src="screenshots/workflows.png" alt="Workflows surface" width="405">

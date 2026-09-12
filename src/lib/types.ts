@@ -98,6 +98,7 @@ export type SessionRow = {
   attentionOperationLineage?: string[];
   familiarId?: string | null;
   origin?: SessionOrigin;
+  flow?: import("./flow-session.ts").FlowSessionReference;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */
   hasLocalConversation?: boolean;
   /**
@@ -163,6 +164,7 @@ export type SessionPullRequestContext = {
 
 export type SessionOrigin =
   | "chat"
+  | "flow"
   | "mention"
   | "board"
   | "cron"

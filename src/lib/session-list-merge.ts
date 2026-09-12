@@ -13,6 +13,7 @@ import {
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
+import { flowSessionReferenceFor } from "./flow-session.ts";
 import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<
@@ -133,6 +134,7 @@ function localConversationToSession(
   const cwd = conversationLocalCwd(conv.runtime);
   const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
   const familiarWorkspace = cwd ? familiarWorkspaceForCwd?.(cwd) : undefined;
+  const flow = flowSessionReferenceFor(state.sessionFlow, conv.sessionId);
   return {
     id: conv.sessionId,
     project_root: projectRoot,
@@ -146,7 +148,7 @@ function localConversationToSession(
     archived_at: archivedAt,
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
-    attention: deriveChatAttention({
+    attention: flow || conv.origin === "flow" ? NO_CHAT_ATTENTION : deriveChatAttention({
       evidence: conv.attentionEvidence,
       status,
       archivedAt,
@@ -155,7 +157,8 @@ function localConversationToSession(
     attentionAfterOperationId: attentionAfterOperationId(conv.attentionEvidence),
     ...attentionOperationLineageFields(conv.attentionEvidence),
     familiarId,
-    origin: conv.origin ?? "chat",
+    origin: flow ? "flow" : conv.origin ?? "chat",
+    ...(flow ? { flow } : {}),
     hasLocalConversation: true,
     ...(conv.branch ? { workBranch: conv.branch } : {}),
     ...(conv.prUrl ? { chatPrUrl: conv.prUrl } : {}),
@@ -263,7 +266,7 @@ export function mergeSessionRows({
         );
         const archived_at = state.sessionArchived[stateSessionId] ?? session.archived_at;
         const attention =
-          isArchivedStatus(session.status)
+          isArchivedStatus(session.status) || recovered.origin === "flow"
             ? NO_CHAT_ATTENTION
             : deriveChatAttention({
                 evidence: local.attentionEvidence,
@@ -307,8 +310,9 @@ export function mergeSessionRows({
       localIsNewer && !daemonStatusIsAuthoritative && local?.status
         ? local.status
         : session.status;
+    const flow = flowSessionReferenceFor(state.sessionFlow, stateSessionId);
     const attention =
-      isArchivedStatus(mergedStatus)
+      isArchivedStatus(mergedStatus) || flow || local?.origin === "flow"
         ? NO_CHAT_ATTENTION
         : deriveChatAttention({
             evidence: local?.attentionEvidence,
@@ -344,7 +348,8 @@ export function mergeSessionRows({
       ...attentionOperationLineageFields(local?.attentionEvidence),
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
-      origin: local?.origin ?? inferOrigin(session),
+      origin: flow ? "flow" : local?.origin ?? inferOrigin(session),
+      ...(flow ? { flow } : {}),
       // Per-session branch snapshot (chat's own cwd at its last saved turn).
       // PR attribution must key off this — never the root's current branch.
       ...(local?.branch ? { workBranch: local.branch } : {}),

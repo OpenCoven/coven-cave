@@ -12,14 +12,17 @@ import {
   loadConfig,
   loadState,
   recordSessionFamiliar,
+  sessionTitleRevision,
   setSessionTitleAutoIfOwned,
 } from "@/lib/cave-config";
 import { chatSummaryTitle, chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
+  hasMaterialTitleChange,
   isRenameDueAtTurn,
   normalizeChatAutoRenamePolicy,
   renameTitleFromLatestExchange,
 } from "@/lib/chat-auto-rename";
+import { resolveActivePath } from "@/lib/conversation-tree";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -221,12 +224,15 @@ import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters
 import {
   type ChatTurn,
   createConversationStub,
+  isSafeConversationSessionId,
   loadConversation,
   persistQueuedOfflineConversation,
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
 } from "@/lib/cave-conversations";
+import { flowSessionReferenceFor, isUnstartedFlowDiscussion } from "@/lib/flow-session";
+import { loadFlowSessionState } from "@/lib/server/flow-store";
 import {
   captureWorkBranch,
   cwdFromConversationRuntime,
@@ -285,6 +291,7 @@ import {
   extractIncompleteChatAttentionMarker,
 } from "@/lib/chat-attention-marker";
 import { splitReasoning } from "@/lib/chat-reasoning";
+import { protectApproveMarkers } from "@/lib/approve-blocks";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -538,7 +545,8 @@ function prepareAttentionRequest(args: {
   reasoning?: string;
   request: ChatResponseMetadata["attentionRequest"] | null;
 } {
-  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(args.text);
+  const approveSplit = protectApproveMarkers(args.text);
+  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(approveSplit.text);
   const { visible, request: marker } = args.incomplete
     ? extractIncompleteChatAttentionMarker(visibleBody)
     : extractChatAttentionMarker(visibleBody);
@@ -546,8 +554,8 @@ function prepareAttentionRequest(args: {
     ? extractIncompleteChatAttentionMarker(reasoningBody)
     : extractChatAttentionMarker(reasoningBody);
   return {
-    text: visible,
-    ...(cleanedReasoning.trim() ? { reasoning: cleanedReasoning.trim() } : {}),
+    text: approveSplit.restore(visible, true),
+    ...(cleanedReasoning.trim() ? { reasoning: approveSplit.restore(cleanedReasoning.trim(), true) } : {}),
     request: marker
       ? {
           sessionId: args.sessionId,
@@ -570,7 +578,9 @@ function attentionClearOperationForTurn(
  *  atomically skipping when a manual title is already present. Best effort. */
 async function setDefaultStubTitleAuto(sessionId: string, title: string): Promise<void> {
   const autoDefaults = new Set([defaultChatTitleForSession(sessionId)]);
-  await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => undefined);
+  await setSessionTitleAutoIfOwned(sessionId, title, autoDefaults).catch(() => {
+    console.warn("[chat-title] initial title persistence failed");
+  });
 }
 
 /** Auto-name a thread from its first user/assistant exchange with a short
@@ -584,13 +594,14 @@ async function autoNameSessionFromFirstExchange(
   promptText: string,
 ): Promise<void> {
   try {
-    // Derive the title from the first settled exchange first, before any
-    // ownership check, so stale pre-await state cannot overwrite a manual rename.
-    const conversation = await loadConversation(sessionId).catch(() => null);
-    const turns = conversation?.turns ?? [];
+    const state = await loadState();
+    const conversation = await loadConversation(sessionId);
+    const turns = conversation?.activeLeafId
+      ? resolveActivePath(conversation.turns, conversation.activeLeafId)
+      : conversation?.turns ?? [];
     const firstUser = turns.find((t) => t.role === "user")?.text ?? promptText;
     const firstAssistant =
-      turns.find((t) => t.role === "assistant" && !t.isError)?.text ?? null;
+      turns.find((t) => t.role === "assistant" && !t.isError && !t.cancelled)?.text ?? null;
     const summary = chatSummaryTitle({ userText: firstUser, assistantText: firstAssistant });
     if (!summary) return;
 
@@ -604,18 +615,21 @@ async function autoNameSessionFromFirstExchange(
         defaultChatTitleForSession(sessionId),      // "New chat"
       ].filter((t): t is string => Boolean(t)),
     );
-    await setSessionTitleAutoIfOwned(sessionId, summary, autoDefaults);
+    await setSessionTitleAutoIfOwned(
+      sessionId, summary, autoDefaults, true,
+      sessionTitleRevision(state, sessionId), state.sessionTitles[sessionId],
+    );
   } catch {
-    /* best effort */
+    console.warn("[chat-title] first-exchange naming failed");
   }
 }
 
 /**
- * Periodic, context-aware rename (chat-auto-rename.ts). Opt-in via the
+ * Periodic, context-aware rename (chat-auto-rename.ts). Controlled by the
  * `chatAutoRename` policy: once a thread reaches a multiple of `everyTurns`
  * assistant turns, re-derive its title from the LATEST exchange so a long
- * conversation's name tracks where it actually went. Never overwrites a title
- * a person set by hand (provenance in `sessionTitleAuto`). Best effort: any
+ * conversation's name tracks where it actually went. Preserves manual titles
+ * under the configured ownership policy, and always fences newer writes. Any
  * failure leaves the current title in place. `firstPromptText` seeds the set of
  * auto-derived defaults the first-exchange name may have left behind.
  */
@@ -628,15 +642,25 @@ async function maybeAutoRenameFromContext(
     const policy = normalizeChatAutoRenamePolicy(config.chatAutoRename);
     if (!policy.enabled) return;
 
+    const state = await loadState();
     const conversation = await loadConversation(sessionId);
-    const turns = conversation?.turns ?? [];
-    const assistantTurns = turns.filter((t) => t.role === "assistant").length;
+    const turns = conversation?.activeLeafId
+      ? resolveActivePath(conversation.turns, conversation.activeLeafId)
+      : conversation?.turns ?? [];
+    const latestDialogueTurn = turns.findLast((turn) => turn.role === "user" || turn.role === "assistant");
+    if (
+      latestDialogueTurn?.role !== "assistant" ||
+      latestDialogueTurn.isError || latestDialogueTurn.cancelled || !latestDialogueTurn.text.trim()
+    ) return;
+    const assistantTurns = turns.filter((t) => t.role === "assistant" && !t.isError && !t.cancelled).length;
     if (!isRenameDueAtTurn(assistantTurns, policy.everyTurns)) return;
 
-    const lastUser = [...turns].reverse().find((t) => t.role === "user")?.text ?? null;
-    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant")?.text ?? null;
+    const assistantIndex = turns.findLastIndex((t) => t.role === "assistant" && !t.isError && !t.cancelled);
+    const lastUser = turns.slice(0, assistantIndex).findLast((t) => t.role === "user")?.text ?? null;
+    const lastAssistant = turns[assistantIndex]?.text ?? null;
     const next = renameTitleFromLatestExchange({ userText: lastUser, assistantText: lastAssistant });
     if (!next) return;
+    if (!hasMaterialTitleChange(state.sessionTitles[sessionId] ?? conversation?.title, next)) return;
 
     const firstPrompt = turns.find((t) => t.role === "user")?.text ?? firstPromptText;
     const autoDefaults = new Set(
@@ -653,9 +677,11 @@ async function maybeAutoRenameFromContext(
       next,
       autoDefaults,
       policy.preserveManualTitles,
+      sessionTitleRevision(state, sessionId),
+      state.sessionTitles[sessionId],
     );
   } catch {
-    /* best effort */
+    console.warn("[chat-title] periodic naming failed");
   }
 }
 
@@ -1258,6 +1284,7 @@ function openClawChatResponse(args: {
         );
         push({ kind: "session", sessionId: conversationId });
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
+        let persistedTurnId: string | undefined;
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(conversationId, args.body.familiarId);
@@ -1287,6 +1314,9 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
+          if (conv.flowDiscussion && !isError && !cancelledByUser) {
+            conv.harnessSessionId = openClawSessionKey(conversationId);
+          }
           if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
             conv.inferenceRouteId = responseMetadata.inferenceRouteId;
             if (responseMetadata.inferenceRouteFingerprint) {
@@ -1347,6 +1377,7 @@ function openClawChatResponse(args: {
           );
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          persistedTurnId = assistantTurnId;
           if (isFirstExchange && !isError) await autoNameSessionFromFirstExchange(conversationId, args.promptText);
           if (!isError) await maybeAutoRenameFromContext(conversationId, args.promptText);
           pushProgress("save-transcript", "Transcript saved", "done");
@@ -1363,6 +1394,7 @@ function openClawChatResponse(args: {
           isError,
           sessionId: conversationId,
           responseMetadata,
+          ...(persistedTurnId ? { persistedTurnId } : {}),
         });
         gatewayDispatch.close();
         runBuffer?.finish();
@@ -1638,6 +1670,7 @@ function openClawChatResponse(args: {
         if (sessionId) push({ kind: "session", sessionId });
         push({ kind: "assistant_chunk", text: assistantText });
 
+        let persistedTurnId: string | undefined;
         if (sessionId) {
           try {
             pushProgress("save-transcript", "Saving transcript", "running");
@@ -1679,6 +1712,9 @@ function openClawChatResponse(args: {
               };
               conv.model = responseMetadata.model;
               conv.runtime = responseMetadata.runtime;
+              if (conv.flowDiscussion && !isError && !cancelledByUser) {
+                conv.harnessSessionId = openClawSessionKey(sessionId);
+              }
               if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
                 conv.inferenceRouteId = responseMetadata.inferenceRouteId;
                 if (responseMetadata.inferenceRouteFingerprint) {
@@ -1731,6 +1767,7 @@ function openClawChatResponse(args: {
               );
               conv.activeLeafId = assistantTurnId;
               await saveConversation(conv);
+              persistedTurnId = assistantTurnId;
               return firstExchange;
             });
             if (isFirstExchange && !isError) {
@@ -1753,6 +1790,7 @@ function openClawChatResponse(args: {
           isError,
           sessionId: sessionId ?? undefined,
           responseMetadata,
+          ...(persistedTurnId ? { persistedTurnId } : {}),
         });
         runBuffer?.finish();
         await sleep(20);
@@ -1916,6 +1954,22 @@ async function postChat(
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
+  if (body.sessionId != null &&
+      (typeof body.sessionId !== "string" || !isSafeConversationSessionId(body.sessionId))) {
+    return Response.json({ ok: false, error: "invalid session id" }, { status: 400 });
+  }
+  const existingConversation = body.sessionId ? await loadConversation(body.sessionId) : null;
+  const flowDiscussionStartsFresh = isUnstartedFlowDiscussion(existingConversation);
+  if (body.sessionId && (
+    existingConversation?.origin === "flow" ||
+    flowSessionReferenceFor((await loadFlowSessionState(false)).sessionFlow, body.sessionId)
+  )) {
+    return Response.json({
+      ok: false,
+      code: "flow_session_read_only",
+      error: "Flow executions are read-only in Chat. Use Discuss in Chat to start a linked conversation.",
+    }, { status: 409 });
+  }
   // Persisted transcripts keep metadata plus a durable store id; base64
   // payloads stay out of the conversation JSON. Reloads and retries can then
   // render images/media or rematerialize source files for a local harness.
@@ -1926,9 +1980,6 @@ async function postChat(
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
   // Canonicalize the bound harness id up front so a familiar carrying a
   // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
   // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
@@ -2111,6 +2162,7 @@ async function postChat(
   const codexResumeTarget =
     binding.harness === "codex" &&
     body.sessionId &&
+    !flowDiscussionStartsFresh &&
     !(body.startNewConversation && !existingConversation)
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
@@ -2996,13 +3048,19 @@ async function postChat(
   // back to the boundary block ("listed above") and only exists when the
   // conversation's previous turn strayed out of the granted roots.
   const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
+  // A discussion has a Cave transcript but no native history. All live
+  // transports, including the early OpenClaw bridge, receive the same replay.
+  // Offline sends replay their saved history at dequeue time instead.
+  const flowDiscussionReplay = flowDiscussionStartsFresh
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
       req,
       body,
       promptText,
-      harnessPrompt,
+      harnessPrompt: flowDiscussionReplay?.prompt ?? harnessPrompt,
       attachments: persistedAttachments,
       cwd,
       desiredModel,
@@ -3251,7 +3309,7 @@ async function postChat(
   };
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
-  const resumeTarget = body.startNewConversation && !existingConversation
+  const resumeTarget = flowDiscussionStartsFresh || (body.startNewConversation && !existingConversation)
     ? null
     : body.sessionId
       ? openCodeDirect
@@ -3325,13 +3383,15 @@ async function postChat(
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
   const freshNativeSessionRequired =
+    flowDiscussionStartsFresh ||
     runtimeAccessRefreshNeeded ||
     inferenceRouteRefreshNeeded ||
     grokFreshSessionForSandbox ||
     openCodeFreshSessionForCompatibility;
   const args = buildArgs(
     freshNativeSessionRequired ? null : resumeTarget,
-    runtimeAccessRetry?.prompt ??
+    flowDiscussionReplay?.prompt ??
+      runtimeAccessRetry?.prompt ??
       inferenceRouteRetry?.prompt ??
       grokSandboxRetry?.prompt ??
       openCodeCompatibilityRetry?.prompt,
@@ -3495,9 +3555,11 @@ async function postChat(
         );
       }
 
-      let sessionId: string | null = body.sessionId ?? null;
-      // Cave keeps `sessionId` as the stable conversation id for resumed
-      // chats. Grok's end frame still carries the native session id, which
+      // Track the native attempt independently of body.sessionId, which stays
+      // Cave's stable identity. In particular, a seeded discussion must accept
+      // the first native announcement rather than persisting its Cave UUID.
+      let sessionId: string | null = freshNativeSessionRequired ? null : resumeTarget;
+      // Grok's end frame still carries the native session id, which
       // may change when an access-mode switch starts a fresh native session.
       // Keep it separately so the next Grok turn resumes the actual CLI
       // session rather than Cave's conversation id.
@@ -5557,7 +5619,7 @@ async function postChat(
         );
         await runAttempt(buildArgs(null, replay.prompt), replay.prompt);
       } else {
-        await runAttempt(args);
+        await runAttempt(args, flowDiscussionReplay?.prompt);
       }
 
       // Copilot can silently close an expired native session with no result
@@ -5627,7 +5689,7 @@ async function postChat(
           "done",
           conflict.manifestPath,
         );
-        await runAttempt(args);
+        await runAttempt(args, flowDiscussionReplay?.prompt);
       }
 
       // Transparent retry: if codex reported its rollout-resume failed and
@@ -6033,6 +6095,7 @@ async function postChat(
       const persistCovenProcessFailure = Boolean(
         finalSessionId && launchFailure && covenBackedProcessFailed,
       );
+      let persistedTurnId: string | undefined;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
@@ -6160,6 +6223,7 @@ async function postChat(
           conv.turns.push(userTurn, assistantTurn);
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          persistedTurnId = assistantTurnId;
             return firstExchange;
           });
           if (isFirstExchange && !result.is_error && !cancelledByUser) {
@@ -6186,6 +6250,7 @@ async function postChat(
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,
+        ...(persistedTurnId ? { persistedTurnId } : {}),
       });
       // Session-finished inbox item (cave-fgey): when the turn completed while
       // the user wasn't watching this chat, surface one 'agent' inbox item

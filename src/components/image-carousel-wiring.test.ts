@@ -26,8 +26,8 @@ assert.match(chatView, /function splitSegmentsForArtifacts\(/, "has a segment-pr
 assert.match(chatView, /<ImageCarousel images=\{p\.carousel\.images\} \/>/, "mounts the carousel as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
-  "settled path splits images before preview/GitHub/artifact cards, so one group deck can span any boundary",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForApprove\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: protectedQuestions\.text \}\], onOpenUrl\)/,
+  "settled path splits images before preview/GitHub/artifact/question cards, so one group deck can span any boundary",
 );
 assert.match(
   chatView,
@@ -36,7 +36,7 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
   "preview/image/GitHub markers strip unconditionally and LAST, after all control extraction — raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(

@@ -82,7 +82,7 @@ try {
   const conversations = await import("@/lib/cave-conversations");
   const replay = await import("@/lib/travel-offline-replay.ts");
   const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { grantProjectToFamiliar, revokeProjectFromFamiliar } = await import("@/lib/project-permissions");
   const {
     applyChatAttentionProjections,
     chatAttentionProjectionScopeKey,
@@ -249,6 +249,47 @@ try {
   );
   assert.equal((await conversations.loadConversation("offline-chat-1"))?.turns.length, 1);
 
+  const discussionId = "offline-flow-discussion";
+  const seededAt = new Date().toISOString();
+  await conversations.saveConversation({
+    sessionId: discussionId, familiarId: "sage", harness: "codex", origin: "chat",
+    flowDiscussion: { sessionId: "source-execution", flowId: "flow", runId: "source-run" },
+    createdAt: seededAt, updatedAt: seededAt,
+    turns: [{ id: "seed", role: "assistant", text: "Source evidence: teal comet", createdAt: seededAt }],
+    activeLeafId: "seed",
+  });
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
+  for (const prompt of ["First queued discussion question", "Second queued discussion question"]) {
+    await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "sage", sessionId: discussionId, projectRoot, prompt }),
+    })));
+  }
+  assert.equal((await conversations.loadConversation(discussionId))?.turns.length, 3);
+  await config.recordTravelHubReachability(true);
+  await revokeProjectFromFamiliar({ familiarId: "sage", projectId: project.id });
+  const deniedReplay = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(deniedReplay.failed, 1, "a discussion replay must recheck grants at launch time");
+  assert.equal(sessionRequests.length, 1, "source provenance cannot authorize a revoked project");
+  await grantProjectToFamiliar({ familiarId: "sage", projectId: project.id, source: "human", access: "write" });
+  assert.equal((await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 })).synced, 1);
+  const firstDiscussionPrompt = String(sessionRequests[1]?.prompt);
+  assert.match(firstDiscussionPrompt, /Source evidence: teal comet/);
+  assert.equal(firstDiscussionPrompt.split("First queued discussion question").length - 1, 1);
+  assert.doesNotMatch(firstDiscussionPrompt, /Second queued discussion question/);
+  assert.equal(sessionRequests[1]?.projectRoot, projectRoot, "replay uses ordinary authorized project selection");
+  assert.equal((await conversations.loadConversation(discussionId))?.harnessSessionId, "hub-session-2");
+  assert.equal((await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 })).synced, 1);
+  const secondDiscussionPrompt = String(sessionRequests[2]?.prompt);
+  assert.match(secondDiscussionPrompt, /Source evidence: teal comet/);
+  assert.equal(secondDiscussionPrompt.split("First queued discussion question").length - 1, 1);
+  assert.equal(secondDiscussionPrompt.split("Second queued discussion question").length - 1, 1);
+  const discussion = await conversations.loadConversation(discussionId);
+  assert.equal(discussion?.turns.length, 3, "replay does not append queued user turns a second time");
+  assert.equal(discussion?.harnessSessionId, "hub-session-3");
+  assert.equal(discussion?.flowDiscussion?.sessionId, "source-execution");
+  assert.equal(discussion?.origin, "chat");
+
   await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
   const archive = Buffer.from("PK durable source bundle");
   const archiveResponse = await POST(new Request("http://localhost/api/chat/send", {
@@ -291,7 +332,7 @@ try {
   );
   assert.equal(
     sessionRequests.length,
-    1,
+    3,
     "an attachment-bearing replay must fail before spawning a lossy hub session",
   );
   assert.equal(

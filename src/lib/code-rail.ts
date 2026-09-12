@@ -21,6 +21,8 @@ export type CodeRailSignals = {
    * explicit Files intent.
    */
   browseActive?: boolean;
+  /** Inline chat uses a finite pull-tab cue instead of opening over the conversation. */
+  autoRevealChanges?: boolean;
 };
 
 export type CodeRailState = {
@@ -43,7 +45,7 @@ export function resolveCodeRail(
   signals: CodeRailSignals,
   prev: CodeRailState | null,
 ): CodeRailState {
-  const { hasRepo, changeCount, terminalActive, pinned, dismissed, browseActive } = signals;
+  const { hasRepo, changeCount, terminalActive, pinned, dismissed, browseActive, autoRevealChanges = true } = signals;
   const available = hasRepo || (changeCount ?? 0) > 0 || terminalActive;
 
   if (!available) {
@@ -56,7 +58,7 @@ export function resolveCodeRail(
   // not auto-open the rail (cave-xsq.7), and a browse-at-root peek never
   // reveals (its dirt isn't new agent edits — cave-z44).
   const newEdits =
-    !browseActive && (changeCount ?? 0) > 0 && prev != null && prev.changeCount === 0;
+    autoRevealChanges && !browseActive && (changeCount ?? 0) > 0 && prev != null && prev.changeCount === 0;
 
   const open = pinned ? true : newEdits ? true : dismissed ? false : true;
 
@@ -69,4 +71,13 @@ export function resolveCodeRail(
   else activeTab = "terminal";
 
   return { available, open, activeTab, changeCount };
+}
+
+/** File order is not a change; paths, statuses and diffstats are. */
+export function codeRailChangeSignature(files: readonly unknown[]): string {
+  return JSON.stringify(files.map((file) => JSON.stringify(file)).sort());
+}
+
+export function hasNewCodeRailChanges(previous: string | null, next: string): boolean {
+  return previous !== null && next !== "[]" && previous !== next;
 }

@@ -900,6 +900,101 @@ final class AppModelProjectContextTests: XCTestCase {
         )
     }
 
+    func testFlowSessionVisibilityUsesProvenanceNotTitles() throws {
+        let decoder = JSONDecoder()
+        let execution = try decoder.decode(SessionRow.self, from: Data(
+            #"{"id":"execution","title":"Ordinary title","origin":"flow","generated":false}"#.utf8
+        ))
+        let indexedExecution = try decoder.decode(SessionRow.self, from: Data(
+            #"{"id":"indexed","title":"Ordinary title","flow":{"flowId":"flow-1","runId":"run-1"}}"#.utf8
+        ))
+        let discussion = try decoder.decode(SessionRow.self, from: Data(
+            #"{"id":"flow-discussion","title":"Flow: release","origin":"chat"}"#.utf8
+        ))
+        XCTAssertTrue(execution.isGeneratedRun)
+        XCTAssertTrue(indexedExecution.isGeneratedRun)
+        XCTAssertFalse(discussion.isGeneratedRun)
+    }
+
+    @MainActor
+    func testFlowExecutionListsAndCountsExcludeServerAndPreviouslyOpenedThreads() throws {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectContext = .project(alpha)
+        var execution = session("execution", familiarId: "nova", projectRoot: alpha.root)
+        execution.origin = "flow"
+        var discussion = session("discussion", familiarId: "nova", projectRoot: alpha.root)
+        discussion.title = "Flow: release"
+        app.serverSessions = [execution, discussion]
+
+        XCTAssertEqual(app.projectServerOnlySessions(for: "nova").map(\.id), ["discussion"])
+        XCTAssertEqual(app.globalServerOnlySessions(for: "nova").map(\.id), ["discussion"])
+        XCTAssertEqual(app.projectThreadCount(for: "nova"), 1)
+        XCTAssertEqual(app.projectServerSessions.map(\.id), ["discussion"])
+        XCTAssertEqual(app.chatServerSessions.map(\.id), ["discussion"])
+
+        let opened = app.openServerSession(execution, familiarId: "nova", loadHistory: false)
+        XCTAssertEqual(opened.sessionIds["nova"], "execution", "direct transcript navigation survives")
+        XCTAssertFalse(opened.canSendMessages, "execution transcripts cannot be extended")
+        opened.enqueue("Continue execution")
+        XCTAssertTrue(opened.messages.isEmpty, "an execution cannot queue an offline continuation")
+        XCTAssertNil(opened.makeSendBody(familiarId: "nova", prompt: "Continue", runId: "run-new"))
+        XCTAssertEqual(app.threads.count, 1, "the transcript is not deleted")
+        XCTAssertTrue(app.projectDirectThreads(for: "nova").isEmpty)
+        XCTAssertTrue(app.globalDirectThreads(for: "nova").isEmpty)
+        XCTAssertTrue(app.projectThreads.isEmpty)
+        XCTAssertTrue(app.chatThreads.isEmpty)
+        XCTAssertEqual(app.globalThreadCount(for: "nova"), 1)
+
+        let encoded = try JSONEncoder().encode(opened.snapshot)
+        let restored = ChatThread(snapshot: try JSONDecoder().decode(ThreadSnapshot.self, from: encoded))
+        app.threads = [restored]
+        app.serverSessions = []
+        XCTAssertFalse(restored.canSendMessages)
+        XCTAssertTrue(app.projectDirectThreads(for: "nova").isEmpty,
+                      "a cached execution must stay hidden offline after relaunch")
+        restored.sessionIds = ["nova": "ordinary-chat"]
+        XCTAssertTrue(restored.canSendMessages)
+        XCTAssertEqual(app.projectDirectThreads(for: "nova").map(\.id), [restored.id],
+                       "remembered ownership is exact to the execution session, not the thread title")
+    }
+
+    @MainActor
+    func testUnassignedChatFamiliarsExcludeExecutionOnlyOwnership() {
+        let app = makeApp()
+        app.projectContext = .unassigned
+        app.familiars = [familiar("nova", "Nova"), familiar("sage", "Sage")]
+        var execution = session("flow-only", familiarId: "nova", projectRoot: nil)
+        execution.origin = "flow"
+        app.serverSessions = [execution, session("chat", familiarId: "sage", projectRoot: nil)]
+        XCTAssertEqual(app.projectFamiliars.map(\.id), ["sage"])
+        _ = app.openServerSession(execution, familiarId: "nova", loadHistory: false)
+        XCTAssertEqual(app.projectFamiliars.map(\.id), ["sage"], "opened transcripts cannot enter Chat scope")
+    }
+
+    @MainActor
+    func testFlowSessionRefreshRetainsOwnershipForAnExistingLocalThread() async {
+        let app = makeApp()
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectContext = .project(alpha)
+        let existing = thread("cached", familiarIds: ["nova"], projectRoot: alpha.root)
+        existing.sessionIds = ["nova": "execution"]
+        app.threads = [existing]
+        var execution = session("execution", familiarId: "nova", projectRoot: alpha.root)
+        execution.origin = "flow"
+        await app.loadSessions(using: StubProjectContextClient(
+            projectsResult: .success([alpha]),
+            grantsResult: .failure(URLError(.notConnectedToInternet)),
+            familiarsResult: .success([]),
+            sessionsResult: .success([execution])
+        ))
+        app.serverSessions = []
+        XCTAssertTrue(app.globalDirectThreads(for: "nova").isEmpty)
+        XCTAssertEqual(app.threads.count, 1)
+    }
+
     private func card(
         _ id: String,
         familiarId: String?,

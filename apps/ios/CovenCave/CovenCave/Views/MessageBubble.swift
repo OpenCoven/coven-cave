@@ -6,8 +6,8 @@ struct MessageBubble: View {
     var isGroup: Bool
     var familiar: Familiar?
     var isLast: Bool = false
-    var onDelete: () -> Void
-    var onSuggestion: (String) -> Void = { _ in }
+    var onDelete: (() -> Void)?
+    var onSuggestion: ((String) -> Void)? = { _ in }
     var onOpenReader: ((String) -> Void)? = nil
     var onForward: ((DisplayMessage) -> Void)? = nil
     var onRichRenderStart: (() -> Void)? = nil
@@ -103,8 +103,10 @@ struct MessageBubble: View {
                 Label("Retry", systemImage: "arrow.clockwise")
             }
         }
-        Button(role: .destructive, action: onDelete) {
-            Label("Delete Message", systemImage: "trash")
+        if let onDelete {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete Message", systemImage: "trash")
+            }
         }
     }
 
@@ -343,7 +345,7 @@ struct MessageBubble: View {
                     actionRow
                 }
 
-                if !isUser, isLast, !message.streaming, !projection.suggestions.isEmpty {
+                if !isUser, isLast, !message.streaming, !projection.suggestions.isEmpty, let onSuggestion {
                     SuggestionPills(suggestions: projection.suggestions, onTap: onSuggestion)
                 }
             }
@@ -806,6 +808,8 @@ extension MessageBubble: Equatable {
             && lhs.operatorAvatarURL == rhs.operatorAvatarURL
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
+            && (lhs.onDelete == nil) == (rhs.onDelete == nil)
+            && (lhs.onSuggestion == nil) == (rhs.onSuggestion == nil)
             && (lhs.onRetry == nil) == (rhs.onRetry == nil)
             && (lhs.onReply == nil) == (rhs.onReply == nil)
             && (lhs.onRetryDelete == nil) == (rhs.onRetryDelete == nil)

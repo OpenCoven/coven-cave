@@ -62,8 +62,9 @@
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
+import { assertEmptyRegularRerere } from "./worktree-rerere-state.mjs";
 import path from "node:path";
 import {
   createStrictRetentionDeadline,
@@ -225,6 +226,35 @@ function strictRegisteredWorktree(target) {
     if (registeredPath === target) found = true;
   }
   if (!found) throw new Error("target is not an exactly registered worktree");
+}
+
+// MERGE_RR is rerere's pending-path list, not a commit/recovery OID.
+// An empty regular file is harmless residue; it never overrides operation state.
+function strictRecoveryState(target) {
+  const admin = strictSingleLine(
+    strictGit(["-C", target, "rev-parse", "--absolute-git-dir"]),
+    "git administrative directory",
+  );
+  for (const name of readdirSync(admin)) {
+    if (name.endsWith(".lock")) throw new Error(`target has recovery state: ${name}`);
+    const entry = path.join(admin, name);
+    const stat = lstatSync(entry);
+    if (stat.isSymbolicLink()) throw new Error(`target has recovery state: symbolic ${name}`);
+    if (name === "MERGE_RR") {
+      try {
+        assertEmptyRegularRerere(entry);
+      } catch (error) {
+        throw new Error(`target has recovery state: ${error}`);
+      }
+    } else if (["logs", "refs"].includes(name)) {
+      if (!stat.isDirectory()) throw new Error(`target has recovery state: non-directory ${name}`);
+    } else if (["HEAD", "commondir", "gitdir", "index", "config.worktree",
+      "COMMIT_EDITMSG", "ORIG_HEAD", "FETCH_HEAD"].includes(name) || name.startsWith("sharedindex.")) {
+      if (!stat.isFile()) throw new Error(`target has recovery state: non-file ${name}`);
+    } else {
+      throw new Error(`target has recovery state: ${name}`);
+    }
+  }
 }
 
 function strictRemoteNames(target, deadline) {
@@ -781,6 +811,7 @@ function runStrictWorktreeRemove(args) {
   }
   if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
   strictRegisteredWorktree(target);
+  strictRecoveryState(target);
 
   const actualHead = strictSingleOid(
     strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
@@ -807,6 +838,7 @@ function runStrictWorktreeRemove(args) {
   else if (remoteBranchProof) strictRetainedByRemoteBranch(target, actualHead, remoteBranchProof);
   else strictRetainedOnRemote(target, actualHead);
   strictLiveProcesses(target);
+  strictRecoveryState(target);
   process.stdout.write(`${JSON.stringify({
     ok: true,
     mode: "strict-worktree-remove",

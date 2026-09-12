@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { buildPromptWithCovenIdentityCanon } from "./coven-identity-canon.ts";
 import {
   chatSummaryTitle,
   defaultChatTitleForSession,
@@ -1244,5 +1245,166 @@ assert.equal(
   "Low signal score · 1 signal",
   "the assistant's own heading must not overrule a brief that named itself",
 );
+
+// Generated sources are sanitized before any length cap, including the
+// deliberately longer self-named-brief path. These fixtures are synthetic.
+{
+  const generators = [
+    ["summary", (source) => chatSummaryTitle({ userText: source })],
+    ["prompt", chatTitleFromPrompt],
+    ["assistant", (source) => titleFromAssistantReply(`# ${source}`)],
+  ];
+  for (const [name, generate] of generators) {
+    assert.equal(generate("Fix cafe\u0301 parser"), "Fix café parser", `${name}: NFC`);
+    assert.equal(generate("ΐ parser")?.normalize("NFC"), generate("ΐ parser"), `${name}: capitalization stays NFC`);
+    assert.equal(generate("Fix\u0000\u0007\u202E parser\u2069"), "Fix parser", `${name}: controls/bidi`);
+    for (const secret of [
+      `sk-proj-${"a".repeat(180)}`,
+      `github_pat_${"b".repeat(90)}`,
+      `AKIA${"A".repeat(16)}`,
+      `AIza${"a".repeat(35)}`,
+      `sk_live_${"a".repeat(24)}`,
+      `xoxb-${"a".repeat(24)}`,
+      `123456789:${"a".repeat(35)}`,
+      `Bearer ${"a".repeat(30)}`,
+      `eyJ${"a".repeat(12)}.eyJ${"b".repeat(12)}.${"c".repeat(12)}`,
+      "password=hunter-test-value",
+      'api_key="synthetic phrase value"',
+      "client_secret=synthetic-value",
+      "Authorization: Basic dXNlcjpwYXNz",
+      'token={"nested": "synthetic-value", "other": "private-value"}',
+      'credentials=["synthetic-value", "private-value"]',
+      `ghp_${"a".repeat(24)}`,
+      `Bearer ${"a".repeat(16)}`,
+      "https://alice:synthetic-password@example.test/private",
+      "https://alice@example.test/private",
+      "https://example.test/?%61pi_key=synthetic-value",
+      "https://example.test/#token=synthetic-value",
+      "ssh://alice:synthetic-password@example.test/private",
+      "//alice:synthetic-password@example.test/private",
+      `https://example.test/private/github_pat_${"a".repeat(24)}`,
+      "/private?token=synthetic-value",
+      "?api_key=synthetic-value",
+      "#token=synthetic-value",
+    ]) {
+      const title = generate(`Fix ${secret} parser`);
+      assert.equal(title, "Fix parser", `${name}: strips complete known credential source`);
+    }
+    assert.equal(generate('Authorization: Digest response="private-response"'), null, `${name}: Digest-only input has no title`);
+    // The token is not recognizable until inline markup has been rejoined.
+    for (const token of [
+      `sk-**proj**-${"x".repeat(180)}`,
+      `sk-\`proj\`-${"x".repeat(180)}`,
+      `sk-~~proj~~-${"x".repeat(180)}`,
+      `sk-[proj](https://example.test)-${"x".repeat(180)}`,
+      `sk-proj-${"x".repeat(12)}**${"x".repeat(12)}**`,
+      `sk-proj-${"x".repeat(24)}**${"y".repeat(24)}**`,
+      `ghp_${"x".repeat(35)}\`${"y".repeat(24)}\``,
+      `sk-\u200Bproj-${"x".repeat(180)}`,
+      `sk-<b>proj</b>-${"x".repeat(180)}`,
+      `sk-<span class="hl">proj</span>-${"x".repeat(180)}`,
+      `sk-<scr<script>ipt>proj</scr<script>ipt>-${"x".repeat(180)}`,
+    ]) {
+      assert.equal(generate(`Fix ${token} parser`), "Fix parser", `${name}: markup/control-rejoined token`);
+    }
+    assert.equal(generate("Fix snake_case C# #123 *.ts"), "Fix snake_case C# #123 *.ts", `${name}: symbols`);
+    assert.equal(generate("Fix 👩🏽‍💻 parser"), "Fix 👩🏽‍💻 parser", `${name}: intact inner emoji`);
+  }
+  for (const generate of [chatTitleFromPrompt, (source) => chatSummaryTitle({ userText: source })]) {
+    assert.equal(generate(buildPromptWithCovenIdentityCanon("Fix parser", "fixture")), "Fix parser", "real canon builder remains aligned");
+    assert.equal(generate("Fix\n-----BEGIN PRIVATE KEY-----\nsynthetic key bytes\n-----END PRIVATE KEY-----\nparser"), "Fix parser");
+    assert.equal(generate("Fix parser\n-----BEGIN OPENSSH PRIVATE KEY-----\nunfinished synthetic bytes"), "Fix parser");
+    assert.equal(generate(`sk-proj-${"a".repeat(180)}`), null, "only secret material does not name a chat");
+    assert.equal(generate('Fix token="synthetic\nmultiline private value" parser'), "Fix parser", "multiline assignment stays whole until redaction");
+    assert.equal(generate("Fix token_count=12 parser"), "Fix token_count=12 parser", "safe secret-related metadata is not removed");
+    assert.equal(generate('Fix Authorization: Digest username="alice", nonce="private-nonce", response="private-response"\nparser'), "Fix parser", "Digest header fields never become metadata");
+    assert.equal(generate('Fix Proxy-Authorization: Custom response="private-response", nonce="private-nonce"\nparser'), "Fix parser", "parameterized authorization schemes remain whole");
+    assert.equal(generate("Session: restore state"), "Session: restore state", "ordinary colon prose stays intact");
+    assert.equal(generate("Token: parser"), "Token: parser", "ordinary token heading stays intact");
+    assert.equal(generate(`Fix <A ${'""'.repeat(20_000)}`), "Fix", "unterminated quoted attributes are consumed without backtracking");
+  }
+}
+
+// Hidden prompt/reasoning/tool content is not a title source, even when it has
+// a plausible heading or a complete self-named brief of its own.
+{
+  const wrappers = [
+    ["FAMILIAR_CONTRACT", ""],
+    ["KNOWLEDGE_VAULT", ""],
+    ["INSTRUCTIONS", ""],
+    ["system", ' role="system"'],
+    ["system-reminder", ""],
+    ["identity", ""],
+    ["runtime", ""],
+    ["canon", ""],
+    ["thinking", ""],
+    ["thinking", ' note="a < b"'],
+    ["thinking", ' note="a > b"'],
+    ["think", ""],
+    ["reasoning", ""],
+    ["analysis", ""],
+    ["tool_call", ' name="bash"'],
+    ["tool_result", ""],
+  ];
+  for (const [tag, attrs] of wrappers) {
+    const hidden = `<${tag}${attrs}>\n# Hidden subject\n\nHidden body\n</${tag}>`;
+    assert.equal(chatSummaryTitle({ userText: `${hidden}\nFix parser` }), "Fix parser", `${tag}: summary`);
+    assert.equal(chatTitleFromPrompt(`${hidden}\nFix parser`), "Fix parser", `${tag}: prompt`);
+    assert.equal(titleFromAssistantReply(`${hidden}\n# Visible heading`), "Visible heading", `${tag}: heading`);
+    assert.equal(titleFromAssistantReply(`<${tag}${attrs}>\n# Still hidden`), null, `${tag}: unclosed`);
+  }
+  assert.equal(
+    titleFromAssistantReply("<thinking><thinking>nested</thinking>\n# Still hidden\n</thinking>\n# Visible heading"),
+    "Visible heading",
+    "same-tag nesting stays hidden until the outer block closes",
+  );
+  assert.equal(chatSummaryTitle({ userText: "<!-- # Hidden subject -->\nFix parser" }), "Fix parser");
+  assert.equal(titleFromAssistantReply("<!--\n# Hidden unfinished comment"), null);
+  const wrapped = [
+    "Runtime filesystem boundary:\n- hidden path",
+    "Current user message:\nCoven identity canon (binding):\n- hidden identity",
+    "Current user message:\n# Signal review · parser regressions\n\nResolve the task",
+  ].join("\n\n");
+  for (const generate of [chatTitleFromPrompt, (source) => chatSummaryTitle({ userText: source })]) {
+    assert.equal(generate(wrapped), "Signal review · parser regressions", "nested runtime/canon preambles removed");
+    assert.equal(generate("Runtime filesystem boundary:\n- hidden path"), null, "no user boundary means no title");
+    assert.equal(generate("Coven identity canon:\n- hidden identity"), null, "no canon body leakage");
+  }
+}
+
+{
+  const longSubject = "Signal resolution review · 5 independent parser regression signals";
+  assert.ok(longSubject.length > MAX_SUMMARY_TITLE_LENGTH && longSubject.length <= 72);
+  for (const generate of [promptSubjectLine, chatTitleFromPrompt, (source) => chatSummaryTitle({ userText: source })]) {
+    assert.equal(generate(`${longSubject}\n\nResolve these signals`), longSubject, "named brief keeps explicit long subject");
+    assert.equal(
+      generate("# Café\u202E parser · token=synthetic-value review\n\nResolve the task"),
+      "Café parser · review",
+      "named brief is sanitized without the generic summary formatter",
+    );
+    assert.equal(generate(`# Fix sk-**proj**-${"a".repeat(150)} parser\n\nResolve the task`), "Fix parser");
+  }
+  assert.equal(normalizeChatTitle("x".repeat(130)), "x".repeat(120), "manual titles retain their 120-code-unit policy");
+  assert.equal(normalizeChatTitle("token=manually-chosen-label"), "token=manually-chosen-label", "generated redaction does not rewrite manual titles");
+}
+
+// Legacy caps still count UTF-16 units, but no truncation may bisect a grapheme.
+{
+  const stem = "界".repeat(61);
+  for (const grapheme of ["👩🏽‍💻", "🇺🇸", "a\u0308\u0301", "क्\u200Dष"]) {
+    const source = `${stem}${grapheme}終わり`;
+    const result = chatTitleFromPrompt(source);
+    assert.ok(result !== null && result.length <= 64, "prompt cap remains 64 UTF-16 units");
+    const kept = result.replace(/…$/, "");
+    const boundaries = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(source.normalize("NFC"))]
+      .map(({ index, segment }) => index + segment.length);
+    assert.ok(boundaries.includes(kept.length), "prompt truncation lands on a complete grapheme boundary");
+  }
+  assert.equal(
+    chatSummaryTitle({ userText: `${"界".repeat(32)} 👩🏽‍💻 parser` }),
+    `${"界".repeat(32)}…`,
+    "summary keeps the existing 40-code-unit cap and word-boundary truncation",
+  );
+}
 
 console.log("cave-chat-titles.test.ts ok");

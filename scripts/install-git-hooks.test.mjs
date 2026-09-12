@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -253,25 +253,28 @@ test("cave-f13bp: a shell FUNCTION named 'node' does not count as a resolved nod
 test("cave-f13bp: install FAILS LOUDLY when node cannot be resolved, rather than writing a config we already know will break later", () => {
   // A silent fallback to the bare "node" would just relocate the failure to
   // whatever GUI merge eventually runs the driver — exactly the bug being
-  // fixed. Restrict the installer's PATH to directories that hold bash/git
-  // but never node (they are unrelated install trees on every platform this
-  // matters on), and require the script to exit non-zero and change nothing.
+  // fixed. Whitelist the installer's tools rather than their host directories:
+  // Homebrew and other package managers can install git alongside node.
   const dir = scaffold();
   try {
-    const bashDir = dirname(execFileSync("which", ["bash"], { encoding: "utf8" }).trim());
-    const gitDir = dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim());
-    const restrictedPath = Array.from(new Set([bashDir, gitDir])).join(":");
+    const bashPath = execFileSync("which", ["bash"], { encoding: "utf8" }).trim();
+    const restrictedPath = join(dir, "tools");
+    mkdirSync(restrictedPath);
+    for (const tool of ["git", "chmod", "ls", "xargs"]) {
+      const toolPath = execFileSync("which", [tool], { encoding: "utf8" }).trim();
+      symlinkSync(toolPath, join(restrictedPath, tool));
+    }
 
     assert.throws(
       () =>
-        execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh")], {
+        execFileSync(bashPath, [join(dir, "scripts", "install-git-hooks.sh")], {
           cwd: dir,
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
           env: { PATH: restrictedPath },
         }),
-      /node/i,
-      "installer must fail (and mention node) when node is unresolvable",
+      (error) => error.status === 1 && /^ERROR: node not found/m.test(error.stderr),
+      "installer must reach the missing-Node error, not fail on another missing tool",
     );
 
     assert.throws(

@@ -1,6 +1,7 @@
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
+import { normalizeFlowSessionCompletions, normalizeFlowSessionReferences } from "./flow-session.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
@@ -165,6 +166,9 @@ function defaultState(): CaveState {
     sessionPinned: {},
     sessionArchiveExtendedUntil: {},
     sessionOwned: {},
+    sessionFlow: {},
+    sessionFlowCompleted: {},
+    sessionFlowAmbiguous: {},
     mergedPrAutoArchived: {},
     travel: defaultTravelState(),
   };
@@ -410,6 +414,12 @@ export type CaveState = {
   sessionArchiveExtendedUntil: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
   sessionOwned: Record<string, string>;
+  /** Durable execution ownership, independent of capped/clearable Flow history. */
+  sessionFlow?: Record<string, import("./flow-session.ts").FlowSessionReference>;
+  /** Reconciliation eligibility survives history clearing; false means pending. */
+  sessionFlowCompleted?: Record<string, boolean>;
+  /** Ambiguous legacy owners remain excluded after history eviction or clearing. */
+  sessionFlowAmbiguous?: Record<string, boolean>;
   /** Session → PR key ("owner/repo#N") whose merge already auto-archived it
    *  once. Makes the merged-chat sweep one-shot: summoning the chat sticks. */
   mergedPrAutoArchived: Record<string, string>;
@@ -874,6 +884,11 @@ async function loadStateUnlocked(): Promise<CaveState> {
       );
     }
     const parsed = value as Partial<CaveState>;
+    const sessionFlow = normalizeFlowSessionReferences(parsed.sessionFlow);
+    const sessionFlowAmbiguous = normalizeFlowSessionCompletions(parsed.sessionFlowAmbiguous);
+    for (const [id, excluded] of Object.entries(sessionFlowAmbiguous)) {
+      if (excluded) delete sessionFlow[id];
+    }
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
@@ -886,6 +901,9 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionPinned: parsed.sessionPinned ?? {},
       sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
+      sessionFlow,
+      sessionFlowCompleted: normalizeFlowSessionCompletions(parsed.sessionFlowCompleted),
+      sessionFlowAmbiguous,
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
     };
@@ -924,6 +942,7 @@ let stateMutex: Promise<unknown> = Promise.resolve();
 
 async function updateState<T>(
   mutator: (state: CaveState) => T | Promise<T>,
+  shouldSave: () => boolean = () => true,
 ): Promise<T> {
   const previous = stateMutex;
   let release!: () => void;
@@ -933,7 +952,7 @@ async function updateState<T>(
     return await withCaveHomeReconciledStore("cave-state.json", async () => {
       const state = await loadStateUnlocked();
       const result = await mutator(state);
-      await saveStateUnlocked(state);
+      if (shouldSave()) await saveStateUnlocked(state);
       return result;
     });
   } finally {
@@ -945,6 +964,43 @@ async function updateState<T>(
 // state write (cave-53yx): the SWR cache behind /api/sessions/list would
 // otherwise serve the pre-mutation list to the event-driven refresh fired
 // right after the mutation, delaying the visible change by 1-2 polls.
+export async function recordFlowSessionReferences(
+  references: Record<string, import("./flow-session.ts").FlowSessionReference>,
+  completed: readonly string[] = [],
+  ambiguous: readonly string[] = [],
+): Promise<void> {
+  const normalized = normalizeFlowSessionReferences(references);
+  const state = await loadState();
+  if (ambiguous.every((id) => state.sessionFlowAmbiguous?.[id]) &&
+      Object.keys(normalized).every((id) => state.sessionFlowAmbiguous?.[id] ||
+        (Object.hasOwn(state.sessionFlow ?? {}, id) && Object.hasOwn(state.sessionFlowCompleted ?? {}, id)))) return;
+  await updateState((latest) => {
+    // Existing ownership is immutable; an old history snapshot cannot retarget it.
+    latest.sessionFlowAmbiguous = { ...latest.sessionFlowAmbiguous,
+      ...Object.fromEntries(ambiguous.map((id) => [id, true])) };
+    latest.sessionFlow = { ...normalized, ...latest.sessionFlow };
+    latest.sessionFlowCompleted = {
+      ...Object.fromEntries(Object.keys(normalized).map((id) => [id, completed.includes(id)])),
+      ...latest.sessionFlowCompleted,
+    };
+    for (const [id, excluded] of Object.entries(latest.sessionFlowAmbiguous)) {
+      if (!excluded) continue;
+      delete latest.sessionFlow[id];
+      delete latest.sessionFlowCompleted[id];
+    }
+  });
+  invalidateSessionsListCache();
+}
+
+export async function markFlowSessionCompleted(sessionId: string): Promise<void> {
+  await updateState((latest) => {
+    if (!Object.hasOwn(latest.sessionFlow ?? {}, sessionId)) {
+      throw new Error("Cannot settle a session without Flow ownership");
+    }
+    latest.sessionFlowCompleted = { ...latest.sessionFlowCompleted, [sessionId]: true };
+  });
+}
+
 export async function recordOwnedSession(sessionId: string): Promise<void> {
   try {
     await updateState((state) => {
@@ -1177,6 +1233,7 @@ export async function setSessionTitleAutoIfOwned(
 ): Promise<string | null> {
   const trimmed = title.trim();
   if (!trimmed) return null;
+  let changed = false;
   const result = await updateState((state) => {
     const current = state.sessionTitles[sessionId];
     const explicitlyManual = state.sessionTitleManual[sessionId] === true;
@@ -1206,13 +1263,15 @@ export async function setSessionTitleAutoIfOwned(
     ) {
       return null; // manual title present — preserve it
     }
+    if (current === trimmed && currentAuto === trimmed && !explicitlyManual) return trimmed;
     state.sessionTitles[sessionId] = trimmed;
     state.sessionTitleAuto[sessionId] = trimmed;
     delete state.sessionTitleManual[sessionId];
     incrementSessionTitleRevision(state, sessionId);
+    changed = true;
     return trimmed;
-  });
-  if (result !== null) invalidateSessionsListCache();
+  }, () => changed);
+  if (changed) invalidateSessionsListCache();
   return result;
 }
 

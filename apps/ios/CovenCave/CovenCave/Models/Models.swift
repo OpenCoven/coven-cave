@@ -71,6 +71,13 @@ struct ThemeResponse: Codable {
 
 // MARK: - Sessions
 
+struct FlowSessionReference: Codable, Hashable {
+    let flowId: String
+    let runId: String
+    var missionId: String?
+    var iteration: Int?
+}
+
 /// A chat session as returned by `GET /api/sessions/list`.
 struct SessionRow: Identifiable, Codable, Hashable {
     let id: String
@@ -95,6 +102,7 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var origin: String?
     /// Daemon-only runs the server flags as generated (not user chats).
     var generated: Bool?
+    var flow: FlowSessionReference? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, title, harness, model, runtime, status
@@ -105,14 +113,17 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case pinned
         case projectRoot = "project_root"
         case origin, generated
+        case flow
     }
+
+    var isFlowRun: Bool { origin == "flow" || flow != nil }
 
     /// Mirrors the web's isGeneratedChatSession (chat-projects.ts): generated
     /// runs stay out of thread lists. Legacy journal runs predate the origin
     /// tag, so their exact machine-prompt titles match too — at the truncated
     /// lengths the store actually keeps.
     var isGeneratedRun: Bool {
-        if generated == true { return true }
+        if generated == true || isFlowRun { return true }
         if let origin, ["cron", "heartbeat", "canvas", "journal"].contains(origin) { return true }
         return title.hasPrefix("Write a short narrative of my day (")
             || title.hasPrefix("Write a short, first-person reflective journal entry")

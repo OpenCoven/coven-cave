@@ -51,6 +51,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: "invalid event cursor" }, { status: 400 });
   }
   const afterSeq = Math.max(requestedQuery, requestedHeader);
+  const cursorRunId = url.searchParams.get("cursorRunId");
   const requestedRunId = authorized.value.requestedRunId ?? undefined;
   const authorizedRunId = researchRunIdForMissionId(
     authorized.value.missionId,
@@ -58,13 +59,22 @@ export async function GET(
   );
   const watchMissionSource =
     !requestedRunId || requestedRunId === authorizedRunId;
-  const replayForStream = async (cursor: number) => {
+  const replayForStream = async (
+    cursor: number,
+    requireCursorIdentity = false,
+  ) => {
     try {
       return await replayResearchRunGateway(
         authorized.value.missionId,
         cursor,
         STREAM_PAGE_SIZE,
         requestedRunId,
+        requireCursorIdentity
+          ? {
+              requireCursorIdentity: true,
+              cursorRunId,
+            }
+          : undefined,
       );
     } catch (error) {
       if (
@@ -107,7 +117,7 @@ export async function GET(
         return subscription.stop;
       },
       () => publishOnChange(),
-      () => replayForStream(afterSeq),
+      () => replayForStream(afterSeq, true),
     );
     initial = opened.value;
     activateWatching = opened.activate;

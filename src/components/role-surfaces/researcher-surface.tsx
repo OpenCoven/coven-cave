@@ -24,6 +24,10 @@ import "@/styles/globals/surface-research-library.css";
 import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { ResearchMissionMode } from "@/lib/research-missions";
@@ -96,7 +100,18 @@ function readStoredTab(): ResearchDeskTab | null {
 }
 
 export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) {
+  const search = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const linkedMissionId = search.get("researchMission")?.trim() || null;
+  const linkedFamiliarId = search.get("flowFamiliar")?.trim() || null;
+  const linkedKey = linkedMissionId ? JSON.stringify([linkedMissionId, linkedFamiliarId]) : null;
+  const [handledLink, setHandledLink] = useState<string | null>(null);
+  const linkedPending = linkedKey !== null && linkedKey !== handledLink;
   const research = useResearchMissions(context.activeFamiliar.id);
+  const linkedOwnerReady = !linkedFamiliarId || linkedFamiliarId === context.activeFamiliar.id;
+  const linkedMission = research.missions.find((mission) => mission.id === linkedMissionId
+    && mission.familiarId === context.activeFamiliar.id);
   const [, patch] = useRoleSurfaceState<ResearcherState>(
     context.activeFamiliar.id,
     RESEARCHER_SURFACE_ID,
@@ -121,7 +136,7 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   // must not flip tabs under the user and discard an in-progress prompt
   // draft (cave-9589). Only explicit selections persist to storage.
   const activeTab: ResearchDeskTab =
-    tab ?? (research.loading || research.missions.length > 0 ? "desk" : "prompt");
+    linkedPending ? "desk" : tab ?? (research.loading || research.missions.length > 0 ? "desk" : "prompt");
   useEffect(() => {
     if (tab !== null || research.loading) return;
     setTab(research.missions.length > 0 ? "desk" : "prompt");
@@ -136,6 +151,38 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
       // Private mode / quota — selection still works for the session.
     }
   }, []);
+
+  const dismissLinkedMission = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    if ((params.get("researchMission")?.trim() || null) !== linkedMissionId
+      || (params.get("flowFamiliar")?.trim() || null) !== linkedFamiliarId) return;
+    setHandledLink(linkedKey);
+    params.delete("researchMission");
+    if (!params.has("flowRun") && !params.has("flowSession")) params.delete("flowFamiliar");
+    const query = params.toString();
+    const href = `${pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+    // Keep the dismissed URL truthful even if the server navigation is unavailable.
+    window.history.replaceState(null, "", href);
+    router.replace(href, { scroll: false });
+  }, [linkedKey, linkedMissionId, linkedFamiliarId, pathname, router]);
+
+  useEffect(() => {
+    if (!linkedKey) {
+      setHandledLink(null);
+      return;
+    }
+    if (!linkedPending) return;
+    selectTab("desk");
+    if (!linkedOwnerReady || research.loading || research.error || !linkedMission) return;
+    if (research.selectedId !== linkedMission.id) {
+      research.select(linkedMission.id);
+      return;
+    }
+    // Only the consumer clears a successful link, after selection renders.
+    // This also resets FlowExecutionLink's navigation latch for the next visit.
+    dismissLinkedMission();
+  }, [linkedKey, linkedPending, linkedOwnerReady, linkedMission, research.loading, research.error,
+    research.selectedId, research.select, selectTab, dismissLinkedMission]);
 
   // The desk's five tabs are destinations; the stored tab restores on mount
   // through setTab, which records nothing.
@@ -230,7 +277,18 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
         aria-labelledby={`research-desk-tab-${activeTab}`}
         className="research-desk__panel"
       >
-        {activeTab === "prompt" ? (
+        {linkedPending && (!linkedOwnerReady || research.loading) ? (
+          <div role="status" aria-label="Opening research mission…"><SkeletonRows count={3} /></div>
+        ) : linkedPending && (research.error || !linkedMission) ? (
+          <ErrorState headline="Research mission unavailable"
+            subtitle={research.error || `Mission ${linkedMissionId} is not available for this familiar. No other mission was opened.`}
+            actions={<>
+              <Button size="sm" onClick={() => void research.load()}>Retry</Button>
+              <Button size="sm" variant="ghost" onClick={dismissLinkedMission}>Back to research</Button>
+            </>} />
+        ) : linkedPending ? (
+          <div role="status" aria-label="Opening research mission…"><SkeletonRows count={3} /></div>
+        ) : activeTab === "prompt" ? (
           <ResearchTabPrompt
             research={research}
             context={context}

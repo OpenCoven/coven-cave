@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -162,7 +163,8 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
  *  there would be a silent no-op (cave-hbpb). */
 function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem) {
   const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
-  requestAgentsNewChat({
+  return requestAgentsNewChat({
+    destination: "right-panel",
     familiarId,
     initialPrompt: `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
     origin: "chat" as const,
@@ -172,7 +174,7 @@ function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem
 /** Shape a table row into a review item so it can launch the same resolution thread. */
 function resolveRow(familiarId: string, row: ThreadSignalTableRow) {
   if (!row.kind) return;
-  launchResolutionThread(familiarId, {
+  return launchResolutionThread(familiarId, {
     kind: row.kind,
     severity: row.severity ?? "info",
     sourceId: row.id,
@@ -229,6 +231,13 @@ function ThreadSignalsTable({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const resolve = (row: ThreadSignalTableRow) => {
+    const result = resolveRow(familiarId, row);
+    if (!result) return;
+    setLaunchError(result.ok ? null : result.error);
+    announce(result.ok ? "Requested a Chat panel thread." : result.error, result.ok ? "polite" : "assertive");
+  };
 
   const allRows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
   const sortedRows = useMemo(() => {
@@ -342,7 +351,7 @@ function ThreadSignalsTable({
             // always-visible pair below.
             <OverflowMenu ariaLabel={`Actions for signal ${row.signal}`} size="sm">
               {row.kind ? (
-                <PopoverItem icon="ph:chat-circle-dots" onSelect={() => resolveRow(familiarId, row)}>
+                <PopoverItem icon="ph:chat-circle-dots" onSelect={() => resolve(row)}>
                   Resolve in a thread
                 </PopoverItem>
               ) : null}
@@ -361,7 +370,7 @@ function ThreadSignalsTable({
                   variant="ghost"
                   size="xs"
                   leadingIcon="ph:chat-circle-dots"
-                  onClick={() => resolveRow(familiarId, row)}
+                  onClick={() => resolve(row)}
                   aria-label={`Launch a thread to resolve ${row.signal}`}
                   title="Launch a new thread with this familiar, primed to resolve this signal"
                 >
@@ -430,6 +439,7 @@ function ThreadSignalsTable({
         </Button>
       </div>
       <div className="fa-thread-table-wrap">
+        {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
         <table className="board-table board-table--grid fa-thread-table" aria-label="Thread signal summary">
           <colgroup>
             <col className="fa-thread-table__col-select" />
@@ -582,6 +592,7 @@ function ThreadSignalReviewQueue({
 }) {
   const { announce } = useAnnouncer();
   const listRef = useRef<HTMLUListElement>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<ThreadSignalReviewItem["kind"] | null>(null);
   // Dismissals load after mount — localStorage isn't SSR-safe.
   const [dismissals, setDismissals] = useState<SignalDismissalMap>({});
@@ -654,6 +665,7 @@ function ThreadSignalReviewQueue({
 
   return (
     <div className="fa-thread-review">
+      {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
       <div className="fa-thread-review-head">
         <div>
           <h3>Review queue</h3>
@@ -741,7 +753,11 @@ function ThreadSignalReviewQueue({
                   variant="ghost"
                   className="fa-thread-review-item"
                   data-signal-identity={signalIdentity(item)}
-                  onClick={() => launchResolutionThread(familiarId, item)}
+                  onClick={() => {
+                    const result = launchResolutionThread(familiarId, item);
+                    setLaunchError(result.ok ? null : result.error);
+                    announce(result.ok ? "Requested a Chat panel thread." : result.error, result.ok ? "polite" : "assertive");
+                  }}
                   title={`Launch a thread to resolve "${item.title}"`}
                   aria-label={`Resolve ${item.title}`}
                   leadingIcon={item.severity === "critical" ? "ph:warning-circle" : "ph:info"}
