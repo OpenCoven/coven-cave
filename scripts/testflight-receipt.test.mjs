@@ -138,14 +138,17 @@ test("availability requires exact identity, matching beta lane and populated ass
   assert.doesNotMatch(receiptSummary(receipt), /PRIVATE GROUP NAME|private-tester-id|private-token/);
 });
 
-test("beta details bind to the exact build even when inverse linkage is omitted", async () => {
-  for (const relationships of [undefined, {}, { build: { links: { related: "https://example.test/unused" } } }]) {
+test("beta details bind to the exact build when inverse linkage is omitted or empty", async () => {
+  for (const relationships of [undefined, {}, { build: { data: null } },
+    { build: { links: { related: "https://example.test/unused" } } }]) {
     const f = fixture();
     f.data.buildBetaDetail.relationships = relationships;
     const receipt = await runReceipt(env, { api: f.api });
     assert.equal(receipt.verdict, "TESTER_AVAILABLE");
     assert.equal(receipt.buildBetaDetailId, "detail-1");
     assert.equal(receipt.buildBetaDetailHasBuildLinkage, false);
+    assert.equal(receipt.buildBetaDetailBuildLinkageState,
+      relationships?.build?.data === null ? "empty" : "omitted");
     assert.equal(f.calls.filter(({ url }) => url.pathname.endsWith("/relationships/buildBetaDetail")).length, 1);
   }
 });
@@ -164,11 +167,15 @@ test("missing, malformed or conflicting forward beta-detail linkage fails closed
     assert.deepEqual(receipt.groups, []);
     assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE/);
   }
-  const f = fixture();
-  f.data.buildBetaDetail.relationships.build.data = null;
-  const receipt = await runReceipt(env, { api: f.api });
-  assert.equal(receipt.verdict, "UNKNOWN");
-  assert.equal(receipt.error.code, "INVALID_RESOURCE_TYPE");
+  for (const inverse of [{ type: "apps", id: "build-1" }, {}, [], "PRIVATE"]) {
+    const f = fixture();
+    f.data.buildBetaDetail.relationships.build.data = inverse;
+    const receipt = await runReceipt(env, { api: f.api });
+    assert.equal(receipt.verdict, "UNKNOWN");
+    assert.equal(receipt.error.code, "INVALID_RESOURCE_TYPE");
+    assert.equal(receipt.buildBetaDetailBuildLinkageState, "present");
+    assert.doesNotMatch(JSON.stringify(receipt), /PRIVATE/);
+  }
 });
 
 test("processing, absent, blocked, unknown and merely ready states are not success", async () => {

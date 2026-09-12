@@ -38,10 +38,13 @@ Apple response bodies and arbitrary error messages are never logged.
 Beta-detail identity is proven by reading the exact build's
 `relationships/buildBetaDetail` ID and matching it to the returned detail.
 Apple defines the inverse `build` relationship and its inline linkage as optional;
-a links-only inverse is not an identity failure. When inverse linkage is supplied,
-it must still match the exact build. Missing or mismatched forward linkage remains
-an error. `buildBetaDetailHasBuildLinkage` records only whether the inverse linkage
-was supplied; it does not replace the forward identity proof. Resource-type,
+a links-only inverse or an empty to-one linkage (`data: null`) supplies no inverse
+identity. When non-null inverse linkage is supplied, it must still match the exact
+build. Missing, null or mismatched **forward** linkage remains an error.
+`buildBetaDetailHasBuildLinkage` records whether non-null inverse linkage was
+supplied, and `buildBetaDetailBuildLinkageState` distinguishes `omitted`, `empty`
+and `present` without exposing response bodies. Neither replaces the mandatory
+forward identity proof. Resource-type,
 resource-ID and missing-linkage failures have distinct sanitized error codes.
 
 | Verdict | Meaning |
