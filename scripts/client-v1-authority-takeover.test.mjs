@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -22,9 +25,43 @@ import {
   inspectCapturedBoundRequest,
   inspectCapturedPlaintextRequest,
 } from "./client-v1-authority-takeover.mjs";
+import * as authorityTakeover from "./client-v1-authority-takeover.mjs";
 
 const PAIRING_SECRET = base64UrlEncode(new Uint8Array(32).fill(0x31));
 const BEARER = "coven_test_bearer";
+
+test("authority takeover scratch data uses the supplied temp root", async () => {
+  assert.equal(
+    typeof authorityTakeover.createAuthorityTakeoverScratchRoot,
+    "function",
+  );
+  const parent = await mkdtemp(
+    path.join(tmpdir(), "cave-authority-takeover-parent-"),
+  );
+  const previousTmpdir = process.env.TMPDIR;
+  try {
+    const canonicalParent = await realpath(parent);
+    process.env.TMPDIR = canonicalParent;
+    const root = await authorityTakeover.createAuthorityTakeoverScratchRoot();
+    try {
+      assert.equal(root, await realpath(root));
+      assert.equal(path.dirname(root), canonicalParent);
+      assert.match(
+        path.basename(root),
+        /^cave-client-v1-conformance-/u,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  } finally {
+    if (previousTmpdir === undefined) {
+      delete process.env.TMPDIR;
+    } else {
+      process.env.TMPDIR = previousTmpdir;
+    }
+    await rm(parent, { recursive: true, force: true });
+  }
+});
 
 test("takeover credential kinds include pairing-secret and bearer", () => {
   assert.deepEqual(
