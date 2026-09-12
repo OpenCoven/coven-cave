@@ -794,6 +794,114 @@ export function buildCaveEnvironment({
   return env;
 }
 
+const CAVE_DISCOVERY_READ_FAILURES = new Set([
+  "not-found",
+  "access-denied",
+  "operation-not-permitted",
+  "not-directory",
+  "other-read-error",
+  "invalid-json",
+  "invalid-shape",
+]);
+const CAVE_DISCOVERY_PUBLICATION_FAILURES = new Set([
+  "not-observed",
+  "output-limit",
+  "disabled-other",
+  "root-owner-unverified",
+  "root-owner-shared",
+  "target-owner-unverified",
+  "target-owner-shared",
+  "root-not-directory",
+  "root-symlink",
+  "target-not-file",
+  "endpoint-invalid",
+  "authority-init",
+]);
+export const CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT = 32 * 1024;
+
+export async function readCaveDiscovery(discoveryPath, read = readFile) {
+  let text;
+  try {
+    text = await read(discoveryPath, "utf8");
+  } catch (error) {
+    const code = typeof error === "object" && error !== null
+      ? Object.getOwnPropertyDescriptor(error, "code")?.value
+      : undefined;
+    const readFailure = code === "ENOENT" ? "not-found"
+      : code === "EACCES" ? "access-denied"
+      : code === "EPERM" ? "operation-not-permitted"
+      : code === "ENOTDIR" ? "not-directory"
+      : "other-read-error";
+    return { discovery: null, readFailure };
+  }
+  let discovery;
+  try {
+    discovery = JSON.parse(text);
+  } catch {
+    return { discovery: null, readFailure: "invalid-json" };
+  }
+  if (!discovery || typeof discovery !== "object" || Array.isArray(discovery)) {
+    return { discovery: null, readFailure: "invalid-shape" };
+  }
+  return { discovery, readFailure: null };
+}
+
+export function createCaveDiscoveryPublicationObserver() {
+  let remaining = CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT;
+  let pending = "";
+  let category = "not-observed";
+  const acceptLine = (line) => {
+    const match = /^\[cave\] client-v1 discovery publication refused: ([a-z-]+)\r?$/u.exec(line);
+    if (
+      match
+      && CAVE_DISCOVERY_PUBLICATION_FAILURES.has(match[1])
+      && match[1] !== "not-observed"
+      && match[1] !== "output-limit"
+    ) {
+      category = match[1];
+    }
+  };
+  return {
+    observe(chunk) {
+      if (category !== "not-observed") return;
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      pending += bytes.subarray(0, remaining).toString("utf8");
+      remaining -= Math.min(bytes.length, remaining);
+      let newline;
+      while ((newline = pending.indexOf("\n")) !== -1) {
+        acceptLine(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+        if (category !== "not-observed") {
+          pending = "";
+          return;
+        }
+      }
+      if (bytes.length > 0 && remaining === 0) {
+        pending = "";
+        category = "output-limit";
+      }
+    },
+    finish() {
+      if (category === "not-observed") acceptLine(pending);
+      pending = "";
+    },
+    category() {
+      return category;
+    },
+  };
+}
+
+export function caveDiscoveryReadinessDiagnostic(failure, readFailure, publicationFailure) {
+  if (
+    failure !== "Client v1 discovery record is not published."
+    || !CAVE_DISCOVERY_READ_FAILURES.has(readFailure)
+    || !CAVE_DISCOVERY_PUBLICATION_FAILURES.has(publicationFailure)
+  ) {
+    return failure;
+  }
+  return `${failure} [read=${readFailure}; publication=${publicationFailure}]`;
+}
+
 export async function startCave(input) {
   const { port } = input;
   const env = buildCaveEnvironment(input);
@@ -803,6 +911,9 @@ export async function startCave(input) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.resume();
+  const publication = createCaveDiscoveryPublicationObserver();
+  child.stderr.on("data", publication.observe);
+  child.stderr.on("end", publication.finish);
   child.stderr.resume();
 
   const origin = `http://127.0.0.1:${port}`;
@@ -813,6 +924,7 @@ export async function startCave(input) {
     exited = true;
   });
   let failure = "Cave readiness timed out after 120 seconds.";
+  let readFailure = null;
   while (Date.now() < deadline) {
     if (exited) {
       failure = "Cave exited before readiness.";
@@ -823,12 +935,9 @@ export async function startCave(input) {
         path: `${CLIENT_V1_PREFIX}/health`,
         timeoutMs: Math.min(1_000, Math.max(1, deadline - Date.now())),
       });
-      let discovery = null;
-      try {
-        discovery = JSON.parse(await readFile(discoveryPath, "utf8"));
-      } catch {
-        // The listen callback may not have published the discovery record yet.
-      }
+      const readResult = await readCaveDiscovery(discoveryPath);
+      const { discovery } = readResult;
+      readFailure = readResult.readFailure;
       const readinessFailure = caveReadinessFailure({
         healthStatus: response.status,
         discovery,
@@ -843,7 +952,7 @@ export async function startCave(input) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   await stopCave({ child }, port).catch(() => {});
-  throw new Error(failure);
+  throw new Error(caveDiscoveryReadinessDiagnostic(failure, readFailure, publication.category()));
 }
 
 export function caveReadinessFailure({

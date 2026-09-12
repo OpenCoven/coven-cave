@@ -270,6 +270,11 @@ if (-not (Test-Exclusive $state)) {
 `;
 const standaloneVerifiedWindowsPaths = /* @__PURE__ */ new Set();
 const standaloneWaivedWindowsPaths = /* @__PURE__ */ new Set();
+const standaloneDiscoveryPublicationFailures = /* @__PURE__ */ new WeakMap();
+function discoveryPublicationFailure(category, error) {
+  standaloneDiscoveryPublicationFailures.set(error, category);
+  return error;
+}
 function assertStandaloneWindowsExclusive(path, label) {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   if (standaloneWaivedWindowsPaths.has(path)) return;
@@ -315,10 +320,10 @@ function assertStandaloneWindowsExclusive(path, label) {
     }
   } catch (cause) {
     if (!waiver.granted) {
-      throw new Error(
+      throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
         unverifiableOwnershipRefusal(subject, path, cause, waiver.note),
         { cause }
-      );
+      ));
     }
     standaloneWaivedWindowsPaths.add(path);
     console.warn(
@@ -337,7 +342,10 @@ function assertStandaloneWindowsExclusive(path, label) {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
-    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
+    throw discoveryPublicationFailure(
+      `${label}-owner-shared`,
+      new Error(sharedOwnershipRefusal(subject, path, findings, waiver))
+    );
   }
   if (report.repaired) {
     console.warn(
@@ -349,14 +357,17 @@ function assertStandaloneWindowsExclusive(path, label) {
 function requireStandaloneOwner(path, metadata, label) {
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
-      throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+      throw discoveryPublicationFailure(
+        `${label}-owner-shared`,
+        new Error(`Client v1 discovery ${label} must be owned by the current user.`)
+      );
     }
     return;
   }
   if (process.platform !== "win32") {
-    throw new Error(
+    throw discoveryPublicationFailure(`${label}-owner-unverified`, new Error(
       `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`
-    );
+    ));
   }
   assertStandaloneWindowsExclusive(path, label);
 }
@@ -364,7 +375,10 @@ function assertStandaloneDiscoveryTarget(path) {
   try {
     const metadata = lstatSync(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
+      throw discoveryPublicationFailure(
+        "target-not-file",
+        new Error(`Client v1 discovery target must be a regular file: ${path}.`)
+      );
     }
     requireStandaloneOwner(path, metadata, "target");
   } catch (error) {
@@ -377,18 +391,35 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   mkdirSync(root, { recursive: true, mode: 448 });
   const rootMetadata = lstatSync(root);
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
-    throw new Error("Client v1 discovery root must be a real directory.");
+    throw discoveryPublicationFailure(
+      rootMetadata.isSymbolicLink() ? "root-symlink" : "root-not-directory",
+      new Error("Client v1 discovery root must be a real directory.")
+    );
   }
   requireStandaloneOwner(root, rootMetadata, "root");
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
-    throw new Error("Client v1 discovery root must not resolve through a symlink.");
+    throw discoveryPublicationFailure(
+      "root-symlink",
+      new Error("Client v1 discovery root must not resolve through a symlink.")
+    );
   }
   chmodSync(root, 448);
-  const url = new URL(endpoint);
+  let url;
+  try {
+    url = new URL(endpoint);
+  } catch (cause) {
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.", { cause })
+    );
+  }
   const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
   if (url.protocol !== "http:" || !loopback || !url.port || url.username || url.password || url.pathname !== "/" || url.search || url.hash || /%(?:2f|5c)/i.test(endpoint)) {
-    throw new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.");
+    throw discoveryPublicationFailure(
+      "endpoint-invalid",
+      new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.")
+    );
   }
   const path = clientV1DiscoveryFile();
   assertStandaloneDiscoveryTarget(path);
@@ -403,10 +434,16 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
     };
   } else {
     if (CLIENT_V1_AUTHORITY_BOOTSTRAP === void 0) {
-      throw new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        new Error("Client v1 HPKE authority initialization failed.")
+      );
     }
     if ("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP) {
-      throw clientV1AuthorityInitializationError ?? new Error("Client v1 HPKE authority initialization failed.");
+      throw discoveryPublicationFailure(
+        "authority-init",
+        clientV1AuthorityInitializationError ?? new Error("Client v1 HPKE authority initialization failed.")
+      );
     }
     const bootstrap = CLIENT_V1_AUTHORITY_BOOTSTRAP;
     record = {
@@ -1248,9 +1285,9 @@ server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
 function reportClientV1DiscoveryUnavailable(error) {
   clientV1DiscoveryPublished = false;
-  const detail = error instanceof Error ? error.message : String(error);
+  const category = typeof error === "object" && error !== null ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other" : "disabled-other";
   console.error("[cave] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 CLIENT V1 DISABLED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-  console.error(`[cave] ${detail}`);
+  console.error(`[cave] client-v1 discovery publication refused: ${category}`);
   console.error(
     "[cave] The client v1 discovery record was NOT published, so paired clients cannot find this server and every client v1 request stays refused. Everything else on this server is running normally."
   );
