@@ -785,6 +785,14 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
     files: [{ path: "src/auth.ts" }, { path: "src/auth.test.ts" }],
   });
 
+  // A fresh 0→N edit batch no longer auto-opens the rail over the
+  // conversation — it surfaces as a discoverable pull-tab cue instead
+  // (cave-nve9s), so open it explicitly before inspecting Changes.
+  const reopen = page.getByRole("button", { name: "Show code rail" });
+  await expect(reopen).toBeVisible();
+  await expect(reopen).toHaveAttribute("data-change-count", "2");
+  await reopen.click();
+
   const chatRail = page.getByRole("region", { name: "Code rail" });
   await expect(chatRail).toBeVisible({ timeout: 15_000 });
   const changesTab = chatRail.getByRole("button", { name: "Changes", exact: true });
@@ -882,6 +890,9 @@ test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, a
   const populatedChangesResponse = waitForChangesListResponse(page, PROJECT_ROOT);
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
   await populatedChangesResponse;
+  // A fresh 0→N edit batch surfaces as a discoverable pull-tab cue rather
+  // than auto-opening over the conversation (cave-nve9s); open it explicitly.
+  await page.getByRole("button", { name: "Show code rail" }).click();
   await expect(page.getByRole("region", { name: "Code rail" })).toBeVisible({ timeout: 15_000 });
   await finishAnimations(page, ".workspace-rail");
   const constrainedChat = await requiredBounds(page, ".chat-surface");

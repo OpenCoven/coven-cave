@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { useCodeRail } from "@/lib/use-code-rail";
+import { codeRailChangeSignature, hasNewCodeRailChanges } from "@/lib/code-rail";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useIsMobile } from "@/lib/use-viewport";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
@@ -56,17 +57,21 @@ export function useWorkspaceRailController({
   const effectiveProjectRoot = browseRootOverride ?? projectRoot;
   const [changeCount, setChangeCount] = useState<number | null>(null);
   const changeCountRootRef = useRef<string | null>(null);
+  const changeSignatureRef = useRef<string | null>(null);
+  const [changeNonce, setChangeNonce] = useState(0);
 
   useEffect(() => {
     if (!effectiveProjectRoot) {
       setChangeCount(null);
       changeCountRootRef.current = null;
+      changeSignatureRef.current = null;
       return;
     }
     const root = effectiveProjectRoot;
     if (changeCountRootRef.current !== root) {
       setChangeCount(null);
       changeCountRootRef.current = root;
+      changeSignatureRef.current = null;
     }
     let cancelled = false;
     let inFlight = false;
@@ -75,7 +80,16 @@ export function useWorkspaceRailController({
       inFlight = true;
       try {
         const { httpOk, json } = await fetchChangesSummary(root, opts);
-        if (!cancelled) setChangeCount(httpOk && json.ok ? (json.files?.length ?? 0) : null);
+        if (!cancelled) {
+          setChangeCount(httpOk && json.ok ? (json.files?.length ?? 0) : null);
+          if (httpOk && json.ok) {
+            const signature = codeRailChangeSignature(json.files ?? []);
+            if (hasNewCodeRailChanges(changeSignatureRef.current, signature)) {
+              setChangeNonce((nonce) => nonce + 1);
+            }
+            changeSignatureRef.current = signature;
+          }
+        }
       } catch {
         if (!cancelled) setChangeCount(null);
       } finally {
@@ -103,6 +117,7 @@ export function useWorkspaceRailController({
     changeCount,
     terminalActive: terminalOpened,
     browseActive: browseRootOverride !== null,
+    autoRevealChanges: false,
   });
   const [focus, setFocus] = useState<PendingCodeOpen | null>(null);
   useEffect(() => {
@@ -189,6 +204,7 @@ export function useWorkspaceRailController({
   return {
     rail,
     changeCount,
+    changeNonce,
     effectiveProjectRoot,
     focus,
     isMobile,

@@ -767,8 +767,8 @@ describe("FamiliarAnalyticsView", () => {
     );
     assert.match(
       source,
-      /announce\(`Opening a review thread to repair \$\{familiarName\}'s contract\.`\)/,
-      "the launch is announced to assistive tech",
+      /announce\([\s\S]*?result\.ok \? `Requested a Chat panel thread to repair \$\{familiarName\}'s contract\.` : result\.error/,
+      "the request or handoff failure is truthfully announced to assistive tech",
     );
   });
 
@@ -820,7 +820,7 @@ describe("FamiliarAnalyticsView", () => {
     );
     assert.match(
       contentSource,
-      /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
+      /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setChatLaunchError\(null\);\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
       "opening board action detail retires the board before activating the next modal focus trap",
     );
     assert.match(

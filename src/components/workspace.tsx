@@ -178,7 +178,7 @@ import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSAT
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
-import { RightChatPanel } from "@/components/right-chat-panel";
+import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -240,8 +240,12 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import {
+  AGENTS_NEW_RIGHT_CHAT_EVENT,
+  publishRightChatFailure,
   clearPendingAgentsNewChat,
+  hasIndependentRightChatProject,
   readPendingAgentsNewChat,
+  resolveRightChatProjectRoot,
   type AgentsNewChatRequest,
 } from "@/lib/agents-new-chat";
 import {
@@ -338,6 +342,8 @@ export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   const [rightChatOpen, setRightChatOpen] = useState(false);
+  const [rightChatLaunchRequest, setRightChatLaunchRequest] = useState<RightChatLaunchRequest | null>(null);
+  const rightChatLaunchNonceRef = useRef(0);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -380,6 +386,8 @@ export function Workspace() {
     () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
     [familiars, archivedFamiliars],
   );
+  const visibleFamiliarsRef = useRef(visibleFamiliars);
+  visibleFamiliarsRef.current = visibleFamiliars;
   // false until the first /api/familiars fetch settles (success or error) —
   // lets the chat boot view hold a quiet frame instead of flashing the
   // "choose a familiar" empty-state copy while the roster is in flight.
@@ -626,6 +634,7 @@ export function Workspace() {
   const workspaceChatLaunchOwnerRef = useRef<{
     generation: number;
     kind: "live" | "persisted";
+    request?: AgentsNewChatRequest;
   } | null>(null);
   const workspaceMountedRef = useRef(true);
   const projectAccessGenerationRef = useRef({
@@ -678,6 +687,7 @@ export function Workspace() {
     return () => {
       workspaceMountedRef.current = false;
       workspaceChatRequestGenerationRef.current += 1;
+      publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "The workspace closed before opening the chat. Try again.");
       workspaceChatLaunchOwnerRef.current = null;
       homeActionAuthorityRef.current = null;
       homeActionRequestGenerationRef.current += 1;
@@ -2805,7 +2815,22 @@ export function Workspace() {
     initialAttachments?: ChatAttachment[] | null,
     origin?: SessionOrigin,
     actorHasProjectAccess?: boolean,
+    destination?: AgentsNewChatRequest["destination"],
   ) => {
+    if (destination === "right-panel") {
+      if (!familiarId || actorHasProjectAccess !== true) {
+        const message = "Add a project this familiar can access before opening the Chat panel";
+        announce(message, "assertive");
+        pushToast(message);
+        return false;
+      }
+      setRightChatLaunchRequest({
+        familiarId, projectRoot, initialPrompt, initialControls, origin,
+        nonce: ++rightChatLaunchNonceRef.current,
+      });
+      shellRef.current?.openRightChat();
+      return true;
+    }
     if (
       actorHasProjectAccess === false
       || (actorHasProjectAccess === undefined && chatProjectBlockedRef.current)
@@ -2829,13 +2854,14 @@ export function Workspace() {
     });
     setMode("chat");
     return true;
-  }, []);
+  }, [announce, pushToast]);
 
   const resolveActorProjectAccess = useCallback(async (
     familiarId: string,
     projectId: string | null,
+    projectRoot?: string,
   ): Promise<boolean | null> => {
-    if (projectId !== null) return true;
+    if (projectId !== null && projectRoot === undefined) return true;
     try {
       const payload = await fetchProjectsFromCache(familiarId, { force: true });
       if (payload.ok === false || !Array.isArray(payload.projects)) {
@@ -2844,12 +2870,68 @@ export function Workspace() {
         }
         return null;
       }
-      return payload.projects.length > 0;
+      return projectId !== null
+        ? requestedWorkspaceProjectId(projectRoot ?? null, payload.projects) === projectId
+        : payload.projects.length > 0;
     } catch {
       if (workspaceMountedRef.current) announce("Project access is unavailable");
       return null;
     }
   }, [announce]);
+
+  const startIndependentRightChat = useCallback(async (
+    request: AgentsNewChatRequest,
+    generation: number,
+  ): Promise<boolean> => {
+    try {
+      const projectRoot = await resolveRightChatProjectRoot(request);
+      while (workspaceMountedRef.current && workspaceChatLaunchOwnerRef.current?.generation === generation) {
+        const authority = actingFamiliarAuthorityRef.current;
+        if (!authority.workspaceContextHydrated || authority.projectsLoading || authority.familiarRosterLoading) {
+          await waitForActingFamiliarContextChange(authority.contextKey);
+          continue;
+        }
+        if (!authority.projectsLoadedSuccessfully || authority.projectsError || !authority.familiarRosterLoadedSuccessfully) {
+          throw new Error(authority.projectsError ?? "Project or familiar authority is unavailable. Try again.");
+        }
+        const projectId = requestedWorkspaceProjectId(projectRoot, authority.registeredProjects);
+        if (!projectId) throw new Error("That project is no longer available.");
+        const familiarId = request.familiarId ?? activeIdRef.current;
+        if (!familiarId || !visibleFamiliarsRef.current.some((entry) => entry.id === familiarId)) {
+          throw new Error("Choose an available familiar for this fix thread.");
+        }
+        const accessGeneration = projectAccessGenerationRef.current.byProject.get(projectId) ?? 0;
+        // The main scope's crew proves nothing about this target. Force a
+        // fresh actor-scoped grant lookup against the target root instead.
+        const allowed = await resolveActorProjectAccess(familiarId, projectId, projectRoot);
+        if (!workspaceMountedRef.current || workspaceChatLaunchOwnerRef.current?.generation !== generation) return false;
+        if (
+          actingFamiliarAuthorityRef.current.contextKey !== authority.contextKey
+          || (projectAccessGenerationRef.current.byProject.get(projectId) ?? 0) !== accessGeneration
+        ) continue;
+        if (!visibleFamiliarsRef.current.some((entry) => entry.id === familiarId)) {
+          throw new Error("The requested familiar is no longer available.");
+        }
+        if (!allowed) {
+          throw new Error(allowed === null
+            ? "Project access is unavailable. Try again."
+            : "This familiar cannot access the fix thread's project. Grant access and try again.");
+        }
+        return startFamiliarChat(
+          familiarId, projectRoot, request.initialPrompt, request.initialControls,
+          null, request.origin, true, "right-panel",
+        );
+      }
+    } catch (error) {
+      if (workspaceMountedRef.current && workspaceChatLaunchOwnerRef.current?.generation === generation) {
+        const message = error instanceof Error ? error.message : "Couldn't open the Chat panel. Try again.";
+        publishRightChatFailure(request, message);
+        announce(message, "assertive");
+        pushToast(message);
+      }
+    }
+    return false;
+  }, [announce, pushToast, resolveActorProjectAccess, startFamiliarChat, waitForActingFamiliarContextChange]);
 
   const requestActingFamiliar = useCallback(async (
     actionLabel: string,
@@ -2920,10 +3002,15 @@ export function Workspace() {
 
   const startWorkspaceChat = useCallback((request: AgentsNewChatRequest = {}) => {
     shellRef.current?.dismissNavMobile();
+    const reportProblem = (message: string) => {
+      announce(message, "assertive");
+      if (request.destination === "right-panel") pushToast(message);
+    };
     clearPendingAgentsNewChat();
     setPendingAgentsNewChat(null);
     const generation = ++workspaceChatRequestGenerationRef.current;
-    workspaceChatLaunchOwnerRef.current = { generation, kind: "live" };
+    publishRightChatFailure(workspaceChatLaunchOwnerRef.current?.request, "Another chat request replaced this one. Try again.");
+    workspaceChatLaunchOwnerRef.current = { generation, kind: "live", request };
     const pendingActorRequest = actingFamiliarRequestRef.current;
     if (pendingActorRequest) {
       actingFamiliarRequestRef.current = null;
@@ -2932,6 +3019,10 @@ export function Workspace() {
     }
     void (async () => {
       try {
+        if (hasIndependentRightChatProject(request)) {
+          await startIndependentRightChat(request, generation);
+          return;
+        }
         while (workspaceChatLaunchOwnerRef.current?.generation === generation) {
         const authority = actingFamiliarAuthorityRef.current;
         if (!authority.workspaceContextHydrated) {
@@ -2949,7 +3040,7 @@ export function Workspace() {
               await waitForActingFamiliarContextChange(authority.contextKey);
               continue;
             }
-            announce(authority.projectsError ?? "Project registry is unavailable");
+            reportProblem(authority.projectsError ?? "Project registry is unavailable");
             return;
           }
           requestedProjectId = requestedWorkspaceProjectId(
@@ -2957,20 +3048,24 @@ export function Workspace() {
             authority.registeredProjects,
           );
           if (requestedProjectId === undefined) {
-            announce("That project is no longer available");
+            reportProblem("That project is no longer available");
             clearPendingAgentsNewChat();
             setPendingAgentsNewChat(null);
             return;
           }
         }
         if (requestedProjectId !== authority.selectedWorkspaceProjectId) {
+          if (request.destination === "right-panel") {
+            reportProblem("Select that project before opening the Chat panel");
+            return;
+          }
           selectWorkspaceProject(requestedProjectId);
           await waitForActingFamiliarContextChange(authority.contextKey);
           continue;
         }
         if (requestedProjectId === null && request.projectRoot === undefined) {
           setPendingAgentsNewChat(request);
-          announce("Choose a project before starting a chat");
+          reportProblem("Choose a project before starting a chat");
           return;
         }
         const authorityLoading =
@@ -2992,7 +3087,7 @@ export function Workspace() {
               || authority.projectCrewError !== null
             ));
         if (authorityFailed) {
-          announce(
+          reportProblem(
             authority.projectsError
             ?? authority.projectCrewError
             ?? "Familiar eligibility is unavailable",
@@ -3024,7 +3119,10 @@ export function Workspace() {
           }
           continue;
         }
-        if (actorHasProjectAccess === null) return;
+        if (actorHasProjectAccess === null) {
+          reportProblem("Project access is unavailable. Try again.");
+          return;
+        }
         const projectRoot =
           request.projectRoot !== undefined
             ? request.projectRoot
@@ -3037,9 +3135,12 @@ export function Workspace() {
           null,
           request.origin,
           actorHasProjectAccess,
+          request.destination,
         );
         return;
         }
+      } catch {
+        reportProblem("Couldn't open the chat. Try again.");
       } finally {
         if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
           workspaceChatLaunchOwnerRef.current = null;
@@ -3049,9 +3150,11 @@ export function Workspace() {
     })();
   }, [
     announce,
+    pushToast,
     resolveActorProjectAccess,
     selectWorkspaceProject,
     startFamiliarChat,
+    startIndependentRightChat,
     waitForActingFamiliarContextChange,
   ]);
 
@@ -3108,6 +3211,17 @@ export function Workspace() {
     };
   }, [startFamiliarChat, startWorkspaceChat]);
 
+  useEffect(() => {
+    const onRightChat = (event: Event) => {
+      const detail = (event as CustomEvent<AgentsNewChatRequest>).detail;
+      if (detail?.destination !== "right-panel") return;
+      event.preventDefault();
+      startWorkspaceChat(detail);
+    };
+    window.addEventListener(AGENTS_NEW_RIGHT_CHAT_EVENT, onRightChat);
+    return () => window.removeEventListener(AGENTS_NEW_RIGHT_CHAT_EVENT, onRightChat);
+  }, [startWorkspaceChat]);
+
   // Read a cross-page "new chat" handoff without clearing it. Ownerless actions
   // may arrive before actor authority has loaded, so the request remains durable
   // until the gate launches it or the user explicitly cancels the chooser.
@@ -3139,13 +3253,35 @@ export function Workspace() {
       || pendingAgentsNewChatAttemptRef.current
       || workspaceChatLaunchOwnerRef.current !== null
     ) return;
+    if (hasIndependentRightChatProject(pending)) {
+      const generation = ++workspaceChatRequestGenerationRef.current;
+      workspaceChatLaunchOwnerRef.current = { generation, kind: "persisted", request: pending };
+      pendingAgentsNewChatAttemptRef.current = true;
+      void startIndependentRightChat(pending, generation).then(() => {
+        if (workspaceChatLaunchOwnerRef.current?.generation !== generation) return;
+        // A terminal failure is reported by the launcher. Drop the stale
+        // handoff so a fresh request can retry without a reload/access event.
+        clearPendingAgentsNewChat();
+        setPendingAgentsNewChat(null);
+      }).finally(() => {
+        pendingAgentsNewChatAttemptRef.current = false;
+        if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
+          workspaceChatLaunchOwnerRef.current = null;
+        }
+      });
+      return;
+    }
+    const reportProblem = (message: string) => {
+      announce(message, "assertive");
+      if (pending.destination === "right-panel") pushToast(message);
+    };
     if (pending.projectRoot !== undefined) {
       if (
         pending.projectRoot !== null
         && (projectsLoading || !projectsLoadedSuccessfully)
       ) {
         if (projectsLoading) return;
-        announce(projectsError ?? "Project registry is unavailable");
+        reportProblem(projectsError ?? "Project registry is unavailable");
         return;
       }
       const requestedProjectId = requestedWorkspaceProjectId(
@@ -3153,18 +3289,22 @@ export function Workspace() {
         registeredProjects,
       );
       if (requestedProjectId === undefined) {
-        announce("That project is no longer available");
+        reportProblem("That project is no longer available");
         clearPendingAgentsNewChat();
         setPendingAgentsNewChat(null);
         return;
       }
       if (requestedProjectId !== selectedWorkspaceProjectId) {
+        if (pending.destination === "right-panel") {
+          reportProblem("Select that project before opening the Chat panel");
+          return;
+        }
         selectWorkspaceProject(requestedProjectId);
         return;
       }
     }
     if (pending.projectRoot === undefined && selectedWorkspaceProjectId === null) {
-      announce("Choose a project to continue the pending chat");
+      reportProblem("Choose a project to continue the pending chat");
       return;
     }
     const authorityLoading =
@@ -3183,7 +3323,7 @@ export function Workspace() {
           || projectCrewError !== null
         ));
     if (authorityFailed) {
-      announce(
+      reportProblem(
         projectsError
         ?? projectCrewError
         ?? "Familiar eligibility is unavailable",
@@ -3241,7 +3381,10 @@ export function Workspace() {
           retryAfterFinish = true;
           return;
         }
-        if (actorHasProjectAccess === null) return;
+        if (actorHasProjectAccess === null) {
+          reportProblem("Project access is unavailable. Try again.");
+          return;
+        }
         const projectRoot =
           pending.projectRoot !== undefined
             ? pending.projectRoot
@@ -3254,10 +3397,13 @@ export function Workspace() {
           null,
           pending.origin,
           actorHasProjectAccess,
+          pending.destination,
         );
         if (!launched) return;
         clearPendingAgentsNewChat();
         setPendingAgentsNewChat(null);
+      } catch {
+        reportProblem("Couldn't open the chat. Try again.");
       } finally {
         pendingAgentsNewChatAttemptRef.current = false;
         if (
@@ -3282,6 +3428,7 @@ export function Workspace() {
     familiarRosterLoading,
     pendingAgentsNewChat,
     pendingAgentsNewChatRetryEpoch,
+    pushToast,
     projectCrewError,
     projectCrewLoadedSuccessfully,
     projectCrewLoading,
@@ -3295,6 +3442,7 @@ export function Workspace() {
     selectedWorkspaceProjectId,
     selectWorkspaceProject,
     startFamiliarChat,
+    startIndependentRightChat,
     workspaceContextHydrated,
   ]);
 
@@ -4617,6 +4765,8 @@ export function Workspace() {
   );
   const rightChat = (
     <RightChatPanel
+      launchRequest={rightChatLaunchRequest}
+      onFollowMainChat={() => setRightChatLaunchRequest(null)}
       open={rightChatOpen}
       familiars={familiars}
       activeFamiliar={active}
