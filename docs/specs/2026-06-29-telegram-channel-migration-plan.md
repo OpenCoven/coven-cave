@@ -27,7 +27,7 @@ OpenClaw already has a mature Telegram stack:
 - Group policy and group sender allowlists.
 - Group/forum topic support and topic-aware session keys.
 - Message send/action paths and health/probe coverage.
-- Cave's former OpenClaw transcript ingestion caller was removed with the Calls surface in PR #1858 (`7f2beed2e`); its unused parsing helpers were retired in `cave-ep9fb`. `src/lib/session-initiator.ts` now provides session-key attribution only. Its production caller, `src/lib/session-list-merge.ts`, preserves supplied initiators and otherwise uses an empty key with a familiar/harness fallback; it does not ingest OpenClaw sender metadata. Transcript attribution remains a migration requirement, not an already-wired capability.
+- Cave's former OpenClaw transcript ingestion caller was removed with the Calls surface in PR #1858 (`7f2beed2e`); its unused parsing helpers were retired in `cave-ep9fb`. `src/lib/session-initiator.ts` now provides session-key attribution only. Its production caller, `src/lib/session-list-merge.ts`, preserves supplied initiators; daemon rows reaching the session-key fallback use an empty key with a familiar/harness fallback, while local conversations without supplied initiators default to the human "Cave user". Neither path ingests OpenClaw sender metadata. Transcript attribution remains a migration requirement, not an already-wired capability.
 - Cave already treats `telegram` as a remote lane in `src/lib/presence.ts`.
 
 The OpenCoven target should preserve the parts Val relies on first, then graduate the richer group/topic behavior.
