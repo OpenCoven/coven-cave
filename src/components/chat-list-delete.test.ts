@@ -335,10 +335,10 @@ assert.match(
   /\.ui-origin-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
   "The origin pill keeps the signature pill radius",
 );
-// The three row action buttons (pin/archive/delete) must be uniform squares.
+// The plain row action buttons must be uniform 32px squares.
 {
-  const squares = source.match(/touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md/g) ?? [];
-  assert.equal(squares.length, 4, "pin/archive/debug/delete must be uniform h-6 w-6 square icon buttons");
+  const squares = source.match(/focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md/g) ?? [];
+  assert.equal(squares.length, 4, "pin/archive/debug/delete must be uniform 32px square icon buttons with focus rings");
 }
 assert.match(
   source,

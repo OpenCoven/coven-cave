@@ -1833,7 +1833,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 aria-label={`${pinned ? "Unpin" : "Pin"} chat ${rowName}`}
                                 aria-pressed={pinned}
                                 className={[
-                                  "touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] transition-all hover:border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] hover:text-[var(--accent-presence)] focus-visible:opacity-100 group-hover:opacity-100",
+                                  "focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] transition-all hover:border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] hover:text-[var(--accent-presence)] focus-visible:opacity-100 group-hover:opacity-100",
                                   pinned
                                     ? "text-[var(--accent-presence)] opacity-100"
                                     : "text-[var(--text-muted)] opacity-0",
@@ -1847,7 +1847,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 disabled={archivingId !== null}
                                 title={s.archived_at ? "Unarchive chat" : "Archive chat"}
                                 aria-label={`${s.archived_at ? "Unarchive" : "Archive"} chat ${rowName}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
                               >
                                 <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
                               </button>
@@ -1858,8 +1858,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 <OverflowMenu
                                   ariaLabel={`Archive controls for chat ${rowName}`}
                                   icon="ph:clock-counter-clockwise"
+                                  size="lg"
                                   disabled={archivingId !== null}
-                                  className="touch-always-visible h-6 w-6 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                  className="touch-always-visible shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
                                   minWidth={208}
                                 >
                                   <PopoverItem
@@ -1883,7 +1884,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 onClick={(e) => debugSession(e, s)}
                                 title="Debug chat"
                                 aria-label={`Debug chat ${rowName}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
                               >
                                 <Icon name="ph:bug-bold" width={12} aria-hidden />
                               </button>
@@ -1892,7 +1893,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
                                 title="Delete chat"
                                 aria-label={`Delete chat ${s.title || s.id}`}
-                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
+                                className="focus-ring touch-always-visible inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
                               >
                                 <Icon name="ph:trash" width={12} aria-hidden />
                               </button>
