@@ -109,7 +109,7 @@ test("contract module keeps its edge-safe data-only runtime import boundary", ()
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
-  assert.equal(CLIENT_V1_MIN_CLIENT_VERSION, "0.1.0");
+  assert.equal(CLIENT_V1_MIN_CLIENT_VERSION, "0.0.1");
   // Every entry here is a family some live operation claims, and every
   // operation is bound to a route on disk by api-contracts.test.ts. `streaming`
   // and `revisions` were removed by #4869: both were advertised for months with
@@ -759,7 +759,7 @@ test("builds explicit generic success envelopes with stable contract metadata", 
     ),
     {
       apiVersion: "1.0",
-      minimumClientVersion: "0.1.0",
+      minimumClientVersion: "0.0.1",
       capabilities: ["conversations", "cursors"],
       operations: ["conversations.list", "conversations.read"],
       requestId: "request-1",
@@ -784,7 +784,7 @@ test("maps explicit client v1 errors without coupling success to route guesses",
     }),
     {
       apiVersion: "1.0",
-      minimumClientVersion: "0.1.0",
+      minimumClientVersion: "0.0.1",
       capabilities: [...CLIENT_V1_CAPABILITIES],
     operations: [...CLIENT_V1_OPERATIONS],
       error: {
@@ -803,7 +803,7 @@ test("maps explicit client v1 errors without coupling success to route guesses",
   assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: ["pairing"],
     operations: ["pairing.create"],
     data: { contract: "foundation-only" },
@@ -816,7 +816,7 @@ test("maps explicit client v1 errors without coupling success to route guesses",
   assert.equal(limited.status, 429);
   assert.deepEqual(await limited.json(), {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     operations: [...CLIENT_V1_OPERATIONS],
     error: {
@@ -865,7 +865,7 @@ test("rejects contradictory client v1 error status overrides", () => {
 test("represents in-progress operations as retryable conflicts", () => {
   assert.deepEqual(clientV1OperationInProgressError("send-message"), {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     operations: [...CLIENT_V1_OPERATIONS],
     error: {
@@ -885,7 +885,7 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
 
   assert.deepEqual(fixture.contract, {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     // The MANIFEST publishes whole operation records, not bare ids — that is
     // what lets a client resolve an advertised id to a request without probing
@@ -1001,7 +1001,7 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
     }),
     hasMore: true,
   });
-  assert.equal(fixture.examples.successEnvelope.minimumClientVersion, "0.1.0");
+  assert.equal(fixture.examples.successEnvelope.minimumClientVersion, "0.0.1");
   assert.equal(fixture.examples.successEnvelope.capabilities.includes("pairing"), true);
   assert.deepEqual(fixture.examples.successEnvelope.identity, fixture.examples.identity);
   assert.deepEqual(fixture.examples.successEnvelope.revision, fixture.examples.revision);
@@ -1014,6 +1014,34 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
     retryable: true,
   });
   assert.deepEqual(createClientV1ContractFixture(), fixture);
+});
+
+test("publishes the first SDK release floor in every example envelope without relaxing producer validation", () => {
+  const fixture = createClientV1ContractFixture();
+  let envelopeCount = 0;
+  for (const example of Object.values(fixture.examples)) {
+    if (!("minimumClientVersion" in example)) continue;
+    envelopeCount += 1;
+    assert.equal(example.minimumClientVersion, "0.0.1");
+    assert.equal(example.apiVersion, "1.0");
+  }
+  assert.equal(envelopeCount, 6);
+  for (const minimumClientVersion of ["0.0.0", "0.1.0", "999.0.0"]) {
+    assert.throws(
+      () => parseClientV1SuccessEnvelope({
+        ...fixture.examples.successEnvelope,
+        minimumClientVersion,
+      }),
+      /minimumClientVersion must be 0\.0\.1/,
+    );
+    assert.throws(
+      () => parseClientV1ErrorEnvelope({
+        ...fixture.examples.errorEnvelope,
+        minimumClientVersion,
+      }),
+      /minimumClientVersion must be 0\.0\.1/,
+    );
+  }
 });
 
 test("copies protocol defaults into fixtures and envelope metadata", () => {
@@ -1193,7 +1221,7 @@ test("uses explicit generic success envelopes instead of guessing future route p
   assert.equal(genericResponse.status, 202);
   assert.deepEqual(await genericResponse.json(), {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     operations: [...CLIENT_V1_OPERATIONS],
     data: futureRouteLike,
@@ -1204,7 +1232,7 @@ test("uses explicit generic success envelopes instead of guessing future route p
   const emptyResponse = clientV1SuccessResponse({});
   assert.deepEqual(await emptyResponse.json(), {
     apiVersion: "1.0",
-    minimumClientVersion: "0.1.0",
+    minimumClientVersion: "0.0.1",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     operations: [...CLIENT_V1_OPERATIONS],
     data: {},

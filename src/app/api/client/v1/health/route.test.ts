@@ -58,6 +58,7 @@ test("serves the seven compatibility fields a client needs before pairing", asyn
     const envelope = await response.json();
     assert.equal(envelope.apiVersion, CLIENT_V1_API_VERSION);
     assert.equal(envelope.minimumClientVersion, CLIENT_V1_MIN_CLIENT_VERSION);
+    assert.equal(envelope.minimumClientVersion, "0.0.1");
     assert.deepEqual(envelope.capabilities, [...CLIENT_V1_CAPABILITIES]);
     assert.deepEqual(envelope.operations, [...CLIENT_V1_OPERATIONS]);
     assert.equal(envelope.error, undefined);
