@@ -257,9 +257,7 @@ export function SessionOverflowMenu({
 
 /** Direct danger action (cave-zolo): the trash icon in the header cluster.
  *  Delete is irreversible, so it keeps its confirm step — a small popover on
- *  the button itself instead of a view swap inside the kebab. Quiet at rest:
- *  reveal-on-hover against the chat header's reveal-scope (design language
- *  §8), so the destructive verb earns visibility instead of holding it. */
+ *  the button itself instead of a view swap inside the kebab. */
 export function DeleteChatButton({
   deleting,
   onDelete,
@@ -274,7 +272,7 @@ export function DeleteChatButton({
       <button
         ref={triggerRef}
         type="button"
-        className="focus-ring cave-chat-delete-btn reveal-on-hover"
+        className="focus-ring cave-chat-delete-btn"
         aria-label="Delete this chat"
         aria-haspopup="dialog"
         aria-expanded={confirming}
@@ -337,8 +335,7 @@ export function ArchiveChatButton({
 
 /** Direct voice-call action (cave-zolo): rings the session's familiar without
  *  opening the kebab. Same gating the kebab item had — needs a configured
- *  voice provider, and one call at a time. Reveal-on-hover like the delete
- *  button beside it — the header is the reveal-scope. */
+ *  voice provider, and one call at a time. */
 export function VoiceCallButton({
   familiar,
   voiceActive,
@@ -356,7 +353,7 @@ export function VoiceCallButton({
   return (
     <button
       type="button"
-      className="focus-ring voice-call-button reveal-on-hover"
+      className="focus-ring voice-call-button"
       onClick={onOpenVoice}
       disabled={action.disabled}
       aria-label={action.label}

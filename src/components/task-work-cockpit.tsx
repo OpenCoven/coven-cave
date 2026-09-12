@@ -9,6 +9,7 @@ import { WorkspaceRail } from "@/components/lazy-surfaces";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { Icon } from "@/lib/icon";
+import { CodeRailReopen } from "@/components/code-rail-reopen";
 import { resolveTaskWorkTarget } from "@/lib/task-work-target";
 import { CHAT_VIEW_HANDOFF_SCOPE, releaseInitialPromptHandoff } from "@/lib/initial-prompt-handoff";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
@@ -357,7 +358,7 @@ export function TaskWorkCockpit({
             </span>
           </div>
         )}
-        {/* Collapsed code rail: the same transparent pull tab as Chat. It must
+        {/* Collapsed code rail: the same labeled pull tab as Chat. It must
             sit INSIDE the body
             row — the cockpit root is a flex column, so as a root child the
             rail collapsed into a 44px stub in the bottom-left corner under the
@@ -368,17 +369,12 @@ export function TaskWorkCockpit({
         && !railController.rail.open
         && !railController.isMobile
         && !railController.paneNarrow ? (
-          <button
-            type="button"
-            aria-label="Show code rail"
-            title="Show code rail"
-            className="workspace-rail-reopen focus-ring"
-            onClick={railController.rail.reopen}
-          >
-            <span className="workspace-rail-reopen__tab" aria-hidden>
-              <Icon name="ph:caret-left" width={10} aria-hidden />
-            </span>
-          </button>
+          <CodeRailReopen
+            key={`${railController.effectiveProjectRoot}:${railSession?.id}`}
+            changeCount={railController.changeCount}
+            changeNonce={railController.changeNonce}
+            onOpen={railController.openChanges}
+          />
         ) : null}
       </div>
       <WorkspaceRailSheet controller={railController} familiar={familiar} sessionId={railSession?.id ?? null} />

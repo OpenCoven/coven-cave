@@ -47,6 +47,7 @@ export const SUITES = {
     "src/lib/chat-live-generation-identity.test.ts",
     "src/lib/chat-router-promotion.test.ts",
     "src/lib/code-rail.test.ts",
+    "src/components/code-rail-reopen.test.tsx",
     "src/lib/use-code-rail.test.ts",
     "src/lib/initial-prompt-handoff.test.ts",
     "src/lib/cave-board-retention.test.ts",
@@ -267,6 +268,7 @@ export const SUITES = {
     "src/lib/browser-native-overlay.test.ts",
     "src/lib/open-external.test.ts",
     "src/lib/agents-new-chat.test.ts",
+    "src/lib/server/change-file-versions.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
     "src/lib/opencoven-tools-update-cache.test.ts",
@@ -2473,6 +2475,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/code-rail-reopen.test.tsx",
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/ui/avatar-lightbox.behavior.test.tsx",

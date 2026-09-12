@@ -250,7 +250,7 @@ assert.ok(
 );
 assert.match(
   workspaceSource,
-  /workspaceChatLaunchOwnerRef\.current = \{ generation, kind: "live" \}[\s\S]*finally \{[\s\S]{0,220}workspaceChatLaunchOwnerRef\.current = null;[\s\S]{0,120}setPendingAgentsNewChatRetryEpoch/,
+  /workspaceChatLaunchOwnerRef\.current = \{ generation, kind: "live", request \}[\s\S]*finally \{[\s\S]{0,220}workspaceChatLaunchOwnerRef\.current = null;[\s\S]{0,120}setPendingAgentsNewChatRetryEpoch/,
   "a superseded persisted handoff retries after the newer actor request settles",
 );
 assert.match(
@@ -382,12 +382,12 @@ assert.match(
 );
 assert.match(
   workspaceSource,
-  /requestedProjectId !== authority\.selectedWorkspaceProjectId[\s\S]{0,120}selectWorkspaceProject\(requestedProjectId\)/,
+  /requestedProjectId !== authority\.selectedWorkspaceProjectId[\s\S]{0,320}selectWorkspaceProject\(requestedProjectId\)/,
   "live explicit-root launches restore the destination project's saved crew",
 );
 assert.match(
   workspaceSource,
-  /requestedProjectId !== selectedWorkspaceProjectId[\s\S]{0,120}selectWorkspaceProject\(requestedProjectId\)/,
+  /requestedProjectId !== selectedWorkspaceProjectId[\s\S]{0,320}selectWorkspaceProject\(requestedProjectId\)/,
   "persisted explicit-root launches restore the destination project's saved crew",
 );
 assert.ok(
