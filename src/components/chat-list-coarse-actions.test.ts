@@ -48,4 +48,9 @@ assert.match(src, /const togglePin = \(e: React\.MouseEvent \| null/, "togglePin
 assert.match(src, /const setSessionArchived = async \(e: React\.MouseEvent \| null/, "setSessionArchived accepts null event");
 assert.match(src, /const debugSession = \(e: React\.MouseEvent \| null/, "debugSession accepts null event");
 
+const desktopActions = src.slice(src.indexOf("/* Row actions — pin"), src.indexOf("{/* ── In conversations"));
+assert.equal((desktopActions.match(/h-8 w-8/g) ?? []).length, 4, "plain fine-pointer actions have 32px targets");
+assert.match(desktopActions, /ariaLabel=\{`Archive controls for chat \$\{rowName\}`\}[\s\S]*?size="lg"/, "the archive menu uses the primitive's 32px size rather than overriding its small size with utility classes");
+assert.equal((desktopActions.match(/focus-ring touch-always-visible/g) ?? []).length, 4, "plain action buttons opt into visible focus; OverflowMenu owns its focus ring");
+
 console.log("chat-list-coarse-actions.test.ts: ok");

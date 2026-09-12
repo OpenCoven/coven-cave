@@ -226,7 +226,7 @@
   min-width: 0;
 }
 
-/* The collapsed code pull tab is an in-flow flex child that reserves 14px
+/* The collapsed code pull tab is an in-flow flex child that reserves 28px
  * of layout width beside the conversation (never over it) and runs the full
  * height of the row — the contract .workspace-rail-reopen is written against
  * on the chat surface, whose root is a flex ROW. The cockpit root is a flex
@@ -234,7 +234,7 @@
  * at the bottom-left corner. It lives in the body row instead; this pins the
  * geometry so a future column-child regression is visible. */
 .task-work-cockpit__body > .workspace-rail-reopen {
-  flex: 0 0 14px;
+  flex: 0 0 calc(var(--space-6) + var(--space-1));
   align-self: stretch;
 }
 

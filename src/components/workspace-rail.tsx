@@ -91,17 +91,15 @@ export function WorkspaceRail({
         </button>
       </nav>
       <div className="workspace-rail__body">
-        {/* Progressive disclosure (§8): pin + fullscreen are occasional-use —
-            they reveal on header hover / focus-within (and stay visible on
-            touch); collapse remains the always-visible primary verb. */}
-        <header className="workspace-rail__head reveal-scope">
+        <header className="workspace-rail__head">
           <span className="workspace-rail__title">{title}</span>
           <span className="workspace-rail__actions">
             {!hidePin && (
               <button
                 type="button"
-                className={`workspace-rail__btn focus-ring reveal-on-hover${pinned ? " is-on" : ""}`}
+                className={`workspace-rail__btn focus-ring${pinned ? " is-on" : ""}`}
                 aria-label={pinned ? "Unpin code rail" : "Pin code rail open"}
+                title={pinned ? "Unpin code rail" : "Pin code rail open"}
                 aria-pressed={pinned}
                 onClick={onTogglePin}
               >
@@ -110,8 +108,9 @@ export function WorkspaceRail({
             )}
             <button
               type="button"
-              className={`workspace-rail__btn focus-ring reveal-on-hover${isFullscreen ? " is-on" : ""}`}
+              className={`workspace-rail__btn focus-ring${isFullscreen ? " is-on" : ""}`}
               aria-label={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
+              title={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               aria-pressed={isFullscreen}
               onClick={() => setIsFullscreen((value) => !value)}
             >
@@ -121,6 +120,7 @@ export function WorkspaceRail({
               type="button"
               className="workspace-rail__btn focus-ring"
               aria-label="Collapse code rail"
+              title="Collapse code rail"
               onClick={onCollapse}
             >
               <Icon name="ph:caret-right" width={13} aria-hidden />

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stripTypeScriptTypes } from "node:module";
+import { runInNewContext } from "node:vm";
 
 const previousHome = process.env.HOME;
 const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
@@ -142,6 +144,17 @@ try {
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-owned"], "Auto title A", "title persisted");
   assert.equal(state.sessionTitleAuto["session-owned"], "Auto title A", "provenance persisted");
+  const titleStatePath = path.join(tempHome, ".coven", "cave", "state.json");
+  fs.utimesSync(titleStatePath, 1, 1);
+  await sessionsListCache.get("title-noop", async () => ({ payload: { ok: true, sessions: [] } }));
+  await config.setSessionTitleAutoIfOwned("session-owned", "Auto title A", new Set());
+  assert.equal(fs.statSync(titleStatePath).mtimeMs, 1000, "identical auto title does not rewrite state");
+  let titleNoopRecomputes = 0;
+  await sessionsListCache.get("title-noop", async () => {
+    titleNoopRecomputes++;
+    return { payload: { ok: true, sessions: [] } };
+  });
+  assert.equal(titleNoopRecomputes, 0, "identical auto title preserves the sessions cache");
 
   // Prior auto title (still in autoDefaults) → can update.
   const ownedUpdate = await config.setSessionTitleAutoIfOwned(
@@ -330,6 +343,33 @@ try {
   state = await config.loadState();
   assert.equal(state.sessionTitleAuto["session-owned"], "Fresh sparkle title");
   assert.equal(state.sessionTitleManual["session-owned"], undefined);
+
+  const settledRevision = config.sessionTitleRevision(state, "session-owned");
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "session-owned", "Fresh sparkle title", new Set(), true,
+      settledRevision, "Fresh sparkle title",
+    ),
+    "Fresh sparkle title",
+  );
+  state = await config.loadState();
+  assert.equal(
+    config.sessionTitleRevision(state, "session-owned"),
+    settledRevision,
+    "replaying the same auto-owned title does not churn the revision",
+  );
+  await config.setSessionTitleAutoIfOwned(
+    "session-owned", "Keychain recovery", new Set(), true,
+    settledRevision, "Fresh sparkle title",
+  );
+  assert.equal(
+    await config.setSessionTitleAutoIfOwned(
+      "session-owned", "Older automatic result", new Set(), true,
+      settledRevision, "Fresh sparkle title",
+    ),
+    null,
+    "a newer automatic result fences a stale automatic writer too",
+  );
 
   const exhaustedState = JSON.parse(await readFile(statePath, "utf8"));
   exhaustedState.sessionTitleRevision["revision-exhausted"] = Number.MAX_SAFE_INTEGER;
@@ -776,6 +816,147 @@ try {
       offlineQueue: [],
     },
   });
+
+  await conversations.saveConversation({
+    sessionId: "client-title",
+    familiarId: "cody",
+    harness: "copilot",
+    title: "New chat",
+    createdAt: "2026-09-09T00:00:00Z",
+    updatedAt: "2026-09-09T00:00:00Z",
+    turns: [],
+  });
+  const { clientV1ReadSources } = await import("./server/client-v1/read-sources.ts");
+  const titleSources = clientV1ReadSources();
+  await config.setSessionTitleAuto("client-title", "Database migration");
+  assert.equal(
+    (await titleSources.listConversations()).find((row) => row.sessionId === "client-title")?.title,
+    "Database migration",
+    "SDK list reads the persisted auto title rather than the transcript stub",
+  );
+  await config.setSessionTitle("client-title", "My launch checklist");
+  assert.equal((await titleSources.loadConversation("client-title"))?.title, "My launch checklist");
+  assert.equal(
+    (await titleSources.listConversations()).find((row) => row.sessionId === "client-title")?.title,
+    "My launch checklist",
+    "title changes are visible even if the cached transcript has not changed",
+  );
+  assert.equal((await conversations.loadConversation("client-title"))?.title, "New chat");
+  await config.setSessionTitle("client-title", "");
+  assert.equal((await titleSources.loadConversation("client-title"))?.title, "New chat");
+  assert.equal(await titleSources.loadConversation("no-such-conversation"), null);
+
+  // Exercise the actual private send-route helper against the real state and
+  // transcript stores, without importing unrelated provider/daemon transports.
+  const sendSource = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+  const checkpointStart = sendSource.indexOf("async function maybeAutoRenameFromContext");
+  const checkpointEnd = sendSource.indexOf("\nasync function ", checkpointStart + 1);
+  assert.ok(checkpointStart >= 0 && checkpointEnd > checkpointStart);
+  const naming = await import("./chat-auto-rename.ts");
+  const titles = await import("./cave-chat-titles.ts");
+  const { resolveActivePath } = await import("./conversation-tree.ts");
+  let preserveManualTitles = true;
+  let interleaveTitleWrite = async () => {};
+  const titleContext = {
+    ...naming,
+    ...titles,
+    resolveActivePath,
+    console,
+    loadConfig: async () => ({ chatAutoRename: { enabled: true, everyTurns: 4, preserveManualTitles } }),
+    loadState: config.loadState,
+    sessionTitleRevision: config.sessionTitleRevision,
+    setSessionTitleAutoIfOwned: config.setSessionTitleAutoIfOwned,
+    loadConversation: async (id) => {
+      const result = await conversations.loadConversation(id);
+      await interleaveTitleWrite();
+      return result;
+    },
+  };
+  const checkpoint = runInNewContext(
+    stripTypeScriptTypes(`(${sendSource.slice(checkpointStart, checkpointEnd)})`),
+    titleContext,
+  );
+  const checkpointConversation = {
+    sessionId: "checkpoint-title", familiarId: "cody", harness: "copilot",
+    createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z",
+    turns: Array.from({ length: 8 }, (_, index) => ({
+      id: `turn-${index}`, role: index % 2 ? "assistant" : "user",
+      text: "Database migration tests", createdAt: "2026-09-09T00:00:00Z",
+    })),
+  };
+  await conversations.saveConversation(checkpointConversation);
+  await config.setSessionTitleAuto("checkpoint-title", "Database migration");
+  const beforeCheckpoint = config.sessionTitleRevision(await config.loadState(), "checkpoint-title");
+  await checkpoint("checkpoint-title");
+  assert.equal(config.sessionTitleRevision(await config.loadState(), "checkpoint-title"), beforeCheckpoint);
+  checkpointConversation.turns[6].text = "Keychain recovery";
+  checkpointConversation.turns[7].text = "Keychain recovery testing";
+  await conversations.saveConversation(checkpointConversation);
+  await checkpoint("checkpoint-title");
+  assert.equal((await config.loadState()).sessionTitles["checkpoint-title"], "Keychain recovery");
+  assert.equal(config.sessionTitleRevision(await config.loadState(), "checkpoint-title"), beforeCheckpoint + 1);
+  await checkpoint("checkpoint-title");
+  assert.equal(config.sessionTitleRevision(await config.loadState(), "checkpoint-title"), beforeCheckpoint + 1);
+
+  await config.setSessionTitleAuto("checkpoint-title", "Database migration");
+  preserveManualTitles = false;
+  interleaveTitleWrite = () => config.setSessionTitle("checkpoint-title", "Human owns this");
+  await checkpoint("checkpoint-title");
+  assert.equal((await config.loadState()).sessionTitles["checkpoint-title"], "Human owns this");
+  assert.equal((await config.loadState()).sessionTitleManual["checkpoint-title"], true);
+  interleaveTitleWrite = () => config.setSessionTitleAuto("checkpoint-title", "Newer automatic title");
+  await checkpoint("checkpoint-title");
+  assert.equal((await config.loadState()).sessionTitles["checkpoint-title"], "Newer automatic title");
+  interleaveTitleWrite = async () => {};
+  preserveManualTitles = true;
+  for (const lastTurn of [
+    { id: "pending-user", role: "user", text: "A different topic" },
+    { id: "failed-assistant", role: "assistant", text: "Keychain recovery", isError: true },
+    { id: "cancelled-assistant", role: "assistant", text: "Keychain recovery", cancelled: true },
+  ]) {
+    await config.setSessionTitleAuto("checkpoint-title", "Database migration");
+    await conversations.saveConversation({
+      ...checkpointConversation,
+      turns: [...checkpointConversation.turns, { ...lastTurn, createdAt: "2026-09-09T00:00:01Z" }],
+    });
+    await checkpoint("checkpoint-title");
+    assert.equal(
+      (await config.loadState()).sessionTitles["checkpoint-title"], "Database migration",
+      "pending/failed/cancelled follow-ups must not retrigger an older checkpoint",
+    );
+  }
+  const branchTurns = checkpointConversation.turns.map((turn, index) => ({
+    ...turn, parentId: index === 0 ? null : `turn-${index - 1}`,
+  }));
+  await conversations.saveConversation({
+    ...checkpointConversation, turns: branchTurns, activeLeafId: "turn-5",
+  });
+  await checkpoint("checkpoint-title");
+  assert.equal(
+    (await config.loadState()).sessionTitles["checkpoint-title"], "Database migration",
+    "inactive branch turns cannot supply the cadence or title basis",
+  );
+  const firstExchangeStart = sendSource.indexOf("async function autoNameSessionFromFirstExchange");
+  const firstExchangeEnd = sendSource.indexOf("\nasync function ", firstExchangeStart + 1);
+  assert.ok(firstExchangeStart >= 0 && firstExchangeEnd > firstExchangeStart);
+  const firstExchange = runInNewContext(
+    stripTypeScriptTypes(`(${sendSource.slice(firstExchangeStart, firstExchangeEnd)})`),
+    titleContext,
+  );
+  await conversations.saveConversation({
+    ...checkpointConversation, sessionId: "first-exchange-title",
+    turns: checkpointConversation.turns.slice(0, 2),
+  });
+  await firstExchange("first-exchange-title", "Database migration tests");
+  assert.equal((await config.loadState()).sessionTitles["first-exchange-title"], "Database migration tests");
+  interleaveTitleWrite = () => config.setSessionTitle("first-exchange-title", "Manual first title");
+  await firstExchange("first-exchange-title", "Database migration tests");
+  assert.equal((await config.loadState()).sessionTitles["first-exchange-title"], "Manual first title");
+  await config.setSessionTitleAuto("first-exchange-title", "Database migration tests");
+  interleaveTitleWrite = () => config.setSessionTitleAuto("first-exchange-title", "Newer automatic title");
+  await firstExchange("first-exchange-title", "Database migration tests");
+  assert.equal((await config.loadState()).sessionTitles["first-exchange-title"], "Newer automatic title");
+  interleaveTitleWrite = async () => {};
 
   const installedAt = await config.installMarketplacePlugin("github", "0.1.0", "catalog");
   assert.ok(Number.isFinite(Date.parse(installedAt)));

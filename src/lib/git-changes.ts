@@ -13,6 +13,7 @@ export type ChangedFile = {
   renamedFrom?: string;
   insertions?: number;
   deletions?: number;
+  changeVersion?: string;
 };
 
 /** Map a porcelain XY status pair to a single coarse status. */

@@ -8,7 +8,7 @@
 // cave-config state (`sessionTitleAuto`); the decision here is pure and
 // unit-tested (see chat-auto-rename.test.ts) with no config/network access.
 
-import { chatSummaryTitle } from "./cave-chat-titles.ts";
+import { chatSummaryTitle, defaultChatTitleForSession } from "./cave-chat-titles.ts";
 
 export type ChatAutoRenamePolicy = {
   /** Master switch for periodic context-aware renaming. */
@@ -107,4 +107,35 @@ export function renameTitleFromLatestExchange(exchange: RenameExchange): string 
     userText: exchange.userText ?? null,
     assistantText: exchange.assistantText ?? null,
   });
+}
+
+const TOPIC_FILLER = new Set(
+  "a an and are as at be can continue do for from help how i in is it me of on or please the this to we with you thanks thank fix update add plan test tests testing".split(" "),
+);
+const topicSegmenter = new Intl.Segmenter("en", { granularity: "word" });
+
+function titleTopicWords(title: string): Set<string> {
+  return new Set(
+    [...topicSegmenter.segment(title.normalize("NFC").toLowerCase())]
+      .filter((part) => part.isWordLike && !TOPIC_FILLER.has(part.segment))
+      .map((part) => part.segment),
+  );
+}
+
+/** Conservative lexical gate, not a semantic classifier: retain a title when
+ *  at least half of its smaller topic vocabulary survives the checkpoint. */
+export function hasMaterialTitleChange(
+  current: string | null | undefined,
+  candidate: string,
+): boolean {
+  const nextWords = titleTopicWords(candidate);
+  if (nextWords.size === 0) return false;
+  if (!current?.trim() || current === defaultChatTitleForSession()) return true;
+  const previousWords = titleTopicWords(current);
+  const shared = [...nextWords].filter((word) => previousWords.has(word)).length;
+  if (shared >= Math.min(previousWords.size, nextWords.size) / 2 && previousWords.size > 0) {
+    return false;
+  }
+  // One-word acknowledgements and ambiguous follow-ups are not a new topic.
+  return nextWords.size >= 2;
 }
