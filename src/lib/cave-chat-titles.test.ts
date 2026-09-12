@@ -1290,6 +1290,7 @@ assert.equal(
       const title = generate(`Fix ${secret} parser`);
       assert.equal(title, "Fix parser", `${name}: strips complete known credential source`);
     }
+    assert.equal(generate('Authorization: Digest response="private-response"'), null, `${name}: Digest-only input has no title`);
     // The token is not recognizable until inline markup has been rejoined.
     for (const token of [
       `sk-**proj**-${"x".repeat(180)}`,
@@ -1302,6 +1303,7 @@ assert.equal(
       `sk-\u200Bproj-${"x".repeat(180)}`,
       `sk-<b>proj</b>-${"x".repeat(180)}`,
       `sk-<span class="hl">proj</span>-${"x".repeat(180)}`,
+      `sk-<scr<script>ipt>proj</scr<script>ipt>-${"x".repeat(180)}`,
     ]) {
       assert.equal(generate(`Fix ${token} parser`), "Fix parser", `${name}: markup/control-rejoined token`);
     }
@@ -1315,6 +1317,11 @@ assert.equal(
     assert.equal(generate(`sk-proj-${"a".repeat(180)}`), null, "only secret material does not name a chat");
     assert.equal(generate('Fix token="synthetic\nmultiline private value" parser'), "Fix parser", "multiline assignment stays whole until redaction");
     assert.equal(generate("Fix token_count=12 parser"), "Fix token_count=12 parser", "safe secret-related metadata is not removed");
+    assert.equal(generate('Fix Authorization: Digest username="alice", nonce="private-nonce", response="private-response"\nparser'), "Fix parser", "Digest header fields never become metadata");
+    assert.equal(generate('Fix Proxy-Authorization: Custom response="private-response", nonce="private-nonce"\nparser'), "Fix parser", "parameterized authorization schemes remain whole");
+    assert.equal(generate("Session: restore state"), "Session: restore state", "ordinary colon prose stays intact");
+    assert.equal(generate("Token: parser"), "Token: parser", "ordinary token heading stays intact");
+    assert.equal(generate(`Fix <A ${'""'.repeat(20_000)}`), "Fix", "unterminated quoted attributes are consumed without backtracking");
   }
 }
 
@@ -1331,6 +1338,8 @@ assert.equal(
     ["runtime", ""],
     ["canon", ""],
     ["thinking", ""],
+    ["thinking", ' note="a < b"'],
+    ["thinking", ' note="a > b"'],
     ["think", ""],
     ["reasoning", ""],
     ["analysis", ""],

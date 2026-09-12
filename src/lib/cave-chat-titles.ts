@@ -1,7 +1,7 @@
 import { COVEN_IDENTITY_CANON_HEADER } from "./coven-identity-canon.ts";
 import { relativeTime } from "./daily-report.ts";
 import { redact } from "./redact.ts";
-import { REDACTED_SECRET, redactSecretText } from "./secret-redaction.ts";
+import { REDACTED_SECRET, redactSecretText, scanAuthorizationCredential } from "./secret-redaction.ts";
 
 type SessionLike = {
   id: string;
@@ -254,39 +254,83 @@ function sliceAtGraphemeBoundary(text: string, maxUnits: number): string {
 // Keep joiners/variation selectors used by real graphemes; remove C0/C1
 // controls (except layout whitespace), bidi controls and zero-width clutter.
 const UNSAFE_TITLE_CONTROLS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/gu;
-const HIDDEN_TITLE_BLOCK_RE = /<!--[\s\S]*?(?:-->|$)|<(\/?)(FAMILIAR_CONTRACT|KNOWLEDGE_VAULT|INSTRUCTIONS|system(?:[-_]reminder)?|identity|runtime|canon|thinking|think|reasoning|analysis|tool(?:s|[-_]call|[-_]result|[-_]use|[-_]response)?)(?:\s[^<>]*?)?\s*(\/?)>/gi;
+const HIDDEN_TITLE_BLOCK_RE = /<!--[\s\S]*?(?:-->|$)|<(\/?)(FAMILIAR_CONTRACT|KNOWLEDGE_VAULT|INSTRUCTIONS|system(?:[-_]reminder)?|identity|runtime|canon|thinking|think|reasoning|analysis|tool(?:s|[-_]call|[-_]result|[-_]use|[-_]response)?)(?=[\s/>])/gi;
 const PRIVATE_KEY_BLOCK_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z]+ )?PRIVATE KEY-----|$)/g;
 // Generic inline HTML (<b>, <code>, <span class="…">, …) — drop the tag but
 // keep its text. Requires a tag-name-shaped run right after '<'/'</', so a
 // Markdown autolink (<https://…>, <user@example.com>) never matches: ':' and
 // '@' break the run before any '>' or attribute whitespace is reached.
-const GENERIC_HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:"[^"]*"|'[^']*'|[^<>"'])*)?\s*\/?>/g;
-
 function stripInlineHtmlTags(text: string): string {
-  let current = text;
-  let previous: string;
-  do {
-    previous = current;
-    current = current.replace(GENERIC_HTML_TAG_RE, "");
-  } while (current !== previous);
-  return current;
+  const chunks: string[] = [];
+  let copiedThrough = 0;
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== "<") continue;
+    let cursor = start + 1;
+    if (text[cursor] === "/") cursor++;
+    if (!/[A-Za-z]/.test(text[cursor] ?? "")) continue;
+    while (cursor < text.length && /[A-Za-z0-9-]/.test(text[cursor])) cursor++;
+    if (!/[\s/<>]/.test(text[cursor] ?? "")) continue;
+    // Consume malformed nested tags together: stripping only the inner tag
+    // could manufacture a new tag and leave a split credential unrecognized.
+    let depth = 1;
+    let quote: string | null = null;
+    for (; cursor < text.length; cursor++) {
+      const char = text[cursor];
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === "<") {
+        depth++;
+      } else if (char === ">" && --depth === 0) {
+        cursor++;
+        break;
+      }
+    }
+    chunks.push(text.slice(copiedThrough, start));
+    copiedThrough = cursor;
+    start = cursor - 1;
+  }
+  chunks.push(text.slice(copiedThrough));
+  return chunks.join("");
 }
 
 function stripHiddenTitleSources(text: string): string {
   const visible: string[] = [];
   const stack: string[] = [];
   let cursor = 0;
-  for (const match of text.matchAll(HIDDEN_TITLE_BLOCK_RE)) {
+  HIDDEN_TITLE_BLOCK_RE.lastIndex = 0;
+  for (let match; (match = HIDDEN_TITLE_BLOCK_RE.exec(text));) {
+    let end = HIDDEN_TITLE_BLOCK_RE.lastIndex;
+    let selfClosing = false;
+    if (match[2]) {
+      // Scan attributes once, respecting quotes. A '<' or '>' inside a quoted
+      // attribute must not expose the body of a hidden reasoning/tool block.
+      let quote: string | null = null;
+      for (; end < text.length; end++) {
+        const char = text[end];
+        if (quote) {
+          if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === ">") {
+          selfClosing = text[end - 1] === "/";
+          end++;
+          break;
+        }
+      }
+      HIDDEN_TITLE_BLOCK_RE.lastIndex = end;
+    }
     if (stack.length === 0) visible.push(text.slice(cursor, match.index));
     if (match[2]) {
       const tag = match[2].toLowerCase();
       if (match[1]) {
         if (stack.at(-1) === tag) stack.pop();
-      } else if (!match[3]) {
+      } else if (!selfClosing) {
         stack.push(tag);
       }
     }
-    cursor = match.index + match[0].length;
+    cursor = end;
   }
   if (stack.length === 0) visible.push(text.slice(cursor));
   let source = visible.join("").trim();
@@ -306,6 +350,11 @@ function redactTitleAssignments(text: string): string {
   let copiedThrough = 0;
   for (let match; (match = assignments.exec(text));) {
     if (match[1]) continue;
+    // A plain heading such as "Session: restore state" is not an assignment.
+    // Quoted JSON keys and explicit credential headers still use colons.
+    if (match[0].trimEnd().endsWith(":") &&
+        !/^["']/.test(match[0]) &&
+        !/^(?:authorization|proxy-authorization|password|passwd|api[_-]?key|client[_-]?secret)\s*:/i.test(match[0])) continue;
     let end = assignments.lastIndex;
     while (/\s/.test(text[end] ?? "") && end < text.length) end++;
     const first = text[end];
@@ -333,8 +382,12 @@ function redactTitleAssignments(text: string): string {
         }
       }
     } else {
+      const authorizationEnd = /^(?:proxy-)?authorization\s*[:=]/i.test(match[0])
+        ? scanAuthorizationCredential(text, end)
+        : undefined;
       const authorization = /^(?:Basic|Bearer)[ \t]+[^\s,;]+/i.exec(text.slice(end));
-      if (authorization) end += authorization[0].length;
+      if (authorizationEnd !== undefined) end = authorizationEnd;
+      else if (authorization) end += authorization[0].length;
       else while (end < text.length && !/[\s,;]/.test(text[end])) end++;
     }
     const candidate = text.slice(match.index, end);

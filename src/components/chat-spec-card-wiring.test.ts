@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
+  /splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: protectedQuestions\.text \}\], onOpenUrl\)/,
 );
 assert.match(
   chatView,

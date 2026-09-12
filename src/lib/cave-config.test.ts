@@ -144,6 +144,17 @@ try {
   state = await config.loadState();
   assert.equal(state.sessionTitles["session-owned"], "Auto title A", "title persisted");
   assert.equal(state.sessionTitleAuto["session-owned"], "Auto title A", "provenance persisted");
+  const titleStatePath = path.join(tempHome, ".coven", "cave", "state.json");
+  fs.utimesSync(titleStatePath, 1, 1);
+  await sessionsListCache.get("title-noop", async () => ({ payload: { ok: true, sessions: [] } }));
+  await config.setSessionTitleAutoIfOwned("session-owned", "Auto title A", new Set());
+  assert.equal(fs.statSync(titleStatePath).mtimeMs, 1000, "identical auto title does not rewrite state");
+  let titleNoopRecomputes = 0;
+  await sessionsListCache.get("title-noop", async () => {
+    titleNoopRecomputes++;
+    return { payload: { ok: true, sessions: [] } };
+  });
+  assert.equal(titleNoopRecomputes, 0, "identical auto title preserves the sessions cache");
 
   // Prior auto title (still in autoDefaults) → can update.
   const ownedUpdate = await config.setSessionTitleAutoIfOwned(

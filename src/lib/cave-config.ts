@@ -924,6 +924,7 @@ let stateMutex: Promise<unknown> = Promise.resolve();
 
 async function updateState<T>(
   mutator: (state: CaveState) => T | Promise<T>,
+  shouldSave: () => boolean = () => true,
 ): Promise<T> {
   const previous = stateMutex;
   let release!: () => void;
@@ -933,7 +934,7 @@ async function updateState<T>(
     return await withCaveHomeReconciledStore("cave-state.json", async () => {
       const state = await loadStateUnlocked();
       const result = await mutator(state);
-      await saveStateUnlocked(state);
+      if (shouldSave()) await saveStateUnlocked(state);
       return result;
     });
   } finally {
@@ -1177,6 +1178,7 @@ export async function setSessionTitleAutoIfOwned(
 ): Promise<string | null> {
   const trimmed = title.trim();
   if (!trimmed) return null;
+  let changed = false;
   const result = await updateState((state) => {
     const current = state.sessionTitles[sessionId];
     const explicitlyManual = state.sessionTitleManual[sessionId] === true;
@@ -1211,9 +1213,10 @@ export async function setSessionTitleAutoIfOwned(
     state.sessionTitleAuto[sessionId] = trimmed;
     delete state.sessionTitleManual[sessionId];
     incrementSessionTitleRevision(state, sessionId);
+    changed = true;
     return trimmed;
-  });
-  if (result !== null) invalidateSessionsListCache();
+  }, () => changed);
+  if (changed) invalidateSessionsListCache();
   return result;
 }
 

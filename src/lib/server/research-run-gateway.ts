@@ -7,6 +7,7 @@ import {
   type RunEventV1,
 } from "../research-protocol/research-run.ts";
 import type { ResearchMission } from "../research-missions.ts";
+import { canonicalResearchRunStatusForMission } from "../research-run-lifecycle.ts";
 import {
   isValidResearchMissionId,
   loadResearchMission,
@@ -24,8 +25,7 @@ import {
 } from "./research-run-gateway-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 
-const PHASES = ["scope", "challenge", "synthesize", "control"] as const;
-type ResearchRunPhase = (typeof PHASES)[number];
+type ResearchRunPhase = "scope" | "challenge" | "synthesize" | "control";
 const TERMINAL_RUN_STATUSES: ReadonlySet<ResearchRunStatusV1> = new Set([
   "completed",
   "failed",
@@ -106,62 +106,27 @@ function latestTimestamp(...values: string[]): string {
   return parsed.reduce((latest, candidate) => candidate.time > latest.time ? candidate : latest).value;
 }
 
-function activePhase(mission: ResearchMission): ResearchRunPhase | undefined {
-  const steps = mission.iterations.at(-1)?.steps ?? [];
-  const active = steps.find((step) => step.status === "running");
-  const candidate = `${active?.type ?? ""} ${active?.id ?? ""}`.toLowerCase();
-  return PHASES.find((phase) => candidate.includes(phase));
-}
-
 function canonicalStatusForMission(mission: ResearchMission): {
   status: ResearchRunStatusV1;
   waitingReason?: "checkpoint";
   waitingForPhase?: ResearchRunPhase;
   failure?: { code: string; message: string; retryable: boolean };
 } {
-  switch (mission.status) {
-    case "queued":
-      return { status: "queued" };
-    case "planning":
-      return { status: "scoping" };
-    case "running": {
-      const phase = activePhase(mission);
-      if (phase === "scope") return { status: "scoping" };
-      if (phase === "challenge") return { status: "challenging" };
-      if (phase === "control") return { status: "controlling" };
-      return { status: "synthesizing" };
-    }
-    case "checkpoint":
-    case "paused":
-      return { status: "awaiting_checkpoint", waitingReason: "checkpoint" };
-    case "completed":
-      return { status: "completed" };
-    case "failed":
-      return {
-        status: "failed",
-        failure: {
-          code: "research_mission_failed",
-          message: "The persisted research mission reported a failure.",
-          retryable: false,
-        },
-      };
-    case "cancelled":
-      return { status: "cancelled" };
-    case "archived": {
-      if (mission.archivedFrom === "completed") return { status: "completed" };
-      if (mission.archivedFrom === "failed") {
-        return {
-          status: "failed",
-          failure: {
-            code: "research_mission_failed",
-            message: "The persisted research mission reported a failure.",
-            retryable: false,
-          },
-        };
-      }
-      return { status: "cancelled" };
-    }
+  const status = canonicalResearchRunStatusForMission(mission);
+  if (status === "awaiting_checkpoint") {
+    return { status, waitingReason: "checkpoint" };
   }
+  if (status === "failed") {
+    return {
+      status,
+      failure: {
+        code: "research_mission_failed",
+        message: "The persisted research mission reported a failure.",
+        retryable: false,
+      },
+    };
+  }
+  return { status };
 }
 
 export async function subscribeBeforeInitialResearchRunRead<T>(
@@ -446,6 +411,14 @@ function snapshotRun(
   };
   const candidate = {
     ...researchMissionToCanonicalRun(finalizedMission, nextEventSequence),
+    ...(researchRunIdForMission(mission) !== log.runId
+      ? {
+          acceptedTopic: {
+            question: "Historical research run",
+            editedByUser: false,
+          },
+        }
+      : {}),
     status: terminalStatus,
     artifactManifest: log.finalManifest,
   };
@@ -650,6 +623,10 @@ export async function replayResearchRunGateway(
   afterSequence: number,
   limit: number,
   requestedRunId?: string,
+  streamCursor?: {
+    requireCursorIdentity: true;
+    cursorRunId?: string | null;
+  },
 ): Promise<ResearchRunGatewayReplay | null> {
   if (!isValidResearchMissionId(missionId)) {
     throw new ResearchRunGatewayError("invalid", "invalid research mission id", 409);
@@ -661,14 +638,20 @@ export async function replayResearchRunGateway(
   );
   if (!synced) return null;
   const { mission, log } = synced;
-  const replay = replayFromLog(log, afterSequence, limit);
+  const effectiveAfterSequence = streamCursor?.requireCursorIdentity
+    && !requestedRunId
+    && afterSequence > 0
+    && streamCursor.cursorRunId !== log.runId
+    ? 0
+    : afterSequence;
+  const replay = replayFromLog(log, effectiveAfterSequence, limit);
   const lastEventSequence = log.events.at(-1)?.sequence ?? 0;
   return {
     run: snapshotRun(mission, log),
     lastEventSequence,
     nextEventSequence: lastEventSequence + 1,
     events: replay.events,
-    afterSequence,
+    afterSequence: effectiveAfterSequence,
     hasMore: replay.hasMore,
   };
 }

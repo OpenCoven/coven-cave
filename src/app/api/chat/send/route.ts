@@ -288,6 +288,7 @@ import {
   extractIncompleteChatAttentionMarker,
 } from "@/lib/chat-attention-marker";
 import { splitReasoning } from "@/lib/chat-reasoning";
+import { protectApproveMarkers } from "@/lib/approve-blocks";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -541,7 +542,8 @@ function prepareAttentionRequest(args: {
   reasoning?: string;
   request: ChatResponseMetadata["attentionRequest"] | null;
 } {
-  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(args.text);
+  const approveSplit = protectApproveMarkers(args.text);
+  const { visible: visibleBody, reasoning: reasoningBody } = splitReasoning(approveSplit.text);
   const { visible, request: marker } = args.incomplete
     ? extractIncompleteChatAttentionMarker(visibleBody)
     : extractChatAttentionMarker(visibleBody);
@@ -549,8 +551,8 @@ function prepareAttentionRequest(args: {
     ? extractIncompleteChatAttentionMarker(reasoningBody)
     : extractChatAttentionMarker(reasoningBody);
   return {
-    text: visible,
-    ...(cleanedReasoning.trim() ? { reasoning: cleanedReasoning.trim() } : {}),
+    text: approveSplit.restore(visible, true),
+    ...(cleanedReasoning.trim() ? { reasoning: approveSplit.restore(cleanedReasoning.trim(), true) } : {}),
     request: marker
       ? {
           sessionId: args.sessionId,
@@ -1279,6 +1281,7 @@ function openClawChatResponse(args: {
         );
         push({ kind: "session", sessionId: conversationId });
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
+        let persistedTurnId: string | undefined;
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(conversationId, args.body.familiarId);
@@ -1368,6 +1371,7 @@ function openClawChatResponse(args: {
           );
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          persistedTurnId = assistantTurnId;
           if (isFirstExchange && !isError) await autoNameSessionFromFirstExchange(conversationId, args.promptText);
           if (!isError) await maybeAutoRenameFromContext(conversationId, args.promptText);
           pushProgress("save-transcript", "Transcript saved", "done");
@@ -1384,6 +1388,7 @@ function openClawChatResponse(args: {
           isError,
           sessionId: conversationId,
           responseMetadata,
+          ...(persistedTurnId ? { persistedTurnId } : {}),
         });
         gatewayDispatch.close();
         runBuffer?.finish();
@@ -1659,6 +1664,7 @@ function openClawChatResponse(args: {
         if (sessionId) push({ kind: "session", sessionId });
         push({ kind: "assistant_chunk", text: assistantText });
 
+        let persistedTurnId: string | undefined;
         if (sessionId) {
           try {
             pushProgress("save-transcript", "Saving transcript", "running");
@@ -1752,6 +1758,7 @@ function openClawChatResponse(args: {
               );
               conv.activeLeafId = assistantTurnId;
               await saveConversation(conv);
+              persistedTurnId = assistantTurnId;
               return firstExchange;
             });
             if (isFirstExchange && !isError) {
@@ -1774,6 +1781,7 @@ function openClawChatResponse(args: {
           isError,
           sessionId: sessionId ?? undefined,
           responseMetadata,
+          ...(persistedTurnId ? { persistedTurnId } : {}),
         });
         runBuffer?.finish();
         await sleep(20);
@@ -6054,6 +6062,7 @@ async function postChat(
       const persistCovenProcessFailure = Boolean(
         finalSessionId && launchFailure && covenBackedProcessFailed,
       );
+      let persistedTurnId: string | undefined;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
@@ -6181,6 +6190,7 @@ async function postChat(
           conv.turns.push(userTurn, assistantTurn);
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          persistedTurnId = assistantTurnId;
             return firstExchange;
           });
           if (isFirstExchange && !result.is_error && !cancelledByUser) {
@@ -6207,6 +6217,7 @@ async function postChat(
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,
+        ...(persistedTurnId ? { persistedTurnId } : {}),
       });
       // Session-finished inbox item (cave-fgey): when the turn completed while
       // the user wasn't watching this chat, surface one 'agent' inbox item

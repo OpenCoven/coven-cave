@@ -20,8 +20,8 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
-  "settled path keeps GitHub splitting after artifacts while image groups remain intact across preview and card boundaries",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForApprove\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: protectedQuestions\.text \}\], onOpenUrl\)/,
+  "settled path keeps GitHub splitting after artifacts and question cards while image groups remain intact across preview and card boundaries",
 );
 assert.match(
   chatView,
@@ -40,7 +40,7 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+  /visible: approveSplit\.restore\(\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\),/,
   "preview/GitHub/image markers strip unconditionally and LAST — after every control extractor has seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(

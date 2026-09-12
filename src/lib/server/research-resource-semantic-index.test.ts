@@ -11,7 +11,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { mkdtemp, rename, rm } from "node:fs/promises";
+import fsPromises, { mkdtemp, rename, rm } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -168,6 +169,60 @@ test("a pre-opened child-process handle releases the canonical file before rebui
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const [suffix, failureCode] of [
+  ["-wal", null],
+  ["-shm", null],
+  ["-wal", "EIO"],
+  ["-wal", "ENOENT"],
+  ["", "ENOENT"],
+] as const) {
+  test(`rebuild handles ${suffix || "canonical"} rename ${failureCode ?? "disappearance"}`, async (t) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "research-semantic-rename-race-"));
+    const file = path.join(root, "semantic.sqlite");
+    const seed = await openResearchResourceSemanticIndex({ file });
+    seed.replace(authority(), vectors);
+    seed.close();
+    const originalRename = fsPromises.rename;
+    let intercepted = false;
+    const renameMock = t.mock.method(fsPromises, "rename", async (
+      source: Parameters<typeof originalRename>[0],
+      destination: Parameters<typeof originalRename>[1],
+    ) => {
+      if (source === `${file}${suffix}`) {
+        intercepted = true;
+        if (failureCode !== null) {
+          throw Object.assign(new Error("injected rename failure"), { code: failureCode });
+        }
+        // SQLite's closing child removes this between the existence check and rename.
+        rmSync(source);
+      }
+      await originalRename(source, destination);
+      if (source === file && suffix) {
+        writeFileSync(`${file}${suffix}`, "closing child sidecar", { mode: 0o600 });
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      if (failureCode !== null) {
+        await assert.rejects(rebuildResearchResourceSemanticIndex({ file }), { code: failureCode });
+      } else {
+        const rebuilt = await rebuildResearchResourceSemanticIndex({ file });
+        assert.equal(rebuilt.index.publication("resource-a"), null);
+        rebuilt.index.close();
+        assert.equal(existsSync(file), true, "the rebuilt canonical database must be published");
+        assert.ok(rebuilt.quarantinePath && existsSync(rebuilt.quarantinePath));
+        const reopened = await openResearchResourceSemanticIndex({ file });
+        reopened.close();
+      }
+      assert.equal(intercepted, true, "the intended rename boundary must be exercised");
+    } finally {
+      renameMock.mock.restore();
+      syncBuiltinESMExports();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
 
 test("a pre-opened handle maps a missing canonical generation to stale", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "research-semantic-missing-generation-"));
