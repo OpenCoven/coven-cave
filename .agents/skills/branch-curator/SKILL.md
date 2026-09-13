@@ -22,10 +22,13 @@ Preserve a branch or worktree when any of these signals apply:
 - Any non-closed Bead names the branch, worktree, surface, or owner.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
-- Its tip or reflog changed in the last 3 hours. Recency is unconditional;
-  known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
+
+Manual cleanup has no minimum branch or reflog age. A timestamp alone neither
+proves a live writer nor authorizes deletion: recheck ownership, activity,
+retention, and every recovery OID under the local lease. Automatic retirement
+keeps its separate 15-minute lifecycle cooldown and full maintenance gate.
 
 Treat `main`, the default branch, Beads/Dolt sync refs such as
 `__dolt_remote_info__`, and other tool-owned refs as protected infrastructure.
@@ -460,7 +463,7 @@ imply remote deletion.
 The manual profile substitutes current authorization plus exact fail-closed
 proof for the unavailable cross-system transaction. It still must acquire and
 retain the local maintenance lease, rerun every Beads, GitHub, process,
-worktree, ref, recency, archive, and recovery check immediately before each
+worktree, ref, archive, and recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
 `worktree-guard`.

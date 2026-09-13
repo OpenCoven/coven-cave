@@ -46,8 +46,13 @@ therefore `delete_remote=1` only for explicit remote authorization naming the
 exact recorded candidate.
 
 Treat the recorded instruction as authorization evidence, not candidate-safety evidence.
-Every live-work, unique-work, recovery, recency, destination, and exact-tip
+Every live-work, unique-work, recovery, destination, and exact-tip
 proof below remains mandatory. Authorization never replaces safety evidence.
+Manual cleanup has no minimum branch-tip or recovery-record age. Fresh
+observations and unchanged audited OIDs remain mandatory before every mutation.
+Automatic retirement still requires the lifecycle classifier's 15-minute
+cooldown and complete maintenance transaction; this manual age-policy change
+does not alter automatic eligibility.
 
 ## Automatic local-retirement profile
 
@@ -68,7 +73,8 @@ Delete only when all of these remain true under the gate:
 3. Configuration-independent inspection finds no staged, unstaged, untracked,
    ignored, submodule, assume-unchanged, or skip-worktree state.
 4. The local ref is not symbolic.
-5. The tip and every recovery record are at least 3 hours old.
+5. Every recovery record is well-formed and its old and new nonzero OIDs are
+   retained, regardless of record age.
 6. Every local and remote tip is redundant on the freshly fetched default
    branch or exactly matches the recorded head of a merged PR.
 7. Every recovery OID is reachable from that default branch or from an
@@ -232,9 +238,8 @@ if test -n "$audited_remote_oid" && test "$delete_remote" -eq 1; then
   # GitHub does not expose a server-authoritative ref-update timestamp. Current
   # bounded manual authority is the disposition for only that unavailable fact
   # and only for this exact remote candidate.
-  # Commit age is never used as ref recency; every observable activity, local
-  # and recovery recency, retention,
-  # ownership, destination, and exact-tip proof still runs.
+  # Commit age is never used as ref recency; every observable activity,
+  # retention, ownership, destination, and exact-tip proof still runs.
 fi
 ```
 
@@ -459,17 +464,13 @@ test "$archives_safe" -eq 1 ||
   { printf 'PRESERVE - archive refresh failed\n'; continue; }
 ```
 
-Use the repository's object format, a numeric cutoff, and raw reflog records.
+Use the repository's object format and raw reflog records.
 The raw parser must prove both old and new nonzero OIDs, including the old OID
 of the oldest retained record. Git may omit the tab-delimited message only from
 the first canonical creation record, whose old OID is all zeroes; every other
 message-less or malformed record fails closed:
 
 ```bash
-now_epoch=$(date +%s) ||
-  { printf 'PRESERVE - clock failed\n'; continue; }
-case "$now_epoch" in ''|*[!0-9]*) printf 'PRESERVE - clock invalid\n'; continue ;; esac
-recency_cutoff_epoch=$((now_epoch - 10800))
 object_format=$(git rev-parse --show-object-format) ||
   { printf 'PRESERVE - object format failed\n'; continue; }
 case "$object_format" in
@@ -523,7 +524,6 @@ prove_reflog() {
   test -n "$reflog_records" || return 1
   while IFS=' ' read -r epoch oid; do
     case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
-    test "$epoch" -lt "$recency_cutoff_epoch" || return 1
     oid_is_retained "$oid" || return 1
   done <<EOF
 $reflog_records
@@ -531,14 +531,10 @@ EOF
 }
 ```
 
-Require the branch tip and raw branch reflog to be old and retained:
+The current tip was proven retained above. Require the raw branch reflog to
+be well-formed and fully retained, without an age cutoff:
 
 ```bash
-tip_epoch=$(git_exact log -1 --format='%ct' "$local_ref") ||
-  { printf 'PRESERVE - tip timestamp failed\n'; continue; }
-case "$tip_epoch" in ''|*[!0-9]*) printf 'PRESERVE - tip timestamp invalid\n'; continue ;; esac
-test "$tip_epoch" -lt "$recency_cutoff_epoch" ||
-  { printf 'PRESERVE - recent tip\n'; continue; }
 branch_reflog=$(git rev-parse --path-format=absolute --git-path "logs/$local_ref") ||
   { printf 'PRESERVE - branch reflog path failed\n'; continue; }
 case "$branch_reflog" in
@@ -688,7 +684,7 @@ regular `MERGE_RR` file: Git's [rerere implementation](https://github.com/git/gi
 writes a list of pending conflict paths and can leave an empty list after
 resolution. A nonempty file, directory, symlink (including dangling), unreadable
 file, or `MERGE_RR.lock` remains protected. Empty residue never overrides an
-unmerged index, operation marker, lock, ownership, recency, or retention check.
+unmerged index, operation marker, lock, ownership, or retention check.
 Do not delete or rewrite the file to qualify a candidate. The strict guard
 checks this state before retention probes and again before its allow result;
 the complete recovery-OID and unknown-admin proof below remains mandatory.
@@ -772,7 +768,7 @@ branch ref or `logs/HEAD` alone covers it.
 Each mutation below is a separate transaction boundary. Immediately before
 each one, the parent loop must freshly reverify the selected profile exclusion
 and its current gate or lease ownership, then rerun every applicable Beads,
-GitHub PR and workflow, process, worktree, ref/OID/destination, recency,
+GitHub PR and workflow, process, worktree, ref/OID/destination,
 archive, and recovery/admin proof. Requery and refetch the exact default and
 candidate remote refs, recapture the applicable tips, require them to equal the
 audited OIDs, and rerun the selected guarded redundancy proof. An OID-only
@@ -790,7 +786,7 @@ Immediately before removing a worktree, freshly revalidate the selected profile
 authority as current, task-bounded, candidate-exact, and scope-exact. Freshly
 reverify the selected profile exclusion and gate or lease ownership. Rerun the
 applicable Beads, GitHub PR and workflow, process, worktree, ref, OID, and
-destination, recency, archive, and recovery and admin evidence. Detect newly
+destination, archive, and recovery and admin evidence. Detect newly
 appearing ownership, activity, registration, refs, or destination drift. Any
 query, proof, or recheck failure stops this candidate and all later
 transactions for it.
@@ -910,7 +906,7 @@ Require the prior worktree path and registry absence to remain verified.
 Freshly revalidate the selected profile authority as current, task-bounded,
 candidate-exact, and scope-exact. Freshly reverify the selected profile
 exclusion and gate or lease ownership, then rerun the applicable Beads, GitHub
-PR and workflow, process, worktree, ref, OID, and destination, recency, archive,
+PR and workflow, process, worktree, ref, OID, and destination, archive,
 and recovery and admin evidence against the remaining state. Reject newly
 appearing ownership, activity, worktree registration, refs, or destination
 drift. Any query, proof, or recheck failure stops this candidate and all later
@@ -955,7 +951,7 @@ current, task-bounded, candidate-exact, and scope-exact. Freshly revalidate the
 exact remote authorization as current-task, candidate-exact, and
 remote-scope-exact. Freshly reverify the selected profile exclusion and gate or
 lease ownership, then rerun the applicable Beads, GitHub PR and workflow,
-process, worktree, ref, OID, and destination, recency, archive, and recovery and
+process, worktree, ref, OID, and destination, archive, and recovery and
 admin evidence against the remaining remote state. Reject newly appearing
 ownership, activity, worktree registration, refs, or destination drift. Any
 query, proof, or recheck failure stops this candidate and all later

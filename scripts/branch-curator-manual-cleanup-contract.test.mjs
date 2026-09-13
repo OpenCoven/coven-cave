@@ -36,16 +36,26 @@ const evals = JSON.parse(
   read(".agents/skills/branch-curator/evals/evals.json"),
 ).evals;
 
-function runDocumentedReflogParser(contents) {
+function runDocumentedReflogParser(contents, { prove = false, unretainedOid = "" } = {}) {
   const functionMatch = proof.match(/emit_reflog_records\(\) \{[\s\S]*?\n\}/);
   assert.ok(functionMatch, "missing documented emit_reflog_records function");
+  const proofMatch = proof.match(/prove_reflog\(\) \{[\s\S]*?\n\}/);
+  assert.ok(proofMatch, "missing documented prove_reflog function");
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "branch-curator-reflog-"));
   const fixture = path.join(fixtureRoot, "HEAD");
   fs.writeFileSync(fixture, contents);
   try {
+    // Keep the legacy cutoff defined so reintroducing its comparison fails the recent-record case.
+    const invocation = prove
+      ? `recency_cutoff_epoch=$(($(date +%s) - 10800))
+unretained_oid=$2
+oid_is_retained() { printf '%s\\n' "$1"; test "$1" != "$unretained_oid"; }
+${proofMatch[0]}
+prove_reflog "$1"`
+      : 'emit_reflog_records "$1"';
     return spawnSync(
       "bash",
-      ["-c", `oid_width=40\n${functionMatch[0]}\nemit_reflog_records "$1"`, "branch-curator-reflog", fixture],
+      ["-c", `oid_width=40\n${functionMatch[0]}\n${invocation}`, "branch-curator-reflog", fixture, unretainedOid],
       { encoding: "utf8" },
     );
   } finally {
@@ -78,6 +88,38 @@ test("normative reflog parser accepts only the canonical message-less creation r
     `${created} ${committed} Val Alexander <68980965+BunsDev@users.noreply.github.com> 1788296310 -0500\n`,
   );
   assert.notEqual(nonCreationFirstRecord.status, 0, "message-less first records with a nonzero old OID must fail closed");
+});
+
+test("manual reflog proof accepts recent retained records but rejects lost recovery OIDs", () => {
+  const zero = "0".repeat(40);
+  const previous = "1".repeat(40);
+  const current = "2".repeat(40);
+  const epoch = Math.floor(Date.now() / 1000);
+  const creation = `${zero} ${previous} Owner <owner@example.com> ${epoch} +0000\n`;
+  const update = `${previous} ${current} Owner <owner@example.com> ${epoch} +0000\tcommit: update\n`;
+  const accepted = runDocumentedReflogParser(creation + update, { prove: true });
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.deepEqual(accepted.stdout.trim().split("\n"), [previous, previous, current]);
+
+  for (const unretainedOid of [previous, current]) {
+    const rejected = runDocumentedReflogParser(update, { prove: true, unretainedOid });
+    assert.notEqual(rejected.status, 0, `unretained recovery OID ${unretainedOid} must fail closed`);
+  }
+  for (const contents of ["", update.replace(String(epoch), "invalid"), update.replace("\tcommit: update", "")]) {
+    const rejected = runDocumentedReflogParser(contents, { prove: true });
+    assert.notEqual(rejected.status, 0, "empty or malformed recovery logs must fail closed");
+  }
+});
+
+test("manual cleanup has no age-only rejection and automatic cooldown stays separate", () => {
+  assert.doesNotMatch(skill, /last 3 hours|Recency is unconditional/);
+  assert.doesNotMatch(proof, /recency_cutoff_epoch|tip_epoch|10800|at least 3 hours old/);
+  assert.match(skill, /Manual cleanup has no minimum branch or reflog age/);
+  assert.match(proof, /Automatic retirement still requires the lifecycle classifier's 15-minute/);
+  const byId = new Map(evals.map((entry) => [entry.id, entry]));
+  assert.match(byId.get(9).expected_output, /age alone/i);
+  assert.match(byId.get(14).expected_output, /no minimum age/i);
+  assert.match(byId.get(18).expected_output, /unretained recovery OID/i);
 });
 
 test("Branch Curator separates automatic and maintainer-authorized cleanup", () => {
@@ -122,7 +164,7 @@ imply remote deletion.`),
   assert.ok(
     manual.includes(`It still must acquire and
 retain the local maintenance lease, rerun every Beads, GitHub, process,
-worktree, ref, recency, archive, and recovery check immediately before each
+worktree, ref, archive, and recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
 \`worktree-guard\`.`),
@@ -296,7 +338,7 @@ test("normative proof scopes remote deletion and uses exact expected OIDs", () =
       ["process", /process/],
       ["worktree", /worktree/],
       ["ref, OID, and destination", /ref, OID, and\s+destination/],
-      ["recency", /recency/],
+      ["freshness", /freshly/i],
       ["archive", /archive/],
       ["recovery and admin", /recovery and\s+admin/],
     ]) {
@@ -463,7 +505,7 @@ test("evals cover every new authorization and race boundary", () => {
   }
   const eval2 = byId.get(2);
   assert.match(eval2.prompt, /current maintainer/i);
-  assert.match(eval2.prompt, /both its local and recovery timestamps are older than 24h/);
+  assert.match(eval2.prompt, /both its local and recovery timestamps are only one minute old/);
   assert.match(
     eval2.prompt,
     /configuration-independent inspection finds no staged, unstaged, untracked, ignored, submodule, assume-unchanged, or skip-worktree state/,
@@ -514,7 +556,7 @@ test("evals cover every new authorization and race boundary", () => {
   assert.match(eval53.prompt, /current maintainer/i);
   assert.match(eval53.prompt, /exact local-only candidate/i);
   assert.match(eval53.prompt, /current task/i);
-  assert.match(eval53.prompt, /both its local and recovery timestamps are older than 24h/);
+  assert.match(eval53.prompt, /both its local and recovery timestamps are only one minute old/);
   assert.match(
     eval53.prompt,
     /configuration-independent inspection finds no staged, unstaged, untracked, ignored, submodule, assume-unchanged, or skip-worktree state/,

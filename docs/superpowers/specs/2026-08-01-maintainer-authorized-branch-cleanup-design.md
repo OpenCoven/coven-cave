@@ -4,6 +4,11 @@
 **Status:** Approved for implementation
 **Bead:** `cave-3hpv8`
 
+> Policy amendment (2026-09-11, `cave-hgtux`): manual cleanup has no minimum
+> branch-tip or reflog age. Fresh ownership, activity, exact-tip and recovery
+> retention proofs remain mandatory. The automatic lifecycle's separate
+> 15-minute cooldown is unchanged.
+
 ## Problem
 
 The branch-curator contract currently requires one repository-wide transaction
@@ -47,7 +52,7 @@ The manual path still:
 - acquires and retains the existing local maintenance lease;
 - runs the worktree guard and never bypasses it;
 - queries Beads and GitHub immediately before mutation;
-- preserves any live, claimed, recent, unique, protected, dirty, or uncertain
+- preserves any live, claimed, unique, protected, dirty, or uncertain
   state;
 - uses expected-OID compare-and-delete for local and remote refs; and
 - verifies postconditions before moving to the next mutation.
@@ -101,7 +106,6 @@ The following are always preserved:
 - branches checked out by another active session;
 - candidates with an active Bead claim, active familiar/session owner, open PR,
   queued/running workflow, or other verified writer;
-- candidates with activity inside the repository's recency window;
 - commits not proven reachable from a retained ref or verified archive; and
 - candidates for which any inventory, API, parse, ancestry, reflog, recovery,
   ownership, or postcondition check is incomplete or ambiguous.
@@ -140,7 +144,7 @@ from fresh fail-closed observations plus exact mutation preconditions:
 7. verify its postcondition; and
 8. repeat the full recheck before any next mutation.
 
-The complete applicable lease, Beads, GitHub, process, worktree, ref, recency,
+The complete applicable lease, Beads, GitHub, process, worktree, ref,
 archive, and recovery evidence is rerun immediately before each transaction:
 worktree removal, local ref deletion, and remote ref deletion. Evidence from a
 prior transaction is never reused as authorization for the next one.
@@ -211,9 +215,9 @@ The curator then requires `git ls-remote --exit-code --heads` to return status
 2 for the exact ref. If the remote OID or destination changes, deletion stops.
 For this manual profile only, the recorded remote-cleanup authorization is the
 disposition for GitHub's unavailable server-side ref-update timestamp. It does
-not waive the 24-hour local/recovery recency checks or any observable PR,
-workflow, commit, ownership, or branch-activity signal. Commit age is never
-presented as remote-ref recency proof.
+not waive any observable PR, workflow, ownership, ref-drift or recovery-retention
+proof. Manual cleanup imposes no local/recovery minimum age. Commit age is
+never presented as remote-ref recency proof.
 
 ## Documentation and implementation scope
 
@@ -250,7 +254,7 @@ Verification must include:
 1. branch-curator evals showing that vague, historical, local-only, and
    automatic requests cannot authorize remote or unattended deletion;
 2. evals showing that explicit bounded maintainer authorization reaches the
-   manual proof path but still preserves dirty, live, recent, unique,
+   manual proof path even for recent retained commits but still preserves dirty, live, unique,
    protected, or uncertain candidates;
 3. evals requiring expected-OID local and remote deletion and stopping on ref
    drift;

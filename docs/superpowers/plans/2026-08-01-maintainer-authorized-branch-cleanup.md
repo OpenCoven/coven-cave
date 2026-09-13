@@ -8,6 +8,13 @@
 
 **Tech Stack:** Markdown skill contracts, JSON skill evals, Node.js `node:test` source-contract tests, Git plumbing, GitHub CLI, Beads CLI.
 
+> Historical implementation record: the age-based manual-cleanup examples and
+> test excerpts below are superseded by `cave-hgtux` (2026-09-11). Manual cleanup
+> now has no minimum branch-tip or reflog age; use the current Branch Curator
+> skill and normative deletion proof, not these copied snippets. Fresh ownership,
+> activity, exact-OID and recovery-retention proofs remain mandatory. The
+> automatic lifecycle's separate 15-minute cooldown is unchanged.
+
 ---
 
 ## File map
