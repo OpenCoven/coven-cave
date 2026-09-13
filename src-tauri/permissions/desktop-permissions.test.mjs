@@ -330,20 +330,24 @@ test("secondary main-window authority is granted only to exact native-registered
     "secondary labels must be registered before capability activation and retired if activation fails",
   );
   assert.match(mainWindowRust, /retired_labels\.contains\(label\)[\s\S]{0,200}cannot be reused/);
-  assert.match(mainWindowRust, /"webviews": \[label\]/);
-  assert.match(mainWindowRust, /"permissions": SECONDARY_MAIN_WINDOW_PERMISSIONS/);
+  assert.match(mainWindowRust, /capability\["webviews"\] = serde_json::json!\(\[label\]\)/);
   assert.match(mainWindowRust, /app\.add_capability\(serialized\)/);
+  assert.match(mainWindowRust, /capability\.get\("windows"\)\.is_some\(\)/);
 
-  const secondaryPermissions = mainWindowRust.slice(
-    mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS"),
-    mainWindowRust.indexOf("];", mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS")) + 2,
+  // The primary JSON contracts own origins, platforms, permission sets and scopes.
+  // Keep the runtime grant tied to those contracts, not a second permission list.
+  const secondaryTemplates = mainWindowRust.slice(
+    mainWindowRust.indexOf("const MAIN_CAPABILITY_TEMPLATES"),
+    mainWindowRust.indexOf("];", mainWindowRust.indexOf("const MAIN_CAPABILITY_TEMPLATES")) + 2,
   );
-  for (const permission of ["allow-pty-start", "allow-browser-navigate", "core:event:allow-listen"]) {
-    assert.match(secondaryPermissions, new RegExp(`"${permission}"`));
+  for (const name of [
+    "default", "loopback-browser", "loopback-main-events", "loopback-window-controls",
+    "loopback-window-drag", "loopback-updater", "loopback-speech",
+    "loopback-microphone", "loopback-x-oauth",
+  ]) {
+    assert.ok(secondaryTemplates.includes(`include_str!("../capabilities/${name}.json")`), `${name} must use its primary capability contract`);
   }
-  for (const permission of ["updater:default", "process:default", "allow-open-x-oauth-url", "allow-speech-stt-start"]) {
-    assert.doesNotMatch(secondaryPermissions, new RegExp(`"${permission}"`));
-  }
+  assert.doesNotMatch(mainWindowRust, /SECONDARY_MAIN_WINDOW_PERMISSIONS/);
 });
 
 test("Windows sidecar startup status reaches every managed main window", () => {

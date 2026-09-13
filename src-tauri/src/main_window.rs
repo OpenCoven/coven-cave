@@ -6,23 +6,17 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 pub(super) const PRIMARY_MAIN_WINDOW_LABEL: &str = "main";
 const SECONDARY_MAIN_WINDOW_PREFIX: &str = "main-";
-const SECONDARY_MAIN_WINDOW_PERMISSIONS: [&str; 16] = [
-    "allow-pty-start",
-    "allow-pty-write",
-    "allow-pty-resize",
-    "allow-pty-stop",
-    "allow-pty-list",
-    "allow-pty-diagnose",
-    "allow-browser-navigate",
-    "allow-browser-set-bounds",
-    "allow-browser-hide",
-    "allow-browser-hide-all-except",
-    "allow-browser-close",
-    "allow-browser-deactivate-all",
-    "allow-browser-close-all",
-    "allow-browser-reload",
-    "core:event:allow-listen",
-    "core:event:allow-unlisten",
+// Reuse the primary contracts so permission, origin and platform restrictions stay aligned.
+const MAIN_CAPABILITY_TEMPLATES: [&str; 9] = [
+    include_str!("../capabilities/default.json"),
+    include_str!("../capabilities/loopback-browser.json"),
+    include_str!("../capabilities/loopback-main-events.json"),
+    include_str!("../capabilities/loopback-window-controls.json"),
+    include_str!("../capabilities/loopback-window-drag.json"),
+    include_str!("../capabilities/loopback-updater.json"),
+    include_str!("../capabilities/loopback-microphone.json"),
+    include_str!("../capabilities/loopback-speech.json"),
+    include_str!("../capabilities/loopback-x-oauth.json"),
 ];
 
 #[derive(Default)]
@@ -185,11 +179,29 @@ fn secondary_main_window_capabilities(label: &str) -> Result<Vec<serde_json::Val
             "'{label}' is not a valid secondary main-window label"
         ));
     }
-    Ok(vec![serde_json::json!({
-        "identifier": format!("secondary-main-runtime-{label}"),
-        "webviews": [label],
-        "permissions": SECONDARY_MAIN_WINDOW_PERMISSIONS,
-    })])
+    MAIN_CAPABILITY_TEMPLATES
+        .iter()
+        .map(|template| {
+            let mut capability: serde_json::Value = serde_json::from_str(template)
+                .map_err(|error| format!("invalid main-window capability: {error}"))?;
+            if capability.get("windows").is_some()
+                || !capability["webviews"].as_array().is_some_and(|labels| {
+                    labels
+                        .iter()
+                        .any(|value| value == PRIMARY_MAIN_WINDOW_LABEL)
+                })
+            {
+                return Err("main-window template must scope authority by main webview".to_string());
+            }
+            let identifier = capability["identifier"]
+                .as_str()
+                .ok_or("main-window capability has no identifier")?;
+            capability["identifier"] =
+                serde_json::json!(format!("secondary-main-{identifier}-{label}"));
+            capability["webviews"] = serde_json::json!([label]);
+            Ok(capability)
+        })
+        .collect()
 }
 
 pub(super) fn is_registered_main_window(app: &AppHandle, label: &str) -> bool {
@@ -253,34 +265,223 @@ mod tests {
     }
 
     #[test]
+    fn secondary_main_can_receive_loopback_events() {
+        let capabilities = secondary_main_window_capabilities("main-2").unwrap();
+        assert!(
+            capabilities.iter().any(|capability| {
+                capability["permissions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|permission| permission == "core:event:allow-listen")
+                    && capability["remote"]["urls"]
+                        .as_array()
+                        .is_some_and(|urls| urls.iter().any(|url| url == "http://127.0.0.1:*/*"))
+            }),
+            "secondary main event permission lacks the trusted loopback origin"
+        );
+    }
+
+    #[test]
+    fn secondary_main_has_scoped_native_capabilities() {
+        let capabilities = secondary_main_window_capabilities("main-2").unwrap();
+        for expected in [
+            "updater:default",
+            "allow-microphone-permission-request",
+            "core:window:allow-start-dragging",
+        ] {
+            assert!(
+                capabilities.iter().any(|capability| {
+                    capability["permissions"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|permission| permission == expected)
+                }),
+                "missing {expected}"
+            );
+        }
+    }
+
+    #[test]
     fn secondary_capabilities_target_only_the_exact_registered_label() {
-        let capabilities =
-            secondary_main_window_capabilities("main-2").expect("secondary capabilities");
-        assert_eq!(capabilities.len(), 1);
+        let capabilities = secondary_main_window_capabilities("main-2").unwrap();
+        let mut identifiers = BTreeSet::new();
         for capability in capabilities {
             assert_eq!(capability["webviews"], serde_json::json!(["main-2"]));
-            assert!(capability["identifier"]
-                .as_str()
-                .is_some_and(|identifier| identifier == "secondary-main-runtime-main-2"));
-            let permissions = capability["permissions"]
-                .as_array()
-                .expect("secondary permissions");
-            assert!(permissions
-                .iter()
-                .any(|permission| permission == "allow-pty-start"));
-            assert!(permissions
-                .iter()
-                .any(|permission| permission == "allow-browser-navigate"));
-            for forbidden in [
-                "updater:default",
-                "process:default",
-                "allow-open-x-oauth-url",
-            ] {
-                assert!(!permissions.iter().any(|permission| permission == forbidden));
+            assert!(capability.get("windows").is_none());
+            let identifier = capability["identifier"].as_str().unwrap();
+            assert!(identifier.starts_with("secondary-main-"));
+            assert!(identifier.ends_with("-main-2"));
+            assert!(identifiers.insert(identifier.to_string()));
+        }
+        for label in [
+            "main",
+            "quick-chat",
+            "notch",
+            "browser-main-2",
+            "main-2--browser",
+            "main-*",
+            "main--unmanaged",
+        ] {
+            assert!(
+                secondary_main_window_capabilities(label).is_err(),
+                "must reject {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn grants_preserve_primary_scopes_and_target_only_secondary_webview() {
+        for label in ["main-2", "main-project_alpha"] {
+            let caps = secondary_main_window_capabilities(label).unwrap();
+            for (mut cap, source) in caps.into_iter().zip(MAIN_CAPABILITY_TEMPLATES) {
+                let mut primary: serde_json::Value = serde_json::from_str(source).unwrap();
+                assert_eq!(cap["webviews"], serde_json::json!([label]));
+                assert!(cap.get("windows").is_none());
+                cap.as_object_mut().unwrap().remove("identifier");
+                cap.as_object_mut().unwrap().remove("webviews");
+                primary.as_object_mut().unwrap().remove("identifier");
+                primary.as_object_mut().unwrap().remove("webviews");
+                assert_eq!(
+                    cap, primary,
+                    "origins, permissions, scopes and platforms must stay unchanged"
+                );
             }
         }
-        assert!(secondary_main_window_capabilities("main--unmanaged").is_err());
-        assert!(secondary_main_window_capabilities(PRIMARY_MAIN_WINDOW_LABEL).is_err());
+        for label in [
+            "main",
+            "quick-chat",
+            "notch",
+            "browser-main-2",
+            "main-2--browser",
+            "main-*",
+            "main--unmanaged",
+        ] {
+            assert!(
+                secondary_main_window_capabilities(label).is_err(),
+                "must reject {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn actual_tauri_acl_matches_primary_across_platforms_origins_and_labels() {
+        use std::collections::BTreeMap;
+        use tauri::utils::{
+            acl::{
+                capability::Capability,
+                manifest::Manifest,
+                resolved::{Resolved, ResolvedCommand},
+                ExecutionContext,
+            },
+            platform::Target,
+        };
+        fn allowed(
+            commands: &BTreeMap<String, Vec<ResolvedCommand>>,
+            command: &str,
+            label: &str,
+            origin: Option<&str>,
+        ) -> bool {
+            commands.get(command).is_some_and(|entries| {
+                entries.iter().any(|entry| {
+                    let scope = entry.webviews.iter().any(|pattern| pattern.matches(label));
+                    let context = match (&entry.context, origin) {
+                        (ExecutionContext::Local, None) => true,
+                        (ExecutionContext::Remote { url }, Some(origin)) => {
+                            url.test(&tauri::Url::parse(origin).unwrap())
+                        }
+                        _ => false,
+                    };
+                    scope && context
+                })
+            })
+        }
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/acl-manifests.json"
+        )))
+        .unwrap();
+        for target in [Target::MacOS, Target::Windows, Target::Linux] {
+            let primary_caps: BTreeMap<String, Capability> = std::fs::read_dir(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities"),
+            )
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .map(|path| {
+                serde_json::from_str::<Capability>(&std::fs::read_to_string(path).unwrap()).unwrap()
+            })
+            .filter(|capability| {
+                capability.windows.is_empty()
+                    && capability
+                        .webviews
+                        .iter()
+                        .any(|label| label == PRIMARY_MAIN_WINDOW_LABEL)
+            })
+            .map(|capability| (capability.identifier.clone(), capability))
+            .collect();
+            let secondary_caps: BTreeMap<String, Capability> =
+                secondary_main_window_capabilities("main-2")
+                    .unwrap()
+                    .into_iter()
+                    .map(|raw| {
+                        let c: Capability = serde_json::from_value(raw).unwrap();
+                        (c.identifier.clone(), c)
+                    })
+                    .collect();
+            let primary = Resolved::resolve(&manifests, primary_caps, target).unwrap();
+            let secondary = Resolved::resolve(&manifests, secondary_caps, target).unwrap();
+            for (p, s) in [
+                (&primary.allowed_commands, &secondary.allowed_commands),
+                (&primary.denied_commands, &secondary.denied_commands),
+            ] {
+                for command in p.keys().chain(s.keys()) {
+                    for origin in [
+                        None,
+                        Some("http://127.0.0.1:3000/chat"),
+                        Some("http://localhost:3000/"),
+                        Some("http://[::1]:3000/"),
+                        Some("https://evil.example/"),
+                        Some("https://github.com/"),
+                    ] {
+                        assert_eq!(
+                            allowed(p, command, "main", origin),
+                            allowed(s, command, "main-2", origin),
+                            "{target} {command} {origin:?}"
+                        );
+                        for child in [
+                            "main",
+                            "quick-chat",
+                            "notch",
+                            "browser-main-2",
+                            "main-2--browser",
+                            "main-20",
+                        ] {
+                            assert!(
+                                !allowed(s, command, child, origin),
+                                "unexpected authority for {child}"
+                            );
+                        }
+                    }
+                }
+            }
+            assert!(allowed(
+                &secondary.allowed_commands,
+                "plugin:updater|check",
+                "main-2",
+                Some("http://127.0.0.1:3000/")
+            ));
+            assert_eq!(
+                allowed(
+                    &secondary.allowed_commands,
+                    "microphone_permission_request",
+                    "main-2",
+                    Some("http://127.0.0.1:3000/")
+                ),
+                target == Target::MacOS
+            );
+        }
     }
 
     #[test]
