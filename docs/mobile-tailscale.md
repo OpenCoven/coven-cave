@@ -110,6 +110,34 @@ when it runs; each opportunity performs one reachability ping and a token
 renewal when needed. It is not guaranteed real-time reconnect, continuous
 background execution, or a way to wake a sleeping Mac.
 
+## Use existing familiars from another Mac
+
+The authenticated browser surface also works from another Mac on the same
+tailnet. On the Mac that owns the familiars, use **Open on phone** to create
+the signed invite, then open that invite in the other Mac's browser. Treat the
+invite as a credential: transfer it privately, not through chat logs or a public
+document. This grants access to that Cave browser application, not a
+familiar-scoped native client connection.
+
+Keep the browser connected to the owning Mac's Cave. Select an existing
+familiar there rather than creating a copy through **Summoning circle →
+A remote machine**. That screen configures a new familiar with an SSH runtime;
+it does not attach another Cave installation's existing roster and identity.
+
+Daemon Server Hub configuration below is a separate feature. A healthy hub or
+visible remote roster does not establish where a chat harness executes:
+Cave's chat route also uses local familiar bindings and explicitly selected
+SSH runtimes. Do not use a successful hub health check as proof that another
+Mac's familiar, workspace, and runtime handled a conversation.
+
+The `/api/client/v1/` contract is another separate surface: it requires direct
+loopback access and has no chat-submit or streaming operation. Its credentials
+are not interchangeable with a mobile invite or Server Hub token.
+
+Confirm success with an actual reply in the owning Mac's conversation, not
+just discovery or an app shell. The availability and consent requirements
+above still apply; pairing does not wake a sleeping Mac.
+
 ## Connect Cave to a remote Server Hub
 
 Open **Settings → Daemon → Connection**, choose **Server hub**, and use the **Tailnet devices** list to select the machine running the remote Coven daemon. Cave discovers this device and online peers from `tailscale status --json`; it uses the device's `100.x` address when available and fills the standard daemon port, `8787`. The current machine is labelled **This device**. You can still enter a MagicDNS name or another private HTTP URL manually.
