@@ -36,6 +36,7 @@ import {
   REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
 } from "./ids";
 
 function RoomFallback() {
@@ -76,6 +77,10 @@ const ReviewerSurface = dynamic(
 );
 const CodeRoom = dynamic(
   () => import("./code-room").then((m) => m.CodeRoom),
+  { ssr: false, loading: RoomFallback },
+);
+const XCommsSurface = dynamic(
+  () => import("./x-comms-surface").then((m) => m.XCommsSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -215,6 +220,45 @@ registerRoleSurface({
     };
   },
   render: (context) => <MessengerSurface context={context} />,
+});
+
+/**
+ * X Comms — the account's own room, beside Comms Operations rather than inside
+ * it. Comms Operations stays channel-agnostic and keeps its X publishing panel;
+ * this room is X end-to-end, so it can be shaped around the single decision it
+ * exists for: releasing one write, once, at a slot a person chose.
+ *
+ * Gated on `xPublishEnabled` for the same reason every other X surface is
+ * (`x-surface-gating.test.ts`): the capability mirrors a server-side rule, and
+ * a room offering an approval an ungated familiar could never act on would be
+ * a promise the Cave cannot keep.
+ */
+registerRoleSurface({
+  id: X_COMMS_SURFACE_ID,
+  role: "messenger",
+  title: "X Comms",
+  iconName: "ph:x-logo-bold",
+  description: "Draft, approve and schedule posts to X",
+  accentHue: 38,
+  // Below Comms Operations (20): the general room is the one a messenger lands
+  // in, and this is the specialised one they step into.
+  priority: 18,
+  shouldDisplay: (context) => context.activeFamiliar?.xPublishEnabled === true,
+  getContributions() {
+    return {
+      statusIndicators: [
+        {
+          id: "x-comms.demo",
+          label: "demo room",
+          tone: "warn",
+          detail:
+            "Approvals and slots are local to this room; nothing reaches X. The live publish path is in Comms Operations.",
+        },
+      ],
+      notifications: [],
+    } satisfies RoleSurfaceContribution;
+  },
+  render: (context) => <XCommsSurface context={context} />,
 });
 
 registerRoleSurface({
