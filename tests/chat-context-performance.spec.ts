@@ -1,6 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  createOnboardingBootstrapState,
+  ONBOARDING_BOOTSTRAP_BOUNDARIES,
+  type OnboardingBootstrapState,
+} from "../src/lib/onboarding-bootstrap";
 
 const now = new Date().toISOString();
+const initialBootstrap = createOnboardingBootstrapState(true);
+const completedBootstrap: OnboardingBootstrapState = {
+  ...initialBootstrap,
+  complete: true,
+  needsSetup: false,
+  status: "complete",
+  stages: initialBootstrap.stages.map((stage) => ({
+    ...stage, status: "complete", detail: "Ready in the chat fixture.",
+  })),
+};
 const familiars = [
   { id: "cody", display_name: "Cody", role: "Code Familiar", status: "active", icon: "ph:code" },
   { id: "sage", display_name: "Sage", role: "Research Familiar", status: "active", icon: "ph:book-open" },
@@ -19,6 +34,7 @@ const sessions = [
 
 async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promise<void>) {
   const conversationRequests: string[] = [];
+  page.on("console", (msg) => { if (msg.text().includes("DEBUG")) console.log("[PAGE]", msg.text()); });
   await page.context().routeWebSocket("**/*", (socket) => socket.close());
   await page.addInitScript((betaFamiliar) => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -35,7 +51,11 @@ async function setup(page: Page, betaFamiliar = "cody", pendingSessions?: Promis
       return;
     }
     let payload: object = { ok: true };
-    if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
+    if (url.pathname === "/api/onboarding/bootstrap") {
+      payload = { ok: true, ...completedBootstrap, boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
+    }
+    else if (url.pathname === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
+    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
     else if (url.pathname === "/api/projects") payload = { ok: true, projects };
     else if (url.pathname === "/api/sessions/list") {
       if (pendingSessions) await pendingSessions;
@@ -79,6 +99,24 @@ async function switchProject(page: Page, projectId: "alpha" | "beta") {
   await switcher.getByRole("button", { name: /^Switch project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
 }
+
+test("context fixtures serve completed onboarding locally and reject setup writes", async ({ page }) => {
+  await setup(page);
+  const status = await page.evaluate(async () => {
+    const write = await fetch("/api/onboarding/bootstrap", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    const bootstrap = await fetch("/api/onboarding/bootstrap").then((response) => response.json());
+    const onboarding = await fetch("/api/onboarding/status").then((response) => response.json());
+    return { writeStatus: write.status, bootstrap, onboarding };
+  });
+  expect(status.writeStatus).toBe(403);
+  expect(status.bootstrap).toMatchObject({ ok: true, complete: true, needsSetup: false });
+  expect(status.onboarding).toMatchObject({ ok: true, complete: true });
+  await expect(page.locator(".chat-surface")).toBeVisible();
+});
 
 test("reselecting the composer project preserves its draft across global and local selections", async ({ page }) => {
   await setup(page);
