@@ -34,7 +34,7 @@ export type ElevenLabsVoiceSettings = {
   speed: number;
 };
 
-/** ElevenLabs' own baseline settings — delivery-neutral, safe on every model. */
+/** Delivery-neutral baseline. Model-specific unsupported controls are omitted. */
 export const DEFAULT_ELEVENLABS_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   stability: 0.5,
   similarityBoost: 0.75,
@@ -218,6 +218,35 @@ export function isValidElevenLabsModelId(id: unknown): id is string {
  */
 export function modelSupportsRequestStitching(modelId: string): boolean {
   return !modelId.startsWith("eleven_v3");
+}
+
+/**
+ * Research render validation, not a clamp: stored custom direction must never
+ * silently turn into another performance. V3's baseline sends stability only.
+ * https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech
+ */
+export function validateElevenLabsModelSettings(
+  modelId: string,
+  settings?: ElevenLabsVoiceSettings,
+): string | null {
+  if (!settings) return null;
+  if (!validateElevenLabsVoiceSettings(settings)) return "ElevenLabs voice settings are malformed.";
+  if (modelId.startsWith("eleven_v3")) {
+    if (![0, 0.5, 1].includes(settings.stability)) {
+      return "Eleven v3 stability must be 0, 0.5, or 1. Choose Neutral delivery or Multilingual v2.";
+    }
+    if (
+      settings.useSpeakerBoost ||
+      settings.speed !== 1 ||
+      settings.similarityBoost !== DEFAULT_ELEVENLABS_VOICE_SETTINGS.similarityBoost ||
+      settings.style !== 0
+    ) {
+      return "Eleven v3 does not support these delivery controls. Choose Neutral delivery without custom settings, or Multilingual v2.";
+    }
+  } else if (settings.speed < 0.7 || settings.speed > 1.2) {
+    return "ElevenLabs speech speed must be between 0.7 and 1.2. Update the custom delivery settings.";
+  }
+  return null;
 }
 
 /** ElevenLabs accepts an unsigned 32-bit integer seed for reproducible renders. */

@@ -61,6 +61,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`chat-github-integration.md`](chat-github-integration.md) — the shipped GitHub integration and its turn-marker protocol
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
+- [`research-podcast-quality.md`](research-podcast-quality.md) — voice auditions, source fidelity, audio fault gates, and the limits of podcast quality guarantees
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards
 
 ### Knowledge, authoring, and marketplace

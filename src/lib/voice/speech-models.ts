@@ -349,7 +349,7 @@ export type SelectableLocalTtsVoice = {
  * keep using the plain model list; this catalog is for pickers.
  */
 export function selectableLocalTtsVoices(
-  tts: readonly SpeechModelReadiness[],
+  tts: readonly Pick<SpeechModelReadiness, "id" | "name" | "engine" | "ready" | "verified" | "kokoroSpeakerId">[],
 ): SelectableLocalTtsVoice[] {
   const voices: SelectableLocalTtsVoice[] = [];
   for (const model of tts) {

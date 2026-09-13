@@ -44,6 +44,7 @@ import {
   RESEARCH_GENERATION_MEDIA_KINDS,
   RESEARCH_THREAD_POST_MAX_CHARS,
   isResearchGenerationKind,
+  elevenLabsPodcastDirection,
   type ResearchGeneration,
   type ResearchGenerationCreatableKind,
   type ResearchGenerationKind,
@@ -54,18 +55,22 @@ import {
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import {
+  DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
   ELEVENLABS_DELIVERY_PRESETS,
   ELEVENLABS_MAX_SEED,
   ELEVENLABS_PODCAST_MODEL_OPTIONS,
   describeElevenLabsVoiceSettings,
   elevenLabsDeliveryPreset,
   isValidElevenLabsSeed,
+  validateElevenLabsModelSettings,
   type ElevenLabsDeliveryPresetId,
 } from "@/lib/voice/elevenlabs-shared";
 import type { ElevenLabsCatalogState } from "@/lib/voice/settings-client";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { PodcastVoicePreviews } from "./research-podcast-preview";
+import "@/styles/research-podcast-config.css";
 
 // ── kind presentation (real kinds — the creatable union) ─────────────────────
 
@@ -468,14 +473,17 @@ export function GenerationReviewModal({
   rendering,
   error,
   onClose,
+  voiceNames = {},
 }: {
   generation: ResearchGeneration;
   onRender: () => void;
   rendering: boolean;
   error: string | null;
   onClose: () => void;
+  voiceNames?: Record<string, string>;
 }) {
   const content = generation.content;
+  const voiceName = (id: string) => voiceNames[id] ?? `${id} (catalog name unavailable)`;
   return (
     <StudioModal
       onClose={onClose}
@@ -493,31 +501,36 @@ export function GenerationReviewModal({
       </header>
       <div className="research-studio-modal__body">
         <p className="research-studio-config__note">
-          This is the exact extractive source the renderer will use. Nothing is rendered until you choose Render.
+          Review the extracted findings and source citations below. The renderer prepares them for speech; this is not an AI-written conversation.
+          Nothing is rendered until you choose Render media.
         </p>
+        {generation.kind === "podcast" ? (
+          <p className="research-studio-config__note">The output is AI-generated audio, not a recording of real speakers. {generation.renderConfig?.provider === "elevenlabs" ? "Rendering sends this script to ElevenLabs using your key and may incur usage charges." : "Local voice synthesis stays on this machine."}</p>
+        ) : null}
+        {generation.directions ? <p className="research-studio-config__note">Directions are saved as notes only. They have not rewritten or directed this script.</p> : null}
         {generation.renderConfig ? (
           <dl className="research-studio-review__config">
             <div>
               <dt>Provider</dt>
               <dd>
                 {generation.renderConfig.provider === "local"
-                  ? "Local"
-                  : "ElevenLabs"}
+                  ? "Local · private synthesis"
+                  : "ElevenLabs · hosted, key and usage"}
               </dd>
             </div>
             <div>
               <dt>Voice</dt>
-              <dd>{generation.renderConfig.voice}</dd>
+              <dd>{voiceName(generation.renderConfig.voice)}</dd>
             </div>
             {generation.renderConfig.voices ? (
               <>
                 <div>
                   <dt>Host voice</dt>
-                  <dd>{generation.renderConfig.voices.host}</dd>
+                  <dd>{voiceName(generation.renderConfig.voices.host)}</dd>
                 </div>
                 <div>
                   <dt>Guest voice</dt>
-                  <dd>{generation.renderConfig.voices.guest}</dd>
+                  <dd>{voiceName(generation.renderConfig.voices.guest)}</dd>
                 </div>
               </>
             ) : null}
@@ -546,14 +559,17 @@ export function GenerationReviewModal({
             {generation.renderConfig.model ? (
               <div>
                 <dt>Model</dt>
-                <dd>{generation.renderConfig.model}</dd>
+                <dd>{ELEVENLABS_PODCAST_MODEL_OPTIONS.find((model) => model.id === generation.renderConfig?.model)?.label ?? generation.renderConfig.model}</dd>
               </div>
             ) : null}
             {generation.renderConfig.seed !== undefined ? (
               <div>
                 <dt>Seed</dt>
-                <dd>{generation.renderConfig.seed}</dd>
+                <dd>{generation.renderConfig.seed} · best effort, not deterministic</dd>
               </div>
+            ) : null}
+            {generation.kind === "podcast" && generation.renderConfig?.style !== "recap" && (!generation.renderConfig?.voices || generation.renderConfig.voices.host === generation.renderConfig.voices.guest) ? (
+              <p className="research-studio-config__note">Host and guest use the same voice. Speaker labels do not create distinct-sounding speakers.</p>
             ) : null}
           </dl>
         ) : null}
@@ -608,6 +624,7 @@ export function GenerationConfigModal({
   onMediaGuestVoiceChange,
   elevenLabsCatalog,
   onRetryElevenLabsCatalog,
+  onRetryReadiness,
   mediaStyle,
   onMediaStyleChange,
   mediaLength,
@@ -641,6 +658,7 @@ export function GenerationConfigModal({
     | { status: "idle" | "loading" }
     | ElevenLabsCatalogState;
   onRetryElevenLabsCatalog: () => void;
+  onRetryReadiness?: () => void;
   /** Podcast-only drafting style; ignored for video kinds. */
   mediaStyle: ResearchPodcastStyle;
   onMediaStyleChange: (style: ResearchPodcastStyle) => void;
@@ -662,39 +680,39 @@ export function GenerationConfigModal({
   onClose: () => void;
 }) {
   const meta = studioMetaForKind(kind);
+  const { announce } = useAnnouncer();
+  const DirectionsWrapper = kind === "podcast" ? "details" : "div";
   const isMedia = !isResearchGenerationKind(kind);
   const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
   const elevenLabsVoiceOptions: StandardSelectOption<string>[] =
     elevenLabsCatalog.status === "ready"
-      ? [
-          ...[
-            mediaVoice,
-            ...(mediaGuestVoice ? [mediaGuestVoice] : []),
-          ]
-            .filter(
-              (voice, index, voices) =>
-                voice &&
-                voices.indexOf(voice) === index &&
-                !elevenLabsCatalog.voices.some(
-                  (option) => option.id === voice,
-                ),
-            )
-            .map((voice) => ({
-              value: voice,
-              label: "Current voice",
-              detail: voice,
-            })),
-          ...elevenLabsCatalog.voices.map((voice) => ({
+      ? elevenLabsCatalog.voices.map((voice) => ({
             value: voice.id,
             label: voice.name,
             detail: voice.category ?? voice.id,
-          })),
-        ]
+          }))
       : [];
   const elevenLabsCatalogUnavailable =
     elevenLabsCatalog.status === "idle" ||
     elevenLabsCatalog.status === "loading" ||
     elevenLabsCatalog.status === "error";
+  const localVoiceOptions = readiness?.providers.local.voices.map((voice) => ({
+    value: voice.id,
+    label: voice.name,
+    detail: voice.engine,
+  })) ?? [];
+  const podcastDirection = elevenLabsPodcastDirection({
+    kind, provider: mediaProvider, delivery: mediaDelivery, model: mediaModel, seed: mediaSeed,
+  });
+  const modelId = mediaModel || DEFAULT_ELEVENLABS_PODCAST_MODEL_ID;
+  const availableModels = ELEVENLABS_PODCAST_MODEL_OPTIONS.filter((option) =>
+    elevenLabsCatalog.status === "ready" && elevenLabsCatalog.models.some((model) => model.id === option.id),
+  );
+  const modelCatalogKnown = elevenLabsCatalog.status === "ready" && elevenLabsCatalog.models.length > 0;
+  const deliveryOptions = ELEVENLABS_DELIVERY_PRESETS.filter((preset) =>
+    !validateElevenLabsModelSettings(modelId, preset.id === "neutral" ? undefined : preset.settings),
+  );
+  const hostLabel = kind === "podcast" && mediaStyle !== "recap" ? "Host voice" : "Narrator voice";
   const mediaConfigurationError = (() => {
     if (!isMedia) return null;
     if (!readiness) return "Media readiness is still loading.";
@@ -738,7 +756,14 @@ export function GenerationConfigModal({
       if (elevenLabsCatalog.status === "error") {
         return elevenLabsCatalog.message;
       }
-      if (!mediaVoice.trim()) return "Choose an ElevenLabs voice.";
+      if (!elevenLabsVoiceOptions.length) return "No ElevenLabs voices are available. Add a voice to your ElevenLabs library, then retry voices.";
+      if (!elevenLabsVoiceOptions.some((voice) => voice.value === mediaVoice)) return "The selected host or narrator voice is unavailable. Choose a voice from the current catalog.";
+      if (kind === "podcast" && mediaStyle !== "recap" && mediaGuestVoice && !elevenLabsVoiceOptions.some((voice) => voice.value === mediaGuestVoice)) return "The selected guest voice is unavailable. Choose a voice from the current catalog.";
+      if (kind === "podcast") {
+        if (modelCatalogKnown && !availableModels.some((model) => model.id === modelId)) return "The selected model is unavailable for this account. Choose an available render model in Advanced voice settings.";
+        const settingsError = validateElevenLabsModelSettings(modelId, podcastDirection.voiceSettings);
+        if (settingsError) return settingsError;
+      }
     }
     if (kind === "short-video" && mediaLength === "extended") {
       return "Short video length must be brief or standard.";
@@ -804,7 +829,8 @@ export function GenerationConfigModal({
           The draft extracts from this run&rsquo;s newest markdown artifact.
           </span>
         </div>
-        <div className="research-studio-config__field">
+        <DirectionsWrapper className="research-studio-config__field">
+          {kind === "podcast" ? <summary className="research-podcast-directions focus-ring">Directions (optional · notes only)</summary> : null}
           <label className="research-studio-config__label" htmlFor="research-studio-directions">
             Directions (optional)
           </label>
@@ -814,16 +840,17 @@ export function GenerationConfigModal({
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
-            aria-describedby="research-studio-directions-count"
-            placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
+            aria-describedby="research-studio-directions-count research-studio-directions-help"
+            placeholder="Add a note…"
           />
+          <span id="research-studio-directions-help" className="research-studio-config__hint">Optional notes only — directions are saved, but do not change the script or delivery.</span>
           <span
             id="research-studio-directions-count"
             className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}
           >
             {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
           </span>
-        </div>
+        </DirectionsWrapper>
         {isMedia ? (
           <div className="research-studio-config__media">
             <div className="research-studio-config__field">
@@ -833,8 +860,9 @@ export function GenerationConfigModal({
               >
                 Voice provider
               </label>
-              <select
+              <StandardSelect<ResearchMediaProvider>
                 id="research-studio-config-provider"
+                label="Voice provider"
                 className="research-studio__select focus-ring"
                 value={mediaProvider}
                 aria-describedby="research-studio-config-provider-help"
@@ -844,30 +872,33 @@ export function GenerationConfigModal({
                     ? "research-studio-config-media-error"
                     : undefined
                 }
-                onChange={(event) => {
-                  const provider = event.target.value as ResearchMediaProvider;
+                onChange={(provider) => {
                   onMediaProviderChange(provider);
-                  onMediaVoiceChange(
-                    provider === "local"
+                  const host = provider === "local"
                       ? (readiness?.providers.local.voices[0]?.id ?? "")
-                      : (readiness?.providers.elevenlabs.defaultVoiceId ?? ""),
-                  );
+                      : (elevenLabsVoiceOptions[0]?.value ?? readiness?.providers.elevenlabs.defaultVoiceId ?? "");
+                  onMediaVoiceChange(host);
+                  onMediaGuestVoiceChange(provider === "local"
+                    ? (localVoiceOptions.find((voice) => voice.value !== host)?.value ?? "")
+                    : (elevenLabsVoiceOptions.find((voice) => voice.value !== host)?.value ?? ""));
+                  announce(provider === "local" ? "Selected local private synthesis" : "Selected hosted ElevenLabs synthesis. Usage charges may apply.");
                 }}
-              >
-                {readiness?.providers.local.ready ? (
-                  <option value="local">Local</option>
-                ) : null}
-                {readiness?.providers.elevenlabs.ready ? (
-                  <option value="elevenlabs">ElevenLabs</option>
-                ) : null}
-              </select>
+                showCaret
+                options={[
+                  { value: "local", label: "Local · private", detail: readiness?.providers.local.ready ? "Installed voices, no cloud usage" : readiness?.providers.local.hint ?? "Not ready — check local voice setup" },
+                  { value: "elevenlabs", label: "ElevenLabs · hosted", detail: readiness?.providers.elevenlabs.ready ? "Your key · usage charges may apply" : "Not ready — configure your key" },
+                ]}
+              />
               <span
                 id="research-studio-config-provider-help"
                 className="research-studio-config__hint"
               >
-                Uses only providers verified by current readiness checks.
+                {mediaProvider === "local" ? "Source text stays on this machine for synthesis. Local voice quality varies by installed model." : "Rendering sends the script to ElevenLabs using your saved key. Usage charges may apply."}
               </span>
             </div>
+            {mediaProvider === "local" && readiness?.providers.elevenlabs.ready ? (
+              <p className="research-podcast-provider-note">For more expressive delivery, choose ElevenLabs · hosted. This is optional; your local selection will not switch automatically.</p>
+            ) : null}
 
             {mediaProvider === "local" ? (
               <div className="research-studio-config__field">
@@ -875,12 +906,16 @@ export function GenerationConfigModal({
                   className="research-studio-config__label"
                   htmlFor="research-studio-config-local-voice"
                 >
-                  Local voice
+                  {hostLabel}
                 </label>
-                <select
+                <StandardSelect
                   id="research-studio-config-local-voice"
+                  label={hostLabel}
                   className="research-studio__select focus-ring"
                   value={mediaVoice}
+                  options={localVoiceOptions}
+                  placeholder={mediaVoice ? "Selected voice unavailable" : "Choose local voice…"}
+                  showCaret
                   aria-describedby="research-studio-config-voice-help"
                   aria-invalid={mediaConfigurationError ? true : undefined}
                   aria-errormessage={
@@ -888,20 +923,17 @@ export function GenerationConfigModal({
                       ? "research-studio-config-media-error"
                       : undefined
                   }
-                  onChange={(event) => onMediaVoiceChange(event.target.value)}
-                >
-                  {readiness?.providers.local.voices.map((voice) => (
-                    <option key={voice.id} value={voice.id}>
-                      {voice.name} · {voice.engine}
-                    </option>
-                  ))}
-                </select>
+                  onChange={onMediaVoiceChange}
+                />
                 <span
                   id="research-studio-config-voice-help"
                   className="research-studio-config__hint"
                 >
-                  Ready voices installed on this machine.
+                  {readiness?.providers.local.ready
+                    ? "Ready voices installed on this machine."
+                    : readiness?.providers.local.hint ?? "Local voice readiness is unavailable. Check local voice setup, then retry."}
                 </span>
+                {onRetryReadiness ? <button type="button" className="research-studio-act research-studio-act--tiny focus-ring" onClick={onRetryReadiness}>Retry local readiness</button> : null}
               </div>
             ) : (
               <div className="research-studio-config__field">
@@ -909,11 +941,11 @@ export function GenerationConfigModal({
                   className="research-studio-config__label"
                   htmlFor="research-studio-config-elevenlabs-voice"
                 >
-                  Host voice
+                  {hostLabel}
                 </label>
                 <StandardSelect
                   id="research-studio-config-elevenlabs-voice"
-                  label="Host voice"
+                  label={hostLabel}
                   className="research-studio__select focus-ring"
                   value={mediaVoice}
                   options={elevenLabsVoiceOptions}
@@ -922,9 +954,9 @@ export function GenerationConfigModal({
                     elevenLabsCatalog.status === "loading" ||
                     elevenLabsCatalog.status === "idle"
                       ? "Loading voices…"
-                      : "Choose a voice"
+                      : mediaVoice ? "Selected voice unavailable" : "Choose voice…"
                   }
-                  showCaret={false}
+                  showCaret
                   aria-describedby="research-studio-config-voice-help"
                   aria-invalid={mediaConfigurationError ? true : undefined}
                   aria-errormessage={
@@ -941,7 +973,7 @@ export function GenerationConfigModal({
                   Saved voices in your ElevenLabs library. The selected voice is
                   frozen on this draft.
                 </span>
-                {elevenLabsCatalog.status === "error" ? (
+                {elevenLabsCatalog.status === "error" || elevenLabsCatalog.status === "ready" ? (
                   <button
                     type="button"
                     className="research-studio-act research-studio-act--tiny focus-ring"
@@ -999,10 +1031,14 @@ export function GenerationConfigModal({
                   Guest voice (optional)
                 </label>
                 {mediaProvider === "local" ? (
-                  <select
+                  <StandardSelect
                     id="research-studio-config-guest-voice"
+                    label="Guest voice (optional)"
                     className="research-studio__select focus-ring"
                     value={mediaGuestVoice}
+                    options={[{ value: "", label: "Same as host voice" }, ...localVoiceOptions]}
+                    placeholder="Selected guest voice unavailable"
+                    showCaret
                     aria-describedby="research-studio-config-guest-voice-help"
                     aria-invalid={mediaConfigurationError ? true : undefined}
                     aria-errormessage={
@@ -1010,17 +1046,8 @@ export function GenerationConfigModal({
                         ? "research-studio-config-media-error"
                         : undefined
                     }
-                    onChange={(event) =>
-                      onMediaGuestVoiceChange(event.target.value)
-                    }
-                  >
-                    <option value="">Same as host voice</option>
-                    {readiness?.providers.local.voices.map((voice) => (
-                      <option key={voice.id} value={voice.id}>
-                        {voice.name} · {voice.engine}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={onMediaGuestVoiceChange}
+                  />
                 ) : (
                   <StandardSelect
                     id="research-studio-config-guest-voice"
@@ -1035,8 +1062,8 @@ export function GenerationConfigModal({
                       ...elevenLabsVoiceOptions,
                     ]}
                     disabled={elevenLabsCatalogUnavailable}
-                    placeholder="Same as host voice"
-                    showCaret={false}
+                    placeholder={mediaGuestVoice ? "Selected guest voice unavailable" : "Same as host voice"}
+                    showCaret
                     aria-describedby="research-studio-config-guest-voice-help"
                     aria-invalid={mediaConfigurationError ? true : undefined}
                     aria-errormessage={
@@ -1051,13 +1078,16 @@ export function GenerationConfigModal({
                   id="research-studio-config-guest-voice-help"
                   className="research-studio-config__hint"
                 >
-                  A second voice makes the podcast a host/guest dialogue.
+                  {!mediaGuestVoice || mediaGuestVoice === mediaVoice
+                    ? "Host and guest use the same voice. Choose a different guest voice for distinct-sounding speakers."
+                    : "The guest uses a different voice. Both speakers read extracted findings, not a newly written conversation."}
                 </span>
               </div>
             ) : null}
 
             {kind === "podcast" && mediaProvider === "elevenlabs" ? (
-              <>
+              <details className="research-podcast-advanced">
+                <summary className="focus-ring">Advanced voice settings (optional)</summary>
                 <div className="research-studio-config__field">
                   <label
                     className="research-studio-config__label"
@@ -1069,11 +1099,12 @@ export function GenerationConfigModal({
                     id="research-studio-config-delivery"
                     label="Delivery"
                     className="research-studio__select focus-ring"
-                    showCaret={false}
+                    showCaret
                     value={mediaDelivery}
+                    placeholder="Choose supported delivery…"
                     aria-describedby="research-studio-config-delivery-help"
                     onChange={onMediaDeliveryChange}
-                    options={ELEVENLABS_DELIVERY_PRESETS.map((preset) => ({
+                    options={deliveryOptions.map((preset) => ({
                       value: preset.id,
                       label: preset.label,
                     }))}
@@ -1098,13 +1129,17 @@ export function GenerationConfigModal({
                     id="research-studio-config-model"
                     label="Render model"
                     className="research-studio__select focus-ring"
-                    showCaret={false}
+                    showCaret
                     value={mediaModel}
                     aria-describedby="research-studio-config-model-help"
-                    onChange={onMediaModelChange}
+                    onChange={(model) => {
+                      onMediaModelChange(model);
+                      const settingsError = validateElevenLabsModelSettings(model || DEFAULT_ELEVENLABS_PODCAST_MODEL_ID, podcastDirection.voiceSettings);
+                      if (settingsError) announce(settingsError, "assertive");
+                    }}
                     options={[
-                      { value: "", label: "Default for offline renders" },
-                      ...ELEVENLABS_PODCAST_MODEL_OPTIONS.map((option) => ({
+                      { value: "", label: "Multilingual v2 · balanced (default)", disabled: modelCatalogKnown && !availableModels.some((model) => model.id === DEFAULT_ELEVENLABS_PODCAST_MODEL_ID) },
+                      ...(modelCatalogKnown ? availableModels : ELEVENLABS_PODCAST_MODEL_OPTIONS).map((option) => ({
                         value: option.id,
                         label: option.label,
                       })),
@@ -1114,8 +1149,8 @@ export function GenerationConfigModal({
                     id="research-studio-config-model-help"
                     className="research-studio-config__hint"
                   >
-                    An episode render is queued and offline, so it is not tied to
-                    the live voice call&rsquo;s latency-first model.
+                    Hosted synthesis, queued after review — not an offline/private render. Available delivery controls depend on the model.
+                    {!modelCatalogKnown ? " Model availability could not be listed; the provider will verify your choice." : ""}
                   </span>
                 </div>
 
@@ -1131,7 +1166,7 @@ export function GenerationConfigModal({
                     className="research-studio-config__input focus-ring"
                     value={mediaSeed}
                     inputMode="numeric"
-                    placeholder="Unpinned"
+                    placeholder="e.g., 42"
                     aria-describedby="research-studio-config-seed-help"
                     aria-invalid={mediaConfigurationError ? true : undefined}
                     aria-errormessage={
@@ -1145,11 +1180,20 @@ export function GenerationConfigModal({
                     id="research-studio-config-seed-help"
                     className="research-studio-config__hint"
                   >
-                    Pin the sampler so two renders of the same script are
-                    comparable when you are tuning delivery.
+                    Optional sampling hint for comparisons. Best effort only: the same seed does not guarantee identical audio.
                   </span>
                 </div>
-              </>
+              </details>
+            ) : null}
+
+            {kind === "podcast" ? (
+              <PodcastVoicePreviews
+                key={JSON.stringify([mediaProvider, mediaVoice, mediaGuestVoice, mediaStyle, mediaDelivery, mediaModel, mediaSeed, Boolean(mediaConfigurationError)])}
+                request={{ provider: mediaProvider, voice: mediaVoice, ...podcastDirection }}
+                guestVoice={mediaStyle === "recap" ? null : mediaGuestVoice}
+                narrator={mediaStyle === "recap"}
+                disabled={Boolean(mediaConfigurationError) || creating}
+              />
             ) : null}
 
             <div className="research-studio-config__field">
@@ -1185,7 +1229,7 @@ export function GenerationConfigModal({
                 className="research-studio-config__hint"
               >
                 {kind === "podcast"
-                  ? "About 3, 8, or 15 minutes."
+                  ? "Source budget for roughly 3, 8, or 15 minutes. Short sources produce shorter episodes."
                   : kind === "short-video"
                     ? "Up to 30 or 60 seconds."
                     : "Up to 5, 10, or 20 minutes."}
@@ -1205,9 +1249,10 @@ export function GenerationConfigModal({
         ) : null}
         <p className="research-studio-config__note">
           {isMedia
-            ? "A source script or storyboard is drafted from the artifact before media rendering."
+            ? "A source script or storyboard is extracted from the artifact for review before rendering. Directions are saved as notes only and do not alter the draft."
             : "Content is drafted extractively from the run’s artifact. Directions are stored for future pipelines and do not alter the draft."}
         </p>
+        {kind === "podcast" ? <p className="research-studio-config__hint">Voice choices are remembered for this familiar after drafting. Existing drafts keep their original settings.</p> : null}
         {error ? (
           <p role="alert" className="research-studio-config__error">
             {error}
@@ -1228,7 +1273,7 @@ export function GenerationConfigModal({
             mediaConfigurationError !== null
           }
         >
-          {creating ? "Drafting…" : `✦ ${isMedia ? "Draft for review" : "Generate"} ${meta.label}`}
+          {creating ? "Drafting…" : isMedia ? `✦ Draft ${meta.label.toLowerCase()} for review` : `✦ Generate ${meta.label}`}
         </button>
       </footer>
     </StudioModal>
@@ -1505,6 +1550,7 @@ export function GenerationViewerModal({
             is scannable. */}
         {content?.kind === "podcast" ? (
           <div className="research-studio-viewer__points">
+            <p className="research-studio-config__note">AI-generated audio from extracted research findings. This is not a recording of real speakers.</p>
             <span className="research-studio-viewer__label">Transcript</span>
             <PodcastTranscript
               script={content.script}

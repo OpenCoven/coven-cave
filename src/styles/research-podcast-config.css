@@ -1,0 +1,48 @@
+.research-studio-modal--config .standard-select-trigger.research-studio__select {
+  background-image: none;
+  padding-right: var(--space-3);
+}
+
+.research-podcast-preview,
+.research-podcast-advanced,
+.research-podcast-provider-note {
+  grid-column: 1 / -1;
+}
+
+.research-podcast-preview,
+.research-podcast-advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.research-podcast-preview__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.research-podcast-advanced > summary,
+.research-podcast-directions {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.research-podcast-advanced .research-studio-config__field {
+  margin-top: var(--space-3);
+}
+
+.research-podcast-provider-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+@media (pointer: coarse) {
+  .research-podcast-preview button,
+  .research-podcast-advanced > summary,
+  .research-podcast-directions {
+    min-height: var(--touch-target);
+  }
+}

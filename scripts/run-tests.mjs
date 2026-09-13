@@ -1731,6 +1731,7 @@ export const SUITES = {
     "src/app/api/chat/attachment/route.test.ts",
     "src/app/api/chat/send/chat-send-image-persistence.test.ts",
     "src/app/api/research/generations/readiness/route.test.ts",
+    "src/app/api/research/generations/preview/route.test.ts",
     "src/app/api/research/generations/render/route.test.ts",
     "src/app/api/research/autoloop/routes.test.ts",
     "src/app/api/flows/webhook/route.test.ts",

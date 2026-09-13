@@ -79,6 +79,28 @@ test("the local chip counts the voices it actually found", () => {
   assert.match(many.find((chip) => chip.id === "local")!.detail, /2 voices installed/);
 });
 
+test("configured hosted credentials do not imply successful authentication or automatic usage", () => {
+  const chips = researchProviderChips(readiness({
+    providers: {
+      local: { ready: false, voices: [] },
+      elevenlabs: { ready: true, defaultVoiceId: "unverified-voice" },
+    },
+  }));
+  const hosted = chips.find((chip) => chip.id === "elevenlabs")!;
+  assert.equal(hosted.state, "ready");
+  assert.equal(hosted.detail, "Key configured — choose and preview a hosted voice. Usage charges may apply.");
+  assert.doesNotMatch(hosted.detail, /authenticated|voices available|humanlike|automatic/i);
+  assert.match(chips.find((chip) => chip.id === "podcast")!.detail, /draft for review/);
+  assert.match(chips.find((chip) => chip.id === "podcast")!.detail, /selected, available voice/);
+});
+
+test("local privacy describes installed audio voices, not transformed prose", () => {
+  const local = researchProviderChips(readiness()).find((chip) => chip.id === "local")!;
+  assert.equal(local.name, "Local voices");
+  assert.equal(local.detail, "1 voice installed on this machine");
+  assert.doesNotMatch(local.detail, /rewrite|conversation|humanlike|transformed/i);
+});
+
 test("the strip summary counts ready providers, and says so while loading", () => {
   assert.equal(describeProviderChips(researchProviderChips(readiness())), "Media providers — 3 of 4 ready");
   assert.equal(

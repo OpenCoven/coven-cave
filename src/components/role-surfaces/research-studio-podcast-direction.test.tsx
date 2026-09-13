@@ -39,6 +39,8 @@ import {
 } from "./research-studio-modals";
 import { StandardSelect } from "@/components/ui/select";
 import { elevenLabsDeliveryPreset } from "@/lib/voice/elevenlabs-shared";
+import { createPodcastPreviewController } from "./research-podcast-preview";
+import { readPodcastPreferences, savePodcastPreferences } from "./research-podcast-preferences";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -107,7 +109,7 @@ function renderConfig(overrides: Record<string, unknown> = {}) {
   act(() => {
     renderer = create(createElement(GenerationConfigModal, props));
   });
-  return { renderer: renderer!, calls };
+  return { renderer: renderer!, calls, props };
 }
 
 /** Find a rendered host element by its DOM id, or null when absent. */
@@ -191,7 +193,7 @@ describe("Studio podcast delivery controls", () => {
     expect(
       loading.renderer.root
         .findAllByType("button")
-        .find((button) => textOf(button).includes("Draft for review")).props
+        .find((button) => textOf(button).includes("Draft podcast")).props
         .disabled,
     ).toBe(true);
 
@@ -229,7 +231,7 @@ describe("Studio podcast delivery controls", () => {
       expect(trigger.props["aria-errormessage"]).toBe(
         "research-studio-config-media-error",
       );
-      expect(selectById(renderer, id).props.showCaret).toBe(false);
+      expect(selectById(renderer, id).props.showCaret).toBe(true);
     }
   });
 
@@ -303,7 +305,7 @@ describe("Studio podcast delivery controls", () => {
     expect(textOf(error)).toContain("Seed must be a whole number");
     const submit = bad.renderer.root
       .findAllByType("button")
-      .find((button) => textOf(button).includes("Draft for review"));
+      .find((button) => textOf(button).includes("Draft podcast"));
     expect(submit.props.disabled).toBe(true);
 
     const good = renderConfig({ mediaSeed: "4294967295" });
@@ -311,7 +313,7 @@ describe("Studio podcast delivery controls", () => {
     expect(
       good.renderer.root
         .findAllByType("button")
-        .find((button) => textOf(button).includes("Draft for review")).props.disabled,
+        .find((button) => textOf(button).includes("Draft podcast")).props.disabled,
     ).toBe(false);
   });
 });
@@ -358,8 +360,8 @@ describe("Studio review gate", () => {
       seed: 20_260_823,
     });
     expect(rows.Delivery).toBe("Animated");
-    expect(rows.Model).toBe("eleven_v3");
-    expect(rows.Seed).toBe("20260823");
+    expect(rows.Model).toBe("v3 · most expressive");
+    expect(rows.Seed).toBe("20260823 · best effort, not deterministic");
   });
 
   test("says nothing about direction an undirected render never carried", () => {
@@ -371,7 +373,246 @@ describe("Studio review gate", () => {
     expect(rows.Delivery).toBeUndefined();
     expect(rows.Model).toBeUndefined();
     expect(rows.Seed).toBeUndefined();
-    expect(rows.Voice).toBe("21m00Tcm4TlvDq8ikWAM");
+    expect(rows.Voice).toBe("21m00Tcm4TlvDq8ikWAM (catalog name unavailable)");
+  });
+
+  describe("Podcast configuration honesty", () => {
+    test("keeps advanced controls collapsed and exposes named local choices with carets", () => {
+      const hosted = renderConfig();
+      expect(hosted.renderer.root.findAllByType("details").every((details) => details.props.open === undefined)).toBe(true);
+      expect(hosted.renderer.root.findAllByType("summary").map(textOf).join(" ")).toContain("Advanced voice settings");
+      const local = renderConfig({ mediaProvider: "local", mediaVoice: "piper-lessac-medium" });
+      const host = selectById(local.renderer, "research-studio-config-local-voice");
+      expect(host.props.options[0].label).toBe("Lessac");
+      expect(host.props.showCaret).toBe(true);
+      expect(local.renderer.root.findAllByType("p").map(textOf).join(" ")).toContain("will not switch automatically");
+      expect(textOf(byId(local.renderer, "research-studio-config-guest-voice-help"))).toContain("Host and guest use the same voice");
+    });
+
+    test("never manufactures ready catalog options for stale host or guest ids", () => {
+      for (const overrides of [{ mediaVoice: "stalevoice123" }, { mediaGuestVoice: "stalevoice123" }]) {
+        const { renderer } = renderConfig(overrides);
+        expect(textOf(byId(renderer, "research-studio-config-media-error"))).toContain("unavailable");
+        expect(selectById(renderer, "research-studio-config-elevenlabs-voice").props.options.some((option) => option.value === "stalevoice123")).toBe(false);
+        expect(renderer.root.findAllByType("button").find((button) => textOf(button).includes("Draft podcast")).props.disabled).toBe(true);
+      }
+      const empty = renderConfig({ elevenLabsCatalog: { status: "ready", voices: [], models: [] } });
+      expect(textOf(byId(empty.renderer, "research-studio-config-media-error"))).toContain("No ElevenLabs voices are available");
+      expect(empty.renderer.root.findAllByType("button").some((button) => textOf(button) === "Retry voices")).toBe(true);
+    });
+
+    test("runtime readiness hints take precedence over stale installed voice choices", () => {
+      const hint = "Piper runtime is missing. Install the Piper runtime, then retry.";
+      const retry = vi.fn();
+      const { renderer } = renderConfig({
+        mediaProvider: "local", mediaVoice: "piper-lessac-medium",
+        onRetryReadiness: retry,
+        readiness: {
+          ...readiness,
+          providers: {
+            ...readiness.providers,
+            local: { ...readiness.providers.local, ready: false, hint },
+          },
+        },
+      });
+      expect(textOf(byId(renderer, "research-studio-config-media-error"))).toBe(hint);
+      expect(textOf(byId(renderer, "research-studio-config-voice-help"))).toBe(hint);
+      expect(selectById(renderer, "research-studio-config-provider").props.options[0].detail).toBe(hint);
+      expect(renderer.root.findAllByType("button").find((button) => textOf(button) === "Preview host voice").props.disabled).toBe(true);
+      expect(renderer.root.findAllByType("button").find((button) => textOf(button).includes("Draft podcast")).props.disabled).toBe(true);
+      act(() => renderer.root.findAllByType("button").find((button) => textOf(button) === "Retry local readiness").props.onClick());
+      expect(retry).toHaveBeenCalledOnce();
+    });
+
+    test("provider switch resets guest to a voice from the new catalog", () => {
+      const { renderer, calls } = renderConfig({ mediaGuestVoice: "AZnzlk1XvdvUeBnXmlld" });
+      act(() => selectById(renderer, "research-studio-config-provider").props.onChange("local"));
+      expect(calls.voice).toEqual(["piper-lessac-medium"]);
+      expect(calls.guestVoice).toEqual([""]);
+    });
+
+    test("restricts unavailable account models and incompatible v3 directions", () => {
+      const { renderer } = renderConfig({
+        mediaModel: "eleven_v3",
+        mediaDelivery: "neutral",
+        elevenLabsCatalog: {
+          status: "ready", voices: [{ id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel" }],
+          models: [{ id: "eleven_v3", name: "Eleven v3" }],
+        },
+      });
+      expect(selectById(renderer, "research-studio-config-model").props.options.map((option) => option.value)).toEqual(["", "eleven_v3"]);
+      expect(selectById(renderer, "research-studio-config-model").props.options[0].disabled).toBe(true);
+      expect(selectById(renderer, "research-studio-config-delivery").props.options.map((option) => option.value)).toEqual(["neutral"]);
+    });
+
+    test("changing to v3 requires explicit delivery repair rather than rewriting the selected preset", () => {
+      const { renderer, calls, props } = renderConfig({ mediaDelivery: "conversational" });
+      act(() => selectById(renderer, "research-studio-config-model").props.onChange("eleven_v3"));
+      expect(calls.model).toEqual(["eleven_v3"]);
+      expect(calls.delivery).toEqual([]);
+      act(() => renderer.update(createElement(GenerationConfigModal, { ...props, mediaModel: "eleven_v3" })));
+      expect(textOf(byId(renderer, "research-studio-config-media-error"))).toMatch(/Choose Neutral delivery or Multilingual v2/);
+      expect(renderer.root.findAllByType("button").find((button) => textOf(button).includes("Draft podcast")).props.disabled).toBe(true);
+      act(() => renderer.update(createElement(GenerationConfigModal, { ...props, mediaModel: "eleven_v3", mediaDelivery: "neutral" })));
+      expect(byId(renderer, "research-studio-config-media-error")).toBeNull();
+    });
+  });
+
+  function previewFixture() {
+    const states = [];
+    const audio = {
+      play: vi.fn(async () => {}), pause: vi.fn(), load: vi.fn(), removeAttribute: vi.fn(),
+      src: "", onended: null, onerror: null,
+    };
+    const dependencies = {
+      fetch: vi.fn(async () => new Response(new Blob(["wave"]), { headers: { "content-type": "audio/wav" } })),
+      audio: vi.fn(() => audio),
+      createUrl: vi.fn(() => "blob:preview"),
+      revokeUrl: vi.fn(),
+    };
+    const controller = createPodcastPreviewController((state) => states.push(state), dependencies);
+    return { controller, dependencies, audio, states };
+  }
+  const previewRequest = {
+    provider: "elevenlabs" as const, voice: "21m00Tcm4TlvDq8ikWAM",
+    model: "eleven_multilingual_v2",
+    voiceSettings: elevenLabsDeliveryPreset("conversational")!.settings, seed: 42,
+  };
+
+  describe("Podcast audition lifecycle", () => {
+    test("posts the actual voice direction without source text and releases ended audio", async () => {
+      const { controller, dependencies, audio, states } = previewFixture();
+      await controller.play("host", previewRequest);
+      const [path, init] = dependencies.fetch.mock.calls[0];
+      expect(path).toBe("/api/research/generations/preview");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body)).toEqual(previewRequest);
+      expect(audio.src).toBe("blob:preview");
+      expect(states.at(-1).status).toBe("playing");
+      audio.onended();
+      expect(audio.pause).toHaveBeenCalled();
+      expect(audio.removeAttribute).toHaveBeenCalledWith("src");
+      expect(dependencies.revokeUrl).toHaveBeenCalledWith("blob:preview");
+      expect(states.at(-1).status).toBe("idle");
+    });
+
+    test("stops and revokes the host before playing a guest, then stops on close", async () => {
+      const { controller, dependencies, audio } = previewFixture();
+      await controller.play("host", previewRequest);
+      await controller.play("guest", { ...previewRequest, voice: "AZnzlk1XvdvUeBnXmlld" });
+      expect(audio.pause).toHaveBeenCalledTimes(1);
+      expect(dependencies.revokeUrl).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(dependencies.fetch.mock.calls[1][1].body).voice).toBe("AZnzlk1XvdvUeBnXmlld");
+      controller.stop(false);
+      expect(audio.pause).toHaveBeenCalledTimes(2);
+      expect(dependencies.revokeUrl).toHaveBeenCalledTimes(2);
+    });
+
+    test("cancels superseded pending requests even when fetch ignores abort", async () => {
+      const { controller, dependencies, audio } = previewFixture();
+      let resolve;
+      dependencies.fetch.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+      const pending = controller.play("host", previewRequest);
+      const signal = dependencies.fetch.mock.calls[0][1].signal;
+      await controller.play("guest", { ...previewRequest, voice: "AZnzlk1XvdvUeBnXmlld" });
+      expect(signal.aborted).toBe(true);
+      resolve(new Response(new Blob(["late wave"]), { headers: { "content-type": "audio/wav" } }));
+      await pending;
+      expect(audio.play).toHaveBeenCalledTimes(1);
+      controller.stop();
+    });
+
+    test("rejects late blob conversion and late play promises after cancellation", async () => {
+      const fixture = previewFixture();
+      let resolveBlob;
+      fixture.dependencies.fetch.mockResolvedValueOnce({
+        ok: true, headers: new Headers({ "content-type": "audio/wav" }),
+        blob: () => new Promise((done) => { resolveBlob = done; }),
+      });
+      const pending = fixture.controller.play("host", previewRequest);
+      await Promise.resolve();
+      fixture.controller.stop(false);
+      resolveBlob(new Blob(["late"]));
+      await pending;
+      expect(fixture.dependencies.createUrl).not.toHaveBeenCalled();
+      let resolvePlay;
+      fixture.audio.play.mockImplementationOnce(() => new Promise((done) => { resolvePlay = done; }));
+      const playing = fixture.controller.play("host", previewRequest);
+      await vi.waitFor(() => expect(fixture.audio.play).toHaveBeenCalledTimes(1));
+      fixture.controller.stop();
+      resolvePlay();
+      await playing;
+      expect(fixture.states.at(-1).status).toBe("idle");
+      expect(fixture.dependencies.revokeUrl).toHaveBeenCalledTimes(1);
+    });
+
+    test("autoplay failure releases the blob and allows a new explicit retry", async () => {
+      const { controller, dependencies, audio, states } = previewFixture();
+      audio.play.mockRejectedValueOnce(new Error("Playback requires another click."));
+      await controller.play("host", previewRequest);
+      expect(states.at(-1)).toMatchObject({ status: "error", error: "Playback requires another click." });
+      expect(dependencies.revokeUrl).toHaveBeenCalledTimes(1);
+      await controller.play("host", previewRequest);
+      expect(states.at(-1).status).toBe("playing");
+      controller.stop();
+    });
+
+    test("JSON failures and empty audio never reach playback", async () => {
+      for (const response of [
+        Response.json({ ok: false, error: "Configure your voice provider, then retry." }, { status: 503 }),
+        new Response(new Blob([]), { headers: { "content-type": "audio/wav" } }),
+      ]) {
+        const { controller, dependencies, audio, states } = previewFixture();
+        dependencies.fetch.mockResolvedValueOnce(response);
+        await controller.play("host", previewRequest);
+        expect(states.at(-1).status).toBe("error");
+        expect(audio.play).not.toHaveBeenCalled();
+      }
+    });
+
+    test("selection changes and modal unmount abort the component's real fetch", async () => {
+      const requests = [];
+      vi.stubGlobal("fetch", vi.fn((path, init) => new Promise(() => { requests.push({ path, init }); })));
+      const { renderer, props } = renderConfig({ mediaDelivery: "conversational" });
+      const clickPreview = () => act(() => renderer.root.findAllByType("button").find((button) => textOf(button) === "Preview host voice").props.onClick());
+      for (const change of [
+        { mediaVoice: "AZnzlk1XvdvUeBnXmlld" }, { mediaGuestVoice: "21m00Tcm4TlvDq8ikWAM" },
+        { mediaModel: "eleven_turbo_v2_5" }, { mediaDelivery: "animated" }, { mediaSeed: "7" },
+        { mediaStyle: "interview" }, { mediaProvider: "local", mediaVoice: "piper-lessac-medium", mediaGuestVoice: "" },
+      ]) {
+        clickPreview();
+        const request = requests.at(-1);
+        Object.assign(props, change);
+        act(() => renderer.update(createElement(GenerationConfigModal, props)));
+        expect(request.init.signal.aborted).toBe(true);
+      }
+      clickPreview();
+      act(() => renderer.unmount());
+      expect(requests.at(-1).init.signal.aborted).toBe(true);
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe("Podcast preferences", () => {
+    const preferences = {
+      version: 1, provider: "local", voice: "piper-lessac-medium", guestVoice: "",
+      style: "breakdown", length: "standard", delivery: "conversational", model: "", seed: "",
+    };
+    test("uses a versioned per-familiar namespace without changing stale choices", () => {
+      const items = new Map();
+      const storage = { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) };
+      expect(savePodcastPreferences(storage, "nova", preferences)).toBe(true);
+      expect(readPodcastPreferences(storage, "nova")).toEqual(preferences);
+      expect(readPodcastPreferences(storage, "sage")).toBeNull();
+      expect([...items.keys()]).toEqual(["cave:research-podcast:v1:nova"]);
+    });
+    test("rejects malformed or future storage and tolerates denied storage", () => {
+      for (const value of ["broken", JSON.stringify({ ...preferences, version: 2 }), JSON.stringify({ ...preferences, seed: "-1" }), JSON.stringify({ ...preferences, provider: "other" })]) {
+        expect(readPodcastPreferences({ getItem: () => value }, "nova")).toBeNull();
+      }
+      expect(readPodcastPreferences({ getItem: () => { throw new Error("denied"); } }, "nova")).toBeNull();
+      expect(savePodcastPreferences({ setItem: () => { throw new Error("full"); } }, "nova", preferences)).toBe(false);
+    });
   });
 
   test("refuses to name a preset for settings that are not one", () => {

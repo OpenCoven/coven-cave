@@ -44,6 +44,7 @@ import {
 } from "@/lib/voice/settings-client";
 import type { ResearchTabProps } from "./researcher-surface";
 import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
+import { readPodcastPreferences, savePodcastPreferences } from "./research-podcast-preferences";
 import {
   GenerationConfigModal,
   GenerationReviewModal,
@@ -84,10 +85,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [mediaStyle, setMediaStyle] = useState<ResearchPodcastStyle>("breakdown");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
-  // ElevenLabs podcast delivery direction. Defaults reproduce the previous
-  // undirected render exactly: neutral preset, pipeline default model, no seed.
+  // Only new configurations get this default; saved drafts keep their settings.
   const [mediaDelivery, setMediaDelivery] =
-    useState<ElevenLabsDeliveryPresetId>("neutral");
+    useState<ElevenLabsDeliveryPresetId>("conversational");
   const [mediaModel, setMediaModel] = useState("");
   const [mediaSeed, setMediaSeed] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -124,6 +124,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const readinessControllerRef = useRef<AbortController | null>(null);
   const elevenLabsCatalogControllerRef = useRef<AbortController | null>(null);
   const retryInFlightRef = useRef<string | null>(null);
+  const preferenceFamiliarRef = useRef<string | null>(null);
 
   const loadGenerations = useCallback(async (showLoading: boolean) => {
     if (listInFlightRef.current) return;
@@ -227,6 +228,19 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       loadedFamiliarRef.current = familiarId;
       setGenerations([]);
       setFilter("all");
+      setConfigKind(null);
+      setReviewGeneration(null);
+      setViewerId(null);
+      setEditorId(null);
+      preferenceFamiliarRef.current = null;
+      setMediaProvider("local");
+      setMediaVoice("");
+      setMediaGuestVoice("");
+      setMediaDelivery("conversational");
+      setMediaStyle("breakdown");
+      setMediaLength("standard");
+      setMediaModel("");
+      setMediaSeed("");
       previousGenerationsRef.current = new Map();
     }
     void loadGenerations(true);
@@ -255,7 +269,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     ) {
       elevenLabsCatalogControllerRef.current?.abort();
       elevenLabsCatalogControllerRef.current = null;
-      setElevenLabsCatalog({ status: "idle" });
+      setElevenLabsCatalog((current) => current.status === "ready" ? current : { status: "idle" });
       return;
     }
     void loadElevenLabsCatalogForStudio();
@@ -312,40 +326,36 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const openConfig = useCallback((kind: ResearchGenerationCreatableKind) => {
     setCreateError(null);
     setDirections("");
+    if (kind === "podcast" && preferenceFamiliarRef.current !== familiarId) {
+      preferenceFamiliarRef.current = familiarId;
+      const stored = readPodcastPreferences(() => window.localStorage, familiarId);
+      if (stored) {
+        setMediaProvider(stored.provider);
+        setMediaVoice(stored.voice);
+        setMediaGuestVoice(stored.guestVoice);
+        setMediaStyle(stored.style);
+        setMediaLength(stored.length);
+        setMediaDelivery(stored.delivery);
+        setMediaModel(stored.model);
+        setMediaSeed(stored.seed);
+        setConfigKind(kind);
+        return;
+      }
+    }
     if (!isResearchGenerationKind(kind) && readiness) {
-      const elevenLabsShortVideoDefaultIsReady =
-        kind === "short-video" &&
-        readiness.providers.elevenlabs.ready &&
-        readiness.providers.elevenlabs.defaultVoiceId.trim().length > 0;
-      const localSelectionIsValid =
-        mediaProvider === "local" &&
-        readiness.providers.local.ready &&
-        readiness.providers.local.voices.some(
-          (voice) => voice.id === mediaVoice,
-        );
-      const elevenLabsSelectionIsValid =
-        mediaProvider === "elevenlabs" &&
-        readiness.providers.elevenlabs.ready &&
-        mediaVoice.trim().length > 0;
-      if (elevenLabsShortVideoDefaultIsReady) {
-        setMediaProvider("elevenlabs");
-        setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
-      } else if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
-        const firstLocalVoice = readiness.providers.local.voices[0];
-        if (readiness.providers.local.ready && firstLocalVoice) {
-          setMediaProvider("local");
-          setMediaVoice(firstLocalVoice.id);
-        } else if (readiness.providers.elevenlabs.ready) {
-          setMediaProvider("elevenlabs");
-          setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
-        }
+      // Readiness may disable a saved choice, never convert local consent into
+      // hosted usage. Invalid nonempty voices are left visible for repair.
+      if (mediaProvider === "local" && !mediaVoice) {
+        const voices = readiness.providers.local.voices;
+        setMediaVoice(voices[0]?.id ?? "");
+        setMediaGuestVoice(voices[1]?.id ?? "");
       }
       if (kind === "short-video") {
         setMediaLength("standard");
       }
     }
     setConfigKind(kind);
-  }, [mediaLength, mediaProvider, mediaVoice, readiness]);
+  }, [familiarId, mediaProvider, mediaVoice, readiness]);
 
   const submitCreate = useCallback(async () => {
     if (!configKind || !effectiveSourceId) return;
@@ -397,6 +407,14 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       return;
     }
     const created = result.generation;
+    let preferenceWarning = "";
+    if (configKind === "podcast") {
+      const saved = savePodcastPreferences(() => window.localStorage, familiarId, {
+        version: 1, provider: mediaProvider, voice: mediaVoice, guestVoice: mediaGuestVoice,
+        style: mediaStyle, length: mediaLength, delivery: mediaDelivery, model: mediaModel, seed: mediaSeed,
+      });
+      if (!saved) preferenceWarning = ". Voice preferences could not be saved on this device";
+    }
     setGenerations((prev) => [created, ...prev.filter((g) => g.id !== created.id)]);
     setConfigKind(null);
     setDirections("");
@@ -405,7 +423,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     } else {
       setReviewError(null);
       setReviewGeneration(created);
-      announce(`${studioMetaForKind(created.kind).label} draft ready for review`);
+      announce(`${studioMetaForKind(created.kind).label} draft ready for review${preferenceWarning}`);
     }
   }, [
     announce,
@@ -891,6 +909,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onMediaGuestVoiceChange={setMediaGuestVoice}
           elevenLabsCatalog={elevenLabsCatalog}
           onRetryElevenLabsCatalog={loadElevenLabsCatalogForStudio}
+          onRetryReadiness={loadReadiness}
           mediaStyle={mediaStyle}
           onMediaStyleChange={setMediaStyle}
           mediaLength={mediaLength}
@@ -915,6 +934,11 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           error={reviewError}
           onRender={renderReview}
           onClose={() => setReviewGeneration(null)}
+          voiceNames={Object.fromEntries(
+            reviewGeneration.renderConfig?.provider === "elevenlabs"
+              ? (elevenLabsCatalog.status === "ready" ? elevenLabsCatalog.voices.map((voice) => [voice.id, voice.name]) : [])
+              : (readiness?.providers.local.voices.map((voice) => [voice.id, voice.name]) ?? []),
+          )}
         />
       ) : null}
 

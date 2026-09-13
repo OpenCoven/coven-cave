@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEFAULT_ELEVENLABS_VOICE_ID } from "../src/lib/voice/elevenlabs-shared";
+import { DEFAULT_ELEVENLABS_VOICE_ID, elevenLabsDeliveryPreset } from "../src/lib/voice/elevenlabs-shared";
 
 const FAMILIAR_ID = "rida";
 const MISSION_ID = "m-media";
@@ -227,6 +227,7 @@ async function boot(
   const autoProgress = new Set<string>();
   const pollCounts = new Map<string, number>();
   const createBodies: Array<Record<string, unknown>> = [];
+  const previewBodies: Array<Record<string, unknown>> = [];
 
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -267,7 +268,11 @@ async function boot(
             category: "premade",
           },
         ],
-        models: [],
+        models: [
+          { id: "eleven_multilingual_v2", name: "Multilingual v2" },
+          { id: "eleven_v3", name: "Eleven v3" },
+          { id: "eleven_turbo_v2_5", name: "Turbo v2.5" },
+        ],
       },
     }),
   );
@@ -285,6 +290,11 @@ async function boot(
     async (route) => {
       const url = new URL(route.request().url());
       const method = route.request().method();
+      if (url.pathname.endsWith("/preview")) {
+        previewBodies.push(route.request().postDataJSON());
+        await route.fulfill({ contentType: "audio/wav", body: SILENT_WAV });
+        return;
+      }
       if (url.pathname.endsWith("/readiness")) {
         await route.fulfill({
           json: {
@@ -451,6 +461,7 @@ async function boot(
   await openResearchStudio(page);
   return {
     createBodies,
+    previewBodies,
     setReady: () => {
       ready = true;
     },
@@ -478,12 +489,10 @@ test.describe("Research Studio media honesty and playback", () => {
     await podcastCard.click();
     const config = page.getByRole("dialog", { name: "Generate Podcast" });
     const provider = config.getByLabel("Voice provider");
-    await expect(provider.locator("option")).toHaveText([
-      "Local",
-      "ElevenLabs",
-    ]);
-    await expect(config.getByLabel("Local voice")).toHaveValue("piper-amy");
-    await provider.selectOption("elevenlabs");
+    await expect(provider).toContainText("Local · private");
+    await expect(config.getByLabel("Host voice", { exact: true })).toContainText("Piper Amy");
+    await provider.click();
+    await page.getByRole("menuitemradio", { name: /ElevenLabs · hosted/ }).click();
     await expect(config.getByLabel("Host voice")).toContainText("Rachel");
     await expect(config.getByLabel("Length").locator("option")).toHaveCount(3);
     await expect(config.getByLabel("Style").locator("option")).toHaveText([
@@ -506,7 +515,7 @@ test.describe("Research Studio media honesty and playback", () => {
     await page
       .getByRole("menuitemradio", { name: /Domi/ })
       .click();
-    await config.getByRole("button", { name: /Draft for review Podcast/ }).click();
+    await config.getByRole("button", { name: /Draft podcast for review/ }).click();
     expect(controls.createBodies.at(-1)?.renderConfig).toEqual({
       provider: "elevenlabs",
       voice: ELEVENLABS_VOICE_ID,
@@ -516,6 +525,7 @@ test.describe("Research Studio media honesty and playback", () => {
         guest: ELEVENLABS_GUEST_VOICE_ID,
       },
       style: "debate",
+      voiceSettings: elevenLabsDeliveryPreset("conversational")!.settings,
     });
     let review = page.getByRole("dialog", {
       name: "Review before rendering",
@@ -524,7 +534,7 @@ test.describe("Research Studio media honesty and playback", () => {
       "An extracted finding for the podcast.",
     );
     await expect(review).toContainText("ElevenLabs");
-    await expect(review).toContainText(ELEVENLABS_GUEST_VOICE_ID);
+    await expect(review).toContainText("Domi");
     await expect(review).toContainText("debate");
     await review.getByRole("button", { name: "Keep draft" }).click();
     const row = studio.locator(".research-studio-row").first();
@@ -562,8 +572,10 @@ test.describe("Research Studio media honesty and playback", () => {
     await shortVideoCard.click();
 
     const config = page.getByRole("dialog", { name: "Generate Short video" });
-    await expect(config.getByLabel("Voice provider")).toHaveValue("elevenlabs");
-    await expect(config.getByLabel("Host voice")).toContainText("Rachel");
+    await expect(config.getByLabel("Voice provider")).toContainText("Local · private");
+    await config.getByLabel("Voice provider").click();
+    await page.getByRole("menuitemradio", { name: /ElevenLabs · hosted/ }).click();
+    await expect(config.getByLabel("Narrator voice")).toContainText("Rachel");
     await expect(config.getByLabel("Length")).toHaveValue("standard");
     await config.getByLabel("Research run").focus();
     await page.keyboard.press("Tab");
@@ -574,7 +586,7 @@ test.describe("Research Studio media honesty and playback", () => {
     );
 
     await config
-      .getByRole("button", { name: /Draft for review Short video/ })
+      .getByRole("button", { name: /Draft short video for review/ })
       .click();
     expect(controls.createBodies.at(-1)).toEqual({
       familiarId: FAMILIAR_ID,
@@ -608,6 +620,88 @@ test.describe("Research Studio media honesty and playback", () => {
     await expect(
       viewer.getByRole("link", { name: /Download media/ }),
     ).toHaveAttribute("href", /download=1/);
+  });
+
+  test("previews chosen voices, cancels on selection and close, and remembers only explicit hosted choices", async ({ page }, testInfo) => {
+      const controls = await boot(page, { ready: true });
+      // Keep each fake playback pending until stopped. The controller must stop
+      // the first speaker before another preview can start; no paid calls occur.
+      await page.evaluate(() => {
+        const state = { plays: [] as string[], pauses: 0, revoked: [] as string[] };
+        Object.assign(window, { podcastPreviewTest: state });
+        HTMLMediaElement.prototype.play = function () {
+          state.plays.push(this.src);
+          return Promise.resolve();
+        };
+        HTMLMediaElement.prototype.pause = function () { state.pauses += 1; };
+        HTMLMediaElement.prototype.load = function () {};
+        const revoke = URL.revokeObjectURL.bind(URL);
+        URL.revokeObjectURL = (url: string) => { state.revoked.push(url); revoke(url); };
+      });
+      const card = page.locator('.research-studio button[data-kind="podcast"]');
+      await card.click();
+      let config = page.getByRole("dialog", { name: "Generate Podcast" });
+      await expect(config.getByLabel("Voice provider")).toContainText("Local · private");
+      await expect(config).toContainText("will not switch automatically");
+      await config.getByLabel("Voice provider").click();
+      await page.getByRole("menuitemradio", { name: /ElevenLabs · hosted/ }).click();
+      await expect(config.getByLabel("Host voice", { exact: true })).toContainText("Rachel");
+      await expect(config.getByLabel("Delivery", { exact: true })).not.toBeVisible();
+      await config.getByText("Advanced voice settings (optional)", { exact: true }).click();
+      await expect(config.getByLabel("Delivery", { exact: true })).toContainText("Conversational");
+      await config.getByLabel("Guest voice (optional)").click();
+      await page.getByRole("menuitemradio", { name: /Domi/ }).click();
+      await config.getByRole("button", { name: "Preview host voice" }).click();
+      await expect(config.getByRole("status")).toContainText("Playing host preview");
+      expect(controls.previewBodies.at(-1)).toEqual({
+        provider: "elevenlabs", voice: ELEVENLABS_VOICE_ID,
+        voiceSettings: elevenLabsDeliveryPreset("conversational")!.settings,
+      });
+      await config.getByRole("button", { name: "Preview guest voice" }).click();
+      await expect(config.getByRole("status")).toContainText("Playing guest preview");
+      expect(controls.previewBodies.at(-1)?.voice).toBe(ELEVENLABS_GUEST_VOICE_ID);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { podcastPreviewTest: { pauses: number } }).podcastPreviewTest.pauses)).toBe(1);
+      await config.getByLabel("Delivery", { exact: true }).click();
+      await page.getByRole("menuitemradio", { name: "Animated", exact: true }).click();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { podcastPreviewTest: { revoked: string[] } }).podcastPreviewTest.revoked.length)).toBe(2);
+      await config.getByRole("button", { name: "Preview host voice" }).click();
+      await expect(config.getByRole("status")).toContainText("Playing host preview");
+      expect(controls.previewBodies.at(-1)?.voiceSettings).toEqual(elevenLabsDeliveryPreset("animated")!.settings);
+      await config.getByRole("button", { name: "Close dialog" }).click();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { podcastPreviewTest: { revoked: string[] } }).podcastPreviewTest.revoked.length)).toBe(3);
+      await expect(card).toBeFocused();
+      await card.click();
+      config = page.getByRole("dialog", { name: "Generate Podcast" });
+      await expect(config.getByLabel("Host voice", { exact: true })).toContainText("Rachel");
+      await config.getByRole("button", { name: /Draft podcast for review/ }).click();
+      const review = page.getByRole("dialog", { name: "Review before rendering" });
+      await expect(review).toContainText("AI-generated audio");
+      await expect(review).toContainText("Domi");
+      await review.getByRole("button", { name: "Keep draft" }).click();
+      await page.reload();
+      await openResearchStudio(page);
+      await card.click();
+      await expect(config.getByLabel("Voice provider")).toContainText("ElevenLabs · hosted");
+      await expect(config.getByLabel("Guest voice (optional)")).toContainText("Domi");
+      for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+        await page.evaluate(({ theme, mode }) => {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.mode = mode;
+        }, { theme, mode });
+        const screenshotPath = testInfo.outputPath(`podcast-${theme}-${mode}.png`);
+        await config.screenshot({ path: screenshotPath, animations: "disabled" });
+        await testInfo.attach(`podcast-${theme}-${mode}`, { path: screenshotPath, contentType: "image/png" });
+      }
+      await config.getByRole("button", { name: "Close dialog" }).click();
+      const closeNavigation = page.getByRole("button", { name: "Close navigation", exact: true });
+      if (await closeNavigation.isVisible()) await closeNavigation.click();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await card.click();
+      await expect(config).toBeVisible();
+      expect(await config.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      const narrowScreenshotPath = testInfo.outputPath("podcast-narrow.png");
+      await page.screenshot({ path: narrowScreenshotPath, animations: "disabled" });
+      await testInfo.attach("podcast-narrow", { path: narrowScreenshotPath, contentType: "image/png" });
   });
 
   test("resumes drafts, retries failures, cancels progress, and opens both video players", async ({

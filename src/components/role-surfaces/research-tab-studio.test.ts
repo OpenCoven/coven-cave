@@ -79,7 +79,8 @@ test("media configuration is controlled, readiness-backed, and kind-specific", (
   assert.match(tab, /useState<ResearchMediaProvider>\("local"\)/);
   assert.match(tab, /useState<ResearchMediaLength>\("standard"\)/);
   assert.match(tab, /readiness\.providers\.local\.voices/);
-  assert.match(tab, /readiness\.providers\.elevenlabs\.defaultVoiceId/);
+  assert.doesNotMatch(tab, /setMediaProvider\("elevenlabs"\)/);
+  assert.match(tab, /useState<ElevenLabsDeliveryPresetId>\("conversational"\)/);
   assert.match(tab, /renderConfig:\s*\{[\s\S]*provider: mediaProvider,[\s\S]*voice: mediaVoice,[\s\S]*length: mediaLength/);
   assert.match(modals, /htmlFor="research-studio-config-provider"/);
   assert.match(modals, /id="research-studio-config-provider"/);
@@ -153,7 +154,7 @@ test("create failures surface the server's message inline (409 no-artifact inclu
 test("generation directions show a bounded, quiet character count", () => {
   assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
   assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
-  assert.match(modals, /aria-describedby="research-studio-directions-count"/);
+  assert.match(modals, /aria-describedby="research-studio-directions-count research-studio-directions-help"/);
   assert.match(modals, /id="research-studio-directions-count"/);
   assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
   assert.match(css, /\.research-studio-config__count--near/);

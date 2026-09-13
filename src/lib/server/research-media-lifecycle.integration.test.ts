@@ -69,7 +69,7 @@ after(async () => {
   await rm(temporary, { recursive: true, force: true });
 });
 
-function pcmWav(durationMs = 100): Uint8Array {
+function pcmWav(durationMs = 400): Uint8Array {
   const sampleRate = 16_000;
   const sampleCount = Math.round((durationMs / 1_000) * sampleRate);
   const bytes = new Uint8Array(44 + sampleCount * 2);
@@ -91,6 +91,9 @@ function pcmWav(durationMs = 100): Uint8Array {
   view.setUint16(34, 16, true);
   text(36, "data");
   view.setUint32(40, sampleCount * 2, true);
+  for (let index = 0; index < sampleCount; index += 1) {
+    view.setInt16(44 + index * 2, Math.round(4_000 * Math.sin(2 * Math.PI * 220 * index / sampleRate)), true);
+  }
   return bytes;
 }
 

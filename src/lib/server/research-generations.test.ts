@@ -288,6 +288,29 @@ test("source pick: falls back to the newest published/working ref when no primar
   assert.equal(picked?.key, "findings");
 });
 
+test("podcast code fences cannot turn later findings into HTML comments", () => {
+  for (const style of ["breakdown", "debate", "interview", "recap"] as const) {
+    const content = draftPodcastContent({
+      mission: baseMission("fence-markers", "sage"),
+      artifact: artifactRef({}),
+      markdown: [
+        "# Findings",
+        "The first experiment succeeded.",
+        "```js",
+        'const marker = "<!--";',
+        "```",
+        "## Limitations",
+        "However, the study did not replicate.",
+      ].join("\n"),
+    }, "extended", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") throw new Error("expected podcast");
+    const spoken = content.script.map((segment) => segment.text).join(" ");
+    assert.match(spoken, /However, the study did not replicate/);
+    assert.doesNotMatch(spoken, /const marker/);
+  }
+});
+
 // ── extractive drafting per kind ─────────────────────────────────────────────
 
 test("blog = the artifact markdown as an editable copy with a provenance first line", async () => {
@@ -606,7 +629,7 @@ test("podcast drafter strips citation apparatus from speech, keeps prose verbati
   if (content.kind !== "podcast") return;
   const narration = content.script.map((segment) => segment.text).join(" ");
   assert.ok(
-    narration.includes("Formal proofs are blocked."),
+    narration.includes("Formal proofs are blocked (high confidence)."),
     `ledger-id parentheticals never reach speech (${narration})`,
   );
   assert.ok(
@@ -618,19 +641,88 @@ test("podcast drafter strips citation apparatus from speech, keeps prose verbati
     `bracketed and link-form ledger ids never reach speech (${narration})`,
   );
   assert.ok(
-    narration.includes("Robust goal-guarding traces to training choices."),
-    `dated confidence parentheticals never reach speech (${narration})`,
+    narration.includes("Robust goal-guarding traces to training choices (high confidence)."),
+    `citation dates are removed but confidence survives (${narration})`,
   );
   assert.ok(
     narration.includes("The date alone was flagged as unverified.") &&
-      narration.includes("Anti-faking mitigations were characterized."),
-    `lone date and lone label parentheticals never reach speech (${narration})`,
+      narration.includes("Anti-faking mitigations were characterized (verified)."),
+    `lone citation dates are removed without erasing evidence labels (${narration})`,
   );
   assert.ok(
     narration.includes("The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales."),
     `bare publication years and lone pronouns stay verbatim (${narration})`,
   );
   assert.ok(!/\bS\d{1,3}\b/.test(narration), `no bare ledger ids in speech (${narration})`);
+});
+
+test("podcast prose preserves full paragraphs and list qualifications in source order", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings" },
+    markdown: [
+      "# Findings",
+      "## Reliability",
+      "The measured improvement was 12 percent",
+      "on this dataset, not across all tasks.",
+      "",
+      "A second paragraph explains a failed replication.",
+      "",
+      "1. The first result is promising",
+      "   but rests on only one run (S1; low).",
+      "2. The alternative has not been tested [S2; inference].",
+      "",
+      "- A third result did not replicate.",
+      "  Its negative outcome must remain audible.",
+    ].join("\n"),
+  }, "standard", "recap");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(narration.includes("12 percent on this dataset, not across all tasks."));
+  assert.ok(narration.includes("A second paragraph explains a failed replication."));
+  assert.ok(narration.includes("one run (low confidence)."));
+  assert.ok(narration.includes("has not been tested (inference)."));
+  assert.ok(narration.includes("did not replicate. Its negative outcome must remain audible."));
+  assert.ok(narration.indexOf("second paragraph") < narration.indexOf("first result"));
+  assert.ok(!/\bS[12]\b|1\. The|2\. The/.test(narration));
+});
+
+test("podcast source machinery is excluded without losing findings after reference sections", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings" },
+    markdown: [
+      "---",
+      "author: INTERNAL_AUTHOR",
+      "---",
+      "<!-- research-provenance",
+      "session: INTERNAL_SESSION",
+      "-->",
+      "# Findings",
+      "## Result",
+      "The result remains uncertain.",
+      "```typescript",
+      "const HIDDEN_CODE = 42;",
+      "```",
+      "",
+      "## Sources",
+      "1. SOURCE_ENTRY https://example.com/paper",
+      "### Source details",
+      "SOURCE_METADATA",
+      "",
+      "## Limits",
+      "Small sample sizes limit confidence.",
+      "",
+      "[^1]: FOOTNOTE_URL https://example.com/footnote",
+    ].join("\n"),
+  }, "standard", "recap");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(narration.includes("The result remains uncertain."));
+  assert.ok(narration.includes("Small sample sizes limit confidence."));
+  assert.doesNotMatch(narration, /INTERNAL_|HIDDEN_|SOURCE_|FOOTNOTE_|https:/);
 });
 
 test("podcast styles branch the drafter without inventing findings", () => {

@@ -59,8 +59,8 @@ export function researchProviderChips(
       name: "ElevenLabs",
       state: elevenlabs.ready ? "ready" : "blocked",
       detail: elevenlabs.ready
-        ? "Authenticated — hosted voices available"
-        : elevenlabs.hint ?? "Needs authentication before its voices can be listed.",
+        ? "Key configured — choose and preview a hosted voice. Usage charges may apply."
+        : elevenlabs.hint ?? "Configure an ElevenLabs key to load the voice catalog.",
     },
     {
       id: "ffmpeg",
@@ -75,7 +75,7 @@ export function researchProviderChips(
       name: "Podcast pipeline",
       state: readiness.podcast.ready ? "ready" : "blocked",
       detail: readiness.podcast.ready
-        ? "Ready to draft and render"
+        ? "Ready to draft for review — rendering requires a selected, available voice"
         : readiness.podcast.hint ?? "The podcast pipeline is not ready.",
     },
   ];

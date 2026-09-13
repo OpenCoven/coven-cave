@@ -980,12 +980,28 @@ function citationTokens(inner: string): string[] {
   return inner.split(/[\s,;·+&]+/).filter(Boolean);
 }
 
-function stripSpokenCitations(text: string): string {
+function stripSpokenCitations(text: string, preserveQualifications = false): string {
+  const qualification = (tokens: string[]): string => {
+    if (!preserveQualifications) return "";
+    const labels = tokens.filter((token) =>
+      /^(?:high|medium|low|inference|theory|fact|verified)$/i.test(token),
+    );
+    return labels.length === 0
+      ? ""
+      : `(${labels.map((label) =>
+          /^(?:high|medium|low)$/i.test(label) ? `${label} confidence` : label,
+        ).join("; ")})`;
+  };
   return text
     // Bracket groups made only of ledger ids: "[S01]", "[knuth-lp-1992]".
     .replace(/\[([^\][]+)\]/g, (match, inner: string) => {
       const tokens = citationTokens(inner);
-      return tokens.every((token) => CITATION_ID_RE.test(token)) ? "" : match;
+      if (tokens.every((token) => CITATION_ID_RE.test(token))) return "";
+      if (
+        preserveQualifications &&
+        tokens.every((token) => CITATION_ID_RE.test(token) || CITATION_LABEL_RE.test(token))
+      ) return qualification(tokens);
+      return match;
     })
     // Parentheticals of ids + dates + confidence labels: "(S20 2025-06; high)",
     // "(high confidence)". At least one id or label keeps "(the DGM lesson)"
@@ -998,7 +1014,7 @@ function stripSpokenCitations(text: string): string {
       const anchored = tokens.some(
         (token) => PAREN_ID_RE.test(token) || CITATION_ANCHOR_RE.test(token),
       );
-      return allCitation && anchored ? "" : match;
+      return allCitation && anchored ? qualification(tokens) : match;
     })
     // Bare ledger ids left behind by markdown-link stripping ("S01 S06").
     .replace(/(^|\s)[SCR]\d{1,3}[a-z]?(?=[\s,.;:!?]|$)/g, "$1")
@@ -1010,13 +1026,13 @@ function stripSpokenCitations(text: string): string {
 }
 
 /** Full spoken-text normalization: citations out, glyphs to words. */
-function spokenText(text: string): string {
-  return normalizeSpokenGlyphs(stripSpokenCitations(text));
+function spokenText(text: string, preserveQualifications = false): string {
+  return normalizeSpokenGlyphs(stripSpokenCitations(text, preserveQualifications));
 }
 
 /** Terminates a fragment for speech without ever doubling punctuation. */
-function speakable(fragment: string): string {
-  const trimmed = spokenText(fragment);
+function speakable(fragment: string, preserveQualifications = false): string {
+  const trimmed = spokenText(fragment, preserveQualifications);
   if (!trimmed) return trimmed;
   return SPEAKABLE_TERMINAL_RE.test(trimmed) ? trimmed : `${trimmed}.`;
 }
@@ -1065,7 +1081,7 @@ function mediaNarrationSectionUnits(source: GenerationDraftSource): NarrationUni
       // .join(" ")` here is exactly the run-on collapse issue #4689 calls
       // out: it erased the source's own clause structure before any turn
       // shaping could see it.
-      return [{ title: section.title, details: details.map(speakable) }];
+      return [{ title: section.title, details: details.map((detail) => speakable(detail)) }];
     });
   }
   // A heading-less artifact still has useful source lines. Ignore markdown
@@ -1097,6 +1113,95 @@ function mediaNarrationUnits(source: GenerationDraftSource): string[] {
   });
 }
 
+/**
+ * Podcasts need complete paragraphs, not the slide extractor's first line.
+ * Keep prose and list continuations in source order; omit document machinery
+ * and reference sections that belong in the source artifact, not in speech.
+ */
+function podcastNarrationSectionUnits(markdown: string): NarrationUnit[] {
+  const units: NarrationUnit[] = [];
+  let current: NarrationUnit = { title: null, details: [] };
+  let paragraph: string[] = [];
+  let fence: string | null = null;
+  let inComment = false;
+  let inFrontmatter = false;
+  let skippedSectionLevel: number | null = null;
+  const flush = () => {
+    const text = speakable(stripInlineMarkdown(paragraph.join(" ")), true);
+    if (text) current.details.push(text);
+    paragraph = [];
+  };
+  const closeSection = () => {
+    flush();
+    if (current.details.length > 0) units.push(current);
+  };
+  for (const [index, raw] of markdown.split("\n").entries()) {
+    let line = raw.trim();
+    if (index === 0 && line === "---") {
+      inFrontmatter = true;
+      continue;
+    }
+    if (inFrontmatter) {
+      if (/^(?:---|\.\.\.)$/.test(line)) inFrontmatter = false;
+      continue;
+    }
+    if (fence) {
+      if (new RegExp(`^${fence[0]}{${fence.length},}\\s*$`).test(line)) fence = null;
+      continue;
+    }
+    if (inComment) {
+      const end = line.indexOf("-->");
+      if (end === -1) continue;
+      line = line.slice(end + 3).trim();
+      inComment = false;
+    }
+    line = line.replace(/<!--[\s\S]*?-->/g, "").trim();
+    const commentStart = line.indexOf("<!--");
+    if (commentStart !== -1) {
+      line = line.slice(0, commentStart).trim();
+      inComment = true;
+    }
+    const fenceStart = line.match(/^(`{3,}|~{3,})/);
+    if (fenceStart) {
+      flush();
+      fence = fenceStart[1];
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      closeSection();
+      const level = heading[1].length;
+      const title = stripInlineMarkdown(heading[2]);
+      if (skippedSectionLevel !== null && level <= skippedSectionLevel) {
+        skippedSectionLevel = null;
+      }
+      if (/^(?:\d+[.)]\s*)?(?:references|bibliography|sources|source ledger|research log)(?:\s*[:—–-].*)?$/i.test(title)) {
+        skippedSectionLevel ??= level;
+      }
+      current = { title: level === 1 ? null : title, details: [] };
+      continue;
+    }
+    if (skippedSectionLevel !== null) continue;
+    if (
+      !line || /^(?:[-*_]\s*){3,}$/.test(line) ||
+      /^\|/.test(line) || /^\[[^\]]+\]:/.test(line) ||
+      /^<[^>]+>/.test(line) || /^!\[/.test(line)
+    ) {
+      flush();
+      continue;
+    }
+    const listItem = line.match(/^(?:[-*+]|\d+[.)])\s+(.+)$/);
+    if (listItem) {
+      flush();
+      paragraph.push(listItem[1]);
+    } else {
+      paragraph.push(line.replace(/^>\s?/, ""));
+    }
+  }
+  closeSection();
+  return units;
+}
+
 /** Drafts a reviewable, extractive host script before any audio is rendered. */
 export function draftPodcastContent(
   source: GenerationDraftSource,
@@ -1104,7 +1209,7 @@ export function draftPodcastContent(
   style: ResearchPodcastStyle = "breakdown",
 ): ResearchGenerationContent {
   const budget = RESEARCH_MEDIA_LENGTH_LIMITS.podcast[length].maxCharacters;
-  const units = mediaNarrationSectionUnits(source);
+  const units = podcastNarrationSectionUnits(source.markdown);
   if (style === "recap") {
     // Recap is the original single-narrator read-through: one voice, no
     // dialogue turns, findings in source order. Cadence-safe turns keep each

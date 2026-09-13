@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_ELEVENLABS_VOICE_ID } from "../voice/elevenlabs-shared.ts";
+import { DEFAULT_ELEVENLABS_VOICE_ID, elevenLabsDeliveryPreset } from "../voice/elevenlabs-shared.ts";
+import { validateResearchMediaRenderConfig } from "../research-generations.ts";
 
 const {
   getResearchMediaReadiness,
@@ -10,6 +11,7 @@ const {
 
 const readyLocalVoice = {
   ready: true,
+  verified: true,
   id: "piper-lessac-medium",
   name: "Piper Lessac",
   engine: "piper" as const,
@@ -18,6 +20,7 @@ const readyLocalVoice = {
 test("readiness describes every provider and a complete ffmpeg toolchain", async () => {
   const result = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [readyLocalVoice] }),
+    probeLocalRuntime: async () => ({ available: true }),
     elevenLabsKey: () => "configured",
     probeCommand: async () => ({ ready: true }),
   });
@@ -49,6 +52,7 @@ test("readiness describes every provider and a complete ffmpeg toolchain", async
 test("readiness returns actionable provider, ffmpeg, and ffprobe hints", async () => {
   const unavailable = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [] }),
+    probeLocalRuntime: async () => ({ available: true }),
     elevenLabsKey: () => undefined,
     probeCommand: async (command) => ({
       ready: command === "ffprobe",
@@ -65,6 +69,7 @@ test("readiness returns actionable provider, ffmpeg, and ffprobe hints", async (
 
   const missingProbe = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [readyLocalVoice] }),
+    probeLocalRuntime: async () => ({ available: true }),
     elevenLabsKey: () => undefined,
     probeCommand: async (command) => ({
       ready: command === "ffmpeg",
@@ -81,6 +86,7 @@ test("readiness returns actionable provider, ffmpeg, and ffprobe hints", async (
 test("selection validation freezes exact voices and video prerequisites", async () => {
   const ready = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [readyLocalVoice] }),
+    probeLocalRuntime: async () => ({ available: true }),
     elevenLabsKey: () => "configured",
     probeCommand: async () => ({ ready: true }),
   });
@@ -175,6 +181,7 @@ test("selection validation freezes exact voices and video prerequisites", async 
 
   const noFfprobe = await getResearchMediaReadiness({
     speechReadiness: async () => ({ tts: [readyLocalVoice] }),
+    probeLocalRuntime: async () => ({ available: true }),
     elevenLabsKey: () => undefined,
     probeCommand: async (command) => ({ ready: command === "ffmpeg" }),
   });
@@ -189,4 +196,77 @@ test("selection validation freezes exact voices and video prerequisites", async 
   );
   assert.equal(video.ok, false);
   if (!video.ok) assert.match(video.error, /ffprobe/);
+});
+
+test("installed voice files do not make an unavailable runtime ready", async () => {
+  const result = await getResearchMediaReadiness({
+    speechReadiness: async () => ({ tts: [readyLocalVoice] }),
+    elevenLabsKey: () => undefined,
+    probeCommand: async () => ({ ready: true }),
+    probeLocalRuntime: async () => ({
+      available: false,
+      hint: "Install the local Piper runtime before selecting a Piper voice.",
+    }),
+  });
+  assert.equal(result.providers.local.ready, false);
+  assert.deepEqual(result.providers.local.voices, []);
+  assert.match(result.providers.local.hint ?? "", /Install the local Piper runtime/);
+  assert.equal(result.podcast.ready, false);
+  assert.match(result.podcast.hint ?? "", /Install the local Piper runtime/);
+});
+
+test("research voice choices include named Kokoro speakers from a verified runnable bundle", async () => {
+  const inspected: string[] = [];
+  const result = await getResearchMediaReadiness({
+    speechReadiness: async () => ({
+      tts: [
+        readyLocalVoice,
+        { ...readyLocalVoice, id: "unverified", verified: false },
+        {
+          id: "kokoro-v0-19",
+          name: "Kokoro",
+          engine: "kokoro",
+          ready: true,
+          verified: true,
+          kokoroSpeakerId: 0,
+        },
+      ],
+    }),
+    elevenLabsKey: () => undefined,
+    probeCommand: async () => ({ ready: true }),
+    probeLocalRuntime: async (engine) => {
+      inspected.push(engine);
+      return { available: engine === "kokoro" };
+    },
+  });
+  assert.deepEqual(inspected.sort(), ["kokoro", "piper"]);
+  assert.equal(result.providers.local.ready, true);
+  const voices = result.providers.local.voices;
+  assert.equal(voices.length, 11);
+  assert.ok(voices.some((voice) => voice.id === "kokoro-v0-19-bella"));
+  assert.ok(voices.some((voice) => voice.id === "kokoro-v0-19-george"));
+  assert.ok(voices.every((voice) => voice.engine === "kokoro"));
+});
+
+test("incompatible stored v3 settings remain readable but fail before rendering", async () => {
+  const config = {
+    provider: "elevenlabs" as const,
+    voice: DEFAULT_ELEVENLABS_VOICE_ID,
+    length: "brief" as const,
+    model: "eleven_v3",
+    voiceSettings: elevenLabsDeliveryPreset("conversational")!.settings,
+  };
+  assert.equal(validateResearchMediaRenderConfig("podcast", config).ok, true);
+  const readiness = await getResearchMediaReadiness({
+    speechReadiness: async () => ({ tts: [] }),
+    elevenLabsKey: () => "configured",
+    probeCommand: async () => ({ ready: true }),
+  });
+  const result = validateResearchMediaSelection("podcast", config, readiness);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /v3.*Neutral|v3.*stability/i);
+  assert.deepEqual(
+    validateResearchMediaSelection("podcast", { ...config, voiceSettings: undefined }, readiness),
+    { ok: true },
+  );
 });
