@@ -2,18 +2,24 @@
 
 import "@/styles/research-github-repo-viewer.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Group, Panel, Separator, type PanelImperativeHandle } from "react-resizable-panels";
+import { highlightToHtml, MarkdownBlock } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { resolveLangLabel } from "@/lib/code-lang";
+import { splitHighlightedLines } from "@/lib/code-lines";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useMeasuredWidth } from "@/lib/use-measured-width";
 import {
   buildGithubRepoTree,
   formatGithubBytes,
   githubRepoFileEndpoint,
   githubRepoFileWebUrl,
   githubRepoReadmeLinkUrl,
-  githubRepoTreeWebUrl,
   type GithubRepoFileView,
   type GithubRepoSnapshot,
   type RepoTreeNode,
@@ -22,6 +28,7 @@ import {
 export type ResearchGithubRepoViewerProps = {
   snapshot: GithubRepoSnapshot;
   openUrl: (url: string) => void;
+  relatedContent?: ReactNode;
 };
 
 type FileState =
@@ -36,20 +43,72 @@ function fileIconName(path: string): "ph:file-code" | "ph:file-text" {
     : "ph:file-text";
 }
 
+function languageTokenForPath(path: string): string {
+  const filename = path.split("/").at(-1) ?? path;
+  return (filename.includes(".") ? filename.split(".").at(-1) : filename)?.toLowerCase() || "text";
+}
+
+function GithubSourceRows({ path, source }: { path: string; source: string }) {
+  const language = languageTokenForPath(path);
+  const [lines, setLines] = useState(() => splitHighlightedLines("", source));
+
+  useEffect(() => {
+    let cancelled = false;
+    setLines(splitHighlightedLines("", source));
+    void (async () => {
+      try {
+        const html = await highlightToHtml(source, language);
+        if (!cancelled) setLines(splitHighlightedLines(html, source));
+      } catch (error) {
+        console.warn("GitHub file syntax highlighting unavailable; displaying plain text.", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [language, source]);
+
+  return (
+    <div className="research-gh__source" aria-label={`Source for ${path}`}>
+      {lines.map((line, index) => (
+        <div className="research-gh__source-row" key={`${path}:${index + 1}`}>
+          <span className="research-gh__line-number" aria-hidden="true">
+            {index + 1}
+          </span>
+          <code dangerouslySetInnerHTML={{ __html: line || "&nbsp;" }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FileTreeNode({
   node,
   selectedPath,
   onSelect,
+  expanded,
+  onExpand,
+  searching,
 }: {
   node: RepoTreeNode;
   selectedPath: string | null;
   onSelect: (node: RepoTreeNode) => void;
+  expanded: ReadonlySet<string>;
+  onExpand: (path: string, open: boolean) => void;
+  searching: boolean;
 }) {
   if (node.type === "tree") {
     return (
       <li className="research-gh__node">
-        <details className="research-gh__dir">
+        <details
+          className="research-gh__dir"
+          open={searching || expanded.has(node.path)}
+          onToggle={(event) => {
+            if (!searching) onExpand(node.path, event.currentTarget.open);
+          }}
+        >
           <summary className="research-gh__dir-summary focus-ring">
+            <Icon className="research-gh__dir-caret" name="ph:caret-right" width={12} height={12} aria-hidden />
             <Icon name="ph:folder" width={14} height={14} aria-hidden />
             <span>{node.name}</span>
             <span className="sr-only"> folder</span>
@@ -61,6 +120,9 @@ function FileTreeNode({
                 node={child}
                 selectedPath={selectedPath}
                 onSelect={onSelect}
+                expanded={expanded}
+                onExpand={onExpand}
+                searching={searching}
               />
             ))}
           </ul>
@@ -90,31 +152,89 @@ function FileTreeNode({
 export function ResearchGithubRepoViewer({
   snapshot,
   openUrl,
+  relatedContent,
 }: ResearchGithubRepoViewerProps) {
   const { announce } = useAnnouncer();
-  const roots = useMemo(() => buildGithubRepoTree(snapshot.tree), [snapshot.tree]);
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const matchingEntries = useMemo(
+    () => snapshot.tree.filter((entry) => !needle || (entry.type === "blob" && entry.path.toLowerCase().includes(needle))),
+    [needle, snapshot.tree],
+  );
+  const roots = useMemo(
+    () => buildGithubRepoTree(
+      matchingEntries.filter((entry) => entry.path !== snapshot.readme?.path),
+    ),
+    [snapshot.readme?.path, matchingEntries],
+  );
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const onExpand = useCallback((path: string, open: boolean) => {
+    setExpanded((previous) => {
+      if (previous.has(path) === open) return previous;
+      const next = new Set(previous);
+      if (open) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
   const [selectedPath, setSelectedPath] = useState<string | null>(
     snapshot.readme?.path ?? null,
   );
+  const [railOpen, setRailOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const railPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const railWidthRef = useRef(256);
+  const railId = useId();
   const [fileState, setFileState] = useState<FileState>({ kind: "idle" });
   const requestGenerationRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const workbenchRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLElement>(null);
+  const railToggleRef = useRef<HTMLButtonElement>(null);
+  const readerBodyRef = useRef<HTMLDivElement>(null);
+  const readerScrollRef = useRef({ top: 0, left: 0 });
+  const width = useMeasuredWidth(workbenchRef);
+  const narrow = width === null || width < 760;
+
+  useFocusTrap(narrow && railOpen, railRef, {
+    onEscape: () => setRailOpen(false),
+    restoreFocus: () => Boolean(railToggleRef.current?.offsetParent),
+  });
 
   useEffect(() => {
     requestGenerationRef.current += 1;
     requestControllerRef.current?.abort();
     requestControllerRef.current = null;
     setSelectedPath(snapshot.readme?.path ?? null);
+    setRailOpen(false);
+    setQuery("");
+    setExpanded(new Set());
     setFileState({ kind: "idle" });
-  }, [snapshot.commitSha, snapshot.readme?.path]);
+  }, [snapshot.owner, snapshot.repo, snapshot.commitSha, snapshot.readme?.path]);
 
   useEffect(() => () => requestControllerRef.current?.abort(), []);
+
+  useLayoutEffect(() => {
+    if (!narrow && railCollapsed) railPanelRef.current?.collapse();
+    setRailOpen(false);
+    const reader = readerBodyRef.current;
+    if (reader) {
+      reader.scrollTop = readerScrollRef.current.top;
+      reader.scrollLeft = readerScrollRef.current.left;
+    }
+  }, [narrow, railCollapsed]);
+
+  useEffect(() => {
+    readerScrollRef.current = { top: 0, left: 0 };
+    readerBodyRef.current?.scrollTo(0, 0);
+  }, [selectedPath, snapshot.commitSha]);
 
   const selectReadme = useCallback(() => {
     requestGenerationRef.current += 1;
     requestControllerRef.current?.abort();
     requestControllerRef.current = null;
     setSelectedPath(snapshot.readme?.path ?? null);
+    setRailOpen(false);
     setFileState({ kind: "idle" });
   }, [snapshot.readme?.path]);
 
@@ -125,6 +245,7 @@ export function ResearchGithubRepoViewer({
     requestControllerRef.current = controller;
     const generation = ++requestGenerationRef.current;
     setSelectedPath(node.path);
+    setRailOpen(false);
     setFileState({ kind: "loading", path: node.path });
     try {
       const response = await fetch(
@@ -175,76 +296,73 @@ export function ResearchGithubRepoViewer({
       : null
   ), [snapshot.commitSha, snapshot.owner, snapshot.readme, snapshot.repo]);
   const showingReadme = Boolean(snapshot.readme && selectedPath === snapshot.readme.path);
-  const treeUrl = githubRepoTreeWebUrl(snapshot.owner, snapshot.repo, snapshot.commitSha);
+  const capturedFileCount = snapshot.tree.filter((entry) => entry.type === "blob").length;
+  const capturedBytes = snapshot.tree.reduce((total, entry) => total + (entry.size ?? 0), 0);
+  const selectedLanguage = selectedPath
+    ? resolveLangLabel(languageTokenForPath(selectedPath))
+    : null;
+  const selectedBytes = selectedFileEntry
+    ? formatGithubBytes(selectedFileEntry.size)
+    : null;
 
-  return (
-    <section className="research-gh" aria-label={`${snapshot.owner}/${snapshot.repo} repository`}>
-      <header className="research-gh__header">
-        <div className="research-gh__identity">
-          <span className="research-gh__glyph" aria-hidden>
-            <Icon name="ph:github-logo" width={20} height={20} />
-          </span>
-          <div>
-            <span className="research-gh__eyebrow">Saved GitHub repository</span>
-            <h4>{snapshot.owner}/{snapshot.repo}</h4>
-            {snapshot.description ? <p>{snapshot.description}</p> : null}
-          </div>
-        </div>
-        <Button
-          size="xs"
-          variant="ghost"
-          trailingIcon="ph:arrow-square-out"
-          onClick={() => openUrl(treeUrl)}
+  const showReadme = snapshot.readme && (!needle || snapshot.readme.path.toLowerCase().includes(needle));
+  const files = (
+        <nav
+          ref={railRef}
+          className="research-gh__rail"
+          id={railId}
+          aria-label="Repository files"
+          tabIndex={-1}
         >
-          Open captured tree
-        </Button>
-      </header>
-
-      <div className="research-gh__provenance" aria-label="Snapshot provenance">
-        <span className="research-gh__commit-marker" aria-hidden>
-          <Icon name="ph:git-commit" width={15} height={15} />
-        </span>
-        <span className="research-gh__provenance-line" aria-hidden />
-        <div>
-          <span>Captured commit</span>
-          <strong>{snapshot.commitSha.slice(0, 12)}</strong>
-        </div>
-        <div>
-          <span>Resolved from</span>
-          <strong>{snapshot.resolvedRef}</strong>
-        </div>
-        <div>
-          <span>Captured</span>
-          <strong>{new Date(snapshot.fetchedAt).toLocaleString()}</strong>
-        </div>
-        {snapshot.truncated ? (
-          <span className="research-gh__truncated">Tree listing truncated</span>
-        ) : null}
-      </div>
-
-      <div className="research-gh__facts" aria-label="Repository metadata">
-        {snapshot.primaryLanguage ? <span>{snapshot.primaryLanguage}</span> : null}
-        {snapshot.licenseSpdx ? <span>{snapshot.licenseSpdx}</span> : null}
-        <span>{snapshot.visibility}</span>
-        <span>{snapshot.stars.toLocaleString()} stars</span>
-        <span>{snapshot.forks.toLocaleString()} forks</span>
-      </div>
-
-      <div className="research-gh__workspace">
-        <nav className="research-gh__rail" aria-label="Repository files">
           <header>
-            <strong>Files</strong>
-            <span>{snapshot.tree.length} entries</span>
+            <div>
+              <strong>Files</strong>
+              <span>{capturedFileCount.toLocaleString()} captured</span>
+            </div>
+            <Button
+              className="research-gh__rail-close"
+              size="xs"
+              variant="ghost"
+              aria-label={narrow ? "Close file rail" : "Collapse file rail"}
+              onClick={() => {
+                railToggleRef.current?.focus();
+                if (narrow) setRailOpen(false);
+                else {
+                  railPanelRef.current?.collapse();
+                  setRailCollapsed(true);
+                }
+              }}
+            >
+              <Icon name="ph:x" width={13} height={13} aria-hidden />
+            </Button>
           </header>
-          {snapshot.readme ? (
+          <SearchInput
+            containerClassName="research-gh__search"
+            aria-label="Search captured files"
+            placeholder="Search files…"
+            value={query}
+            onValueChange={setQuery}
+            onClear={() => setQuery("")}
+            hint={needle ? `${matchingEntries.length} captured file matches` : "Search captured paths, not the live repository."}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
+          />
+          <div className="research-gh__file-list">
+          {showReadme && snapshot.readme ? (
             <button
               type="button"
               className="research-gh__readme-link focus-ring"
               aria-current={showingReadme ? "page" : undefined}
               onClick={selectReadme}
+              title={`Read ${snapshot.readme.path}`}
             >
               <Icon name="ph:book-open" width={14} height={14} aria-hidden />
-              {snapshot.readme.path}
+              Overview
             </button>
           ) : null}
           {roots.length > 0 ? (
@@ -255,78 +373,193 @@ export function ResearchGithubRepoViewer({
                   node={node}
                   selectedPath={selectedPath}
                   onSelect={(selected) => void selectFile(selected)}
+                  expanded={expanded}
+                  onExpand={onExpand}
+                  searching={Boolean(needle)}
                 />
               ))}
             </ul>
           ) : (
-            <p className="research-gh__empty">No saved tree entries.</p>
+            <p className="research-gh__empty" role="status">
+              {needle && !showReadme ? "No captured files match. Clear the search to browse the saved tree." : "No additional files were captured."}
+            </p>
           )}
+          </div>
         </nav>
-
-        <article className="research-gh__reader" aria-live="polite">
+  );
+  const reader = (
+        <article className="research-gh__reader" data-source={!showingReadme && fileState.kind === "ready" || undefined}>
           <header className="research-gh__reader-head">
-            <div>
-              <span>{showingReadme ? "README" : selectedPath ? "Source file" : "Repository snapshot"}</span>
-              <strong>{selectedPath ?? "Select a file to read it in Cave"}</strong>
-            </div>
-            {selectedFileEntry ? (
+            <div className="research-gh__reader-identity">
               <Button
+                ref={railToggleRef}
+                className="research-gh__rail-toggle"
                 size="xs"
                 variant="ghost"
-                trailingIcon="ph:arrow-square-out"
-                onClick={() => openUrl(githubRepoFileWebUrl(
-                  snapshot.owner,
-                  snapshot.repo,
-                  snapshot.commitSha,
-                  selectedFileEntry.path,
-                ))}
+                leadingIcon="ph:sidebar-simple"
+                aria-controls={railId}
+                aria-expanded={narrow ? railOpen : !railCollapsed}
+                onClick={(event) => {
+                  // WebKit does not focus clicked buttons; give the trap a return target.
+                  event.currentTarget.focus();
+                  if (narrow) setRailOpen((current) => !current);
+                  else if (railCollapsed) {
+                    railPanelRef.current?.expand();
+                    railPanelRef.current?.resize(`${railWidthRef.current}px`);
+                    setRailCollapsed(false);
+                  } else {
+                    railPanelRef.current?.collapse();
+                    setRailCollapsed(true);
+                  }
+                }}
               >
-                Open on GitHub
+                Files
               </Button>
-            ) : null}
-          </header>
-
-          {showingReadme && snapshot.readme ? (
-            <MarkdownBlock
-              text={snapshot.readme.markdown}
-              className="research-gh__markdown cave-md--expanded cave-md--reader"
-              onOpenUrl={openUrl}
-              resolveOpenUrl={resolveReadmeUrl}
-              suppressRemoteMedia
-            />
-          ) : fileState.kind === "loading" && fileState.path === selectedPath ? (
-            <p className="research-gh__state" role="status">Loading file…</p>
-          ) : fileState.kind === "error" && fileState.path === selectedPath ? (
-            <div className="research-gh__state research-gh__state--error" role="alert">
-              <p>{fileState.message}</p>
+              <div>
+                <span>
+                  {showingReadme ? "Overview" : selectedPath ? "Source file" : "Repository snapshot"}
+                </span>
+                <strong>{selectedPath ?? "Select a file to read it in Cave"}</strong>
+              </div>
+            </div>
+            <div className="research-gh__reader-actions">
+              {selectedFileEntry ? (
+                <div className="research-gh__reader-facts" aria-label="Selected file details">
+                  {selectedLanguage ? <span>{selectedLanguage}</span> : null}
+                  {selectedBytes ? <span>{selectedBytes}</span> : null}
+                </div>
+              ) : null}
               {selectedFileEntry ? (
                 <Button
                   size="xs"
                   variant="ghost"
-                  onClick={() => void selectFile({
-                    name: selectedFileEntry.path.split("/").at(-1) ?? selectedFileEntry.path,
-                    path: selectedFileEntry.path,
-                    type: "blob",
-                    sha: selectedFileEntry.sha,
-                    size: selectedFileEntry.size,
-                  })}
+                  trailingIcon="ph:arrow-square-out"
+                  onClick={() => openUrl(githubRepoFileWebUrl(
+                    snapshot.owner,
+                    snapshot.repo,
+                    snapshot.commitSha,
+                    selectedFileEntry.path,
+                  ))}
                 >
-                  Retry
+                  Open on GitHub
                 </Button>
               ) : null}
             </div>
-          ) : fileState.kind === "ready" && fileState.path === selectedPath ? (
-            <pre className="research-gh__source" tabIndex={0}>
-              <code>{fileState.file.text}</code>
-            </pre>
-          ) : (
-            <p className="research-gh__state">
-              {snapshot.readme
-                ? "Choose the README or a source file from the saved tree."
-                : "Choose a text file from the saved tree to read its captured blob."}
-            </p>
-          )}
+          </header>
+
+          <div
+            ref={readerBodyRef}
+            className="research-gh__reader-body focus-ring"
+            tabIndex={0}
+            aria-label={selectedPath ? `${selectedPath} document` : "Repository document"}
+            onScroll={(event) => {
+              readerScrollRef.current = { top: event.currentTarget.scrollTop, left: event.currentTarget.scrollLeft };
+            }}
+          >
+            {showingReadme && snapshot.readme ? (
+              <MarkdownBlock
+                text={snapshot.readme.markdown}
+                className="research-gh__markdown cave-md--expanded cave-md--reader"
+                onOpenUrl={openUrl}
+                resolveOpenUrl={resolveReadmeUrl}
+                suppressRemoteMedia
+              />
+            ) : fileState.kind === "loading" && fileState.path === selectedPath ? (
+              <p className="research-gh__state" role="status">Loading file…</p>
+            ) : fileState.kind === "error" && fileState.path === selectedPath ? (
+              <div className="research-gh__state research-gh__state--error" role="alert">
+                <p>{fileState.message}</p>
+                {selectedFileEntry ? (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void selectFile({
+                      name: selectedFileEntry.path.split("/").at(-1) ?? selectedFileEntry.path,
+                      path: selectedFileEntry.path,
+                      type: "blob",
+                      sha: selectedFileEntry.sha,
+                      size: selectedFileEntry.size,
+                    })}
+                  >
+                    Retry
+                  </Button>
+                ) : null}
+              </div>
+            ) : fileState.kind === "ready" && fileState.path === selectedPath ? (
+              <GithubSourceRows path={fileState.path} source={fileState.file.text} />
+            ) : (
+              <p className="research-gh__state">
+                {snapshot.readme
+                  ? "Choose the overview or a source file from the saved tree."
+                  : "Choose a text file from the saved tree to read its captured blob."}
+              </p>
+            )}
+          </div>
         </article>
+  );
+
+  return (
+    <section
+      ref={workbenchRef}
+      className="research-gh"
+      aria-label={`${snapshot.owner}/${snapshot.repo} repository workbench`}
+    >
+      <div className="research-gh__context" aria-label="Captured repository context">
+        <Icon name="ph:git-commit" width={16} height={16} aria-hidden />
+        <span>Captured snapshot</span>
+        <strong title={`Ref resolved at capture: ${snapshot.resolvedRef}`}>{snapshot.resolvedRef}</strong>
+        <code title={snapshot.commitSha}>{snapshot.commitSha.slice(0, 12)}</code>
+        <time dateTime={snapshot.fetchedAt} title={new Date(snapshot.fetchedAt).toLocaleString()}>
+          Captured {new Date(snapshot.fetchedAt).toLocaleDateString()}
+        </time>
+        {snapshot.truncated ? <span className="research-gh__truncated" role="status">Tree listing truncated</span> : null}
+      </div>
+      <details className="research-gh__details">
+        <summary className="focus-ring">Repository details</summary>
+        <div className="research-gh__details-body">
+          {snapshot.description ? <p>{snapshot.description}</p> : null}
+          <dl>
+            <div><dt>Captured commit</dt><dd>{snapshot.commitSha}</dd></div>
+            <div><dt>Ref at capture</dt><dd>{snapshot.resolvedRef}</dd></div>
+            <div><dt>Captured</dt><dd>{new Date(snapshot.fetchedAt).toLocaleString()}</dd></div>
+            <div><dt>Files captured</dt><dd>{capturedFileCount.toLocaleString()} · {formatGithubBytes(capturedBytes)}</dd></div>
+            {snapshot.primaryLanguage ? <div><dt>Language</dt><dd>{snapshot.primaryLanguage}</dd></div> : null}
+            {snapshot.licenseSpdx ? <div><dt>License</dt><dd>{snapshot.licenseSpdx}</dd></div> : null}
+            <div><dt>Visibility</dt><dd>{snapshot.visibility}</dd></div>
+            <div><dt>Stars / forks at capture</dt><dd>{snapshot.stars.toLocaleString()} / {snapshot.forks.toLocaleString()}</dd></div>
+          </dl>
+          {relatedContent}
+        </div>
+      </details>
+      <div className="research-gh__workspace" data-narrow={narrow || undefined} data-rail-open={railOpen || undefined}>
+        {narrow ? <>{files}{reader}</> : (
+          <Group className="research-gh__split" orientation="horizontal">
+            <Panel
+              id="files"
+              panelRef={railPanelRef}
+              defaultSize={`${railWidthRef.current}px`}
+              minSize="192px"
+              maxSize="384px"
+              collapsible
+              collapsedSize={0}
+              onResize={(size) => {
+                const collapsed = size.inPixels === 0;
+                setRailCollapsed(collapsed);
+                // A shrinking container can clamp the panel before React swaps
+                // in the drawer. Do not replace the saved desktop width then.
+                if (!collapsed && (workbenchRef.current?.clientWidth ?? 0) >= 760) {
+                  railWidthRef.current = size.inPixels;
+                }
+              }}
+            >
+              {files}
+            </Panel>
+            <Separator className="shell-separator research-gh__separator" aria-label="Resize file rail">
+              <SeparatorHandle orientation="col" />
+            </Separator>
+            <Panel id="reader" minSize="360px">{reader}</Panel>
+          </Group>
+        )}
       </div>
     </section>
   );

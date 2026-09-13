@@ -7,6 +7,12 @@ import { LiveRegionProvider } from "@/components/ui/live-region";
 import { ResearchGithubRepoViewer } from "./research-github-repo-viewer";
 
 vi.mock("@/components/message-bubble", () => ({
+  highlightToHtml: async (code: string) => (
+    `<pre class="shiki"><code>${code
+      .split("\n")
+      .map((line) => `<span class="line">${line}</span>`)
+      .join("\n")}</code></pre>`
+  ),
   MarkdownBlock: ({
     text,
     className,
@@ -85,6 +91,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("uses compact snapshot context and exposes the saved README once", async () => {
+  const { renderer } = await mount();
+  const json = JSON.stringify(renderer.toJSON());
+
+  expect(json).not.toMatch(/Saved GitHub repository/);
+  expect(json).toMatch(/Captured snapshot/);
+  expect(json).toMatch(/main/);
+  expect(renderer.root.findAll(
+    (node) => node.type === "button" && node.props.title === "Read README.md",
+  )).toHaveLength(1);
+  expect(renderer.root.findByType("article").props["aria-live"]).toBeUndefined();
+  renderer.unmount();
+});
+
+test("exposes a collapsible file rail control for narrow containers", async () => {
+  const { renderer } = await mount();
+  const focus = vi.fn();
+  const railToggle = () => renderer.root.find(
+    (node) => node.type === "button"
+      && node.props["aria-controls"] === renderer.root.findByType("nav").props.id,
+  );
+
+  expect(railToggle().props["aria-expanded"]).toBe(false);
+  await act(async () => {
+    railToggle().props.onClick({ currentTarget: { focus } });
+  });
+  expect(focus).toHaveBeenCalledOnce();
+  expect(railToggle().props["aria-expanded"]).toBe(true);
+  renderer.unmount();
+});
+
 test("renders the persisted commit snapshot without fetching on mount", async () => {
   const fetchSpy = vi.fn();
   vi.stubGlobal("fetch", fetchSpy);
@@ -136,6 +173,12 @@ test("selecting a text file reads its exact captured blob inside Cave", async ()
   ]);
   expect(JSON.stringify(renderer.toJSON())).toMatch(/export const cave = true/);
   expect(fileButton(renderer, "src/index.ts").props["aria-current"]).toBe("page");
+  expect(renderer.root.findAllByProps({ className: "research-gh__source-row" })).toHaveLength(2);
+  expect(
+    renderer.root
+      .findAllByProps({ className: "research-gh__line-number" })
+      .map((node) => node.props.children),
+  ).toEqual([1, 2]);
   renderer.unmount();
 });
 
@@ -181,4 +224,64 @@ test("non-previewable files surface a specific recoverable state", async () => {
   expect(JSON.stringify(renderer.toJSON())).toMatch(/binary file cannot be previewed/);
   expect(JSON.stringify(renderer.toJSON())).toMatch(/Retry/);
   renderer.unmount();
+});
+
+test("captured-path search exposes ancestors without changing the document or saved folder state", async () => {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal("fetch", fetchSpy);
+  const { renderer } = await mount();
+  const search = () => renderer.root.find(
+    (node) => node.type === "input" && node.props["aria-label"] === "Search captured files",
+  );
+  const directory = () => renderer.root.findByProps({ className: "research-gh__dir" });
+
+  expect(directory().props.open).toBe(false);
+  await act(async () => search().props.onChange({ target: { value: "INDEX.TS" } }));
+  expect(directory().props.open).toBe(true);
+  expect(renderer.root.findAll((node) => node.type === "button" && node.props.title === "Read src/util.ts")).toHaveLength(0);
+  expect(renderer.root.findByProps({ "data-testid": "markdown-block" }).props.children).toBe("# Hello");
+  await act(async () => search().props.onChange({ target: { value: "" } }));
+  expect(directory().props.open).toBe(false);
+  await act(async () => directory().props.onToggle({ currentTarget: { open: true } }));
+  await act(async () => search().props.onChange({ target: { value: "no-matches" } }));
+  expect(JSON.stringify(renderer.toJSON())).toMatch(/No captured files match/);
+  await act(async () => search().props.onChange({ target: { value: "" } }));
+  expect(directory().props.open).toBe(true);
+  expect(fetchSpy).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("searching for the overview retains one saved README and does not fetch it", async () => {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal("fetch", fetchSpy);
+  const { renderer } = await mount();
+  const search = renderer.root.find((node) => node.type === "input" && node.props["aria-label"] === "Search captured files");
+  await act(async () => search.props.onChange({ target: { value: "readme" } }));
+  expect(renderer.root.findAll((node) => node.type === "button" && node.props.title === "Read README.md")).toHaveLength(1);
+  await act(async () => fileButton(renderer, "README.md").props.onClick());
+  expect(fetchSpy).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("switching repositories at the same SHA clears navigation and rejects the previous response", async () => {
+  let resolveFile;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { resolveFile = resolve; })));
+  const { renderer, openUrl } = await mount();
+  await act(async () => { fileButton(renderer, "src/index.ts").props.onClick(); });
+  await act(async () => {
+    renderer.update(
+      <LiveRegionProvider>
+        <ResearchGithubRepoViewer
+          snapshot={{ ...SNAPSHOT, repo: "another-repo", truncated: true, readme: { path: "README.md", markdown: "# Another snapshot" } }}
+          openUrl={openUrl}
+        />
+      </LiveRegionProvider>,
+    );
+  });
+  await act(async () => resolveFile(Response.json({ ok: true, sha: INDEX_SHA, text: "stale previous repository", bytes: 25 })));
+  expect(JSON.stringify(renderer.toJSON())).not.toMatch(/stale previous repository/);
+  expect(JSON.stringify(renderer.toJSON())).toMatch(/Tree listing truncated/);
+  expect(renderer.root.findByProps({ "data-testid": "markdown-block" }).props.children).toBe("# Another snapshot");
+  expect(fileButton(renderer, "README.md").props["aria-current"]).toBe("page");
+  await act(async () => renderer.unmount());
 });

@@ -31,6 +31,8 @@ import { ResearchXArticleReader } from "@/components/research-x-article-reader";
 import { ResearchResourceBrowserModal } from "@/components/research-resource-browser-modal";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { Button } from "@/components/ui/button";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
@@ -52,7 +54,8 @@ import {
 import type { ResearchMission } from "@/lib/research-missions";
 import type { ResourceManifestV1 } from "@/lib/research-resource-contracts";
 import { resourceForQueryHit } from "@/lib/research-resource-client";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { FocusTrapPortalLayersContext, PortalLayerDepthContext, PortalLayerRootContext, useFocusTrap, usePortalLayerRootId } from "@/lib/use-focus-trap";
+import { githubRepoTreeWebUrl } from "@/lib/research-github-repo";
 import {
   MAX_X_ARTICLES_PER_INGEST,
   parseXArticleCandidateUrl,
@@ -417,6 +420,17 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const openLink = openId ? links.find((link) => link.id === openId) ?? null : null;
   const openDurableResource = openLink ? resourceByLegacyId.get(openLink.id) : undefined;
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const removalRef = useRef<HTMLDivElement | null>(null);
+  const portalRootId = usePortalLayerRootId();
+  const portalElementsRef = useRef(new Set<HTMLElement>());
+  const portalLayers = useMemo(() => ({
+    register: (element: HTMLElement) => {
+      portalElementsRef.current.add(element);
+      return () => { portalElementsRef.current.delete(element); };
+    },
+    contains: (node: Node | null) => Boolean(node && [...portalElementsRef.current].some((element) => element.contains(node))),
+    elements: () => [...portalElementsRef.current],
+  }), []);
   const closeOverlay = useCallback(() => {
     articleRequestRef.current += 1;
     githubRequestRef.current += 1;
@@ -429,11 +443,17 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     }
     closeOverlay();
   }, [closeOverlay, readerExpanded]);
-  useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
+  useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape, portalLayers, portalRootId });
 
   useEffect(() => {
-    if (reading && readerExpanded) readerFocusControlRef.current?.focus();
-  }, [reading, readerExpanded]);
+    if ((reading || openLink?.githubRepo) && readerExpanded) readerFocusControlRef.current?.focus();
+  }, [reading, readerExpanded, openLink?.githubRepo]);
+
+  useEffect(() => {
+    if (!confirmingRemove || !openLink?.githubRepo) return;
+    const frame = requestAnimationFrame(() => removalRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [confirmingRemove, openLink?.githubRepo]);
 
   // A fresh overlay never inherits the previous one's confirm/copied/reading
   // state — closing the overlay or opening a different resource both land
@@ -572,6 +592,28 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   };
 
   const openCited = openLink ? citingMissions(openLink) : [];
+  const citedRuns = openCited.length > 0 ? (
+    <div className="research-res-overlay__runs">
+      <div className="research-res-overlay__runs-label">
+        <i aria-hidden /><span>Cited by runs</span>
+      </div>
+      <div className="research-res-overlay__runs-chips">
+        {openCited.map((mission) => (
+          <button
+            key={mission.id}
+            type="button"
+            className="focus-ring"
+            onClick={() => {
+              closeOverlay();
+              onNavigate("desk", { missionId: mission.id });
+            }}
+          >
+            {mission.title} <span aria-hidden>→</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
   const openPaperId = openLink?.paper?.arxivId ?? null;
 
   return (
@@ -1074,9 +1116,14 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       ) : null}
 
       {openLink ? (
+        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
+        <PortalLayerRootContext.Provider value={portalRootId}>
+        <PortalLayerDepthContext.Provider value={1}>
         <div
           className="research-res-overlay"
           data-reader={reading && readerExpanded || undefined}
+          data-github={openLink.githubRepo ? true : undefined}
+          data-github-focus={openLink.githubRepo && readerExpanded || undefined}
           onClick={closeOverlay}
         >
           <div
@@ -1092,6 +1139,13 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             onClick={(event) => event.stopPropagation()}
           >
             <header className="research-res-overlay__head">
+              {openLink.githubRepo ? (
+                <div className="research-res-overlay__heading research-gh__heading">
+                  <span>Resources <span aria-hidden>/</span></span>
+                  <h3 id="research-res-overlay-title">{openLink.githubRepo.owner}/{openLink.githubRepo.repo}</h3>
+                </div>
+              ) : (
+                <>
               <span className="research-res-overlay__glyph" aria-hidden>
                 <Icon
                   name={openLink.xArticle ? "ph:newspaper" : linkCategoryMeta(openLink.category).icon}
@@ -1129,10 +1183,48 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 </h3>
                 <span className="research-res-overlay__sub">{linkDomain(openLink.url)}</span>
               </div>
+                </>
+              )}
               <div className="research-res-overlay__head-actions">
-                {openPaperId && reading ? (
+                {openLink.githubRepo ? (
+                  <OverflowMenu ariaLabel="Repository actions" popoverClassName="research-gh__actions-menu" placement="bottom-end">
+                    {selectedMission ? (
+                      <PopoverItem
+                        icon="ph:plus"
+                        disabled={attachBusy || attachedToSelected(openLink)}
+                        onSelect={() => void attachToRun(openLink)}
+                      >
+                        {attachedToSelected(openLink) ? "In this run" : "Add to run"}
+                      </PopoverItem>
+                    ) : <PopoverItem disabled>Select a run to add this resource</PopoverItem>}
+                    <PopoverSeparator />
+                    <PopoverItem icon="ph:copy" onSelect={() => void copyUrl(openLink.url)}>
+                      {copied ? "Copied" : "Copy repository URL"}
+                    </PopoverItem>
+                    <PopoverItem icon="ph:arrow-square-out" onSelect={() => context.openUrl(openLink.url)}>
+                      Open live repository
+                    </PopoverItem>
+                    <PopoverItem icon="ph:git-commit" onSelect={() => {
+                      const snapshot = openLink.githubRepo;
+                      if (snapshot) context.openUrl(githubRepoTreeWebUrl(snapshot.owner, snapshot.repo, snapshot.commitSha));
+                    }}>
+                      Open captured tree
+                    </PopoverItem>
+                    <PopoverItem icon="ph:globe" onSelect={() => setBrowserPreview({
+                      title: openLink.title,
+                      url: (openDurableResource ? researchResourceSourceUrl(openDurableResource) : null) ?? openLink.url,
+                    })}>
+                      Preview in browser
+                    </PopoverItem>
+                    <PopoverSeparator />
+                    <PopoverItem danger onSelect={() => setConfirmingRemove(true)}>
+                      {openDurableResource ? "Delete resource" : "Remove from saves"}
+                    </PopoverItem>
+                  </OverflowMenu>
+                ) : null}
+                {(openPaperId && reading) || openLink.githubRepo ? (
                   <>
-                    {readerExpanded ? (
+                    {readerExpanded && openPaperId ? (
                       <button
                         type="button"
                         className="research-res-overlay__close focus-ring"
@@ -1147,7 +1239,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       ref={readerFocusControlRef}
                       type="button"
                       className="research-res-overlay__close focus-ring"
-                      onClick={() => setReaderExpanded((current) => !current)}
+                      onClick={() => {
+                        setReaderExpanded((current) => !current);
+                        announce(readerExpanded ? "Exited focus reader" : "Entered focus reader");
+                      }}
                       aria-label={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
                       aria-pressed={readerExpanded}
                       title={readerExpanded ? "Exit focus reader" : "Enter focus reader"}
@@ -1172,7 +1267,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
               </div>
             </header>
 
-            <div className="research-res-overlay__source">
+            {!openLink.githubRepo ? <div className="research-res-overlay__source">
               <Icon name="ph:link-simple" width={12} height={12} aria-hidden />
               <span className="research-res-overlay__url">{openLink.url}</span>
               <button
@@ -1184,7 +1279,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 <Icon name={copied ? "ph:check" : "ph:copy"} width={11} height={11} aria-hidden />
                 {copied ? "Copied" : "Copy"}
               </button>
-            </div>
+            </div> : null}
 
             <div className="research-res-overlay__body">
               {openLink.xArticle ? (
@@ -1310,6 +1405,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   <ResearchGithubRepoViewer
                     snapshot={githubDetail.githubRepo}
                     openUrl={context.openUrl}
+                    relatedContent={<>
+                      <p>Saved <RelativeTime iso={openLink.addedAt} fallback="date unavailable" /></p>
+                      {citedRuns ?? <p>Not cited by a run yet.</p>}
+                    </>}
                   />
                 ) : null
               ) : null}
@@ -1337,32 +1436,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 </div>
               ) : null}
 
-              {openCited.length > 0 ? (
-                <div className="research-res-overlay__runs">
-                  <div className="research-res-overlay__runs-label">
-                    <i aria-hidden />
-                    <span>Cited by runs</span>
-                  </div>
-                  <div className="research-res-overlay__runs-chips">
-                    {openCited.map((mission) => (
-                      <button
-                        key={mission.id}
-                        type="button"
-                        onClick={() => {
-                          closeOverlay();
-                          onNavigate("desk", { missionId: mission.id });
-                        }}
-                      >
-                        {mission.title} <span aria-hidden>→</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              {!openLink.githubRepo ? citedRuns : null}
             </div>
 
-            <footer className="research-res-overlay__actions">
-              <div className="research-res-overlay__remove">
+            {!openLink.githubRepo || confirmingRemove ? <footer className="research-res-overlay__actions">
+              <div ref={removalRef} className="research-res-overlay__remove">
                 {confirmingRemove ? (
                   <>
                     <span className="research-res-overlay__remove-warn">
@@ -1378,7 +1456,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                     >
                       {openDurableResource ? "Delete resource" : "Remove save"}
                     </Button>
-                    <Button size="xs" variant="ghost" onClick={() => setConfirmingRemove(false)}>
+                    <Button size="xs" variant="ghost" onClick={() => {
+                      setConfirmingRemove(false);
+                      if (openLink.githubRepo) readerFocusControlRef.current?.focus();
+                    }}>
                       Keep
                     </Button>
                   </>
@@ -1388,7 +1469,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   </Button>
                 )}
               </div>
-              <div className="research-res-overlay__primary-actions">
+              {!openLink.githubRepo ? <div className="research-res-overlay__primary-actions">
                 {!selectedMission ? (
                   <span className="research-res-overlay__hint">
                     Select a run to add this resource.
@@ -1459,10 +1540,13 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                     Add to run
                   </Button>
                 ) : null}
-              </div>
-            </footer>
+              </div> : null}
+            </footer> : null}
           </div>
         </div>
+        </PortalLayerDepthContext.Provider>
+        </PortalLayerRootContext.Provider>
+        </FocusTrapPortalLayersContext.Provider>
       ) : null}
 
       <ResearchResourceBrowserModal

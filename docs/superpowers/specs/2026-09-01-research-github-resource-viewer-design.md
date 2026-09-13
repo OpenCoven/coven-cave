@@ -43,6 +43,29 @@ server-side GitHub credential; the browser never receives a token.
 
 ## Feasibility evidence
 
+### Reader-first workbench refinement (cave-ioefs)
+
+The saved GitHub resource opens as a bounded reading workspace, not an editor.
+Its header names the repository once. The commit strip keeps the captured ref,
+SHA, date, and any truncated-tree warning visible, including in narrow layouts.
+Repository details discloses the description, captured metadata, save time, and
+citing runs rather than competing with the document.
+
+The file rail searches captured paths only, reveals matching ancestors, and
+restores folder expansion when the query clears. Overview is the saved README's
+single destination. On wide containers, the rail supports keyboard/pointer
+resizing and collapse; on narrow containers, Files opens a focus-trapped drawer.
+Escape clears an active file query before dismissing that drawer. The document
+and file list own separate vertical scroll areas.
+
+Focus reader expands inside the application window without changing the selected
+file or captured snapshot. Escape leaves focus mode before closing the resource.
+The repository action menu retains copy, explicitly live versus captured GitHub
+links, browser preview, Add to run for the explicitly selected run, and the
+existing two-step removal confirmation. Paper and article readers keep their
+existing presentation. Snapshot ingestion, blob endpoints, and credential
+boundaries are unchanged.
+
 ### Current GitHub transport
 
 GitHub's current REST version is `2026-03-10`; requests opt into it with

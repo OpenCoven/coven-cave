@@ -142,7 +142,8 @@ test("grid/rows view persists under cave:research:res-view with an SSR guard", (
 });
 
 test("detail overlay is a focus-trapped dialog with honest copy/open actions", () => {
-  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{ onEscape: handleOverlayEscape \}\)/);
+  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{ onEscape: handleOverlayEscape, portalLayers, portalRootId \}\)/);
+  assert.match(source, /<FocusTrapPortalLayersContext.Provider value=\{portalLayers\}>/);
   assert.match(source, /role="dialog"/);
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /aria-labelledby="research-res-overlay-title"/);
@@ -190,7 +191,7 @@ test("the paper reader opens directly into a near-bezelless focus mode", () => {
   assert.match(source, /const readerFocusControlRef = useRef<HTMLButtonElement>\(null\)/);
   assert.match(
     source,
-    /if \(reading && readerExpanded\) readerFocusControlRef\.current\?\.focus\(\)/,
+    /if \(\(reading \|\| openLink\?\.githubRepo\) && readerExpanded\) readerFocusControlRef\.current\?\.focus\(\)/,
     "focus moves from the removed Read button to a surviving reader control",
   );
   assert.match(

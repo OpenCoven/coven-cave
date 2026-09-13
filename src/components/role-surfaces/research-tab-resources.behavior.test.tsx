@@ -4,6 +4,7 @@ import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { LiveRegionProvider } from "@/components/ui/live-region";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { sha256Digest } from "@/lib/research-protocol/digest";
 import { ResearchTabResources } from "./research-tab-resources.tsx";
 
@@ -245,9 +246,47 @@ test("opening a saved GitHub card automatically loads and renders its full snaps
 
     const text = visibleText(renderer);
     expect(requests.filter((url) => url === "/api/research/links?id=saved_github")).toHaveLength(1);
-    expect(text).toMatch(/Saved GitHub repository/);
+    expect(text).toMatch(/Captured snapshot/);
     expect(text).toMatch(/Saved repository/);
     expect(text).toMatch(new RegExp("a".repeat(12)));
+    expect(renderer.root.find(
+      (node) => node.type === "div"
+        && node.props.role === "dialog"
+        && node.props["data-github"] === true,
+    )).toBeTruthy();
+    expect(renderer.root.findAllByProps({ className: "research-res-overlay__source" })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ className: "research-res-overlay__actions" })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ id: "research-res-overlay-title" })).toHaveLength(1);
+    const viewerBefore = renderer.root.findByProps({ className: "research-gh" });
+    const focus = renderer.root.find((node) => node.type === "button" && node.props["aria-label"] === "Enter focus reader");
+    await act(async () => focus.props.onClick());
+    expect(renderer.root.findByProps({ className: "research-res-overlay" }).props["data-github-focus"]).toBe(true);
+    expect(renderer.root.findByProps({ className: "research-gh" })).toBe(viewerBefore);
+    await act(async () => renderer.root.find((node) => node.type === "button" && node.props["aria-label"] === "Exit focus reader").props.onClick());
+    expect(renderer.root.findByProps({ className: "research-res-overlay" }).props["data-github-focus"]).toBeUndefined();
+    const attach = vi.fn(async () => ({ ok: true }));
+    await act(async () => renderer.update(
+      <LiveRegionProvider>
+        <ResearchTabResources
+          research={{ ...research, selected: { id: "chosen-run", title: "Chosen run", sources: [] }, act: attach }}
+          context={context}
+          onNavigate={() => {}}
+        />
+      </LiveRegionProvider>,
+    ));
+    const menu = renderer.root.findByType(OverflowMenu);
+    const addToRun = React.Children.toArray(menu.props.children).find((child) => child.props?.children === "Add to run");
+    expect(addToRun.props.disabled).toBe(false);
+    await act(async () => addToRun.props.onSelect());
+    expect(attach).toHaveBeenCalledWith("chosen-run", {
+      action: "attach-source",
+      source: expect.objectContaining({ url: githubSavedLink.url, status: "candidate", sourceType: "web" }),
+    });
+    expect(renderer.root.find(
+      (node) => node.type === "div"
+        && node.props.className === "research-res-overlay"
+        && node.props["data-github"] === true,
+    )).toBeTruthy();
   } finally {
     if (renderer) await act(async () => renderer.unmount());
     globalThis.fetch = originalFetch;
