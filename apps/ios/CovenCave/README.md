@@ -1,8 +1,9 @@
 # Coven Cave — Native iOS app
 
 A native, chat-only SwiftUI client for Coven Cave. It connects to your desktop
-over your **Tailscale** network with desktop-approved device access (or a legacy
-QR/invite credential), stored in Keychain and scoped to the desktop endpoint.
+over your **Tailscale** network with a paired Cave access credential:
+desktop-approved device access (or a legacy QR/invite credential), stored in
+Keychain and scoped to the desktop endpoint.
 Tailnet membership alone does not grant access.
 This is *not* a webview wrapper around the web app.
 

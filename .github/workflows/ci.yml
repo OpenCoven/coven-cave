@@ -277,6 +277,10 @@ jobs:
       # and never runs is a check that certifies its tests parse rather than
       # pass (cave-ac372). Building for the concrete destination the test action
       # will use keeps the two steps in agreement about architecture and SDK.
+      # The simulator host needs ad-hoc signing for Keychain access. Disabling
+      # signing makes fail-closed managed-device reads throw `storage` before
+      # even mocked API requests dispatch. No Apple certificate or team is
+      # needed; the device compile gate above remains unsigned.
       - name: Compile the iOS test bundles
         working-directory: apps/ios/CovenCave
         run: |
@@ -284,7 +288,10 @@ jobs:
           xcodebuild -scheme CovenCave \
             -destination "id=$IOS_SIMULATOR_UDID" \
             -derivedDataPath "$IOS_DERIVED_DATA" \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
             build-for-testing
 
       # Only the unit bundle runs here. CovenCaveUITests drives the app through
@@ -333,7 +340,10 @@ jobs:
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 60 \
             -maximum-test-execution-time-allowance 180 \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
             test-without-building
 
       # xcodebuild's exit status covers "did every executed test pass". It does

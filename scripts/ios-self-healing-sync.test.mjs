@@ -136,8 +136,8 @@ assert.match(
 );
 assert.match(
   client,
-  /for attempt in 0\.\.\.retryDelays\.count[\s\S]*?session\.data\(for: req\)[\s\S]*?Task\.sleep/,
-  "resilient data loading should retry transient failures with bounded backoff",
+  /for attempt in 0\.\.\.retryDelays\.count[\s\S]*?session\.data\(for: req, delegate: DeviceAccessRedirectGuard\.shared\)[\s\S]*?Task\.sleep/,
+  "resilient data loading should preserve the credential redirect guard while retrying transient failures with bounded backoff",
 );
 assert.match(
   client,

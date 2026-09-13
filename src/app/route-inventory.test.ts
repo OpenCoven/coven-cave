@@ -20,9 +20,18 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
 //   redirect    — compatibility stub that forwards into a canonical route;
 //                 kept so old deep links never 404
 //   window-host — not navigation: a route loaded by a dedicated native window
+//   access-gate — pre-approval pairing, without authenticated workspace chrome
 //   dev-only    — design/review reference pages; never linked from nav hosts
 const ROUTE_INVENTORY = {
   "/": { kind: "workspace" },
+  "/connect": {
+    kind: "access-gate",
+    component: "DevicePairing",
+    entry: {
+      file: "./api/mobile-handoff/route.ts",
+      pattern: /new URL\("\/connect", discovery\.serveUrl\)/,
+    },
+  },
   "/dashboard": {
     kind: "destination",
     entry: {
@@ -123,7 +132,7 @@ const declared = Object.keys(ROUTE_INVENTORY).sort();
 for (const route of discovered) {
   assert.ok(
     ROUTE_INVENTORY[route],
-    `new page route "${route}" must be classified in ROUTE_INVENTORY (workspace / destination / redirect / window-host / dev-only) — see issue #3283`,
+    `new page route "${route}" must be classified in ROUTE_INVENTORY (workspace / destination / redirect / window-host / access-gate / dev-only) — see issue #3283`,
   );
 }
 for (const route of declared) {
@@ -165,16 +174,21 @@ for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
 // Destination routes render outside the SPA workspace, so every one mounts
 // AnalyticsPageShell. That adapter now delegates to the canonical Shell and
 // sidebar primitives instead of maintaining parallel app chrome. Window-hosts
-// (overlay windows) and dev-only pages stay bare.
+// (overlay windows), pre-approval access gates and dev-only pages stay bare.
 for (const [route, spec] of Object.entries(ROUTE_INVENTORY)) {
-  if (spec.kind !== "destination") continue;
+  if (spec.kind !== "destination" && spec.kind !== "access-gate") continue;
   const file = path.join(appDir, route.replace(/^\//, ""), "page.tsx");
   const source = readFileSync(file, "utf8");
-  assert.ok(
-    source.includes("AnalyticsPageShell"),
-    `${route} is a destination route — it must mount AnalyticsPageShell so the universal page frame is present`,
-  );
-  assert.ok(spec.entry, `${route} is a destination route — declare its in-app entry point`);
+  if (spec.kind === "destination") {
+    assert.ok(
+      source.includes("AnalyticsPageShell"),
+      `${route} is a destination route — it must mount AnalyticsPageShell so the universal page frame is present`,
+    );
+  } else {
+    assert.match(source, new RegExp(`<${spec.component}\\s*/>`), `${route} must render its access gate`);
+    assert.ok(!source.includes("AnalyticsPageShell"), `${route} must not mount authenticated chrome before approval`);
+  }
+  assert.ok(spec.entry, `${route} must declare its entry point`);
   const entrySource = readFileSync(path.resolve(appDir, spec.entry.file), "utf8");
   assert.match(
     entrySource,
