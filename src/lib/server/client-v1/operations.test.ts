@@ -49,6 +49,7 @@ test("declares exactly the reviewed operation inventory, in order", () => {
     "conversations.list",
     "conversations.read",
     "messages.list",
+    "chapters.list",
   ]);
 });
 
@@ -140,6 +141,7 @@ test("keeps cursors a cross-cutting family rather than a route of its own", () =
     "projects.list",
     "conversations.list",
     "messages.list",
+    "chapters.list",
   ]);
   assert.equal(clientV1Operation("conversations.read")?.families.includes("cursors"), false);
   // The two familiar detail reads are single records narrowed by query, not
@@ -233,6 +235,7 @@ test("pins every operation's credential and authority binding", () => {
         binding: "hpke-bound-v1",
       },
       "messages.list": { credential: "bearer", binding: "hpke-bound-v1" },
+      "chapters.list": { credential: "bearer", binding: "hpke-bound-v1" },
     },
   );
 });
@@ -310,14 +313,14 @@ test("renders public JSON-safe records for the generated fixture", () => {
     families: ["health"],
   });
   assert.deepEqual(records.at(-1), {
-    id: "messages.list",
+    id: "chapters.list",
     method: "GET",
-    path: "/api/client/v1/conversations/:id/messages",
+    path: "/api/client/v1/conversations/:id/chapters",
     ingress: "authenticated",
     scope: "chat:read",
     credential: "bearer",
     binding: "hpke-bound-v1",
-    families: ["conversation-messages", "cursors"],
+    families: ["conversation-chapters-v1", "cursors"],
   });
   // A copy, not the frozen registry: the fixture builder mutates nothing, but a
   // caller that did would otherwise poison every later render.

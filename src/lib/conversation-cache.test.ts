@@ -143,6 +143,26 @@ test("foreground loading preserves a context-only successful payload", async () 
   assert.equal(readCachedConversation("s1"), null);
 });
 
+test("source identity comes only from the HTTP producer stamp and survives caching", async () => {
+  const { continuitySourceId, matchesContinuitySource } = await import("./chat-continuity-preferences.ts");
+  const stamp = encodeURIComponent(JSON.stringify("installation-new"));
+  stubFetch(async () => Response.json({ ...payload("original text"), sourceStamp: "forged-body" }, {
+    headers: { "x-cave-instance-id": stamp },
+  }));
+  const result = await loadConversation("s1");
+  assert.equal(result.sourceStamp, stamp);
+  assert.equal(result.conversation.turns[0].text, "original text");
+  const cached = readCachedConversation("s1");
+  assert.equal(matchesContinuitySource(cached, continuitySourceId("installation-old", "https://cave.test"), "https://cave.test"), false);
+  assert.equal(matchesContinuitySource(cached, continuitySourceId("installation-new", "https://cave.test"), "https://cave.test"), true);
+  assert.equal(matchesContinuitySource(cached, continuitySourceId("installation-new", "https://other.test"), "https://cave.test"), false);
+  for (const sourceStamp of [undefined, "%broken", "null", encodeURIComponent(JSON.stringify({ id: "wrong-shape" }))]) {
+    assert.equal(matchesContinuitySource({ sourceStamp }, continuitySourceId("installation-new", "https://cave.test"), "https://cave.test"), false);
+  }
+  stubFetch(async () => Response.json({ ...payload("unstamped"), sourceStamp: stamp }));
+  assert.equal((await loadConversation("s2")).sourceStamp, undefined);
+});
+
 test("foreground loading preserves the response status for error handling", async () => {
   stubFetch(async () => ({
     ok: false,
@@ -245,4 +265,14 @@ test("chat-view paints cached payloads and shares revalidation with prefetch", (
   // Confirmed deletion invalidation is centralized so list, project, header,
   // sidebar, and split-pane deletes cannot drift apart.
   assert.match(workspace, /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\)/);
+});
+
+test("continuity applies source checks to memory, offline and live history before mutation", () => {
+  assert.match(chatView, /cachedPayload\.conversation && canUseCachedPayload\(cachedPayload\)/);
+  assert.match(chatView, /cached\.data\.conversation && canUseCachedPayload\(cached\.data\)/);
+  assert.match(chatView, /!matchesContinuitySource\(json, continuitySourceId, window\.location\.origin\)/);
+  assert.match(chatView, /setHistorySourceChanged\(true\)/);
+  assert.match(chatView, /const offlineReadOnly = historyState === "offline" \|\| historySourceChanged/);
+  assert.match(chatView, /if \(historyState === "offline" \|\| historySourceChanged\)/);
+  assert.match(chatView, /continuityLoadedSessionId === sessionId && resolvedProjectId/);
 });

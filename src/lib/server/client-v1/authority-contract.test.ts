@@ -357,6 +357,7 @@ test("publishes the complete pure authority manifest contract", () => {
         "conversations.list",
         "conversations.read",
         "messages.list",
+        "chapters.list",
       ],
       vectorFixture: {
         fileName: "hpke-bound-v1-vectors.json",

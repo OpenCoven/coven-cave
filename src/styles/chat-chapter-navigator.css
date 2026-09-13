@@ -1,0 +1,117 @@
+.chat-chapter-navigator {
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: var(--text-xs);
+}
+
+.chat-chapter-navigator__scope {
+  color: var(--text-muted);
+}
+
+.chat-chapter-navigator__notice {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+}
+
+.chat-chapter-navigator__window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  flex-basis: 100%;
+  color: var(--text-secondary);
+}
+
+.chat-chapter-navigator__trigger:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.chat-chapter-navigator__trigger {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.chat-chapter-navigator__trigger:hover,
+.chat-chapter-index__row:hover {
+  background: var(--bg-hover);
+}
+
+.chat-chapter-index {
+  display: grid;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+.ui-modal:has(.chat-chapter-index) {
+  background: var(--bg-elevated);
+}
+
+.chat-chapter-index__description {
+  color: var(--text-muted);
+}
+
+.chat-chapter-index__list {
+  display: grid;
+  gap: var(--space-1);
+  max-height: 55dvh;
+  overflow-y: auto;
+}
+
+.chat-chapter-index__row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  text-align: start;
+}
+
+.chat-chapter-index__row time {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.chat-chapter-index__row[aria-current="location"] {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+@container (max-width: 400px) {
+  .chat-chapter-navigator__scope {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .ui-modal-backdrop:has(.chat-chapter-index) {
+    padding: 0;
+  }
+
+  .ui-modal:has(.chat-chapter-index) {
+    align-self: end;
+    width: 100%;
+    max-height: 85dvh;
+    margin: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    padding-bottom: var(--sai-bottom);
+  }
+
+  .chat-chapter-navigator__trigger {
+    min-height: var(--touch-target);
+  }
+}

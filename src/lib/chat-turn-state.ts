@@ -6,6 +6,7 @@ import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
+import type { ReviewedExcerpt } from "@/lib/server/chat-side-conversations";
 
 /**
  * The shared state contract for ChatView's persisted transcript and its
@@ -56,6 +57,7 @@ export type ChatTurnLifecycle =
   | "complete";
 
 export type Turn = {
+  reviewedExcerpt?: ReviewedExcerpt;
   id: string;
   parentId?: string | null;
   role: "user" | "assistant" | "system";
@@ -84,6 +86,7 @@ export type Turn = {
 };
 
 export type ConversationHistoryTurn = {
+  reviewedExcerpt?: ReviewedExcerpt;
   id: string;
   parentId?: string | null;
   role: string;
@@ -107,6 +110,7 @@ export type ConversationHistoryTurn = {
 };
 
 export type ConversationHistoryPayload = {
+  sourceStamp?: string;
   ok?: boolean;
   context?: ChatLinkedContext | null;
   conversation?: {
@@ -116,17 +120,21 @@ export type ConversationHistoryPayload = {
 };
 
 /** Normalize the API's permissive persisted turn shape for ChatView. */
-export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[]): Turn[] {
+export function mapConversationHistoryTurns(
+  rawTurns: readonly ConversationHistoryTurn[],
+  { includeSystem = false }: { includeSystem?: boolean } = {},
+): Turn[] {
   return rawTurns
     .filter(
-      (turn): turn is ConversationHistoryTurn & { role: "user" | "assistant" } =>
-        turn.role === "user" || turn.role === "assistant",
+      (turn): turn is ConversationHistoryTurn & { role: Turn["role"] } =>
+        turn.role === "user" || turn.role === "assistant" || (includeSystem && turn.role === "system"),
     )
     .map((turn) => ({
       id: turn.id,
       parentId: turn.parentId,
       role: turn.role,
       text: turn.text,
+      ...(turn.reviewedExcerpt ? { reviewedExcerpt: turn.reviewedExcerpt } : {}),
       attachments: turn.attachments,
       reasoning: turn.reasoning,
       tools: turn.tools,
@@ -144,6 +152,27 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       voiceCallId: turn.voiceCallId,
       researchRunId: turn.researchRunId,
     }));
+}
+
+/**
+ * Restore persisted system rows for presentation without rolling back live
+ * turn updates or reviving removed user/assistant rows from an older payload.
+ * Callers keep this projection out of the send/stream registry.
+ */
+export function mergeConversationHistoryProjection(currentTurns: Turn[], history: readonly Turn[]): Turn[] {
+  const currentById = new Map(currentTurns.map((turn) => [turn.id, turn]));
+  const historyIds = new Set<string>();
+  const projected: Turn[] = [];
+  for (const persisted of history) {
+    historyIds.add(persisted.id);
+    const current = currentById.get(persisted.id);
+    if (current) projected.push(current);
+    else if (persisted.role === "system") projected.push(persisted);
+  }
+  for (const current of currentTurns) {
+    if (!historyIds.has(current.id)) projected.push(current);
+  }
+  return projected;
 }
 
 export type RetryTurnModelRequest = {

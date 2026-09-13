@@ -89,6 +89,7 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
+    var reviewedExcerpt: ReviewedSideExcerpt?
 
     var isQueued: Bool { queued == true }
     var isQueuedDispatchInFlight: Bool { queued == true && queuedDispatchInFlight == true }
@@ -133,6 +134,7 @@ extension DisplayMessage {
             familiarId: role == .assistant ? familiarId : nil,
             text: turn.text,
             isError: turn.isError ?? false,
+            createdAt: ConversationChapters.sourceDate(turn.createdAt) ?? Date(),
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
             modelControls: turn.modelControls,
@@ -151,7 +153,8 @@ extension DisplayMessage {
             modelOverride: resolvedModel,
             modelOverridesByFamiliar: overridesByFamiliar,
             modelOverrideScope: turn.modelOverrideScope,
-            activity: activity
+            activity: activity,
+            reviewedExcerpt: turn.reviewedExcerpt
         )
     }
 
@@ -197,7 +200,8 @@ extension DisplayMessage {
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
             modelOverrideScope: message.modelOverrideScope,
-            activity: message.activity
+            activity: message.activity,
+            reviewedExcerpt: message.reviewedExcerpt
         )
     }
 }
@@ -277,9 +281,15 @@ final class ChatThread: Identifiable, Hashable {
 
     let id: String
     var title: String
-    var familiarIds: [String]
-    var sessionIds: [String: String]
-    var projectRoot: String?
+    var familiarIds: [String] {
+        didSet { conversationMutationGeneration &+= 1 }
+    }
+    var sessionIds: [String: String] {
+        didSet { conversationMutationGeneration &+= 1 }
+    }
+    var projectRoot: String? {
+        didSet { conversationMutationGeneration &+= 1 }
+    }
     /// Thread-owned so two unsent chats never share a view-local model choice.
     var pendingModelOverride: String?
     /// Structural changes (append/insert/remove/replace — here or from
@@ -287,6 +297,7 @@ final class ChatThread: Identifiable, Hashable {
     /// deltas go through `mutate`, which updates one row in place instead.
     var messages: [DisplayMessage] {
         didSet {
+            conversationMutationGeneration &+= 1
             guard !inPlaceMutation else { return }
             rebuildTranscript()
         }
@@ -295,6 +306,12 @@ final class ChatThread: Identifiable, Hashable {
     /// messages. `ChatView` renders this directly, so separator placement is
     /// computed once per structural change, not once per body evaluation.
     private(set) var transcriptRows: [TranscriptRow] = []
+    private(set) var chapterIndex: ConversationChapterIndex = .needsRefresh
+    @ObservationIgnored private var chapterConversationId: String?
+    @ObservationIgnored private var chapterSourceIds: [String] = []
+    @ObservationIgnored private var displayIdBySourceId: [String: String] = [:]
+    @ObservationIgnored private var conversationMutationGeneration: UInt64 = 0
+    @ObservationIgnored private var conversationReadGeneration: UInt64 = 0
     var updatedAt: Date
     var archived: Bool = false
     var pinned: Bool = false
@@ -1452,6 +1469,39 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    struct ConversationReadTicket {
+        fileprivate let threadId: String
+        fileprivate let requestGeneration: UInt64
+        fileprivate let mutationGeneration: UInt64
+        fileprivate let familiarIds: [String]
+        fileprivate let sessionIds: [String: String]
+        fileprivate let projectRoot: String?
+    }
+
+    /// Shared by initial hydration and refresh. Generations also reject a send
+    /// that finishes, or a source that switches away and back, during the GET.
+    func beginConversationRead() -> ConversationReadTicket {
+        conversationReadGeneration &+= 1
+        return ConversationReadTicket(
+            threadId: id,
+            requestGeneration: conversationReadGeneration,
+            mutationGeneration: conversationMutationGeneration,
+            familiarIds: familiarIds,
+            sessionIds: sessionIds,
+            projectRoot: projectRoot
+        )
+    }
+
+    func canApplyConversationRead(_ read: ConversationReadTicket) -> Bool {
+        read.threadId == id &&
+            read.requestGeneration == conversationReadGeneration &&
+            read.mutationGeneration == conversationMutationGeneration &&
+            read.familiarIds == familiarIds &&
+            read.sessionIds == sessionIds &&
+            read.projectRoot == projectRoot &&
+            !isStreaming && !messages.contains(where: \.isQueued)
+    }
+
     /// Re-fetch this thread's conversation from the server and replace the local
     /// messages — backs pull-to-refresh, so a chat advanced on another device
     /// catches up. A group is N independent sessions with no shared turn
@@ -1463,16 +1513,66 @@ final class ChatThread: Identifiable, Hashable {
     /// failure so the caller (pull to refresh) can surface it instead of
     /// failing silently.
     func reload(client: CaveClient) async throws {
-        guard !isStreaming else { return }
+        guard !isStreaming, !messages.contains(where: \.isQueued) else { return }
         if isGroup {
             try await reloadGroup(client: client)
             return
         }
         guard let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId] else { return }
-        guard let convo = try await client.conversation(sessionId: sessionId) else { return }
-        messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId)
+        let read = beginConversationRead()
+        let conversation = try await client.conversation(sessionId: sessionId)
+        guard canApplyConversationRead(read) else { return }
+        guard let convo = conversation else {
+            chapterIndex = .unavailable
+            throw ConversationRestoreError.invalidSource
+        }
+        try restoreConversation(convo, familiarId: familiarId)
         updatedAt = Date()
+    }
+
+    /// Both first-open and refresh use the exact selected server branch.
+    /// Existing display identity stays local; chapter anchors use source IDs.
+    func restoreConversation(_ conversation: Conversation, familiarId: String) throws {
+        guard !isGroup, sessionIds[familiarId] == conversation.sessionId,
+              conversation.familiarId == nil || conversation.familiarId == familiarId else {
+            chapterIndex = .unavailable
+            throw ConversationRestoreError.invalidSource
+        }
+        let source = conversation.turns.map {
+            ChapterSourceTurn(id: $0.id, parentId: $0.parentId, role: $0.role, createdAt: $0.createdAt)
+        }
+        guard let branch = ConversationChapters.activeBranch(source, activeLeafId: conversation.activeLeafId) else {
+            chapterIndex = .unavailable
+            throw ConversationRestoreError.invalidBranch
+        }
+        let byId = Dictionary(uniqueKeysWithValues: conversation.turns.map { ($0.id, $0) })
+        var restored = DisplayMessage.restoredTranscript(
+            from: branch.compactMap { byId[$0.id] }, familiarId: familiarId
+        )
+        var previousIds: [String: String] = [:]
+        for message in messages {
+            if let sourceId = message.serverTurnId { previousIds[sourceId] = message.id }
+        }
+        for index in restored.indices {
+            if let sourceId = restored[index].serverTurnId, let displayId = previousIds[sourceId] {
+                restored[index].id = displayId
+            }
+        }
+        chapterConversationId = conversation.sessionId
+        chapterSourceIds = branch.map(\.id)
+        messages = restored
+        chapterIndex = ConversationChapters.build(conversationId: conversation.sessionId, activeBranch: branch)
+    }
+
+    enum ConversationRestoreError: Error { case invalidSource, invalidBranch }
+
+    func displayId(for chapter: ConversationChapter) -> String? {
+        guard !isGroup, chapterIndex.status == .complete,
+              chapter.conversationId == chapterConversationId,
+              familiarIds.first.flatMap({ sessionIds[$0] }) == chapter.conversationId,
+              chapterIndex.chapters.contains(where: { $0.id == chapter.id }) else { return nil }
+        return displayIdBySourceId[chapter.firstTurnId]
     }
 
     /// Re-sync a GROUP thread from the server: fetch every session's transcript
@@ -1833,6 +1933,16 @@ final class ChatThread: Identifiable, Hashable {
         }
         transcriptRows = rows
         rowPositionByMessageID = rowPositions
+        displayIdBySourceId.removeAll(keepingCapacity: true)
+        for message in messages {
+            if let sourceId = message.serverTurnId {
+                displayIdBySourceId[sourceId] = message.id
+            }
+        }
+        if messages.compactMap(\.serverTurnId) != chapterSourceIds ||
+            messages.count != chapterSourceIds.count {
+            chapterIndex = .needsRefresh
+        }
     }
 
     @discardableResult

@@ -649,7 +649,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const harnessPrompt = buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
+  /return buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
   "The harness prompt should carry the corrective boundary reminder when the previous turn went out of bounds",
 );
 
@@ -661,7 +661,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /existingConversation[\s\S]*runtimeAccessFingerprint !== runtimeAccessFingerprint[\s\S]*buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  /existingConversation[\s\S]*runtimeAccessFingerprint !== runtimeAccessFingerprint[\s\S]*const runtimeAccessRetry = runtimeAccessRefreshNeeded\s*\? await buildChatRecoveryPrompt\(\)/,
   "A resumed conversation whose live grant set changed should start a fresh sandbox with bounded transcript replay",
 );
 
@@ -733,7 +733,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const retry = buildResumeRetryPrompt\(harnessPrompt, existingConversation\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
+  /const retry = await buildChatRecoveryPrompt\(\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Fresh-session retry should replay recent conversation history so the familiar keeps context",
 );
 

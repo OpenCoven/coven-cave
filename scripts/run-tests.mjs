@@ -39,6 +39,16 @@ export const SUITES = {
     "src/lib/split-snap.test.ts",
     "src/lib/split-geometry.test.ts",
     "src/lib/chat-split.test.ts",
+    "src/lib/chat-continuity-chapters.test.ts",
+    "src/lib/chat-continuity-preferences.test.ts",
+    "src/lib/server/chat-side-conversations.test.ts",
+    "src/lib/cave-conversation-send-reservations.test.ts",
+    "src/app/api/chat/side-conversations/route.test.ts",
+    "src/lib/use-chat-continuity-source.test.tsx",
+    "src/lib/chat-turn-state.test.ts",
+    "src/components/chat-chapter-navigator.test.tsx",
+    "src/components/chat-side-drafts.test.tsx",
+    "src/components/chat-router-continuity.test.tsx",
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
     "src/lib/right-chat-session.test.ts",
@@ -1555,6 +1565,7 @@ export const SUITES = {
     "src/app/api/client/v1/admin/status/route.test.ts",
     "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/lib/server/client-v1/pagination.test.ts",
+    "src/lib/server/client-v1/chapter-reads.test.ts",
     "src/lib/server/client-v1/reads.test.ts",
     "src/lib/server/client-v1/read-guard.test.ts",
     "src/lib/server/client-v1/familiar-reads.test.ts",
@@ -1565,6 +1576,7 @@ export const SUITES = {
     "src/app/api/client/v1/conversations/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/chapters/route.test.ts",
     // Derived from CLIENT_V1_AUTHENTICATED_PATHS: every pre-authorized path
     // must behaviourally refuse an uncredentialed request (cave-cm2i0).
     "src/app/api/client/v1/authenticated-route-refusal.test.ts",
@@ -1696,6 +1708,7 @@ export const SUITES = {
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
     "src/app/api/chat/send/route-body-validation.test.ts",
+    "src/app/api/chat/send/route-side-draft-fence.test.ts",
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/bootstrap/route.test.ts",
@@ -2005,6 +2018,8 @@ export const SUITES = {
     "scripts/ios-message-bubble-equatable.test.mjs",
     "scripts/ios-motion-polish.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
+    "scripts/ios-continuity-chapters.test.mjs",
+    "scripts/ios-continuity-parity.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
@@ -2050,6 +2065,7 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  "scripts/ios-continuity-parity.test.mjs",
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",
   "scripts/release-macos-signing.test.mjs",
@@ -2078,6 +2094,10 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/server/chat-side-conversations.test.ts",
+  "src/lib/cave-conversation-send-reservations.test.ts",
+  "src/app/api/chat/side-conversations/route.test.ts",
+  "src/lib/chat-turn-state.test.ts",
   // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",
@@ -2110,6 +2130,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/familiars/[id]/contract/route.test.ts",
   "src/app/api/client/v1/familiars/[id]/analytics/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/chapters/route.test.ts",
   // The refusal gate imports "@/proxy-helpers" and the client-v1 runtime, and
   // dynamically imports every pre-authorized route module — each of which
   // resolves "@/lib/server/..." as a runtime value.
@@ -2246,6 +2267,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
   "src/app/api/chat/send/route-body-validation.test.ts",
+  "src/app/api/chat/send/route-side-draft-fence.test.ts",
   "src/app/api/x/connection-route-behavior.test.ts",
   "src/app/api/x/publish-route-behavior.test.ts",
   "src/app/api/x/research-routes.test.ts",
@@ -2462,6 +2484,10 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/chat-side-drafts.test.tsx",
+  "src/lib/use-chat-continuity-source.test.tsx",
+  "src/components/chat-chapter-navigator.test.tsx",
+  "src/components/chat-router-continuity.test.tsx",
   // renders the parameterized ApprovalCard through react-test-renderer (JSX)
   "src/components/ui/beautiful/ApprovalCard.test.tsx",
   "src/components/ui/avatar-lightbox.behavior.test.tsx",

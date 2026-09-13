@@ -36,7 +36,8 @@
           "projects.list",
           "conversations.list",
           "conversations.read",
-          "messages.list"
+          "messages.list",
+          "chapters.list"
         ],
         "requestEncoding": "headers-plus-rfc8785-json",
         "requestHeaders": {
@@ -83,6 +84,7 @@
       "projects",
       "conversations",
       "conversation-messages",
+      "conversation-chapters-v1",
       "cursors"
     ],
     "discovery": {
@@ -327,6 +329,19 @@
         "method": "GET",
         "path": "/api/client/v1/conversations/:id/messages",
         "scope": "chat:read"
+      },
+      {
+        "binding": "hpke-bound-v1",
+        "credential": "bearer",
+        "families": [
+          "conversation-chapters-v1",
+          "cursors"
+        ],
+        "id": "chapters.list",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/conversations/:id/chapters",
+        "scope": "chat:read"
       }
     ],
     "pairingRequired": true,
@@ -401,6 +416,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "error": {
@@ -428,7 +444,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ],
       "requestId": "request-example-error"
     },
@@ -449,6 +466,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "data": {
@@ -473,7 +491,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ]
     },
     "identity": {
@@ -493,6 +512,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "data": {
@@ -517,7 +537,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ]
     },
     "pairingExchangeEnvelope": {
@@ -532,6 +553,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "data": {
@@ -567,7 +589,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ]
     },
     "pairingStatusEnvelope": {
@@ -582,6 +605,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "data": {
@@ -606,7 +630,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ]
     },
     "revision": {
@@ -628,6 +653,7 @@
         "projects",
         "conversations",
         "conversation-messages",
+        "conversation-chapters-v1",
         "cursors"
       ],
       "cursor": {
@@ -660,7 +686,8 @@
         "projects.list",
         "conversations.list",
         "conversations.read",
-        "messages.list"
+        "messages.list",
+        "chapters.list"
       ],
       "requestId": "request-example-success",
       "revision": {

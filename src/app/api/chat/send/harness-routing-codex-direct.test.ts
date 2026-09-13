@@ -1,8 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +13,7 @@ import { fileURLToPath } from "node:url";
 // text. A second fixture reporting an unknown future version must keep the
 // whole turn on the generic `coven run codex` path (fixture coven shim) with
 // one codex-compatibility notice.
-const home = await mkdtemp(path.join(homedir(), "cave-codex-direct-"));
+const home = path.join(process.cwd(), `.cave-codex-direct-${process.pid}`);
 const bin = path.join(home, "bin");
 const familiarWorkspace = path.join(home, "familiars", "opal");
 await mkdir(bin, { recursive: true });
@@ -46,7 +45,7 @@ process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 const daemonOnlySessionId = "codex-daemon-only-resume";
 const daemonSocket = process.platform === "win32"
   ? `\\\\.\\pipe\\cave-codex-direct-${process.pid}-${path.basename(home)}`
-  : path.join(home, "coven.sock");
+  : path.relative(process.cwd(), path.join(home, "coven.sock"));
 const daemon = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (req.url === "/api/v1/sessions") {
@@ -128,7 +127,13 @@ async function writeExecutableShim(name, source) {
     return cmd;
   }
   const executable = path.join(bin, name);
-  await writeFile(executable, `#!/usr/bin/env node\n${source}`, { mode: 0o755 });
+  const script = path.join(bin, `${name}-shim.cjs`);
+  await writeFile(script, source);
+  await writeFile(
+    executable,
+    `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`,
+    { mode: 0o755 },
+  );
   return executable;
 }
 
@@ -167,7 +172,19 @@ try {
 
   process.env.COVEN_BIN = covenShim;
   refreshCovenBin();
-  await saveConfig({ familiars: { opal: { harness: "codex" } } });
+  await writeFile(path.join(home, "familiars.toml"), [
+    "[[familiar]]",
+    'id = "opal"',
+    'display_name = "Opal"',
+    `workspace = ${JSON.stringify(familiarWorkspace)}`,
+  ].join("\n"));
+  await writeFile(path.join(familiarWorkspace, "SOUL.md"), "Opal's declared recovery identity.");
+  await writeFile(path.join(familiarWorkspace, "IDENTITY.md"), "Opal is the continuity fixture familiar.");
+  await writeFile(path.join(familiarWorkspace, "MEMORY.md"), "Durable memory must not be added by recovery.");
+  await saveConfig({
+    familiars: { opal: { harness: "codex" } },
+    profile: { name: "Recovery fixture operator" },
+  });
   const project = await createProject({ name: "Codex direct fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
 
@@ -192,7 +209,7 @@ try {
   const directExecCalls = (await loggedCalls(codexLog)).filter((args) => args[0] === "exec");
   assert.ok(
     directExecCalls.length > 0,
-    `the verified CLI must serve this turn directly, not fall back (coven argv: ${JSON.stringify(await loggedCalls(covenLog))})`,
+    `the verified CLI must serve this turn directly, not fall back (coven argv: ${JSON.stringify(await loggedCalls(covenLog))}; errors: ${JSON.stringify(events.filter((event) => event.kind === "error"))})`,
   );
 
   const toolEvents = events.filter((event) => event.kind === "tool_use");
@@ -264,6 +281,7 @@ try {
   assert.equal(execRun.includes("--sandbox"), false, "full access never widens or narrows the sandbox implicitly");
   assert.equal(execRun[execRun.length - 2], "--", "the prompt is positional behind the option terminator");
   assert.match(execRun[execRun.length - 1], /codex direct fixture prompt/, "the user prompt reaches the positional");
+  assert.match(execRun.at(-1), /Opal's declared recovery identity/);
   assert.ok(
     !(await loggedCalls(covenLog)).some((args) => args[0] === "run" && args[1] === "codex"),
     "a verified direct turn never starts `coven run codex`",
@@ -273,6 +291,7 @@ try {
   // resume cannot widen an already-created sandbox reliably, so Cave must
   // launch a fresh native thread with both the new --add-dir and bounded
   // transcript replay. This is the end-to-end regression for cave-jf5o0.
+  await writeFile(path.join(familiarWorkspace, "SOUL.md"), "Opal's updated recovery identity.");
   const newlyGrantedRoot = path.join(home, "newly-granted-project");
   await mkdir(newlyGrantedRoot, { recursive: true });
   const newlyGrantedProject = await createProject({
@@ -318,6 +337,38 @@ try {
     /## Prior conversation[\s\S]*codex direct fixture prompt[\s\S]*continue after approving the extra project/,
     "the fresh sandbox keeps recent thread context while applying the new grants",
   );
+  assert.match(
+    refreshedExec.at(-1),
+    /Opal's updated recovery identity/,
+    "a new native sandbox must reload declared identity even when Cave's conversation id is retained",
+  );
+  assert.match(refreshedExec.at(-1), /Name: Recovery fixture operator/);
+  assert.doesNotMatch(refreshedExec.at(-1), /Opal's declared recovery identity/);
+  assert.doesNotMatch(refreshedExec.at(-1), /Durable memory must not be added/);
+  assert.ok(
+    grantRefreshEvents.some((event) =>
+      event.kind === "progress" && event.id === "familiar-contract" &&
+      event.label.includes("SOUL.md") && event.label.includes("IDENTITY.md")),
+    "the recovery attempt discloses the identity it actually reloaded",
+  );
+  const { events: nativeResumeEvents } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      sessionId: done.sessionId,
+      prompt: "continue on the existing native thread",
+    }),
+  })));
+  const nativeResume = (await loggedCalls(codexLog))
+    .filter((argv) => argv[0] === "exec" && !argv.includes("--help"))
+    .at(-1);
+  assert.ok(nativeResume.includes("resume"), "matching runtime authority still resumes the existing thread");
+  assert.doesNotMatch(nativeResume.at(-1), /Opal's updated recovery identity|Name: Recovery fixture operator|## Prior conversation/);
+  assert.ok(
+    !nativeResumeEvents.some((event) => event.kind === "progress" && event.id === "familiar-contract"),
+    "a normal native resume must not claim it reloaded identity",
+  );
 
   // A submitted daemon session id is resume provenance even before Cave has a
   // local transcript. Materialize the follow-up, but never claim its title.
@@ -333,6 +384,15 @@ try {
       prompt: daemonResumePrompt,
     }),
   })));
+  const reservedIdLaunch = (await loggedCalls(codexLog))
+    .filter((argv) => argv[0] === "exec" && !argv.includes("--help"))
+    .at(-1);
+  assert.equal(reservedIdLaunch.includes("resume"), false);
+  assert.match(
+    reservedIdLaunch.at(-1),
+    /Opal's updated recovery identity/,
+    "a first native launch receives identity even when it already has a stable Cave id",
+  );
   assert.ok(
     !daemonResumeEvents.findLast((event) => event.kind === "done")?.isError,
     `daemon-only resume completes: ${JSON.stringify(daemonResumeEvents)}`,

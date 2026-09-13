@@ -23,6 +23,10 @@ import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { ChatThreadsSheet } from "@/components/chat-threads-sheet";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
+import { CHAT_CONTINUITY_ENABLED_KEY } from "@/lib/chat-continuity-preferences";
+import { useChatContinuitySource } from "@/lib/use-chat-continuity-source";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
 import {
   CHAT_RAIL_TOGGLE_EVENT,
@@ -153,6 +157,26 @@ export function ChatSurface({
   initialScope = "conversation",
   scopeHistoryId = "chat:scope",
 }: Props) {
+  const [continuityEnabled, setContinuityEnabled] = useState(false);
+  const [continuityReady, setContinuityReady] = useState(false);
+  const continuitySource = useChatContinuitySource(continuityEnabled);
+  useEffect(() => {
+    try {
+      setContinuityEnabled(window.localStorage.getItem(CHAT_CONTINUITY_ENABLED_KEY) === "true");
+    } catch {
+      console.warn("Continuity preference storage is unavailable; continuity remains off.");
+    }
+    setContinuityReady(true);
+  }, []);
+  const toggleContinuity = () => {
+    const next = !continuityEnabled;
+    setContinuityEnabled(next);
+    try {
+      window.localStorage.setItem(CHAT_CONTINUITY_ENABLED_KEY, String(next));
+    } catch {
+      console.warn("Continuity preference could not be saved; this choice applies to the current view only.");
+    }
+  };
   // The rail highlights the open thread. ChatRouter reports it upward already;
   // mirror it locally so the rail can render the active row without ChatSurface
   // reaching into the router for state it is handed anyway.
@@ -595,6 +619,16 @@ export function ChatSurface({
             ]}
           />
           <div className="flex shrink-0 items-center gap-1.5">
+            <OverflowMenu ariaLabel="Chat preferences">
+              <PopoverItem
+                checked={continuityEnabled}
+                checkedRole="checkbox"
+                onSelect={toggleContinuity}
+                title="Return to the exact last chat when switching familiars, with UTC date chapters. Chats stay separate."
+              >
+                Familiar continuity
+              </PopoverItem>
+            </OverflowMenu>
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.
@@ -687,6 +721,10 @@ export function ChatSurface({
               <div className="min-h-0 min-w-0 flex-1">
                 <ChatRouter
                   ref={routerRef}
+                  continuityEnabled={continuityEnabled}
+                  continuityReady={continuityReady && (!continuityEnabled || continuitySource.status !== "loading")}
+                  continuitySourceId={continuitySource.id}
+                  continuityExplicitNavigation={Boolean(pendingChatAction || pendingProjectRoot)}
                   familiar={activeFamiliar}
                   familiars={familiars}
                   sessions={sessions}

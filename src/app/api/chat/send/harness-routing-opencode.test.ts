@@ -219,7 +219,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeNativeResumeSupported = openCodeCompatibility\?\.mode === "structured"[\s\S]*?schema\?\.launch\.sessionOption[\s\S]*?const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?!openCodeNativeResumeSupported[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  /const openCodeNativeResumeSupported = openCodeCompatibility\?\.mode === "structured"[\s\S]*?schema\?\.launch\.sessionOption[\s\S]*?const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?!openCodeNativeResumeSupported[\s\S]*?const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility\s*\? await buildChatRecoveryPrompt\(\)/,
   "OpenCode replays Cave context when the selected schema cannot launch a native resume",
 );
 assert.match(

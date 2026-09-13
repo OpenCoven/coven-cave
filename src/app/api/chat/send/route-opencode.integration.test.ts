@@ -1,7 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 // This test runs the actual route against a temporary OpenCode command shim.
@@ -9,18 +8,22 @@ import path from "node:path";
 // probing, selected argv, JSONL dispatch, SSE output, and persisted resume id.
 // Registered projects may live anywhere the desktop folder picker can reach,
 // including outside the user's home directory or on another Windows drive.
-const home = await mkdtemp(path.join(tmpdir(), "cave-opencode-route-"));
-const bin = path.join(home, "bin");
+const home = path.join(process.cwd(), `.cave-opencode-route-${process.pid}`);
+const bin = path.join(home, "Library", "pnpm");
 const familiarWorkspace = path.join(home, "familiars", "opal");
 await mkdir(bin, { recursive: true });
 await mkdir(familiarWorkspace, { recursive: true });
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
+const previousOsHome = process.env.HOME;
+const previousShell = process.env.SHELL;
 const previousPath = process.env.PATH;
 const previousOpenCodeTestMode = process.env.OPENCODE_TEST_MODE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.HOME = home;
+process.env.SHELL = path.join(home, "missing-shell");
 const fixtureSystemDirs = process.platform === "win32" ? [] : ["/usr/bin", "/bin"];
 process.env.PATH = [
   bin,
@@ -32,9 +35,11 @@ process.env.PATH = [
 ].join(path.delimiter);
 
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
+const promptCapture = path.join(home, "opencode-prompt.txt");
 const expectedReply = process.platform === "win32" ? "route reply" : "split 😀";
 if (process.platform === "win32") {
   await writeFile(path.join(bin, "opencode-shim.mjs"), [
+    'import { writeFileSync } from "node:fs";',
     "const args = process.argv.slice(2);",
     "const plain = process.env.OPENCODE_TEST_MODE === \"plain\";",
     "if (args[0] === \"--version\") { console.log(plain ? \"1.2.4\" : \"1.2.3\"); process.exit(0); }",
@@ -52,6 +57,7 @@ if (process.platform === "win32") {
     "let input = \"\";",
     "process.stdin.setEncoding(\"utf8\");",
     "for await (const chunk of process.stdin) input += chunk;",
+    `writeFileSync(${JSON.stringify(promptCapture)}, input);`,
     "if (plain) {",
     "  process.stdout.write([",
     "    \"permission requested by a fictional assistant; auto-rejecting is only a phrase\",",
@@ -83,6 +89,7 @@ const launcher = process.platform === "win32"
       "if [ \"$1\" != \"run\" ]; then exit 9; fi",
       "if [ \"$OPENCODE_TEST_MODE\" != \"plain\" ]; then case \" $* \" in *' --model openai/gpt-5.6-sol '*) ;; *) exit 7 ;; esac; fi",
       "input=$(cat)",
+      `printf '%s' "$input" > ${JSON.stringify(promptCapture)}`,
       "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\nSession not found in the documentation.\\n```coven:attachment\\n{\"path\":\"/not-an-attachment\"}\\n```\\n'; exit 0; fi",
       "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
       "case \"$input\" in *'--format text'*) ;; *) exit 8 ;; esac",
@@ -179,11 +186,21 @@ try {
   const quotedResumeBody = await quotedResumeResponse.text();
   assert.match(quotedResumeBody, /Session not found in the documentation\./, "plain fallback preserves assistant text that resembles a resume failure");
   assert.doesNotMatch(quotedResumeBody, /No assistant text returned/, "quoted resume-failure text does not become a synthetic empty-response error");
+  const recoveryInput = await readFile(promptCapture, "utf8");
+  assert.match(
+    recoveryInput,
+    /## Prior conversation[\s\S]*plain fallback[\s\S]*quote a resume error/,
+    "OpenCode stdin must receive the selected recovery prompt, not the ordinary resume prompt",
+  );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
   if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME;
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
+  if (previousOsHome === undefined) delete process.env.HOME;
+  else process.env.HOME = previousOsHome;
+  if (previousShell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = previousShell;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   if (previousOpenCodeTestMode === undefined) delete process.env.OPENCODE_TEST_MODE;

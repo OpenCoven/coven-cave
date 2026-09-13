@@ -170,6 +170,19 @@ struct ChatTurnResponseMetadata: Codable, Hashable {
     var rejectedControlFamilies: [String]?
 }
 
+struct ReviewedSideExcerpt: Codable, Hashable {
+    var schemaVersion: Int
+    var kind: String
+    var sourceSessionId: String
+    var sourceRevision: String
+    var sourceTurnIds: [String]
+    var sourceDigest: String
+    var reviewedDigest: String
+    var edited: Bool
+    var operationId: String
+    var inert: Bool
+}
+
 /// One message turn within a conversation.
 struct ChatTurn: Identifiable, Codable, Hashable {
     let id: String
@@ -194,6 +207,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     /// Conversation-tree parent. The reply for an interrupted delivery is
     /// adopted only when this points at the exact run-owned user turn.
     var parentId: String?
+    var reviewedExcerpt: ReviewedSideExcerpt?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
@@ -201,7 +215,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
         case isError
         case usage
         case reasoningEffort, responseSpeed, modelControls, modelOverride, modelOverrideScope, responseMetadata
-        case attentionClearOperationId, parentId
+        case attentionClearOperationId, parentId, reviewedExcerpt
     }
 }
 
@@ -214,6 +228,7 @@ struct Conversation: Codable {
     var createdAt: String?
     var updatedAt: String?
     var turns: [ChatTurn]
+    var activeLeafId: String?
 }
 
 struct ConversationResponse: Codable {

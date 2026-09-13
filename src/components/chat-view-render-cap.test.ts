@@ -2,7 +2,7 @@
 // Transcript render cap (perf): while the reader is pinned to the newest
 // content, only the last TRANSCRIPT_RENDER_CAP grouped turns mount, so opening a
 // long transcript doesn't build hundreds of DOM nodes up front. The cap must
-// dissolve the instant the reader leaves the bottom or opens find, so seeking
+// dissolve in legacy mode when the reader leaves the bottom or opens find, so seeking
 // and find are never limited by it. These source-text assertions guard that
 // wiring (the behavior is exercised live; this catches accidental removal).
 import assert from "node:assert/strict";
@@ -17,8 +17,8 @@ assert.match(src, /const TRANSCRIPT_RENDER_CAP = \d+;/, "a numeric render cap co
 // is what runs whenever the fold is open or absent.
 assert.match(
   src,
-  /const renderGroups = folded\s*\n\s*\? groupedTurns\.slice\(fold\.startIndex\)/,
-  "a closed fold mounts its tail instead of the capped tail",
+  /const renderGroups = bounded \? groupedTurns : folded\s*\n\s*\? groupedTurns\.slice\(fold\.startIndex\)/,
+  "bounded source groups bypass legacy folding; default-off keeps the original tail",
 );
 assert.match(
   src,
@@ -63,9 +63,12 @@ assert.match(
 // row it looks for was never rendered.
 assert.match(
   src,
-  /if \(findOpen\) \{\s*\n\s*setHistoryExpanded\(true\);\s*\n\s*setFoldOpen\(true\);/,
-  "opening find mounts the whole transcript so jumps resolve via data-turn-id",
+  /if \(findOpen && !continuityEnabled\) \{\s*\n\s*setHistoryExpanded\(true\);\s*\n\s*setFoldOpen\(true\);/,
+  "legacy find expands; continuity find keeps the bounded mount",
 );
+assert.match(src, /activePath\.slice\(continuityWindow\.start, continuityWindow\.end\)/, "continuity slices source turns before grouping");
+assert.match(src, /groupTranscriptTurns\(mountedTurns\)/, "voice grouping cannot widen the source mount");
+assert.match(src, /gap <= 4 && !continuityWindowStateRef\.current\.pinned/, "historical window bottom is not the live tail");
 
 // Switching sessions resets the cap so a long previous transcript is released.
 assert.match(

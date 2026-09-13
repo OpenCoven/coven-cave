@@ -48,6 +48,7 @@ export const REVIEWED_CLIENT_V1_CAPABILITIES = Object.freeze([
   "projects",
   "conversations",
   "conversation-messages",
+  "conversation-chapters-v1",
   "cursors",
 ]);
 
@@ -68,6 +69,7 @@ export const REVIEWED_CLIENT_V1_OPERATIONS = Object.freeze([
   "conversations.list",
   "conversations.read",
   "messages.list",
+  "chapters.list",
 ]);
 
 export const REVIEWED_CLIENT_V1_HPKE_BOUND_OPERATIONS = Object.freeze([
@@ -80,6 +82,7 @@ export const REVIEWED_CLIENT_V1_HPKE_BOUND_OPERATIONS = Object.freeze([
   "conversations.list",
   "conversations.read",
   "messages.list",
+  "chapters.list",
 ]);
 
 export const REVIEWED_CLIENT_V1_AUTHORITY_MODES = Object.freeze([

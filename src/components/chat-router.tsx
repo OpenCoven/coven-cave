@@ -52,15 +52,20 @@ import {
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
+import { readContinuityReference, resolveContinuityReturn } from "@/lib/chat-continuity-preferences";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin; continuityReturn?: boolean };
 
 type Props = {
+  continuityEnabled?: boolean;
+  continuityReady?: boolean;
+  continuitySourceId?: string | null;
+  continuityExplicitNavigation?: boolean;
   familiar: Familiar | null;
   familiars?: Familiar[];
   sessions: SessionRow[];
@@ -157,6 +162,10 @@ function selectionForProjectRoot(
 
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
   {
+    continuityEnabled = false,
+    continuityReady = true,
+    continuitySourceId = null,
+    continuityExplicitNavigation = false,
     familiar,
     familiars = [],
     sessions,
@@ -556,6 +565,21 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     // compose — mirrors the condition inside the setView updater below.
     const currentView = viewRef.current;
     if (
+      continuityEnabled && !continuityExplicitNavigation && nextFamiliarId &&
+      !(currentView.kind === "chat" && currentView.familiarId === nextFamiliarId)
+    ) {
+      const sourceId = continuitySourceId ?? "";
+      const target = resolveContinuityReturn(
+        readContinuityReference(sourceId, nextFamiliarId),
+        sourceId, nextFamiliarId, sessions, Boolean(sessionsError),
+      );
+      advanceComposeInstance();
+      setView(target
+        ? { kind: "chat", sessionId: target, familiarId: nextFamiliarId, continuityReturn: true }
+        : { kind: "list" });
+      return;
+    }
+    if (
       nextFamiliarId !== null &&
       currentView.kind === "chat" &&
       currentView.familiarId !== nextFamiliarId
@@ -584,7 +608,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               }
         : { kind: "list" },
     );
-  }, [advanceComposeInstance, familiar?.id]);
+  }, [advanceComposeInstance, familiar?.id, continuityEnabled, continuitySourceId, continuityExplicitNavigation, sessions, sessionsError]);
 
   // ── Chat-first IA (cave-hsa6): boot into a fresh compose view ──────────────
   // Booting into chat mode should read like ChatGPT — an empty conversation with
@@ -600,9 +624,24 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const bootComposeRef = useRef(false);
   useEffect(() => {
     if (bootComposeRef.current) return;
+    if (!continuityReady) return;
     if (typeof window !== "undefined") {
       if (window.location.hash.startsWith("#chat-")) {
         bootComposeRef.current = true; // a deep link owns the boot view
+        return;
+      }
+      if (continuityEnabled && familiar?.id) {
+        if (sessionsLoaded === false) return;
+        bootComposeRef.current = true;
+        const sourceId = continuitySourceId ?? "";
+        const target = resolveContinuityReturn(
+          readContinuityReference(sourceId, familiar.id),
+          sourceId, familiar.id, sessions,
+          continuityExplicitNavigation || Boolean(sessionsError),
+        );
+        if (target) setView((prev) => prev.kind === "list"
+          ? { kind: "chat", sessionId: target, familiarId: familiar.id, continuityReturn: true }
+          : prev);
         return;
       }
       // Compose-first boot is a desktop affordance. On mobile the thread list is
@@ -628,7 +667,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         ? { kind: "chat", sessionId: null, familiarId: familiar?.id ?? null }
         : prev,
     );
-  }, [familiar?.id, visibleFamiliars.length]);
+  }, [familiar?.id, visibleFamiliars.length, continuityReady, continuityEnabled, continuitySourceId, continuityExplicitNavigation, sessionsLoaded, sessionsError, sessions]);
 
   useImperativeHandle(
     ref,
@@ -828,6 +867,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <FamiliarChatoutCodexSurface />
   ) : (
     <ChatView
+      continuityEnabled={continuityEnabled}
+      continuitySourceId={continuitySourceId}
+      continuityRestoreAnchor={view.continuityReturn}
       composerDraftKey={composerDraftKey}
       key={`chat-compose-${composerDraftKey}-${composeInstance}`}
       ref={viewHandle}

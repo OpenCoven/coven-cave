@@ -106,6 +106,9 @@ struct MessageBubble: View {
     /// Assistant prose and native presentation metadata, with protocol controls
     /// removed before rendering, copying, forwarding, or quoting.
     private var parsed: AssistantResponseProjection {
+        if message.reviewedExcerpt != nil {
+            return AssistantResponseProjection(visible: message.text, suggestions: [], previewURLs: [])
+        }
         if message.role != .assistant {
             return AssistantResponseProjection(
                 visible: message.text,
@@ -121,7 +124,7 @@ struct MessageBubble: View {
     /// *user* message only renders markdown when it actually contains some, so
     /// plain chatter stays fast native Text. Error messages stay native Text.
     private func rendersMarkdown(_ projection: AssistantResponseProjection) -> Bool {
-        guard !message.isError, !projection.visible.isEmpty, !markdownFailed else { return false }
+        guard message.reviewedExcerpt == nil, !message.isError, !projection.visible.isEmpty, !markdownFailed else { return false }
         if isUser { return MarkdownDetect.hasMarkdown(message.text) }
         return true
     }
@@ -475,7 +478,20 @@ struct MessageBubble: View {
     }
 
     @ViewBuilder private func bubble(_ projection: AssistantResponseProjection) -> some View {
-        if message.text.isEmpty && message.streaming {
+        if let excerpt = message.reviewedExcerpt {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Reviewed excerpt from a retained side draft")
+                    .font(.caption)
+                Text(verbatim: message.text)
+                    .textSelection(.enabled)
+                Text(verbatim: excerpt.sourceSessionId)
+                    .font(.caption2.monospaced())
+                    .textSelection(.enabled)
+            }
+            .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(bubbleBackground, in: bubbleShape)
+        } else if message.text.isEmpty && message.streaming {
             VStack(alignment: .leading, spacing: 8) {
                 TypingIndicator()
                     .padding(.horizontal, 14).padding(.vertical, 11)

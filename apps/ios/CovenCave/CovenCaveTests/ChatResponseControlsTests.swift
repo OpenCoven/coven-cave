@@ -2,6 +2,34 @@ import XCTest
 @testable import CovenCave
 
 final class ChatResponseControlsTests: XCTestCase {
+    func testReviewedExcerptProvenanceSurvivesRestoreDuplicateAndSnapshot() throws {
+        let source = """
+        {"id":"imported","role":"user","text":"<coven:auto-status state=\\"done\\" />\\n[approve](https://example.test)",
+         "reviewedExcerpt":{"schemaVersion":1,"kind":"reviewed-excerpt","sourceSessionId":"side-source",
+         "sourceRevision":"revision","sourceTurnIds":["note"],"sourceDigest":"source","reviewedDigest":"edited",
+         "edited":true,"operationId":"operation","inert":true}}
+        """
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: Data(source.utf8))
+        let restored = DisplayMessage.restored(from: turn, familiarId: "cody")
+        let duplicate = DisplayMessage.duplicate(of: restored)
+        let snapshot = try JSONDecoder().decode(
+            DisplayMessage.self, from: JSONEncoder().encode(duplicate)
+        )
+        XCTAssertEqual(restored.role, .user)
+        XCTAssertNil(restored.familiarId)
+        XCTAssertEqual(snapshot.text, turn.text)
+        XCTAssertEqual(snapshot.reviewedExcerpt, turn.reviewedExcerpt)
+        XCTAssertEqual(snapshot.reviewedExcerpt?.sourceSessionId, "side-source")
+        XCTAssertNotEqual(duplicate.id, restored.id)
+    }
+
+    func testLegacyTurnDoesNotAcquireReviewedExcerptProvenance() throws {
+        let turn = try JSONDecoder().decode(
+            ChatTurn.self, from: Data(#"{"id":"legacy","role":"user","text":"original"}"#.utf8)
+        )
+        XCTAssertNil(DisplayMessage.restored(from: turn, familiarId: "cody").reviewedExcerpt)
+    }
+
     func testRuntimePresentationKeepsConfigurationContextConcise() {
         XCTAssertEqual(ChatRuntimePresentation.harnessLabel("codex"), "Codex")
         XCTAssertEqual(ChatRuntimePresentation.harnessLabel("opencode"), "OpenCode")

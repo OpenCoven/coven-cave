@@ -48,6 +48,25 @@ function waitForLine(child: ChildProcessWithoutNullStreams, expected: string): P
   });
 }
 
+test("process identity verification does not depend on the harness PATH", async () => {
+  const previousPath = process.env.PATH;
+  const previousPathCase = process.env.Path;
+  process.env.PATH = "";
+  if (process.platform === "win32") delete process.env.Path;
+  try {
+    const release = await acquireProcessIntentLock({
+      intentsDirectory: path.join(temporary, "restricted-path"),
+      label: "restricted-path",
+    });
+    await release();
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousPathCase === undefined) delete process.env.Path;
+    else process.env.Path = previousPathCase;
+  }
+});
+
 test("an arbitrarily old live-owner intent is never reclaimed", async () => {
   const intentsDirectory = path.join(temporary, "live-owner");
   const releaseLiveOwner = await acquireProcessIntentLock({

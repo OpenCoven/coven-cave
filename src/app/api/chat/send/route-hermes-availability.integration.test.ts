@@ -1,14 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { copyFile, link, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { copyFile, link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 // Hermes-specific launch coverage for #3860. The resolver must stop an absent
 // direct CLI before any model command starts, then the post-preflight fallback
 // must still suppress fabricated assistant/auth copy if the file disappears or
 // fails when spawn reaches it.
-const home = await mkdtemp(path.join(homedir(), "cave-hermes-availability-"));
+const home = path.join(process.cwd(), `.cave-hermes-availability-${process.pid}`);
 const familiarWorkspace = path.join(home, "familiars", "ember");
 const bin = path.join(familiarWorkspace, "bin");
 await mkdir(familiarWorkspace, { recursive: true });
@@ -89,7 +88,18 @@ try {
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
-  await saveConfig({ familiars: { ember: { harness: "hermes" } } });
+  await writeFile(path.join(home, "familiars.toml"), [
+    "[[familiar]]",
+    'id = "ember"',
+    'display_name = "Ember"',
+    `workspace = ${JSON.stringify(familiarWorkspace)}`,
+  ].join("\n"));
+  await writeFile(path.join(familiarWorkspace, "SOUL.md"), "Ember's declared recovery identity.");
+  await writeFile(path.join(familiarWorkspace, "IDENTITY.md"), "Ember is the Hermes fixture familiar.");
+  await saveConfig({
+    familiars: { ember: { harness: "hermes" } },
+    profile: { name: "Recovery fixture operator" },
+  });
   const project = await createProject({ name: "Hermes availability fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "ember", projectId: project.id, source: "human", access: "write" });
 
@@ -178,8 +188,14 @@ try {
   // nor become a terminal runtime-process failure that blocks the retry's
   // successful response from being persisted.
   {
+    const promptCapture = path.join(home, "hermes-recovery-prompt.txt");
     await installHermesFixture(
       [
+        "previous=",
+        'for arg in "$@"; do',
+        `  if [ "$previous" = "--query" ]; then printf '%s' "$arg" > ${JSON.stringify(promptCapture)}; fi`,
+        '  previous="$arg"',
+        "done",
         'case " $* " in',
         '  *" --resume "*)',
         "    printf '%s\\n' 'stale Hermes output'",
@@ -190,7 +206,8 @@ try {
         "printf '%s\\n' 'fresh Hermes response'",
       ].join("\n"),
       [
-        'const { writeSync } = require("node:fs");',
+        'const { writeFileSync, writeSync } = require("node:fs");',
+        `writeFileSync(${JSON.stringify(promptCapture)}, process.argv[process.argv.indexOf("--query") + 1]);`,
         'if (process.argv.includes("--resume")) {',
         '  writeSync(1, "stale Hermes output\\n");',
         '  writeSync(2, "session_id: stale-hermes-session\\nSession not found\\n");',
@@ -226,6 +243,14 @@ try {
       conversation?.turns.at(-1)?.text.trim(),
       "fresh Hermes response",
       "the successful fresh retry persists instead of being suppressed by the stale attempt",
+    );
+    const recoveryPrompt = await readFile(promptCapture, "utf8");
+    assert.match(recoveryPrompt, /Ember's declared recovery identity/);
+    assert.match(recoveryPrompt, /Name: Recovery fixture operator/);
+    assert.ok(
+      events.some((event) => event.kind === "progress" &&
+        event.id === "familiar-contract" && event.label.includes("SOUL.md")),
+      "a late resume failure discloses the reloaded identity on its replacement attempt",
     );
   }
 

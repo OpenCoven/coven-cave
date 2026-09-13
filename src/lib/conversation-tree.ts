@@ -58,7 +58,25 @@ export function resolveActivePath<T extends TreeTurn>(turns: T[], activeLeafId: 
   // No full re-sort: user/assistant pairs share a createdAt stamp, so sorting
   // the chain itself would tie-break on random ids and could swap them.
   const at = (x: T) => (x.createdAt ? Date.parse(x.createdAt) : 0);
-  for (const sys of byCreatedAt(orphanSystems)) {
+  const orderedSystems = byCreatedAt(orphanSystems);
+  if (orderedSystems.every((sys) => Number.isFinite(at(sys)))) {
+    // Sorted echoes can only move the insertion point forward, even when
+    // chain clocks reverse. Weave once instead of rescanning and splicing.
+    const woven: T[] = [];
+    let position = 0;
+    for (const sys of orderedSystems) {
+      const timestamp = at(sys);
+      while (position < chain.length && !(at(chain[position]) > timestamp)) {
+        woven.push(chain[position++]);
+      }
+      woven.push(sys);
+    }
+    while (position < chain.length) woven.push(chain[position++]);
+    return woven;
+  }
+  // NaN comparisons do not establish sorted echo order. Preserve legacy
+  // rendering for malformed dates; chapter validation rejects those dates.
+  for (const sys of orderedSystems) {
     let idx = chain.length;
     for (let i = 0; i < chain.length; i++) {
       if (at(chain[i]) > at(sys)) {

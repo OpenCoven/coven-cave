@@ -289,6 +289,16 @@ export const CLIENT_V1_OPERATION_DEFINITIONS: readonly ClientV1OperationDefiniti
       binding: "hpke-bound-v1",
       families: ["conversation-messages", "cursors"],
     }),
+    freezeDefinition({
+      id: "chapters.list",
+      method: "GET",
+      path: "/api/client/v1/conversations/:id/chapters",
+      ingress: "authenticated",
+      scope: "chat:read",
+      credential: "bearer",
+      binding: "hpke-bound-v1",
+      families: ["conversation-chapters-v1", "cursors"],
+    }),
   ]);
 
 /**
@@ -308,6 +318,7 @@ const CLIENT_V1_CAPABILITY_FAMILY_ORDER: readonly ClientV1Capability[] = Object.
   "projects",
   "conversations",
   "conversation-messages",
+  "conversation-chapters-v1",
   "cursors",
 ]);
 

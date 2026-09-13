@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { clientV1InstanceId } from "@/lib/server/client-v1/instance-id";
 import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
+  conversationDeletionFence,
   deleteConversation,
   loadConversation,
   loadConversationCached,
@@ -485,6 +487,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+  // A fenced deletion must not fall through to native JSONL rehydration.
+  if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
+  const sourceHeaders = { "x-cave-instance-id": encodeURIComponent(JSON.stringify(clientV1InstanceId())) };
 
   // Primary: cave-conversations JSON (written by chat/send for UI-originated chats)
   //
@@ -499,11 +504,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const conv = await loadConversationCached(id);
   if (conv) {
     const context = await linkedContextForSession(id);
+    if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
     return NextResponse.json({
       ok: true,
       conversation: sanitizeConversationMetadata(conv),
       context,
-    });
+    }, { headers: sourceHeaders });
   }
 
   // Fallback: read the openclaw .jsonl transcript for sessions that were started
@@ -515,19 +521,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const jsonlConv = await loadConversationFromJsonl(id, familiarId);
     if (jsonlConv) {
       const context = await linkedContextForSession(id);
+      if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
       return NextResponse.json({
         ok: true,
         conversation: sanitizeConversationMetadata(jsonlConv),
         context,
-      });
+      }, { headers: sourceHeaders });
     }
   }
 
   // No transcript yet — but if a board card claims this session, surface
   // the task affiliation so the chat header can show the Task pill on first open.
   const context = await linkedContextForSession(id);
+  if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
   if (context) {
-    return NextResponse.json({ ok: true, conversation: null, context });
+    return NextResponse.json({ ok: true, conversation: null, context }, { headers: sourceHeaders });
   }
 
   return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
@@ -538,6 +546,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+  if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
   const body = await readBody(req);
   if (!body) return jsonError("invalid json body", 400);
   if (body.sessionId && body.sessionId !== id) {
@@ -573,6 +582,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+  if (await conversationDeletionFence(id)) return jsonError("conversation_deleted", 410);
   const body = await readBody(req);
   if (!body) return jsonError("invalid json body", 400);
   if (body.sessionId && body.sessionId !== id) {
@@ -686,18 +696,20 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // delete leaves nothing to hide since local session rows derive from the
   // conversation files themselves.
   if (new URL(req.url).searchParams.get("ifEmpty") === "1") {
-    const existing = await loadConversation(id);
-    if (!existing || existing.turns.length > 0) {
-      return NextResponse.json({ ok: true, deleted: false });
-    }
-    const deleted = await deleteConversation(id);
-    return NextResponse.json({ ok: true, deleted });
+    return withConversationLock(id, async () => {
+      const existing = await loadConversation(id);
+      if (!existing || existing.turns.length > 0) {
+        return NextResponse.json({ ok: true, deleted: false });
+      }
+      const deleted = await deleteConversation(id);
+      return NextResponse.json({ ok: true, deleted });
+    });
   }
 
   // Default: an explicit user-initiated delete. Sacrifice keeps a
   // recreated-later file (e.g. a stale client retrying) from resurrecting a
   // session the user deliberately removed — other callers depend on this.
-  const deleted = await deleteConversation(id);
+  const deleted = await deleteConversation(id, { permanent: true });
   const sacrificedAt = await sacrificeSessionLocal(id);
   const unlinkedCards = await unlinkSessionFromCards(id);
   return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });

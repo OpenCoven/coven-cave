@@ -13,10 +13,11 @@
 
 import { markEnd, markStart } from "./perf/marks.ts";
 
-/** Shape callers care about; the payload is stored as parsed JSON verbatim. */
+/** Response envelope plus a producer stamp from the HTTP response, not its body. */
 export type CachedConversationPayload = {
   ok?: boolean;
   conversation?: unknown;
+  sourceStamp?: string;
 };
 
 /**
@@ -150,6 +151,9 @@ export function loadConversation(
           res.status,
         );
       }
+      delete json.sourceStamp;
+      const sourceStamp = res.headers?.get("x-cave-instance-id");
+      if (sourceStamp) json.sourceStamp = sourceStamp;
       if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
       return json;
     } finally {

@@ -1,0 +1,150 @@
+{
+  "contract": "cave.familiar-continuity-v1",
+  "algorithm": "utc-day-v1",
+  "scope": "Exact conversation; turns are already in resolved active-branch order",
+  "cases": [
+    {
+      "id": "empty",
+      "conversationId": "conversation-a",
+      "turns": [],
+      "expected": []
+    },
+    {
+      "id": "same-utc-day",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T00:00:00.000Z"},
+        {"id": "turn-2", "createdAt": "2026-09-08T23:59:59.999Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "2026-09-08", "firstTurnId": "turn-1", "lastTurnId": "turn-2", "turnCount": 2}
+      ]
+    },
+    {
+      "id": "utc-midnight",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T23:59:59.999Z"},
+        {"id": "turn-2", "createdAt": "2026-09-09T00:00:00.000Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "2026-09-08", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1},
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-2\"]", "date": "2026-09-09", "firstTurnId": "turn-2", "lastTurnId": "turn-2", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "same-day-clock-reversal-preserves-order",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-z", "createdAt": "2026-09-08T18:00:00.000Z"},
+        {"id": "turn-a", "createdAt": "2026-09-08T06:00:00.000Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-z\"]", "date": "2026-09-08", "firstTurnId": "turn-z", "lastTurnId": "turn-a", "turnCount": 2}
+      ]
+    },
+    {
+      "id": "returning-day-is-a-new-run",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T09:00:00.000Z"},
+        {"id": "turn-2", "createdAt": "2026-09-09T09:00:00.000Z"},
+        {"id": "turn-3", "createdAt": "2026-09-08T10:00:00.000Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "2026-09-08", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1},
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-2\"]", "date": "2026-09-09", "firstTurnId": "turn-2", "lastTurnId": "turn-2", "turnCount": 1},
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-3\"]", "date": "2026-09-08", "firstTurnId": "turn-3", "lastTurnId": "turn-3", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "different-conversation-does-not-alias",
+      "conversationId": "conversation-b",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T00:00:00.000Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-b\",\"turn-1\"]", "date": "2026-09-08", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "valid-leap-day",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2028-02-29T23:59:59.999Z"},
+        {"id": "turn-2", "createdAt": "2028-03-01T00:00:00.000Z"}
+      ],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "2028-02-29", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1},
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-2\"]", "date": "2028-03-01", "firstTurnId": "turn-2", "lastTurnId": "turn-2", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "astronomical-year-zero",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "0000-02-29T12:00:00.000Z"}],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "0000-02-29", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "year-below-one-hundred",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "0099-01-01T00:00:00Z"}],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "0099-01-01", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "proleptic-gregorian-cutover-day",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "1582-10-10T00:00:00Z"}],
+      "expected": [
+        {"id": "[\"utc-day-v1\",\"conversation-a\",\"turn-1\"]", "date": "1582-10-10", "firstTurnId": "turn-1", "lastTurnId": "turn-1", "turnCount": 1}
+      ]
+    },
+    {
+      "id": "proleptic-gregorian-non-leap-century",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "1500-02-29T00:00:00Z"}],
+      "expectedError": "invalid-timestamp"
+    },
+    {
+      "id": "impossible-date",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "2026-02-29T12:00:00.000Z"}],
+      "expectedError": "invalid-timestamp"
+    },
+    {
+      "id": "non-utc-offset",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "2026-09-08T12:00:00.000+01:00"}],
+      "expectedError": "invalid-timestamp"
+    },
+    {
+      "id": "timezone-missing",
+      "conversationId": "conversation-a",
+      "turns": [{"id": "turn-1", "createdAt": "2026-09-08T12:00:00.000"}],
+      "expectedError": "invalid-timestamp"
+    },
+    {
+      "id": "duplicate-id",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T00:00:00.000Z"},
+        {"id": "turn-1", "createdAt": "2026-09-09T00:00:00.000Z"}
+      ],
+      "expectedError": "duplicate-turn-id"
+    },
+    {
+      "id": "invalid-middle-row-does-not-disappear",
+      "conversationId": "conversation-a",
+      "turns": [
+        {"id": "turn-1", "createdAt": "2026-09-08T00:00:00.000Z"},
+        {"id": "turn-2", "createdAt": "not-a-date"},
+        {"id": "turn-3", "createdAt": "2026-09-09T00:00:00.000Z"}
+      ],
+      "expectedError": "invalid-timestamp"
+    }
+  ]
+}

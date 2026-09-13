@@ -374,7 +374,7 @@ objects.
 The `hpke-bound-v1` protected operation list is exactly `pairing.poll`,
 `pairing.exchange`, `familiars.list`, `familiars.contract.read`,
 `familiars.analytics.read`, `projects.list`, `conversations.list`,
-`conversations.read`, and `messages.list`.
+`conversations.read`, `messages.list`, and `chapters.list`.
 `health.read` and `pairing.create` carry no credential and remain unbound.
 
 The five administrator operations — `pairing.admin.list`,
@@ -405,14 +405,15 @@ one shape, so a client parses once:
   "capabilities": [
     "health", "pairing", "credentials", "familiars",
     "familiar-contract", "familiar-analytics", "projects",
-    "conversations", "conversation-messages", "cursors"
+    "conversations", "conversation-messages", "conversation-chapters-v1", "cursors"
   ],
   "operations": [
     "health.read", "pairing.create", "pairing.poll", "pairing.exchange",
     "pairing.admin.list", "pairing.admin.decide",
     "credentials.admin.list", "credentials.admin.revoke", "status.admin.read",
     "familiars.list", "familiars.contract.read", "familiars.analytics.read",
-    "projects.list", "conversations.list", "conversations.read", "messages.list"
+    "projects.list", "conversations.list", "conversations.read", "messages.list",
+    "chapters.list"
   ],
   "data": { }
 }
@@ -502,6 +503,7 @@ contract fixture, which carries the same records — rather than by probing path
 | `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations`, `cursors` |
 | `conversations.read` | `GET /api/client/v1/conversations/:id` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversations` |
 | `messages.list` | `GET /api/client/v1/conversations/:id/messages` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversation-messages`, `cursors` |
+| `chapters.list` | `GET /api/client/v1/conversations/:id/chapters` | authenticated | `bearer` | `hpke-bound-v1` | `chat:read` | `conversation-chapters-v1`, `cursors` |
 
 #### Three authority classes, and why the id tells you which
 
@@ -1015,15 +1017,16 @@ ten and lock out both.
 
 ## Canonical read routes
 
-The six resource families the inventory advertises to a paired bearer —
+The seven resource families the inventory advertises to a paired bearer are
 `"familiars"`, `"familiar-contract"`, `"familiar-analytics"`, `"projects"`,
-`"conversations"`, `"conversation-messages"` — four of them served as paged
+`"conversations"`, `"conversation-messages"`, and `"conversation-chapters-v1"`.
+Five of them are served as paged
 reads over `"cursors"` and two as single records per familiar. Every one of
 them is a `GET`, requires the `chat:read` scope, and projects a store the Cave
 itself reads, so a paired client and the desktop never disagree about what
 exists.
 
-Seven operations, not six: `conversations.list` and `conversations.read` are
+Eight operations, not seven: `conversations.list` and `conversations.read` are
 separately invokable and share the `conversations` family, which is why the
 `operations` list is the one to branch on. The two familiar detail reads carry
 families of their own — `familiar-contract`, `familiar-analytics` — rather than
@@ -1387,7 +1390,56 @@ the ledger is built and do not exist in the stored file, so serving this from
 the file would answer the same question two different ways depending on which
 route you asked.
 
+### `GET /api/client/v1/conversations/:id/chapters`
+
+Read chapter headers without downloading transcript bodies. Require
+`chapters.list` and `conversation-chapters-v1` before offering the full index.
+Use the same HPKE-bound `chat:read` credential as the message read.
+
+Send `limit` (1–100, default 50) and optionally `cursor`. The response's `data`
+contains `conversationId`, `rule: "utc-day-v1"`, `sourceRevision`,
+`contextStatus: "context-unverified"`, `status`, and `chapters`. Each chapter
+contains `id`, `conversationId`, `day`, `firstTurnId`, `lastTurnId`, and
+`turnCount`. It contains no message text, reasoning, or tool arguments.
+
+`status: "complete"` means the producer indexed the whole resolved active
+branch, not that this page contains every chapter or that transcript bodies are
+loaded. `cursor.hasMore` describes the remaining header pages. A loaded-history
+client fallback must identify itself as partial, not as a complete producer
+index. Missing metadata remains unavailable rather than a fabricated empty
+transcript.
+
+The rule groups consecutive UTC-day runs in active-branch order, not sorted
+timestamp order. Only valid UTC timestamps ending in `Z`, with seconds or exactly
+three fractional digits, are indexable. The ID
+is `JSON.stringify(["utc-day-v1", conversationId, firstTurnId])`, so appending
+to a day never renames its anchor. Broken or missing metadata yields
+`status: "unavailable"` with no index, not proof of an empty transcript.
+
+Follow the envelope's bounded `cursor.next` only while `hasMore` is true.
+Cursors bind the exact conversation, source/branch revision, authenticated
+credential, and server process. Edits, deletions, branch switches, a different
+credential, and server restarts require a fresh first page
+(`reconcile_required`). Never merge pages across source revisions.
+
+Each request loads one existing conversation JSON and hashes that record once
+for `sourceRevision`, including its content and branch metadata. The page cap
+bounds the response, not the conversation load or digest size. Do not fetch
+messages once per chapter to construct a navigator. Native p95 qualification
+for 100,000 turns and 1,000 chapters is separate from source work-count tests.
+
+This is an exact-conversation projection. A legacy record does not prove a
+shared audience, project, or root. Matching `familiarId` values do not authorize
+cross-conversation aggregation. These local credentials still mean the same
+user on the same machine, not a general project ACL.
+
+The source capability is an additive DEVELOPMENT candidate. It does not
+qualify or replace any frozen SDK artifact or conformance lock.
+
 ### `GET /api/client/v1/conversations/:id/messages`
+
+The additive chapter read above indexes this same active branch. Message IDs,
+message paging, and this route's response stay unchanged.
 
 One conversation's transcript, oldest first, paged.
 
@@ -1462,6 +1514,19 @@ path, a command, the contents of a file it read. Neither is served. `toolCount`
 and `attachmentCount` tell you the turn did work without handing over the work.
 `usage` and `costUsd` are also withheld. `chat:read` is a grant to read the
 conversation, not everything the conversation touched.
+
+**Reviewed excerpts (additive source candidate).** A reviewed side-draft import
+keeps its original `text` and `role: "user"` and may include `reviewedExcerpt`.
+The metadata contains `schemaVersion: 1`, `kind: "reviewed-excerpt"`,
+`inert: true`, `sourceSessionId`, `sourceRevision`, `sourceTurnIds`,
+`sourceDigest`, `reviewedDigest`, `edited` and `operationId`. It records the
+reviewed import, not an execution or authority grant. Render any annotation
+separately from the literal source text. Absent metadata means unknown
+provenance, not proof that a message was never imported.
+
+The SDK source candidate validates and preserves these fields. The frozen
+installed 0.1.0 client still drops them; this addition does not qualify that
+artifact or grant it a write capability.
 
 ### `GET /api/client/v1/familiars/:id/contract`
 

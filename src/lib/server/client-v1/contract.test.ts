@@ -127,6 +127,7 @@ test("publishes the locked v1 metadata, capabilities, scopes, error codes, and i
     "projects",
     "conversations",
     "conversation-messages",
+    "conversation-chapters-v1",
     "cursors",
   ]);
   assert.deepEqual(CLIENT_V1_OPERATIONS, [
@@ -146,6 +147,7 @@ test("publishes the locked v1 metadata, capabilities, scopes, error codes, and i
     "conversations.list",
     "conversations.read",
     "messages.list",
+    "chapters.list",
   ]);
   for (const retired of ["streaming", "revisions"]) {
     assert.equal(
@@ -960,6 +962,7 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
           "conversations.list",
           "conversations.read",
           "messages.list",
+          "chapters.list",
         ],
         vectorFixture: {
           fileName: "hpke-bound-v1-vectors.json",

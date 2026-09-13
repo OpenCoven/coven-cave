@@ -63,6 +63,7 @@ export const CLIENT_V1_CAPABILITIES = freezeReadonlyArray([
   "projects",
   "conversations",
   "conversation-messages",
+  "conversation-chapters-v1",
   "cursors",
 ] as const);
 
@@ -108,6 +109,7 @@ export const CLIENT_V1_OPERATIONS = freezeReadonlyArray([
   "conversations.list",
   "conversations.read",
   "messages.list",
+  "chapters.list",
 ] as const);
 
 export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([

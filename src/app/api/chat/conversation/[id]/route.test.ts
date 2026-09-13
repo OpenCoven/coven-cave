@@ -66,6 +66,45 @@ function paramsFor(id: string) {
 const { DELETE, GET, PATCH } = await import("./route.ts");
 const { PUT, POST } = await import("./route.ts");
 
+test("GET stamps its source instance without adding metadata to the transcript body", async () => {
+  const id = "continuity-source-stamp";
+  writeConversation(id);
+  const response = await GET(new Request(`http://test/api/chat/conversation/${id}`), paramsFor(id));
+  const stamp = response.headers.get("x-cave-instance-id");
+  assert.ok(stamp, "a successful transcript read carries its producer cache identity");
+  const instanceId = JSON.parse(decodeURIComponent(stamp));
+  assert.equal(typeof instanceId, "string");
+  assert.ok(instanceId.length > 0);
+  const json = await response.json();
+  assert.equal(json.conversation.sessionId, id);
+  assert.equal(Object.hasOwn(json, "instanceId"), false);
+  assert.equal(Object.hasOwn(json.conversation, "instanceId"), false);
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(conversationPath(id), "utf8")), "instanceId"), false);
+});
+
+test("GET source stamps stay fresh over cached conversations and safely encode JSON strings", async () => {
+  const key = "COVEN_CAVE_CLIENT_V1_INSTANCE_ID";
+  const original = process.env[key];
+  const id = "continuity-source-replacement";
+  writeConversation(id);
+  try {
+    for (const instanceId of ["source-a", "source-\u00e9\n\ud800"]) {
+      process.env[key] = instanceId;
+      // The OS environment normalizes lone surrogates before the producer reads it.
+      const effectiveInstanceId = process.env[key];
+      const response = await GET(new Request(`http://test/api/chat/conversation/${id}`), paramsFor(id));
+      const stamp = response.headers.get("x-cave-instance-id");
+      assert.ok(stamp);
+      assert.match(stamp, /^[\x20-\x7e]+$/);
+      assert.equal(JSON.parse(decodeURIComponent(stamp)), effectiveInstanceId);
+      assert.equal((await response.json()).conversation.sessionId, id);
+    }
+  } finally {
+    if (original === undefined) delete process.env[key];
+    else process.env[key] = original;
+  }
+});
+
 function writeReq(bodyObj: unknown) {
   return new Request("http://test/api/chat/conversation/x", {
     method: "PUT",

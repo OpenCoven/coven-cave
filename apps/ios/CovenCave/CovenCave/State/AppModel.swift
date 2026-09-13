@@ -2232,6 +2232,10 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
             isConnectingPreview = true
             configureEmptyChatPreview()
+            if ProcessInfo.processInfo.arguments.contains("--ui-preview-continuity"),
+               let thread = threads.first {
+                configureContinuityPreview(thread)
+            }
             if ProcessInfo.processInfo.arguments.contains("--ui-preview-second-thread") {
                 // A second conversation with the same familiar, so the session
                 // switcher has somewhere to switch *to*. Without it the picker
@@ -2274,6 +2278,28 @@ final class AppModel {
     }
 
     #if DEBUG
+    private func configureContinuityPreview(_ thread: ChatThread) {
+        let sessionId = "fixture-continuity-exact-conversation"
+        thread.title = "Continuity source fixture"
+        thread.sessionIds = ["nyx": sessionId]
+        var turns: [ChatTurn] = []
+        for index in 0..<48 {
+            let role = index.isMultiple(of: 2) ? "user" : "assistant"
+            let text = index == 0 ? "Original source anchor: keep this exact conversation."
+                : "Source turn \(index). Chapter navigation does not change this chat or its draft."
+            let createdAt = String(format: "2026-09-%02dT09:%02d:00Z", 7 + index / 16, index % 16)
+            let parentId: String? = index == 0 ? nil : "source-\(index - 1)"
+            turns.append(ChatTurn(id: "source-\(index)", role: role, text: text,
+                                  createdAt: createdAt, parentId: parentId))
+        }
+        turns.append(ChatTurn(id: "sibling-hidden", role: "assistant",
+                              text: "Inactive sibling must not appear.",
+                              createdAt: "2026-09-10T09:00:00Z", parentId: "source-0"))
+        try? thread.restoreConversation(Conversation(
+            sessionId: sessionId, familiarId: "nyx", turns: turns, activeLeafId: "source-47"
+        ), familiarId: "nyx")
+    }
+
     private func configureEmptyChatPreview() {
         connection = nil
         familiars = [
@@ -6841,10 +6867,18 @@ final class AppModel {
     /// Pull a session's history into a freshly-bound thread so opening a chat
     /// linked elsewhere isn't blank.
     private func loadHistory(into thread: ChatThread, sessionId: String) async {
-        guard let client, thread.messages.isEmpty,
-              let convo = try? await client.conversation(sessionId: sessionId) else { return }
-        let assignee = thread.familiarIds.first ?? convo.familiarId
-        thread.messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: assignee)
+        guard let client, thread.messages.isEmpty else { return }
+        let read = thread.beginConversationRead()
+        guard let convo = try? await client.conversation(sessionId: sessionId) else { return }
+        guard thread.messages.isEmpty, thread.canApplyConversationRead(read) else { return }
+        guard let assignee = thread.familiarIds.first ?? convo.familiarId else { return }
+        do {
+            try thread.restoreConversation(convo, familiarId: assignee)
+        } catch {
+            showToast("Couldn't load this chat's active branch",
+                      systemImage: "exclamationmark.triangle.fill", style: .error)
+            return
+        }
         persistThreads()
     }
 

@@ -76,12 +76,18 @@ assert.match(
 
 // cave-gw3iq: chat asserted (via the per-turn identity canon) that SOUL.md and
 // IDENTITY.md define the familiar, while never loading them. These pins keep
-// the fix wired: the block is built, it is gated to new non-enhance turns, it
+// the fix wired: the block is built for new non-enhance native sessions, it
 // sits inside the canon wrapper, and the turn reports what it loaded.
 assert.match(
   chatRoute,
-  /body\.sessionId \|\| body\.origin === "enhance"[\s\S]{0,80}:\s*await buildFamiliarContractContext\(body\.familiarId\)/,
-  "The familiar contract should load on new, non-enhance turns only",
+  /!startsNewNativeSession \|\| body\.origin === "enhance"[\s\S]{0,80}:\s*await buildFamiliarContractContext\(body\.familiarId\)/,
+  "The familiar contract should load on new, non-enhance native sessions",
+);
+
+assert.match(
+  chatRoute,
+  /const buildChatRecoveryPrompt = async[\s\S]*?if \(!loadedStartupContext\)[\s\S]*?body\.origin !== "enhance"[\s\S]*?await buildFamiliarContractContext\(body\.familiarId\)[\s\S]*?recoveryPrompt = buildResumeRetryPrompt\(\s*composeHarnessPrompt\(familiarContract\.block, buildOperatorProfileContext\(config\.profile\)\)/,
+  "Recovery restores startup identity and operator context without turning enhancement into identity injection",
 );
 
 assert.match(

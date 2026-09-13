@@ -23,6 +23,7 @@ export const CLIENT_V1_HPKE_PROTECTED_OPERATIONS = Object.freeze([
   "conversations.list",
   "conversations.read",
   "messages.list",
+  "chapters.list",
 ] as const);
 
 export type ClientV1AuthorityMode =

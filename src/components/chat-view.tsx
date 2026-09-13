@@ -6,6 +6,10 @@ import "@/styles/cave-composer.css";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import dynamic from "next/dynamic";
+import { ChatChapterNavigator } from "@/components/chat-chapter-navigator";
+import { ChatSideDrafts, ReviewedSideExcerpt } from "@/components/chat-side-drafts";
+import { buildChatContinuityChapters, chatContinuityWindow, hasValidChatContinuityLineage, utcChapterDay, type ChatContinuityChapter } from "@/lib/chat-continuity-chapters";
+import { matchesContinuitySource, readContinuityReference, writeContinuityReference } from "@/lib/chat-continuity-preferences";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
@@ -86,6 +90,7 @@ import {
   clearLiveChatGeneration,
   clearLiveChatGenerationAliases,
   mapConversationHistoryTurns,
+  mergeConversationHistoryProjection,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
@@ -412,6 +417,9 @@ const externallySettledChatAttentionControllers = createExternallySettledGenerat
 const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
 
 type Props = {
+  continuityEnabled?: boolean;
+  continuitySourceId?: string | null;
+  continuityRestoreAnchor?: boolean;
   familiar: Familiar;
   sessionId: string | null;
   session?: SessionRow | null;
@@ -624,9 +632,10 @@ const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 // last N grouped turns are mounted, so opening a long transcript doesn't build
 // hundreds of DOM nodes up front (off-screen rows already get
 // content-visibility:auto, but the nodes still cost mount + memory). The moment
-// the reader scrolls up or opens find — both routed through updateFollowing /
+// the legacy reader scrolls up or opens find — both routed through updateFollowing /
 // the find effect — the full transcript renders, so seeking, find, and deep
 // scroll are never limited by the cap.
+// Continuity instead applies the same budget to source turns before grouping.
 const TRANSCRIPT_RENDER_CAP = 60;
 // Streaming text flush window (cave-w50e): assistant_chunk frames arrive
 // ~one per token; buffering them for this long collapses dozens of React
@@ -2039,7 +2048,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { continuityEnabled = false, continuitySourceId = null, continuityRestoreAnchor = false, familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2061,6 +2070,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // is what lets the first exchange branch instead of silently appending.
   const [pendingBranchParent, setPendingBranchParent] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const [historySourceChanged, setHistorySourceChanged] = useState(false);
+  const [continuityLoadedSessionId, setContinuityLoadedSessionId] = useState<string | null>(null);
+  const [continuityMetadataValid, setContinuityMetadataValid] = useState(false);
+  const [continuityHistory, setContinuityHistory] = useState<{
+    sessionId: string;
+    turns: NonNullable<NonNullable<ConversationHistoryPayload["conversation"]>["turns"]>;
+  } | null>(null);
+  // Reproject the exact raw payload on opt-in, without resetting the composer,
+  // leaf, or live registry. Newer in-flight turn objects always win the merge.
+  const continuityHistoryTurns = useMemo(() =>
+    continuityEnabled && continuityHistory?.sessionId === sessionId
+      ? mapConversationHistoryTurns(continuityHistory.turns, { includeSystem: true })
+      : null,
+  [continuityEnabled, continuityHistory, sessionId]);
+  const presentationTurns = useMemo(() =>
+    continuityHistoryTurns ? mergeConversationHistoryProjection(turns, continuityHistoryTurns) : turns,
+  [turns, continuityHistoryTurns]);
+  const activePath = useMemo<Turn[]>(() => {
+    if (!activeLeafId) return presentationTurns;
+    return resolveActivePath(presentationTurns, activeLeafId);
+  }, [presentationTurns, activeLeafId]);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+  const [chapterLocationUnavailable, setChapterLocationUnavailable] = useState(false);
+  const [chapterReveal, setChapterReveal] = useState<{ conversationId: string; turnId: string; focus: boolean } | null>(null);
+  const [continuityWindowStart, setContinuityWindowStart] = useState<{ conversationId: string; turnId: string } | null>(null);
+  const continuityWindowStateRef = useRef<{
+    enabled: boolean; conversationId: string | null; firstTurnId: string | null; pinned: boolean;
+  }>({ enabled: false, conversationId: null, firstTurnId: null, pinned: false });
+  const continuityJumpRef = useRef<((turnId: string) => void) | null>(null);
+  const continuityRememberedRef = useRef<string | null>(null);
   const [flowTranscriptFallback, setFlowTranscriptFallback] = useState<string | null>(null);
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [reflecting, setReflecting] = useState(false);
@@ -2818,6 +2858,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setReleasedScrollDistance(Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight));
       }
     }
+    const window = continuityWindowStateRef.current;
+    if (window.enabled) {
+      if (next) {
+        setContinuityWindowStart(null);
+        setChapterReveal(null);
+        setSelectedChapterId(null);
+      } else if (window.conversationId && window.firstTurnId) {
+        const { conversationId, firstTurnId } = window;
+        setContinuityWindowStart((current) => current?.conversationId === conversationId
+          ? current
+          : { conversationId, turnId: firstTurnId });
+        captureReleasedScrollAnchor();
+      }
+      return;
+    }
     if (!next && !historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
@@ -3496,7 +3551,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const findHits = useMemo(() => {
     if (!findOpen) return [];
     return findTranscriptHits(
-      turns.map((t) => ({
+      (continuityEnabled ? activePath : presentationTurns).map((t) => ({
         id: t.id,
         role: t.role,
         // Match the exact prose projection used by the transcript, excluding
@@ -3506,19 +3561,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
     );
-  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, turns]);
+  }, [findOpen, findDebouncedQuery, findMatchCase, findWholeWord, presentationTurns, continuityEnabled, activePath]);
 
-  // Find searches the whole transcript, so opening it mounts every turn — a
+  // Legacy find mounts every turn; continuity instead windows each exact hit. A
   // jump (jumpToFindMatch) resolves its target via querySelector and must find
   // the row in the DOM regardless of the render cap OR the fold. Without the
   // fold half, searching a long thread reports hits in folded turns and then
   // jumps nowhere, because the row it looks for was never rendered.
   useEffect(() => {
-    if (findOpen) {
+    if (findOpen && !continuityEnabled) {
       setHistoryExpanded(true);
       setFoldOpen(true);
     }
-  }, [findOpen]);
+  }, [findOpen, continuityEnabled]);
 
   // Keep the active pointer in bounds when the match set shrinks.
   useEffect(() => {
@@ -3526,10 +3581,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [findHits]);
 
   const jumpToFindMatch = useCallback(
-    (idx: number, matches: readonly { turnId: string }[]) => {
+    (idx: number, matches: readonly { turnId: string }[], mountedOnly = false) => {
       const id = matches[idx]?.turnId;
       if (!id) return;
-      setFindActiveIdx(idx);
+      if (!mountedOnly) setFindActiveIdx(idx);
+      if (continuityWindowStateRef.current.enabled && !mountedOnly) {
+        continuityJumpRef.current?.(id);
+        return;
+      }
       // A find jump is explicit navigation away from the tail — release the
       // stream follow-pin (CHAT-D10-01) so the next SSE chunk doesn't yank
       // the reader back to the bottom.
@@ -4043,14 +4102,132 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, projectRoot, familiar.harness, familiar.model, familiar.id]);
 
-  // Active branch path: when activeLeafId is set (branched conversation), only
-  // the turns on the path from the root to that leaf are rendered. For linear
-  // (non-branched) conversations every turn has exactly one child so
-  // resolveActivePath returns the full list — behaviour is identical.
-  const activePath = useMemo<Turn[]>(() => {
-    if (!activeLeafId) return turns;
-    return resolveActivePath(turns, activeLeafId) as Turn[];
-  }, [turns, activeLeafId]);
+  const activeTurnIndex = useMemo(() => new Map(activePath.map((turn, index) => [turn.id, index])), [activePath]);
+  const pinnedWindow = continuityWindowStart?.conversationId === sessionId ? continuityWindowStart : null;
+  const continuityWindow = chatContinuityWindow(
+    activePath.length, pinnedWindow ? activeTurnIndex.get(pinnedWindow.turnId) ?? -1 : null, TRANSCRIPT_RENDER_CAP,
+  );
+  // Slice before voice grouping: one call group may otherwise mount thousands of turns.
+  const mountedTurns = useMemo(() => continuityEnabled
+    ? activePath.slice(continuityWindow.start, continuityWindow.end)
+    : activePath,
+  [continuityEnabled, activePath, continuityWindow.start, continuityWindow.end]);
+  continuityWindowStateRef.current = {
+    enabled: continuityEnabled, conversationId: sessionId,
+    firstTurnId: mountedTurns[0]?.id ?? null, pinned: pinnedWindow !== null,
+  };
+
+  const chapterIndex = useMemo(() => buildChatContinuityChapters(
+    sessionId ?? "",
+    continuityEnabled && continuityMetadataValid && continuityLoadedSessionId === sessionId &&
+      hasValidChatContinuityLineage(presentationTurns, activeLeafId) ? activePath : [],
+    true,
+  ), [continuityEnabled, continuityMetadataValid, continuityLoadedSessionId, sessionId, activeLeafId, presentationTurns, activePath]);
+
+  const markChapterLocationUnavailable = useCallback(() => {
+    setChapterLocationUnavailable(true);
+    setSelectedChapterId(null);
+    setChapterReveal(null);
+    clearFoundHighlightTimer();
+    setFoundTurnId(null);
+  }, [clearFoundHighlightTimer]);
+
+  const revealContinuityTurn = useCallback((turnId: string, centered = true, focus = true) => {
+    const position = activeTurnIndex.get(turnId);
+    if (!sessionId || position === undefined) {
+      markChapterLocationUnavailable();
+      return;
+    }
+    const start = Math.max(0, position - (centered ? Math.floor(TRANSCRIPT_RENDER_CAP / 2) : 0));
+    updateFollowing(false);
+    releasedScrollAnchorRef.current = null;
+    expandAnchorRef.current = null;
+    setContinuityWindowStart({ conversationId: sessionId, turnId: activePath[start].id });
+    setChapterReveal({ conversationId: sessionId, turnId, focus });
+  }, [activeTurnIndex, activePath, sessionId, updateFollowing, markChapterLocationUnavailable]);
+  continuityJumpRef.current = (turnId) => {
+    setSelectedChapterId(null);
+    revealContinuityTurn(turnId, true, false);
+  };
+  const moveContinuityWindow = (direction: -1 | 1) => {
+    const start = Math.max(0, Math.min(activePath.length - 1, continuityWindow.start + direction * TRANSCRIPT_RENDER_CAP));
+    const turn = activePath[start];
+    if (!turn) return;
+    setSelectedChapterId(null);
+    revealContinuityTurn(turn.id, false);
+  };
+
+  const selectChapter = useCallback((chapter: ChatContinuityChapter) => {
+    if (!continuityEnabled || chapter.conversationId !== sessionId ||
+      !chapterIndex.chapters.some((entry) => entry.id === chapter.id)) return;
+    setChapterLocationUnavailable(false);
+    setSelectedChapterId(chapter.id);
+    revealContinuityTurn(chapter.firstTurnId);
+    if (continuitySourceId) writeContinuityReference({
+      sourceId: continuitySourceId, familiarId: familiar.id,
+      conversationId: chapter.conversationId, anchorId: chapter.id,
+    });
+  }, [continuityEnabled, continuitySourceId, sessionId, chapterIndex, familiar.id, revealContinuityTurn]);
+
+  useEffect(() => {
+    setChaptersOpen(false);
+    setSelectedChapterId(null);
+    setChapterLocationUnavailable(false);
+    setChapterReveal(null);
+    setContinuityWindowStart(null);
+    continuityRememberedRef.current = null;
+  }, [sessionId, familiar.id, continuityEnabled, continuitySourceId]);
+
+  useEffect(() => {
+    if (!continuityEnabled || !continuitySourceId || !sessionId || continuityLoadedSessionId !== sessionId ||
+      session?.familiarId !== familiar.id || continuityRememberedRef.current === sessionId) return;
+    continuityRememberedRef.current = sessionId;
+    const sourceId = continuitySourceId;
+    const saved = readContinuityReference(sourceId, familiar.id);
+    const savedAnchorId = continuityRestoreAnchor && saved?.conversationId === sessionId ? saved.anchorId : null;
+    if (savedAnchorId) {
+      const anchor = chapterIndex.chapters.find((chapter) => chapter.id === savedAnchorId);
+      if (anchor) selectChapter(anchor);
+      else markChapterLocationUnavailable();
+    } else {
+      writeContinuityReference({ sourceId, familiarId: familiar.id, conversationId: sessionId, anchorId: null });
+    }
+  }, [continuityEnabled, continuitySourceId, continuityLoadedSessionId, sessionId, session?.familiarId, familiar.id, continuityRestoreAnchor, chapterIndex, selectChapter, markChapterLocationUnavailable]);
+
+  useEffect(() => {
+    if (continuityEnabled && continuityLoadedSessionId === sessionId &&
+      (session?.familiarId == null || session.familiarId === familiar.id) && selectedChapterId &&
+      !chapterIndex.chapters.some((chapter) => chapter.id === selectedChapterId)) {
+      markChapterLocationUnavailable();
+    }
+  }, [continuityEnabled, continuityLoadedSessionId, sessionId, session?.familiarId, familiar.id, chapterIndex, selectedChapterId, markChapterLocationUnavailable]);
+
+  useEffect(() => {
+    if (continuityEnabled && pinnedWindow && !activeTurnIndex.has(pinnedWindow.turnId)) {
+      markChapterLocationUnavailable();
+    }
+  }, [continuityEnabled, pinnedWindow, activeTurnIndex, markChapterLocationUnavailable]);
+
+  useEffect(() => {
+    if (!chapterReveal || !continuityEnabled || chapterReveal.conversationId !== sessionId ||
+      !activeTurnIndex.has(chapterReveal.turnId)) return;
+    // The bounded window must commit before the existing host reveals its exact row.
+    const frame = requestAnimationFrame(() => {
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(chapterReveal.turnId)}"]`);
+      if (row) {
+        jumpToFindMatch(0, [{ turnId: chapterReveal.turnId }], true);
+        if (chapterReveal.focus) {
+          row.tabIndex = -1;
+          row.focus({ preventScroll: true });
+        }
+        captureReleasedScrollAnchor();
+        setChapterReveal(null);
+      } else {
+        markChapterLocationUnavailable();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [chapterReveal, continuityEnabled, sessionId, activeTurnIndex, mountedTurns, jumpToFindMatch, captureReleasedScrollAnchor, markChapterLocationUnavailable]);
 
   const activeAssistantResponse = useMemo(() => {
     const turn = activePath.findLast((turn) => turn.role === "assistant");
@@ -4095,7 +4272,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Branch-nav siblings for EVERY turn, built once per `turns` change instead
   // of scanning the whole array per rendered row (which ran on every stream
   // chunk). Lookups are O(1).
-  const siblingIndex = useMemo(() => buildSiblingIndex(turns), [turns]);
+  const siblingIndex = useMemo(() => buildSiblingIndex(presentationTurns), [presentationTurns]);
   const siblingsFor = useCallback(
     (turnId: string) => siblingIndex.get(turnId) ?? { siblings: [] as Turn[], index: 0 },
     [siblingIndex],
@@ -4106,7 +4283,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // changes — NOT on every composer keystroke / caret move / hover, which all
   // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
   // per render).
-  const { groupedTurns, turnIndexMap } = useMemo(() => groupTranscriptTurns(activePath), [activePath]);
+  const { groupedTurns } = useMemo(() => groupTranscriptTurns(mountedTurns), [mountedTurns]);
+  const turnIndexMap = activeTurnIndex;
 
   // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
   // @-mention picker re-arms here (same any-edit-brings-it-back contract).
@@ -4150,15 +4328,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       liveSessionId: liveSessionIdRef.current,
       turnCount: turnsRef.current.length,
     })) {
+      if (continuityLoadedSessionId !== sessionId) {
+        setContinuityLoadedSessionId(sessionId);
+        setContinuityMetadataValid(true);
+      }
       setHistoryState("loaded");
       return;
     }
     const isThreadSwitch = currentSessionRef.current !== sessionId;
+    if (isThreadSwitch || !continuityEnabled) setHistorySourceChanged(false);
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      setContinuityLoadedSessionId(null);
+      setContinuityHistory(null);
       // Clearing display ownership on any thread switch means an in-flight
       // generation from the previous view can no longer adopt.
       displayedCreationRunIdRef.current = null;
@@ -4183,6 +4368,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setTaskArmed(false);
     setFlowTranscriptFallback(null);
     if (!sessionId) {
+      setContinuityHistory(null);
       setTurns([]);
       setActiveLeafId("");
       setHistoryState("idle");
@@ -4195,6 +4381,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
+      setContinuityLoadedSessionId(sessionId);
+      setContinuityMetadataValid(true);
       setFlowTranscriptFallback(null);
       abortRef.current = live.controller;
       setHistoryState("loaded");
@@ -4235,13 +4423,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     }
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
-      const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
+      const rawTurns = json.conversation?.turns ?? [];
+      const rawLeaf = json.conversation?.activeLeafId;
+      const leaf = typeof rawLeaf === "string" ? rawLeaf : "";
+      // The ordinary renderer supplies legacy missing dates. Those display
+      // defaults must never become invented continuity index evidence.
+      const ids = new Set<string>();
+      const validMetadata = rawTurns.every((turn) => {
+        if (typeof turn.id !== "string" || !turn.id || ids.has(turn.id) || !utcChapterDay(turn.createdAt)) return false;
+        ids.add(turn.id);
+        return true;
+      });
+      setContinuityMetadataValid(validMetadata && (rawLeaf == null || typeof rawLeaf === "string") &&
+        hasValidChatContinuityLineage(rawTurns, leaf));
+      setContinuityHistory({ sessionId, turns: rawTurns });
+      // Preserve legacy send-state normalization; only presentation opts in.
+      const mapped = mapConversationHistoryTurns(rawTurns);
       setFlowTranscriptFallback(null);
       setTurns(mapped);
+      setContinuityLoadedSessionId(sessionId);
       turnsRef.current = mapped;
-      setActiveLeafId(
-        typeof json.conversation?.activeLeafId === "string" ? json.conversation.activeLeafId : "",
-      );
+      setActiveLeafId(leaf);
       setHistoryState("loaded");
     };
     // A history request can start just before the user sends. By the time its
@@ -4257,8 +4459,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // as revalidation, so a stale cache entry is corrected as soon as the
     // network answers — the cache is never the source of truth.
     const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
+    const canUseCachedPayload = (payload: ConversationHistoryPayload | null | undefined) =>
+      !continuityEnabled || matchesContinuitySource(payload, continuitySourceId, window.location.origin);
     const cachedConversation =
-      cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
+      cachedPayload?.ok && cachedPayload.conversation && canUseCachedPayload(cachedPayload) ? cachedPayload : null;
     if (cachedConversation) {
       setLinkedContext(cachedConversation.context ?? null);
       applyConversationPayload(cachedConversation);
@@ -4281,7 +4485,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (!cachedConversation) {
         const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
         if (cancelled) return;
-        if (cached?.data.ok && cached.data.conversation) {
+        if (cached?.data.ok && cached.data.conversation && canUseCachedPayload(cached.data)) {
           durableConversation = cached.data;
           setLinkedContext(durableConversation.context ?? null);
           applyConversationPayload(durableConversation);
@@ -4291,6 +4495,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       try {
         const json = await loadConversation(sessionId) as ConversationHistoryPayload | null;
         if (cancelled) return;
+        if (continuityEnabled && continuitySourceId && json?.ok &&
+          !matchesContinuitySource(json, continuitySourceId, window.location.origin)) {
+          setContinuityLoadedSessionId(null);
+          setContinuityHistory(null);
+          setHistorySourceChanged(true);
+          throw new ConversationLoadError("Cave's source identity changed or is unavailable. Reload before restoring this chat.", 409);
+        }
+        setHistorySourceChanged(false);
         setLinkedContext(json?.context ?? null);
         if (json?.ok && json.conversation) {
           if (hasLiveGeneration()) {
@@ -4327,6 +4539,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setFlowTranscriptFallback(null);
+          setContinuityHistory(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState("loaded");
@@ -4336,6 +4549,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setFlowTranscriptFallback(null);
+          setContinuityHistory(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState("missing");
@@ -4359,6 +4573,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             }
             const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
             if (cleanedTranscript) {
+              setContinuityHistory(null);
               setTurns([]);
               setActiveLeafId("");
               setFlowTranscriptFallback(cleanedTranscript);
@@ -4368,12 +4583,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           if (
             (durableConversation || cachedConversation)
-            && !(error instanceof ConversationLoadError && error.status === 404)
+            && !(error instanceof ConversationLoadError && (error.status === 404 || error.status === 409))
           ) {
             setHistoryState("offline");
             return;
           }
           setFlowTranscriptFallback(null);
+          setContinuityHistory(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState(
@@ -4387,7 +4603,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, historyRetryKey, flowBackedSession]);
+  }, [sessionId, historyRetryKey, flowBackedSession, continuityEnabled, continuitySourceId]);
 
   // Pin: while following, snap the scroller to the bottom INSTANTLY
   // (scrollTop assignment inside a rAF, coalescing multiple triggers per
@@ -4542,7 +4758,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       setReleasedScrollDistance(Math.max(0, gap));
-      if (gap <= 4) updateFollowing(true);
+      if (gap <= 4 && !continuityWindowStateRef.current.pinned) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
@@ -4792,6 +5008,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // mirrors the just-cleared turns back, while busy stays set.
       cancelSend();
       liveSessionIdRef.current = null;
+      setContinuityHistory(null);
       setTurns([]);
       setActiveLeafId("");
       setInput("");
@@ -6166,7 +6383,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const { siblings, index } = siblingsFor(turnId);
     const next = siblings[index + dir];
     if (!next) return;
-    const leaf = childLeaf(turns, next.id);
+    const leaf = childLeaf(presentationTurns, next.id);
     setActiveLeafId(leaf);
     if (!sessionId) return;
     invalidateConversation(sessionId);
@@ -6182,8 +6399,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
-    if (historyState === "offline") {
-      announce("Offline copies are read only. Reconnect before sending.", "assertive");
+    if (historyState === "offline" || historySourceChanged) {
+      announce(historySourceChanged ? "Cave's source identity changed. Reload before sending." : "Offline copies are read only. Reconnect before sending.", "assertive");
       return;
     }
     const text = (override ?? input).trim();
@@ -7213,6 +7430,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     () => ({
       clearTranscript: () => {
         liveSessionIdRef.current = null;
+        setContinuityHistory(null);
         setTurns([]);
         setActiveLeafId("");
       },
@@ -7220,6 +7438,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // Push command into the composer + dispatch
         if (command === "/clear") {
           liveSessionIdRef.current = null;
+          setContinuityHistory(null);
           setTurns([]);
           setActiveLeafId("");
           return;
@@ -7277,7 +7496,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
-  const offlineReadOnly = historyState === "offline";
+  const offlineReadOnly = historyState === "offline" || historySourceChanged;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -7338,14 +7557,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-composer-dock"
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
     >
-      {historyState === "offline" && sessionId ? (
+      {offlineReadOnly && sessionId ? (
         <div
           role="status"
           className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
         >
-          <span>Offline copy · Read only. Reconnect before sending or changing this chat.</span>
-          <Button variant="ghost" onClick={retryHistory}>
-            Try live connection
+          <span>{historySourceChanged ? "Cave's source identity changed or is unavailable. Reload before sending or changing this chat." : "Offline copy · Read only. Reconnect before sending or changing this chat."}</span>
+          <Button variant="ghost" onClick={historySourceChanged ? () => window.location.reload() : retryHistory}>
+            {historySourceChanged ? "Reload Cave" : "Try live connection"}
           </Button>
         </div>
       ) : (
@@ -8034,7 +8253,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             ) : null}
             {/* cave-7gr08: the header keeps only the trigger — the search
                 itself lives in the band under the title row. */}
-            {turns.length > 0 && !findOpen ? (
+            {presentationTurns.length > 0 && !findOpen ? (
               <button
                 type="button"
                 className="focus-ring"
@@ -8056,7 +8275,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onProjectChange={setProjectIdDraft}
                 onAddProject={overflowAddProject.beginAddProject}
                 sessionId={sessionId}
-                hasTurns={turns.length > 0}
+                hasTurns={presentationTurns.length > 0}
                 onOpenDebug={openDebug}
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
@@ -8093,6 +8312,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             below the breakpoint — with both retired the composer carries the
             controls on every width, so there is nothing left to double-mount. */}
       </header>
+      {continuityEnabled && sessionId ? (
+        <ChatChapterNavigator
+          index={chapterIndex}
+          open={chaptersOpen}
+          selectedId={selectedChapterId}
+          locationUnavailable={chapterLocationUnavailable}
+          window={{
+            start: continuityWindow.start, end: continuityWindow.end, total: activePath.length,
+            atLatest: following && !pinnedWindow,
+            onEarlier: () => moveContinuityWindow(-1),
+            onLater: () => moveContinuityWindow(1),
+            onLatest: () => { updateFollowing(true); schedulePin(); },
+          }}
+          onOpenChange={setChaptersOpen}
+          onSelect={selectChapter}
+        />
+      ) : null}
+      {continuityEnabled && continuitySourceId && sessionId && continuityLoadedSessionId === sessionId && resolvedProjectId && resolvedProjectId !== NO_PROJECT_ID ? (
+        <ChatSideDrafts
+          key={JSON.stringify([continuitySourceId, sessionId, familiar.id, resolvedProjectId])}
+          sourceId={continuitySourceId}
+          scope={{ parentSessionId: sessionId, familiarId: familiar.id, projectId: resolvedProjectId }}
+          turns={activePath}
+          parentBusy={busy}
+          onImported={() => {
+            invalidateConversation(sessionId);
+            retryHistory();
+            onSessionsChangedRef.current?.();
+          }}
+        />
+      ) : null}
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
           a bare "3 / 17" makes you press Next until you recognise the one you
@@ -8161,7 +8411,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <ChatEnvironmentPanel
           projectRoot={session?.project_root ?? projectRoot ?? null}
           runtime={session?.runtime ?? null}
-          hasTurns={turns.length > 0}
+          hasTurns={presentationTurns.length > 0}
           onOpenUrl={onOpenUrl}
         />
         {/* Left turn spine (Chat.dc.html 2a, cave-j86la). One node per turn in
@@ -8174,7 +8424,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             replaced the minimap never occupied. */}
         {activePath.length > 0 ? (
           <ChatThreadSpine
-            turns={activePath}
+            turns={mountedTurns}
             scrollRef={scrollRef}
             familiarName={familiar.display_name}
           />
@@ -8186,7 +8436,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           aria-label="Conversation"
           aria-busy={busy || undefined}
         >
-          {turns.length === 0 ? (
+          {presentationTurns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistorySkeleton />
             ) : flowTranscriptFallback ? (
@@ -8271,6 +8521,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             groupedTurns={groupedTurns}
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
+            bounded={continuityEnabled}
             autoMission={autoMission}
             historyExpanded={historyExpanded}
             foldOpen={foldOpen}
@@ -8387,7 +8638,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   readers — `order` moves boxes, never reading order. DOM order
                   is the accessible order, so the annotation follows the log. */}
               {activePath.length > 0 ? (
-                <ChatActivityMap turns={activePath} conversationCreatedAt={session?.created_at} />
+                <ChatActivityMap turns={mountedTurns} conversationCreatedAt={session?.created_at} />
               ) : null}
       </div>
       </CodeReadingContext.Provider>
@@ -8787,6 +9038,7 @@ const TranscriptRows = memo(function TranscriptRows({
   groupedTurns,
   turnIndexMap,
   allTurns,
+  bounded,
   historyExpanded,
   foldOpen,
   onToggleFold,
@@ -8806,6 +9058,7 @@ const TranscriptRows = memo(function TranscriptRows({
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
+  bounded: boolean;
   autoMission: AutoMissionRecord | null;
   historyExpanded: boolean;
   /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
@@ -8829,14 +9082,14 @@ const TranscriptRows = memo(function TranscriptRows({
   // slice — a pill reading "54 earlier turns" on a 200-turn thread would be
   // reporting the render cap, not the conversation.
   const fold = chatTranscriptFold(groupedTurns);
-  const folded = fold.hiddenTurns > 0 && !foldOpen;
+  const folded = !bounded && fold.hiddenTurns > 0 && !foldOpen;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
   // mount the newest groups. The per-row prev-turn lookup still reads
   // the full `allTurns`/`turnIndexMap`, so the first visible row's
   // timestamp gap stays correct. Expands to the whole transcript the
   // moment the reader scrolls up or opens find (see historyExpanded).
   // A closed fold mounts even less than the cap would, so it wins outright.
-  const renderGroups = folded
+  const renderGroups = bounded ? groupedTurns : folded
     ? groupedTurns.slice(fold.startIndex)
     : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
@@ -8932,7 +9185,7 @@ const TranscriptRows = memo(function TranscriptRows({
       <div key={g.callId} className="cave-chat-voice-call-group">
         <div className="cave-chat-voice-call-header">
           <span aria-hidden>📞</span>
-          Voice call · {mm}:{ss}
+          Voice call · {mm}:{ss}{bounded ? " (loaded window)" : ""}
         </div>
         {g.turns.map((t) => {
           const i = turnIndexMap.get(t.id) ?? -1;
@@ -8986,7 +9239,7 @@ const TranscriptRows = memo(function TranscriptRows({
       </div>
     );
   });
-  if (fold.hiddenTurns === 0) return rows;
+  if (bounded || fold.hiddenTurns === 0) return rows;
   // The fold leads the transcript in both states: closed it names what is
   // hidden, open it names the way back. The visual stays one full-width seam;
   // the count remains available through its accessible name and title.
@@ -9168,7 +9421,9 @@ function TurnRowImpl({
               {turn.attachments?.length ? <span className="cave-linear-turn-recency">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
             </div>
             <div className="cave-linear-turn-body">
-              <MessageBubble
+              {turn.reviewedExcerpt?.inert ? (
+                <ReviewedSideExcerpt text={turn.text} sourceSessionId={turn.reviewedExcerpt.sourceSessionId} />
+              ) : <MessageBubble
                 role={turn.role}
                 content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
                 timestamp={turn.createdAt}
@@ -9178,7 +9433,7 @@ function TurnRowImpl({
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
-              />
+              />}
               {/* An image or playable clip you attached renders as itself,
                   matching the assistant path — the chip list only carries what
                   has nothing to show (text files, oversize/undelivered). */}
@@ -9195,8 +9450,8 @@ function TurnRowImpl({
                   beneath the bubble (attachment idiom) — the headline "paste a
                   PR link" gesture (design §1). User turns only, never system. */}
               {(() => {
-                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
-                const skillInvocation = turn.role === "user" ? parseSkillInvocation(turn.text) : null;
+                const ghRefs = turn.role === "user" && !turn.reviewedExcerpt ? unfurlUserMessage(turn.text) : [];
+                const skillInvocation = turn.role === "user" && !turn.reviewedExcerpt ? parseSkillInvocation(turn.text) : null;
                 return ghRefs.length || skillInvocation ? (
                   <div className="mt-2 space-y-2">
                     {skillInvocation ? (

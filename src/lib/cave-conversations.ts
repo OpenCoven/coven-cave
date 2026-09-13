@@ -1,8 +1,12 @@
 import { mkdir, readFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { createHash, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withProcessIntentLock } from "./server/process-intent-lock.ts";
+import type { SideConversationRecord, ReviewedExcerpt, SideOperationReceipt } from "./server/chat-side-conversations.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
@@ -22,6 +26,8 @@ import {
 
 const CONV_DIR = path.join(caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
+const heldConversationLocks = new AsyncLocalStorage<ReadonlyMap<string, { active: boolean }>>();
+const loadedConversations = new WeakSet<ConversationFile>();
 const VALID_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
 export type ChatTurn = {
@@ -92,6 +98,8 @@ export type ChatTurn = {
   attentionClearOperationId?: string;
   origin?: "chat" | "voice";
   voiceCallId?: string;
+  /** User-reviewed quoted content, never a runtime answer or executable marker. */
+  reviewedExcerpt?: ReviewedExcerpt;
 };
 
 export type ConversationModelIntent = {
@@ -175,6 +183,12 @@ export type ConversationFile = {
    * list uses that to report `failed` instead of a phantom `completed`.
    */
   pendingUserTurnId?: string;
+  /** Durable import exclusion from sender snapshot through transcript settlement.
+   *  No TTL: an interrupted sender must not silently lose its reservation. */
+  activeSendReservations?: Array<{ id: string; startedAt: string }>;
+  writeRevision?: number;
+  sideConversation?: SideConversationRecord;
+  sideImportReceipts?: SideOperationReceipt[];
 };
 
 export type ConversationSummary = {
@@ -199,6 +213,7 @@ export type ConversationSummary = {
   createdAt?: string;
   updatedAt: string;
   attentionEvidence?: ChatAttentionEvidence;
+  sideConversation?: boolean;
 };
 
 export type ConversationListMetrics = {
@@ -510,6 +525,10 @@ export function isSafeConversationSessionId(sessionId: string): boolean {
   return path.basename(sessionId) === sessionId;
 }
 
+export function isRetainedSideConversationId(sessionId: string): boolean {
+  return /^side-[a-f0-9]{64}$/.test(sessionId);
+}
+
 function pathFor(sessionId: string): string {
   if (!isSafeConversationSessionId(sessionId)) {
     throw new Error("invalid session id");
@@ -524,6 +543,7 @@ function pathFor(sessionId: string): string {
 
 export async function loadConversation(sessionId: string): Promise<ConversationFile | null> {
   try {
+    if (await conversationDeletionFence(sessionId)) return null;
     const raw = await readFile(pathFor(sessionId), "utf8");
     const conv = JSON.parse(raw) as ConversationFile;
     // Lazy migration: only genuinely pre-branching files (parentId absent
@@ -541,6 +561,7 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
         if (inferredLeafId) conv.activeLeafId = inferredLeafId;
       }
     }
+    loadedConversations.add(conv);
     return conv;
   } catch {
     return null;
@@ -590,6 +611,7 @@ export async function loadConversationCached(sessionId: string): Promise<Convers
     // a caching wrapper is not the place to start surfacing a new exception.
     return null;
   }
+  if (await conversationDeletionFence(sessionId)) return null;
   return readCachedStore(filePath, () => loadConversation(sessionId), {
     maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
   });
@@ -603,43 +625,243 @@ export async function withConversationLock<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   if (!isSafeConversationSessionId(sessionId)) throw new Error("invalid session id");
+  const options = {
+    intentsDirectory: path.join(CONV_DIR, ".locks", createHash("sha256").update(sessionId).digest("hex")),
+    label: "conversation",
+  };
+  if (heldConversationLocks.getStore()?.get(sessionId)?.active) return withProcessIntentLock(options, operation);
   const previous = conversationLockTails.get(sessionId) ?? Promise.resolve();
   let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const current = new Promise<void>((resolve) => { release = resolve; });
   const tail = previous.catch(() => undefined).then(() => current);
   conversationLockTails.set(sessionId, tail);
   await previous.catch(() => undefined);
+  const lease = { active: true };
+  const held = new Map(heldConversationLocks.getStore() ?? []);
+  held.set(sessionId, lease);
   try {
-    return await operation();
+    return await withProcessIntentLock(options, () => heldConversationLocks.run(held, operation));
   } finally {
+    lease.active = false;
     release();
-    if (conversationLockTails.get(sessionId) === tail) {
-      conversationLockTails.delete(sessionId);
-    }
+    if (conversationLockTails.get(sessionId) === tail) conversationLockTails.delete(sessionId);
   }
 }
 
-export async function saveConversation(conv: ConversationFile): Promise<void> {
-  await ensureDir();
-  conv.updatedAt = new Date().toISOString();
-  // Atomic replace (cave-1v95): conversations are the highest-churn store —
-  // a crash mid-write must leave the previous transcript intact, never a
-  // torn half-JSON that loadConversation silently drops.
-  await writeJsonAtomic(pathFor(conv.sessionId), conv);
-  conversationSummaryCache.delete(pathFor(conv.sessionId));
-  // Bust the sessions-list SWR cache (cave-53yx): a new or updated
-  // conversation must be visible to the event-driven list refresh that fires
-  // right after the save, not 1-2 polls later.
-  invalidateSessionsListCache();
+export async function withConversationLocks<T>(ids: string[], operation: () => Promise<T>): Promise<T> {
+  const ordered = [...new Set(ids)].sort();
+  const next = (index: number): Promise<T> => index === ordered.length
+    ? operation()
+    : withConversationLock(ordered[index], () => next(index + 1));
+  return next(0);
+}
+
+export type ConversationSendReservation = {
+  conversation: ConversationFile | null;
+  release: () => Promise<void>;
+};
+
+type SendReservationEntry = NonNullable<ConversationFile["activeSendReservations"]>[number];
+function sendReservationPath(sessionId: string): string {
+  pathFor(sessionId);
+  return path.join(CONV_DIR, ".send-reservations", createHash("sha256").update(sessionId).digest("hex") + ".json");
+}
+
+export async function activeConversationSendReservations(sessionId: string): Promise<SendReservationEntry[]> {
+  try {
+    const stored = JSON.parse(await readFile(sendReservationPath(sessionId), "utf8")) as {
+      schemaVersion: number; sessionId: string; reservations: SendReservationEntry[];
+    };
+    if (stored.schemaVersion !== 1 || stored.sessionId !== sessionId || !Array.isArray(stored.reservations)
+      || stored.reservations.some((entry) => !entry || typeof entry.id !== "string" || typeof entry.startedAt !== "string")) {
+      throw new Error("invalid_send_reservations");
+    }
+    return stored.reservations;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeSendReservations(sessionId: string, reservations: SendReservationEntry[]): Promise<void> {
+  await mkdir(path.join(CONV_DIR, ".send-reservations"), { recursive: true });
+  await writeJsonAtomic(sendReservationPath(sessionId), { schemaVersion: 1, sessionId, reservations });
+}
+
+export async function reserveConversationSend(
+  sessionId: string | null | undefined,
+  familiarId: string,
+): Promise<ConversationSendReservation> {
+  if (!sessionId) return { conversation: null, release: async () => {} };
+  return withConversationLock(sessionId, async () => {
+    if (await conversationDeletionFence(sessionId)) throw new Error("conversation_deleted");
+    const conversation = await loadConversation(sessionId);
+    if (conversation && conversation.familiarId !== familiarId) {
+      return { conversation, release: async () => {} };
+    }
+    if (conversation?.sideConversation || isRetainedSideConversationId(sessionId)) {
+      throw new Error("side_execution_unavailable");
+    }
+    if (conversation?.activeSendReservations !== undefined && !Array.isArray(conversation.activeSendReservations)) {
+      throw new Error("invalid_send_reservations");
+    }
+    const reservationId = randomUUID();
+    const entry = { id: reservationId, startedAt: new Date().toISOString() };
+    // Persist the non-content fence first, including IDs without a transcript.
+    // A crash before the optional transcript mirror remains fail closed.
+    await writeSendReservations(sessionId, [...await activeConversationSendReservations(sessionId), entry]);
+    if (conversation) {
+      conversation.activeSendReservations = [...(conversation.activeSendReservations ?? []), entry];
+      await saveConversation(conversation, { sendReservationMutation: true });
+    }
+    return {
+      conversation,
+      release: () => withConversationLock(sessionId, async () => {
+        const current = await loadConversation(sessionId);
+        if (current?.activeSendReservations !== undefined && !Array.isArray(current.activeSendReservations)) {
+          throw new Error("invalid_send_reservations");
+        }
+        if (current?.activeSendReservations?.some((entry) => entry.id === reservationId)) {
+          current.activeSendReservations = current.activeSendReservations.filter((entry) => entry.id !== reservationId);
+          if (!current.activeSendReservations.length) delete current.activeSendReservations;
+          await saveConversation(current, { sendReservationMutation: true });
+        }
+        // Drop the authoritative fence last; a failed mirror cleanup must not
+        // open imports, nor may one completion release a different sender.
+        const reservations = await activeConversationSendReservations(sessionId);
+        if (reservations.some((entry) => entry.id === reservationId)) {
+          await writeSendReservations(sessionId, reservations.filter((entry) => entry.id !== reservationId));
+        }
+      }),
+    };
+  });
+}
+
+export type ConversationDeletionFence = {
+  sessionId: string;
+  deletedAt: string;
+  side: boolean;
+};
+
+function deletionFencePath(sessionId: string): string {
+  pathFor(sessionId);
+  return path.join(CONV_DIR, ".deleted", createHash("sha256").update(sessionId).digest("hex") + ".json");
+}
+
+export async function conversationDeletionFence(sessionId: string): Promise<ConversationDeletionFence | null> {
+  try {
+    const fence = JSON.parse(await readFile(deletionFencePath(sessionId), "utf8")) as ConversationDeletionFence;
+    if (fence.sessionId !== sessionId || typeof fence.deletedAt !== "string" || typeof fence.side !== "boolean") {
+      throw new Error("invalid conversation deletion fence");
+    }
+    return fence;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function deletionFenceNames(): Promise<Set<string>> {
+  try {
+    return new Set(await readdir(path.join(CONV_DIR, ".deleted")));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Set();
+    throw error;
+  }
+}
+
+export async function saveConversation(
+  conv: ConversationFile,
+  options: { continuityMutation?: boolean; sendReservationMutation?: boolean } = {},
+): Promise<void> {
+  return withConversationLock(conv.sessionId, async () => {
+    await ensureDir();
+    if (await conversationDeletionFence(conv.sessionId)) throw new Error("conversation_deleted");
+    const existing = await loadConversation(conv.sessionId);
+    const protectedRecord = existing?.sideConversation || existing?.sideImportReceipts?.length;
+    if (protectedRecord && conv.writeRevision !== undefined && conv.writeRevision !== existing?.writeRevision) {
+      throw new Error("conversation_revision_conflict");
+    }
+    if (!options.sendReservationMutation) {
+      if (existing?.activeSendReservations !== undefined) conv.activeSendReservations = existing.activeSendReservations;
+      else delete conv.activeSendReservations;
+    }
+    if (existing?.sideConversation && !options.continuityMutation) {
+      if (JSON.stringify(conv.turns) !== JSON.stringify(existing.turns)
+        || conv.familiarId !== existing.familiarId || conv.runtime !== existing.runtime || conv.harness !== existing.harness) {
+        throw new Error("side_conversation_requires_lifecycle_writer");
+      }
+      conv.sideConversation = existing.sideConversation;
+    }
+    if (existing?.sideImportReceipts?.length) {
+      const receipts = new Map(existing.sideImportReceipts.map((receipt) => [receipt.operationId, receipt]));
+      if (options.continuityMutation) {
+        for (const receipt of conv.sideImportReceipts ?? []) receipts.set(receipt.operationId, receipt);
+      }
+      for (const receipt of receipts.values()) {
+        const wasCommitted = existing.sideImportReceipts.some((entry) => entry.operationId === receipt.operationId);
+        if (!wasCommitted) continue;
+        const persisted = existing.turns.find((turn) => turn.id === receipt.turnId);
+        const index = conv.turns.findIndex((turn) => turn.id === receipt.turnId);
+        if (receipt.removed || !persisted) {
+          if (receipt.turnId) conv.turns = conv.turns.filter((turn) => turn.id !== receipt.turnId);
+          if (conv.activeLeafId === receipt.turnId) conv.activeLeafId = existing.activeLeafId;
+          receipt.removed = true;
+        } else if (index >= 0) {
+          conv.turns[index] = persisted;
+        } else if (conv.writeRevision === existing.writeRevision) {
+          receipt.removed = true;
+        } else {
+          // Old writers do not carry revisions. They cannot erase an import.
+          conv.turns.push(persisted);
+          if (conv.activeLeafId === persisted.parentId) conv.activeLeafId = persisted.id;
+        }
+      }
+      conv.sideImportReceipts = [...receipts.values()];
+    }
+    // Older writers rebuild a known subset. Keep additive, unrelated metadata.
+    const merged = { ...existing, ...conv };
+    if (options.sendReservationMutation && conv.activeSendReservations === undefined) delete merged.activeSendReservations;
+    if (loadedConversations.has(conv) || conv.writeRevision !== undefined) {
+      // A current snapshot can explicitly delete optional runtime/branch
+      // metadata. A legacy writer rebuilding only known fields cannot.
+      const optionalFields: Array<keyof ConversationFile> = [
+        "harnessSessionId", "grokSandboxProfile", "runtimeAccessFingerprint", "inferenceRouteId",
+        "inferenceRouteFingerprint", "model", "modelIntent", "runtime", "title", "origin", "branch", "prUrl",
+        "activeLeafId", "parentSessionId", "branchedFromTurnId", "pendingUserTurnId",
+      ];
+      for (const key of optionalFields) if (!Object.hasOwn(conv, key)) delete merged[key];
+    } else {
+      if (!Object.hasOwn(conv, "activeLeafId")) delete merged.activeLeafId;
+      if (!Object.hasOwn(conv, "pendingUserTurnId")) delete merged.pendingUserTurnId;
+    }
+    if (existing && !Object.hasOwn(existing, "createdAt")) {
+      delete merged.createdAt;
+      delete conv.createdAt;
+    }
+    if (existing?.createdAt) merged.createdAt = existing.createdAt;
+    merged.writeRevision = (existing?.writeRevision ?? 0) + 1;
+    merged.updatedAt = new Date().toISOString();
+    Object.assign(conv, merged);
+    // Atomic replace (cave-1v95): conversations are the highest-churn store —
+    // a crash mid-write must leave the previous transcript intact, never a
+    // torn half-JSON that loadConversation silently drops.
+    await writeJsonAtomic(pathFor(conv.sessionId), conv);
+    conversationSummaryCache.delete(pathFor(conv.sessionId));
+    // Bust the sessions-list SWR cache (cave-53yx): a new or updated
+    // conversation must be visible to the event-driven list refresh that fires
+    // right after the save, not 1-2 polls later.
+    invalidateSessionsListCache();
+  });
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
-  const conv = await loadConversation(sessionId);
-  if (!conv) return;
-  conv.turns.push(turn);
-  await saveConversation(conv);
+  return withConversationLock(sessionId, async () => {
+    const conv = await loadConversation(sessionId);
+    if (!conv) return;
+    conv.turns.push(turn);
+    await saveConversation(conv);
+  });
 }
 
 export type ConversationStubSeed = {
@@ -857,17 +1079,34 @@ export function stripConversationStubTurn(
   return true;
 }
 
-export async function deleteConversation(sessionId: string): Promise<boolean> {
-  try {
-    const file = pathFor(sessionId);
-    await unlink(file);
-    conversationSummaryCache.delete(file);
-    conversationCreatedAtByFile.delete(file);
-    invalidateSessionsListCache();
-    return true;
-  } catch {
-    return false;
-  }
+export async function deleteConversation(
+  sessionId: string,
+  options: { permanent?: boolean } = {},
+): Promise<boolean> {
+  if (!isSafeConversationSessionId(sessionId)) return false;
+  return withConversationLock(sessionId, async () => {
+    const existing = await loadConversation(sessionId);
+    if (options.permanent || existing?.sideConversation || existing?.sideImportReceipts?.length) {
+      const fence = await conversationDeletionFence(sessionId);
+      if (!fence) {
+        await mkdir(path.join(CONV_DIR, ".deleted"), { recursive: true });
+        await writeJsonAtomic(deletionFencePath(sessionId), {
+          sessionId, deletedAt: new Date().toISOString(), side: Boolean(existing?.sideConversation),
+        } satisfies ConversationDeletionFence);
+      }
+    }
+    try {
+      const file = pathFor(sessionId);
+      await unlink(file);
+      conversationSummaryCache.delete(file);
+      conversationCreatedAtByFile.delete(file);
+      invalidateSessionsListCache();
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return false;
+    }
+  });
 }
 
 /**
@@ -962,6 +1201,7 @@ async function readConversationSummary(
           ? { status: signals.terminal.status, exitCode: signals.terminal.exitCode }
           : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
+        ...(conv.sideConversation ? { sideConversation: true } : {}),
         ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
@@ -980,7 +1220,7 @@ async function readConversationSummary(
   }
 }
 
-export async function listConversations(): Promise<ConversationSummary[]> {
+export async function listConversations(options: { includeSideConversations?: boolean } = {}): Promise<ConversationSummary[]> {
   const startedAt = performance.now();
   const scanCount = ++conversationListScanCount;
   await ensureDir();
@@ -1004,7 +1244,9 @@ export async function listConversations(): Promise<ConversationSummary[]> {
     return [];
   }
 
-  const names = entries.filter((name) => name.endsWith(".json"));
+  const deleted = await deletionFenceNames();
+  const names = entries.filter((name) => name.endsWith(".json")
+    && !deleted.has(createHash("sha256").update(name.slice(0, -5)).digest("hex") + ".json"));
   const files = names.map((name) => path.join(CONV_DIR, name));
   const liveFiles = new Set(files);
   for (const file of conversationSummaryCache.keys()) {
@@ -1085,7 +1327,8 @@ export async function listConversations(): Promise<ConversationSummary[]> {
     ),
   );
 
-  const summaries = results.filter((summary): summary is ConversationSummary => Boolean(summary));
+  const summaries = results.filter((summary): summary is ConversationSummary =>
+    Boolean(summary) && (options.includeSideConversations === true || (!summary?.sideConversation && !isRetainedSideConversationId(summary?.sessionId ?? ""))));
   summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   if (scanCount >= conversationListMetrics.scanCount) {
     conversationListMetrics = {
@@ -1164,8 +1407,10 @@ export async function searchConversations(
   }
 
   const hits: Array<ConversationSearchHit & { updatedAt: string }> = [];
+  const deleted = await deletionFenceNames();
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
+    if (deleted.has(createHash("sha256").update(name.slice(0, -5)).digest("hex") + ".json")) continue;
     try {
       const file = path.join(CONV_DIR, name);
       const info = await stat(file);
@@ -1188,7 +1433,7 @@ export async function searchConversations(
       // Cheap substring pre-filter before scanning turns.
       if (!entry.lower.includes(qLower)) continue;
       const conv = entry.conv;
-      if (!conv || !Array.isArray(conv.turns)) continue;
+      if (!conv || !Array.isArray(conv.turns) || conv.sideConversation || isRetainedSideConversationId(conv.sessionId)) continue;
       let matchCount = 0;
       let snippet = "";
       for (const turn of conv.turns) {

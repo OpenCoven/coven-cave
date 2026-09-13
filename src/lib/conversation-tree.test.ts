@@ -87,6 +87,74 @@ test("resolveActivePath does not weave parentless USER turns (root branch siblin
   assert.deepEqual(resolveActivePath(turns, "a1").map((x) => x.id), ["u1", "a1"]);
 });
 
+test("resolveActivePath uses bounded timestamp reads when weaving many valid echoes", () => {
+  let timestampReads = 0;
+  const chain: TreeTurn[] = Array.from({ length: 500 }, (_, index) => ({
+    id: `turn-${index}`,
+    parentId: index === 0 ? null : `turn-${index - 1}`,
+    get createdAt() {
+      timestampReads += 1;
+      return "2026-06-23T00:00:00.000Z";
+    },
+  }));
+  const echoes: TreeTurn[] = Array.from({ length: 250 }, (_, index) => ({
+    id: `echo-${index}`,
+    role: "system",
+    get createdAt() {
+      timestampReads += 1;
+      return "2026-06-23T00:00:01.000Z";
+    },
+  }));
+  const path = resolveActivePath([...chain, ...echoes], "turn-499");
+  const bound = 20 * (chain.length + echoes.length);
+  assert.ok(timestampReads <= bound, `${timestampReads} timestamp reads exceed ${bound}; echoes must not rescan the chain`);
+  assert.deepEqual(path.slice(0, chain.length).map((turn) => turn.id), chain.map((turn) => turn.id));
+  assert.deepEqual(path.slice(chain.length).map((turn) => turn.id), echoes.map((turn) => turn.id).sort());
+});
+
+test("resolveActivePath preserves reference weaving for reversed, missing and malformed clocks", () => {
+  const timestamps = [
+    undefined,
+    "not-a-date",
+    "1970-01-01T00:00:00Z",
+    "2026-06-23T00:00:01.000Z",
+    "2026-06-23T00:00:02.000Z",
+  ];
+  const at = (turn: TreeTurn) => turn.createdAt ? Date.parse(turn.createdAt) : 0;
+  for (const first of timestamps) {
+    for (const second of timestamps) {
+      for (const a of timestamps) {
+        for (const b of timestamps) {
+          for (const c of timestamps) {
+            const chain: TreeTurn[] = [
+              { id: "root", parentId: null, createdAt: first },
+              { id: "leaf", parentId: "root", createdAt: second },
+            ];
+            const echoes: TreeTurn[] = [
+              { id: "echo-z", role: "system", createdAt: a },
+              { id: "echo-a", role: "system", createdAt: b },
+              { id: "echo-m", role: "system", createdAt: c },
+            ];
+            const expected = [...chain];
+            const ordered = [...echoes].sort((left, right) => {
+              if (at(left) !== at(right)) return at(left) - at(right);
+              return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+            });
+            for (const echo of ordered) {
+              const position = expected.findIndex((turn) => at(turn) > at(echo));
+              expected.splice(position < 0 ? expected.length : position, 0, echo);
+            }
+            const input = [...chain].reverse().concat(echoes);
+            const original = structuredClone(input);
+            assert.deepEqual(resolveActivePath(input, "leaf").map((turn) => turn.id), expected.map((turn) => turn.id));
+            assert.deepEqual(input, original);
+          }
+        }
+      }
+    }
+  }
+});
+
 test("siblingsOf returns ordered siblings and the 0-based index", () => {
   const turns = [t("u1", null, 1), t("a", "u1", 2), t("b", "u1", 3), t("c", "u1", 4)];
   const r = siblingsOf(turns, "b");

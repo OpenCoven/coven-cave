@@ -307,8 +307,8 @@ export async function buildFamiliarContractBlock(
  * Always returns a row when a familiar was selected — including the "nothing
  * was loaded" case, because that absence is precisely the fact the motivating
  * session could not establish. Callers decide whether a turn warrants a row at
- * all (the chat route skips resumed and `enhance` turns, which load nothing by
- * design and would otherwise report a misleading absence).
+ * all (the chat route skips successful native resumes and `enhance` turns,
+ * but reports identity reloaded for a replacement native session).
  */
 export function familiarContractNotice(
   context: FamiliarContractContext,

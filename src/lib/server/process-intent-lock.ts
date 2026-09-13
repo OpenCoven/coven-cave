@@ -114,7 +114,8 @@ async function processStartIdentity(pid: number): Promise<string | null> {
         `if ($null -ne $p) { $p.CreationDate.ToUniversalTime().Ticks }`,
       ].join("; ");
       const { stdout } = await execFileAsync(
-        "powershell.exe",
+        path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows",
+          "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
         ["-NoProfile", "-NonInteractive", "-Command", script],
         { windowsHide: true },
       );
@@ -122,7 +123,7 @@ async function processStartIdentity(pid: number): Promise<string | null> {
       if (startedAt) return `win32:${startedAt}`;
     } else {
       const { stdout } = await execFileAsync(
-        "ps",
+        "/bin/ps",
         ["-o", "lstart=", "-p", String(pid)],
         { windowsHide: true },
       );

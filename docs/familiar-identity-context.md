@@ -42,9 +42,12 @@ Both surfaces now share one builder, so the two cannot drift apart again.
 | `MEMORY.md` | **no** | yes (`includeMemory: true`) |
 | `ward.toml` | never | never |
 
-- **New sessions only.** Resumed conversations already carry the block in their
-  transcript; re-sending kilobytes of prose every turn would invert the very
-  imbalance this fixes. This matches how the operator profile is handled.
+- **New native sessions, including replacement attempts.** A successful native
+  resume already carries the block. If runtime access changes or a failed
+  resume requires a replacement session, Cave reloads the familiar contract
+  and operator context for that attempt. The visible conversation can keep
+  its ID even though its native session changed. Recovery may still replay
+  bounded history; it is not a Fresh-context guarantee.
 - **Never on `origin === "enhance"`.** Enhance is a one-shot utility lane where
   persona prose is ballast — the same reason the Knowledge Vault skips it.
 - **`MEMORY.md` is chat-excluded** because chat already injects today's
@@ -119,10 +122,13 @@ unless the workspace is a granted root.
 
 ## Observability
 
-Every new turn emits a `familiar-contract` progress row naming the files that
-were actually inlined, or stating that none were found. It carries file names
-only, never contents, and it persists across transcript reloads alongside the
-runtime compatibility notices.
+New native sessions report a `familiar-contract` progress row naming the
+files actually inlined, or stating that none were found. Replacement-session
+recovery also reports the contract loaded for its new attempt. An ordinary
+successful resume does not imply another contract-file load. The row carries
+file names only, never contents, and persists across transcript reloads
+alongside the runtime compatibility notices. It describes prompt assembly,
+not an authorized root/revision receipt or an isolated context manifest.
 
 This exists because the motivating report was a user reading an *exported*
 transcript in which a familiar said it could not access its `SOUL.md`. The

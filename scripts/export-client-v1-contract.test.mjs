@@ -200,6 +200,7 @@ test("ratchets the complete authority contract and protected operation inventory
     "conversations.list",
     "conversations.read",
     "messages.list",
+    "chapters.list",
   ]);
 
   const fixture = JSON.parse(renderClientV1ContractFixture());

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { NextResponse } from "next/server";
+import { assertOrdinaryConversationSendAllowed, sideConversationErrorResponse } from "@/lib/server/chat-side-conversations";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -226,6 +227,7 @@ import {
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
+  reserveConversationSend,
 } from "@/lib/cave-conversations";
 import {
   captureWorkBranch,
@@ -778,6 +780,7 @@ function openClawChatResponse(args: {
   openClawRegistryBundleSource?: "inline" | "cache";
   openClawRegistryPublicKeys?: OpenClawRegistryKeyring;
   openClawRegistryCheckpoint?: OpenClawRegistryCheckpoint;
+  releaseSendReservation: () => Promise<void>;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -818,7 +821,13 @@ function openClawChatResponse(args: {
           ...(durationMs != null ? { durationMs } : {}),
         });
       const heartbeat = startChatSseHeartbeat(controller, () => closed || args.req.signal.aborted);
-      const close = () => {
+      const close = async () => {
+        try {
+          await args.releaseSendReservation();
+        } catch (error) {
+          // Keep the durable reservation on cleanup failure; imports fail closed.
+          console.error("Could not settle the conversation send reservation", error);
+        }
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
@@ -850,7 +859,7 @@ function openClawChatResponse(args: {
             durationMs: Date.now() - startedAt,
             isError: true,
           });
-          close();
+          await close();
           return;
         }
         throw error;
@@ -1147,7 +1156,7 @@ function openClawChatResponse(args: {
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch is indeterminate", "error", gatewayDispatch.reason);
         push({ kind: "error", code: "openclaw_gateway_indeterminate", message: gatewayDispatch.reason });
         push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
-        close();
+        await close();
         return;
       }
       if (gatewayDispatch.kind === "unavailable" && negotiationDegradedDiagnostic) {
@@ -1367,7 +1376,7 @@ function openClawChatResponse(args: {
         gatewayDispatch.close();
         runBuffer?.finish();
         await sleep(20);
-        close();
+        await close();
         return;
       }
       const openclawLaunch = openClawLaunchCommand();
@@ -1397,7 +1406,7 @@ function openClawChatResponse(args: {
           durationMs: Date.now() - startedAt,
           isError: true,
         });
-        close();
+        await close();
         return;
       }
       let executionMode = openClawCliExecutionMode();
@@ -1518,7 +1527,7 @@ function openClawChatResponse(args: {
         markChatRunProjectionSettled(runHandle);
         unregisterChatRun(runHandle);
         runBuffer?.finish();
-        close();
+        void close();
       };
       const attachChild = (launchedChild: ReturnType<typeof spawn>) => {
         launchedChild.stdout?.on("data", (data: Buffer) => {
@@ -1756,7 +1765,7 @@ function openClawChatResponse(args: {
         });
         runBuffer?.finish();
         await sleep(20);
-        close();
+        await close();
       }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
       child = spawnChild(executionMode);
@@ -1830,6 +1839,14 @@ async function postChat(
         headers: { "content-type": "application/json" },
       },
     );
+  }
+  if (body.sessionId != null && typeof body.sessionId !== "string") {
+    return Response.json({ ok: false, code: "invalid_sessionId", error: "sessionId must be a string" }, { status: 400 });
+  }
+  try {
+    await assertOrdinaryConversationSendAllowed(body.sessionId);
+  } catch (error) {
+    return sideConversationErrorResponse(error);
   }
   body.runId = normalizeChatAttentionOperationId(
     (body as { runId?: unknown }).runId,
@@ -1926,9 +1943,15 @@ async function postChat(
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
+  let sendReservation: Awaited<ReturnType<typeof reserveConversationSend>>;
+  try {
+    sendReservation = await reserveConversationSend(body.sessionId, body.familiarId);
+  } catch (error) {
+    return sideConversationErrorResponse(error);
+  }
+  let streamOwnsSendReservation = false;
+  try {
+  const existingConversation = sendReservation.conversation;
   // Canonicalize the bound harness id up front so a familiar carrying a
   // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
   // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
@@ -2883,7 +2906,12 @@ async function postChat(
     persistedAttachments,
     responseMetadata,
   });
-  if (offlineChatResponse) return offlineChatResponse;
+  if (offlineChatResponse) {
+    // Queue acknowledgement is not runtime/transcript settlement. Until the
+    // queue owner can reconcile this reservation, imports remain unavailable.
+    streamOwnsSendReservation = true;
+    return offlineChatResponse;
+  }
 
   // Image delivery channel: only harnesses that can read a local granted root
   // may receive image paths. Remote Hermes Responses endpoints cannot,
@@ -2906,11 +2934,12 @@ async function postChat(
   const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
     resolvedFamiliarWorkspace,
   );
-  // Operator profile — who the human is. New sessions only: resumed sessions
-  // already carry the block in their transcript.
-  const operatorProfileContext = body.sessionId
-    ? null
-    : buildOperatorProfileContext(config.profile);
+  // A reserved Cave id can still launch its first native session.
+  const startsNewNativeSession = !body.sessionId ||
+    (body.startNewConversation === true && !existingConversation);
+  const operatorProfileContext = startsNewNativeSession
+    ? buildOperatorProfileContext(config.profile)
+    : null;
   // Knowledge Vault — curated, cross-harness reference knowledge, separate from
   // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
   // consumes `harnessPrompt` below receives the same authoritative context.
@@ -2934,10 +2963,8 @@ async function postChat(
   // familiar; until cave-gw3iq chat never actually loaded them, so the claim was
   // unbacked in the one surface users spend most of their time in.
   //
-  // New sessions only, matching the operator profile: a resumed conversation
-  // already carries the block in its transcript, and re-sending several KB of
-  // identity prose on every turn is exactly the imbalance this fix is meant to
-  // correct — not to invert.
+  // Native resumes already carry this block. A recovery that replaces the
+  // native session must reload it even when Cave keeps the same conversation.
   //
   // `enhance` is skipped for the same reason it skips the Knowledge Vault: that
   // origin is the one-shot utility lane (prompt enhance, reply recommendation,
@@ -2946,58 +2973,78 @@ async function postChat(
   //
   // MEMORY.md is deliberately excluded — see FamiliarContractBlockOptions. Chat
   // already injects today's daily memory as its own startup-context block.
-  const familiarContract =
-    body.sessionId || body.origin === "enhance"
+  let familiarContract =
+    !startsNewNativeSession || body.origin === "enhance"
       ? { block: null, loaded: [], clamped: [] }
       : await buildFamiliarContractContext(body.familiarId);
-  const familiarContractBlock = familiarContract.block;
+  let loadedStartupContext = startsNewNativeSession;
 
   // Reuse the task card already loaded to authorize this reserved handoff.
   // Besides avoiding a second board-store read on every chat turn, this keeps
   // the permission decision and prompt context on the same task snapshot.
   const taskContext = taskCard ? buildTaskContext(taskCard) : null;
-  const scopedPrompt = buildPromptWithRuntimeScope(
-    buildPromptWithDeliveryEvidenceContract(
-      buildPromptWithCovenIdentityCanon(
-        // Sits directly inside the canon so the files land next to the rule that
-        // names them, and ahead of the vault/task/memory data blocks so persona
-        // frames how the familiar reads them. The genuine runtime boundary is
-        // applied outermost and therefore still leads the assembled prompt.
-        buildPromptWithFamiliarContract(
-          buildTaskAwarePrompt(
-            buildPromptWithKnowledgeVault(
-              buildPromptWithFamiliarStartupContext(
-                appendMentionedFilesBlock(
-                  buildPromptWithResponseControls(
-                    buildPromptWithAttachments(promptText, attachments, {
-                      imagesSupported,
-                      filesSupported: imagesSupported,
-                      attachmentFilePaths,
-                    }),
-                    { modelControls: promptModelControls },
+  const composeHarnessPrompt = (
+    familiarContractBlock: string | null,
+    operatorProfileContext: ReturnType<typeof buildOperatorProfileContext>,
+  ): string => {
+    const scopedPrompt = buildPromptWithRuntimeScope(
+      buildPromptWithDeliveryEvidenceContract(
+        buildPromptWithCovenIdentityCanon(
+          // Keep identity beside its canon, inside the actual runtime boundary.
+          buildPromptWithFamiliarContract(
+            buildTaskAwarePrompt(
+              buildPromptWithKnowledgeVault(
+                buildPromptWithFamiliarStartupContext(
+                  appendMentionedFilesBlock(
+                    buildPromptWithResponseControls(
+                      buildPromptWithAttachments(promptText, attachments, {
+                        imagesSupported,
+                        filesSupported: imagesSupported,
+                        attachmentFilePaths,
+                      }),
+                      { modelControls: promptModelControls },
+                    ),
+                    mentionedFiles,
                   ),
-                  mentionedFiles,
+                  [operatorProfileContext, dailyMemoryContext],
                 ),
-                [operatorProfileContext, dailyMemoryContext],
+                knowledgeVaultEntries,
+                knowledgeVaultCollections,
               ),
-              knowledgeVaultEntries,
-              knowledgeVaultCollections,
+              taskContext,
             ),
-            taskContext,
+            familiarContractBlock,
           ),
-          familiarContractBlock,
+          body.familiarId,
         ),
-        body.familiarId,
       ),
-    ),
-    runtimeScope,
-  );
-  // The boundary reminder rides OUTSIDE the runtime-scope wrapper: it refers
-  // back to the boundary block ("listed above") and only exists when the
-  // conversation's previous turn strayed out of the granted roots.
-  const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
+      runtimeScope,
+    );
+    // The reminder refers back to the boundary block and therefore follows it.
+    return buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
+  };
+  const harnessPrompt = composeHarnessPrompt(familiarContract.block, operatorProfileContext);
+  let recoveryPrompt: ReturnType<typeof buildResumeRetryPrompt> | null = null;
+  const buildChatRecoveryPrompt = async () => {
+    if (recoveryPrompt) return recoveryPrompt;
+    if (!loadedStartupContext) {
+      if (body.origin !== "enhance") {
+        familiarContract = await buildFamiliarContractContext(body.familiarId);
+      }
+      loadedStartupContext = true;
+    }
+    // This is continuity recovery, NOT an isolated Fresh side chat. Keep the
+    // ordinary optional context and active-path replay, plus the identity that
+    // the lost native transcript can no longer supply.
+    recoveryPrompt = buildResumeRetryPrompt(
+      composeHarnessPrompt(familiarContract.block, buildOperatorProfileContext(config.profile)),
+      existingConversation,
+    );
+    return recoveryPrompt;
+  };
 
   if (binding.harness === "openclaw" && !sshRuntime) {
+    streamOwnsSendReservation = true;
     return openClawChatResponse({
       req,
       body,
@@ -3015,6 +3062,7 @@ async function postChat(
       openClawRegistryBundleSource: dependencies.openClawRegistryBundleSource,
       openClawRegistryPublicKeys: dependencies.openClawRegistryPublicKeys,
       openClawRegistryCheckpoint: dependencies.openClawRegistryCheckpoint,
+      releaseSendReservation: sendReservation.release,
     });
   }
 
@@ -3275,7 +3323,7 @@ async function postChat(
     existingConversation.runtimeAccessFingerprint !== runtimeAccessFingerprint,
   );
   const runtimeAccessRetry = runtimeAccessRefreshNeeded
-    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    ? await buildChatRecoveryPrompt()
     : null;
   const inferenceRouteRefreshNeeded = Boolean(
     existingConversation &&
@@ -3283,7 +3331,7 @@ async function postChat(
     !inferencePlan.resumeSafe
   );
   const inferenceRouteRetry = inferenceRouteRefreshNeeded
-    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    ? await buildChatRecoveryPrompt()
     : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
@@ -3296,7 +3344,7 @@ async function postChat(
     requestedProfile: grokSandboxProfile,
   });
   const grokSandboxRetry = grokFreshSessionForSandbox
-    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    ? await buildChatRecoveryPrompt()
     : null;
   const openCodeNativeResumeSupported = openCodeCompatibility?.mode === "structured"
     ? Boolean(openCodeCompatibility.schema?.launch.sessionOption)
@@ -3322,20 +3370,19 @@ async function postChat(
   );
   const openCodeSessionUnavailable = !openCodeNativeResumeSupported;
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
-    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    ? await buildChatRecoveryPrompt()
     : null;
   const freshNativeSessionRequired =
     runtimeAccessRefreshNeeded ||
     inferenceRouteRefreshNeeded ||
     grokFreshSessionForSandbox ||
     openCodeFreshSessionForCompatibility;
-  const args = buildArgs(
-    freshNativeSessionRequired ? null : resumeTarget,
-    runtimeAccessRetry?.prompt ??
-      inferenceRouteRetry?.prompt ??
-      grokSandboxRetry?.prompt ??
-      openCodeCompatibilityRetry?.prompt,
-  );
+  const initialAttemptPrompt = runtimeAccessRetry?.prompt ??
+    inferenceRouteRetry?.prompt ??
+    grokSandboxRetry?.prompt ??
+    openCodeCompatibilityRetry?.prompt ??
+    harnessPrompt;
+  const args = buildArgs(freshNativeSessionRequired ? null : resumeTarget, initialAttemptPrompt);
 
   // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
@@ -3359,6 +3406,7 @@ async function postChat(
   // before the child-run registry is installed. Keep this binding available
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
+  streamOwnsSendReservation = true;
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
@@ -3420,7 +3468,12 @@ async function postChat(
         });
       };
       const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
-      const close = () => {
+      const close = async () => {
+        try {
+          await sendReservation.release();
+        } catch (error) {
+          console.error("Could not settle the conversation send reservation", error);
+        }
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
@@ -3444,10 +3497,15 @@ async function postChat(
       // asked "what is in your SOUL.md" should be answerable from the run's own
       // record rather than from the familiar's introspection, which is exactly
       // what was missing when this injection was specified.
-      if (!body.sessionId && body.origin !== "enhance" && body.familiarId) {
+      let familiarContractNoticeSent = false;
+      const reportFamiliarContract = () => {
+        if (!loadedStartupContext || body.origin === "enhance" ||
+          !body.familiarId || familiarContractNoticeSent) return;
         const notice = familiarContractNotice(familiarContract);
         pushProgress("familiar-contract", notice.label, "notice", notice.detail);
-      }
+        familiarContractNoticeSent = true;
+      };
+      reportFamiliarContract();
       if (hermesDirect && !hermesApi) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
@@ -5025,7 +5083,7 @@ async function postChat(
         }
       };
 
-      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+      const runAttempt = (spawnArgs: string[], apiPrompt: string): Promise<void> => {
         if (runHandle.stopRequested) return Promise.resolve();
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
         return new Promise((resolve) => {
@@ -5547,7 +5605,8 @@ async function postChat(
         );
       }
       if (hermesNeedsContextReplay) {
-        const replay = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        const replay = await buildChatRecoveryPrompt();
+        reportFamiliarContract();
         pushProgress(
           "resume-retry",
           replay.replayedHistory
@@ -5557,7 +5616,7 @@ async function postChat(
         );
         await runAttempt(buildArgs(null, replay.prompt), replay.prompt);
       } else {
-        await runAttempt(args);
+        await runAttempt(args, initialAttemptPrompt);
       }
 
       // Copilot can silently close an expired native session with no result
@@ -5627,7 +5686,7 @@ async function postChat(
           "done",
           conflict.manifestPath,
         );
-        await runAttempt(args);
+        await runAttempt(args, initialAttemptPrompt);
       }
 
       // Transparent retry: if codex reported its rollout-resume failed and
@@ -5637,7 +5696,8 @@ async function postChat(
       // otherwise the familiar answers as if the thread just started and the
       // user has to remind it of everything said so far.
       if (resumeFailed && body.sessionId) {
-        const retry = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        const retry = await buildChatRecoveryPrompt();
+        reportFamiliarContract();
         pushProgress(
           "resume-retry",
           retry.replayedHistory
@@ -6214,7 +6274,7 @@ async function postChat(
       unregisterChatRun(runHandle);
       runBuffer?.finish();
       await sleep(20);
-      close();
+      await close();
     },
   });
 
@@ -6225,4 +6285,7 @@ async function postChat(
       connection: "keep-alive",
     },
   });
+  } finally {
+    if (!streamOwnsSendReservation) await sendReservation.release();
+  }
 }

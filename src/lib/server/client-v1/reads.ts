@@ -117,6 +117,7 @@ export type ClientV1MessageRecord = {
   toolCount: number;
   isError?: boolean;
   cancelled?: boolean;
+  reviewedExcerpt?: ChatTurn["reviewedExcerpt"];
 };
 
 /**
@@ -265,6 +266,12 @@ export function projectClientV1Message(
   conversationId: string,
   turn: ChatTurn,
 ): ClientV1MessageRecord {
+  const excerpt = turn.reviewedExcerpt;
+  if (excerpt && (turn.role !== "user" || excerpt.schemaVersion !== 1 ||
+    excerpt.kind !== "reviewed-excerpt" || excerpt.inert !== true ||
+    typeof excerpt.edited !== "boolean" || !Array.isArray(excerpt.sourceTurnIds))) {
+    throw new Error("Client v1 cannot project malformed reviewed-excerpt provenance.");
+  }
   return {
     id: requiredId(turn.id, "message id"),
     conversationId: requiredId(conversationId, "message conversationId"),
@@ -282,6 +289,15 @@ export function projectClientV1Message(
     toolCount: countOf(turn.tools),
     ...(turn.isError === undefined ? {} : { isError: turn.isError }),
     ...(turn.cancelled === undefined ? {} : { cancelled: turn.cancelled }),
+    ...(excerpt ? { reviewedExcerpt: {
+      schemaVersion: 1 as const, kind: "reviewed-excerpt" as const, inert: true as const,
+      sourceSessionId: requiredId(excerpt.sourceSessionId, "excerpt sourceSessionId"),
+      sourceRevision: requiredText(excerpt.sourceRevision, "excerpt sourceRevision"),
+      sourceTurnIds: excerpt.sourceTurnIds.map((id) => requiredId(id, "excerpt sourceTurnId")),
+      sourceDigest: requiredText(excerpt.sourceDigest, "excerpt sourceDigest"),
+      reviewedDigest: requiredText(excerpt.reviewedDigest, "excerpt reviewedDigest"),
+      edited: excerpt.edited, operationId: requiredId(excerpt.operationId, "excerpt operationId"),
+    } } : {}),
   };
 }
 

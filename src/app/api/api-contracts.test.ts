@@ -78,6 +78,9 @@ const contracts: RouteContract[] = [
   { route: "/chat/conversation", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/conversation/[id]/turns/[turnId]", methods: ["DELETE"], kind: "json" },
+  { route: "/chat/side-conversations", methods: ["GET", "POST"], kind: "json" },
+  { route: "/chat/side-conversations/[id]", methods: ["GET", "PATCH"], kind: "json" },
+  { route: "/chat/side-conversations/[id]/bring-back", methods: ["POST"], kind: "json" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/broadcast", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/chat/rewrite", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -138,6 +141,7 @@ const contracts: RouteContract[] = [
   // trust from the thing that demoted it.
   { route: "/client/v1/conversations", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]/chapters", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
   { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
   { route: "/client/v1/familiars/[id]/analytics", methods: ["GET"], kind: "json" },
@@ -464,7 +468,7 @@ function exportedMethods(source: string): string[] {
 // readsJson / invalidJson assertions below keep reading the route itself
 // instead of an unrelated module's text.
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(|clientV1(?:Success|Error|RateLimit)Response\s*\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|clientV1(?:Success|Error|RateLimit)Response\s*\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(|sideConversation(?:Route|ErrorResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
@@ -657,6 +661,7 @@ assert.deepEqual(
     "/client/v1/admin/status",
     "/client/v1/conversations",
     "/client/v1/conversations/[id]",
+    "/client/v1/conversations/[id]/chapters",
     "/client/v1/conversations/[id]/messages",
     "/client/v1/familiars",
     "/client/v1/familiars/[id]/analytics",

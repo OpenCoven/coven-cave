@@ -54,6 +54,9 @@ struct ChatView: View {
     @State private var permissionsFamiliar: Familiar?
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
+    @AppStorage(ConversationChapters.preferenceKey) private var chaptersEnabled = false
+    @State private var showChapters = false
+    @State private var selectedChapter: ConversationChapter?
     @State private var showSessionPicker = false
     @State private var showVoiceCall = false
     /// Inert navigation path handed to the session picker to satisfy its
@@ -388,6 +391,11 @@ struct ChatView: View {
         // was dismissed or the app backgrounded). Only when the live draft is
         // empty, so a draft already in hand isn't clobbered.
         .onAppear {
+            #if DEBUG
+            if chaptersEnabled, ProcessInfo.processInfo.arguments.contains("--ui-preview-open-chapters") {
+                showChapters = true
+            }
+            #endif
             if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
                 draft = saved
             }
@@ -512,6 +520,27 @@ struct ChatView: View {
             .accessibilityLabel("Conversation")
             .accessibilityValue(thread.title)
             .disabled(thread.isGroup)
+            if !thread.isGroup {
+                Divider()
+                Toggle("Chapter navigation", isOn: $chaptersEnabled)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("Chapter navigation")
+                if chaptersEnabled {
+                    Divider()
+                    Button {
+                        showSessionDetails = false
+                        composerFocused = false
+                        selectedChapter = nil
+                        showChapters = true
+                    } label: {
+                        sessionDetailRow("Chapters", value: "This conversation",
+                                         systemImage: "list.bullet", showsChevron: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("Browse chapters")
+                }
+            }
             ForEach(presentedModelControlCapabilities) { capability in
                 Divider()
                 sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
@@ -1016,6 +1045,7 @@ struct ChatView: View {
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard atBottom else { return }
                 streamScroll.request {
+                    guard atBottom else { return }
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }
@@ -1040,6 +1070,29 @@ struct ChatView: View {
                 } else {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
+            }
+            .sheet(isPresented: $showChapters, onDismiss: {
+                guard let chapter = selectedChapter else { return }
+                selectedChapter = nil
+                guard chaptersEnabled, let displayId = thread.displayId(for: chapter) else {
+                    app.showToast("This part of the conversation is no longer available.",
+                                  systemImage: "exclamationmark.triangle.fill", style: .warning)
+                    return
+                }
+                streamScroll.cancel()
+                atBottom = false
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                    proxy.scrollTo(displayId, anchor: .top)
+                }
+            }) {
+                ConversationChaptersSheet(
+                    thread: thread,
+                    familiarName: thread.familiarIds.first.flatMap(app.familiar)?.displayName
+                        ?? thread.familiarIds.first ?? "Unknown familiar",
+                    client: app.client,
+                    onRefresh: { app.persistThreads() },
+                    onSelect: { selectedChapter = $0 }
+                )
             }
         }
     }
@@ -2505,6 +2558,11 @@ struct ChatView: View {
 @MainActor
 final class ScrollCoalescer {
     private var pending: Task<Void, Never>?
+
+    func cancel() {
+        pending?.cancel()
+        pending = nil
+    }
 
     func request(_ scroll: @escaping @MainActor () -> Void) {
         guard pending == nil else { return }

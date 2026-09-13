@@ -292,6 +292,7 @@ export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [
   "/api/client/v1/conversations",
   "/api/client/v1/conversations/:id",
   "/api/client/v1/conversations/:id/messages",
+  "/api/client/v1/conversations/:id/chapters",
 ].map(clientV1PathPattern);
 
 /**

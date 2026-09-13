@@ -21,7 +21,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const inferenceRouteRefreshNeeded = Boolean\([\s\S]*?!inferencePlan\.resumeSafe[\s\S]*?\);[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  /const inferenceRouteRefreshNeeded = Boolean\([\s\S]*?!inferencePlan\.resumeSafe[\s\S]*?\);[\s\S]*?const inferenceRouteRetry = inferenceRouteRefreshNeeded\s*\? await buildChatRecoveryPrompt\(\)/,
   "route changes start a fresh native session with bounded transcript replay",
 );
 assert.match(
