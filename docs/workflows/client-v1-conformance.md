@@ -249,8 +249,15 @@ keeps the first complete recognized refusal. Without one, it reports
 `not-observed`, or `output-limit` if the observation budget is exhausted.
 It continues draining both output streams without forwarding raw output.
 The 120-second readiness deadline, polling, health/endpoint/PID precedence,
-and teardown are unchanged. Only the final missing-discovery outcome gains
-the suffix; there is no earlier generic missing line to mask it.
+and process termination/port-release checks are unchanged. Before formatting
+the final missing-discovery outcome, the harness waits for stderr `end` or
+`close`, capped at one second from the start of teardown. This wait runs
+alongside teardown, not after it: child `exit` alone does not prove the last
+buffered stderr has arrived. An unclosed pipe cannot extend this drain budget;
+any category already observed is retained, otherwise it stays `not-observed`
+(or `output-limit` if the byte budget was exhausted). Other readiness outcomes
+do not wait for the diagnostic drain. Only the final missing-discovery outcome
+gains the suffix; there is no earlier generic missing line to mask it.
 
 These observations are diagnostic evidence only. They do not establish a
 repair, change ownership checks or waivers, infer reader/publisher path

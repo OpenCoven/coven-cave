@@ -447,13 +447,13 @@ test("formats exactly the coordinated finite read/publication contract", () => {
   assert.equal(caveDiscoveryReadinessDiagnostic(missing), missing);
 });
 
-test("startup drains stderr and emits only the final diagnostic after unchanged readiness gates and teardown", async () => {
+test("startup drains stderr and emits only the final diagnostic after unchanged readiness gates and teardown", { timeout: 10_000 }, async () => {
   const source = await readFile(new URL("./client-v1-conformance.mjs", import.meta.url), "utf8");
   const startSource = /export async function startCave\(input\) \{[\s\S]*?\n\}/u.exec(source);
   assert.ok(startSource);
   const origin = "http://127.0.0.1:4310";
   const missing = "Client v1 discovery record is not published.";
-  for (const [healthStatus, discovery, expected, requestFails, exits] of [
+  for (const [healthStatus, discovery, expected, requestFails, exits, stderrTiming = "early"] of [
     [200, null, `${missing} [read=access-denied; publication=root-owner-unverified]`],
     [503, null, "Cave health is not ready."],
     [200, { endpoint: "http://127.0.0.1:4311", pid: 4310 }, "Client v1 discovery endpoint does not match the listening Cave."],
@@ -461,6 +461,11 @@ test("startup drains stderr and emits only the final diagnostic after unchanged 
     [200, null, "Cave readiness timed out after 120 seconds.", true],
     [200, null, "Cave exited before readiness.", true, true],
     [200, { endpoint: origin, pid: 4310 }, null],
+    [200, null, `${missing} [read=access-denied; publication=root-owner-unverified]`, false, false, "late-end"],
+    [200, null, `${missing} [read=access-denied; publication=root-owner-unverified]`, false, false, "late-close"],
+    [200, null, `${missing} [read=access-denied; publication=not-observed]`, false, false, "never"],
+    [503, null, "Cave health is not ready.", false, false, "never"],
+    [200, null, "Cave exited before readiness.", true, true, "late-end"],
   ]) {
     const child = new EventEmitter();
     child.pid = 4310;
@@ -468,14 +473,24 @@ test("startup drains stderr and emits only the final diagnostic after unchanged 
     let reads = 0;
     let stops = 0;
     let now = 0;
+    let drainExpired = false;
+    const drainTimers = new Set();
+    const events = [];
     child.stdout = { resume() { drains += 1; } };
     child.stderr = new EventEmitter();
+    const emitRefusal = () => {
+      events.push("stderr");
+      child.stderr.emit("data", Buffer.from("private stderr\n[cave] client-v1 discovery publi"));
+      child.stderr.emit("data", Buffer.from("cation refused: root-owner-unverified"));
+      if (stderrTiming !== "late-close") {
+        child.stderr.emit("data", Buffer.from("\nprivate late stderr\n"));
+        child.stderr.emit("end");
+      }
+      child.stderr.emit("close");
+    };
     child.stderr.resume = () => {
       drains += 1;
-      child.stderr.emit("data", Buffer.from("private stderr\n[cave] client-v1 discovery publi"));
-      child.stderr.emit("data", Buffer.from("cation refused: root-owner-unverified\n"));
-      child.stderr.emit("data", Buffer.from("private late stderr\n"));
-      child.stderr.emit("end");
+      if (stderrTiming === "early") emitRefusal();
     };
     const start = runInNewContext(`(${startSource[0].replace(/^export /u, "")})`, {
       buildCaveEnvironment: () => ({}),
@@ -486,9 +501,22 @@ test("startup drains stderr and emits only the final diagnostic after unchanged 
       CLIENT_V1_PREFIX: "/api/client/v1",
       Date: { now: () => now },
       setTimeout: (resolve, delay) => {
+        if (delay === 1_000) {
+          const timer = setTimeout(() => {
+            drainExpired = true;
+            drainTimers.delete(timer);
+            resolve();
+          }, delay);
+          drainTimers.add(timer);
+          return timer;
+        }
         assert.equal(delay, 250);
         now += exits ? delay : 120_000;
         resolve();
+      },
+      clearTimeout: (timer) => {
+        drainTimers.delete(timer);
+        clearTimeout(timer);
       },
       requestOnce: async (_origin, options) => {
         assert.equal(options.timeoutMs, 1_000);
@@ -503,7 +531,12 @@ test("startup drains stderr and emits only the final diagnostic after unchanged 
       caveReadinessFailure,
       caveDiscoveryReadinessDiagnostic,
       createCaveDiscoveryPublicationObserver,
-      stopCave: async () => { stops += 1; },
+      stopCave: async () => {
+        stops += 1;
+        child.emit("exit");
+        events.push("exit");
+        if (stderrTiming.startsWith("late-")) setImmediate(emitRefusal);
+      },
     });
     if (expected === null) {
       const result = await start({ port: 4310, caveHomeDir: "unused-home" });
@@ -520,6 +553,13 @@ test("startup drains stderr and emits only the final diagnostic after unchanged 
     }
     assert.equal(drains, 2);
     assert.equal(reads, requestFails ? 0 : 1);
+    assert.equal(drainTimers.size, 0, "no drain timer survives startup failure");
+    assert.equal(drainExpired, stderrTiming === "never" && healthStatus === 200);
+    if (stderrTiming.startsWith("late-") && !exits) {
+      assert.deepEqual(events, ["exit", "stderr"]);
+      assert.equal(child.stderr.listenerCount("end"), 0);
+      assert.equal(child.stderr.listenerCount("close"), 0);
+    }
   }
 });
 

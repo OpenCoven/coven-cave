@@ -913,7 +913,16 @@ export async function startCave(input) {
   child.stdout.resume();
   const publication = createCaveDiscoveryPublicationObserver();
   child.stderr.on("data", publication.observe);
-  child.stderr.on("end", publication.finish);
+  const stderrDrained = new Promise((resolve) => {
+    const finish = () => {
+      publication.finish();
+      child.stderr.off("end", finish);
+      child.stderr.off("close", finish);
+      resolve();
+    };
+    child.stderr.once("end", finish);
+    child.stderr.once("close", finish);
+  });
   child.stderr.resume();
 
   const origin = `http://127.0.0.1:${port}`;
@@ -951,7 +960,16 @@ export async function startCave(input) {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  await stopCave({ child }, port).catch(() => {});
+  // Exit can precede the last stderr data. Bound the drain alongside teardown,
+  // not after it, and never delay outcomes that do not use publication details.
+  let drainTimer = null;
+  const drain = failure === "Client v1 discovery record is not published."
+    ? Promise.race([
+      stderrDrained,
+      new Promise((resolve) => { drainTimer = setTimeout(resolve, 1_000); }),
+    ]).finally(() => clearTimeout(drainTimer))
+    : Promise.resolve();
+  await Promise.all([stopCave({ child }, port).catch(() => {}), drain]);
   throw new Error(caveDiscoveryReadinessDiagnostic(failure, readFailure, publication.category()));
 }
 
