@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import {
+import fs, {
   chmodSync,
   existsSync,
   mkdirSync,
@@ -170,21 +170,39 @@ test("a pre-opened child-process handle releases the canonical file before rebui
   }
 });
 
-for (const [suffix, failureCode] of [
+for (const [suffix, failureCode, probeFailure] of [
   ["-wal", null],
   ["-shm", null],
   ["-wal", "EIO"],
   ["-wal", "ENOENT"],
   ["", "ENOENT"],
+  ["-wal", "ENOENT", "dangling"],
+  ["-wal", "ENOENT", "EACCES"],
+  ["-wal", "ENOENT", "EIO"],
 ] as const) {
-  test(`rebuild handles ${suffix || "canonical"} rename ${failureCode ?? "disappearance"}`, async (t) => {
+  test(`rebuild handles ${suffix || "canonical"} rename ${failureCode ?? "disappearance"}${probeFailure ? ` with ${probeFailure} probe` : ""}`, async (t) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "research-semantic-rename-race-"));
     const file = path.join(root, "semantic.sqlite");
     const seed = await openResearchResourceSemanticIndex({ file });
     seed.replace(authority(), vectors);
     seed.close();
     const originalRename = fsPromises.rename;
+    const originalExists = fs.existsSync;
+    const originalLstat = fs.lstatSync;
     let intercepted = false;
+    const existsMock = t.mock.method(fs, "existsSync", (candidate: Parameters<typeof originalExists>[0]) => {
+      if (intercepted && probeFailure && candidate === `${file}${suffix}`) return false;
+      return originalExists(candidate);
+    });
+    const lstatMock = t.mock.method(fs, "lstatSync", (
+      candidate: Parameters<typeof originalLstat>[0],
+      options: Parameters<typeof originalLstat>[1],
+    ) => {
+      if (intercepted && probeFailure && probeFailure !== "dangling" && candidate === `${file}${suffix}`) {
+        throw Object.assign(new Error("injected sidecar probe failure"), { code: probeFailure });
+      }
+      return originalLstat(candidate, options);
+    });
     const renameMock = t.mock.method(fsPromises, "rename", async (
       source: Parameters<typeof originalRename>[0],
       destination: Parameters<typeof originalRename>[1],
@@ -192,6 +210,10 @@ for (const [suffix, failureCode] of [
       if (source === `${file}${suffix}`) {
         intercepted = true;
         if (failureCode !== null) {
+          if (probeFailure === "dangling") {
+            rmSync(source);
+            symlinkSync(path.join(root, "missing-sidecar-target"), source);
+          }
           throw Object.assign(new Error("injected rename failure"), { code: failureCode });
         }
         // SQLite's closing child removes this between the existence check and rename.
@@ -205,7 +227,8 @@ for (const [suffix, failureCode] of [
     syncBuiltinESMExports();
     try {
       if (failureCode !== null) {
-        await assert.rejects(rebuildResearchResourceSemanticIndex({ file }), { code: failureCode });
+        const expectedCode = probeFailure && probeFailure !== "dangling" ? probeFailure : failureCode;
+        await assert.rejects(rebuildResearchResourceSemanticIndex({ file }), { code: expectedCode });
       } else {
         const rebuilt = await rebuildResearchResourceSemanticIndex({ file });
         assert.equal(rebuilt.index.publication("resource-a"), null);
@@ -218,6 +241,8 @@ for (const [suffix, failureCode] of [
       assert.equal(intercepted, true, "the intended rename boundary must be exercised");
     } finally {
       renameMock.mock.restore();
+      existsMock.mock.restore();
+      lstatMock.mock.restore();
       syncBuiltinESMExports();
       await rm(root, { recursive: true, force: true });
     }

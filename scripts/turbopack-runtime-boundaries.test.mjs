@@ -24,7 +24,8 @@ const expectedBoundaries = new Map([
     ["path.resolve(/* turbopackIgnore: true */ options.file ?? semanticIndexPath())", 2],
     ["existsSync(/* turbopackIgnore: true */ candidate.file)", 1],
     ["existsSync(/* turbopackIgnore: true */ file)", 5],
-    ["existsSync(/* turbopackIgnore: true */ sidecar)", 2],
+    ["existsSync(/* turbopackIgnore: true */ sidecar)", 1],
+    ["lstatSync(/* turbopackIgnore: true */ sidecar)", 1],
   ]],
   ["../src/lib/server/research-topic-discovery-store.ts", [
     ["readdir(/* turbopackIgnore: true */ layout.jobsDir)", 2],

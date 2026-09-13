@@ -1080,7 +1080,15 @@ export async function rebuildResearchResourceSemanticIndex(
             } catch (error) {
               // A closing SQLite connection can remove its sidecars after the check.
               const code = error && typeof error === "object" && "code" in error ? error.code : null;
-              if (code !== "ENOENT" || existsSync(/* turbopackIgnore: true */ sidecar)) throw error;
+              if (code !== "ENOENT") throw error;
+              try {
+                lstatSync(/* turbopackIgnore: true */ sidecar);
+              } catch (probeError) {
+                const probeCode = probeError && typeof probeError === "object" && "code" in probeError ? probeError.code : null;
+                if (probeCode === "ENOENT") continue;
+                throw probeError;
+              }
+              throw error;
             }
           }
         }
