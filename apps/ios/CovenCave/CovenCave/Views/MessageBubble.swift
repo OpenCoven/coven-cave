@@ -25,6 +25,10 @@ struct MessageBubble: View {
     /// The operator's server avatar image URL for that same row; nil falls back
     /// to name initials.
     var operatorAvatarURL: URL? = nil
+    /// Rich markdown rows report height settlement so ChatView can preserve
+    /// bottom-follow without turning a WebKit measurement change into "the
+    /// reader scrolled away".
+    var onContentHeightChange: (() -> Void)? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -349,6 +353,7 @@ struct MessageBubble: View {
 
             if !isUser { Spacer(minLength: 48) }
         }
+        .accessibilityIdentifier("Message bubble \(message.id)")
     }
 
     @ViewBuilder private var responseControlStatus: some View {
@@ -489,12 +494,22 @@ struct MessageBubble: View {
                 }
             }
         } else if rendersMarkdown(projection) {
-            MarkdownWebView(markdown: projection.visible, height: $mdHeight,
-                            streaming: message.streaming && !isUser,
-                            theme: colorScheme == .light ? .light : .dark,
-                            accentHex: chrome.accentHex,
-                            onFailure: { markdownFailed = true })
-                .frame(height: max(mdHeight, 1))
+            let ready = mdHeight > 1
+            ZStack(alignment: .topLeading) {
+                MarkdownWebView(markdown: projection.visible, height: $mdHeight,
+                                streaming: message.streaming && !isUser,
+                                theme: colorScheme == .light ? .light : .dark,
+                                accentHex: chrome.accentHex,
+                                onFailure: { markdownFailed = true })
+                    .opacity(ready ? 1 : 0)
+                    .accessibilityHidden(!ready)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(projection.visible)
+                if !ready {
+                    markdownLoadingPlaceholder(projection)
+                }
+            }
+                .frame(height: ready ? mdHeight : markdownPlaceholderHeight(for: projection.visible))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .topTrailing) {
@@ -517,6 +532,10 @@ struct MessageBubble: View {
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming && !isUser { StreamingDot().padding(6) }
                 }
+                .onChange(of: mdHeight) { _, newHeight in
+                    guard newHeight > 1 else { return }
+                    onContentHeightChange?()
+                }
         } else {
             Text(projection.visible.isEmpty ? " " : projection.visible)
                 .textSelection(.enabled)
@@ -529,6 +548,22 @@ struct MessageBubble: View {
                     }
                 }
         }
+    }
+
+    private func markdownPlaceholderHeight(for text: String) -> CGFloat {
+        let explicitLines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        let wrappedLines = Int(ceil(Double(max(text.count, 1)) / 42.0))
+        let estimatedLines = max(explicitLines, wrappedLines)
+        return min(max(CGFloat(estimatedLines) * 20 + 18, 44), 260)
+    }
+
+    private func markdownLoadingPlaceholder(_ projection: AssistantResponseProjection) -> some View {
+        Text(projection.visible)
+            .textSelection(.enabled)
+            .foregroundStyle(Color.primary)
+            .lineLimit(12)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(projection.visible)
     }
 
     private var bubbleShape: UnevenRoundedRectangle {
@@ -780,5 +815,6 @@ extension MessageBubble: Equatable {
             && (lhs.onRetryDelete == nil) == (rhs.onRetryDelete == nil)
             && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
             && (lhs.onForward == nil) == (rhs.onForward == nil)
+            && (lhs.onContentHeightChange == nil) == (rhs.onContentHeightChange == nil)
     }
 }

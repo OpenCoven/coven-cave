@@ -15,9 +15,9 @@ enum UnreadMarker {
         return messages.first { $0.role == .assistant && $0.createdAt > boundary }?.id
     }
 
-    /// How many messages sit at or after the divider. Drives the initial
-    /// scroll: a long unseen run lands the reader on the divider instead of
-    /// hard-bottom so nothing is skipped.
+    /// How many messages sit at or after the divider. Kept for badges and
+    /// regression visibility; initial chat presentation still opens at the
+    /// latest message so returning to a conversation continues from the bottom.
     static func unseenRunLength(messages: [DisplayMessage], firstUnseenId: String?) -> Int {
         guard let id = firstUnseenId,
               let index = messages.firstIndex(where: { $0.id == id }) else { return 0 }

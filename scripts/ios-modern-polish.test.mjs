@@ -43,18 +43,33 @@ assert.doesNotMatch(
 // ── 2. Streaming scroll: reader position is sacred ───────────────────────────
 assert.match(
   chatView,
-  /onChange\(of: thread\.messages\.last\?\.text\) \{ _, _ in\s*\n\s*guard atBottom else \{ return \}/,
-  "token streaming must only auto-scroll while the reader is parked at the bottom",
+  /onChange\(of: thread\.messages\.last\?\.text\) \{ _, _ in\s*\n\s*guard followingLatest else \{ return \}/,
+  "token streaming must only auto-scroll while the reader is following latest",
 );
 assert.match(
   chatView,
-  /onChange\(of: thread\.messages\.count\) \{ _, _ in\s*\n\s*guard atBottom \|\| thread\.messages\.last\?\.role == \.user else \{ return \}/,
-  "a new message auto-reveals only at the bottom, or when it's the user's own send",
+  /let ownSend = thread\.messages\.last\?\.role == \.user\s*\n\s*guard followingLatest \|\| ownSend else \{ return \}/,
+  "a new message auto-reveals only while following latest, or when it's the user's own send",
 );
 assert.match(
   chatView,
   /\.defaultScrollAnchor\(\.bottom, for: \.initialOffset\)/,
   "the transcript should open anchored at the latest message (no post-layout jump)",
+);
+assert.match(
+  chatView,
+  /let target = thread\.messages\.last\?\.id \?\? "bottom"[\s\S]{0,160}?proxy\.scrollTo\(target, anchor: \.bottom\)/,
+  "jump-to-latest should target the newest message row before falling back to the sentinel",
+);
+assert.doesNotMatch(
+  chatView,
+  /proxy\.scrollTo\("unread-divider"/,
+  "the unread divider stays informational; opening a thread must not override latest landing",
+);
+assert.match(
+  bubble,
+  /markdownLoadingPlaceholder\(projection\)/,
+  "rich replies should keep native text visible until the WebView reports a measured height",
 );
 
 // ── 3. Composer: elevated panel + focus halo ─────────────────────────────────

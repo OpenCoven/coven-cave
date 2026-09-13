@@ -2233,6 +2233,22 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-long-chat-scroll") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(delayedHistory: false)
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-delayed-long-chat-scroll") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(delayedHistory: true)
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         // Deterministic native screenshot fixture for the canonical empty-chat
         // surface. Launch with `--ui-preview-empty-chat` and
         // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
@@ -2398,6 +2414,105 @@ final class AppModel {
         }
 
         connectionState = .connected
+    }
+
+    private func configureLongChatScrollPreview(delayedHistory: Bool) {
+        configureEmptyChatPreview()
+        let id = delayedHistory ? "ui-preview-delayed-long-chat-scroll" : "ui-preview-long-chat-scroll"
+        let title = delayedHistory ? "Delayed Scroll Chat" : "Long Scroll Chat"
+        let projectRoot = projects.first?.root
+        let messages = delayedHistory ? [] : Self.longChatScrollPreviewMessages()
+        let thread = ChatThread(
+            id: id,
+            title: title,
+            familiarIds: ["nyx"],
+            projectRoot: projectRoot,
+            messages: messages
+        )
+        if let latest = messages.last?.createdAt {
+            thread.updatedAt = latest
+        }
+        threads = [thread]
+        let seen = Self.longChatScrollPreviewSeenBoundary()
+        threadViews[id] = seen
+        projectContextDefaults.set(seen, forKey: Self.threadViewKey(id))
+
+        guard delayedHistory else { return }
+        Task { @MainActor [weak self, weak thread] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, let thread, thread.messages.isEmpty else { return }
+            let loaded = Self.longChatScrollPreviewMessages()
+            thread.messages = loaded
+            if let latest = loaded.last?.createdAt {
+                thread.updatedAt = latest
+            }
+            self.touch(thread)
+        }
+    }
+
+    private static func longChatScrollPreviewSeenBoundary() -> Date {
+        Date(timeIntervalSince1970: 1_786_000_000 + 9 * 60)
+    }
+
+    private static func longChatScrollPreviewMessages() -> [DisplayMessage] {
+        let base = Date(timeIntervalSince1970: 1_786_000_000)
+        var messages: [DisplayMessage] = []
+        messages.reserveCapacity(37)
+        messages.append(
+            DisplayMessage(
+                id: "scroll-top-marker",
+                role: .user,
+                familiarId: nil,
+                text: "Top scroll marker p7h8u",
+                createdAt: base
+            )
+        )
+        for index in 1...17 {
+            let created = base.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 2) {
+                messages.append(
+                    DisplayMessage(
+                        id: "scroll-assistant-\(index)",
+                        role: .assistant,
+                        familiarId: "nyx",
+                        text: """
+                        ### Scroll fixture reply \(index)
+
+                        This reply has enough markdown to settle after the native row appears.
+
+                        - It keeps the row height varied.
+                        - It exercises the lazy WebView renderer.
+                        - It must not pull the reader away from an intentional scroll.
+                        """,
+                        createdAt: created
+                    )
+                )
+            } else {
+                messages.append(
+                    DisplayMessage(
+                        id: "scroll-user-\(index)",
+                        role: .user,
+                        familiarId: nil,
+                        text: "Operator checkpoint \(index) in the long scroll fixture",
+                        createdAt: created
+                    )
+                )
+            }
+        }
+        messages.append(
+            DisplayMessage(
+                id: "scroll-latest-rich",
+                role: .assistant,
+                familiarId: "nyx",
+                text: """
+                ## Latest rich reply bottom marker p7h8u
+
+                The newest answer is a markdown-rendered reply. Jumping to latest must show this text immediately instead of parking on a blank transcript while WebKit finishes measuring.
+                """,
+                createdAt: base.addingTimeInterval(18 * 60)
+            )
+        )
+        return messages
     }
 
     /// Screenshot fixture for the remaining compatible Claude Design affordances:

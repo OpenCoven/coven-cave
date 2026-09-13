@@ -63,6 +63,8 @@ struct ChatView: View {
     @State private var pickerPath: [ChatRoute] = []
     @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
+    @State private var followingLatest = true
+    @State private var userScrollInProgress = false
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -226,6 +228,35 @@ struct ChatView: View {
                                                        firstUnseenId: unreadDividerId)
     }
 
+    private func scrollToLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
+        let target = thread.messages.last?.id ?? "bottom"
+        if let animation, !reduceMotion {
+            withAnimation(animation) { proxy.scrollTo(target, anchor: .bottom) }
+        } else {
+            proxy.scrollTo(target, anchor: .bottom)
+        }
+    }
+
+    private func requestFollowLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
+        followingLatest = true
+        atBottom = true
+        streamScroll.request { scrollToLatest(proxy, animation: animation) }
+    }
+
+    private func resetScrollVisitState() {
+        streamScroll.cancel()
+        atBottom = true
+        followingLatest = true
+        userScrollInProgress = false
+        unreadDividerId = nil
+        unreadRunLength = 0
+        unreadComputed = false
+        daysAboveTop.removeAll()
+        dayChipActive = false
+        dayChipIdleTask?.cancel()
+        dayChipIdleTask = nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             messageScroll
@@ -379,6 +410,9 @@ struct ChatView: View {
                 }
             }
         }
+        .onChange(of: thread.id) { _, _ in
+            resetScrollVisitState()
+        }
         // Restore an unsent draft for this thread (typed earlier, then the view
         // was dismissed or the app backgrounded). Only when the live draft is
         // empty, so a draft already in hand isn't clobbered.
@@ -406,6 +440,7 @@ struct ChatView: View {
         }
         .onDisappear {
             flushDraftPersistence()
+            streamScroll.cancel()
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
@@ -815,7 +850,7 @@ struct ChatView: View {
                     // so the compiler type-checks one row at a time instead of
                     // the whole scroll view builder (cave-7nrp9).
                     ForEach(thread.transcriptRows) { row in
-                        transcriptRow(row)
+                        transcriptRow(row, proxy: proxy)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -823,6 +858,7 @@ struct ChatView: View {
                 .padding(.vertical, 14)
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
+            .accessibilityIdentifier("Chat transcript")
             .scrollDismissesKeyboard(.interactively)
             // Open at the latest message without the post-layout jump a
             // proxy.scrollTo onAppear causes (the onAppear call stays as a
@@ -849,14 +885,28 @@ struct ChatView: View {
             // Track whether the user is parked at the latest message so a
             // "jump to bottom" button can appear when they've scrolled up.
             .onScrollGeometryChange(for: Bool.self) { geo in
-                geo.contentOffset.y >= geo.contentSize.height - geo.containerSize.height - 24
+                let latestOffset = max(0, geo.contentSize.height - geo.containerSize.height)
+                return geo.contentOffset.y >= latestOffset - 24
             } action: { _, nowAtBottom in
-                atBottom = nowAtBottom
+                if nowAtBottom {
+                    atBottom = true
+                    followingLatest = true
+                } else if userScrollInProgress {
+                    atBottom = false
+                    followingLatest = false
+                } else {
+                    atBottom = followingLatest
+                    if followingLatest {
+                        streamScroll.request { scrollToLatest(proxy) }
+                    }
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if !atBottom {
                     Button {
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        followingLatest = true
+                        atBottom = true
+                        scrollToLatest(proxy, animation: .easeOut(duration: 0.2))
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 15, weight: .semibold))
@@ -888,6 +938,12 @@ struct ChatView: View {
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: dayChipActive)
             .onScrollPhaseChange { _, newPhase in
+                switch newPhase {
+                case .tracking, .interacting, .decelerating:
+                    userScrollInProgress = true
+                default:
+                    userScrollInProgress = false
+                }
                 dayChipIdleTask?.cancel()
                 if newPhase == .idle {
                     dayChipIdleTask = Task {
@@ -906,32 +962,20 @@ struct ChatView: View {
             // Coalesced to display cadence: the trailing-edge fire means the
             // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
-                guard atBottom else { return }
-                streamScroll.request {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    }
-                }
+                guard followingLatest else { return }
+                streamScroll.request { scrollToLatest(proxy, animation: .easeOut(duration: 0.15)) }
             }
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
             // otherwise the unread stays put behind the jump-to-latest button.
             .onChange(of: thread.messages.count) { _, _ in
-                guard atBottom || thread.messages.last?.role == .user else { return }
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                let ownSend = thread.messages.last?.role == .user
+                guard followingLatest || ownSend else { return }
+                requestFollowLatest(proxy, animation: .snappy(duration: 0.25))
             }
             .onAppear {
                 computeUnreadDividerIfNeeded()
-                // A long unseen run lands the reader on the divider so nothing
-                // is skipped; short runs keep the familiar bottom landing
-                // (the divider sits within the first screenful anyway).
-                if unreadDividerId != nil && unreadRunLength >= 6 {
-                    proxy.scrollTo("unread-divider", anchor: .center)
-                } else {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                requestFollowLatest(proxy)
             }
         }
     }
@@ -941,7 +985,7 @@ struct ChatView: View {
     /// time: the whole expression previously exceeded the type-checker budget
     /// (cave-7nrp9).
     @ViewBuilder
-    private func transcriptRow(_ row: TranscriptRow) -> some View {
+    private func transcriptRow(_ row: TranscriptRow, proxy: ScrollViewProxy) -> some View {
         switch row {
         case .day(_, let date):
             DaySeparator(date: date)
@@ -990,7 +1034,11 @@ struct ChatView: View {
                           onReply: bubbleReply,
                           onRetryDelete: bubbleRetryDelete,
                           operatorName: app.operatorDisplayName,
-                          operatorAvatarURL: app.operatorAvatarURL)
+                          operatorAvatarURL: app.operatorAvatarURL,
+                          onContentHeightChange: {
+                              guard followingLatest else { return }
+                              streamScroll.request { scrollToLatest(proxy) }
+                          })
                 .equatable()
                 .id(message.id)
                 // New bubbles settle in with a soft rise-and-fade
@@ -2427,6 +2475,11 @@ final class ScrollCoalescer {
             self.pending = nil
             scroll()
         }
+    }
+
+    func cancel() {
+        pending?.cancel()
+        pending = nil
     }
 }
 
