@@ -1,8 +1,9 @@
 # Coven Cave — Native iOS app
 
 A genuinely native SwiftUI client for Coven Cave. It connects to your desktop over
-your **Tailscale** network — **no token, no password**; tailnet membership is the
-trust boundary. This is *not* a webview wrapper around the web app.
+your **Tailscale** network with desktop-approved device access (or a legacy
+QR/invite credential). Tailnet membership alone does not grant access.
+This is *not* a webview wrapper around the web app.
 
 See [`docs/ios-current-direction.md`](../../../docs/ios-current-direction.md)
 for the canonical active product direction. The older native rebuild and dated
@@ -66,9 +67,25 @@ On first launch, enter your desktop's Tailscale MagicDNS name (e.g.
 `my-mac.tailnet.ts.net`) or its `100.x` address. `.ts.net` hosts use HTTPS; bare
 hosts/IPs default to `http://<host>:3000`.
 
-> The desktop must serve the mobile API tokenlessly over its Tailscale interface
-> (Phase 1b server change). Until that lands, point the app at a mock or a dev
-> server with the gate relaxed.
+For desktop-managed pairing, enter the desktop's HTTPS Tailscale Serve address,
+including its published port. Once the desktop is found, tap **Request access**.
+Compare the last eight characters of the request ID on both devices, then choose
+**Allow** in desktop Settings → Phone → Device access. Denied, revoked, and
+expired requests require a new explicit request; pending requests last five
+minutes. **Cancel** pauses waiting without connecting, and a saved pending
+request can resume through the status endpoint after app restart.
+
+The installation UUID lives in platform preferences. Pending and approved
+credentials live in device-only, non-synchronizing Keychain items bound to the
+exact HTTPS origin. Approved grants have no scheduled expiry and never enter
+legacy mobile-token refresh. Outages retain credentials. Managed requests do
+not follow redirects or gain terminal/WebSocket or client-v1 scopes.
+Older desktops returning 404 for device access retain the QR/invite path.
+The `x-coven-device-pairing: 1` gateway marker distinguishes managed approval
+from a legacy authentication gate. A managed QR contains only the actual HTTPS
+origin plus `/connect`; scanning or pasting it shows **Request access** without
+connecting or granting access. A disabled-policy response also retains the
+legacy QR/invite path; a forbidden tailnet does not downgrade to legacy access.
 
 ## Layout
 
@@ -76,7 +93,8 @@ hosts/IPs default to `http://<host>:3000`.
 CovenCave/
   Models/        Familiar, SessionRow, ChatTurn, StreamEvent (SSE decoding),
                  PermissionModels (grants, proposals, effective access)
-  Networking/    CaveConnection (host/no-token), CaveClient (REST + SSE stream),
+  Networking/    CaveConnection (origin-bound credential), DeviceAccess (pairing),
+                 CaveClient (REST + SSE stream),
                  CaveClient+Permissions (grants console API)
   State/         AppModel (connection, familiars, threads), ChatThread (1:1 + group fan-out)
   Views/         Connection, ChatsHome, NewChat (group picker), Chat, MessageBubble,

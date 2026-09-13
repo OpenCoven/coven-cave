@@ -296,7 +296,7 @@ assert.match(
 // (research missions/links, automations) for a genuinely local user.
 assert.match(
   source,
-  /const mobileAccessVerified = mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
+  /const mobileAccessVerified = deviceAuthenticated \|\| \(mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
   "a trusted local peer must never be marked as mobile ingress, even when a mobile access cookie rides along",
 );
 assert.match(

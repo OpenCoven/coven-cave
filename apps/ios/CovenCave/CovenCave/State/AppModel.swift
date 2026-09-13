@@ -390,6 +390,7 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
+    private(set) var managedPairingBaseURL: URL?
     /// Per-Familiar hub dashboards (`cave-9rwd.2`). Owned here rather than by
     /// the hub view so flipping between two Familiars in the roster does not
     /// re-fetch what was read seconds ago. In-memory only, bounded by its own
@@ -4668,6 +4669,7 @@ final class AppModel {
 
     @discardableResult
     func configure(host: String, token: String? = nil) async -> ConnectionDispatchLease? {
+        guard !Task.isCancelled else { return nil }
         // Revoke every owner of the previous authority before touching its
         // credential. A refresh can already be past discovery and suspended in
         // bootstrap/token renewal, where cancelling the coordinator alone no
@@ -4683,16 +4685,26 @@ final class AppModel {
         // A newer configure/disconnect may have taken ownership while actor
         // cancellation suspended this call. The older transition must not save
         // credentials or overwrite the newer endpoint when it resumes.
+        guard !Task.isCancelled else { return nil }
         guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return nil }
 
         let conn = CaveConnection(host: host)
+        managedPairingBaseURL = nil
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let hostIsExplicitURL = trimmedHost.lowercased().hasPrefix("http://") || trimmedHost.lowercased().hasPrefix("https://")
         let hostHasExplicitPort = !hostIsExplicitURL && trimmedHost.contains(":")
         let isSameEndpoint = (hostIsExplicitURL || hostHasExplicitPort)
             ? (connection?.baseURL == conn.baseURL)
             : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
-        if let token {
+        if let token, CaveConnection.isManagedDeviceCredential(token) {
+            do {
+                guard let baseURL = conn.baseURL else { throw CaveError.notConfigured }
+                try DeviceAccessStore.activate(credential: token, baseURL: baseURL)
+            } catch {
+                connectionState = .needsAuth(error.localizedDescription)
+                return nil
+            }
+        } else if let token {
             CaveConnection.saveAccessToken(token, for: conn.baseURL)
         } else if CaveConnection.shouldClearStoredCredential(
             suppliedToken: token,
@@ -4767,6 +4779,7 @@ final class AppModel {
         invalidateProjectNavigationHydrations()
         invalidateProjectContextLoads()
         CaveConnection.clear(defaults: projectContextDefaults)
+        managedPairingBaseURL = nil
         connection = nil
         familiars = []
         familiarsLoaded = false
@@ -5053,8 +5066,14 @@ final class AppModel {
     }
 
     private func pairingMessage() -> String {
-        CaveConnection.accessToken == nil
-            ? "This desktop requires pairing. Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here."
+        if CaveConnection.isManagedDeviceCredential(CaveConnection.accessToken) {
+            return DeviceAccessStatus.revoked.message
+        }
+        if managedPairingBaseURL != nil {
+            return "This desktop requires approval. Request access below and approve it on the desktop."
+        }
+        return CaveConnection.accessToken == nil
+            ? "This desktop requires pairing. Scan its QR code or paste its invite link."
             : "Your pairing has expired. Open Cave on the desktop → “Open on phone” and scan the QR code (or paste the invite link) to pair again."
     }
 
@@ -5202,6 +5221,7 @@ final class AppModel {
             switch outcome {
             case .found(let url): return .found(url)
             case .unauthorized: return .unauthorized
+            case .pairingRequired(let url): return .pairingRequired(url)
             case .credentialFailure(let message): return .credentialFailure(message)
             case .unreachable(let failure): return .unreachable(failure)
             }
@@ -5332,6 +5352,10 @@ final class AppModel {
                 ) else { return }
             }
         case .unauthorized:
+            managedPairingBaseURL = nil
+            connectionState = .needsAuth(pairingMessage())
+        case .pairingRequired(let url):
+            managedPairingBaseURL = url
             connectionState = .needsAuth(pairingMessage())
         case .credentialFailure(let message):
             connectionState = .unreachable(.credentialFailure(message))
@@ -5439,6 +5463,7 @@ final class AppModel {
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
     private func refreshAccessTokenIfNeeded(onlyWhile isCurrent: (() -> Bool)? = nil) async {
         guard let client = coreResourceClient, let token = CaveConnection.accessToken else { return }
+        guard CaveConnection.shouldRefreshAccessToken(token) else { return }
         guard let expiry = CaveInvite.tokenExpiry(token) else {
             // Legacy raw-secret pairing: no expiry, so the rolling renewal
             // below can never fire and the device stays on a never-expiring
@@ -5473,6 +5498,8 @@ final class AppModel {
 
     enum DiscoveryOutcome: Equatable {
         case found(URL)
+        /// Credential-free preview retains the exact endpoint that asked to pair.
+        case pairingRequired(URL)
         /// At least one candidate was a live Cave server that rejected our
         /// credential — pairing is the fix, not another address.
         case unauthorized
@@ -5512,6 +5539,7 @@ final class AppModel {
         switch await Self.probe(preferred) {
         case .ok: return .found(preferred)
         case .unauthorized: return .unauthorized
+        case .managedPairingRequired: return .pairingRequired(preferred)
         case .credentialFailure(let message): return .credentialFailure(message)
         case .failed(let failure): strongest = failure
         }
@@ -5564,6 +5592,7 @@ final class AppModel {
             switch await Self.probe(base) {
             case .ok: return .found(base)
             case .unauthorized: return .unauthorized
+            case .managedPairingRequired: return .pairingRequired(base)
             case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             }
@@ -5584,6 +5613,7 @@ final class AppModel {
             switch result {
             case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
+            case .managedPairingRequired: return .pairingRequired(candidates[index])
             case .credentialFailure(let message): return .credentialFailure(message)
             case .failed(let failure): strongest = max(strongest ?? failure, failure)
             default: continue
@@ -5623,6 +5653,7 @@ final class AppModel {
     private enum ProbeResult {
         case ok
         case unauthorized
+        case managedPairingRequired
         case credentialFailure(String)
         case failed(ProbeFailure)
     }
@@ -5635,7 +5666,7 @@ final class AppModel {
         config.timeoutIntervalForRequest = 6
         config.timeoutIntervalForResource = 10
         config.waitsForConnectivity = false
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     /// Reachability check that requires a *real* Cave API response — a 2xx whose
@@ -5668,6 +5699,10 @@ final class AppModel {
             return .failed(ProbeFailure(classifying: error))
         }
         guard let http = resp as? HTTPURLResponse else { return .failed(.transport) }
+        if (http.statusCode == 401 || http.statusCode == 403),
+           DeviceAccessClient.isManagedResponse(http) {
+            return .managedPairingRequired
+        }
         if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
         guard (200..<300).contains(http.statusCode),
               (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil

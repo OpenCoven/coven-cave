@@ -40,6 +40,11 @@ import {
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
 import { isValidResearchMediaTicketRequest } from "./lib/research-media-ticket.ts";
+import {
+  DEVICE_GRANT_HEADER,
+  DEVICE_PAIRING_PAGE_HEADER,
+  hasDeviceAccessStamp,
+} from "./lib/device-access-markers.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -318,6 +323,15 @@ function nextWithInternalAuthMarkers(
 }
 
 export async function proxy(req: NextRequest) {
+  const deviceAccessSecret = process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET;
+  const deviceAuthenticated = hasDeviceAccessStamp(
+    req.headers.get(DEVICE_GRANT_HEADER), deviceAccessSecret,
+  );
+  if (req.nextUrl.pathname === "/connect" && hasDeviceAccessStamp(
+    req.headers.get(DEVICE_PAIRING_PAGE_HEADER), deviceAccessSecret,
+  )) {
+    return NextResponse.next();
+  }
   const mobileAccessToken = configuredMobileAccessToken();
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const sidecarTokenMatches = (supplied: string | null | undefined) => {
@@ -363,7 +377,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(400, "invalid client v1 path");
   }
   const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
-  const mobileRes = clientV1Ingress
+  const mobileRes = clientV1Ingress || deviceAuthenticated
     ? null
     : await mobileAccessGate(
       req,
@@ -401,9 +415,9 @@ export async function proxy(req: NextRequest) {
   // auto-sent access cookie) must not reclassify it as a phone — that marker
   // makes isLocalOrigin() 403 every desktop-only route (research missions,
   // links, automations) for a genuinely local user.
-  const mobileAccessVerified = mobileAccessToken
+  const mobileAccessVerified = deviceAuthenticated || (mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
-    : false;
+    : false);
   const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified;
   // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
   // mobile access credential, so a remote-looking (Tailscale Serve) Host is
