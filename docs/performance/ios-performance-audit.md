@@ -105,6 +105,19 @@ classification. Six of seven names now have complete cold/warm coverage.
 The seven-span baseline remains open. These small samples do not establish a
 regression comparison or a reliable tail-latency estimate.
 
+A shorter first-launch diagnostic retained the initial `markdown.webview.init`
+and `markdown.render.streaming` intervals but no `chat.first-rich-render` pair.
+The missing high-level sample is therefore not explained by an absent trace
+prefix alone. `ChatView` discarded starts while its scene was initially inactive;
+the renderer does not replay an unchanged render when activation arrives.
+Retained equatable bubble callbacks also need shared current lifecycle state.
+The measurement now preserves the original start across initial foreground
+activation. Backgrounding, later inactivity, or disappearance cancels an active
+attempt permanently for that mounted view, preventing late callbacks from
+finishing a replacement span. A remounted view gets a fresh measurement.
+The table below remains evidence from the preceding binary until a new physical
+capture verifies initial callback ordering and records the missing first pair.
+
 ### Current v0.4.2 device intervals
 
 Milliseconds, nearest-rank p95. Cold means first attempted named interval in a

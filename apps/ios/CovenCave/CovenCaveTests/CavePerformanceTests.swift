@@ -58,6 +58,165 @@ private enum RecorderTestError: Error, Equatable {
 
 @MainActor
 final class CavePerformanceTests: XCTestCase {
+    func testRetainedRichStartCallbackReadsCurrentSceneState() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.inactive)
+        let start = {
+            measurement.begin(messageID: "first", recorder: recorder,
+                              clock: TestPerformanceClock(values: [.zero, .milliseconds(12)]))
+        }
+        measurement.setSceneState(.active)
+        start()
+        measurement.finish(messageID: "first")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.latestMilliseconds, 12)
+    }
+
+    func testInitialRichStartKeepsItsBoundaryAcrossActivation() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.inactive)
+        measurement.begin(messageID: "first", recorder: recorder,
+                          clock: TestPerformanceClock(values: [.zero, .milliseconds(50)]))
+        measurement.setSceneState(.active)
+        measurement.finish(messageID: "first")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.latestMilliseconds, 50)
+    }
+
+    func testInitialForegroundRichFrameCanPrecedeActiveNotification() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.inactive)
+        measurement.begin(messageID: "first", recorder: recorder,
+                          clock: TestPerformanceClock(values: [.zero, .milliseconds(12)]))
+        measurement.finish(messageID: "first")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testRichDeactivationCancelsAndRejectsLateCallbacks() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "abandoned", recorder: recorder)
+        measurement.setSceneState(.inactive)
+        measurement.finish(messageID: "abandoned")
+        measurement.begin(messageID: "late", recorder: recorder)
+        measurement.finish(messageID: "late")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "abandoned", recorder: recorder)
+        measurement.finish(messageID: "abandoned")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        let remounted = CaveFirstRichRenderMeasurement()
+        remounted.setSceneState(.active)
+        remounted.begin(messageID: "abandoned", recorder: recorder)
+        remounted.finish(messageID: "abandoned")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testBackgroundLaunchCannotUseInitialForegroundException() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.background)
+        measurement.begin(messageID: "background", recorder: recorder)
+        measurement.finish(messageID: "background")
+        measurement.setSceneState(.inactive)
+        measurement.begin(messageID: "inactive", recorder: recorder)
+        measurement.finish(messageID: "inactive")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "foreground", recorder: recorder)
+        measurement.finish(messageID: "foreground")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testRichMeasurementKeepsFirstSuccessAcrossNewerUpdates() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "first", recorder: recorder,
+                          clock: TestPerformanceClock(values: [.zero, .milliseconds(12)]))
+        measurement.begin(messageID: "first", recorder: recorder)
+        measurement.finish(messageID: "first")
+        measurement.begin(messageID: "next", recorder: recorder)
+        measurement.finish(messageID: "next")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.latestMilliseconds, 12)
+    }
+
+    func testOtherRichMessageCannotFinishOrCancelPendingMeasurement() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "first", recorder: recorder)
+        measurement.finish(messageID: "other")
+        measurement.cancel(messageID: "other")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.finish(messageID: "first")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testRichDisappearanceCancelsAndRejectsLateStarts() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "first", recorder: recorder)
+        measurement.setVisible(false)
+        measurement.finish(messageID: "first")
+        measurement.begin(messageID: "late", recorder: recorder)
+        measurement.finish(messageID: "late")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setVisible(true)
+        measurement.begin(messageID: "first", recorder: recorder)
+        measurement.finish(messageID: "first")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+    }
+
+    func testUnknownSceneCannotStartUntilInitialForegroundIsObserved() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.begin(messageID: "unknown", recorder: recorder)
+        measurement.finish(messageID: "unknown")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setSceneState(.inactive)
+        measurement.begin(messageID: "initial", recorder: recorder)
+        measurement.finish(messageID: "initial")
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "later", recorder: recorder)
+        measurement.finish(messageID: "later")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testVisibilityCannotResetBackgroundHistory() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.background)
+        measurement.setVisible(false)
+        measurement.setSceneState(.inactive)
+        measurement.setVisible(true)
+        measurement.begin(messageID: "inactive", recorder: recorder)
+        measurement.finish(messageID: "inactive")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setSceneState(.active)
+        measurement.begin(messageID: "active", recorder: recorder)
+        measurement.finish(messageID: "active")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
+    func testDisappearanceBeforeDeferredStartDoesNotConsumeFirstAttempt() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let measurement = CaveFirstRichRenderMeasurement()
+        measurement.setSceneState(.active)
+        measurement.setVisible(false)
+        measurement.begin(messageID: "late", recorder: recorder)
+        measurement.finish(messageID: "late")
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+        measurement.setVisible(true)
+        measurement.begin(messageID: "first", recorder: recorder)
+        measurement.finish(messageID: "first")
+        XCTAssertEqual(recorder.snapshot()["chat.first-rich-render"]?.count, 1)
+    }
+
     func testBaselineSpanNamesStayStable() {
         XCTAssertEqual(
             CavePerformanceSpanName.baseline.map(\.rawValue),

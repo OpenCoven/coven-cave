@@ -200,8 +200,16 @@ assert.match(app, /performanceSpans\.setSceneActive\(scenePhase == \.active\)/);
 assert.match(app, /app\.cancelProjectSwitchMeasurement\(\)/);
 assert.match(
   read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift"),
-  /guard scenePhase == \.active,[\s\S]*!recordedFirstRichRender/,
-  "rich-render spans must not restart while the scene is inactive",
+  /@State private var firstRichRenderMeasurement = CaveFirstRichRenderMeasurement\(\)/,
+  "retained rich-render callbacks must share current lifecycle state",
+);
+assert.match(
+  read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift"),
+  /\.onChange\(of: scenePhase, initial: true\)/,
+);
+assert.match(
+  read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift"),
+  /\.onDisappear \{[\s\S]*firstRichRenderMeasurement\.setVisible\(false\)/,
 );
 assert.doesNotMatch(
   read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift"),
