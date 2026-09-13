@@ -3394,3 +3394,29 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* The room chrome sets its drawer toggle in uppercase mono at --text-xs, which
+   is right for a generic "delivery queue" label and wrong for this one: the
+   Agenda's summary is a sentence with a time and a draft title in it, and
+   uppercasing it turns "Today 6:10 PM PT · Quote of @anthropicai" into a
+   shout that is materially harder to read at a glance. */
+.x-comms .role-surface-drawer-toggle {
+  gap: var(--space-3);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--x-cream);
+}
+
+.x-comms .role-surface-drawer-summary {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

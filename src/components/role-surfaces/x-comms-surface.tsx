@@ -754,10 +754,13 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
             )}
 
             <header className="x-comms-header">
+              {/* No title here: the room chrome's own header already names the
+                  room. The frame carried one because it had no chrome above it;
+                  repeating it would put "X Comms" on screen twice. */}
               <span className="x-comms-title">
-                <h2>X Comms</h2>
                 <span className="x-comms-subtitle">
-                  {context.activeFamiliar.name}&apos;s X room.
+                  {context.activeFamiliar.display_name || context.activeFamiliar.name}
+                  &apos;s X room.
                 </span>
               </span>
               <span className="x-comms-header-tools">
