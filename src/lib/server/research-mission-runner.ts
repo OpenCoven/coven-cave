@@ -1867,21 +1867,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         await deps.clearSessionOwner(sessionOwner);
         return reconciled;
       }
-      // "gone" is the ABSENCE of evidence, not evidence of death, and for a
-      // direct-copilot owner it is routinely wrong while the run is healthy.
-      // sessionState proves liveness from the in-process ACTIVE_RUNS registry
-      // and death from a persisted transcript, so a live run that has not
-      // closed yet reports "gone" from any reader that does not share that
-      // registry — and the transcript only appears at child close. Failing
-      // immediately therefore killed working missions: measured repeatedly here
-      // with the mission orphaned ~20s after launch while Copilot kept working,
-      // its transcript landing afterwards.
-      //
-      // The recovery grace window above already models exactly this "cannot
-      // prove it either way yet" state; honour it here instead of treating
-      // silence as a terminal verdict. Past the window the orphan verdict still
-      // stands, so a genuinely dead run is not pinned forever.
-      if (state === "gone" && !pastRecoveryGrace) return mission;
+      // Direct "gone" requires settled-process evidence, not a missing local
+      // handle. Unknown readers returned above must never age into failure.
+      // Keep the existing registration grace for daemon-owned sessions.
+      if (sessionOwner.ownerKind !== "direct-copilot" && !pastRecoveryGrace) return mission;
       return failOrphan(
         "The owned Research session ended without reporting — Retry starts a fresh iteration.",
         "Owned session ended",
@@ -2211,9 +2200,12 @@ export async function cancelResearchSession(
   if (ownerKind !== "owner-local-daemon") {
     const directResult = await cancelDirect(sessionId);
     if (ownerKind === "direct-copilot") {
-      // On a live/hot-reloaded server the process-global registry or settled
-      // tombstone owns the id. After a full owner crash, absence is also safe:
-      // the native supervisor's guardian/Job has already reaped the tree.
+      if (directResult === "not-owned") {
+        throw new Error(
+          "Research session cancellation could not be confirmed because this reader cannot observe the direct process owner. " +
+          "The mission remains running; retry Cancel from the owning Cave instance once session state is observable.",
+        );
+      }
       return;
     }
     if (directResult !== "not-owned") return;
@@ -2361,10 +2353,11 @@ export function makeProductionResearchMissionRunner() {
         if (!authority) return "unknown";
         return researchDaemonSessionState(sessionId, authority);
       }
-      // Cave-direct copilot runs never exist on the daemon — the in-process
-      // registry is their only live signal (flow-copilot-session, cave-lhc0).
-      const { isCopilotFlowRunActive } = await import("./flow-copilot-session.ts");
-      if (isCopilotFlowRunActive(sessionId)) return "running";
+      const { copilotFlowRunState } = await import("./flow-copilot-session.ts");
+      // Snapshot before the asynchronous read: a concurrently published
+      // tombstone must not turn a pre-settlement transcript miss into failure.
+      const directState = copilotFlowRunState(sessionId);
+      if (directState === "running") return "running";
       // A persisted conversation with assistant output means the run finished
       // and its transcript is readable (direct runs write it at close).
       const { loadConversation } = await import("../cave-conversations.ts");
@@ -2372,7 +2365,8 @@ export function makeProductionResearchMissionRunner() {
       if (conversation?.turns?.some((turn) => turn.role === "assistant" && turn.text?.trim())) {
         return "finished";
       }
-      if (ownerKind === "direct-copilot") return "gone";
+      if (directState === "settled") return "gone";
+      if (ownerKind === "direct-copilot") return "unknown";
       return researchDaemonSessionState(sessionId, authority);
     },
     readSessionTranscript: async (sessionId, authority, ownerKind) => {

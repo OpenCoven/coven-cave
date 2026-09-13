@@ -111,6 +111,21 @@ test("a direct cancellation failure never falls through to a misleading daemon k
   assert.equal(daemonCalls, 0);
 });
 
+test("an unseen private direct owner cannot be cancelled by assuming its launcher crashed", async () => {
+  let daemonCalls = 0;
+  await assert.rejects(
+    cancelResearchSession("unseen-direct-session", {
+      cancelDirect: async () => "not-owned",
+      callDaemonImpl: async () => {
+        daemonCalls += 1;
+        return { ok: true, status: 200 };
+      },
+    }, undefined, "direct-copilot"),
+    /cancellation could not be confirmed.*mission remains running/i,
+  );
+  assert.equal(daemonCalls, 0);
+});
+
 test("daemon transport uncertainty never masquerades as an already-stopped session", async () => {
   for (const response of [
     { ok: false, status: 0, error: "local daemon offline" },

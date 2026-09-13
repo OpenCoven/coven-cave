@@ -671,6 +671,14 @@ export function isCopilotFlowRunActive(sessionId: string): boolean {
   return ACTIVE_RUNS.has(sessionId);
 }
 
+export function copilotFlowRunState(sessionId: string): "running" | "settled" | "unknown" {
+  if (isCopilotFlowRunActive(sessionId)) return "running";
+  pruneFinishedRuns();
+  // Another process cannot see either registry. Absence never proves its
+  // owner crashed, even after a research recovery deadline has elapsed.
+  return FINISHED_RUNS.has(sessionId) ? "settled" : "unknown";
+}
+
 export async function cancelCopilotFlowRun(sessionId: string): Promise<CopilotFlowCancelResult> {
   const active = ACTIVE_RUNS.get(sessionId);
   if (!active) {

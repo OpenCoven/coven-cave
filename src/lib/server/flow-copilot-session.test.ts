@@ -5,23 +5,37 @@
 // flow transcript endpoint and the research-mission reconcile look first.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn as nodeSpawn } from "node:child_process";
+import { execFile, spawn as nodeSpawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { promisify } from "node:util";
 
 const REAL_HOME = process.env.HOME;
 const REAL_CAVE_HOME = process.env.COVEN_CAVE_HOME;
 const TMP = mkdtempSync(join(tmpdir(), "flow-copilot-session-"));
 process.env.HOME = TMP;
 process.env.COVEN_CAVE_HOME = join(TMP, ".coven", "cave");
+const RESEARCH_ENV = {
+  COVEN_RESEARCH_MISSIONS_DIR: join(TMP, "research-missions"),
+  COVEN_RESEARCH_SESSION_OWNERS_DIR: join(TMP, "research-owners"),
+  COVEN_RESEARCH_ACTION_LOCKS_DIR: join(TMP, "research-locks"),
+};
+const originalResearchEnv = Object.fromEntries(
+  Object.keys(RESEARCH_ENV).map((key) => [key, process.env[key]]),
+);
+Object.assign(process.env, RESEARCH_ENV);
 
 after(() => {
   process.env.HOME = REAL_HOME;
   if (REAL_CAVE_HOME === undefined) delete process.env.COVEN_CAVE_HOME;
   else process.env.COVEN_CAVE_HOME = REAL_CAVE_HOME;
+  for (const [key, value] of Object.entries(originalResearchEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 // Invoke the current Node executable with a JavaScript fixture rather than a
@@ -128,6 +142,7 @@ const {
   WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS,
   assertCopilotCommandLineFitsWindows,
   cancelCopilotFlowRun,
+  copilotFlowRunState,
   copilotPromptTransportFailure,
   isCopilotFlowRunActive,
   shutdownCopilotFlowRuns,
@@ -894,6 +909,9 @@ test("finished direct-run ownership is hot-reload-safe, bounded, and expiring", 
     const now = Date.now();
     registry.set("expired-direct-run", now - 1);
     registry.set("settled-direct-run", now + 60_000);
+    assert.equal(copilotFlowRunState("expired-direct-run"), "unknown");
+    assert.equal(copilotFlowRunState("settled-direct-run"), "settled");
+    assert.equal(copilotFlowRunState("unknown-direct-run"), "unknown");
     assert.equal(await cancelCopilotFlowRun("expired-direct-run"), "not-owned");
     assert.equal(await cancelCopilotFlowRun("settled-direct-run"), "already-finished");
 
@@ -909,6 +927,120 @@ test("finished direct-run ownership is hot-reload-safe, bounded, and expiring", 
     registry.clear();
     for (const [sessionId, expiresAt] of original) registry.set(sessionId, expiresAt);
   }
+});
+
+async function createOwnedResearchMission(sessionId, id, ageMs = 11 * 60_000) {
+  const { createResearchMissionWorkspace, recordResearchMissionSessionOwner } =
+    await import("./research-mission-store.ts");
+  const startedAt = new Date(Date.now() - ageMs).toISOString();
+  const mission = await createResearchMissionWorkspace({
+    version: 1, id, familiarId: "cody", title: "Cross-reader research",
+    intent: "Preserve the exact owner until settlement is observable",
+    mode: "brief", modeSource: "user", deliverable: "brief", constraints: [],
+    bounds: {
+      wallClockMinutes: 60, maxIterations: 1, sourceTarget: 1,
+      checkpointEvery: 1, stopWhenCostUnavailable: false,
+    },
+    status: "running", createdAt: startedAt, updatedAt: startedAt, startedAt,
+    iterations: [{ number: 1, status: "running", sessionId, startedAt }],
+    artifacts: [], sources: [],
+  });
+  await recordResearchMissionSessionOwner({
+    missionId: id, iteration: 1, sessionId, ownerKind: "direct-copilot",
+    recordedAt: startedAt,
+  });
+  return mission;
+}
+
+test("a separate production reader preserves live research past ten minutes and reconciles late output", async () => {
+  const runRoot = mkdtempSync(join(TMP, "research-reader-"));
+  const ready = join(runRoot, "ready");
+  const release = join(runRoot, "release");
+  const fixture = join(runRoot, "copilot.cjs");
+  const transcript = '@@research-control\n{"decision":"checkpoint","reason":"Review draft","confidence":0.9}\n@@research-artifacts-written';
+  writeFileSync(fixture, `
+    const { existsSync, writeFileSync } = require("node:fs");
+    writeFileSync(${JSON.stringify(ready)}, "ready");
+    const timer = setInterval(() => {
+      if (!existsSync(${JSON.stringify(release)})) return;
+      clearInterval(timer);
+      console.log(JSON.stringify({ type: "assistant.message", data: {
+        messageId: "late-output", content: ${JSON.stringify(transcript)}
+      }}));
+    }, 10);
+  `);
+  const started = await startConfirmed({
+    spec: SPEC, prompt: "wait for the research reader", projectRoot: runRoot,
+    familiarId: "cody",
+    spawnCommand: { command: process.execPath, fixedArgs: [fixture] },
+  }, { timeoutMs: 15_000 });
+  try {
+    await waitUntil(() => existsSync(ready));
+    const mission = await createOwnedResearchMission(started.sessionId, "cross-reader-live");
+    const { missionArtifactPath } = await import("./research-mission-store.ts");
+    writeFileSync(missionArtifactPath(mission.id, "primary.md"), "# Draft\nObserved evidence.\n");
+    const reader = `
+      import { makeProductionResearchMissionRunner } from ${JSON.stringify(new URL("./research-mission-runner.ts", import.meta.url).href)};
+      import { loadResearchMission, loadResearchMissionSessionOwner } from ${JSON.stringify(new URL("./research-mission-store.ts", import.meta.url).href)};
+      const mission = await loadResearchMission(process.argv[1]);
+      const runner = makeProductionResearchMissionRunner();
+      let actionError = null;
+      if (process.argv[2]) {
+        try { await runner.act(mission.id, { action: process.argv[2] }); }
+        catch (error) { actionError = error.message; }
+      }
+      const result = await runner.reconcile(mission);
+      console.log(JSON.stringify({ status: result.status, iteration: result.iterations[0],
+        owner: await loadResearchMissionSessionOwner(mission.id), actionError }));
+    `;
+    const readFromAnotherProcess = async (action) => {
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        "--experimental-strip-types", "--input-type=module", "--eval", reader, mission.id,
+        ...(action ? [action] : []),
+      ], { timeout: 10_000 });
+      return JSON.parse(stdout.trim());
+    };
+    const live = await readFromAnotherProcess();
+    assert.equal(live.status, "running", "missing local registry is not process death");
+    assert.equal(live.owner?.sessionId, started.sessionId);
+    assert.equal(isCopilotFlowRunActive(started.sessionId), true);
+    assert.equal(copilotFlowRunState(started.sessionId), "running");
+    const retry = await readFromAnotherProcess("retry");
+    assert.ok(retry.actionError, "retry cannot launch over the unseen owner");
+    assert.equal(retry.status, "running");
+    assert.equal(retry.owner?.sessionId, started.sessionId);
+    const cancel = await readFromAnotherProcess("cancel");
+    assert.match(cancel.actionError, /cancellation could not be confirmed/);
+    assert.equal(cancel.status, "running");
+    assert.equal(cancel.owner?.sessionId, started.sessionId);
+    assert.equal(isCopilotFlowRunActive(started.sessionId), true);
+
+    writeFileSync(release, "finish");
+    await started.done;
+    const settled = await readFromAnotherProcess();
+    assert.equal(settled.status, "checkpoint");
+    assert.equal(settled.iteration.decisionReason, "Review draft");
+    assert.equal(settled.owner, null, "retire the owner only after consuming its output");
+  } finally {
+    writeFileSync(release, "finish");
+    await cancelCopilotFlowRun(started.sessionId);
+    await started.done;
+  }
+});
+
+test("a settled direct run with failed transcript persistence fails research without an arbitrary grace wait", async () => {
+  const started = await startConfirmed({
+    spec: SPEC, prompt: "settle despite failed persistence", projectRoot: TMP,
+    familiarId: "cody", spawnCommand: FAKE_LAUNCH,
+  }, { saveConversationImpl: async () => { throw new Error("test disk failure"); } });
+  await started.done;
+  const mission = await createOwnedResearchMission(started.sessionId, "settled-no-transcript", 0);
+  const { makeProductionResearchMissionRunner } = await import("./research-mission-runner.ts");
+  const { loadResearchMissionSessionOwner } = await import("./research-mission-store.ts");
+  const result = await makeProductionResearchMissionRunner().reconcile(mission);
+  assert.equal(result.status, "failed");
+  assert.match(result.lastError, /owned Research session ended without reporting/);
+  assert.equal(await loadResearchMissionSessionOwner(mission.id), null);
 });
 
 const TREE_WORKER_SOURCE = [
