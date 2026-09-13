@@ -262,6 +262,8 @@
    language (header · primary action · search · sticky groups · thread rows ·
    footer) so the two surfaces feel like one considered product. ═══════════════ */
 .cnav {
+  /* The docked rail and mobile sheet no longer inherit from .shell-nav. */
+  --rail-pad: var(--space-1);
   --cnav-pad: var(--rail-pad);
   --cnav-indent: 24px;
   display: flex;
@@ -733,6 +735,7 @@
   z-index: -1;
   inset-block: 0;
   inset-inline: calc(var(--rail-pad) * -1);
+  border-radius: inherit;
   background: var(--cnav-active-background);
   pointer-events: none;
 }

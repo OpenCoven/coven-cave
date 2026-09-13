@@ -28,7 +28,8 @@ body {
   word-wrap: break-word;
   overflow-wrap: anywhere;
 }
-#root { padding: 0; }
+/* Keep nested block margins inside the height reported to the native bubble. */
+#root { display: flow-root; padding: 0; }
 #root > :first-child { margin-top: 0; }
 #root > :last-child { margin-bottom: 0; }
 

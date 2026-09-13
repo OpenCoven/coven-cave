@@ -15,6 +15,7 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const haptics = await read("apps/ios/CovenCave/CovenCave/Haptics.swift");
 const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+const markdownCss = await read("apps/ios/markdown/markdown.css");
 const theme = await read("apps/ios/CovenCave/CovenCave/Theme/Theme.swift");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
 
@@ -43,18 +44,48 @@ assert.doesNotMatch(
 // ── 2. Streaming scroll: reader position is sacred ───────────────────────────
 assert.match(
   chatView,
-  /onChange\(of: thread\.messages\.last\?\.text\) \{ _, _ in\s*\n\s*guard atBottom else \{ return \}/,
-  "token streaming must only auto-scroll while the reader is parked at the bottom",
+  /onChange\(of: thread\.messages\.last\?\.text\) \{ _, _ in\s*\n\s*guard scrollState\.isFollowingLatest else \{ return \}/,
+  "token streaming must only auto-scroll while the reader is following latest",
 );
 assert.match(
   chatView,
-  /onChange\(of: thread\.messages\.count\) \{ _, _ in\s*\n\s*guard atBottom \|\| thread\.messages\.last\?\.role == \.user else \{ return \}/,
-  "a new message auto-reveals only at the bottom, or when it's the user's own send",
+  /let ownSend = thread\.messages\.last\?\.role == \.user\s*\n\s*guard scrollState\.isFollowingLatest \|\| ownSend else \{ return \}/,
+  "a new message auto-reveals only while following latest, or when it's the user's own send",
 );
 assert.match(
   chatView,
   /\.defaultScrollAnchor\(\.bottom, for: \.initialOffset\)/,
   "the transcript should open anchored at the latest message (no post-layout jump)",
+);
+assert.match(
+  chatView,
+  /let target = thread\.messages\.last\?\.id \?\? "bottom"[\s\S]{0,160}?proxy\.scrollTo\(target, anchor: \.bottom\)/,
+  "jump-to-latest should target the newest message row before falling back to the sentinel",
+);
+assert.doesNotMatch(
+  chatView,
+  /proxy\.scrollTo\("unread-divider"/,
+  "the unread divider stays informational; opening a thread must not override latest landing",
+);
+assert.match(
+  chatView,
+  /let isLastMessage = row\.id == thread\.messages\.last\?\.id[\s\S]{0,450}?guard isLastMessage,[\s\S]{0,100}?geometry\.bounds\(of: \.scrollView\)/,
+  "bottom arrival must use the actual latest row, not the lazy stack's estimated content height",
+);
+assert.match(
+  markdownCss,
+  /#root\s*\{[^}]*display:\s*flow-root/,
+  "nested markdown margins must be included in the height reported to the native bubble",
+);
+assert.match(
+  bubble,
+  /markdownLoadingPlaceholder\(projection\)/,
+  "rich replies should keep native text visible until the WebView reports a measured height",
+);
+assert.doesNotMatch(
+  bubble,
+  /\.accessibilityElement\(children: \.ignore\)/,
+  "rendered markdown must retain its accessible links and headings",
 );
 
 // ── 3. Composer: elevated panel + focus halo ─────────────────────────────────

@@ -10,6 +10,17 @@ const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url)
 const css = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
 assert.match(
+  extractBraceBlock(css, ".cnav {"),
+  /--rail-pad:\s*var\(--space-1\);/,
+  "the docked and mobile session lists must own their inset without a shell-nav ancestor",
+);
+assert.match(
+  extractBraceBlock(css, ".cnav__thread.is-active::after {"),
+  /border-radius:\s*inherit;/,
+  "the full-width active backdrop must preserve the row's left and right corner radius",
+);
+
+assert.match(
   sidebar,
   /const attentionSessions = useMemo\(\s*\(\) =>\s*visibleSessions\s*\.filter\(\(session\) => session\.attention\.state !== "none" && !session\.archived_at\)\s*\.sort\(compareChatAttention\)/,
   "attentionSessions should derive from visible non-archived rows and sort by compareChatAttention",
