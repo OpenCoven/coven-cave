@@ -253,7 +253,10 @@ export function ApprovalCard({
               </span>
             )}
 
-            {blocker && (
+            {/* Only where it blocks something. A posted draft whose account has
+                since disconnected is not waiting on anyone, and a refusal
+                printed under it would read as a problem with the post. */}
+            {blocker && (isDraftLike || isPending || isFailed) && (
               <span
                 role="status"
                 className="x-comms-blocked"
