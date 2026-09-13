@@ -401,7 +401,7 @@ one shape, so a client parses once:
 ```json
 {
   "apiVersion": "1.0",
-  "minimumClientVersion": "0.1.0",
+  "minimumClientVersion": "0.0.1",
   "capabilities": [
     "health", "pairing", "credentials", "familiars",
     "familiar-contract", "familiar-analytics", "projects",
@@ -424,7 +424,7 @@ type level as well as in practice:
 ```json
 {
   "apiVersion": "1.0",
-  "minimumClientVersion": "0.1.0",
+  "minimumClientVersion": "0.0.1",
   "capabilities": ["pairing", "credentials", "..."],
   "operations": ["pairing.create", "pairing.exchange", "..."],
   "error": {
@@ -436,7 +436,7 @@ type level as well as in practice:
 }
 ```
 
-- **`apiVersion`** is `"1.0"` and **`minimumClientVersion`** is `"0.1.0"`. A
+- **`apiVersion`** is `"1.0"` and **`minimumClientVersion`** is `"0.0.1"`. A
   client older than the minimum should stop and tell its user to update rather
   than pair.
 - **`operations`** is the live inventory: every operation this build can
@@ -462,6 +462,29 @@ type level as well as in practice:
 deliberately ride the envelope and are *not* repeated inside `data` — including
 on `/health`, where you might expect them. One source, so a single response can
 never carry two different answers to the same question.
+
+### First public SDK release compatibility
+
+The minimum is `0.0.1` to admit the first public OpenCoven SDK release of the
+existing Client v1 implementation, previously developed under private package
+version `0.1.0`. This changes only the advertised client-version floor, not
+`apiVersion: "1.0"`, the Cave application release version, any operation,
+credential or scope requirement, discovery format, cursor format, or HPKE mode.
+Existing `0.1.0` clients still satisfy the minimum. Clients compare their actual
+package version against this floor using SemVer ordering: `0.0.0` and
+`0.0.1` prereleases remain below it. API-major compatibility and all authority
+checks remain independently required.
+
+The deterministic HPKE vectors retain their original `minimumClientVersion:
+"0.1.0"` plaintext as fixed cryptographic test input; they are not the live
+health declaration. Their source, ciphertext, and digests do not change with
+this floor adjustment.
+
+Consumers must adopt the regenerated contract and its digest from a reviewed
+Cave source commit. This change alone is not packed-release conformance
+evidence or SHIP authorization: the exact `0.0.1` packages and authority
+bindings still require the evidence and review tracked by OpenCoven/sdk#38 and
+OpenCoven/sdk#40.
 
 ### Capability discovery
 
@@ -783,7 +806,7 @@ to fail a paired request.
 ```json
 {
   "apiVersion": "1.0",
-  "minimumClientVersion": "0.1.0",
+  "minimumClientVersion": "0.0.1",
   "capabilities": ["health", "pairing", "credentials", "..."],
   "operations": ["health.read", "pairing.create", "..."],
   "data": {
@@ -826,7 +849,7 @@ COVEN_CAVE_CLIENT_V1_COMPATIBILITY_PRESET=api-major pnpm start
 ```
 
 The runtime selector is finite: `api-major` emits `apiVersion: "2.0"` while
-keeping `minimumClientVersion: "0.1.0"`, and `minimum-client` emits
+keeping `minimumClientVersion: "0.0.1"`, and `minimum-client` emits
 `apiVersion: "1.0"` with `minimumClientVersion: "999.0.0"`. An unset selector
 emits normal metadata; any other value returns HTTP 500 with the shared error
 envelope. These controls exist only to let the Phase 1 harness independently

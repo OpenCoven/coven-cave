@@ -10,7 +10,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { stripTypeScriptTypes } from "node:module";
 import test, { type TestContext } from "node:test";
+import { runInNewContext } from "node:vm";
 
 import {
   CLIENT_V1_DISCOVERY_FILE,
@@ -507,7 +509,7 @@ test("standalone authority boot is default-off, one-key, public-only, and fail-c
   );
   assert.match(
     source,
-    /if \("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP\) \{\s*throw clientV1AuthorityInitializationError/,
+    /if \("unavailable" in CLIENT_V1_AUTHORITY_BOOTSTRAP\) \{\s*throw discoveryPublicationFailure\(\s*"authority-init",\s*clientV1AuthorityInitializationError/,
     "unavailable active mode publishes no record through the existing loud failure path",
   );
 
@@ -621,7 +623,7 @@ test("the standalone server enforces ownership on Windows with this module's scr
   );
   assert.match(
     source,
-    /if \(findings\.length > 0\) \{\s*throw new Error\(/,
+    /if \(findings\.length > 0\) \{\s*throw discoveryPublicationFailure\(\s*`\$\{label\}-owner-shared`,\s*new Error\(/,
     "the standalone server must refuse on any finding, not merely collect them",
   );
 });
@@ -683,4 +685,182 @@ test("a client-v1 discovery failure degrades that surface instead of killing the
     /UNVERIFIED_OWNERSHIP_ENV/,
     "the banner must name the waiver, which is the only remedy on a host that cannot read a DACL",
   );
+});
+
+async function standalonePublisher(overrides: Record<string, unknown> = {}) {
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+  const start = source.indexOf("const standaloneVerifiedWindowsPaths");
+  const end = source.indexOf("function removeStandaloneClientV1DiscoveryRecord");
+  const reporter = /function reportClientV1DiscoveryUnavailable\([\s\S]*?\n\}/.exec(source);
+  assert.ok(start > 0 && end > start && reporter);
+  const messages: string[] = [];
+  const writes: string[] = [];
+  const root = resolve("private-discovery-root");
+  const target = join(root, CLIENT_V1_DISCOVERY_FILE);
+  const metadata = (file: string) => ({
+    uid: 1001,
+    isSymbolicLink: () => false,
+    isDirectory: () => file === root,
+    isFile: () => file !== root,
+  });
+  const runtime = runInNewContext(stripTypeScriptTypes(`
+    let clientV1DiscoveryPublished = false;
+    ${source.slice(start, end)}
+    ${reporter![0]}
+    ({
+      publish: publishStandaloneClientV1DiscoveryRecord,
+      report: reportClientV1DiscoveryUnavailable,
+      published: () => clientV1DiscoveryPublished,
+    });
+  `), {
+    Error, URL, Buffer, join,
+    process: { pid: 4310, getuid: () => 1001, platform: "linux", env: {} },
+    console: {
+      error: (...args: unknown[]) => messages.push(args.join(" ")),
+      warn: (...args: unknown[]) => messages.push(args.join(" ")),
+    },
+    clientV1DiscoveryFile: () => target,
+    mkdirSync: () => {},
+    lstatSync: metadata,
+    realpathSync: () => root,
+    chmodSync: () => {},
+    openSync: () => { writes.push("open"); return 1; },
+    writeFileSync: () => { writes.push("write"); },
+    fsyncSync: () => {},
+    closeSync: () => {},
+    renameSync: () => { writes.push("rename"); },
+    rmSync: () => {},
+    randomUUID: () => "fixed-test-nonce",
+    CLIENT_V1_AUTHORITY_MODE: "off",
+    CLIENT_V1_AUTHORITY_BOOTSTRAP: undefined,
+    CLIENT_V1_DISCOVERY_NONCE: "fixed-test-nonce",
+    CLIENT_V1_DISCOVERY_STARTED_AT: "2026-09-12T00:00:00.000Z",
+    clientV1AuthorityInitializationError: null,
+    resolveUnverifiedOwnershipWaiver: () => ({ granted: false }),
+    unverifiableOwnershipRefusal: () => "private path, ACL and exception",
+    sharedOwnershipRefusal: () => "private path, ACL and principal",
+    WINDOWS_ACL_SCRIPT: "unused-test-probe",
+    WINDOWS_SYSTEM_SID: "system",
+    WINDOWS_ADMINISTRATORS_SID: "admins",
+    UNVERIFIED_OWNERSHIP_ENV: "COVEN_CAVE_ALLOW_UNVERIFIED_CLIENT_V1_OWNERSHIP",
+    UNVERIFIED_OWNERSHIP_TOKEN: "test-waiver-token",
+    UNVERIFIED_OWNERSHIP_REASON_ENV: "COVEN_CAVE_UNVERIFIED_CLIENT_V1_OWNERSHIP_REASON",
+    ...overrides,
+  }) as {
+    publish: (endpoint: string) => void;
+    report: (error: unknown) => void;
+    published: () => boolean;
+  };
+  return { ...runtime, messages, writes, root, target };
+}
+
+test("standalone publication reports fixed refusal categories without raw cause leakage", async () => {
+  const root = resolve("private-discovery-root");
+  const cases: [string, Record<string, unknown>, string?][] = [
+    ["root-not-directory", {
+      lstatSync: () => ({ isSymbolicLink: () => false, isDirectory: () => false }),
+    }],
+    ["root-symlink", {
+      lstatSync: () => ({ isSymbolicLink: () => true, isDirectory: () => true }),
+    }],
+    ["root-symlink", { realpathSync: () => "private-symlink-target" }],
+    ["root-owner-shared", {
+      lstatSync: () => ({ uid: 9999, isSymbolicLink: () => false, isDirectory: () => true }),
+    }],
+    ["target-owner-shared", {
+      lstatSync: (file: string) => ({
+        uid: file === root ? 1001 : 9999,
+        isSymbolicLink: () => false,
+        isDirectory: () => true,
+        isFile: () => true,
+      }),
+    }],
+    ["target-not-file", {
+      lstatSync: () => ({
+        uid: 1001, isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false,
+      }),
+    }],
+    ["endpoint-invalid", {}, "https://private-host:4310/private"],
+    ["endpoint-invalid", {}, "private-invalid-url"],
+    ["authority-init", { CLIENT_V1_AUTHORITY_MODE: "enforce" }],
+    ["authority-init", {
+      CLIENT_V1_AUTHORITY_MODE: "enforce",
+      CLIENT_V1_AUTHORITY_BOOTSTRAP: { unavailable: true },
+      clientV1AuthorityInitializationError: new Error("private init cause"),
+    }],
+    ["disabled-other", {
+      mkdirSync: () => { throw new Error("private mkdir path", { cause: "private secret" }); },
+    }],
+  ];
+  for (const [category, overrides, endpoint] of cases) {
+    const runtime = await standalonePublisher(overrides);
+    let failed = false;
+    try {
+      runtime.publish(endpoint ?? "http://127.0.0.1:4310");
+    } catch (error) {
+      failed = true;
+      runtime.report(error);
+    }
+    assert.equal(failed, true, category);
+    assert.equal(runtime.published(), false, category);
+    assert.deepEqual(runtime.writes, [], category);
+    assert.equal(
+      runtime.messages.filter((line) => line.includes("publication refused:")).join("\n"),
+      `[cave] client-v1 discovery publication refused: ${category}`,
+    );
+    assert.doesNotMatch(runtime.messages.join("\n"), /private/i);
+    assert.match(runtime.messages.join("\n"), /CLIENT V1 DISABLED/);
+    assert.match(runtime.messages.join("\n"), /Everything else on this server is running normally/);
+  }
+});
+
+test("standalone Windows owner observations distinguish unreadable and shared without disarming gates", async () => {
+  for (const label of ["root", "target"]) {
+    for (const verdict of ["unverified", "shared"]) {
+      const root = resolve("private-discovery-root");
+      const runtime = await standalonePublisher({
+        process: { pid: 4310, platform: "win32", env: {} },
+        execFileSync: (_exe: string, _args: string[], options: { env: Record<string, string> }) => {
+          const atRoot = options.env.COVEN_CAVE_CLIENT_V1_ACL_PATH === root;
+          const selected = atRoot === (label === "root");
+          if (selected && verdict === "unverified") {
+            throw Object.assign(new Error("private ACL exception", { cause: "private cause" }), {
+              stderr: "private ACL stderr", stdout: "private ACL stdout",
+            });
+          }
+          return JSON.stringify({
+            self: "self", owner: selected && verdict === "shared" ? "foreign" : "self",
+            protected: true, repaired: false, removed: [], aces: [],
+          });
+        },
+      });
+      assert.throws(() => runtime.publish("http://127.0.0.1:4310"), (error) => {
+        runtime.report(error);
+        return true;
+      });
+      assert.equal(runtime.published(), false);
+      assert.deepEqual(runtime.writes, []);
+      assert.ok(runtime.messages.includes(
+        `[cave] client-v1 discovery publication refused: ${label}-owner-${verdict}`,
+      ));
+      assert.doesNotMatch(runtime.messages.join("\n"), /private|foreign/);
+    }
+  }
+});
+
+test("standalone diagnostic reporter never coerces unknown errors and successful publication stays silent", async () => {
+  const runtime = await standalonePublisher();
+  runtime.publish("http://127.0.0.1:4310");
+  assert.equal(runtime.published(), true);
+  assert.deepEqual(runtime.writes, ["open", "write", "rename"]);
+  assert.equal(runtime.messages.length, 0);
+  const hostile = {
+    toString() { throw new Error("must not stringify errors"); },
+    get message() { throw new Error("must not read message"); },
+    get cause() { throw new Error("must not read cause"); },
+    category: "root-owner-shared",
+  };
+  runtime.report(hostile);
+  assert.equal(runtime.published(), false);
+  assert.ok(runtime.messages.includes("[cave] client-v1 discovery publication refused: disabled-other"));
 });
