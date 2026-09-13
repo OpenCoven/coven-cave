@@ -20,6 +20,7 @@ import {
 const SELF_SID = "S-1-5-21-11-22-33-1001";
 const SYSTEM_SID = "S-1-5-18";
 const ADMINISTRATORS_SID = "S-1-5-32-544";
+const OWNER_RIGHTS_SID = "S-1-3-4";
 /** BUILTIN\Users — the shape of ACE a machine-wide profile policy inherits. */
 const USERS_SID = "S-1-5-32-545";
 
@@ -33,9 +34,9 @@ function report(
     repaired: false,
     removed: [],
     aces: [
-      { sid: SELF_SID, type: "Allow" },
-      { sid: SYSTEM_SID, type: "Allow" },
-      { sid: ADMINISTRATORS_SID, type: "Allow" },
+      { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+      { sid: SYSTEM_SID, type: "Allow", rights: 0x001f_01ff },
+      { sid: ADMINISTRATORS_SID, type: "Allow", rights: 0x001f_01ff },
     ],
     ...overrides,
   };
@@ -135,8 +136,8 @@ test("refuses a Windows path a foreign principal can write", async () => {
         probeWindowsAcl: async () =>
           report({
             aces: [
-              { sid: SELF_SID, type: "Allow" },
-              { sid: USERS_SID, type: "Allow" },
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
             ],
           }),
       }),
@@ -182,10 +183,56 @@ test("refuses a Windows path carrying a Deny entry for an untrusted principal", 
       "discovery root",
       windows({
         probeWindowsAcl: async () =>
-          report({ aces: [{ sid: SELF_SID, type: "Allow" }, { sid: USERS_SID, type: "Deny" }] }),
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Deny", rights: 0x0013_01bf },
+            ],
+          }),
       }),
     ),
     new RegExp(`Deny:${USERS_SID}`),
+  );
+});
+
+test("admits a protected Windows path whose OWNER RIGHTS entry is read-only", async () => {
+  await assert.doesNotReject(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "discovery root",
+      windows({
+        probeWindowsAcl: async () =>
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x0013_01bf },
+              { sid: SYSTEM_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: ADMINISTRATORS_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: OWNER_RIGHTS_SID, type: "Allow", rights: 0x0002_0000 },
+            ],
+          }),
+      }),
+    ),
+  );
+});
+
+test("refuses a Windows path whose OWNER RIGHTS entry can rewrite its DACL", async () => {
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "discovery root",
+      windows({
+        probeWindowsAcl: async () =>
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x0013_01bf },
+              { sid: OWNER_RIGHTS_SID, type: "Allow", rights: 0x0004_0000 },
+            ],
+          }),
+      }),
+    ),
+    new RegExp(`Allow:${OWNER_RIGHTS_SID}`),
   );
 });
 
@@ -341,7 +388,12 @@ test("refusals carry the distinct ownership error class, and a cache hit re-thro
       windows({
         now: () => 1_000,
         probeWindowsAcl: async () =>
-          report({ aces: [{ sid: SELF_SID, type: "Allow" }, { sid: USERS_SID, type: "Allow" }] }),
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
+            ],
+          }),
       }),
     ),
     ClientV1PathOwnershipError,
@@ -417,6 +469,89 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
   }
 });
 
+test("the real Windows probe preserves a read-only OWNER RIGHTS boundary", async (
+  t: TestContext,
+) => {
+  if (process.platform !== "win32") {
+    t.skip("the supervisor-shaped OWNER RIGHTS regression requires a real Windows DACL");
+    return;
+  }
+
+  const root = await mkdtemp(join(tmpdir(), "cave-client-v1-owner-rights-"));
+  try {
+    execFileSync(
+      join(
+        process.env.SystemRoot || process.env.windir || "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      ),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `
+$ErrorActionPreference = 'Stop'
+$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+$acl = $item.GetAccessControl('Access')
+$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = New-Object System.Security.Principal.SecurityIdentifier('${SYSTEM_SID}')
+$admins = New-Object System.Security.Principal.SecurityIdentifier('${ADMINISTRATORS_SID}')
+$ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${OWNER_RIGHTS_SID}')
+$acl.SetOwner($me)
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
+$inheritance = 'ContainerInherit, ObjectInherit'
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $system, 'FullControl', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $admins, 'FullControl', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $me, 'Modify', $inheritance, 'None', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $me, 'FullControl', $inheritance, 'InheritOnly', 'Allow')))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $ownerRights, 'ReadPermissions', $inheritance, 'None', 'Allow')))
+$item.SetAccessControl($acl)
+`,
+      ],
+      {
+        env: {
+          COVEN_CAVE_CLIENT_V1_ACL_PATH: root,
+          NODE_ENV: process.env.NODE_ENV,
+          SystemRoot: process.env.SystemRoot,
+          windir: process.env.windir,
+          PATH: process.env.PATH,
+          PATHEXT: process.env.PATHEXT,
+          TEMP: process.env.TEMP,
+          TMP: process.env.TMP,
+        },
+        encoding: "utf8",
+        windowsHide: true,
+      },
+    );
+
+    const observed = await probeWindowsAcl(root);
+    assert.equal(observed.repaired, false, "the stricter supervisor DACL must not be rewritten");
+    assert.ok(
+      observed.aces.some((ace) =>
+        ace.sid === OWNER_RIGHTS_SID
+        && ace.type === "Allow"
+        && ace.rights === 0x0002_0000
+      ),
+      "the read-only OWNER RIGHTS entry must remain intact",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a malformed probe report is refused rather than read as an empty DACL", () => {
   const exclusive = {
     self: SELF_SID,
@@ -424,11 +559,15 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
     protected: true,
     repaired: false,
     removed: [] as unknown[],
-    aces: [{ sid: SELF_SID, type: "Allow" }] as unknown[],
+    aces: [{ sid: SELF_SID, type: "Allow", rights: 0x001f_01ff }] as unknown[],
   };
   assert.deepEqual(
     parseClientV1WindowsAclReport(JSON.stringify(exclusive)),
-    { ...exclusive, removed: [], aces: [{ sid: SELF_SID, type: "Allow" }] },
+    {
+      ...exclusive,
+      removed: [],
+      aces: [{ sid: SELF_SID, type: "Allow", rights: 0x001f_01ff }],
+    },
   );
 
   // `aces` carries the whole access decision. Coercing an unreadable one to `[]`
@@ -440,6 +579,22 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
       ["aces absent", JSON.stringify({ ...exclusive, aces: undefined })],
       ["aces a bare object", JSON.stringify({ ...exclusive, aces: { sid: USERS_SID, type: "Allow" } })],
       ["aces a string", JSON.stringify({ ...exclusive, aces: "Allow" })],
+      ["ACE rights absent", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow" }],
+      })],
+      ["ACE rights negative", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: -1 }],
+      })],
+      ["ACE rights fractional", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: 1.5 }],
+      })],
+      ["ACE rights above uint32", JSON.stringify({
+        ...exclusive,
+        aces: [{ sid: SELF_SID, type: "Allow", rights: 0x1_0000_0000 }],
+      })],
       ["removed absent", JSON.stringify({ ...exclusive, removed: undefined })],
       ["self absent", JSON.stringify({ ...exclusive, self: undefined })],
       ["self empty", JSON.stringify({ ...exclusive, self: "" })],
@@ -462,12 +617,19 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
 
   // An entry the probe could not name is untrusted, never trusted-by-omission.
   const nameless = parseClientV1WindowsAclReport(
-    JSON.stringify({ ...exclusive, aces: [{}, null, { sid: USERS_SID }] }),
+    JSON.stringify({
+      ...exclusive,
+      aces: [
+        { rights: 0 },
+        { rights: 0 },
+        { sid: USERS_SID, rights: 0 },
+      ],
+    }),
   );
   assert.deepEqual(nameless.aces, [
-    { sid: "", type: "" },
-    { sid: "", type: "" },
-    { sid: USERS_SID, type: "" },
+    { sid: "", type: "", rights: 0 },
+    { sid: "", type: "", rights: 0 },
+    { sid: USERS_SID, type: "", rights: 0 },
   ]);
 });
 
@@ -553,8 +715,8 @@ test("the waiver never covers a DACL that was read and found shared", async () =
         probeWindowsAcl: async () =>
           report({
             aces: [
-              { sid: SELF_SID, type: "Allow" },
-              { sid: USERS_SID, type: "Allow" },
+              { sid: SELF_SID, type: "Allow", rights: 0x001f_01ff },
+              { sid: USERS_SID, type: "Allow", rights: 0x0013_01bf },
             ],
           }),
       }),

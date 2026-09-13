@@ -47,6 +47,9 @@ reopen.
 - Update Next.js, Sharp, and Vitest patch dependencies.
 
 ### Fixed
+- Preserve a protected read-only Windows `OWNER RIGHTS` ACL entry when validating
+  client v1 discovery paths, while continuing to refuse any such entry that can
+  write data, delete content, or rewrite ownership or permissions.
 - Reduce ordinary iOS chat renderer startup JavaScript from 3.6 MB to about
   160 KB by loading the bundled diagram engine only for completed diagrams
   (#5350). This is a payload reduction, not a measured device-latency percentage.

@@ -16,6 +16,8 @@ const execFileAsync = promisify(execFile);
  */
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
+const WINDOWS_OWNER_RIGHTS_SID = "S-1-3-4";
+const WINDOWS_WRITABLE_RIGHTS_MASK = 0x500d_0156;
 
 // ── The unverified-ownership waiver ─────────────────────────────────────────
 // The four constants below, `resolveUnverifiedOwnershipWaiver`, and the three
@@ -168,7 +170,7 @@ export interface ClientV1WindowsAclReport {
   /** SIDs the repair stripped, empty when nothing had to change. */
   removed: string[];
   /** The DACL as it stands now. */
-  aces: { sid: string; type: string }[];
+  aces: { sid: string; type: string; rights?: number }[];
 }
 
 export type ClientV1WindowsAclProbe = (path: string) => Promise<ClientV1WindowsAclReport>;
@@ -220,6 +222,8 @@ $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
 $admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
+$ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID}')
+$writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
 
 function Read-State {
@@ -229,6 +233,7 @@ function Read-State {
     [pscustomobject]@{
       sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
       type = [string]$_.AccessControlType
+      rights = [uint32]$_.FileSystemRights
     }
   })
   [pscustomobject]@{
@@ -244,7 +249,10 @@ function Test-Exclusive {
   if ($state.owner -ne $me.Value) { return $false }
   foreach ($ace in $state.aces) {
     if ($ace.type -ne 'Allow') { return $false }
-    if ($trusted -notcontains $ace.sid) { return $false }
+    if ($trusted -contains $ace.sid) { continue }
+    if ($ace.sid -eq $ownerRights.Value -and
+        (([uint32]$ace.rights -band $writableRights) -eq 0)) { continue }
+    return $false
   }
   return $true
 }
@@ -253,7 +261,11 @@ $state = Read-State $item
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
-  $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
+  $removed = @($state.aces | Where-Object {
+    $trusted -notcontains $_.sid -and
+      -not ($_.sid -eq $ownerRights.Value -and
+        (([uint32]$_.rights -band $writableRights) -eq 0))
+  } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
   if ($state.owner -ne $me.Value) {
@@ -358,7 +370,18 @@ export function parseClientV1WindowsAclReport(raw: string): ClientV1WindowsAclRe
     removed: removed.map((sid) => String(sid)),
     aces: aces.map((ace) => {
       const entry = (ace ?? {}) as Record<string, unknown>;
-      return { sid: String(entry.sid ?? ""), type: String(entry.type ?? "") };
+      if (
+        !Number.isInteger(entry.rights)
+        || (entry.rights as number) < 0
+        || (entry.rights as number) > 0xffff_ffff
+      ) {
+        throw new Error("the ACL probe returned a malformed report");
+      }
+      return {
+        sid: String(entry.sid ?? ""),
+        type: String(entry.type ?? ""),
+        rights: entry.rights as number,
+      };
     }),
   };
 }
@@ -399,7 +422,17 @@ function exclusivityFindings(report: ClientV1WindowsAclReport): string[] {
   }
   if (!report.protected) findings.push("its DACL still inherits from the parent");
   const foreign = report.aces
-    .filter((ace) => ace.type !== "Allow" || !trusted.has(ace.sid))
+    .filter((ace) =>
+      ace.type !== "Allow"
+      || (
+        !trusted.has(ace.sid)
+        && !(
+          ace.sid === WINDOWS_OWNER_RIGHTS_SID
+          && Number.isInteger(ace.rights)
+          && ((ace.rights as number) & WINDOWS_WRITABLE_RIGHTS_MASK) === 0
+        )
+      )
+    )
     .map((ace) => `${ace.type}:${ace.sid}`);
   if (foreign.length > 0) {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);

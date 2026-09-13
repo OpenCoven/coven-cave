@@ -276,6 +276,8 @@ function clientV1DiscoveryFile(): string {
 // discovery.test.ts pins this script so packaging changes cannot weaken it.
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
+const WINDOWS_OWNER_RIGHTS_SID = "S-1-3-4";
+const WINDOWS_WRITABLE_RIGHTS_MASK = 0x500d_0156;
 
 // The unverified-ownership waiver, inlined from path-ownership.ts for the same
 // reason as the script below. See that module for why it is shaped this way;
@@ -373,6 +375,8 @@ $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
 $admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
+$ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID}')
+$writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
 
 function Read-State {
@@ -382,6 +386,7 @@ function Read-State {
     [pscustomobject]@{
       sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
       type = [string]$_.AccessControlType
+      rights = [uint32]$_.FileSystemRights
     }
   })
   [pscustomobject]@{
@@ -397,7 +402,10 @@ function Test-Exclusive {
   if ($state.owner -ne $me.Value) { return $false }
   foreach ($ace in $state.aces) {
     if ($ace.type -ne 'Allow') { return $false }
-    if ($trusted -notcontains $ace.sid) { return $false }
+    if ($trusted -contains $ace.sid) { continue }
+    if ($ace.sid -eq $ownerRights.Value -and
+        (([uint32]$ace.rights -band $writableRights) -eq 0)) { continue }
+    return $false
   }
   return $true
 }
@@ -406,7 +414,11 @@ $state = Read-State $item
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
-  $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
+  $removed = @($state.aces | Where-Object {
+    $trusted -notcontains $_.sid -and
+      -not ($_.sid -eq $ownerRights.Value -and
+        (([uint32]$_.rights -band $writableRights) -eq 0))
+  } |
     ForEach-Object { $_.sid } | Select-Object -Unique)
   $acl = $item.GetAccessControl('Access')
   if ($state.owner -ne $me.Value) {
@@ -494,7 +506,7 @@ function assertStandaloneWindowsExclusive(path: string, label: "root" | "target"
     protected: boolean;
     repaired: boolean;
     removed: string[];
-    aces: { sid: string; type: string }[];
+    aces: { sid: string; type: string; rights: number }[];
   };
   try {
     report = JSON.parse(execFileSync(
@@ -533,6 +545,13 @@ function assertStandaloneWindowsExclusive(path: string, label: "root" | "target"
       || typeof report.repaired !== "boolean"
       || !Array.isArray(report.aces)
       || !Array.isArray(report.removed)
+      || report.aces.some((ace) =>
+        !ace
+        || typeof ace !== "object"
+        || !Number.isInteger(ace.rights)
+        || ace.rights < 0
+        || ace.rights > 0xffff_ffff
+      )
     ) {
       throw new Error("the ACL probe returned a malformed report");
     }
@@ -559,7 +578,17 @@ function assertStandaloneWindowsExclusive(path: string, label: "root" | "target"
   }
   if (!report.protected) findings.push("its DACL still inherits from the parent");
   const foreign = report.aces
-    .filter((ace) => ace.type !== "Allow" || !trusted.has(ace.sid))
+    .filter((ace) =>
+      ace.type !== "Allow"
+      || (
+        !trusted.has(ace.sid)
+        && !(
+          ace.sid === WINDOWS_OWNER_RIGHTS_SID
+          && Number.isInteger(ace.rights)
+          && ((ace.rights as number) & WINDOWS_WRITABLE_RIGHTS_MASK) === 0
+        )
+      )
+    )
     .map((ace) => `${ace.type}:${ace.sid}`);
   if (foreign.length > 0) {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
