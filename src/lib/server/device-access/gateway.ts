@@ -279,7 +279,7 @@ export function createDeviceAccessGateway(options: {
       // A managed remote grant is not a local/admin, terminal, or client-v1
       // credential. Those boundaries must not be relaxed by the new transport.
       if (pathname.startsWith("/api/client/") || pathname.startsWith("/api/pty")
-        || pathname.startsWith("/api/passkey/register")) {
+        || pathname.startsWith("/api/passkey/register") || pathname === "/api/mobile-handoff") {
         throw new DeviceAccessError("forbidden", "This operation requires local desktop authority.", 403);
       }
       requireOrigin(req, false);
