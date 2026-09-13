@@ -13,7 +13,7 @@
 
 import { type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/lib/icon";
-import { ChartDot, StateTag } from "./chart-room-parts";
+import { ChartDot, DependencyReviewTag, StateTag } from "./chart-room-parts";
 import type { ChartStageId, ChartStep, FlowLayout } from "./chart-room-model";
 import { dependencyDepth, gateParent, stepRecommendation } from "./chart-room-model";
 
@@ -184,6 +184,7 @@ export function ChartRoomFlow({
                         </span>
                         <span className="cr-node__title">{step.title}</span>
                         <span className="cr-node__foot">
+                          <DependencyReviewTag reviewed={step.dependencyReviewed} />
                           {upstream ? (
                             <span className="cr-node__need">
                               <Icon name="ph:arrow-bend-left-up" width={10} height={10} aria-hidden />

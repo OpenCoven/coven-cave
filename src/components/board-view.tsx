@@ -4,6 +4,7 @@ import "@/styles/board.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { orchestrationDraft } from "@/lib/task-orchestration-editor";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -579,7 +580,12 @@ export function BoardView({
       // throw an opaque parse error into the caller (which quick-add `void`s,
       // silently dropping the failure).
       const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
-      if (!json.ok) throw new Error(json.error ?? "create failed");
+      if (!res.ok || !json.ok) {
+        const detail = Array.isArray(json.errors)
+          ? json.errors.map((entry: { message?: string }) => entry.message).filter(Boolean).join(" ")
+          : "";
+        throw new Error(detail || json.error || "Could not create the task.");
+      }
       invalidateSurfaceResources("board:cards");
       setActionError(null);
       announce(`Created task '${draft.title.trim()}'.`);
@@ -606,6 +612,7 @@ export function BoardView({
     lane: { familiarId?: string | null; projectId?: string | null },
   ) => {
     await create({
+      ...orchestrationDraft(),
       title: title.trim(),
       notes: "",
       status,
@@ -1572,7 +1579,7 @@ export function BoardView({
           // (defaultValue + save-on-blur), so switching cards while open must
           // reset them — otherwise a blur writes card A's text onto card B.
           key={selectedCard.id}
-          card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
+          card={selectedCard} cards={cards} familiars={familiars} sessions={sessions} projects={projects}
           onClose={() => setSelectedCardId(null)}
           onPatch={patchCard}
           onMoveStatus={moveCardToStatus}
@@ -1589,7 +1596,7 @@ export function BoardView({
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
-        familiars={familiars} sessions={sessions}
+        familiars={familiars} sessions={sessions} cards={cards}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
       {deletePending ? (

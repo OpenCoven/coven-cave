@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/task-orchestration-editor.test.ts",
     "src/lib/afs.test.ts",
     "src/components/afs-pane.test.ts",
     "src/lib/array-content-equal.test.ts",

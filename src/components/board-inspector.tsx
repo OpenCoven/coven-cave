@@ -60,6 +60,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { caveAgenticRecommendations } from "@/lib/feature-flags";
+import { TaskOrchestrationEditor } from "@/components/task-orchestration-editor";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -95,6 +96,7 @@ function openProjectsSurface() {
 
 type Props = {
   card: Card;
+  cards?: readonly Card[];
   familiars: Familiar[];
   sessions: SessionRow[];
   projects: CaveProject[];
@@ -1705,7 +1707,7 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
 }
 
 
-export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
+export function BoardInspector({ card, cards, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -2234,6 +2236,14 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           <BoardAgenticEnhanceSection card={card} onCardReplaced={onCardReplaced} />
 
           <StepsSection card={card} onPatch={onPatch} />
+
+          <TaskOrchestrationEditor
+            key={card.id}
+            card={card}
+            cards={cards}
+            familiars={familiars.map((familiar) => ({ id: familiar.id, name: familiar.display_name }))}
+            onSaved={onCardReplaced}
+          />
 
           <LinksSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 

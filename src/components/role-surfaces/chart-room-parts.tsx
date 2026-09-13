@@ -36,6 +36,11 @@ export function StateTag({ state }: { state: ChartStepState }) {
   );
 }
 
+export function DependencyReviewTag({ reviewed = false }: { reviewed?: boolean }) {
+  const label = reviewed ? "Dependencies reviewed" : "Dependencies unreviewed";
+  return <span className="cr-chip" aria-label={label} title={label}>{reviewed ? "Reviewed" : "Unreviewed"}</span>;
+}
+
 export function Eyebrow({
   children,
   accent = false,

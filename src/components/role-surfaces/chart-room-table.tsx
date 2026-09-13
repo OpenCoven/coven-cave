@@ -11,7 +11,7 @@
 
 import type { CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
-import { ChartDot, ChartSelect, StateTag } from "./chart-room-parts";
+import { ChartDot, ChartSelect, DependencyReviewTag, StateTag } from "./chart-room-parts";
 import {
   CHART_STAGES,
   ancestorsOf,
@@ -159,6 +159,7 @@ export function ChartRoomTable({
               </td>
               <td>
                 <StateTag state={step.state} />
+                <DependencyReviewTag reviewed={step.dependencyReviewed} />
               </td>
               <td>
                 <span className="cr-node__top">
@@ -250,6 +251,7 @@ export function ChartRoomTable({
               >
                 <ChartDot color={projectColor(bar.step.project)} />
                 <span className="cr-chain__title">{bar.step.title}</span>
+                <DependencyReviewTag reviewed={bar.step.dependencyReviewed} />
                 <span className="cr-mono">{stageName(bar.step.stage)}</span>
               </button>
               <span className="cr-gantt__track">
@@ -341,6 +343,7 @@ export function ChartRoomTable({
                       <span className="cr-node__top">
                         <ChartDot color={projectColor(step.project)} />
                         <StateTag state={step.state} />
+                        <DependencyReviewTag reviewed={step.dependencyReviewed} />
                         <span className="cr-mono">{ownerName(step.owner)}</span>
                       </span>
                       <span className="cr-chain__node-title">{step.title}</span>

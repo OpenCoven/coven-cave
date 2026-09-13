@@ -12,6 +12,8 @@
 import { useRef, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import type { Card } from "@/lib/cave-board-types";
+import { TaskOrchestrationEditor } from "@/components/task-orchestration-editor";
 import { ChartDot, ChartSelect, StateTag } from "./chart-room-parts";
 import {
   CHART_STAGES,
@@ -70,6 +72,10 @@ function pickerGroups(
 }
 
 export function ChartRoomStepSheet({
+  card,
+  cards,
+  onCardSaved,
+  onTrace,
   step,
   steps,
   familiars,
@@ -94,6 +100,10 @@ export function ChartRoomStepSheet({
   onDelete,
   onFocusCard,
 }: {
+  card: Card;
+  cards: readonly Card[];
+  onCardSaved: (card: Card) => void;
+  onTrace: () => void;
   step: ChartStep;
   steps: readonly ChartStep[];
   familiars: ReadonlyArray<{ id: string; name: string; role?: string }>;
@@ -158,6 +168,14 @@ export function ChartRoomStepSheet({
             aria-label="Step title"
             onChange={(event) => onTitle(event.target.value)}
           />
+          <TaskOrchestrationEditor
+            key={card.id}
+            card={card}
+            cards={cards}
+            familiars={familiars}
+            onSaved={onCardSaved}
+          />
+          <button type="button" className="cr-btn focus-ring" onClick={onTrace}>Trace dependencies</button>
 
           <div className="cr-sheet__rec">
             <Icon name="ph:sparkle" width={13} height={13} aria-hidden />

@@ -8,9 +8,10 @@ process.env.HOME = caveHome;
 process.env.COVEN_HOME = path.join(caveHome, ".coven");
 process.env.COVEN_CAVE_HOME = caveHome;
 
-const { POST } = await import("./route.ts");
+const { POST, GET } = await import("./route.ts");
 const { PATCH } = await import("./[id]/route.ts");
 const { POST: transition } = await import("./[id]/lifecycle/route.ts");
+const { orchestrationFingerprint } = await import("../../../lib/task-dependency-review.ts");
 
 function request(method: "POST" | "PATCH", body: unknown): Request {
   return new Request("http://127.0.0.1/api/board", {
@@ -112,6 +113,78 @@ assert.notEqual(
   "PATCH cannot replace createdAt",
 );
 assert.equal(renamedBody.card.title, "Renamed safely");
+
+for (const payload of [
+  { dependencyReview: { reviewedAt: "2000-01-01T00:00:00.000Z" } },
+  { dependencyReview: null },
+  { dependencyReviewAction: "reviewed" },
+  { dependencyReviewAction: null },
+  { expectedOrchestration: 42 },
+]) {
+  const forgedCreate = await POST(request("POST", { title: "Reject forged review", ...payload }));
+  assert.equal(forgedCreate.status, 400);
+  const forgedPatch = await PATCH(request("PATCH", payload), { params: Promise.resolve({ id: cardId }) });
+  assert.equal(forgedPatch.status, 400);
+}
+const reviewResponse = await POST(request("POST", {
+  title: "Review no dependencies",
+  dependencies: [],
+  primaryBlockerId: null,
+  primaryBlockerPinned: false,
+  nextStep: null,
+  dependencyReviewAction: "review",
+}));
+assert.equal(reviewResponse.status, 200);
+const reviewCard = (await reviewResponse.json()).card;
+assert.ok(reviewCard.dependencyReview?.reviewedAt);
+assert.equal("dependencyReviewAction" in reviewCard, false);
+const loadedReviews = (await (await GET()).json()).cards;
+assert.deepEqual(
+  loadedReviews.find((card: { id: string }) => card.id === reviewCard.id).dependencyReview,
+  reviewCard.dependencyReview,
+);
+assert.equal(loadedReviews.find((card: { id: string }) => card.id === cardId).dependencyReview, null);
+const fingerprint = orchestrationFingerprint(reviewCard);
+const routeDependency = {
+  id: "new-route-dependency",
+  kind: "human",
+  label: "Approve the release",
+  state: "unresolved",
+  origin: "human",
+  createdAt: new Date().toISOString(),
+};
+const freshRoutePatch = await PATCH(request("PATCH", {
+  dependencies: [routeDependency],
+  primaryBlockerId: routeDependency.id,
+  primaryBlockerPinned: false,
+  nextStep: null,
+  expectedOrchestration: fingerprint,
+}), { params: Promise.resolve({ id: reviewCard.id }) });
+assert.equal(freshRoutePatch.status, 200);
+const freshRouteCard = (await freshRoutePatch.json()).card;
+assert.equal(freshRouteCard.dependencyReview, null);
+assert.equal("expectedOrchestration" in freshRouteCard, false);
+const staleRoutePatch = await PATCH(request("PATCH", {
+  dependencies: [],
+  primaryBlockerId: null,
+  primaryBlockerPinned: false,
+  nextStep: null,
+  dependencyReviewAction: "review",
+  expectedOrchestration: fingerprint,
+}), { params: Promise.resolve({ id: reviewCard.id }) });
+assert.equal(staleRoutePatch.status, 409);
+assert.equal((await staleRoutePatch.json()).error, "stale_orchestration");
+assert.deepEqual(
+  (await (await GET()).json()).cards.find((card: { id: string }) => card.id === reviewCard.id).dependencies,
+  [routeDependency],
+  "a stale UI save cannot remove the newer dependencies",
+);
+const reviewedPatch = await PATCH(request("PATCH", {
+  dependencyReviewAction: "review",
+  expectedOrchestration: orchestrationFingerprint(freshRouteCard),
+}), { params: Promise.resolve({ id: reviewCard.id }) });
+assert.equal(reviewedPatch.status, 200);
+assert.ok((await reviewedPatch.json()).card.dependencyReview?.reviewedAt);
 
 const approvalResponse = await POST(request("POST", {
   title: "Approval route target",

@@ -16,8 +16,12 @@ import {
   type CardStatus,
 } from "@/lib/cave-board-types";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import type { Card } from "@/lib/cave-board-types";
+import { TaskOrchestrationFields } from "@/components/task-orchestration-editor";
+import { orchestrationDraft, type OrchestrationDraft } from "@/lib/task-orchestration-editor";
+import { useAnnouncer } from "@/components/ui/live-region";
 
-export type NewCardDraft = {
+export type NewCardDraft = OrchestrationDraft & {
   title: string;
   notes: string;
   status: CardStatus;
@@ -38,6 +42,7 @@ type Props = {
   onClose: () => void;
   familiars: Familiar[];
   sessions: SessionRow[];
+  cards?: readonly Card[];
   defaultStatus?: CardStatus;
   defaultFamiliarId?: string | null;
   defaultTitle?: string;
@@ -52,6 +57,7 @@ export function NewCardModal({
   onClose,
   familiars,
   sessions,
+  cards,
   defaultStatus = "inbox",
   defaultFamiliarId = null,
   defaultTitle,
@@ -73,6 +79,9 @@ export function NewCardModal({
   const [endDate, setEndDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orchestration, setOrchestration] = useState<OrchestrationDraft>(() => orchestrationDraft());
+  const [dependenciesOpen, setDependenciesOpen] = useState(false);
+  const { announce } = useAnnouncer();
   const wasOpenRef = useRef(open);
   const opening = open && !wasOpenRef.current;
   const coarse = useIsCoarsePointer();
@@ -112,6 +121,8 @@ export function NewCardModal({
     setStartDate("");
     setEndDate("");
     setError(null);
+    setOrchestration(orchestrationDraft());
+    setDependenciesOpen(defaultStatus === "blocked");
   }, [open, defaultStatus, defaultFamiliarId, defaultTitle, defaultLinks, defaultNotes, defaultLabels]);
 
   useEffect(() => {
@@ -180,6 +191,7 @@ export function NewCardModal({
     setError(null);
     try {
       await onCreate({
+        ...orchestration,
         title: title.trim(),
         notes: notes.trim(),
         status,
@@ -194,9 +206,12 @@ export function NewCardModal({
         endDate: endDate || null,
         template: null,
       });
+      announce("Task created.");
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "create failed");
+      const message = err instanceof Error ? err.message : "Could not create the task.";
+      setError(message);
+      announce(message, "assertive");
     } finally {
       setBusy(false);
     }
@@ -283,7 +298,10 @@ export function NewCardModal({
         <Field label="Status">
           <Select
             value={status}
-            onChange={(v) => setStatus(v as CardStatus)}
+            onChange={(v) => {
+              setStatus(v as CardStatus);
+              if (v === "blocked") setDependenciesOpen(true);
+            }}
             options={STATUSES.map((s) => ({ value: s, label: cap(s) }))}
           />
         </Field>
@@ -322,6 +340,25 @@ export function NewCardModal({
           />
         </Field>
       </div>
+
+      <details
+        className="mb-4"
+        open={dependenciesOpen}
+        onToggle={(event) => setDependenciesOpen(event.currentTarget.open)}
+      >
+        <summary className="focus-ring cursor-pointer text-sm text-foreground">
+          Dependencies and next action{status === "blocked" ? " (required)" : ""}
+        </summary>
+        {dependenciesOpen ? (
+          <TaskOrchestrationFields
+            value={orchestration}
+            onChange={setOrchestration}
+            cards={cards}
+            familiars={familiars.map((familiar) => ({ id: familiar.id, name: familiar.display_name }))}
+            disabled={busy}
+          />
+        ) : null}
+      </details>
 
       {/* Optional metadata lives behind a disclosure so the default modal
           stays a short title/notes/pickers form. Open it when a caller
@@ -385,7 +422,7 @@ export function NewCardModal({
       </details>
 
       {error ? (
-        <div className="mb-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <div role="alert" className="mb-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
           {error}
         </div>
       ) : null}

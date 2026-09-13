@@ -42,6 +42,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { orchestrationFingerprint } from "@/lib/task-dependency-review";
 import {
   buildBoardAgenticContext,
   validateBoardAgenticRecommendation,
@@ -78,6 +79,60 @@ export {
   type TaskOrchestrationAuditEntry,
 } from "@/lib/cave-board-types";
 export { OrchestrationValidationError } from "@/lib/task-orchestration";
+
+export class DependencyReviewMutationError extends Error {
+  readonly code: "invalid_dependency_review" | "invalid_dependency_review_action"
+    | "invalid_expected_orchestration" | "automated_dependency_review" | "stale_orchestration";
+
+  constructor(
+    code: DependencyReviewMutationError["code"],
+  ) {
+    super(code === "stale_orchestration"
+      ? "Task dependencies changed. Reload the task before saving."
+      : `Task dependency review rejected: ${code}`);
+    this.name = "DependencyReviewMutationError";
+    this.code = code;
+  }
+}
+
+/** Run before a route allowlist discards command fields; mutators repeat this check. */
+export function assertDependencyReviewCommand(input: object, automated = false): void {
+  if ("dependencyReview" in input) {
+    throw new DependencyReviewMutationError("invalid_dependency_review");
+  }
+  if (
+    "dependencyReviewAction" in input &&
+    input.dependencyReviewAction !== undefined &&
+    input.dependencyReviewAction !== "review" &&
+    input.dependencyReviewAction !== "unreview"
+  ) {
+    throw new DependencyReviewMutationError("invalid_dependency_review_action");
+  }
+  if (
+    "expectedOrchestration" in input &&
+    input.expectedOrchestration !== undefined &&
+    typeof input.expectedOrchestration !== "string"
+  ) {
+    throw new DependencyReviewMutationError("invalid_expected_orchestration");
+  }
+  if (automated && "dependencyReviewAction" in input && input.dependencyReviewAction === "review") {
+    throw new DependencyReviewMutationError("automated_dependency_review");
+  }
+}
+
+function normalizedDependencyReview(value: unknown): Card["dependencyReview"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const reviewedAt = (value as { reviewedAt?: unknown }).reviewedAt;
+  return typeof reviewedAt === "string" && !Number.isNaN(Date.parse(reviewedAt))
+    ? { reviewedAt }
+    : null;
+}
+
+function invalidateDependencyReview(previous: Card, next: Card): void {
+  if (orchestrationFingerprint(previous) !== orchestrationFingerprint(next)) {
+    next.dependencyReview = null;
+  }
+}
 
 const BOARD_PATH = path.join(caveHome(), "board.json");
 export const MAX_BOARD_AGENTIC_PROPOSALS = 16;
@@ -337,6 +392,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     primaryBlockerPinned:
       typeof c.primaryBlockerPinned === "boolean" ? c.primaryBlockerPinned : false,
     nextStep: c.nextStep ?? null,
+    dependencyReview: normalizedDependencyReview(c.dependencyReview),
     orchestrationAudit: Array.isArray(c.orchestrationAudit) ? c.orchestrationAudit : [],
     agenticEnhance: normalizeAgenticEnhance(c.agenticEnhance),
   } as Card;
@@ -1124,6 +1180,7 @@ export type NewCardInput = {
   primaryBlockerId?: string | null;
   primaryBlockerPinned?: boolean;
   nextStep?: TaskNextStep | null;
+  dependencyReviewAction?: CardPatch["dependencyReviewAction"];
 };
 
 /** Store attachments lean: normalize (bounds text + validates image payloads),
@@ -1135,8 +1192,12 @@ function boardAttachments(input: ChatAttachment[] | undefined): ChatAttachment[]
   return lean.length ? lean : undefined;
 }
 
-export async function createCard(input: NewCardInput): Promise<Card> {
+export async function createCard(
+  input: NewCardInput,
+  options: { automated?: boolean } = {},
+): Promise<Card> {
   return withBoardLock(async () => {
+  assertDependencyReviewCommand(input, options.automated);
   const board = await loadBoard();
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
@@ -1176,6 +1237,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     primaryBlockerPinned:
       input.primaryBlockerPinned === undefined ? false : input.primaryBlockerPinned,
     nextStep: input.nextStep ?? null,
+    dependencyReview: input.dependencyReviewAction === "review" ? { reviewedAt: now } : null,
     orchestrationAudit: [],
     agenticEnhance: { proposals: [], audit: [] },
   };
@@ -1395,11 +1457,18 @@ async function updateCardLocked(
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
+  assertDependencyReviewCommand(patchWithOps, options.automated);
+  const { ops, dependencyReviewAction, expectedOrchestration, ...plain } = patchWithOps;
+  if (
+    expectedOrchestration !== undefined &&
+    expectedOrchestration !== orchestrationFingerprint(current)
+  ) {
+    throw new DependencyReviewMutationError("stale_orchestration");
+  }
   // Intent ops resolve against the CURRENT card here, inside the write lock —
   // a toggle/add/remove on one element can never clobber a concurrent edit to
   // another (the full-array clobber the board audit flagged). The resolved
   // arrays then flow through the exact same normalization as plain patches.
-  const { ops, ...plain } = patchWithOps;
   const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
     ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
     : plain;
@@ -1495,7 +1564,7 @@ async function updateCardLocked(
   } else if (next.lifecycle !== "running") {
     delete next.runningSince;
   }
-  if (isRepeatResolutionNoop(current, next, patch)) {
+  if (dependencyReviewAction === undefined && isRepeatResolutionNoop(current, next, patch)) {
     assertValidOrchestration(current, {
       cards: board.cards,
       previous: current,
@@ -1513,7 +1582,12 @@ async function updateCardLocked(
     automated: options.automated,
     allowReadyBlocked: promotion.readyBlocked,
   });
+  invalidateDependencyReview(current, next);
+  if (dependencyReviewAction !== undefined) {
+    next.dependencyReview = dependencyReviewAction === "review" ? { reviewedAt: now } : null;
+  }
   board.cards[idx] = next;
+  invalidateLinkedTaskReviews(board, current, next);
   return { board, card: next };
 }
 
@@ -1675,7 +1749,9 @@ export async function transitionCard(
     previous: current,
     automated: true,
   });
+  invalidateDependencyReview(current, next);
   board.cards[idx] = next;
+  invalidateLinkedTaskReviews(board, current, next);
   await saveBoard(board);
   return next;
   });
@@ -1684,6 +1760,21 @@ export async function transitionCard(
 /** A linked mirror is a durable reference target; routine cleanup must not take
  *  it. `linked` is refused rather than silently skipped so the caller can say so. */
 export type DeleteCardOutcome = "deleted" | "not-found" | "linked";
+
+function invalidateLinkedTaskReviews(board: BoardFile, previous: Card, next: Card): void {
+  if ((previous.status === "done") === (next.status === "done")) return;
+  board.cards = board.cards.map((card) => {
+    if (
+      card.id === next.id ||
+      !card.dependencyReview ||
+      !dependenciesOf(card).some((dependency) =>
+        dependency.kind === "task" && dependency.taskId === next.id)
+    ) return card;
+    // The referenced completion evidence changed, even if a human-authored
+    // dependency still awaits explicit resolution. Do not rewrite their record.
+    return { ...card, dependencyReview: null, updatedAt: next.updatedAt };
+  });
+}
 
 function repairDeletedTaskReferences(
   card: Card,
@@ -1728,6 +1819,7 @@ function repairDeletedTaskReferences(
   const next: Card = {
     ...card,
     dependencies,
+    dependencyReview: null,
     orchestrationAudit: card.orchestrationAudit ?? [],
     updatedAt: now,
   };
@@ -1844,7 +1936,8 @@ export async function deleteCard(
  * mints a fresh id and carries only the subset of fields that path accepts — so
  * every Bead or GitHub reference to the old id broke, and step state, asana
  * links, dependencies and lifecycle history were silently dropped. Restoring
- * writes the stored record back verbatim.
+ * retains the stored record, but invalidates review because its graph may have
+ * changed while the task was removed.
  *
  * An id that is currently live is skipped rather than overwritten: restore
  * exists to undo a removal, never to clobber a card that came back by another
@@ -1864,12 +1957,15 @@ export async function restoreCards(
         skipped.push(card.id);
         continue;
       }
-      // Written back VERBATIM. Re-normalizing here would defeat the contract:
-      // backfillCard is not idempotent — re-running it over a card whose Asana
-      // URL has already been merged into `links` re-derives that link and
-      // overwrites its stored title with a generated one. loadBoard normalizes
-      // every card on read anyway, so nothing is skipped by not doing it twice.
-      board.cards.push(card);
+      // Preserve snapshot content without certifying a graph that may have
+      // changed during removal. Mutation commands are never snapshot data.
+      const restoredCard: Card & {
+        dependencyReviewAction?: unknown;
+        expectedOrchestration?: unknown;
+      } = { ...card, dependencyReview: null };
+      delete restoredCard.dependencyReviewAction;
+      delete restoredCard.expectedOrchestration;
+      board.cards.push(restoredCard);
       live.add(card.id);
       restored.push(card.id);
     }

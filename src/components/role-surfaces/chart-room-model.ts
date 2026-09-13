@@ -128,6 +128,7 @@ export type ChartStep = {
   labels: string[];
   endDate: string | null;
   updatedAt: string;
+  dependencyReviewed?: boolean;
 };
 
 /**
@@ -285,6 +286,7 @@ export function toChartSteps(
       labels: card.labels ?? [],
       endDate: card.endDate ?? null,
       updatedAt: card.updatedAt,
+      dependencyReviewed: card.dependencyReview != null,
     };
   });
 }

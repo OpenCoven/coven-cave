@@ -37,7 +37,11 @@ export type CardOps = {
 };
 
 /** A board PATCH: plain field replacement plus optional intent ops. */
-export type CardPatch = Partial<Omit<Card, "id" | "createdAt">> & { ops?: CardOps };
+export type CardPatch = Partial<Omit<Card, "id" | "createdAt" | "dependencyReview">> & {
+  ops?: CardOps;
+  dependencyReviewAction?: "review" | "unreview";
+  expectedOrchestration?: string;
+};
 
 const MAX_STEP_TEXT = 500;
 const MAX_LIST_VALUE = 2_000;

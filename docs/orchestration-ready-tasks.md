@@ -58,6 +58,35 @@ Rules a familiar must follow:
 Multiple dependencies are normal. Their **order is priority order** — that is
 what promotion uses when the primary blocker clears.
 
+### Explicit dependency review
+
+`dependencyReview: { reviewedAt }` records a human's explicit review of the
+current dependencies, primary blocker, pin, and next step. `null` or a missing
+field means **unreviewed**. An explicitly reviewed empty dependency list means
+"checked: no dependencies"; an unreviewed empty list means "not checked."
+Reading or opening a task never changes this state. Review is not readiness or
+permission to dispatch: the blocked triple and approval boundary still apply.
+
+Create and update accept `dependencyReviewAction: "review" | "unreview"`.
+The server generates `reviewedAt`; clients cannot submit raw review records,
+and automated mutator calls cannot certify review. Saving changed dependencies
+(including their order, evidence, or authorship), primary blocker, pin, or next
+step invalidates the previous review unless the same human save explicitly
+reviews the resulting valid state. Unrelated title or notes edits retain it.
+Lifecycle-generated blockers, dependency resolution, and deletion repair also
+invalidate review. A linked task entering or leaving Done invalidates its
+dependents' reviews without rewriting human-authored dependencies. Restoring a
+removed task restores its content but not its previous review.
+
+Editors send `expectedOrchestration: orchestrationFingerprint(card)` with their
+patch. This pure client/server fingerprint preserves dependency priority and
+all orchestration content, normalizing absent optional defaults. The mutator
+compares it **inside the board write lock** before applying any fields. A stale
+snapshot returns HTTP **409** with `error: "stale_orchestration"`; reload and
+reconcile rather than retrying the old replacement. Older callers may omit the
+guard, but their changes still invalidate review. Neither command field is
+stored on the task.
+
 ## The primary blocker
 
 Exactly one unresolved dependency is designated primary. It is the answer to

@@ -1,0 +1,102 @@
+.task-orchestration-editor,
+.task-orchestration-fields,
+.task-orchestration-next,
+.task-orchestration-dependency {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.task-orchestration-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.task-orchestration-fields legend {
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.task-orchestration-editor,
+.task-orchestration-fields {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.task-orchestration-hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.task-orchestration-picker {
+  max-height: calc(var(--space-10) * 5);
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-control);
+}
+
+.task-orchestration-check,
+.task-orchestration-row,
+.task-orchestration-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.task-orchestration-check {
+  padding-block: var(--space-1);
+}
+
+.task-orchestration-check input {
+  flex-shrink: 0;
+}
+
+.task-orchestration-check label,
+.task-orchestration-dependency,
+.task-orchestration-details {
+  overflow-wrap: anywhere;
+}
+
+.task-orchestration-actions {
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.task-orchestration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3);
+}
+
+.task-orchestration-dependencies {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.task-orchestration-dependency {
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.task-orchestration-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding-block: var(--space-2);
+}
+
+.task-orchestration-error {
+  padding: var(--space-2);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-control);
+}

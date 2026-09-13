@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   deleteCard,
+  assertDependencyReviewCommand,
+  DependencyReviewMutationError,
   loadBoard,
   OrchestrationValidationError,
   STATUSES,
@@ -22,6 +24,7 @@ const PATCH_FIELDS = [
   "projectId", "links", "github", "asana", "labels", "startDate", "endDate",
   "needsHuman", "steps", "attachments", "dependencies",
   "primaryBlockerId", "primaryBlockerPinned", "nextStep", "ops",
+  "dependencyReviewAction", "expectedOrchestration",
 ] as const satisfies readonly (keyof CardPatch)[];
 
 export async function PATCH(
@@ -54,6 +57,8 @@ export async function PATCH(
     primaryBlockerId: string | null;
     primaryBlockerPinned: boolean;
     nextStep: TaskNextStep | null;
+    dependencyReviewAction: "review" | "unreview";
+    expectedOrchestration: string;
     /** Intent ops for array fields — applied against the current card under
      * the board lock so concurrent element edits don't clobber each other. */
     ops: CardOps;
@@ -68,6 +73,14 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
   }
   let body = rawBody as PatchBody;
+  try {
+    assertDependencyReviewCommand(body);
+  } catch (error) {
+    if (error instanceof DependencyReviewMutationError) {
+      return NextResponse.json({ ok: false, error: error.code }, { status: 400 });
+    }
+    throw error;
+  }
   if (body.status !== undefined && !STATUSES.includes(body.status as CardStatus)) {
     return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
@@ -104,6 +117,12 @@ export async function PATCH(
   try {
     card = await updateCard(id, patch);
   } catch (error) {
+    if (error instanceof DependencyReviewMutationError) {
+      return NextResponse.json(
+        { ok: false, error: error.code, message: error.message },
+        { status: error.code === "stale_orchestration" ? 409 : 400 },
+      );
+    }
     if (error instanceof OrchestrationValidationError) {
       return NextResponse.json(
         { ok: false, error: "orchestration_invalid", errors: error.errors },

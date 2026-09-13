@@ -15,7 +15,7 @@
 
 import type { CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
-import { StateTag } from "./chart-room-parts";
+import { DependencyReviewTag, StateTag } from "./chart-room-parts";
 import {
   capabilitiesForStep,
   laneOrder,
@@ -259,8 +259,10 @@ export function ChartRoomOrchestration({
                     data-dim={!live.has(step.id)}
                     aria-pressed={lock?.kind === "step" && lock.id === step.id}
                     style={row(STEP_H)}
-                    onClick={() => toggle({ kind: "step", id: step.id })}
-                    onDoubleClick={() => onOpenStep(step.id)}
+                    onClick={() => {
+                      toggle({ kind: "step", id: step.id });
+                      onOpenStep(step.id);
+                    }}
                   >
                     <span className="cr-node__top">
                       <span className="cr-chain__title">{step.title}</span>
@@ -270,6 +272,7 @@ export function ChartRoomOrchestration({
                       ) : null}
                     </span>
                     <span className="cr-node__foot">
+                      <DependencyReviewTag reviewed={step.dependencyReviewed} />
                       <span>{stageName(step.stage)}</span>
                       <span>{ownerName(step.owner)}</span>
                       <span className="cr-mono">{used.map((capability) => capability.name).join(" · ")}</span>

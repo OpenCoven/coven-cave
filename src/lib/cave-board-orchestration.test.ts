@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -34,6 +34,7 @@ await writeFile(
 
 const board = await import("./cave-board.ts");
 const orchestration = await import("./task-orchestration.ts");
+const { orchestrationFingerprint } = await import("./task-dependency-review.ts");
 const now = new Date().toISOString();
 
 function errorCodes(error: unknown): string[] {
@@ -48,6 +49,7 @@ assert.deepEqual(legacy.dependencies, [], "legacy cards backfill an empty depend
 assert.equal(legacy.primaryBlockerId, null, "legacy cards backfill a null primary blocker");
 assert.equal(legacy.primaryBlockerPinned, false, "legacy cards backfill an unpinned blocker");
 assert.equal(legacy.nextStep, null, "legacy cards backfill a null next step");
+assert.equal(legacy.dependencyReview, null, "legacy tasks are unreviewed, never implicitly reviewed on read");
 assert.equal(orchestration.deriveReadiness(legacy, initial.cards), "incomplete");
 assert.ok(
   orchestration.repairRecommendations(legacy, initial.cards).length >= 2,
@@ -764,13 +766,14 @@ assert.equal(failureBlocker?.kind, "execution");
 assert.equal(failureBlocker?.origin, "system");
 assert.match(failureBlocker?.label ?? "", /Tests failed/);
 
-const cancelledRun = await board.createCard({ title: "Cancelled run" });
+const cancelledRun = await board.createCard({ title: "Cancelled run", dependencyReviewAction: "review" });
 await board.transitionCard(cancelledRun.id, { to: "dispatched" });
 const cancelled = await board.transitionCard(cancelledRun.id, {
   to: "cancelled",
   reason: "Stopped by operator",
 });
 assert.equal(cancelled?.status, "blocked");
+assert.equal(cancelled?.dependencyReview, null, "cancellation invalidates the reviewed empty list");
 assert.equal(cancelled?.dependencies?.find((entry) => entry.id === cancelled.primaryBlockerId)?.kind, "execution");
 assert.equal(cancelled?.nextStep?.summary, "Review the failed run and choose retry or repair");
 
@@ -814,5 +817,288 @@ const pinnedCancelled = await board.transitionCard(pinnedCancellation.id, {
 });
 assert.equal(pinnedCancelled?.primaryBlockerId, "pinned-cancellation");
 assert.equal(pinnedCancelled?.primaryBlockerPinned, true);
+
+// Review is an explicit persisted decision, independent of readiness.
+const reviewEmpty = await board.createCard({
+  title: "Reviewed empty dependencies",
+  dependencies: [],
+  dependencyReviewAction: "review",
+});
+assert.ok(reviewEmpty.dependencyReview?.reviewedAt);
+assert.equal(orchestration.deriveReadiness(reviewEmpty, [reviewEmpty]), "ready");
+assert.deepEqual(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewEmpty.id)?.dependencyReview,
+  reviewEmpty.dependencyReview,
+  "an explicit empty review survives reload",
+);
+const persistedReview = JSON.parse(await readFile(board.BOARD_PATH, "utf8")).cards
+  .find((card: { id: string }) => card.id === reviewEmpty.id);
+assert.deepEqual(persistedReview.dependencyReview, reviewEmpty.dependencyReview);
+assert.equal("dependencyReviewAction" in persistedReview, false);
+assert.equal("expectedOrchestration" in persistedReview, false);
+const reviewTitle = await board.updateCard(reviewEmpty.id, { title: "Unrelated title", notes: "Unrelated notes" });
+assert.deepEqual(reviewTitle?.dependencyReview, reviewEmpty.dependencyReview);
+const reviewSame = await board.updateCard(reviewEmpty.id, {
+  dependencies: [], primaryBlockerId: null, primaryBlockerPinned: false, nextStep: null,
+  expectedOrchestration: orchestrationFingerprint(reviewEmpty),
+});
+assert.deepEqual(reviewSame?.dependencyReview, reviewEmpty.dependencyReview, "default-normalized no-op retains review");
+await board.updateCard(reviewEmpty.id, { dependencyReviewAction: "unreview" });
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewEmpty.id)?.dependencyReview,
+  null,
+);
+const unreviewed = await board.createCard({ title: "Unread dependencies" });
+assert.equal(unreviewed.dependencyReview, null);
+await board.loadBoard();
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === unreviewed.id)?.dependencyReview,
+  null,
+  "loading the board does not certify a task",
+);
+
+const canonicalCard = {
+  dependencies: [blocker, { ...blocker, id: "second" }],
+  primaryBlockerId: blocker.id,
+  nextStep: humanNextStep,
+};
+assert.equal(
+  orchestrationFingerprint({}),
+  orchestrationFingerprint({ dependencies: [], primaryBlockerId: null, primaryBlockerPinned: false, nextStep: null }),
+);
+assert.equal(
+  orchestrationFingerprint(canonicalCard),
+  orchestrationFingerprint({
+    ...canonicalCard,
+    primaryBlockerPinned: false,
+    dependencies: canonicalCard.dependencies.map((dependency) =>
+      ({ ...Object.fromEntries(Object.entries(dependency).reverse()), ref: null, url: undefined }) as unknown as typeof blocker),
+    nextStep: { ...humanNextStep, inputs: [], target: null, actorFamiliarId: undefined },
+  }),
+  "object key order and absent optional values are canonical",
+);
+assert.notEqual(
+  orchestrationFingerprint(canonicalCard),
+  orchestrationFingerprint({ ...canonicalCard, dependencies: [...canonicalCard.dependencies].reverse() }),
+  "dependency priority order is semantic",
+);
+for (const field of ["label", "ref", "url", "origin", "createdAt", "resolvedAt", "resolvedBy", "evidence"] as const) {
+  assert.notEqual(
+    orchestrationFingerprint(canonicalCard),
+    orchestrationFingerprint({
+      ...canonicalCard,
+      dependencies: [{ ...blocker, [field]: "changed" }, canonicalCard.dependencies[1]],
+    }),
+    `fingerprint includes dependency ${field}`,
+  );
+}
+for (const field of ["summary", "actorFamiliarId", "capability", "target", "origin", "updatedAt"] as const) {
+  assert.notEqual(
+    orchestrationFingerprint(canonicalCard),
+    orchestrationFingerprint({ ...canonicalCard, nextStep: { ...humanNextStep, [field]: "changed" } }),
+    `fingerprint includes next step ${field}`,
+  );
+}
+assert.notEqual(
+  orchestrationFingerprint(canonicalCard),
+  orchestrationFingerprint({ ...canonicalCard, nextStep: { ...humanNextStep, requiresApproval: false, inputs: ["input"] } }),
+);
+
+function reviewError(code: string) {
+  return (error: unknown) => {
+    assert.ok(error instanceof board.DependencyReviewMutationError);
+    assert.equal(error.code, code);
+    return true;
+  };
+}
+for (const raw of [null, {}, { reviewedAt: now }]) {
+  await assert.rejects(
+    board.createCard({ title: "Forged review", dependencyReview: raw } as never),
+    reviewError("invalid_dependency_review"),
+  );
+  await assert.rejects(
+    board.updateCard(unreviewed.id, { dependencyReview: raw } as never),
+    reviewError("invalid_dependency_review"),
+  );
+}
+for (const action of [null, true, "reviewed", {}]) {
+  await assert.rejects(
+    board.updateCard(unreviewed.id, { dependencyReviewAction: action } as never),
+    reviewError("invalid_dependency_review_action"),
+  );
+  await assert.rejects(
+    board.createCard({ title: "Invalid review action", dependencyReviewAction: action } as never),
+    reviewError("invalid_dependency_review_action"),
+  );
+}
+await assert.rejects(
+  board.updateCard(unreviewed.id, { expectedOrchestration: null } as never),
+  reviewError("invalid_expected_orchestration"),
+);
+await assert.rejects(
+  board.updateCard(unreviewed.id, { dependencyReviewAction: "review" }, { automated: true }),
+  reviewError("automated_dependency_review"),
+);
+await assert.rejects(
+  board.createCard({ title: "Automation cannot review", dependencyReviewAction: "review" }, { automated: true }),
+  reviewError("automated_dependency_review"),
+);
+
+const reviewTarget = await board.createCard({
+  title: "Review mutation target",
+  ...canonicalCard,
+  dependencyReviewAction: "review",
+});
+const freshDependencies = [{ ...blocker, label: "Wait for the new decision" }, canonicalCard.dependencies[1]];
+const changedReview = await board.updateCard(reviewTarget.id, {
+  dependencies: freshDependencies,
+  expectedOrchestration: orchestrationFingerprint(reviewTarget),
+});
+assert.equal(changedReview?.dependencyReview, null, "a relevant legacy edit invalidates review");
+await assert.rejects(
+  board.updateCard(reviewTarget.id, {
+    ...canonicalCard,
+    dependencyReviewAction: "review",
+    expectedOrchestration: orchestrationFingerprint(reviewTarget),
+  }),
+  reviewError("stale_orchestration"),
+);
+assert.deepEqual(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewTarget.id)?.dependencies,
+  freshDependencies,
+  "a stale second client leaves the newer dependency list untouched",
+);
+for (const patch of [
+  { primaryBlockerPinned: true },
+  { primaryBlockerId: "second" },
+  { nextStep: { ...humanNextStep, summary: "Ask another human" } },
+  { dependencies: [...freshDependencies].reverse() },
+]) {
+  const reviewed = await board.updateCard(reviewTarget.id, { dependencyReviewAction: "review" });
+  assert.ok(reviewed?.dependencyReview);
+  const edited = await board.updateCard(reviewTarget.id, patch);
+  assert.equal(edited?.dependencyReview, null, "each orchestration field invalidates its prior review");
+}
+const automatedReviewTarget = await board.createCard({
+  title: "System-authored task",
+  dependencies: [{ ...blocker, origin: "system" }],
+  dependencyReviewAction: "review",
+});
+const automatedReviewEdit = await board.updateCard(automatedReviewTarget.id, {
+  dependencies: [{ ...blocker, origin: "system", label: "Updated by system" }],
+}, { automated: true });
+assert.equal(automatedReviewEdit?.dependencyReview, null, "automation can invalidate, not certify");
+
+const reviewedBlocked = await board.createCard({
+  title: "Review keeps blocked invariants",
+  status: "blocked",
+  dependencies: [blocker],
+  primaryBlockerId: blocker.id,
+  nextStep: humanNextStep,
+  dependencyReviewAction: "review",
+});
+await assert.rejects(
+  board.updateCard(reviewedBlocked.id, {
+    dependencies: [{ ...blocker, label: "Automation replacing a human decision" }],
+  }, { automated: true }),
+  (error) => errorCodes(error).includes("dependency_authorship"),
+);
+assert.deepEqual(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewedBlocked.id)?.dependencyReview,
+  reviewedBlocked.dependencyReview,
+  "rejected automation changes neither the human record nor its review",
+);
+await assert.rejects(
+  board.updateCard(reviewedBlocked.id, { dependencies: [], primaryBlockerId: null, dependencyReviewAction: "review" }),
+  (error) => errorCodes(error).includes("blocked_requires_dependency"),
+);
+await assert.rejects(
+  board.updateCard(reviewedBlocked.id, {
+    dependencies: [{ ...blocker, state: "resolved" }],
+    dependencyReviewAction: "review",
+  }),
+  (error) => errorCodes(error).includes("dependency_needs_evidence"),
+);
+const reviewResolved = await board.updateCard(reviewedBlocked.id, {
+  dependencies: [{ ...blocker, state: "resolved", resolvedAt: now, evidence: "Maintainer approved" }],
+});
+assert.equal(reviewResolved?.dependencyReview, null);
+assert.equal(reviewResolved?.primaryBlockerId, null);
+assert.equal(reviewResolved?.status, "blocked", "resolution still requires explicit unblocking");
+
+const reviewedLifecycle = await board.createCard({ title: "Reviewed run", dependencyReviewAction: "review" });
+const reviewDispatched = await board.transitionCard(reviewedLifecycle.id, { to: "dispatched" });
+assert.deepEqual(reviewDispatched?.dependencyReview, reviewedLifecycle.dependencyReview);
+const reviewFailed = await board.transitionCard(reviewedLifecycle.id, { to: "failed" });
+assert.equal(reviewFailed?.dependencyReview, null, "a synthesized execution blocker invalidates review");
+
+const reviewUpstream = await board.createCard({ title: "Reviewed dependent upstream" });
+const reviewedDependent = await board.createCard({
+  title: "Reviewed linked task",
+  dependencies: [{ ...blocker, id: "review-task-edge", kind: "task", taskId: reviewUpstream.id }],
+  dependencyReviewAction: "review",
+});
+await assert.rejects(
+  board.updateCard(reviewUpstream.id, {
+    dependencies: [{ ...blocker, kind: "task", taskId: reviewedDependent.id }],
+    dependencyReviewAction: "review",
+  }),
+  (error) => errorCodes(error).includes("dependency_cycle"),
+);
+await assert.rejects(
+  board.updateCard(reviewUpstream.id, {
+    dependencies: [{ ...blocker, kind: "task", taskId: "missing-task" }],
+    dependencyReviewAction: "review",
+  }),
+  (error) => errorCodes(error).includes("dependency_dangling"),
+);
+await board.updateCard(reviewUpstream.id, { status: "done" });
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewedDependent.id)?.dependencyReview,
+  null,
+  "marking the referenced task done invalidates the dependent's review",
+);
+await board.updateCard(reviewUpstream.id, { status: "backlog" });
+await board.updateCard(reviewedDependent.id, { dependencyReviewAction: "review" });
+await board.transitionCard(reviewUpstream.id, { to: "dispatched" });
+await board.transitionCard(reviewUpstream.id, { to: "running" });
+await board.transitionCard(reviewUpstream.id, { to: "completed" });
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewedDependent.id)?.dependencyReview,
+  null,
+  "lifecycle completion invalidates linked review too",
+);
+await board.updateCard(reviewedDependent.id, { dependencyReviewAction: "review" });
+await board.deleteCard(reviewUpstream.id);
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewedDependent.id)?.dependencyReview,
+  null,
+  "deleting a linked task invalidates review while repairing dangling references",
+);
+await board.deleteCard(reviewedLifecycle.id);
+await board.restoreCards([{
+  ...reviewedLifecycle,
+  dependencyReviewAction: "review",
+  expectedOrchestration: "snapshot commands must not persist",
+} as typeof reviewedLifecycle]);
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === reviewedLifecycle.id)?.dependencyReview,
+  null,
+  "restored snapshots cannot restore stale review",
+);
+const restoredSnapshot = JSON.parse(await readFile(board.BOARD_PATH, "utf8")).cards
+  .find((card: { id: string }) => card.id === reviewedLifecycle.id);
+assert.equal("dependencyReviewAction" in restoredSnapshot, false);
+assert.equal("expectedOrchestration" in restoredSnapshot, false);
+
+const malformedStoredReview = await board.loadBoard();
+const malformedReviewIndex = malformedStoredReview.cards.findIndex((card) => card.id === unreviewed.id);
+malformedStoredReview.cards[malformedReviewIndex].dependencyReview = { reviewedAt: "not a timestamp" };
+await board.saveBoard(malformedStoredReview);
+assert.equal(
+  (await board.loadBoard()).cards.find((card) => card.id === unreviewed.id)?.dependencyReview,
+  null,
+  "malformed stored review does not accidentally certify a legacy task",
+);
 
 console.log("cave-board-orchestration.test.ts OK");

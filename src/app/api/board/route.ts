@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   createCard,
+  assertDependencyReviewCommand,
+  DependencyReviewMutationError,
   loadBoard,
   OrchestrationValidationError,
   PRIORITIES,
@@ -52,11 +54,23 @@ export async function POST(req: Request) {
     primaryBlockerId?: string | null;
     primaryBlockerPinned?: boolean;
     nextStep?: TaskNextStep | null;
+    dependencyReviewAction?: "review" | "unreview";
   };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  try {
+    assertDependencyReviewCommand(body);
+  } catch (error) {
+    if (error instanceof DependencyReviewMutationError) {
+      return NextResponse.json({ ok: false, error: error.code }, { status: 400 });
+    }
+    throw error;
   }
   if (!body.title || !body.title.trim()) {
     return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
@@ -105,8 +119,12 @@ export async function POST(req: Request) {
       primaryBlockerId: body.primaryBlockerId,
       primaryBlockerPinned: body.primaryBlockerPinned,
       nextStep: body.nextStep,
+      dependencyReviewAction: body.dependencyReviewAction,
     });
   } catch (error) {
+    if (error instanceof DependencyReviewMutationError) {
+      return NextResponse.json({ ok: false, error: error.code }, { status: 400 });
+    }
     if (error instanceof OrchestrationValidationError) {
       return NextResponse.json(
         { ok: false, error: "orchestration_invalid", errors: error.errors },

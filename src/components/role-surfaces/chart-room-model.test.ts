@@ -141,6 +141,16 @@ test("blocked and done are not pipeline positions", () => {
 
 // ── Card → step ──────────────────────────────────────────────────────────────
 
+test("empty dependencies remain unreviewed unless review was explicitly recorded", () => {
+  const steps = toChartSteps([
+    card("legacy"),
+    card("empty", { dependencies: [] }),
+    card("reviewed", { dependencies: [], dependencyReview: { reviewedAt: "2026-09-09T14:00:00.000Z" } }),
+    card("invalidated", { dependencies: [], dependencyReview: null }),
+  ], { dependsOn: {} }, "2026-09-09");
+  assert.deepEqual(steps.map((item) => item.dependencyReviewed), [false, false, true, false]);
+});
+
 test("stepState ranks a question owed above a late date", () => {
   assert.equal(
     stepState({ status: "running", priority: "high", endDate: "2026-07-01", needsHuman: true, lifecycle: "running" }, "2026-07-31"),

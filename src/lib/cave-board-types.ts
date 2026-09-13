@@ -334,6 +334,8 @@ export type Card = {
   /** Freezes the operator's choice so promotion never moves it. */
   primaryBlockerPinned?: boolean;
   nextStep?: TaskNextStep | null;
+  /** Explicit human review of the current orchestration, including an empty list. */
+  dependencyReview?: { reviewedAt: string } | null;
   /** Append-only explanation of automatic primary-blocker promotions. */
   orchestrationAudit?: TaskOrchestrationAuditEntry[];
   /** Bounded, reviewable Enhance proposals and their governance audit trail. */

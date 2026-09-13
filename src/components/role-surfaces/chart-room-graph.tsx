@@ -8,12 +8,12 @@
  * waits on. Stage cannot do that job — two cards in the same lane can be a
  * week apart when one waits on the other.
  *
- * A click here traces; it does not open. The chain strip above is the drilldown.
+ * A click opens the canonical task editor. Tracing remains an explicit action.
  */
 
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback } from "react";
 import { Icon } from "@/lib/icon";
-import { ChartDot, StateTag } from "./chart-room-parts";
+import { ChartDot, DependencyReviewTag, StateTag } from "./chart-room-parts";
 import type { ChartStep, GraphLayout } from "./chart-room-model";
 
 export type RouteVisibility = "dim" | "hide" | "show";
@@ -32,6 +32,7 @@ export function ChartRoomGraph({
   projectColor,
   projectName,
   onTrace,
+  onOpenStep,
   onPanStart,
   onZoomIn,
   onZoomOut,
@@ -50,6 +51,7 @@ export function ChartRoomGraph({
   projectColor: (id: string | null) => string | null;
   projectName: (id: string | null) => string;
   onTrace: (id: string) => void;
+  onOpenStep: (id: string) => void;
   onPanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -127,7 +129,7 @@ export function ChartRoomGraph({
                   ...(projectColor(step.project) ? { "--cr-dot": projectColor(step.project) as string } : {}),
                 } as CSSProperties
               }
-              onClick={() => onTrace(step.id)}
+              onClick={() => onOpenStep(step.id)}
             >
               <span className="cr-node__top">
                 <ChartDot color={projectColor(step.project)} />
@@ -136,6 +138,7 @@ export function ChartRoomGraph({
               </span>
               <span className="cr-node__title">{step.title}</span>
               <span className="cr-node__foot">
+                <DependencyReviewTag reviewed={step.dependencyReviewed} />
                 <span className="cr-mono">{ownerName(step.owner)}</span>
                 <span>{fan > 0 ? `${fan} waiting` : ""}</span>
               </span>
@@ -160,6 +163,12 @@ export function ChartRoomGraph({
       </div>
 
       <div className="cr-graph__zoom">
+        <button
+          type="button"
+          className="cr-btn focus-ring"
+          disabled={selectedId == null}
+          onClick={() => { if (selectedId) onTrace(selectedId); }}
+        >Trace selected task</button>
         <button type="button" className="cr-icon-btn focus-ring" aria-label="Zoom out" onClick={onZoomOut}>
           <Icon name="ph:minus" width={11} height={11} aria-hidden />
         </button>

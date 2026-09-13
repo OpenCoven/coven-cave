@@ -46,6 +46,7 @@ import {
 } from "./surface-room";
 import { NAVIGATOR_SURFACE_ID } from "./ids";
 import { ChartDot } from "./chart-room-parts";
+import { orchestrationFingerprint } from "@/lib/task-dependency-review";
 import { ChartRoomBand, type BandPanelId, type ProjectProgress } from "./chart-room-band";
 import { ChartRoomChain, type ChainShape } from "./chart-room-chain";
 import { ChartRoomDecisions } from "./chart-room-decisions";
@@ -157,7 +158,7 @@ const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
   ],
   graph: [
     ["ph:columns", "Read the columns", "Laid out by dependency depth, not lane — column one can start today."],
-    ["ph:cursor-click", "Trace, don't open", "A click lights the chain and dims the rest; the chain strip is the drilldown."],
+    ["ph:cursor-click", "Edit dependencies", "Click a task to open its configuration. Choose Trace dependencies in the sheet to follow its chain."],
     ["ph:steps", "Break it into steps", "The strip above shows the route root-first, and where it is held."],
     ["ph:hand-grabbing", "Pan and zoom", "Drag the background; Fit re-centres the whole graph."],
     ["ph:arrow-u-up-left", "Backwards edges", "A dotted edge means the flow runs the wrong way — a planning smell."],
@@ -166,7 +167,7 @@ const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
   orch: [
     ["ph:lock-simple", "Lock the map", "Click any node — familiar, step, capability, or something owed — to focus on it."],
     ["ph:arrows-down-up", "Lanes regroup", "Locking gathers the focused subgraph at the top of every lane."],
-    ["ph:cursor-click", "Open a step", "Double-click any step node."],
+    ["ph:cursor-click", "Open a step", "Click a step to focus its map and edit its dependencies."],
     ["ph:wrench", "Real capabilities", "A card's own labels naming a real workflow or skill. Nothing is inferred."],
     ["ph:hand-palm", "Owed by you", "The last lane is every card flagged as waiting on a person."],
   ],
@@ -188,6 +189,7 @@ type UndoEntry =
   | { kind: "stage"; id: string; stage: ChartStageId; label: string }
   | {
       kind: "deps";
+      expectedOrchestration: string;
       id: string;
       dependencies: TaskDependency[];
       primaryBlockerId: string | null;
@@ -251,9 +253,14 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         const res = await fetch("/api/familiars", { cache: "no-store" });
         const json = (await res.json()) as {
           ok?: boolean;
-          familiars?: Array<{ id: string; name: string; role?: string }>;
+          familiars?: Array<{ id: string; name?: string; display_name?: string; role?: string }>;
         };
-        if (live && json.ok && Array.isArray(json.familiars)) setFamiliars(json.familiars);
+        if (live && json.ok && Array.isArray(json.familiars)) {
+          setFamiliars(json.familiars.map((familiar) => ({
+            ...familiar,
+            name: familiar.display_name ?? familiar.name ?? familiar.id,
+          })));
+        }
       } catch {
         /* the owner lane stays empty rather than inventing a roster */
       }
@@ -305,12 +312,14 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   const overlay = useMemo(() => normalizeOverlay(state.overlay, liveIds), [state.overlay, liveIds]);
 
   const allSteps = useMemo(() => toChartSteps(cards ?? [], overlay, today), [cards, overlay, today]);
+  const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const scoped = useMemo(
     () =>
-      state.scope.length === 0
-        ? allSteps
-        : allSteps.filter((step) => step.project != null && state.scope.includes(step.project)),
-    [allSteps, state.scope],
+      allSteps.filter((step) =>
+        (state.scope.length === 0 || (step.project != null && state.scope.includes(step.project)))
+        && (!unreviewedOnly || !step.dependencyReviewed),
+      ),
+    [allSteps, state.scope, unreviewedOnly],
   );
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
@@ -415,22 +424,14 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) {
-          // The board's validator explains a refused orchestration write; that
-          // explanation is the actionable part, so carry it to the operator.
-          let detail = "";
-          try {
-            const json = (await res.json()) as { errors?: Array<{ message?: string }> };
-            detail = json.errors?.[0]?.message ?? "";
-          } catch {
-            /* a bare status is still a failure */
-          }
-          throw new Error(detail || `status ${res.status}`);
+        const json = await res.json() as { card?: Card; error?: string; errors?: Array<{ message?: string }> };
+        if (!res.ok || !json.card) {
+          throw new Error(json.errors?.[0]?.message || json.error || `status ${res.status}`);
         }
         publishBoardChanged();
         await loadBoard({ retainData: true });
         announce(success);
-        return true;
+        return json.card;
       } catch (error) {
         const detail =
           error instanceof Error && error.message && !error.message.startsWith("status ")
@@ -438,7 +439,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             : "";
         setWriteError(`${failure}${detail}`);
         announce(`${failure}${detail}`, "assertive");
-        return false;
+        return null;
       } finally {
         setSaving(false);
       }
@@ -471,7 +472,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       const label = `Linked — “${step.title}” now waits on “${target.title}”`;
       const ok = await patchCard(
         stepId,
-        { dependencies: [...existing, addition] },
+        { dependencies: [...existing, addition], expectedOrchestration: orchestrationFingerprint(card) },
         `${step.title} now waits on ${target.title}.`,
         "Link failed — the board didn't accept the dependency.",
       );
@@ -480,6 +481,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           [
             {
               kind: "deps" as const,
+              expectedOrchestration: orchestrationFingerprint(ok),
               id: stepId,
               dependencies: existing,
               primaryBlockerId: card.primaryBlockerId ?? null,
@@ -518,7 +520,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         return;
       }
 
-      const body: Record<string, unknown> = { dependencies: kept };
+      const body: Record<string, unknown> = { dependencies: kept, expectedOrchestration: orchestrationFingerprint(card) };
       // Cutting the primary blocker re-points it deterministically rather than
       // leaving a dangling reference for the validator to refuse.
       if (card.primaryBlockerId != null && removed.some((dep) => dep.id === card.primaryBlockerId)) {
@@ -537,6 +539,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           [
             {
               kind: "deps" as const,
+              expectedOrchestration: orchestrationFingerprint(ok),
               id: stepId,
               dependencies: existing,
               primaryBlockerId: card.primaryBlockerId ?? null,
@@ -577,6 +580,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     }
     void (async () => {
       let imported = 0;
+      const failures: string[] = [];
       for (const [cardId, parents] of byCard) {
         const card = cards.find((entry) => entry.id === cardId);
         if (!card) continue;
@@ -598,11 +602,15 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           const res = await fetch(`/api/board/${encodeURIComponent(cardId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dependencies: [...existing, ...additions] }),
+            body: JSON.stringify({ dependencies: [...existing, ...additions], expectedOrchestration: orchestrationFingerprint(card) }),
           });
-          if (res.ok) imported += additions.length;
-        } catch {
-          /* the edge survives in the overlay union; a later session retries */
+          if (!res.ok) {
+            const json = await res.json() as { error?: string; errors?: Array<{ message?: string }> };
+            throw new Error(json.errors?.[0]?.message || json.error || `status ${res.status}`);
+          }
+          imported += additions.length;
+        } catch (error) {
+          failures.push(`${card.title}: ${error instanceof Error ? error.message : "Import failed."}`);
         }
       }
       if (imported > 0) {
@@ -610,8 +618,13 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         await loadBoard({ retainData: true });
         note("ph:link", `Imported ${imported} chart link${imported === 1 ? "" : "s"} onto the board`);
       }
+      if (failures.length > 0) {
+        const message = `Some chart links could not be saved. The legacy links are preserved. ${failures.join(" ")}`;
+        setWriteError(message);
+        announce(message, "assertive");
+      }
     })();
-  }, [cards, loadBoard, note, overlay]);
+  }, [announce, cards, loadBoard, note, overlay]);
 
   const moveStage = useCallback(
     async (id: string, stage: ChartStageId, options?: { record?: boolean }) => {
@@ -754,30 +767,32 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     [titleDrafts],
   );
 
-  const undo = useCallback(() => {
+  const undo = useCallback(async () => {
     const [entry, ...rest] = history;
     if (!entry) return;
-    setHistory(rest);
     if (entry.kind === "overlay") {
       patch({ overlay: entry.overlay });
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
       announce("Undid the last chart edit.");
     } else if (entry.kind === "deps") {
-      void patchCard(
+      const restored = await patchCard(
         entry.id,
         {
           dependencies: entry.dependencies,
+          expectedOrchestration: entry.expectedOrchestration,
           primaryBlockerId: entry.primaryBlockerId,
           primaryBlockerPinned: entry.primaryBlockerPinned,
         },
         "Undid the last dependency edit.",
         "Undo failed — the board didn't accept the change.",
       );
+      if (!restored) return;
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
     } else {
       void moveStage(entry.id, entry.stage, { record: false });
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
     }
+    setHistory(rest);
   }, [announce, history, moveStage, note, patch, patchCard]);
 
   const applyAction = useCallback(
@@ -803,6 +818,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     () => allSteps.find((step) => step.id === state.selectedId) ?? null,
     [allSteps, state.selectedId],
   );
+  const selectedCard = (cards ?? []).find((card) => card.id === selected?.id);
   const focusId = state.selectedId ?? hoverId;
   const route = useMemo(() => (focusId == null ? null : routeSet(scoped, focusId)), [focusId, scoped]);
   const chain = useMemo(() => (selected ? chainOf(allSteps, selected.id) : []), [allSteps, selected]);
@@ -1147,6 +1163,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             patch({ selectedId: state.selectedId === id ? null : id });
             setTraceOnly(true);
             setChainOpen(true);
+          }}
+          onOpenStep={(id) => {
+            patch({ selectedId: id });
+            setTraceOnly(false);
           }}
           onZoomIn={() => setGraphZoom((zoom) => Math.min(1.6, Number((zoom + 0.15).toFixed(2))))}
           onZoomOut={() => setGraphZoom((zoom) => Math.max(0.5, Number((zoom - 0.15).toFixed(2))))}
@@ -1772,6 +1792,14 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 </span>
               </button>
               <span className="cr-lens__spacer" />
+              <button
+                type="button"
+                className="cr-seg__btn focus-ring"
+                aria-pressed={unreviewedOnly}
+                onClick={() => setUnreviewedOnly((current) => !current)}
+              >
+                Unreviewed dependencies
+              </button>
               {lens === "list" ? (
                 <>
                   <span className="cr-filter">
@@ -1920,8 +1948,15 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         />
       ) : null}
 
-      {selected && !traceOnly ? (
+      {selected && selectedCard && !traceOnly ? (
         <ChartRoomStepSheet
+          card={selectedCard}
+          cards={cards ?? []}
+          onCardSaved={() => { void loadBoard({ retainData: true }); }}
+          onTrace={() => {
+            setTraceOnly(true);
+            setChainOpen(true);
+          }}
           step={withDraftTitles([selected])[0]}
           steps={allSteps}
           familiars={familiars}

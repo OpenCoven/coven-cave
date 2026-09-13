@@ -59,8 +59,10 @@ test("dependency edits write canonical card fields while the legacy overlay is i
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
   assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
-  assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\] \}/);
-  assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
+  assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\], expectedOrchestration: orchestrationFingerprint\(card\) \}/);
+  assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept, expectedOrchestration: orchestrationFingerprint\(card\) \}/);
+  assert.match(surface, /expectedOrchestration: entry\.expectedOrchestration/);
+  assert.match(surface, /expectedOrchestration: orchestrationFingerprint\(ok\)/);
   assert.match(surface, /setDependency\(overlay, stepId, null\)/);
   assert.doesNotMatch(surface, /setDependency\(overlay, stepId, parentId\)/);
   assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);
@@ -154,6 +156,19 @@ test("state is never carried by colour alone", () => {
   const parts = read("./chart-room-parts.tsx");
   assert.match(parts, /<span className="cr-state" data-state=\{state\}>/);
   assert.match(parts, /state === "decision" \? "owed" : state/);
+});
+
+test("dependency review is explicit across task lenses and the shared editor is reachable", () => {
+  assert.match(surface, /Unreviewed dependencies/);
+  assert.match(surface, /!unreviewedOnly \|\| !step\.dependencyReviewed/);
+  assert.match(surface, /aria-pressed=\{unreviewedOnly\}/);
+  assert.match(sheet, /<TaskOrchestrationEditor/);
+  assert.match(sheet, /Trace dependencies/);
+  for (const source of [flow, table, orchestration, read("./chart-room-graph.tsx")]) {
+    assert.match(source, /<DependencyReviewTag reviewed=\{(?:bar\.)?step\.dependencyReviewed\}/);
+  }
+  assert.match(read("./chart-room-graph.tsx"), /onClick=\{\(\) => onOpenStep\(step\.id\)\}/);
+  assert.match(orchestration, /onClick=\{\(\) => \{[\s\S]*?onOpenStep\(step\.id\)/);
 });
 
 test("the segmented lenses and toggles expose their pressed state", () => {
