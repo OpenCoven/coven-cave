@@ -56,12 +56,14 @@ import { knowledgeEntryFlags } from "@/lib/knowledge-flags";
 import {
   buildStubPayload,
   groupKnowledgeByCollection,
+  groupResearchStitches,
   knowledgeDocKey,
   knowledgeEntryToRaw,
   rawToKnowledgePayload,
   sameKnowledgeDoc,
   type GrimoireKnowledgeEntry,
   type KnowledgeCollectionSummary,
+  type ResearchStitchGroup,
 } from "./grimoire-helpers";
 import { StitchIntake, StitchProvenance } from "@/components/stitch-intake";
 import type { StitchPinRef } from "@/lib/stitch";
@@ -1203,19 +1205,28 @@ export function GrimoireView({
     [q],
   );
 
+  const knowledgeGroups = useMemo(() => {
+    const groups = groupKnowledgeByCollection(knowledge ?? [], collections ?? []);
+    return {
+      root: groupResearchStitches(groups.root, q),
+      collections: groups.collections.map((group) => {
+        const items = groupResearchStitches(group.entries, q);
+        return { ...group, items, entries: items.flatMap((item) => item.entries) };
+      }).filter((group) => group.entries.length > 0),
+    };
+  }, [knowledge, collections, q]);
   const visibleKnowledge = useMemo(
-    () => (knowledge ?? []).filter((e) => matches(e.title, e.id, e.collection, e.tags.join(" "))),
-    [knowledge, matches],
-  );
-  const knowledgeGroups = useMemo(
-    () => groupKnowledgeByCollection(visibleKnowledge, collections ?? []),
-    [visibleKnowledge, collections],
+    () => [
+      ...knowledgeGroups.root.flatMap((group) => group.entries),
+      ...knowledgeGroups.collections.flatMap((group) => group.entries),
+    ],
+    [knowledgeGroups],
   );
   const [collapsedStitchGroups, setCollapsedStitchGroups] =
     useState<Record<string, boolean>>(readCollapsedStitchGroups);
-  const toggleStitchGroup = useCallback((id: string) => {
+  const toggleStitchGroup = useCallback((id: string, defaultCollapsed = false) => {
     setCollapsedStitchGroups((prev) => {
-      const next = { ...prev, [id]: !(prev[id] ?? false) };
+      const next = { ...prev, [id]: !(prev[id] ?? defaultCollapsed) };
       try {
         window.localStorage.setItem(STITCH_GROUPS_STORAGE_KEY, JSON.stringify(next));
       } catch {
@@ -1224,6 +1235,65 @@ export function GrimoireView({
       return next;
     });
   }, []);
+  const renderKnowledgeEntry = (entry: GrimoireKnowledgeEntry, inResearchGroup = false) => {
+    const flags = knowledgeEntryFlags(entry);
+    const tags = inResearchGroup ? entry.tags.filter((tag) => !tag.startsWith("mission:") && tag !== "research") : entry.tags;
+    return (
+      <NavRow
+        key={knowledgeDocKey(entry.id, entry.collection)}
+        selected={selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`}
+        title={entry.title}
+        subtitle={tags.length ? tags.map((tag) => `#${tag}`).join(" ") : inResearchGroup ? undefined : entry.id}
+        meta={entry.enabled ? undefined : "off"}
+        badge={
+          flags.length > 0 ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
+              title={`${flags.length} continuity flags`}
+              aria-label={`${flags.length} continuity flags`}
+            >
+              <Icon name="ph:warning-circle" width={11} aria-hidden />
+              <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
+            </span>
+          ) : undefined
+        }
+        onClick={() => openDoc({ kind: "knowledge", id: entry.id, ...(entry.collection ? { collection: entry.collection } : {}) })}
+      />
+    );
+  };
+  const renderKnowledgeGroups = (groups: ResearchStitchGroup[]) => groups.map((group) => {
+    if (group.kind === "entry") return renderKnowledgeEntry(group.entries[0]);
+    const defaultCollapsed = !group.entries.some((entry) =>
+      selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`,
+    );
+    const collapsed = !q && (collapsedStitchGroups[group.key] ?? defaultCollapsed);
+    return (
+      <div key={group.key} role="group" aria-label={group.label} data-research-mission={group.missionId}>
+        <button
+          type="button"
+          data-rail-item
+          aria-expanded={!collapsed}
+          title={`${group.label}\n${group.missionId}`}
+          onClick={() => toggleStitchGroup(group.key, defaultCollapsed)}
+          className="focus-ring-inset flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} className="mt-1 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="line-clamp-2 break-words font-medium text-[var(--text-primary)]">{group.label}</span>
+            <span className="mt-0.5 block truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+              Research run · {group.missionId?.replace(/^research-/, "").slice(0, 8)}
+            </span>
+          </span>
+          <span className="shrink-0 text-[var(--text-muted)]" aria-label={`${group.entries.length} documents`}>{group.entries.length}</span>
+        </button>
+        {collapsed ? null : (
+          <div className="ml-3 border-l border-[var(--border-hairline)] pl-1">
+            {group.entries.map((entry) => renderKnowledgeEntry(entry, true))}
+          </div>
+        )}
+      </div>
+    );
+  });
   // The shell's familiar multiselect scopes the Memory navigator: an empty
   // selection is "All", otherwise only the selected familiars' own memory
   // files survive (ownerless shared pools are another familiar's business).
@@ -1831,31 +1901,7 @@ export function GrimoireView({
                   </p>
                 ) : (
                   <>
-                    {knowledgeGroups.root.map((entry) => {
-                      const flags = knowledgeEntryFlags(entry);
-                      return (
-                        <NavRow
-                          key={knowledgeDocKey(entry.id, entry.collection)}
-                          selected={selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`}
-                          title={entry.title}
-                          subtitle={entry.tags.length ? entry.tags.map((t) => `#${t}`).join(" ") : entry.id}
-                          meta={entry.enabled ? undefined : "off"}
-                          badge={
-                            flags.length > 0 ? (
-                              <span
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
-                                title={`${flags.length} continuity flags`}
-                                aria-label={`${flags.length} continuity flags`}
-                              >
-                                <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
-                              </span>
-                            ) : undefined
-                          }
-                          onClick={() => openDoc({ kind: "knowledge", id: entry.id })}
-                        />
-                      );
-                    })}
+                    {renderKnowledgeGroups(knowledgeGroups.root)}
                     {knowledgeGroups.collections.map((group) => {
                       const collapsed = !q && (collapsedStitchGroups[group.id] ?? false);
                       return (
@@ -1877,35 +1923,7 @@ export function GrimoireView({
                             </span>
                             <span className="shrink-0 font-normal text-[var(--text-muted)]">{group.entries.length}</span>
                           </button>
-                          {collapsed
-                            ? null
-                            : group.entries.map((entry) => {
-                                const flags = knowledgeEntryFlags(entry);
-                                return (
-                                  <NavRow
-                                    key={knowledgeDocKey(entry.id, entry.collection)}
-                                    selected={selectedKey === `knowledge:${knowledgeDocKey(entry.id, entry.collection)}`}
-                                    title={entry.title}
-                                    subtitle={entry.tags.length ? entry.tags.map((t) => `#${t}`).join(" ") : entry.id}
-                                    meta={entry.enabled ? undefined : "off"}
-                                    badge={
-                                      flags.length > 0 ? (
-                                        <span
-                                          className="inline-flex shrink-0 items-center gap-0.5 rounded-full text-[var(--color-warning)]"
-                                          title={`${flags.length} continuity flags`}
-                                          aria-label={`${flags.length} continuity flags`}
-                                        >
-                                          <Icon name="ph:warning-circle" width={11} aria-hidden />
-                                          <span className="text-[length:var(--text-2xs)]">{flags.length}</span>
-                                        </span>
-                                      ) : undefined
-                                    }
-                                    onClick={() =>
-                                      openDoc({ kind: "knowledge", id: entry.id, collection: entry.collection })
-                                    }
-                                  />
-                                );
-                              })}
+                          {collapsed ? null : renderKnowledgeGroups(group.items)}
                         </div>
                       );
                     })}

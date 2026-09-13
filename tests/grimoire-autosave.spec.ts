@@ -75,7 +75,11 @@ const EMPTY_RUNNING_ACTIVITY = {
   unavailable: [],
 } as const;
 
-async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
+async function gotoGrimoire(
+  page: Page,
+  readyTimeout = 60_000,
+  knowledgeEntries: Array<typeof KNOWLEDGE_ENTRY & { collection?: string }> = [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE, INCIDENT_PLAYBOOK],
+) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Pin the shared MdEditor to MARKDOWN (CodeMirror) mode — typing goes
@@ -92,11 +96,15 @@ async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   await page.route("**/api/knowledge**", (route) => {
+    if (new URL(route.request().url()).pathname === "/api/knowledge/collections") {
+      const ids = [...new Set(knowledgeEntries.flatMap((entry) => entry.collection ? [entry.collection] : []))];
+      return route.fulfill({ json: { ok: true, collections: ids.map((id) => ({ id, meta: null, count: knowledgeEntries.filter((entry) => entry.collection === id).length })) } });
+    }
     if (route.request().method() === "POST") {
       knowledgePosts.push(route.request().postDataJSON());
       return route.fulfill({ json: { ok: true, entry: { ...KNOWLEDGE_ENTRY } } });
     }
-    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE, INCIDENT_PLAYBOOK] } });
+    return route.fulfill({ json: { ok: true, entries: knowledgeEntries } });
   });
   await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [MEMORY_ENTRY] } }));
   await page.route("**/api/memory/file**", (route) => {
@@ -170,6 +178,86 @@ async function typeInEditor(page: Page, text: string) {
 }
 
 test.describe("grimoire autosave (desktop)", () => {
+  test("Memories research groups preserve topic context, independent collapse, and search", async ({ page }, testInfo) => {
+    test.slow(); // Two full shell loads plus the editor's cold compile.
+    const researchEntries = [
+      ["findings", "Findings"],
+      ["primary", "Research and compare: # Reliable orchestration"],
+      ["research-log", "Research log"],
+      ["source-ledger", "Source ledger"],
+    ].map(([id, title]) => ({
+      ...KNOWLEDGE_ENTRY,
+      id: `alpha-${id}`,
+      title,
+      tags: ["research", "mission:research-alpha", "autoresearch", id],
+      body: `# ${title}\n\nAlpha evidence.`,
+    }));
+    await gotoGrimoire(page, 60_000, [
+      KNOWLEDGE_ENTRY,
+      ...researchEntries,
+      { ...researchEntries[0], id: "beta-findings", tags: ["research", "mission:research-beta"], body: "# Model evaluation\n\nBeta evidence." },
+    ]);
+    const alpha = rail(page).getByRole("group", { name: "Reliable orchestration", exact: true });
+    const beta = rail(page).getByRole("group", { name: "Model evaluation", exact: true });
+    const toggle = alpha.locator(":scope > button");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(rail(page).getByRole("button", { name: /Release checklist/ })).toBeVisible();
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(alpha.getByRole("button", { name: /^Findings/ })).toBeVisible();
+    await expect(alpha.getByRole("button")).toHaveCount(5);
+    await expect(beta.getByRole("button")).toHaveCount(1);
+    // The shell consumes the mode query, so explicitly re-enter on a fresh load.
+    await page.goto("/?mode=grimoire");
+    await page.waitForSelector(".grimoire-view", { timeout: 60_000 });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await toggle.click();
+    const search = page.getByRole("searchbox", { name: "Search memories" });
+    await search.fill("reliable orchestration");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(alpha.getByRole("button")).toHaveCount(5);
+    await expect(beta).toHaveCount(0);
+    await search.fill("source ledger");
+    await expect(alpha).toBeVisible();
+    await expect(alpha.getByRole("button")).toHaveCount(2);
+    await search.fill("");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await alpha.getByRole("button", { name: /^Findings/ }).click();
+    await expect(alpha.getByRole("button", { name: /^Findings/ })).toHaveAttribute("aria-current", "true");
+    await expect(page).toHaveURL(/#grimoire:knowledge:alpha-findings$/);
+    await expect(page.locator(".grimoire-view .cm-editor")).toContainText("Alpha evidence.");
+    for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.setAttribute("data-mode", mode);
+        window.dispatchEvent(new CustomEvent("cave:theme-changed", { detail: { themeId: theme, mode } }));
+      }, { theme, mode });
+      await expect(toggle).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath(`research-topics-${theme}-${mode}.png`), animations: "disabled" });
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Back to document list" }).click();
+    await expect(toggle).toBeVisible();
+    expect(await rail(page).evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("research-topics-narrow.png") });
+  });
+
+  test("Memories research groups retain collection-qualified document selection", async ({ page }) => {
+    const root = {
+      ...KNOWLEDGE_ENTRY, id: "shared-report", title: "Research and compare: Entrusted work",
+      tags: ["research", "mission:research-shared"], body: "# Root evidence",
+    };
+    await gotoGrimoire(page, 60_000, [root, { ...root, collection: "archive", body: "# Archived evidence" }]);
+    const groups = rail(page).getByRole("group", { name: "Entrusted work", exact: true });
+    await expect(groups).toHaveCount(2);
+    await groups.nth(1).getByRole("button").click();
+    await groups.nth(1).getByRole("button", { name: /^Research and compare/ }).click();
+    await expect(page).toHaveURL(/#grimoire:knowledge:archive(?:%2F|\/)shared-report$/);
+    await expect(page.locator(".grimoire-view .cm-editor")).toContainText("Archived evidence");
+    await expect(groups.nth(0).getByRole("button")).toHaveCount(1);
+  });
+
   test("Memories home separates Continue, Recall, and Weave", async ({ page }) => {
     await gotoGrimoire(page);
 

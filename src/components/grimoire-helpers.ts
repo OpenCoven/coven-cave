@@ -1,4 +1,4 @@
-import { parseMdDocument, serializeMdDocument, type MdDocument } from "../lib/md-frontmatter.ts";
+import { parseMdDocument, serializeMdDocument, splitLeadingMdComments, type MdDocument } from "../lib/md-frontmatter.ts";
 import type { KnowledgeCollectionMeta } from "../lib/knowledge-pack-types.ts";
 
 export type GrimoireKnowledgeEntry = {
@@ -117,6 +117,70 @@ export function groupKnowledgeByCollection(
       };
     }),
   };
+}
+
+export type ResearchStitchGroup = {
+  kind: "entry" | "research";
+  key: string;
+  label: string;
+  missionId?: string;
+  entries: GrimoireKnowledgeEntry[];
+};
+
+function researchTopicTitle(value: string): string {
+  const title = value.trim().split(/\r?\n/)[0]
+    .replace(/\*\*/g, "")
+    .replace(/^(?:#{1,6}\s*|(?:Research and compare|(?:Deep )?Research Prompt|Report topic):\s*)+/i, "")
+    .trim();
+  return /^(?:findings|research log|source ledger|(?:primary )?(?:report|brief)|research prompt)$/i.test(title)
+    ? ""
+    : title;
+}
+
+/** Group before filtering so a document-only search keeps its topic context.
+ * Mission identity, never title similarity, determines membership. */
+export function groupResearchStitches(
+  entries: readonly GrimoireKnowledgeEntry[],
+  query = "",
+): ResearchStitchGroup[] {
+  const groups: ResearchStitchGroup[] = [];
+  const byMission = new Map<string, ResearchStitchGroup>();
+  for (const entry of entries) {
+    const missionId = entry.tags.includes("research")
+      ? entry.tags.find((tag) => tag.startsWith("mission:") && tag.slice(8).trim())?.slice(8).trim()
+      : undefined;
+    if (!missionId) {
+      groups.push({ kind: "entry", key: knowledgeDocKey(entry.id, entry.collection), label: entry.title, entries: [entry] });
+      continue;
+    }
+    const key = `research:${JSON.stringify([entry.collection ?? "", missionId])}`;
+    let group = byMission.get(key);
+    if (!group) {
+      group = { kind: "research", key, missionId, label: "", entries: [] };
+      byMission.set(key, group);
+      groups.push(group);
+    }
+    group.entries.push(entry);
+  }
+
+  const q = query.trim().toLowerCase();
+  return groups.flatMap((group) => {
+    if (group.kind === "research") {
+      group.label = group.entries.map((entry) => researchTopicTitle(entry.title)).find(Boolean)
+        || group.entries.map((entry) => {
+          const { visibleBody } = splitLeadingMdComments(entry.body);
+          const heading = visibleBody.trimStart().match(/^#\s+([^\r\n]+)/)?.[1];
+          return heading ? researchTopicTitle(heading) : "";
+        }).find(Boolean)
+        || `Research run ${group.missionId}`;
+    }
+    const topicMatches = !q || group.label.toLowerCase().includes(q);
+    const visible = topicMatches ? group.entries : group.entries.filter((entry) =>
+      [entry.title, entry.id, entry.collection, entry.tags.join(" ")]
+        .some((field) => field?.toLowerCase().includes(q)),
+    );
+    return visible.length ? [{ ...group, entries: visible }] : [];
+  });
 }
 
 export function buildStubPayload(

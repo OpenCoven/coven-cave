@@ -369,7 +369,11 @@ assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,500}onOpen=\{openDoc\}/, "the ch
 assert.match(view, /"cave:grimoire:stitch-groups-collapsed"/, "stitch collection collapse overrides persist");
 assert.match(view, /readSurfaceResource<[^>]+>\("grimoire:collections", force\)/, "collection metadata consumes the shared cache");
 assert.match(warmupRegistry, /defineResource\("grimoire:collections",[^\n]+"\/api\/knowledge\/collections"/, "collection metadata cache loads alongside knowledge");
-assert.match(view, /groupKnowledgeByCollection\(visibleKnowledge, collections \?\? \[\]\)/, "stitches group by collection metadata");
+assert.match(view, /groupKnowledgeByCollection\(knowledge \?\? \[\], collections \?\? \[\]\)/, "stitches group by collection metadata before searching so topic labels survive");
+assert.match(view, /groupResearchStitches\(groups\.root, q\)/, "root stitches group research runs");
+assert.match(view, /groupResearchStitches\(group\.entries, q\)/, "collection stitches use the same research grouping");
+assert.match(view, /const collapsed = !q && \(collapsedStitchGroups\[group\.key\] \?\? defaultCollapsed\)/, "search reveals research results without overwriting collapse preferences");
+assert.match(view, /data-research-mission=\{group\.missionId\}/, "research topic groups retain mission identity");
 assert.match(view, /knowledgeDocKey\(entry\.id, entry\.collection\)/, "knowledge row keys include collection identity");
 assert.match(view, /knowledgeEntryFlags\(entry\)/, "continuity flags are surfaced for open and rail entries");
 assert.match(view, /Continuity flags — resolve by editing the <code className="font-mono">flags:<\/code> list in frontmatter/, "open flagged entries show a frontmatter-resolution banner");
