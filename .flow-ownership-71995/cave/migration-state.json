@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "migrationVersion": 2,
+  "updatedAt": "2026-09-09T23:04:51.059Z",
+  "entries": {
+    "cave-config.json": {
+      "legacy": "cave-config.json",
+      "next": "config.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-config.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/config.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.724Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-state.json": {
+      "legacy": "cave-state.json",
+      "next": "state.json",
+      "strategy": "state",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-state.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/state.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.728Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-board.json": {
+      "legacy": "cave-board.json",
+      "next": "board.json",
+      "strategy": "board",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-board.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/board.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.730Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-canvas.json": {
+      "legacy": "cave-canvas.json",
+      "next": "canvas.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-canvas.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/canvas.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.731Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-inbox.json": {
+      "legacy": "cave-inbox.json",
+      "next": "inbox.json",
+      "strategy": "inbox",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-inbox.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/inbox.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.733Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-inbox-prefs.json": {
+      "legacy": "cave-inbox-prefs.json",
+      "next": "inbox-prefs.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-inbox-prefs.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/inbox-prefs.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.737Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-projects.json": {
+      "legacy": "cave-projects.json",
+      "next": "projects.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-projects.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/projects.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.750Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-project-permissions.json": {
+      "legacy": "cave-project-permissions.json",
+      "next": "project-permissions.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-project-permissions.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/project-permissions.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.755Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-permission-config.json": {
+      "legacy": "cave-permission-config.json",
+      "next": "permission-config.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-permission-config.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/permission-config.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.763Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-automation-runs.json": {
+      "legacy": "cave-automation-runs.json",
+      "next": "automation-runs.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-automation-runs.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/automation-runs.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.784Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-removed-familiars.json": {
+      "legacy": "cave-removed-familiars.json",
+      "next": "removed-familiars.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-removed-familiars.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/removed-familiars.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.835Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-preferences.json": {
+      "legacy": "cave-preferences.json",
+      "next": "preferences.json",
+      "strategy": "preferences",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-preferences.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/preferences.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.848Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-preferences.json.locks": {
+      "legacy": "cave-preferences.json.locks",
+      "next": "preferences.json.locks",
+      "strategy": "directory",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-preferences.json.locks",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/preferences.json.locks",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.850Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-theme.json": {
+      "legacy": "cave-theme.json",
+      "next": "theme.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-theme.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/theme.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:50.891Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-message-feedback.json": {
+      "legacy": "cave-message-feedback.json",
+      "next": "message-feedback.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-message-feedback.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/message-feedback.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:51.019Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-mobile-paired.json": {
+      "legacy": "cave-mobile-paired.json",
+      "next": "mobile-paired.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-mobile-paired.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/mobile-paired.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:51.023Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-salem-pathfinder.json": {
+      "legacy": "cave-salem-pathfinder.json",
+      "next": "salem-pathfinder.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-salem-pathfinder.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/salem-pathfinder.json",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:51.042Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-backdrop.jpg": {
+      "legacy": "cave-backdrop.jpg",
+      "next": "backdrop.jpg",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-backdrop.jpg",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/backdrop.jpg",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:51.058Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-conversations": {
+      "legacy": "cave-conversations",
+      "next": "conversations",
+      "strategy": "directory",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave-conversations",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/cave-nctse-flow-chat-ownership/.flow-ownership-71995/cave/conversations",
+      "decision": "absent",
+      "decidedAt": "2026-09-09T23:04:51.059Z",
+      "summary": "No legacy data remains."
+    }
+  }
+}
