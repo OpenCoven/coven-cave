@@ -21,6 +21,11 @@ assert.match(
   /allowOpenCodeInventory: runtime === "opencode" && localInventoryRequest/,
   "OpenCode credential discovery remains local-only while remote callers receive safe metadata",
 );
+assert.match(
+  source,
+  /providerEnv: passiveHarnessSpawnEnv/,
+  "automatic runtime inventory refreshes reuse only locally available or already-cached credentials",
+);
 assert.doesNotMatch(
   source,
   /if \(forbidden\) return forbidden/,

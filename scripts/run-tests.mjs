@@ -1837,6 +1837,7 @@ export const SUITES = {
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/lib/github-token.test.ts",
+    "src/lib/github-token-passive.test.ts",
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
@@ -2076,6 +2077,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/github-token-passive.test.ts",
   // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",

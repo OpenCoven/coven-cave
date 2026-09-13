@@ -3,6 +3,7 @@ import {
   openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
+  prepareOpenCodeEnv,
 } from "@/lib/opencode-bin";
 import { parseOpenCodeModels } from "@/lib/opencode-models";
 import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
@@ -20,7 +21,12 @@ export function appendBoundedModelOutput(current: string, chunk: string): string
 }
 
 /** Read only the authenticated local OpenCode model inventory; never refresh it. */
-export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeModelOption[]> {
+export function listOpenCodeModels(
+  familiarId?: string | null,
+  dependencies: {
+    env?: (familiarId?: string | null) => NodeJS.ProcessEnv;
+  } = {},
+): Promise<RuntimeModelOption[]> {
   return new Promise((resolve) => {
     let output = "";
     let settled = false;
@@ -30,7 +36,9 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
       resolve(models);
     };
     try {
-      const env = openCodeSpawnEnv(familiarId);
+      const env = dependencies.env
+        ? prepareOpenCodeEnv(dependencies.env(familiarId))
+        : openCodeSpawnEnv(familiarId);
       const launch = openCodeLaunch(["models"], process.platform, env);
       if (evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)).state !== "ready") {
         done([]);

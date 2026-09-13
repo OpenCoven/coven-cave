@@ -91,7 +91,21 @@ test("reports a dotenv-only key as externally owned", async () => {
   assert.doesNotMatch(JSON.stringify(result), /dotenv-only-secret/);
 });
 
-test("reports encrypted, missing, and encrypted-read errors independently", async () => {
+test("reports a 1Password reference without invoking the external CLI", async () => {
+  resetFiles('OPENAI_API_KEY:\n  ref: "op://Private/OpenAI/password"');
+
+  const result = await statuses();
+  assert.deepEqual(result.find((entry) => entry.key === "OPENAI_API_KEY"), {
+    key: "OPENAI_API_KEY",
+    status: "configured",
+    hasValue: false,
+    storage: "1password",
+    source: "vault",
+  });
+  assert.equal(existsSync(opLog), false, "passive credential status must not execute op");
+});
+
+test("reports encrypted and missing credentials without decrypting values", async () => {
   resetFiles("OPENAI_API_KEY:\n  storage: encrypted");
   setLocalEncryptedSecret("OPENAI_API_KEY", "encrypted-secret");
   let result = await statuses();
@@ -111,14 +125,13 @@ test("reports encrypted, missing, and encrypted-read errors independently", asyn
   });
   assert.doesNotMatch(JSON.stringify(result), /encrypted-secret/);
 
-  delete process.env.OPENAI_API_KEY;
   writeFileSync(localVaultKeyFile, "not-a-valid-key\n");
   result = await statuses();
-  const failed = result.find((entry) => entry.key === "OPENAI_API_KEY");
-  assert.equal(failed.status, "error");
-  assert.equal(failed.hasValue, false);
-  assert.equal(failed.storage, "encrypted");
-  assert.equal(failed.source, "vault");
-  assert.equal(typeof failed.error, "string");
-  assert.doesNotMatch(JSON.stringify(failed), /encrypted-secret/);
+  assert.deepEqual(result.find((entry) => entry.key === "OPENAI_API_KEY"), {
+    key: "OPENAI_API_KEY",
+    status: "encrypted",
+    hasValue: true,
+    storage: "encrypted",
+    source: "vault",
+  });
 });

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
   canonicalProbeSpawnEnv,
+  passiveHarnessSpawnEnv,
   restoreAllowedGitHubTokenEnv,
   restoreGrantedVaultEnv,
   restoreGrantedVaultGitHubTokenEnv,
@@ -214,7 +215,12 @@ try {
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const chatSendSource = read("../app/api/chat/send/route.ts");
-assert.match(chatSendSource, /env: harnessSpawnEnv\(body\.familiarId\)/, "familiar chat spawn injects only granted keys");
+assert.match(
+  chatSendSource,
+  /surfaceOrigin === "journal" && body\.credentialMode === "passive"[\s\S]*?passiveHarnessSpawnEnv\(familiarId, discovery\)[\s\S]*?: harnessSpawnEnv\(familiarId, discovery\)/,
+  "only an explicitly passive journal generation avoids provider reads; ordinary familiar chat keeps granted credentials",
+);
+assert.match(chatSendSource, /env: scopedSpawnEnv\(body\.familiarId\)/, "familiar chat spawn injects only granted keys");
 assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwards the unscoped spawn env");
 
 // The one-shot spawn moved into a shared runner when the reader's Rewrite
@@ -309,7 +315,7 @@ assert.match(
 );
 {
   const helperStart = helperSource.indexOf("export function canonicalProbeSpawnEnv");
-  const helperEnd = helperSource.indexOf("/**\n * `covenSpawnEnv()` minus scoped", helperStart);
+  const helperEnd = helperSource.indexOf("/**\n * Familiar-scoped environment for passive UI discovery.", helperStart);
   assert.ok(helperStart >= 0 && helperEnd > helperStart, "the canonical probe helper is present");
   const probeHelperSource = helperSource.slice(helperStart, helperEnd);
   assert.doesNotMatch(
@@ -318,6 +324,11 @@ assert.match(
     "probe environment construction never restores or materializes familiar/shared credentials",
   );
 }
+assert.match(
+  helperSource,
+  /export function passiveHarnessSpawnEnv[\s\S]*resolveCachedVaultManagedSecretIfAvailable/,
+  "passive familiar discovery may reuse cached values without executing an external provider",
+);
 
 // Generic harnesses (Codex, Hermes, OpenCode, etc.) must receive a granted
 // Vault token rather than a same-named launcher variable.
@@ -410,15 +421,37 @@ try {
 
   const fakeBin = join(tokenDir, "bin");
   const fakeOp = join(fakeBin, "op");
+  const fakeOpLog = join(tokenDir, "op.log");
+  writeFileSync(fakeOpLog, "");
   await import("node:fs/promises").then(({ mkdir }) => mkdir(fakeBin));
   writeFileSync(
     fakeOp,
-    "#!/usr/bin/env node\nsetTimeout(() => process.stdout.write('late-secret\\n'), 2000);\n",
+    `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(${JSON.stringify(fakeOpLog)}, "read\\n");\nsetTimeout(() => process.stdout.write("late-secret\\n"), 2000);\n`,
   );
   chmodSync(fakeOp, 0o755);
   process.env.PATH = `${fakeBin}${delimiter}${process.env.PATH ?? ""}`;
   process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS = "5000";
   process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS = "5000";
+  saveVaultMap({
+    PASSIVE_LOCAL_SECRET: { storage: "encrypted", scope: ["nova"] },
+    PASSIVE_PROVIDER_SECRET: { ref: "op://Dev/Passive/credential", scope: ["nova"] },
+  });
+  setLocalEncryptedSecret("PASSIVE_LOCAL_SECRET", "local-secret");
+  assert.equal(
+    passiveHarnessSpawnEnv("nova").PASSIVE_LOCAL_SECRET,
+    "local-secret",
+    "passive discovery keeps locally available scoped credentials",
+  );
+  assert.equal(
+    passiveHarnessSpawnEnv("nova").PASSIVE_PROVIDER_SECRET,
+    undefined,
+    "passive discovery omits an uncached external reference",
+  );
+  assert.equal(
+    readFileSync(fakeOpLog, "utf8"),
+    "",
+    "passive discovery never invokes the external provider",
+  );
   const providerMap = {
     FIRST_PROVIDER_SECRET: { ref: "op://Dev/First/credential", scope: ["nova"] },
     SECOND_PROVIDER_SECRET: { ref: "op://Dev/Second/credential", scope: ["nova"] },

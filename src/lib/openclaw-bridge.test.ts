@@ -99,6 +99,11 @@ assert.match(
   /Bridge implementation support\. Runtime activation remains compatibility-negotiated\./,
   "capabilities describe implemented negotiation support rather than promising every runtime qualifies",
 );
+assert.match(
+  bridgeSource,
+  /openClawProbeEnv,[\s\S]*env: openClawProbeEnv\(\)/,
+  "OpenClaw registry discovery must not materialize launch credentials",
+);
 
 assert.equal(
   extractOpenClawText({ result: { payloads: [{ content: "scalar reply" }] } }),

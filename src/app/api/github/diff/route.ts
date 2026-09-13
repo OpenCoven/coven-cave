@@ -20,7 +20,7 @@
 // and route.test.ts can exercise the bounds directly, as the other tested API
 // routes do.
 import { NextResponse } from "next/server.js";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid number" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.

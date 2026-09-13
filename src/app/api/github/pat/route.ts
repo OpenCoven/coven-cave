@@ -20,10 +20,10 @@ import {
   getLocalEncryptedSecret,
   hasLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubToken, hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 import {
   loadVaultMapForMutation,
-  resolveSecret,
+  resolveSecretWithoutExternalRead,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
@@ -109,17 +109,18 @@ async function usernameExists(username: string): Promise<boolean> {
 
 // GET — just reports presence, never exposes the value
 export async function GET() {
-  // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
+  // Inspect local storage and cached references without opening an external Vault.
   const localEnvPat = readEnvLocalValue(PAT_KEY);
   const hasEncryptedPat = hasLocalEncryptedSecret(PAT_KEY);
-  const patFromVault = resolveSecret("GITHUB_PAT");
-  const loginFromVault = resolveSecret("GITHUB_USERNAME");
+  const patFromVault = resolveSecretWithoutExternalRead("GITHUB_PAT");
+  const loginFromVault = resolveSecretWithoutExternalRead("GITHUB_USERNAME");
 
   // The activity and action routes also accept credentials supplied by the
   // launcher (for example GH_TOKEN from a CLI/harness environment). Reflect
   // that here so an already-authenticated installation is not prompted to add
   // a duplicate Cave PAT.
-  const hasPat = !!resolveGitHubToken();
+  const available = !!resolveGitHubTokenForPassiveRead();
+  const hasPat = available || hasConfiguredGitHubToken();
   // Only storage Cave can actually delete is removable from this UI. A
   // launcher GITHUB_PAT or a vault reference can resolve through
   // resolveSecret(), but deleting it here would only disable it until restart.
@@ -129,19 +130,28 @@ export async function GET() {
     ? "encrypted"
     : localEnvPat
       ? "env"
-      : patFromVault
+      : patFromVault || hasConfiguredGitHubToken() && !available
       ? "vault"
       : hasPat
         ? "env"
         : "none";
 
-  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat });
+  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat, needsInitialization: hasPat && !available });
 }
 
 // POST — validate + save
 export async function POST(req: NextRequest) {
-  let body: { pat?: string; username?: string } = {};
+  let body: { pat?: string; username?: string; initialize?: boolean } = {};
   try { body = await req.json(); } catch { /* ignore */ }
+
+  if (body.initialize === true) {
+    // Only this explicit user action may open the configured external Vault.
+    const existing = resolveGitHubToken();
+    if (!existing) return NextResponse.json({ ok: false, error: "Couldn't read the configured credential. Unlock your Vault and retry." }, { status: 409 });
+    const result = await validatePat(existing);
+    if (!result.valid) return NextResponse.json({ ok: false, error: "Couldn't verify the configured credential." }, { status: result.network ? 503 : 422 });
+    return NextResponse.json({ ok: true, login: result.login });
+  }
 
   const pat = typeof body.pat === "string" ? body.pat.trim() : "";
   const username = typeof body.username === "string" ? body.username.trim() : "";

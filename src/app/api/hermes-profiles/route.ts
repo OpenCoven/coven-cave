@@ -11,7 +11,7 @@ import {
   summarizeHermesProfile,
   type HermesProfileSummary,
 } from "@/lib/hermes-profiles";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { canonicalProbeSpawnEnv } from "@/lib/harness-spawn-env";
 import { resolveHermesLaunch } from "@/lib/runtime-availability";
 
 const execFileAsync = promisify(execFile);
@@ -67,7 +67,7 @@ export async function listHermesProfiles(options: {
   concurrency?: number;
   deadlineMs?: number;
 } = {}): Promise<{ profiles: HermesProfileSummary[]; hint?: string }> {
-  const env = options.env ?? harnessSpawnEnv(null);
+  const env = options.env ?? canonicalProbeSpawnEnv();
   const launch = options.command
     ? { state: "ready" as const, command: options.command }
     : resolveHermesLaunch({ env });

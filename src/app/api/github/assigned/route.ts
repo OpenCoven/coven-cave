@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { GitHubItem } from "@/lib/github-tasks";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 import {
   failedSource,
   isPartial,
@@ -70,10 +70,10 @@ async function fetchSource<T>(
 }
 
 export async function GET() {
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
 
   if (!token) {
-    return NextResponse.json({ ok: true, items: [], configured: false });
+    return NextResponse.json({ ok: true, items: [], configured: hasConfiguredGitHubToken() });
   }
 
   const headers: Record<string, string> = {

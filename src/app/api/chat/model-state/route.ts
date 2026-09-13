@@ -12,7 +12,7 @@ import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { passiveHarnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
@@ -162,12 +162,13 @@ export async function GET(req: Request) {
     {
       allowOpenCodeInventory: canReadOpenCodeInventory,
       allowHermesInventory: canReadHermesInventory,
+      providerEnv: passiveHarnessSpawnEnv,
     },
   );
   // Native Hermes controls are available only through its configured Responses
   // API transport. Keep the state response aligned with the send boundary so
   // a client never renders a provider setting that would be rejected later.
-  const hermesEnvironment = bareLocalHermes ? harnessSpawnEnv(familiarId) : null;
+  const hermesEnvironment = bareLocalHermes ? passiveHarnessSpawnEnv(familiarId) : null;
   const hermesApi = hermesEnvironment
     ? hermesApiConfig({
         HERMES_API_URL: hermesEnvironment.HERMES_API_URL,

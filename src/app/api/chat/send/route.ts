@@ -43,7 +43,10 @@ import {
   covenWrapperSpawnEnv,
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import {
+  harnessSpawnEnv,
+  passiveHarnessSpawnEnv,
+} from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -80,7 +83,7 @@ import {
 import {
   openCodeAvailabilityProbe,
   openCodeLaunch,
-  openCodeSpawnEnv,
+  prepareOpenCodeEnv,
 } from "@/lib/opencode-bin";
 import {
   codexAdapterFailureAvailability,
@@ -430,6 +433,9 @@ type SendBody = {
    *  only when the installed CLI advertises it; "full" is left implicit so the
    *  harness keeps its default sandbox rather than being widened. */
   permissionMode?: string;
+  /** Internal background-generation mode. Honored only on the server-minted
+   * journal surface so ordinary chat launches retain full Vault behavior. */
+  credentialMode?: "passive";
   /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
    *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
    *  runtime bindings) — an unregistered host is rejected fail-closed, and the
@@ -762,6 +768,7 @@ async function maybeQueueOfflineChat(args: {
 }
 
 function openClawChatResponse(args: {
+  credentialMode?: "passive";
   req: Request;
   body: SendBody;
   promptText: string;
@@ -1371,7 +1378,7 @@ function openClawChatResponse(args: {
         return;
       }
       const openclawLaunch = openClawLaunchCommand();
-      const openclawEnv = openClawSpawnEnv();
+      const openclawEnv = openClawSpawnEnv({ credentialMode: args.credentialMode });
       const openclawAvailability = evaluateRuntimeAvailability({
         runner: "openclaw",
         command: openclawLaunch.command,
@@ -1845,6 +1852,12 @@ async function postChat(
   // conversations still own their provenance: every downstream read prefers
   // existingConversation.origin over this value, so a resume never relabels.
   body.origin = surfaceOrigin;
+  const usePassiveCredentials =
+    surfaceOrigin === "journal" && body.credentialMode === "passive";
+  const scopedSpawnEnv: typeof harnessSpawnEnv = (familiarId, discovery) =>
+    usePassiveCredentials
+      ? passiveHarnessSpawnEnv(familiarId, discovery)
+      : harnessSpawnEnv(familiarId, discovery);
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
@@ -2059,7 +2072,7 @@ async function postChat(
   // Build its environment once: API configuration and any CLI fallback must
   // observe the same familiar-scoped values.
   const hermesSpawnEnvironment = hermesDirect
-    ? harnessSpawnEnv(body.familiarId)
+    ? scopedSpawnEnv(body.familiarId)
     : null;
   // Hermes's documented `-p` flag scopes the CLI process before its modules
   // load, which sets the profile's HERMES_HOME without mutating `profile use`.
@@ -2082,7 +2095,7 @@ async function postChat(
   const copilotRuntimeLaunch = copilotManifestStream
     ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable, {
         spawnEnv: (discoveryDeadline) =>
-          harnessSpawnEnv(body.familiarId, { discoveryDeadline }),
+          scopedSpawnEnv(body.familiarId, { discoveryDeadline }),
       })
     : null;
   const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
@@ -2115,7 +2128,7 @@ async function postChat(
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   const codexSpawnEnv =
-    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+    !sshRuntime && binding.harness === "codex" ? scopedSpawnEnv(body.familiarId) : null;
   const codexDirectLaunch = codexSpawnEnv
     ? (() => {
         try {
@@ -2183,7 +2196,7 @@ async function postChat(
           : copilotRuntimeLaunch.availability,
       });
     } else if (openCodeDirect) {
-      const env = openCodeSpawnEnv(body.familiarId);
+      const env = prepareOpenCodeEnv(scopedSpawnEnv(body.familiarId));
       const launch = openCodeLaunch([], process.platform, env);
       const availabilityProbe = openCodeAvailabilityProbe(launch, env);
       localRuntimePlan = createLocalRuntimePlan({
@@ -2197,7 +2210,7 @@ async function postChat(
         availability: evaluateRuntimeAvailability(availabilityProbe),
       });
     } else if (grokDirect) {
-      const env = harnessSpawnEnv(body.familiarId);
+      const env = scopedSpawnEnv(body.familiarId);
       localRuntimePlan = createLocalRuntimePlan({
         runner: "grok",
         launch: grokLaunchCommand(),
@@ -2214,7 +2227,7 @@ async function postChat(
         ...(codexLaunchAvailability ? { availability: codexLaunchAvailability } : {}),
       });
     } else if (!hermesDirect) {
-      const env = covenWrapperSpawnEnv(harnessSpawnEnv(body.familiarId));
+      const env = covenWrapperSpawnEnv(scopedSpawnEnv(body.familiarId));
       let launch: CovenLaunchCommand;
       try {
         launch = covenLaunchCommand();
@@ -2999,6 +3012,7 @@ async function postChat(
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
+      credentialMode: usePassiveCredentials ? "passive" : undefined,
       req,
       body,
       promptText,
@@ -5099,7 +5113,7 @@ async function postChat(
                 return spawn("ssh", sshArgs, {
                   windowsHide: true,
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: harnessSpawnEnv(body.familiarId),
+                  env: scopedSpawnEnv(body.familiarId),
                 });
               })()
             : (() => {

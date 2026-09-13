@@ -27,9 +27,9 @@ import {
   type ActivityCollections,
   type GitHubApiFailure,
 } from "@/lib/github-activity";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecretWithoutExternalRead } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -302,8 +302,8 @@ async function fetchOrganizations(token: string): Promise<OrganizationResult> {
 
 export async function GET() {
   // PAT is strictly local — read from env, never echoed back
-  const storedToken = resolveGitHubToken();
-  const envLogin = resolveSecret("GITHUB_USERNAME") ?? null;
+  const storedToken = resolveGitHubTokenForPassiveRead();
+  const envLogin = resolveSecretWithoutExternalRead("GITHUB_USERNAME") ?? null;
 
   // ── Resolve login ────────────────────────────────────────────────────────
   let login: string | null = envLogin;

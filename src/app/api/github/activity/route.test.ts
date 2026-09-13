@@ -32,13 +32,18 @@ assert.match(
 );
 assert.match(
   route,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
-  "activity should use the shared token resolver for every supported installation harness",
+  /import \{ resolveGitHubTokenForPassiveRead \} from "@\/lib\/github-token"/,
+  "automatic activity refreshes should use the non-materializing shared token resolver",
 );
 assert.match(
   route,
-  /const storedToken = resolveGitHubToken\(\)/,
-  "activity should resolve the token through the shared installation-agnostic resolver",
+  /const storedToken = resolveGitHubTokenForPassiveRead\(\)/,
+  "activity should reuse locally available credentials without launching an external Vault",
+);
+assert.match(
+  route,
+  /resolveSecretWithoutExternalRead\("GITHUB_USERNAME"\)/,
+  "activity should resolve its username without launching an external Vault",
 );
 assert.match(
   route,

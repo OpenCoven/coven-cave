@@ -22,8 +22,8 @@ import {
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { canonicalProbeSpawnEnv } from "@/lib/harness-spawn-env";
+import { openCodeAvailabilityProbe, openCodeLaunch, openCodeProbeEnv } from "@/lib/opencode-bin";
 import { listOpenClawAgents } from "@/lib/openclaw-bridge";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
@@ -151,15 +151,15 @@ function runProbe(
 
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
 // their direct CLI launch plans, everything else launches through `coven run`.
-// Same commands, same spawn env shape (no familiar → shared keys only), and
-// bounded filesystem stats only — this endpoint stays probe-cheap.
+// Same commands and executable-discovery environment as a real launch, but no
+// Vault values: passive status refreshes must never open a secret manager.
 async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
       const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
         spawnEnv: (discoveryDeadline) =>
-          harnessSpawnEnv(null, { discoveryDeadline }),
+          canonicalProbeSpawnEnv({ discoveryDeadline }),
       });
       return {
         availability: summarizeRuntimeAvailability(copilotLaunch.availability),
@@ -168,7 +168,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     }
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
-  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  const env = id === "opencode" ? openCodeProbeEnv() : canonicalProbeSpawnEnv();
   if (id === "codex") {
     const launch = resolvedCovenLaunch();
     if (!launch) return { availability: missingCovenAvailability("coven") };

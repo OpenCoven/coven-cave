@@ -32,6 +32,7 @@ import {
   isVaultKeyGrantedTo,
   loadVaultMap,
   resolveCachedVaultManagedSecret,
+  resolveCachedVaultManagedSecretIfAvailable,
   resolveVaultManagedSecret,
   type VaultMap,
   type VaultResolutionOptions,
@@ -170,6 +171,46 @@ export function canonicalProbeSpawnEnv(
     now: discovery.now,
   });
   return vaultFreeDiscoveryEnv(env, map);
+}
+
+/**
+ * Familiar-scoped environment for passive UI discovery.
+ *
+ * Local, launcher-owned, encrypted, and already-cached values remain usable,
+ * but an unresolved external reference is omitted rather than launching its
+ * provider CLI from a polling GET request.
+ */
+export function passiveHarnessSpawnEnv(
+  familiarId?: string | null,
+  discovery: Pick<CovenSpawnEnvOptions, "discoveryDeadline" | "now"> = {},
+): NodeJS.ProcessEnv {
+  const map = loadVaultMap(true);
+  const env = subtractScopedVaultKeys(
+    covenSpawnEnv({
+      discoveryEnv: vaultFreeDiscoveryEnv(process.env, map),
+      discoveryDeadline: discovery.discoveryDeadline,
+      now: discovery.now,
+    }),
+    map,
+    familiarId,
+  );
+
+  for (const [key, entry] of Object.entries(map)) {
+    const githubTokenKey = GITHUB_HARNESS_TOKEN_ENV_KEYS.includes(
+      key as (typeof GITHUB_HARNESS_TOKEN_ENV_KEYS)[number],
+    );
+    if (
+      (!githubTokenKey && isForbiddenSpawnEnvKey(key))
+      || !canMirrorVaultKeyToProcessEnv(key)
+      || !isVaultKeyGrantedTo(entry, familiarId)
+    ) continue;
+    const value = entry.storage === "environment"
+      ? process.env[key]?.trim() || readEnvLocalValue(key)?.trim()
+      : resolveCachedVaultManagedSecretIfAvailable(key, entry)?.trim();
+    if (value) env[key] = value;
+  }
+
+  return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }
 
 /**

@@ -76,6 +76,8 @@ test("classifies all current Vault status and storage combinations independently
   const configured = [
     ["resolved", "1password", "vault"],
     ["resolved", "dashlane", "vault"],
+    ["configured", "1password", "vault"],
+    ["configured", "dashlane", "vault"],
     ["encrypted", "encrypted", "vault"],
     ["env-only", null, "process-env"],
     ["env-only", null, "env-local"],
@@ -84,7 +86,7 @@ test("classifies all current Vault status and storage combinations independently
     const states = await loadVoiceCredentialStates(async () => jsonResponse({
       ok: true,
       credentials: [
-        { key: "OPENAI_API_KEY", status, hasValue: true, storage, source },
+        { key: "OPENAI_API_KEY", status, hasValue: status !== "configured", storage, source },
         { key: "ELEVENLABS_API_KEY", status: "no-ref", hasValue: false, storage: null, source: null },
       ],
     }));

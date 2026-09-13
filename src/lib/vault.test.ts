@@ -1,8 +1,8 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import * as vaultModule from "./vault.ts";
 import { setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 import {
@@ -278,6 +278,8 @@ const statusOriginal = {
   COVEN_STATUS_REF: process.env.COVEN_STATUS_REF,
   COVEN_STATUS_CACHE: process.env.COVEN_STATUS_CACHE,
   COVEN_STATUS_EXTERNAL: process.env.COVEN_STATUS_EXTERNAL,
+  COVEN_STATUS_REF_SHADOWED: process.env.COVEN_STATUS_REF_SHADOWED,
+  PATH: process.env.PATH,
 };
 const restoreStatusEnv = (key: string, value: string | undefined) => {
   if (value === undefined) delete process.env[key];
@@ -295,6 +297,7 @@ try {
     COVEN_STATUS_REF: { ref: "op://Personal/Test/token" },
     COVEN_STATUS_CACHE: { storage: "encrypted" },
     COVEN_STATUS_EXTERNAL: { storage: "encrypted" },
+    COVEN_STATUS_REF_SHADOWED: { ref: "op://Personal/Shadowed/token" },
   });
   setLocalEncryptedSecret("COVEN_STATUS_STORED", "stored-value");
   setLocalEncryptedSecret("COVEN_STATUS_CACHE", "cached-value");
@@ -324,6 +327,58 @@ try {
     process.env.COVEN_STATUS_EXTERNAL,
     "launcher-owned",
     "Vault caching never overwrites an externally owned process value",
+  );
+  const fakeBin = join(statusRoot, "bin");
+  const opLog = join(statusRoot, "op.log");
+  mkdirSync(fakeBin);
+  writeFileSync(
+    join(fakeBin, "op"),
+    `#!/bin/sh\nprintf '%s\\n' "$2" >> "${opLog}"\nprintf 'vault-owned\\n'\n`,
+  );
+  chmodSync(join(fakeBin, "op"), 0o755);
+  process.env.PATH = `${fakeBin}${delimiter}${process.env.PATH ?? ""}`;
+  process.env.COVEN_STATUS_REF_SHADOWED = "launcher-owned";
+  assert.equal(
+    vaultModule.resolveCachedVaultManagedSecret("COVEN_STATUS_REF_SHADOWED"),
+    "vault-owned",
+  );
+  assert.equal(
+    vaultModule.resolveCachedVaultManagedSecret("COVEN_STATUS_REF_SHADOWED"),
+    "vault-owned",
+  );
+  assert.equal(
+    readFileSync(opLog, "utf8").trim().split("\n").length,
+    1,
+    "a launcher-shadowed external reference is resolved only once per process",
+  );
+  assert.equal(
+    process.env.COVEN_STATUS_REF_SHADOWED,
+    "launcher-owned",
+    "the private cache does not overwrite launcher-owned process values",
+  );
+  assert.equal(
+    clearMirroredVaultSecretFromProcessEnv("COVEN_STATUS_REF_SHADOWED"),
+    false,
+    "clearing a private Vault cache does not claim ownership of the launcher value",
+  );
+  assert.equal(
+    vaultModule.resolveCachedVaultManagedSecretIfAvailable("COVEN_STATUS_REF_SHADOWED"),
+    undefined,
+    "a passive cache lookup never launches an external secret manager",
+  );
+  assert.equal(
+    readFileSync(opLog, "utf8").trim().split("\n").length,
+    1,
+    "a passive cache miss leaves the external resolution count unchanged",
+  );
+  assert.equal(
+    vaultModule.resolveCachedVaultManagedSecret("COVEN_STATUS_REF_SHADOWED"),
+    "vault-owned",
+  );
+  assert.equal(
+    readFileSync(opLog, "utf8").trim().split("\n").length,
+    2,
+    "clearing Vault-owned cache metadata permits one fresh external resolution",
   );
   mirrorVaultSecretToProcessEnv(
     "COVEN_STATUS_STORED",

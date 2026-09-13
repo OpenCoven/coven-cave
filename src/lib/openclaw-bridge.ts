@@ -699,14 +699,14 @@ async function loadOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
   const {
     openClawBin,
     openClawNeedsShell,
+    openClawProbeEnv,
     openClawSpawnArgs,
-    openClawSpawnEnv,
   } = await import("./openclaw-bin.ts");
   return new Promise((resolve) => {
     const child = spawn(openClawBin(), openClawSpawnArgs(["agents", "list", "--json"]), {
       windowsHide: true,
       stdio: ["ignore", "pipe", "ignore"],
-      env: openClawSpawnEnv(),
+      env: openClawProbeEnv(),
       shell: openClawNeedsShell(),
     });
     let stdout = "";

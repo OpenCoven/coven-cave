@@ -447,7 +447,7 @@ assert.match(stream, /\}, \[visibleCount, onSelect\]\);/, "row-nav listeners reb
 // the manual/⌘R refresh keeps the linked-task chips in sync.
 assert.match(source, /function schedulePoll\(ms: number\)[\s\S]{0,160}?document\.hidden\) return/, "polling is skipped while the tab is hidden");
 assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns to the foreground");
-assert.match(source, /refreshActivity\(\);\s*\n\s*refreshLinkedWork\(\);/, "⌘R refreshes activity and linked work together");
+assert.match(source, /void refreshWithCredentials\(\);\s*\n\s*refreshLinkedWork\(\);/, "⌘R refreshes activity and linked work together");
 assert.match(source, /const refreshLinkedWork = useCallback\([\s\S]{0,180}reloadCards\(\);[\s\S]{0,80}onTasksRefresh\?\.\(\)/, "linked-work refresh updates both cards and shell task context");
 assert.match(source, /onClose=\{close\}\s*\n\s*onComplete=\{onAfterLink\}/, "closing the task popover without a change does not force-refresh linked work");
 
@@ -713,3 +713,6 @@ assert.match(source, /const closeUnlessSaving = \(\) => \{\s*\n\s*if \(!savingRe
 assert.match(source, /onClick=\{closeUnlessSaving\}/, "the backdrop uses the saving-aware close");
 
 console.log("github-view-polish.test.ts OK");
+
+assert.match(source, /body: JSON.stringify\(\{ initialize: true \}\)/, "deliberate refresh initializes configured Vault credentials");
+assert.match(source, /else void fetchActivity\(true, true\)/, "visibility refresh remains passive");

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   normalizeHermesProfileBinding,
   hermesProfileDaemonLaunchBlockReason,
@@ -9,6 +10,18 @@ import {
   soulDescription,
   summarizeHermesProfile,
 } from "./hermes-profiles.ts";
+
+const routeSource = readFileSync(new URL("../app/api/hermes-profiles/route.ts", import.meta.url), "utf8");
+assert.match(
+  routeSource,
+  /const env = options\.env \?\? canonicalProbeSpawnEnv\(\)/,
+  "passive Hermes profile discovery uses a credential-free executable probe environment",
+);
+assert.doesNotMatch(
+  routeSource,
+  /\bharnessSpawnEnv\b/,
+  "listing Hermes profiles never materializes shared Vault secrets",
+);
 
 assert.deepEqual(parseHermesProfileList("  default\n* work\n  research\nProfile   Model\n../escape\n"), ["research", "work"]);
 assert.equal(parseHermesProfileHome("Profile: work\nPath: ~/.hermes/profiles/work\n", "/home/cave"), "/home/cave/.hermes/profiles/work");

@@ -3,6 +3,7 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { passiveHarnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
@@ -56,6 +57,7 @@ export async function GET(
   const inventory = await listRuntimeModelInventory(runtime, familiarId, {
     allowOpenCodeInventory: runtime === "opencode" && localInventoryRequest,
     allowHermesInventory,
+    providerEnv: passiveHarnessSpawnEnv,
   });
   return NextResponse.json({
     ok: true,

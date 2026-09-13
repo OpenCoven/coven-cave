@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   NARRATIVE_MAX_CHARS,
   NARRATIVE_MIN_REGEN_MS,
@@ -9,6 +10,13 @@ import {
 } from "./daily-narrative.ts";
 
 const now = new Date("2026-06-18T21:15:00.000Z");
+const source = readFileSync(new URL("./daily-narrative.ts", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /origin: "journal",[\s\S]*?permissionMode: "read",[\s\S]*?credentialMode: "passive"/,
+  "automatic daily narrative generation must not launch an external credential provider",
+);
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
 {

@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid login" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
 
   try {
     // login passed LOGIN_RE — safe to interpolate into the API path.

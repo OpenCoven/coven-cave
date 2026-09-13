@@ -15,7 +15,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubToken, resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
   if (parsed instanceof Response) return parsed;
   const { repo, number } = parsed;
 
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.

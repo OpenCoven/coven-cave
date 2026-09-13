@@ -36,8 +36,8 @@ assert.equal(
 assert.match(serverSource, /MAX_MODEL_LIST_OUTPUT_BYTES/, "OpenCode inventory has a hard response-size budget");
 assert.match(
   serverSource,
-  /listOpenCodeModels\(familiarId\?: string \| null\)[\s\S]*?openCodeSpawnEnv\(familiarId\)/,
-  "model discovery uses the same familiar-scoped vault environment as a chat run",
+  /dependencies\.env\s*\? prepareOpenCodeEnv\(dependencies\.env\(familiarId\)\)\s*: openCodeSpawnEnv\(familiarId\)/,
+  "injected passive discovery retains OpenCode launch PATH and XDG normalization",
 );
 assert.match(
   serverSource,

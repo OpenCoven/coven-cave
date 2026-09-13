@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { AsanaItem } from "@/lib/asana-tasks";
-import { resolveSecret } from "@/lib/vault";
+import { hasConfiguredSecretMetadata, resolveSecretWithoutExternalRead } from "@/lib/vault";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ type RawAsanaTask = {
 
 function resolveAsanaToken(): string | undefined {
   return (
-    resolveSecret("ASANA_PAT") ??
+    resolveSecretWithoutExternalRead("ASANA_PAT") ??
     process.env.ASANA_PAT?.trim() ??
     process.env.ASANA_ACCESS_TOKEN?.trim()
   );
@@ -78,7 +78,7 @@ function toItem(task: RawAsanaTask, workspaceGid: string): AsanaItem {
 export async function GET(req: NextRequest) {
   const token = resolveAsanaToken();
   if (!token) {
-    return NextResponse.json({ ok: true, items: [], configured: false });
+    return NextResponse.json({ ok: true, items: [], configured: hasConfiguredSecretMetadata("ASANA_PAT") || hasConfiguredSecretMetadata("ASANA_ACCESS_TOKEN") });
   }
 
   // Per-agent assignment: when a familiarId is passed, the caller wants only

@@ -3,8 +3,12 @@ import path from "node:path";
 import {
   windowsShimLaunchCommandForBinary,
   type CovenLaunchCommand,
+  type CovenSpawnEnvOptions,
 } from "./coven-bin.ts";
-import { harnessSpawnEnv } from "./harness-spawn-env.ts";
+import {
+  canonicalProbeSpawnEnv,
+  harnessSpawnEnv,
+} from "./harness-spawn-env.ts";
 import type { RuntimeAvailabilityProbe, StatFileFn } from "./runtime-availability.ts";
 
 /** OpenCode is installed as `opencode` on all supported desktop platforms. */
@@ -213,8 +217,7 @@ export function preferOpenCodeLaunchPath(
  * `/run/user/<uid>` directory; `/tmp` is sufficient for OpenCode's ephemeral
  * local runtime files and is never sent to a remote host.
  */
-export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
-  const env = harnessSpawnEnv(familiarId);
+export function prepareOpenCodeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   // OpenCode is direct user-selected tooling: preserve its scoped fallback,
   // but order the actual launch PATH first so a newly updated npm shim cannot
   // be shadowed by an older discovered global copy.
@@ -224,4 +227,15 @@ export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv 
     env.XDG_RUNTIME_DIR = "/tmp";
   }
   return env;
+}
+
+export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
+  return prepareOpenCodeEnv(harnessSpawnEnv(familiarId));
+}
+
+/** Build OpenCode's runtime-compatible environment without resolving Vault values. */
+export function openCodeProbeEnv(
+  discovery: Pick<CovenSpawnEnvOptions, "discoveryDeadline" | "now"> = {},
+): NodeJS.ProcessEnv {
+  return prepareOpenCodeEnv(canonicalProbeSpawnEnv(discovery));
 }

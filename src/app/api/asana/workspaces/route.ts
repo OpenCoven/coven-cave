@@ -8,7 +8,7 @@
 
 import { NextResponse } from "next/server";
 import type { AsanaWorkspace } from "@/lib/asana-tasks";
-import { resolveSecret } from "@/lib/vault";
+import { hasConfiguredSecretMetadata, resolveSecretWithoutExternalRead } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ const API = "https://app.asana.com/api/1.0";
 
 function resolveAsanaToken(): string | undefined {
   return (
-    resolveSecret("ASANA_PAT") ??
+    resolveSecretWithoutExternalRead("ASANA_PAT") ??
     process.env.ASANA_PAT?.trim() ??
     process.env.ASANA_ACCESS_TOKEN?.trim()
   );
@@ -26,7 +26,7 @@ function resolveAsanaToken(): string | undefined {
 export async function GET() {
   const token = resolveAsanaToken();
   if (!token) {
-    return NextResponse.json({ ok: true, configured: false, workspaces: [] });
+    return NextResponse.json({ ok: true, configured: hasConfiguredSecretMetadata("ASANA_PAT") || hasConfiguredSecretMetadata("ASANA_ACCESS_TOKEN"), workspaces: [] });
   }
 
   try {

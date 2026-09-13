@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { AsanaWorkspace, AsanaWorkspacesResponse } from "@/lib/asana-tasks";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { StandardSelect } from "@/components/ui/select";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import {
@@ -21,6 +22,8 @@ import {
  * turning the agent off writes `false`, turning it back on deletes the key.
  */
 export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar }) {
+  const { announce } = useAnnouncer();
+  const [needsInitialization, setNeedsInitialization] = useState(false);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [login, setLogin] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<AsanaWorkspace[]>([]);
@@ -57,9 +60,10 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
     void (async () => {
       try {
         const res = await fetch("/api/asana/pat", { cache: "no-store" });
-        const json = (await res.json()) as { hasPat?: boolean; login?: string | null };
+        const json = (await res.json()) as { hasPat?: boolean; needsInitialization?: boolean; login?: string | null };
         if (cancelled) return;
         setConfigured(Boolean(json.hasPat));
+        setNeedsInitialization(Boolean(json.needsInitialization));
         setLogin(json.login ?? null);
         if (json.hasPat) void loadWorkspaces();
       } catch {
@@ -93,20 +97,22 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
 
   async function connect() {
     const token = pat.trim();
-    if (!token || connecting) return;
+    if ((!token && !needsInitialization) || connecting) return;
     setConnecting(true);
     setError(null);
     try {
       const res = await fetch("/api/asana/pat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pat: token }),
+        body: JSON.stringify(needsInitialization ? { initialize: true } : { pat: token }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Couldn't connect Asana");
       } else {
         setPat("");
+        setNeedsInitialization(false);
+        announce("Asana connected.");
         setConfigured(true);
         setLogin(json.login ?? null);
         void loadWorkspaces();
@@ -129,6 +135,7 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
         setError(json?.error ?? "Couldn't disconnect Asana");
       } else {
         setConfigured(false);
+        setNeedsInitialization(false);
         setLogin(null);
         setWorkspaces([]);
       }
@@ -156,6 +163,12 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
     <section className="familiar-studio-brain__card" data-asana-section>
       <h3 className="familiar-studio-brain__card-title">Asana</h3>
 
+      {needsInitialization && (
+        <button type="button" className="familiar-asana__connect-btn focus-ring"
+          disabled={connecting} onClick={() => void connect()}>
+          {connecting ? "Verifying…" : "Connect configured Asana account"}
+        </button>
+      )}
       {configured === false ? (
         // Seamless first connect — the PAT is app-wide, entered once, right here.
         <div className="familiar-asana__connect">

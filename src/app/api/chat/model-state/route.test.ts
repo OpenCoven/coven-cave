@@ -52,6 +52,16 @@ assert.match(
   /const bareLocalHermes =[\s\S]*?canonicalHarnessId\(binding\.harness\) === "hermes"[\s\S]*?!binding\.hermesProfile[\s\S]*?!binding\.hasInvalidHermesProfileBinding[\s\S]*?!isSshRuntime\(binding\.runtime\)[\s\S]*?!state\.runtime\?\.startsWith\("ssh:"\)[\s\S]*?canReadHermesInventory = bareLocalHermes && localInventoryRequest[\s\S]*?allowHermesInventory: canReadHermesInventory[\s\S]*?hermesDirect = bareLocalHermes[\s\S]*?hermesDirect && hermesApi !== null/,
   "Hermes discovery requires both local origin and a bare-local binding while remote native controls stay transport-aligned",
 );
+assert.match(
+  route,
+  /providerEnv: passiveHarnessSpawnEnv[\s\S]*?bareLocalHermes \? passiveHarnessSpawnEnv\(familiarId\) : null/,
+  "automatic chat model-state reads never launch an external Vault provider",
+);
+assert.doesNotMatch(
+  route,
+  /\bharnessSpawnEnv\b/,
+  "model-state GET must not use the secret-materializing chat launch environment",
+);
 assert.equal(
   route.match(/sessionId && !isSafeConversationSessionId\(sessionId\)/g)?.length,
   2,

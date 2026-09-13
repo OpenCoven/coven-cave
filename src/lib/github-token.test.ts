@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./github-token.ts", import.meta.url), "utf8");
 const envSource = readFileSync(new URL("./github-token-env.ts", import.meta.url), "utf8");
+const activitySource = readFileSync(new URL("../app/api/github/activity/route.ts", import.meta.url), "utf8");
 
 assert.match(
   envSource,
@@ -16,8 +17,13 @@ assert.match(
 );
 assert.match(
   source,
-  /resolveVaultManagedSecret\("GITHUB_PAT", map\.GITHUB_PAT\)\?\.trim\(\)/,
-  "a Cave-managed PAT takes precedence over a same-named launcher credential",
+  /resolveGitHubTokenUsing\(resolveCachedVaultManagedSecret\)/,
+  "a Cave-managed PAT takes precedence and reuses its process cache across automatic refreshes",
+);
+assert.doesNotMatch(
+  source.replace(/resolveCachedVaultManagedSecretIfAvailable/g, ""),
+  /\bresolveVaultManagedSecret\b/,
+  "GitHub token polling never bypasses the Vault-owned process cache",
 );
 assert.match(
   source,
@@ -31,13 +37,28 @@ assert.match(
 );
 assert.match(
   source,
-  /for \(const key of GITHUB_TOKEN_ENV_KEYS\) \{[\s\S]*resolveVaultManagedSecret\(key, map\[key\]\)\?\.trim\(\)/,
+  /function resolveGitHubTokenUsing[\s\S]*for \(const key of GITHUB_TOKEN_ENV_KEYS\) \{[\s\S]*resolveManaged\(key, map\[key\]\)\?\.trim\(\)/,
   "Vault-managed standard GitHub aliases work even before another caller caches them into process.env",
 );
 assert.match(
   source,
   /const launcherPat = process\.env\.GITHUB_PAT\?\.trim\(\);[\s\S]*return launcherPat \|\| resolveGitHubTokenFromEnvironment\(\);/,
   "an unconfigured Cave still accepts a direct GITHUB_PAT before standard aliases",
+);
+assert.match(
+  source,
+  /export function resolveGitHubTokenForPassiveRead\(\)[\s\S]*resolveGitHubTokenUsing\(resolveCachedVaultManagedSecretIfAvailable\)/,
+  "automatic GitHub refreshes only consume already-local Vault values",
+);
+assert.match(
+  activitySource,
+  /const storedToken = resolveGitHubTokenForPassiveRead\(\);[\s\S]*resolveSecretWithoutExternalRead\("GITHUB_USERNAME"\)/,
+  "dashboard activity polling cannot launch an external secret manager for its token or login",
+);
+assert.doesNotMatch(
+  activitySource,
+  /\bresolveSecret\(/,
+  "dashboard activity polling never uses the materializing generic secret resolver",
 );
 
 console.log("github-token.test.ts: ok");

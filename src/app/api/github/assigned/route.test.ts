@@ -6,24 +6,24 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token";/,
+  /import \{ hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead \} from "@\/lib\/github-token";/,
   "assigned GitHub route should use the shared installation-agnostic token resolver",
 );
 
 assert.match(
   source,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  /import \{ hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead \} from "@\/lib\/github-token"/,
   "assigned GitHub route should use the shared token resolver",
 );
 assert.match(
   source,
-  /const token = resolveGitHubToken\(\)/,
+  /const token = resolveGitHubTokenForPassiveRead\(\)/,
   "assigned GitHub route should use the same installation-agnostic token as the activity route",
 );
 
 assert.doesNotMatch(
   source,
-  /NextResponse\.json\(\{[^}]*token/i,
+  /NextResponse\.json\(\{[^}]*\btoken\b/i,
   "assigned GitHub route must not return token material",
 );
 

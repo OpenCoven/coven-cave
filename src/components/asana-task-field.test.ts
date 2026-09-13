@@ -79,7 +79,7 @@ assert.match(beadsApi, /if \(action\.value === "create"\)/, "Beads API handles a
 assert.match(beadsApi, /"--external-ref"/, "Beads create passes --external-ref for the source ticket");
 
 // ── Live data routes gate on the connected PAT ───────────────────────────────
-assert.match(asanaAssigned, /configured: false/, "Assigned route reports unconfigured when no PAT is stored");
+assert.match(asanaAssigned, /configured: hasConfiguredSecretMetadata\("ASANA_PAT"\)/, "Assigned route preserves cold Vault configuration without resolving it");
 assert.match(asanaAssigned, /completed_since=now/, "Assigned route requests only incomplete tasks");
 assert.match(asanaPat, /ASANA_PAT/, "PAT route stores the Asana token under ASANA_PAT");
 
@@ -139,3 +139,33 @@ assert.match(queueStrip, /function sameItems\(/, "Queue Asana strip guards ident
 }
 
 console.log("asana task field guard passed");
+
+// Exercise the actual handlers with a cold external credential, then replace
+// it after disconnecting. A stale initialization flag must not ignore the PAT.
+{
+  const { stripTypeScriptTypes } = await import("node:module");
+  const section = await source("components/familiar-asana-section.tsx");
+  const handlers = section.slice(section.indexOf("  async function connect()"), section.indexOf("  function toggleEnabled()"));
+  const requests: Array<{ method: string; body?: string }> = [];
+  const makeHandlers = new Function("fetch", `
+    let needsInitialization = true, configured = true, connecting = false, disconnecting = false;
+    let pat = "replacement-pat";
+    const setNeedsInitialization = value => { needsInitialization = value; };
+    const setConfigured = value => { configured = value; };
+    const setConnecting = value => { connecting = value; };
+    const setDisconnecting = value => { disconnecting = value; };
+    const setPat = value => { pat = value; };
+    const setError = () => {}, setLogin = () => {}, setWorkspaces = () => {};
+    const loadWorkspaces = () => {}, announce = () => {};
+    ${stripTypeScriptTypes(handlers)}
+    return { connect, disconnect, state: () => ({ needsInitialization, configured }) };
+  `);
+  const handlersUnderTest = makeHandlers(async (_url: string, init: { method: string; body?: string }) => {
+    requests.push(init);
+    return { ok: true, json: async () => ({ ok: true }) };
+  });
+  await handlersUnderTest.disconnect();
+  assert.deepEqual(handlersUnderTest.state(), { needsInitialization: false, configured: false }, "disconnect clears cold credential initialization state");
+  await handlersUnderTest.connect();
+  assert.deepEqual(JSON.parse(requests[1].body!), { pat: "replacement-pat" }, "reconnect validates the replacement PAT rather than initializing the removed credential");
+}

@@ -17,7 +17,7 @@ export type ActivityResult = {
   warning?: string;
   retryAfterSeconds?: number;
 };
-export type PatStatus = { hasPat: boolean; login: string | null; canRemoveStoredPat?: boolean };
+export type PatStatus = { hasPat: boolean; needsInitialization?: boolean; login: string | null; canRemoveStoredPat?: boolean };
 export type Filter = "all" | "pr" | "review_request" | "issue";
 export type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
 export type SortDir = "asc" | "desc";

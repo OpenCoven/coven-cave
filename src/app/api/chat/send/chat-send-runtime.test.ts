@@ -44,6 +44,17 @@ test("Chat derives effective grants from usable local directories", async () => 
   );
 });
 
+test("automatic journal generation cannot launch an external credential provider", async () => {
+  const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(
+    route,
+    /surfaceOrigin === "journal" && body\.credentialMode === "passive"[\s\S]*?passiveHarnessSpawnEnv\(familiarId, discovery\)[\s\S]*?: harnessSpawnEnv\(familiarId, discovery\)/,
+  );
+  assert.match(route, /prepareOpenCodeEnv\(scopedSpawnEnv\(body\.familiarId\)\)/, "OpenCode honors the same passive policy before runtime normalization");
+  assert.match(route, /openClawSpawnEnv\(\{ credentialMode: args\.credentialMode \}\)/, "OpenClaw fallback honors the validated journal policy");
+  assert.match(route, /credentialMode: usePassiveCredentials \? "passive" : undefined/, "only the validated journal boundary selects passive credentials");
+});
+
 test("blank resumed Copilot attempts retry for silent zero and nonzero exits", () => {
   const resumedBlankAttempt = {
     hasCopilotStream: true,

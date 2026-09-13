@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server.js";
-import { resolveSecret } from "../../../../../lib/vault.ts";
+import { resolveSecretWithoutExternalRead } from "../../../../../lib/vault.ts";
 import {
   parseElevenLabsModels,
   parseElevenLabsVoices,
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 const API_BASE = "https://api.elevenlabs.io";
 
 export async function GET() {
-  const apiKey = resolveSecret("ELEVENLABS_API_KEY");
+  const apiKey = resolveSecretWithoutExternalRead("ELEVENLABS_API_KEY");
   if (!apiKey) {
     return NextResponse.json({
       ok: false,

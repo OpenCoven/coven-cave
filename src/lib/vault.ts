@@ -68,6 +68,7 @@ type MirroredSecretMetadata = {
 };
 
 const mirroredSecretMetadata = new Map<string, MirroredSecretMetadata & { digest: string }>();
+const resolvedVaultReferenceCache = new Map<string, { ref: string; value: string }>();
 
 function secretDigest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -121,6 +122,7 @@ export function clearMirroredVaultSecretFromProcessEnv(key: string): boolean {
   const current = process.env[key];
   const mirrored = current ? currentMirroredMetadata(key, current) : null;
   mirroredSecretMetadata.delete(key);
+  resolvedVaultReferenceCache.delete(key);
   if (!current || !mirrored || mirrored.source !== "vault") return false;
   delete process.env[key];
   return true;
@@ -531,6 +533,30 @@ export function resolveVaultManagedSecret(
   return entry.ref ? readRef(entry.ref, options) || undefined : undefined;
 }
 
+/** Return a locally available Vault value without launching an external CLI. */
+export function resolveCachedVaultManagedSecretIfAvailable(
+  key: string,
+  entry = loadVaultMap()[key],
+): string | undefined {
+  if (!entry || entry.storage === "environment") return undefined;
+  const rawCurrent = process.env[key];
+  const current = rawCurrent?.trim();
+  if (
+    current
+    && rawCurrent
+    && currentMirroredMetadata(key, rawCurrent)?.source === "vault"
+  ) {
+    return current;
+  }
+  if (entry.storage === "encrypted") {
+    return getLocalEncryptedSecret(key)?.trim() || undefined;
+  }
+  const cachedReference = resolvedVaultReferenceCache.get(key);
+  return entry.ref && cachedReference?.ref === entry.ref
+    ? cachedReference.value
+    : undefined;
+}
+
 /** Resolve one declared Vault backend and reuse only values cached by the Vault. */
 export function resolveCachedVaultManagedSecret(
   key: string,
@@ -548,7 +574,17 @@ export function resolveCachedVaultManagedSecret(
     return current;
   }
 
+  const cacheableRef = entry.storage !== "encrypted" ? entry.ref : undefined;
+  const cachedReference = resolvedVaultReferenceCache.get(key);
+  if (cacheableRef && cachedReference?.ref === cacheableRef) {
+    return cachedReference.value;
+  }
+  if (cachedReference) resolvedVaultReferenceCache.delete(key);
+
   const value = resolveVaultManagedSecret(key, entry, options);
+  if (value && cacheableRef) {
+    resolvedVaultReferenceCache.set(key, { ref: cacheableRef, value });
+  }
   if (!value || current) return value;
   const storage = entry.storage === "encrypted"
     ? "encrypted"
@@ -624,6 +660,24 @@ export function resolveSecret(key: string): string | undefined {
 }
 
 /**
+ * Resolve a value already available in local process or Cave storage without
+ * invoking 1Password, Dashlane, or another external secret manager.
+ */
+export function resolveSecretWithoutExternalRead(key: string): string | undefined {
+  const fromProcess = process.env[key]?.trim();
+  if (fromProcess) return fromProcess;
+
+  const fromFile = readEnvLocalValue(key);
+  if (fromFile) return fromFile;
+
+  const map = loadVaultMap();
+  const entry = map[key];
+  const managed = resolveCachedVaultManagedSecretIfAvailable(key, entry);
+  if (managed) return managed;
+  return entry ? undefined : getLocalEncryptedSecret(key)?.trim() || undefined;
+}
+
+/**
  * Resolve one explicit key and return only non-secret status metadata.
  * Callers own the key allowlist; this function never enumerates other mappings.
  */
@@ -682,6 +736,84 @@ export function getSecretStatus(key: string): VaultSecretStatus {
       source: "vault",
     };
   }
+  return {
+    key,
+    status: "no-ref",
+    hasValue: false,
+    storage: null,
+    source: null,
+  };
+}
+
+/**
+ * Report one key's configuration state without reading or caching its value.
+ * External secret-manager references remain "configured" until an explicit
+ * consuming action resolves them.
+ */
+export function getSecretMetadataStatus(key: string): VaultSecretStatus {
+  const map = loadVaultMap(true);
+  const entry = map[key];
+  const rawProcessValue = process.env[key];
+  const processValue = rawProcessValue?.trim();
+  const mirrored = rawProcessValue
+    ? currentMirroredMetadata(key, rawProcessValue)
+    : null;
+  if (processValue) {
+    if (mirrored?.source === "vault") {
+      return {
+        key,
+        status: mirrored.storage === "encrypted" ? "encrypted" : "resolved",
+        hasValue: true,
+        storage: mirrored.storage,
+        source: "vault",
+      };
+    }
+    return {
+      key,
+      status: "env-only",
+      hasValue: true,
+      storage: null,
+      source: "process-env",
+    };
+  }
+
+  if (readEnvLocalValue(key) !== undefined) {
+    return {
+      key,
+      status: "env-only",
+      hasValue: true,
+      storage: null,
+      source: "env-local",
+    };
+  }
+
+  const encrypted = entry?.storage === "encrypted" || (
+    entry?.storage !== "environment"
+    && !entry?.ref
+    && hasLocalEncryptedSecret(key)
+  );
+  if (encrypted) {
+    const hasValue = hasLocalEncryptedSecret(key);
+    return {
+      key,
+      status: hasValue ? "encrypted" : "unresolved",
+      hasValue,
+      storage: "encrypted",
+      source: "vault",
+      ...(!hasValue ? { error: "encrypted local secret is missing" } : {}),
+    };
+  }
+
+  if (entry?.ref) {
+    return {
+      key,
+      status: "configured",
+      hasValue: false,
+      storage: refStorage(entry.ref),
+      source: "vault",
+    };
+  }
+
   return {
     key,
     status: "no-ref",

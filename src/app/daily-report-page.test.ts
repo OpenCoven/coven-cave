@@ -194,6 +194,18 @@ assert.match(
   assert.match(route, /now: target/, "the report is built for the requested day, not today");
   assert.match(route, /dailySummaryAutoKey\(target\)/, "the item is keyed to the requested day");
   assert.match(route, /fetchMergedPrsForDay\(target\)/, "merged PRs are fetched for the requested day");
+
+  const githubMerged = read("../lib/server/github-merged.ts");
+  assert.match(
+    githubMerged,
+    /resolveGitHubTokenForPassiveRead\(\)/,
+    "automatic daily-summary enrichment must not launch a GitHub token provider",
+  );
+  assert.match(
+    githubMerged,
+    /resolveSecretWithoutExternalRead\("GITHUB_USERNAME"\)/,
+    "automatic daily-summary enrichment must not launch a username provider",
+  );
 }
 
 // ── theme safety ───────────────────────────────────────────────────────────

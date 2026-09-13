@@ -11,7 +11,13 @@
  */
 import { readEnvLocalValue } from "@/lib/env-file";
 import { getLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
-import { loadVaultMap, resolveVaultManagedSecret } from "@/lib/vault";
+import {
+  loadVaultMap,
+  hasConfiguredSecretMetadata,
+  resolveCachedVaultManagedSecret,
+  resolveCachedVaultManagedSecretIfAvailable,
+  type VaultEntry,
+} from "@/lib/vault";
 export { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env";
 import { GITHUB_TOKEN_ENV_KEYS } from "./github-token-env";
 
@@ -36,13 +42,15 @@ export function resolveGitHubTokenForRead(
   }
 }
 
-export function resolveGitHubToken(): string | null {
+type ManagedTokenResolver = (key: string, entry?: VaultEntry) => string | undefined;
+
+function resolveGitHubTokenUsing(resolveManaged: ManagedTokenResolver): string | null {
   // Cave-managed storage takes precedence over a same-named credential
   // inherited from a launcher. This lets an installation use any supported
   // Node, desktop, or harness launch path without a launcher silently
   // replacing the credential deliberately configured in Cave.
   const map = loadVaultMap();
-  const managed = resolveVaultManagedSecret("GITHUB_PAT", map.GITHUB_PAT)?.trim();
+  const managed = resolveManaged("GITHUB_PAT", map.GITHUB_PAT)?.trim();
   if (managed) return managed;
 
   // Keep supporting encrypted entries created before their vault-map metadata
@@ -58,10 +66,23 @@ export function resolveGitHubToken(): string | null {
   // supplies the same name. Vault scopes only limit harness injection; Cave's
   // own GitHub API routes may resolve the configured secret.
   for (const key of GITHUB_TOKEN_ENV_KEYS) {
-    const managedAlias = resolveVaultManagedSecret(key, map[key])?.trim();
+    const managedAlias = resolveManaged(key, map[key])?.trim();
     if (managedAlias) return managedAlias;
   }
 
   const launcherPat = process.env.GITHUB_PAT?.trim();
   return launcherPat || resolveGitHubTokenFromEnvironment();
+}
+
+export function resolveGitHubToken(): string | null {
+  return resolveGitHubTokenUsing(resolveCachedVaultManagedSecret);
+}
+
+/** Resolve a token for automatic refreshes without opening an external Vault. */
+export function resolveGitHubTokenForPassiveRead(): string | null {
+  return resolveGitHubTokenUsing(resolveCachedVaultManagedSecretIfAvailable);
+}
+
+export function hasConfiguredGitHubToken(): boolean {
+  return ["GITHUB_PAT", ...GITHUB_TOKEN_ENV_KEYS].some(hasConfiguredSecretMetadata);
 }

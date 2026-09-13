@@ -33,6 +33,9 @@ export async function streamFamiliarText(opts: {
    *  hidden/meta generations so prompt-injected transcript text cannot trigger
    *  privileged tool execution. */
   permissionMode?: "read" | "full";
+  /** Background generation may reuse local/cached credentials but must not
+   * launch an external secret provider. */
+  credentialMode?: "passive";
   /** Empty string is the explicit Runtime-default sentinel. */
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session" | "runtime-default";
@@ -91,6 +94,7 @@ export async function streamFamiliarText(opts: {
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
         ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+        ...(opts.credentialMode ? { credentialMode: opts.credentialMode } : {}),
         ...(opts.modelOverride !== undefined ? { modelOverride: opts.modelOverride } : {}),
         ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
         ...(opts.modelControls && Object.keys(opts.modelControls).length

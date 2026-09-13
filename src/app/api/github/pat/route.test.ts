@@ -7,12 +7,12 @@ const githubView = readFileSync(new URL("../../../../components/github-view.tsx"
 
 assert.match(
   route,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  /import \{ resolveGitHubToken, hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead \} from "@\/lib\/github-token"/,
   "PAT status should use the shared resolver used by all GitHub routes",
 );
 assert.match(
   route,
-  /const hasPat = !!resolveGitHubToken\(\);/,
+  /const available = !!resolveGitHubTokenForPassiveRead\(\);[\s\S]*const hasPat = available \|\| hasConfiguredGitHubToken\(\);/,
   "launcher-provided credentials should count as authenticated in the GitHub setup status",
 );
 assert.match(

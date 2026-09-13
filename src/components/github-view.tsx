@@ -2832,6 +2832,7 @@ export function GitHubView({
 }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
+  const { announce } = useAnnouncer();
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -3011,6 +3012,26 @@ export function GitHubView({
     }
   }
 
+  // Only deliberate Refresh actions may unlock external credentials. Polls,
+  // visibility changes and mutation events continue through refreshActivity.
+  async function refreshWithCredentials() {
+    if (patStatus?.needsInitialization) {
+      try {
+        const res = await fetch("/api/github/pat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initialize: true }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) { setError(data.error ?? "Couldn't connect GitHub"); return; }
+        invalidateSurfaceResources("github:pat", "github:activity");
+        await fetchPatStatus();
+        announce("GitHub connected.");
+      } catch { setError("Couldn't connect GitHub"); return; }
+    }
+    refreshActivity();
+  }
+
   // Manual refresh: cancel the pending scheduled poll first so we never spawn a
   // second self-scheduling timer chain (the error-state Retry used to skip this
   // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
@@ -3055,12 +3076,12 @@ export function GitHubView({
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
-      refreshActivity();
+      void refreshWithCredentials();
       refreshLinkedWork(); // keep linked cards and shell task context fresh too
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [refreshLinkedWork]);
+  }, [refreshLinkedWork, patStatus]);
 
   const items = activity?.items ?? [];
   // The configured organization scope (Settings → GitHub). Empty = all
@@ -3451,7 +3472,7 @@ export function GitHubView({
             icon="ph:arrows-clockwise"
             size="sm"
             onClick={() => {
-              refreshActivity();
+              void refreshWithCredentials();
               refreshLinkedWork();
             }}
             title="Refresh (⌘R)"
@@ -3513,7 +3534,7 @@ export function GitHubView({
               size="xs"
               variant="ghost"
               leadingIcon="ph:arrow-clockwise"
-              onClick={refreshActivity}
+              onClick={() => void refreshWithCredentials()}
               disabled={retryBlocked}
             >
               {retryBlocked ? "Retry later" : "Retry"}
@@ -3526,7 +3547,7 @@ export function GitHubView({
               leadingIcon="ph:key"
               onClick={() => setShowPatModal(true)}
             >
-              {activity?.patInvalid ? "Update PAT" : "Add PAT"}
+              {activity?.patInvalid ? "Update PAT" : patStatus?.hasPat ? "Manage PAT" : "Add PAT"}
             </Button>
           ) : null}
         </div>
@@ -3545,10 +3566,10 @@ export function GitHubView({
             <EmptyState
               icon="ph:github-logo"
               headline="Connect your GitHub account"
-              subtitle="Start with just a GitHub username to browse public repos — add a personal access token (PAT) later for private repos and reviews. Both stay on this machine."
+              subtitle={patStatus?.needsInitialization ? "Connect using your configured Vault credential." : "Start with just a GitHub username to browse public repos — add a personal access token (PAT) later for private repos and reviews. Both stay on this machine."}
               actions={
-                <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => setShowPatModal(true)}>
-                  Set up GitHub
+                <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => patStatus?.needsInitialization ? void refreshWithCredentials() : setShowPatModal(true)}>
+                  {patStatus?.needsInitialization ? "Connect GitHub" : "Set up GitHub"}
                 </Button>
               }
             />
@@ -3564,7 +3585,7 @@ export function GitHubView({
               <Button
                 variant="secondary"
                 leadingIcon="ph:arrow-clockwise"
-                onClick={refreshActivity}
+                onClick={() => void refreshWithCredentials()}
                 disabled={retryBlocked}
               >
                 {retryBlocked ? "Retry later" : "Retry"}
@@ -3597,14 +3618,14 @@ export function GitHubView({
                     <Button
                       variant="secondary"
                       leadingIcon="ph:arrow-clockwise"
-                      onClick={refreshActivity}
+                      onClick={() => void refreshWithCredentials()}
                       disabled={retryBlocked}
                     >
                       {retryBlocked ? "Retry later" : "Retry"}
                     </Button>
                   ) : reviewsUnavailable ? (
                     <Button variant="secondary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
-                      Add PAT
+                      {patStatus?.hasPat ? "Manage PAT" : "Add PAT"}
                     </Button>
                   ) : undefined
                 }

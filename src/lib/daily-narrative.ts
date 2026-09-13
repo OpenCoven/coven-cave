@@ -132,6 +132,7 @@ export async function generateDailyNarrative(opts: {
     familiarId: opts.familiarId,
     prompt: buildDailyNarrativePrompt(opts.report, opts.stats, opts.dayLabel),
     permissionMode: "read",
+    credentialMode: "passive",
     signal: opts.signal,
   });
   if (error) return { text: "", error };

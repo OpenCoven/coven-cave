@@ -37,8 +37,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
-  "OpenCode availability derives its Windows PowerShell host from the same scoped environment it probes",
+  /const env =\s*id === "opencode" \? openCodeProbeEnv\(\) : canonicalProbeSpawnEnv\(\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
+  "OpenCode availability derives its Windows PowerShell host from the same credential-free environment it probes",
 );
 assert.match(
   source,
@@ -62,13 +62,18 @@ assert.match(
 );
 assert.match(
   source,
-  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
+  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(discoveryDeadline\) =>[\s\S]*?canonicalProbeSpawnEnv\(\{ discoveryDeadline \}\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
   "Copilot availability retains the shared exact launch plan for internal catalog probes",
 );
 assert.match(
   source,
-  /async function adapterAvailability[\s\S]*?if \(id === "copilot"\)[\s\S]*?resolveCopilotRuntimeLaunch[\s\S]*?const env = id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\)/,
+  /async function adapterAvailability[\s\S]*?if \(id === "copilot"\)[\s\S]*?resolveCopilotRuntimeLaunch[\s\S]*?const env = id === "opencode" \? openCodeProbeEnv\(\) : canonicalProbeSpawnEnv\(\)/,
   "Copilot resolves its deadline-aware environment before any generic environment can populate the PATH cache",
+);
+assert.doesNotMatch(
+  source,
+  /\bharnessSpawnEnv\b/,
+  "passive harness availability must never materialize Vault credentials",
 );
 assert.match(
   source,
@@ -113,13 +118,13 @@ assert.match(
 );
 assert.match(
   source,
-  /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?id === "claude"[\s\S]*?env,/,
-  "Claude status probes the same scoped harness environment shape as a local chat launch",
+  /const env =\s*id === "opencode" \? openCodeProbeEnv\(\) : canonicalProbeSpawnEnv\(\);[\s\S]*?id === "claude"[\s\S]*?env,/,
+  "Claude status probes with the credential-free canonical environment",
 );
 assert.match(
   source,
-  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)/,
-  "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
+  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(discoveryDeadline\) =>[\s\S]*?canonicalProbeSpawnEnv\(\{ discoveryDeadline \}\)/,
+  "Copilot status resolves the same direct launcher without loading Vault credentials",
 );
 
 console.log("harness route tests passed");

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { githubApiFailure } from "@/lib/github-activity";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { hasConfiguredGitHubToken, resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 import type { RepoItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * list "opencoven-openclaw" (fetched via GraphQL, since star lists aren't in
  * REST; cached because the lists query is slow). A GitHub token is required —
  * GraphQL has no anonymous access — so without one we return an empty list with
- * `configured: false` and the UI prompts to add a token. If the slow star-list
+ * configuration metadata preserved for locked external credentials. If the slow star-list
  * query fails, the org repos still return. All query inputs are server
  * constants; no request input reaches the fetch.
  */
@@ -239,13 +239,13 @@ async function fetchListRepos(token: string): Promise<RepoSourceResult> {
 let cache: { at: number; items: RepoItem[]; hasMore: boolean } | null = null;
 
 export async function GET(request: Request) {
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
   if (!token) {
     return NextResponse.json({
       ok: true,
       items: [],
       source: "unconfigured",
-      configured: false,
+      configured: hasConfiguredGitHubToken(),
       incomplete: false,
       errors: [],
       scope: { mode: "curated", limit: MAX_ITEMS, hasMore: false },

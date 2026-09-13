@@ -80,6 +80,11 @@ assert.match(
   /restoreGrantedVaultGitHubTokenEnv\(env, map\)/,
   "OpenClaw should receive shared Vault-managed GitHub aliases while keeping familiar-scoped aliases unavailable",
 );
+assert.match(
+  src,
+  /export function openClawProbeEnv\(\): NodeJS\.ProcessEnv[\s\S]*canonicalProbeSpawnEnv\(\)/,
+  "OpenClaw discovery should have a credential-free environment distinct from real chat launches",
+);
 
 assert.match(
   src,

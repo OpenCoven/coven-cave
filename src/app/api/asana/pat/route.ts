@@ -23,6 +23,8 @@ import {
 import {
   loadVaultMapForMutation,
   resolveSecret,
+  resolveSecretWithoutExternalRead,
+  hasConfiguredSecretMetadata,
   saveVaultMap,
   type VaultMap,
 } from "@/lib/vault";
@@ -68,28 +70,38 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
 }
 
 export async function GET() {
-  const patFromVault = resolveSecret(PAT_KEY);
-  const userFromVault = resolveSecret(USER_KEY);
+  const patFromVault = resolveSecretWithoutExternalRead(PAT_KEY);
+  const userFromVault = resolveSecretWithoutExternalRead(USER_KEY);
 
-  const hasPat = !!(patFromVault ?? process.env.ASANA_PAT?.trim() ?? process.env.ASANA_ACCESS_TOKEN?.trim());
+  const available = !!(patFromVault ?? process.env.ASANA_PAT?.trim() ?? process.env.ASANA_ACCESS_TOKEN?.trim());
+  const hasPat = available || hasConfiguredSecretMetadata(PAT_KEY) || hasConfiguredSecretMetadata("ASANA_ACCESS_TOKEN");
   const login = userFromVault ?? process.env.ASANA_USER?.trim() ?? null;
   const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
     ? "encrypted"
-    : patFromVault
+    : patFromVault || hasConfiguredSecretMetadata(PAT_KEY) && !available
       ? "vault"
       : hasPat
         ? "env"
         : "none";
 
-  return NextResponse.json({ hasPat, login, source });
+  return NextResponse.json({ hasPat, login, source, needsInitialization: hasPat && !available });
 }
 
 export async function POST(req: NextRequest) {
-  let body: { pat?: string } = {};
+  let body: { pat?: string; initialize?: boolean } = {};
   try {
     body = await req.json();
   } catch {
     /* ignore */
+  }
+
+  if (body.initialize === true) {
+    // Only this explicit user action may open the configured external Vault.
+    const existing = resolveSecret(PAT_KEY) ?? resolveSecret("ASANA_ACCESS_TOKEN");
+    if (!existing) return NextResponse.json({ ok: false, error: "Couldn't read the configured credential. Unlock your Vault and retry." }, { status: 409 });
+    const result = await validatePat(existing);
+    if (!result.valid) return NextResponse.json({ ok: false, error: "Couldn't verify the configured credential." }, { status: result.network ? 503 : 422 });
+    return NextResponse.json({ ok: true, login: result.login });
   }
 
   const pat = typeof body.pat === "string" ? body.pat.trim() : "";

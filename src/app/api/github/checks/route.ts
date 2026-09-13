@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubTokenForPassiveRead } from "@/lib/github-token";
 import { summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid number" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
+  const token = resolveGitHubTokenForPassiveRead();
 
   try {
     // Resolve the PR's head SHA — repo passed REPO_RE, number is a positive

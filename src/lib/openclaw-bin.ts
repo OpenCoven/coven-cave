@@ -13,6 +13,8 @@ import {
 } from "./coven-bin";
 import {
   allowedHarnessEnvKeys,
+  canonicalProbeSpawnEnv,
+  passiveHarnessSpawnEnv,
   restoreAllowedGitHubTokenEnv,
   restoreGrantedVaultGitHubTokenEnv,
 } from "./harness-spawn-env";
@@ -173,8 +175,13 @@ export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[]
   return openClawNeedsShell(bin) ? argv.map(quoteWindowsShellArg) : argv;
 }
 
-export function openClawSpawnEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
+export function openClawProbeEnv(): NodeJS.ProcessEnv {
+  return canonicalProbeSpawnEnv();
+}
+
+export function openClawSpawnEnv(options: { credentialMode?: "passive" } = {}): NodeJS.ProcessEnv {
+  const passive = options.credentialMode === "passive";
+  const env: NodeJS.ProcessEnv = passive ? passiveHarnessSpawnEnv() : { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
   const map = loadVaultMap(true);
   const grantedVaultTokenKeys = new Set<string>(
@@ -189,7 +196,7 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   // installations. Cave-managed GITHUB_PAT follows the same Vault scope
   // policy; an unmanaged launcher GITHUB_PAT still requires an explicit
   // opt-in and is never restored when Cave has local storage for that key.
-  restoreGrantedVaultGitHubTokenEnv(env, map);
+  if (!passive) restoreGrantedVaultGitHubTokenEnv(env, map);
   restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
 
   for (const key of Object.keys(env)) {

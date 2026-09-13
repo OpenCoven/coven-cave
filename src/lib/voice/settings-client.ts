@@ -79,6 +79,7 @@ type EditableVoiceVaultKey = (typeof VOICE_VAULT_KEYS)[number];
 
 type VaultStatus =
   | "resolved"
+  | "configured"
   | "encrypted"
   | "env-only"
   | "unresolved"
@@ -87,6 +88,7 @@ type VaultStatus =
 
 const VAULT_STATUSES: ReadonlySet<string> = new Set([
   "resolved",
+  "configured",
   "encrypted",
   "env-only",
   "unresolved",
@@ -178,6 +180,8 @@ function isSensibleVaultMapping(
   switch (status) {
     case "resolved":
       return hasValue && source === "vault" && (storage === "1password" || storage === "dashlane");
+    case "configured":
+      return !hasValue && source === "vault" && (storage === "1password" || storage === "dashlane");
     case "encrypted":
       return hasValue && source === "vault" && storage === "encrypted";
     case "env-only":
@@ -267,7 +271,7 @@ export async function loadVoiceCredentialStates(
       states[key] = { status: "missing" };
       continue;
     }
-    if (mapping.hasValue) {
+    if (mapping.hasValue || mapping.status === "configured") {
       states[key] = { status: "configured", storage: mapping.storage, source: mapping.source! };
       continue;
     }

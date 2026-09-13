@@ -445,7 +445,12 @@ describe("streamFamiliarText", () => {
 
     await streamFamiliarText({ familiarId: "nova", prompt: "p" });
     await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "enhance" });
-    await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "journal" });
+    await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "p",
+      origin: "journal",
+      credentialMode: "passive",
+    });
     await streamFamiliarText({ familiarId: "nova", prompt: "p", origin: "canvas" });
 
     // Ordinary sends stay on the chat surface; hidden generations hit the
@@ -458,6 +463,11 @@ describe("streamFamiliarText", () => {
     // stamps it from the route path.
     assert.equal(JSON.parse(bodies[1]).origin, undefined, "generation sends omit the body origin claim");
     assert.equal(JSON.parse(bodies[2]).origin, undefined);
+    assert.equal(
+      JSON.parse(bodies[2]).credentialMode,
+      "passive",
+      "background generation can request a non-interactive credential boundary",
+    );
   });
 
   it("keeps non-generation origins on the chat surface", async () => {

@@ -24,6 +24,9 @@ export type RuntimeModelOptionsDependencies = {
   /** Hermes API discovery is valid only for a bare, local binding. Callers
    * that resolved familiar profile/SSH state opt in explicitly. */
   allowHermesInventory?: boolean;
+  /** Passive callers can supply a familiar-scoped environment that never
+   * launches an external secret provider. */
+  providerEnv?: (familiarId?: string | null) => NodeJS.ProcessEnv;
   listClaude?: typeof listClaudeModels;
   listCopilot?: typeof listCopilotModels;
   listClaudeInventory?: typeof listClaudeModelInventory;
@@ -109,23 +112,37 @@ export async function listRuntimeModelInventory(
     if (canonicalRuntime === "claude") {
       const discovery = dependencies.listClaude
         ? { models: await dependencies.listClaude(familiarId), provenance: "live" as const }
-        : await (dependencies.listClaudeInventory ?? listClaudeModelInventory)(familiarId);
+        : await (dependencies.listClaudeInventory ?? listClaudeModelInventory)(
+          familiarId,
+          dependencies.providerEnv ? { scopedEnv: dependencies.providerEnv } : {},
+        );
       result = discovery;
     } else if (canonicalRuntime === "copilot") {
       const discovery = dependencies.listCopilot
         ? { models: await dependencies.listCopilot(familiarId), provenance: "live" as const }
-        : await (dependencies.listCopilotInventory ?? listCopilotModelInventory)(familiarId);
+        : await (dependencies.listCopilotInventory ?? listCopilotModelInventory)(
+          familiarId,
+          dependencies.providerEnv ? { scopedEnv: dependencies.providerEnv } : {},
+        );
       result = discovery;
     } else if (canonicalRuntime === "grok") {
       result = {
-        models: await (dependencies.listGrok ?? listGrokModels)(familiarId),
+        models: dependencies.listGrok
+          ? await dependencies.listGrok(familiarId)
+          : await listGrokModels(
+            familiarId,
+            dependencies.providerEnv ? { env: dependencies.providerEnv } : {},
+          ),
         provenance: "live",
       };
     } else if (canonicalRuntime === "hermes") {
       if (dependencies.allowHermesInventory !== true) return degraded;
       const discovery = dependencies.listHermes
         ? { models: await dependencies.listHermes(familiarId), provenance: "live" as const }
-        : await (dependencies.listHermesInventory ?? listHermesModelInventory)(familiarId);
+        : await (dependencies.listHermesInventory ?? listHermesModelInventory)(
+          familiarId,
+          dependencies.providerEnv ? { scopedEnv: dependencies.providerEnv } : {},
+        );
       result = discovery;
     } else if (
       canonicalRuntime === "opencode" &&
@@ -133,7 +150,12 @@ export async function listRuntimeModelInventory(
     ) {
       result = {
         models: [
-          ...await (dependencies.listOpenCode ?? listOpenCodeModels)(familiarId),
+          ...(dependencies.listOpenCode
+            ? await dependencies.listOpenCode(familiarId)
+            : await listOpenCodeModels(
+              familiarId,
+              dependencies.providerEnv ? { env: dependencies.providerEnv } : {},
+            )),
         ],
         provenance: "live",
       };
