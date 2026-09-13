@@ -155,6 +155,7 @@ test("approving from the queue row schedules it and says where it landed", async
   // The seeded reply is the one draft awaiting approval.
   expect(roomText(renderer)).toContain("Reply to @sarahdev");
 
+  const pairsBefore = byClass(renderer, "x-comms-inline-action").length;
   const approve = byClass(renderer, "x-comms-inline-action").find(
     (node) => node.props["data-variant"] === "approve",
   );
@@ -164,8 +165,8 @@ test("approving from the queue row schedules it and says where it landed", async
   const text = roomText(renderer);
   expect(text).toContain("approved · queued for");
   // It left "Needs you": the inline approve/decline pair only renders on a row
-  // awaiting approval, and that row was the only one.
-  expect(byClass(renderer, "x-comms-inline-action")).toHaveLength(0);
+  // awaiting approval, so approving one row retires exactly that pair.
+  expect(byClass(renderer, "x-comms-inline-action")).toHaveLength(pairsBefore - 2);
   // And it is now carrying a slot it did not have before.
   expect(text).toContain("posts in");
 });
@@ -306,6 +307,66 @@ test("a missing alt text is quoted in the preview, where approval is being decid
   await act(async () => toPreview.props.onClick());
 
   expect(roomText(renderer)).toContain("alt: missing — blocks approval");
+});
+
+// ── Account-level states ────────────────────────────────────────────────────
+
+/** Flip the demo account-state switch to one of its three values. */
+async function setAccountState(renderer, value: string) {
+  const group = byClass(renderer, "x-comms-segmented").find(
+    (node) => node.props["aria-label"] === "Demo account state",
+  );
+  const option = group.findAll((node) => node.props?.role === "radio").find(
+    (node) => textOf(node) === value,
+  );
+  await act(async () => option.props.onClick());
+}
+
+test("a disconnected account blocks approval and says what happens to the queue", async () => {
+  const renderer = await render();
+  await setAccountState(renderer, "disconnected");
+
+  const text = roomText(renderer);
+  expect(text).toContain("X disconnected.");
+  // The promise the state has to keep: work is not lost, it is held.
+  expect(text).toContain("posts hold locally");
+  expect(text).toContain("nothing drops");
+
+  // And the gate closes — approving into a disconnected account would be a
+  // release the room cannot honour.
+  const approve = byClass(renderer, "x-comms-inline-action").find(
+    (node) => node.props["data-variant"] === "approve",
+  );
+  expect(approve.props.disabled).toBe(true);
+  expect(approve.props.title).toContain("X disconnected");
+});
+
+test("a spent API budget is shown as spent, and still does not lose the queue", async () => {
+  const renderer = await render();
+  await setAccountState(renderer, "rate-limited");
+
+  const text = roomText(renderer);
+  expect(text).toContain("API budget spent.");
+  expect(text).toContain("scheduled posts wait for the reset");
+  // The meter reads zero rather than merely turning red.
+  expect(text).toContain("api 0 left");
+});
+
+test("the failed and slot-passed states are reachable, and each says what did NOT happen", async () => {
+  const renderer = await render();
+
+  await act(async () => queueRow(renderer, "The write-up is live").props.onClick());
+  let text = roomText(renderer);
+  expect(text).toContain("post failed");
+  expect(text).toContain("403 · duplicate content");
+  // The part an operator needs most: X refused, so nothing went out.
+  expect(text).toContain("Nothing was posted.");
+  expect(buttonByText(renderer, "Retry at next slot").length).toBeGreaterThan(0);
+
+  await act(async () => queueRow(renderer, "Office hours").props.onClick());
+  text = roomText(renderer);
+  expect(text).toContain("slot passed");
+  expect(text).toContain("Approving picks the next");
 });
 
 // ── The queue ───────────────────────────────────────────────────────────────

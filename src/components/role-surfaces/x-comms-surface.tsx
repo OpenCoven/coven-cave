@@ -135,8 +135,13 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
-  const [connection] = useState<XConnectionState>("connected");
-  const [quotaUsed] = useState(412);
+  // Account-level state. With no dispatcher and no connection to read, these
+  // two are otherwise unreachable — and an operator has to be able to recognise
+  // both, because they are the states in which approving still works but
+  // nothing moves. The demo banner carries the switch, which is the one place
+  // in the room already saying that its data is not real.
+  const [connection, setConnection] = useState<XConnectionState>("connected");
+  const quotaUsed = connection === "rate-limited" ? X_API_BUDGET : 412;
 
   const primaryRef = useRef<HTMLSpanElement | null>(null);
   const renameRef = useRef<HTMLInputElement | null>(null);
@@ -702,9 +707,37 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
               <strong>Demo room.</strong>
               <span className="x-comms-banner-body">{X_DEMO_NOTICE}</span>
               <span className="x-comms-banner-tail">
-                the real publish path lives in Comms Operations
+                <span>account state</span>
+                <Segmented
+                  ariaLabel="Demo account state"
+                  value={connection}
+                  options={["connected", "disconnected", "rate-limited"] as const}
+                  onChange={setConnection}
+                />
               </span>
             </div>
+
+            {connection !== "connected" && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="x-comms-banner"
+                data-tone={connection === "disconnected" ? "danger" : "warn"}
+              >
+                <span className="x-comms-banner-icon">
+                  <Icon name="ph:warning" width={12} height={12} aria-hidden />
+                </span>
+                <strong>
+                  {connection === "disconnected" ? "X disconnected." : "API budget spent."}
+                </strong>
+                <span className="x-comms-banner-body">
+                  {connection === "disconnected"
+                    ? "Approvals still work; posts hold locally and go once the account reconnects."
+                    : `${X_API_BUDGET} of ${X_API_BUDGET} used · scheduled posts wait for the reset.`}
+                </span>
+                <span className="x-comms-banner-tail">queue holds locally · nothing drops</span>
+              </div>
+            )}
 
             <header className="x-comms-header">
               <span className="x-comms-title">

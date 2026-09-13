@@ -3369,3 +3369,24 @@
 .x-comms-dot[data-tone="scheduled"] { --x-dot-tone: var(--x-state-scheduled); }
 .x-comms-dot[data-tone="accent"] { --x-dot-tone: var(--x-accent); }
 .x-comms-dot[data-tone="danger"] { --x-dot-tone: var(--color-danger); }
+
+/* Account-level banners. These are the states where approving still works and
+   nothing moves, so they say what holds and what drops rather than just that
+   something is wrong. */
+.x-comms-banner[data-tone="warn"] {
+  --x-banner-border: color-mix(in oklch, var(--x-accent) 40%, var(--border));
+  --x-banner-bg: color-mix(in oklch, var(--x-accent) 8%, var(--bg-raised));
+  --x-banner-tone: var(--x-accent);
+}
+
+.x-comms-banner[data-tone="danger"] {
+  --x-banner-border: var(--danger-border);
+  --x-banner-bg: var(--danger-bg);
+  --x-banner-tone: var(--color-danger);
+}
+
+.x-comms-banner-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}

@@ -99,7 +99,7 @@ export const X_ACCOUNT = {
 
 /** Where the room's own copy admits what it is. */
 export const X_DEMO_NOTICE =
-  "Demo content · approvals and slots are local to this room and nothing reaches X.";
+  "Approvals and slots are local to this room and nothing reaches X — the live publish path is in Comms Operations.";
 
 export function seedDrafts(now: number): XDraft[] {
   const reply: XPostDraft = {
@@ -274,6 +274,47 @@ export function seedDrafts(now: number): XDraft[] {
     revisions: [{ at: minutesAgo(now, DAY_MINUTES), note: "Echo · first draft" }],
   };
 
+  // Two states that are otherwise unreachable from a room with no dispatcher:
+  // a write X refused at its slot, and an approval that sat past the slot it
+  // was queued for. Both are shapes an operator has to be able to recognise,
+  // and neither can arise here on its own.
+  const failed: XPostDraft = {
+    id: "x7",
+    kind: "post",
+    type: "post",
+    target: "",
+    posts: [
+      body("The write-up is live: three familiars, one brief, one decision log."),
+    ],
+    replyPermission: "everyone",
+    tone: "neutral",
+    status: "failed",
+    approvedBy: "you",
+    approvedAt: minutesAgo(now, 200),
+    scheduledAt: minutesAgo(now, 35),
+    failedAt: minutesAgo(now, 30),
+    failReason: "403 · duplicate content",
+    notes: "",
+    createdAt: minutesAgo(now, 260),
+    revisions: [{ at: minutesAgo(now, 260), note: "Echo · first draft" }],
+  };
+
+  const slotPassed: XPostDraft = {
+    id: "x8",
+    kind: "post",
+    type: "post",
+    target: "",
+    posts: [body("Office hours this Thursday, 4 PM PT. Bring a broken ward.")],
+    replyPermission: "everyone",
+    tone: "warm",
+    status: "needs-approval",
+    scheduledAt: minutesAgo(now, 90),
+    slotPassed: true,
+    notes: "",
+    createdAt: minutesAgo(now, 320),
+    revisions: [{ at: minutesAgo(now, 320), note: "Echo · first draft" }],
+  };
+
   const article: XArticleDraft = {
     id: "a1",
     kind: "article",
@@ -291,5 +332,5 @@ export function seedDrafts(now: number): XDraft[] {
     revisions: [{ at: minutesAgo(now, 600), note: "Echo · first draft" }],
   };
 
-  return [reply, thread, poll, quote, posted, dm, article];
+  return [reply, slotPassed, failed, thread, poll, quote, posted, dm, article];
 }
