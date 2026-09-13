@@ -3410,13 +3410,23 @@
   color: var(--x-cream);
 }
 
+/* A flex row so the three state counts can sit hard right, away from the
+   next-slot sentence they would otherwise run into. */
 .x-comms .role-surface-drawer-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: 400;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.x-comms .role-surface-drawer-summary > .x-comms-agenda-note {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
