@@ -180,6 +180,56 @@ async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS } =
 }
 
 test.describe("chat threads rail", () => {
+  test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));
+    });
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    const row = rail.locator(".cnav__thread", { hasText: "Review active pull request" }).first();
+    await row.locator("button.cnav__thread-main").click();
+    await expect(row).toHaveClass(/is-active/);
+
+    for (const mode of ["dark", "light"]) {
+      for (const radius of ["0px", "12px", "20px"]) {
+        await page.evaluate(({ mode, radius }) => {
+          document.documentElement.dataset.mode = mode;
+          document.documentElement.style.setProperty("--radius-card", radius);
+        }, { mode, radius });
+        const geometry = await rail.evaluate((element) => {
+          const scroller = element.querySelector(".cnav__scroll")!;
+          const scrollStyle = getComputedStyle(scroller);
+          const rows = Array.from(element.querySelectorAll(".cnav__thread"));
+          const corners = (style: CSSStyleDeclaration) => [
+            style.borderTopLeftRadius,
+            style.borderTopRightRadius,
+            style.borderBottomRightRadius,
+            style.borderBottomLeftRadius,
+          ];
+          return {
+            insideShellNav: element.closest(".shell-nav") !== null,
+            paddingLeft: scrollStyle.paddingLeft,
+            paddingRight: scrollStyle.paddingRight,
+            rows: rows.map((thread) => ({
+              corners: corners(getComputedStyle(thread)),
+              backdrop: thread.classList.contains("is-active")
+                ? corners(getComputedStyle(thread, "::after"))
+                : null,
+            })),
+          };
+        });
+        expect(geometry.insideShellNav).toBe(false);
+        expect(geometry.paddingLeft).toBe("4px");
+        expect(geometry.paddingRight).toBe("4px");
+        expect(geometry.rows.length).toBeGreaterThan(SESSIONS.length);
+        for (const thread of geometry.rows) {
+          expect(thread.corners).toEqual(Array(4).fill(radius));
+          if (thread.backdrop) expect(thread.backdrop).toEqual(thread.corners);
+        }
+      }
+    }
+  });
+
   test("middle ellipsis preserves title tails in narrow rail and session rows", async ({ page }) => {
     const title = "Investigate a shared deployment prefix and keep the distinguishing release suffix";
     const pinnedTitle = "Review a second shared deployment prefix and preserve the production suffix";
