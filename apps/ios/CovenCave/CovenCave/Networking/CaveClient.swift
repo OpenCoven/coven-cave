@@ -620,13 +620,9 @@ struct CaveClient {
         }
     }
 
-    /// URL for the operator's server avatar image (`GET /api/profile/avatar`),
-    /// cache-busted by `updatedAt` so a new desktop upload invalidates the
-    /// image. A plain image load can't set an `Authorization` header, so when
-    /// the desktop enforces a mobile access token it is attached as a
-    /// `coven_access_token` query param — the same credential the server
-    /// accepts from the query string (server.ts). `nil` when unconfigured.
-    func operatorAvatarURL(updatedAt: String?) -> URL? {
+    /// Header-authenticated operator avatar, cache-busted by `updatedAt`.
+    /// Unavailable credentials fail closed to the initials fallback.
+    func operatorAvatarSource(updatedAt: String?) -> CaveImageSource? {
         guard let base = connection.baseURL,
               var comps = URLComponents(
                 url: base.appendingPathComponent("api/profile/avatar"),
@@ -636,11 +632,16 @@ struct CaveClient {
         if let updatedAt, !updatedAt.isEmpty {
             items.append(URLQueryItem(name: "v", value: updatedAt))
         }
-        if let token = try? CaveConnection.credentialForRequest(to: comps.url ?? base) {
-            items.append(URLQueryItem(name: "coven_access_token", value: token))
-        }
         if !items.isEmpty { comps.queryItems = items }
-        return comps.url
+        guard let url = comps.url else { return nil }
+        do {
+            if let token = try CaveConnection.credentialForRequest(to: url) {
+                return .authenticatedRemoteURL(url, bearerToken: token)
+            }
+            return .remoteURL(url)
+        } catch {
+            return nil
+        }
     }
 
     // MARK: - Sessions

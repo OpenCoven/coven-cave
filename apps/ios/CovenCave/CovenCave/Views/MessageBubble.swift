@@ -22,9 +22,9 @@ struct MessageBubble: View {
     /// group threads (mirrors the familiar name row). Defaults to "You" so a
     /// missing profile reads exactly as before.
     var operatorName: String = "You"
-    /// The operator's server avatar image URL for that same row; nil falls back
+    /// The operator's server avatar image source for that same row; nil falls back
     /// to name initials.
-    var operatorAvatarURL: URL? = nil
+    var operatorAvatarSource: CaveImageSource? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -344,7 +344,7 @@ struct MessageBubble: View {
             // Operator avatar sits at the trailing edge, mirroring the familiar
             // avatar on the leading edge for assistant bubbles.
             if isUser, isGroup {
-                AvatarView(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName)
+                AvatarView(familiar: nil, source: operatorAvatarSource, size: 28, fallbackName: operatorName)
             }
 
             if !isUser { Spacer(minLength: 48) }
@@ -770,7 +770,7 @@ extension MessageBubble: Equatable {
             && lhs.familiar == rhs.familiar
             && lhs.isLast == rhs.isLast
             && lhs.operatorName == rhs.operatorName
-            && lhs.operatorAvatarURL == rhs.operatorAvatarURL
+            && lhs.operatorAvatarSource == rhs.operatorAvatarSource
             && lhs.colorScheme == rhs.colorScheme
             && lhs.chrome == rhs.chrome
             && (lhs.onDelete == nil) == (rhs.onDelete == nil)

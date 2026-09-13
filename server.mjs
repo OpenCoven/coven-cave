@@ -1935,7 +1935,7 @@ function createDeviceAccessGateway(options) {
             label: stringField(input.label)
           });
           credentialCookie(res, issued.credential);
-          json(res, 201, { ok: true, ...issued });
+          json(res, 201, { ok: true, device: issued.device });
           return true;
         }
         if (pathname === `${API}/status` && req.method === "GET") {

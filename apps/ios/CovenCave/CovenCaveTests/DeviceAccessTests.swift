@@ -4,13 +4,14 @@ import XCTest
 
 private final class DeviceAccessURLProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, Data)?)?
+    static var responseHeaders: [String: String]?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         do {
             guard let result = try Self.handler?(request) else { return }
-            let response = HTTPURLResponse(url: request.url!, statusCode: result.0, httpVersion: nil, headerFields: nil)!
+            let response = HTTPURLResponse(url: request.url!, statusCode: result.0, httpVersion: nil, headerFields: Self.responseHeaders)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: result.1)
             client?.urlProtocolDidFinishLoading(self)
@@ -27,9 +28,9 @@ final class DeviceAccessTests: XCTestCase {
     private let deviceID = "12345678-1234-1234-1234-123456789abc"
     private var credential: String { "cave-device-v1.\(deviceID).test-only-secret" }
 
-    private func response(_ status: DeviceAccessStatus = .pending, creating: Bool = false, expired: Bool = false) throws -> Data {
+    private func response(_ status: DeviceAccessStatus = .pending, expired: Bool = false) throws -> Data {
         let now = Date().timeIntervalSince1970 * 1000
-        var body: [String: Any] = [
+        let body: [String: Any] = [
             "ok": true,
             "device": [
                 "id": deviceID, "status": status.rawValue,
@@ -41,7 +42,6 @@ final class DeviceAccessTests: XCTestCase {
                 ],
             ],
         ]
-        if creating { body["credential"] = credential }
         return try JSONSerialization.data(withJSONObject: body)
     }
 
@@ -52,7 +52,7 @@ final class DeviceAccessTests: XCTestCase {
     }
 
     private func pending(expired: Bool = false) throws -> PendingDeviceAccess {
-        let decoded = try DeviceAccessResponse.decode(response(creating: true, expired: expired), creating: true)
+        let decoded = try DeviceAccessResponse.decode(response(expired: expired), creating: true)
         return PendingDeviceAccess(origin: origin, credential: credential, device: decoded.device)
     }
 
@@ -90,8 +90,7 @@ final class DeviceAccessTests: XCTestCase {
             XCTAssertEqual($0 as? DeviceAccessError, .invalidResponse)
             XCTAssertFalse($0.localizedDescription.contains(self.credential))
         }
-        XCTAssertThrowsError(try DeviceAccessResponse.decode(response(.allowed, creating: true), creating: true))
-        XCTAssertThrowsError(try DeviceAccessResponse.decode(response(), creating: true))
+        XCTAssertThrowsError(try DeviceAccessResponse.decode(response(.allowed), creating: true))
         let unknown = String(decoding: try response(), as: UTF8.self).replacingOccurrences(of: "pending", with: "unknown")
         XCTAssertThrowsError(try DeviceAccessResponse.decode(Data(unknown.utf8), creating: false))
     }
@@ -149,7 +148,10 @@ final class DeviceAccessTests: XCTestCase {
     }
 
     func testRequestSendsOnlyInstallationAndLabelWithExactOrigin() async throws {
-        let body = try response(creating: true)
+        let body = try response()
+        DeviceAccessURLProtocol.responseHeaders = [
+            "Set-Cookie": "cave_device_access=\(credential); HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000"
+        ]
         let expectedOrigin = origin
         DeviceAccessURLProtocol.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
@@ -162,9 +164,39 @@ final class DeviceAccessTests: XCTestCase {
             return (201, body)
         }
         defer { DeviceAccessURLProtocol.handler = nil }
+        defer { DeviceAccessURLProtocol.responseHeaders = nil }
         let result = try await client().request(installationID: "installation-uuid", label: "iPhone")
         XCTAssertEqual(result.origin, origin)
+        XCTAssertEqual(result.credential, credential)
         XCTAssertEqual(result.device.status, .pending)
+    }
+
+    func testPairingRequiresValidHttpOnlyCookieEvenIfJSONContainsCredential() async throws {
+        var body = try XCTUnwrap(JSONSerialization.jsonObject(with: response()) as? [String: Any])
+        body["credential"] = credential
+        let data = try JSONSerialization.data(withJSONObject: body)
+        DeviceAccessURLProtocol.handler = { _ in (201, data) }
+        defer {
+            DeviceAccessURLProtocol.handler = nil
+            DeviceAccessURLProtocol.responseHeaders = nil
+        }
+        for header in [
+            nil,
+            "other=\(credential); HttpOnly; Secure; Path=/",
+            "cave_device_access=\(credential); Secure; Path=/",
+            "cave_device_access=\(credential); HttpOnly; Path=/",
+            "cave_device_access=legacy-secret; HttpOnly; Secure; Path=/",
+            "cave_device_access=cave-device-v1.\(UUID()).secret; HttpOnly; Secure; Path=/",
+        ] as [String?] {
+            DeviceAccessURLProtocol.responseHeaders = header.map { ["Set-Cookie": $0] }
+            do {
+                _ = try await client().request(installationID: "installation-uuid", label: "iPhone")
+                XCTFail("Invalid or missing cookie must not fall back to a JSON credential")
+            } catch {
+                XCTAssertEqual(error as? DeviceAccessError, .invalidResponse)
+                XCTAssertFalse(error.localizedDescription.contains(credential))
+            }
+        }
     }
 
     func testStatusUsesBearerAndRefusesOtherOriginBeforeDispatch() async throws {
@@ -308,6 +340,15 @@ final class DeviceAccessTests: XCTestCase {
         XCTAssertThrowsError(try CaveConnection.credentialForRequest(to: URL(string: "wss://desktop.example.ts.net:8443/socket")!))
         DeviceAccessURLProtocol.handler = { _ in XCTFail("A managed grant must never reach refresh"); return (500, Data()) }
         let api = CaveClient(connection: CaveConnection(host: origin), session: client().session)
+        let avatar = try XCTUnwrap(api.operatorAvatarSource(updatedAt: "profile-version"))
+        let avatarRequest = try XCTUnwrap(DefaultCaveImageDataLoader.request(for: avatar))
+        XCTAssertEqual(avatarRequest.url?.path, "/api/profile/avatar")
+        XCTAssertEqual(avatarRequest.url?.query, "v=profile-version")
+        XCTAssertFalse(avatarRequest.url!.absoluteString.contains(credential))
+        XCTAssertEqual(avatarRequest.value(forHTTPHeaderField: "Authorization"), "Bearer " + credential)
+        XCTAssertFalse(DeviceAccessRedirectGuard.permitsRedirect(for: avatarRequest))
+        let otherAPI = CaveClient(connection: CaveConnection(host: "https://other.example.ts.net"))
+        XCTAssertNil(otherAPI.operatorAvatarSource(updatedAt: nil))
         for method in ["POST", "PUT", "PATCH", "DELETE"] {
             let request = try api.request("api/example", method: method, body: Data("{}".utf8))
             XCTAssertEqual(request.value(forHTTPHeaderField: "Origin"), origin)

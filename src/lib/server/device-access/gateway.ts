@@ -238,7 +238,7 @@ export function createDeviceAccessGateway(options: {
           });
           // A pending cookie is only a proof for polling, never authorization.
           credentialCookie(res, issued.credential);
-          json(res, 201, { ok: true, ...issued });
+          json(res, 201, { ok: true, device: issued.device });
           return true;
         }
         if (pathname === `${API}/status` && req.method === "GET") {

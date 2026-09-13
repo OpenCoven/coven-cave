@@ -24,7 +24,7 @@ test("browser requests approval, survives reload, and displays denial without gr
     expect(body.installationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.label).toBe("My phone");
     current = device();
-    await route.fulfill({ status: 201, json: { ok: true, device: current, credential: "cave-device-v1.fixture" } });
+    await route.fulfill({ status: 201, json: { ok: true, device: current } });
   });
   await page.goto("/connect");
   await page.getByLabel("Device label").fill("My phone");

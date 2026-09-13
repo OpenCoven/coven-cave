@@ -19,8 +19,10 @@ Local desktop access stays available.
 5. Choose **Revoke access** to stop future access and close active connections.
 
 Pending requests expire after five minutes. Approval has no scheduled expiry.
-The browser keeps an HttpOnly, Secure, SameSite cookie; the native app keeps
-its credential in Keychain, pinned to the selected HTTPS origin. A credential
+The browser keeps an HttpOnly, Secure, SameSite cookie. Pairing JSON contains
+only device metadata; the native app reads the credential from `Set-Cookie`
+and keeps it in Keychain, pinned to the selected HTTPS origin. Native avatar
+requests carry credentials in Authorization headers, never in URLs. A credential
 is not transferable to a different Tailscale node or user. Clearing browser
 storage, reinstalling the client, or losing its credential requires another
 request; it does not silently recover the previous approval.

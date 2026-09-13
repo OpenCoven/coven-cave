@@ -95,7 +95,17 @@ test("HTTP pairing, desktop decisions, persistent authorization, audit and live 
     });
     assert.equal(created.status, 201, await created.clone().text());
     assert.match(created.headers.get("set-cookie") ?? "", /HttpOnly; Secure; SameSite=Strict/);
-    const issued = await created.json();
+    const payload = await created.json();
+    const cookie = created.headers.get("set-cookie")!.split(";")[0];
+    const credential = cookie.slice("cave_device_access=".length);
+    assert.match(credential, /^cave-device-v1\./);
+    assert.deepEqual(Object.keys(payload).sort(), ["device", "ok"], "pairing JSON is credential-free");
+    assert.ok(!JSON.stringify(payload).includes(credential), "the HttpOnly credential is never script-readable");
+    const issued = { ...payload, credential };
+    const browserHeaders = { ...remoteHeaders, cookie };
+    const pendingStatus = await request("/api/device-access/status", { headers: browserHeaders });
+    assert.equal((await pendingStatus.json()).device.status, "pending", "browsers poll with the HttpOnly cookie");
+    assert.equal((await request("/api/example", { headers: browserHeaders })).status, 403);
     const authenticatedHeaders = { ...remoteHeaders, authorization: `Bearer ${issued.credential}` };
     assert.equal((await request("/api/example", { headers: authenticatedHeaders })).status, 403, "pending credentials cannot use the app");
     assert.equal((await request("/api/example", {
@@ -108,6 +118,18 @@ test("HTTP pairing, desktop decisions, persistent authorization, audit and live 
     assert.equal(result.status, 200);
     assert.equal((await result.json()).authenticated, true);
     assert.ok(result.headers.get("x-coven-request-id"));
+    assert.equal((await request("/api/profile/avatar", { headers: authenticatedHeaders })).status, 200,
+      "native avatars authenticate through their bearer header");
+    const browserAvatar = await request("/api/profile/avatar", { headers: browserHeaders });
+    assert.equal(browserAvatar.status, 200, "browser avatars retain cookie authentication");
+    assert.equal((await browserAvatar.json()).authenticated, true);
+    assert.equal((await request(`/api/profile/avatar?coven_access_token=${encodeURIComponent(credential)}`, {
+      headers: remoteHeaders,
+    })).status, 403, "managed credentials are never accepted from URLs");
+    for (const method of ["GET", "POST"]) {
+      assert.equal((await request("/api/mobile-handoff", { method, headers: authenticatedHeaders })).status, 403,
+        "approved devices cannot administer the desktop's mobile handoff");
+    }
     for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
       const headers = new Headers(authenticatedHeaders);
       headers.delete("origin");

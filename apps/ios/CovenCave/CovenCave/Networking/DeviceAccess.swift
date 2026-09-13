@@ -35,7 +35,6 @@ struct DeviceAccessDevice: Codable, Equatable, Sendable {
 struct DeviceAccessResponse: Decodable {
     let ok: Bool
     let device: DeviceAccessDevice
-    let credential: String?
 
     static func decode(_ data: Data, creating: Bool) throws -> Self {
         let decoder = JSONDecoder()
@@ -63,10 +62,6 @@ struct DeviceAccessResponse: Decodable {
         }
         if creating {
             guard result.device.status == .pending,
-                  let credential = result.credential,
-                  CaveConnection.isManagedDeviceCredential(credential),
-                  credential.split(separator: ".").count == 3,
-                  credential.split(separator: ".")[1].lowercased() == result.device.id.lowercased(),
                   result.device.pairingExpiresAt > result.device.createdAt
             else { throw DeviceAccessError.invalidResponse }
         }
@@ -217,8 +212,17 @@ struct DeviceAccessClient {
         request.setValue(origin, forHTTPHeaderField: "Origin")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(Body(installationId: installationID, label: label))
-        let response = try await send(request, creating: true)
-        guard let credential = response.credential else { throw DeviceAccessError.invalidResponse }
+        let (response, http) = try await send(request, creating: true)
+        // Set-Cookie is readable by native URLSession, but not browser scripts.
+        guard let cookieHeader = http.value(forHTTPHeaderField: "Set-Cookie"),
+              let url = request.url else { throw DeviceAccessError.invalidResponse }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": cookieHeader], for: url)
+            .filter { $0.name == "cave_device_access" && $0.isSecure && $0.isHTTPOnly && $0.path == "/" }
+        guard cookies.count == 1, let credential = cookies.first?.value,
+              CaveConnection.isManagedDeviceCredential(credential),
+              credential.split(separator: ".").count == 3,
+              credential.split(separator: ".")[1].lowercased() == response.device.id.lowercased()
+        else { throw DeviceAccessError.invalidResponse }
         return PendingDeviceAccess(origin: origin, credential: credential, device: response.device)
     }
 
@@ -228,12 +232,12 @@ struct DeviceAccessClient {
         }
         var request = URLRequest(url: baseURL.appendingPathComponent("api/device-access/status"))
         request.setValue("Bearer \(pending.credential)", forHTTPHeaderField: "Authorization")
-        let response = try await send(request, creating: false)
+        let (response, _) = try await send(request, creating: false)
         guard response.device.id == pending.device.id else { throw DeviceAccessError.invalidResponse }
         return response.device
     }
 
-    private func send(_ request: URLRequest, creating: Bool) async throws -> DeviceAccessResponse {
+    private func send(_ request: URLRequest, creating: Bool) async throws -> (DeviceAccessResponse, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request, delegate: DeviceAccessRedirectGuard.shared)
         guard let http = response as? HTTPURLResponse else { throw DeviceAccessError.invalidResponse }
         if http.statusCode == 404 { throw DeviceAccessError.legacyDesktop }
@@ -246,6 +250,6 @@ struct DeviceAccessClient {
             }
             throw DeviceAccessError.refused(http.statusCode)
         }
-        return try DeviceAccessResponse.decode(data, creating: creating)
+        return (try DeviceAccessResponse.decode(data, creating: creating), http)
     }
 }

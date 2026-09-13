@@ -990,7 +990,7 @@ struct ChatView: View {
                           onReply: bubbleReply,
                           onRetryDelete: bubbleRetryDelete,
                           operatorName: app.operatorDisplayName,
-                          operatorAvatarURL: app.operatorAvatarURL)
+                          operatorAvatarSource: app.operatorAvatarSource)
                 .equatable()
                 .id(message.id)
                 // New bubbles settle in with a soft rise-and-fade

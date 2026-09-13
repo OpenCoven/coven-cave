@@ -1979,11 +1979,11 @@ final class AppModel {
     /// Name to show for the operator's messages — the profile name, or "You".
     var operatorDisplayName: String { operatorProfile?.displayName ?? "You" }
 
-    /// Server avatar image URL for the operator, or `nil` when none is set (the
+    /// Server avatar image source for the operator, or `nil` when none is set (the
     /// UI falls back to name initials). Cache-busted by the profile's mtime.
-    var operatorAvatarURL: URL? {
+    var operatorAvatarSource: CaveImageSource? {
         guard let client, operatorProfile?.avatarPresent == true else { return nil }
-        return client.operatorAvatarURL(updatedAt: operatorProfile?.avatarUpdatedAt)
+        return client.operatorAvatarSource(updatedAt: operatorProfile?.avatarUpdatedAt)
     }
 
     /// Fetch the operator profile. Best-effort: on failure the last snapshot
