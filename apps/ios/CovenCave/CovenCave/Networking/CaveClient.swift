@@ -134,7 +134,7 @@ struct CaveClient {
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     /// Dedicated session for chat SSE streams. `timeoutIntervalForResource`
@@ -148,7 +148,7 @@ struct CaveClient {
         config.timeoutIntervalForRequest = 600
         config.timeoutIntervalForResource = 24 * 3600
         config.waitsForConnectivity = true
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: DeviceAccessRedirectGuard.shared, delegateQueue: nil)
     }()
 
     private var session: URLSession { Self.restSession }
@@ -217,7 +217,7 @@ struct CaveClient {
     ) async throws -> RequestResult {
         for attempt in 0...retryDelays.count {
             do {
-                let (data, response) = try await session.data(for: req)
+                let (data, response) = try await session.data(for: req, delegate: DeviceAccessRedirectGuard.shared)
                 return RequestResult(data: data, response: response)
             } catch {
                 guard attempt < retryDelays.count, isTransient(error) else { throw error }
@@ -320,6 +320,9 @@ struct CaveClient {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            if CaveConnection.isManagedDeviceCredential(token) {
+                req.setValue(try DeviceAccessClient.origin(for: baseURL), forHTTPHeaderField: "Origin")
+            }
         }
         if let body {
             req.httpBody = body
@@ -341,11 +344,13 @@ struct CaveClient {
     /// endpoint (503) or the credential can't refresh — callers treat nil as "keep
     /// using what we have".
     func refreshAccessToken() async -> String? {
+        guard CaveConnection.shouldRefreshAccessToken(CaveConnection.accessToken) else { return nil }
         guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
         guard let (data, resp) = try? await data(for: req),
               let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let decoded = try? JSONDecoder().decode(TokenRefreshResponse.self, from: data),
-              decoded.ok, let token = decoded.token, !token.isEmpty
+              decoded.ok, let token = decoded.token, !token.isEmpty,
+              CaveConnection.shouldRefreshAccessToken(token)
         else { return nil }
         return token
     }

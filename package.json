@@ -115,7 +115,7 @@
     "test:e2e:mobile": "pnpm e2e:install && playwright test --project=pixel-5 --project=iphone-13",
     "test:e2e": "pnpm e2e:install && playwright test",
     "start": "node server.mjs",
-    "build:server": "esbuild server.ts --bundle=false --platform=node --target=node24 --outfile=server.mjs --format=esm",
+    "build:server": "esbuild server.ts --bundle --packages=external --platform=node --target=node24 --outfile=server.mjs --format=esm",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs && node scripts/copy-pdf-worker.mjs",
     "test:supply-chain": "node scripts/dependency-policy.test.mjs"
   },

@@ -131,7 +131,7 @@ assert.match(source, /isAllowedRequestSourceAny\(referer, expectedOrigins\)/, "A
 // listen port), so the browser Origin on a fallback port still passes.
 assert.match(
   source,
-  /const expectedOrigins = expectedRequestOrigins\(\s*req\.nextUrl\.origin,\s*req\.nextUrl\.protocol,\s*requestHost,?\s*\)/,
+  /const expectedOrigins = deviceAuthenticated\s*\? \[`https:\/\/\$\{req\.headers\.get\("x-forwarded-host"\)\}`\]\s*: expectedRequestOrigins\(\s*req\.nextUrl\.origin,\s*req\.nextUrl\.protocol,\s*requestHost,?\s*\)/,
   "the origin gate must compare against origins derived from the request's own Host, not just the configured-port nextUrl.origin",
 );
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
@@ -296,7 +296,7 @@ assert.match(
 // (research missions/links, automations) for a genuinely local user.
 assert.match(
   source,
-  /const mobileAccessVerified = mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
+  /const mobileAccessVerified = deviceAuthenticated \|\| \(mobileAccessToken\s*\?[\s\S]*?const mobileAccessAuthenticated = !trustedLocalPeer && mobileAccessVerified/,
   "a trusted local peer must never be marked as mobile ingress, even when a mobile access cookie rides along",
 );
 assert.match(

@@ -30,6 +30,8 @@ import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
+import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
@@ -58,13 +60,10 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 // Phone (or scripts/mobile-tailscale.sh — same state file) provisioned, so
 // paired phones survive dev-server restarts and a still-configured Tailscale
 // Serve route stays token-gated. Mirrors src/lib/server/mobile-access-
-// provision.ts, inlined because the standalone server.mjs cannot import from
-// src/.
-// The port contract, inlined for the same reason as everything else in this
-// block: `build:server` runs esbuild with `--bundle=false`, so any import here
-// must still resolve at runtime from wherever server.mjs is unpacked — and the
-// packaged bundle ships server.mjs without scripts/. scripts/ports.mjs is the
-// source of truth and scripts/port-contract.test.mjs fails if this copy drifts.
+// provision.ts. These existing standalone copies remain pinned by their
+// contract tests; new relative server imports are bundled into server.mjs.
+// scripts/ports.mjs is the port authority and port-contract.test.mjs detects
+// drift in this copy.
 const CAVE_DEV_PORT = 3000;
 const CAVE_PRODUCTION_PORT = 3020;
 
@@ -273,11 +272,8 @@ function clientV1DiscoveryFile(): string {
   return join(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
 }
 
-// Windows ownership, inlined for the same reason as everything else in this
-// block: `build:server` runs esbuild with `--bundle=false`, so server.mjs
-// cannot import src/lib/server/client-v1/path-ownership.ts. That module is the
-// authority; the PowerShell below is a verbatim copy of its script and
-// discovery.test.ts fails if the two ever drift.
+// Existing standalone ownership copy. path-ownership.ts remains the authority;
+// discovery.test.ts pins this script so packaging changes cannot weaken it.
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
 
@@ -1814,6 +1810,23 @@ const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 const wss = new WebSocketServer({ noServer: true });
+const remotePtyClients = new Set<WebSocket>();
+const deviceAccessSecret = randomUUID();
+process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
+const deviceAccessStore = await createDeviceAccessStore();
+const deviceAccess = createDeviceAccessGateway({
+  store: deviceAccessStore,
+  isDirectLoopback: isDirectLoopbackRequest,
+  sidecarToken: SIDECAR_TOKEN,
+  packaged: process.env.COVEN_CAVE_BUNDLE === "1",
+  stampSecret: deviceAccessSecret,
+  onAuthenticated(req, device) {
+    req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${device.peer.nodeId}`;
+  },
+  onPolicyChanged() {
+    for (const client of remotePtyClients) client.terminate();
+  },
+});
 
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
@@ -1830,10 +1843,32 @@ const server = createServer((req, res) => {
   if (tailnetNodeId) {
     req.headers[TAILNET_PEER_HEADER] = `${TAILNET_PEER_SECRET}:${tailnetNodeId}`;
   }
-  void handle(req, res);
+  void deviceAccess.handle(req, res).then((handled) => {
+    if (!handled) return handle(req, res);
+  }).catch((error: unknown) => {
+    console.error("[device-access] Request handling failed:", error);
+    res.destroy(error instanceof Error ? error : undefined);
+  });
 });
 
-server.on("upgrade", (req, socket, head) => {
+server.on("close", () => {
+  void deviceAccess.close().then(() => deviceAccessStore.close()).catch((error: unknown) => {
+    console.error("[device-access] Shutdown failed:", error);
+  });
+});
+
+server.on("upgrade", async (req, socket, head) => {
+  try {
+    if (await deviceAccess.blocksUpgrade(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+  } catch (error) {
+    console.error("[device-access] Upgrade refused:", error);
+    socket.destroy();
+    return;
+  }
   let pathname: string;
   let query: UpgradeQuery;
   try {
@@ -1924,6 +1959,10 @@ server.on("upgrade", (req, socket, head) => {
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
 
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+    if (!isDirectLoopbackRequest(req)) {
+      remotePtyClients.add(ws);
+      ws.once("close", () => { remotePtyClients.delete(ws); });
+    }
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });

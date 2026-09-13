@@ -313,7 +313,7 @@ assert.match(
 );
 // cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
 // so the canonical field is the fragment-aware inviteUrl.
-assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
+assert.match(handoffRoute, /const inviteUrl = invite\s*\? withChatFragment\(invite\.url, chatId\)\s*: new URL\("\/connect", discovery\.serveUrl\)/, "legacy invites preserve the chat fragment while device approval uses the proven origin");
 assert.match(handoffRoute, /inviteUrl,\r?\n\s*url: inviteUrl,/, "API should expose inviteUrl as the canonical invite field");
 assert.match(handoffRoute, /appUrl: inviteUrl/, "API should keep appUrl as an inviteUrl alias for compatibility");
 assert.match(handoffRoute, /action === "app-start"/, "API should expose a native app mobile-mode start action");
@@ -333,8 +333,8 @@ assert.doesNotMatch(
 assert.match(handoffRoute, /function nativeTokenlessMode\(\)/, "the tokenless/invite trust decision should be a single named predicate");
 assert.match(
   handoffRoute,
-  /if \(!nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret,[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
-  "token-gated app-start mints the signed invite the packaged phone pairs with",
+  /if \(!managed && !nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret,[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
+  "legacy token-gated app-start mints an invite, but managed pairing never does",
 );
 assert.match(
   handoffRoute,
@@ -643,6 +643,6 @@ assert.match(
 );
 assert.match(
   settings,
-  /<\/div>\s*<\/div>\s*<MobileWriteAccessCard \/>/,
-  "Phone write access follows the two-column control sheet",
+  /<\/div>\s*<\/div>\s*<SettingsDeviceAccess[\s\S]+?<MobileWriteAccessCard \/>/,
+  "device approval and phone write access follow the two-column control sheet",
 );
