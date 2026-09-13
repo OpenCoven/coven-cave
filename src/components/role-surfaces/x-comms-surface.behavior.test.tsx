@@ -356,13 +356,17 @@ test("a disconnected account blocks approval and says what happens to the queue"
   expect(text).toContain("posts hold locally");
   expect(text).toContain("nothing drops");
 
-  // And the gate closes — approving into a disconnected account would be a
-  // release the room cannot honour.
+  // And approval keeps working, which is what makes that promise true — the
+  // queue exists to be filled while the account is away. A gate here would
+  // mean nothing could ever be waiting for the reconnect.
   const approve = byClass(renderer, "x-comms-inline-action").find(
     (node) => node.props["data-variant"] === "approve",
   );
-  expect(approve.props.disabled).toBe(true);
-  expect(approve.props.title).toContain("X disconnected");
+  expect(approve.props.disabled).toBe(false);
+  const pairsBefore = byClass(renderer, "x-comms-inline-action").length;
+  await act(async () => approve.props.onClick());
+  expect(byClass(renderer, "x-comms-inline-action")).toHaveLength(pairsBefore - 2);
+  expect(roomText(renderer)).toContain("approved · queued for");
 });
 
 test("a spent API budget is shown as spent, and still does not lose the queue", async () => {
@@ -391,6 +395,28 @@ test("the failed and slot-passed states are reachable, and each says what did NO
   text = roomText(renderer);
   expect(text).toContain("slot passed");
   expect(text).toContain("Approving picks the next");
+});
+
+test("merging two posts refuses rather than quietly dropping an attachment", async () => {
+  const renderer = await render();
+  await act(async () => queueRow(renderer, "Three familiars").props.onClick());
+
+  // Post 2 of the seeded thread carries an image; give post 1 a poll so the
+  // pair cannot legally combine.
+  const addPoll = renderer.root
+    .findAll((node) => node.type === "button" && textOf(node) === "+poll")
+    .find((node) => !node.props.disabled);
+  await act(async () => addPoll.props.onClick());
+
+  const mergeDown = renderer.root
+    .findAll((node) => node.type === "button" && textOf(node).startsWith("merge"))
+    .find((node) => !node.props.disabled);
+  await act(async () => mergeDown.props.onClick());
+
+  // Said, not done: the poll and the image both survive.
+  expect(roomText(renderer)).toContain("can't merge");
+  expect(byClass(renderer, "x-comms-poll").length).toBeGreaterThan(0);
+  expect(byClass(renderer, "x-comms-media").length).toBeGreaterThan(0);
 });
 
 // ── The queue ───────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   altFromPrompt,
+  limitFor,
   mediaAffordances,
   X_GENERATE_PLACEHOLDER,
   X_MAX_POLL_OPTIONS,
@@ -72,7 +73,9 @@ export function PostEditor({
   editable: boolean;
 }) {
   const isThread = draft.type === "thread";
-  const limit = draft.type === "dm" ? 10_000 : 280;
+  // From the model, never restated here: a second copy is exactly the drift
+  // the room reuses x-publish-composer to avoid.
+  const limit = limitFor(draft);
   const dragPost = useRef<number | null>(null);
   const dragOption = useRef<string | null>(null);
 

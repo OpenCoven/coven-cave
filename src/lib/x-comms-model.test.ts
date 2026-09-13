@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import {
   altFromPrompt,
   approvalBlocker,
+  connectionAdvice,
   clockLabel,
   countdownLabel,
   dayLabel,
@@ -107,9 +108,9 @@ test("counting inherits the composer's weighting, so an emoji is 2 and not 2 cod
 
 test("a DM is measured against the DM limit, not 280", () => {
   const long = "x".repeat(500);
-  assert.equal(approvalBlocker(post({ posts: [body(long)] }), "connected"), "a post is over the limit");
+  assert.equal(approvalBlocker(post({ posts: [body(long)] })), "a post is over the limit");
   assert.equal(
-    approvalBlocker(post({ type: "dm", target: "@rae", posts: [body(long)] }), "connected"),
+    approvalBlocker(post({ type: "dm", target: "@rae", posts: [body(long)] })),
     "",
     "500 chars is nowhere near the DM limit",
   );
@@ -119,25 +120,78 @@ test("a DM is measured against the DM limit, not 280", () => {
 // ── Approval gate ───────────────────────────────────────────────────────────
 
 test("an ordinary draft is approvable", () => {
-  assert.equal(approvalBlocker(post(), "connected"), "");
+  assert.equal(approvalBlocker(post()), "");
 });
 
-test("a disconnected account blocks before any content rule is consulted", () => {
-  // Order matters: the account-level reason is the actionable one, and a
-  // content complaint underneath it would send someone editing for nothing.
-  const broken = post({ posts: [body("#hashtag over the room rule")] });
-  assert.match(approvalBlocker(broken, "disconnected"), /^X disconnected/);
+test("an account state never blocks approval — that is the whole promise", () => {
+  // The room's banner says approvals still work while posts hold locally, and
+  // the queue exists precisely to be filled in this state. A gate here would
+  // make the banner a lie: nothing could ever enter the queue that is waiting
+  // for the reconnect. (The frame this room came from carried both the promise
+  // and the blocker; only the promise survived.)
+  assert.equal(approvalBlocker(post()), "", "a clean draft approves regardless of the account");
+  for (const state of ["connected", "disconnected", "rate-limited"] as const) {
+    assert.match(
+      connectionAdvice(state),
+      state === "connected" ? /^$/ : /hold|wait/,
+      `${state} is said, not enforced`,
+    );
+  }
+});
+
+test("the link rule is per post, exactly as the chip says", () => {
+  // A four-post thread with one link each satisfies "one link per post" in
+  // every post; counting the joined thread text failed it.
+  const spread = post({
+    type: "thread",
+    posts: [body("a https://a.example"), body("b https://b.example")],
+  });
+  assert.equal(approvalBlocker(spread), "", "one link in each of two posts is fine");
+  const doubled = post({ posts: [body("https://a.example and https://b.example")] });
+  assert.equal(approvalBlocker(doubled), "room rule · 1 link max");
+  assert.ok(
+    ruleChips(spread).find((chip) => chip.label === "1 link max")?.passing,
+    "and the chip agrees with the gate",
+  );
+});
+
+test("a destination the publish path would refuse is refused here too", () => {
+  const good = "https://x.com/sarahdev/status/1834401192837472256";
+  assert.equal(approvalBlocker(post({ type: "reply", target: good })), "");
+  // Trailing junk and non-digit suffixes passed an unanchored prefix match and
+  // would have been approved into a write the server rejects.
+  for (const bad of [`${good}/photo/1`, `${good}abc`, "https://x.com/sarahdev/status/", "https://evil.example/x.com/a/status/1"]) {
+    assert.equal(
+      approvalBlocker(post({ type: "reply", target: bad })),
+      "fix the destination to continue",
+      `rejected: ${bad}`,
+    );
+  }
+});
+
+test("an inline image with no marker left in the body blocks approval", () => {
+  // The editor shows it as "not in body" in amber; without this the warning
+  // was decorative and the image would ship attached to nothing.
+  const orphaned = article({
+    body: "word ".repeat(60),
+    inline: [{ kind: "image", alt: "A diagram", n: 1 }],
+  });
+  assert.equal(approvalBlocker(orphaned), "an inline image isn't placed in the body");
+  const placed = article({
+    body: `${"word ".repeat(60)}\n\n[img:1]`,
+    inline: [{ kind: "image", alt: "A diagram", n: 1 }],
+  });
+  assert.equal(approvalBlocker(placed), "");
 });
 
 test("the room's own rules block, with the rule named", () => {
   assert.equal(
-    approvalBlocker(post({ posts: [body("ship it #launch")] }), "connected"),
+    approvalBlocker(post({ posts: [body("ship it #launch")] })),
     "room rule · no hashtags",
   );
   assert.equal(
     approvalBlocker(
       post({ posts: [body("https://a.example/one and https://b.example/two")] }),
-      "connected",
     ),
     "room rule · 1 link max",
   );
@@ -145,22 +199,21 @@ test("the room's own rules block, with the rule named", () => {
 
 test("a DM is exempt from the timeline-only room rules", () => {
   const dm = post({ type: "dm", target: "@rae", posts: [body("hi #there")] });
-  assert.equal(approvalBlocker(dm, "connected"), "", "hashtags are a timeline rule");
+  assert.equal(approvalBlocker(dm), "", "hashtags are a timeline rule");
 });
 
 test("a destination is required, and then required to be valid", () => {
   assert.equal(
-    approvalBlocker(post({ type: "reply" }), "connected"),
+    approvalBlocker(post({ type: "reply" })),
     "add the post URL to continue",
   );
   assert.equal(
-    approvalBlocker(post({ type: "reply", target: "sarahdev" }), "connected"),
+    approvalBlocker(post({ type: "reply", target: "sarahdev" })),
     "fix the destination to continue",
   );
   assert.equal(
     approvalBlocker(
       post({ type: "reply", target: "https://x.com/sarahdev/status/1834401192837472256" }),
-      "connected",
     ),
     "",
   );
@@ -170,39 +223,38 @@ test("an attachment without alt text blocks approval", () => {
   const withImage = post({
     posts: [body("look", [{ kind: "image", alt: "" }])],
   });
-  assert.equal(approvalBlocker(withImage, "connected"), "every attachment needs alt text");
+  assert.equal(approvalBlocker(withImage), "every attachment needs alt text");
 
   const described = post({
     posts: [body("look", [{ kind: "image", alt: "A diagram" }])],
   });
-  assert.equal(approvalBlocker(described, "connected"), "");
+  assert.equal(approvalBlocker(described), "");
 });
 
 test("a poll needs two filled options, not two option slots", () => {
   const halfFilled = post({
     posts: [body("pick", [], { options: ["one", "   "], duration: "1d" })],
   });
-  assert.equal(approvalBlocker(halfFilled, "connected"), "polls need two filled options");
+  assert.equal(approvalBlocker(halfFilled), "polls need two filled options");
 });
 
 test("an empty draft asks for words before it asks for anything else", () => {
-  assert.equal(approvalBlocker(post({ posts: [body("   ")] }), "connected"), "write something first");
+  assert.equal(approvalBlocker(post({ posts: [body("   ")] })), "write something first");
 });
 
 test("an article has its own gate", () => {
-  assert.equal(approvalBlocker(article({ title: " " }), "connected"), "add a title to continue");
+  assert.equal(approvalBlocker(article({ title: " " })), "add a title to continue");
   assert.equal(
-    approvalBlocker(article({ body: "too short" }), "connected"),
+    approvalBlocker(article({ body: "too short" })),
     "articles need at least 50 words",
   );
   assert.equal(
     approvalBlocker(
       article({ cover: { kind: "image", alt: "" } }),
-      "connected",
     ),
     "every image needs alt text",
   );
-  assert.equal(approvalBlocker(article(), "connected"), "");
+  assert.equal(approvalBlocker(article()), "");
 });
 
 test("only a thread ships its later posts", () => {
@@ -211,7 +263,7 @@ test("only a thread ships its later posts", () => {
   assert.equal(shippedPosts(post({ type: "thread", posts })).length, 3);
   // …and the gate only measures what ships, so an over-limit orphan does not block.
   assert.equal(
-    approvalBlocker(post({ posts: [body("fine"), body("x".repeat(400))] }), "connected"),
+    approvalBlocker(post({ posts: [body("fine"), body("x".repeat(400))] })),
     "",
   );
 });

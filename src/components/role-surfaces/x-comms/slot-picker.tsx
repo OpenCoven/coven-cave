@@ -12,9 +12,10 @@
  * post is otherwise easy to read as touching the decision that released it.
  */
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   dayActivityScale,
   dayDelta,
@@ -55,17 +56,11 @@ export function SlotPicker({
   const inBand = isInPeakBand(pickedHour);
   const dailyTotal = X_FOLLOWER_ACTIVITY.reduce((sum, value) => sum + value, 0);
 
-  // Focus lands inside the dialog rather than on the page behind it; Escape is
-  // handled by the room so one key closes whatever overlay is topmost.
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const target = dialogRef.current?.querySelector<HTMLElement>(
-        '[aria-checked="true"]:not(:disabled), button:not(:disabled)',
-      );
-      target?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  // The repository's contract for anything that declares aria-modal: real
+  // containment, Escape, and focus returned to whatever opened it. Moving
+  // focus once is not that — Tab walked straight out of the dialog into the
+  // room behind it, and closing left focus on the body.
+  useFocusTrap(true, dialogRef, { onEscape: onCancel });
 
   const justification = inBand
     ? `inside the 5–7 PM band · ${Math.round((X_FOLLOWER_ACTIVITY[pickedHour] / dailyTotal) * 100)}% of daily follower activity in this hour`

@@ -16,6 +16,7 @@ import {
   clockLabel,
   countWords,
   handleOf,
+  limitFor,
   shippedPosts,
   slotLabel,
   X_POLL_DURATIONS,
@@ -66,7 +67,7 @@ export function Preview({ draft, now }: { draft: XDraft; now: number }) {
 function TimelinePreview({ draft, now }: { draft: XPostDraft; now: number }) {
   const posts = shippedPosts(draft);
   const isThread = draft.type === "thread";
-  const limit = 280;
+  const limit = limitFor(draft);
   const handle = handleOf(draft) || "@…";
 
   return (

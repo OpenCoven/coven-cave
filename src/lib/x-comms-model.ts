@@ -20,6 +20,7 @@
  * every hour of the day.
  */
 
+import { parseXPostUrl } from "@/lib/x-api";
 import {
   weightedPostLength,
   X_POST_WEIGHTED_LIMIT,
@@ -353,6 +354,23 @@ export const X_POST_TYPE_ORDER: readonly XPostType[] = [
   "dm",
 ];
 
+/**
+ * A destination the publish path would also accept.
+ *
+ * Delegated to the shared parser rather than matched here: a local prefix
+ * pattern let `…/status/123/trailing-junk` through the room gate and straight
+ * into a write the server would refuse, which is the worst place to find out.
+ * `parseXPostUrl` throws on anything it cannot canonicalise.
+ */
+function isXPostUrl(value: string): boolean {
+  try {
+    parseXPostUrl(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Which types need a destination, and what counts as a valid one. */
 export const X_TARGET_RULES: Partial<
   Record<
@@ -372,7 +390,7 @@ export const X_TARGET_RULES: Partial<
     icon: "ph:arrow-bend-up-left",
     placeholder: "https://x.com/handle/status/…",
     format: "post URL",
-    isValid: (value) => /^https:\/\/(x|twitter)\.com\/\w+\/status\/\d+/i.test(value),
+    isValid: isXPostUrl,
     whenInvalid: "Not a post URL — paste the https://x.com/…/status/… link.",
   },
   quote: {
@@ -380,7 +398,7 @@ export const X_TARGET_RULES: Partial<
     icon: "ph:repeat",
     placeholder: "https://x.com/handle/status/…",
     format: "post URL",
-    isValid: (value) => /^https:\/\/(x|twitter)\.com\/\w+\/status\/\d+/i.test(value),
+    isValid: isXPostUrl,
     whenInvalid: "Not a post URL — paste the https://x.com/…/status/… link.",
   },
   dm: {
@@ -518,6 +536,21 @@ export function metaOf(draft: XDraft): string {
 
 export type XConnectionState = "connected" | "disconnected" | "rate-limited";
 
+/**
+ * What an account state means for a draft the operator is about to approve.
+ * Advice, never a refusal — see `approvalBlocker` for why disconnected does
+ * not gate.
+ */
+export function connectionAdvice(connection: XConnectionState): string {
+  if (connection === "disconnected") {
+    return "X disconnected — approving holds it locally until the account reconnects";
+  }
+  if (connection === "rate-limited") {
+    return "API budget spent — approved posts wait for the reset";
+  }
+  return "";
+}
+
 export type XRuleChip = {
   label: string;
   passing: boolean;
@@ -597,9 +630,12 @@ export function ruleChips(draft: XDraft): XRuleChip[] {
       countHashtags(allText) === 0,
       "Room rule: this account doesn't use hashtags. Echo won't add them; you can't approve with one in.",
     ),
+    // Per POST, which is what the chip says. Counting the joined thread failed
+    // a four-post thread carrying one link each — every post satisfying the
+    // rule, the rule reported as broken.
     ruleChip(
       "1 link max",
-      countLinks(allText) <= 1,
+      posts.every((post) => countLinks(post.text) <= 1),
       "Room rule: one link per post keeps the click path obvious.",
     ),
     ...(hasMedia
@@ -618,21 +654,31 @@ export function ruleChips(draft: XDraft): XRuleChip[] {
  * Why this draft cannot be approved, in the operator's words, or "" when it
  * can. One string rather than a list: the primary button needs a single reason
  * to show, and the rule chips above already say which rules are failing.
+ *
+ * The account's connection is deliberately NOT an input. Both non-connected
+ * states are ones the room promises to survive by holding work locally, so
+ * neither can refuse an approval; `connectionAdvice` says what they mean
+ * instead.
  */
-export function approvalBlocker(
-  draft: XDraft | null,
-  connection: XConnectionState,
-): string {
+export function approvalBlocker(draft: XDraft | null): string {
   if (!draft) return "";
-  if (connection === "disconnected") {
-    return "X disconnected — approvals hold locally until it reconnects";
-  }
+  // A disconnected account is deliberately NOT a blocker. The room's banner
+  // promises "approvals still work; posts hold locally and go once the account
+  // reconnects", and a gate that disabled Approve would make that a lie — the
+  // queue could never be filled in the one state it exists to survive. The
+  // frame this room is built from carried both the promise and the blocker;
+  // the promise is the one worth keeping.
 
   if (draft.kind === "article") {
     if (!draft.title.trim()) return "add a title to continue";
     if (countWords(draft.body) < 50) return "articles need at least 50 words";
     const images = [draft.cover, ...draft.inline].filter(Boolean) as XMedia[];
     if (images.some((image) => !image.alt.trim())) return "every image needs alt text";
+    // The editor already marks these "not in body" in amber; without this the
+    // warning was decorative and the image would ship attached to nothing.
+    if (draft.inline.some((image) => !draft.body.includes(`[img:${image.n}]`))) {
+      return "an inline image isn't placed in the body";
+    }
     return "";
   }
 
@@ -650,7 +696,7 @@ export function approvalBlocker(
   if (draft.type !== "dm") {
     const allText = posts.map((post) => post.text).join("\n");
     if (countHashtags(allText) > 0) return "room rule · no hashtags";
-    if (countLinks(allText) > 1) return "room rule · 1 link max";
+    if (posts.some((post) => countLinks(post.text) > 1)) return "room rule · 1 link max";
   }
 
   if (posts.some((post) => post.media.some((item) => !item.alt.trim()))) {

@@ -41,6 +41,7 @@ import {
   titleOf,
   X_API_BUDGET,
   X_API_WARN_AT,
+  X_MAX_IMAGES_PER_POST,
   X_MEDIA_PRESETS,
   X_POST_TYPES,
   X_STATUS,
@@ -98,6 +99,25 @@ type Toast = { message: string; secondsLeft: number; undo: (() => void) | null }
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 const emptyPost = (): XPostBody => ({ text: "", media: [], poll: null });
+
+/** Why these two posts cannot be merged without losing something, or "". */
+function mergeRefusal(post: XPostBody, following: XPostBody): string {
+  if (post.poll && following.poll) return "can't merge · both posts carry a poll";
+  if ((post.poll && following.media.length) || (following.poll && post.media.length)) {
+    return "can't merge · a post can't carry both a poll and media";
+  }
+  const media = [...post.media, ...following.media];
+  if (media.filter((item) => item.kind !== "image").length > 1) {
+    return "can't merge · one video or GIF per post";
+  }
+  if (media.length > 1 && media.some((item) => item.kind !== "image")) {
+    return "can't merge · a video or GIF travels alone";
+  }
+  if (media.filter((item) => item.kind === "image").length > X_MAX_IMAGES_PER_POST) {
+    return `can't merge · ${X_MAX_IMAGES_PER_POST} images max`;
+  }
+  return "";
+}
 
 export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
   const { announce } = useAnnouncer();
@@ -163,7 +183,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
   ).length;
 
   const nextSlotAt = useMemo(() => nextSlot(now), [now]);
-  const blocker = approvalBlocker(selected, connection);
+  const blocker = approvalBlocker(selected);
 
   // The dispatch rail collapses to a tab strip below 1280px, which is the
   // frame's own break. The room's three columns are not the room chrome's
@@ -452,14 +472,31 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
         );
         patchSelected({ posts: next });
       },
+      /**
+       * Merge down, or refuse and say why.
+       *
+       * The obvious implementation concatenates and truncates — `slice(0, 4)`
+       * on the media, `a.poll ?? b.poll` on the polls — and that silently
+       * destroys an attachment or a whole poll the operator wrote. It can also
+       * assemble combinations the add buttons refuse one at a time: a poll
+       * beside media, or two videos. So the incompatible cases are reported
+       * rather than performed, and merge only proceeds where nothing is lost.
+       */
       mergePost: (index) => {
         if (!selected || selected.kind !== "post" || index >= selected.posts.length - 1) return;
+        const post = selected.posts[index];
+        const following = selected.posts[index + 1];
+
+        const refusal = mergeRefusal(post, following);
+        if (refusal) {
+          commit(refusal, false);
+          return;
+        }
+
         const next = [...selected.posts];
-        const post = next[index];
-        const following = next[index + 1];
         next.splice(index, 2, {
           text: `${post.text.trimEnd()}\n${following.text.trimStart()}`,
-          media: [...post.media, ...following.media].slice(0, 4),
+          media: [...post.media, ...following.media],
           poll: post.poll ?? following.poll,
         });
         patchSelected({ posts: next });
@@ -587,7 +624,10 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
           patchSelected({ cover: { ...item, width: 1200, height: 675 } });
           commit("cover generated · 1200×675 · review its alt text", false);
         } else if (selected.kind === "article") {
-          const n = selected.inline.length + 1;
+          // One past the highest marker ever issued, not the count: after
+          // removing [img:1] the count is 1 again, and a second image would
+          // take the id [img:2] already in the body.
+          const n = selected.inline.reduce((high, image) => Math.max(high, image.n), 0) + 1;
           const token = `[img:${n}]`;
           const caret = articleCaret ?? selected.body.length;
           const body = `${selected.body.slice(0, caret).replace(/\s+$/, "")}\n\n${token}\n\n${selected.body
@@ -1002,7 +1042,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
                   ? "var(--color-danger)"
                   : "var(--x-accent)"
             }
-            blockerFor={(draft) => approvalBlocker(draft, connection)}
+            blockerFor={(draft) => approvalBlocker(draft)}
             onToggleGroup={(label) =>
               setCollapsedGroups((current) => ({ ...current, [label]: !current[label] }))
             }
