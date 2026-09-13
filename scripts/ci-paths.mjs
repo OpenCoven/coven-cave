@@ -22,6 +22,8 @@ const IOS_PATH =
   /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 const CLIENT_V1_PATH =
   /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-(?:contract|hpke-vectors)|client-v1-(?:release-smoke|conformance|authority-takeover))(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
+const AUTOMATIONS_V1_PATH =
+  /^(?:conformance\/automations-v1-artifact(?:\/|$)|conformance\/automations-v1-artifact-lock\.json$)/;
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change
 // should not pay for lint, typecheck, and build. But that also meant the docs
 // index ratchet, which only fires when a doc is added or renamed, never ran on
@@ -33,8 +35,12 @@ export function classifyCiPaths(paths) {
     .map((value) => value.trim())
     .filter(Boolean);
   const clientV1 = normalized.some((file) => CLIENT_V1_PATH.test(file));
+  const automationsV1 = normalized.some((file) => AUTOMATIONS_V1_PATH.test(file));
   return {
-    frontend: clientV1 || normalized.some((file) => FRONTEND_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
+    frontend:
+      clientV1 ||
+      automationsV1 ||
+      normalized.some((file) => FRONTEND_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
     rust: normalized.some((file) => RUST_PATH.test(file)),
     e2e: clientV1 || normalized.some((file) => E2E_PATH.test(file) || ROOT_RUNTIME_PATH.test(file)),
     ios: normalized.some((file) => IOS_PATH.test(file)),

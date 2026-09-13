@@ -75,6 +75,7 @@
     "test:client-v1:conformance": "node scripts/client-v1-conformance.mjs",
     "test:client-v1:compatibility-control": "node scripts/client-v1-compatibility-control.integration.test.mjs",
     "test:client-v1:authority-takeover": "node --experimental-strip-types scripts/client-v1-authority-takeover.mjs",
+    "verify:automations-v1-evidence": "node ./scripts/verify-automations-v1-artifact-evidence.mjs",
     "test:research-media:ffmpeg": "node --experimental-strip-types scripts/research-media-ffmpeg.integration.test.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
     "test:conformance": "node scripts/run-tests.mjs conformance",

@@ -332,9 +332,44 @@ pnpm typecheck          # TypeScript
 pnpm test:app           # app/component tests
 pnpm test:api           # API route tests
 pnpm test:mobile        # mobile/iOS logic tests
+pnpm test:conformance   # protocol and cross-environment conformance
 pnpm test:e2e           # end-to-end
 pnpm check:tests-wired  # ensure new tests are registered
+pnpm verify:automations-v1-evidence  # live GitHub evidence for the pinned Automations v1 bundle
 ```
+
+### Coven Automations v1 exact-artifact canary
+
+Cave consumes the same immutable `coven.automations.v1` contract artifact as
+the SDK: [artifact `9909975069`](https://github.com/OpenCoven/coven/actions/runs/33798101313/artifacts/9909975069),
+produced from Coven commit `8a796807b37d4ad33eaeca37498debf1ca55dd49`.
+The exact producer, workflow, artifact, and digest identities are recorded in
+[`conformance/automations-v1-artifact-lock.json`](conformance/automations-v1-artifact-lock.json);
+the 17 portable contract files and their manifest are checked in under
+[`conformance/automations-v1-artifact/`](conformance/automations-v1-artifact/).
+Updating this pin is a reviewed compatibility change, not a fetch of the
+latest producer branch.
+
+`pnpm test:conformance` runs the offline integrity and consumer canary in
+normal CI. It checks the vendored contract against the pinned digests and
+exercises a Cave-owned, read-only occurrence projection with actual duplicate
+delivery, out-of-order rejection, and deterministic reconnect/resume replay.
+Transitions must also appear in the pinned occurrence state machine; a matching
+source state alone cannot authorize an impossible transition or terminal-state
+regression. Unsupported schema versions and event variants fail explicitly.
+
+`pnpm verify:automations-v1-evidence` is a separate, networked provenance
+check. Supply a GitHub token through `GITHUB_TOKEN` with read access to the
+producer's Actions evidence; do not put credentials in the lock or source.
+The command verifies the pinned repository, source commit, workflow, run,
+job, and artifact metadata and fails if required evidence is unavailable or
+mismatched. It is not automatically run by the offline conformance suite.
+
+This canary demonstrates compatibility with one exact base-protocol artifact.
+It does not activate a routine, replace Coven's scheduler or run ledger,
+certify `coven.automations.authority.v1`, or complete Cave's automation
+oversight and recovery UI. The remaining program gates are tracked in
+[`docs/roadmaps/coven-automations-v1.md`](docs/roadmaps/coven-automations-v1.md).
 
 ---
 

@@ -52,6 +52,20 @@ test("protocol changes run conformance in normal Linux pull-request CI", () => {
   );
 });
 
+test("automations v1 exact-artifact contract changes run protocol conformance without widening docs or E2E", () => {
+  for (const file of [
+    "conformance/automations-v1-artifact-lock.json",
+    "conformance/automations-v1-artifact/manifest.json",
+    "conformance/automations-v1-artifact/coven-automations-v1/test-vectors.json",
+    "conformance/automations-v1-artifact/coven-automations-v1/event-envelope.schema.json",
+  ]) {
+    const paths = classifyCiPaths([file]);
+    assert.equal(paths.frontend, true, `${file} must run conformance`);
+    assert.equal(paths.e2e, false, `${file} must not widen into E2E`);
+    assert.equal(paths.docs, false, `${file} must not widen into docs`);
+  }
+});
+
 test("PR checks cannot silently skip suites after an earlier failure (cave-t8p1a)", () => {
   const workflow = readFileSync(
     new URL("../.github/workflows/ci.yml", import.meta.url),

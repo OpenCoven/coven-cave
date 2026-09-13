@@ -2030,8 +2030,10 @@ export const SUITES = {
   conformance: [
     "scripts/cross-environment.test.ts",
     "scripts/client-v1-compatibility-control.integration.test.mjs",
+    "scripts/verify-automations-v1-artifact-evidence.test.mjs",
     "scripts/research-protocol-conformance.test.ts",
     "scripts/research-protocol-scenario-conformance.test.ts",
+    "src/lib/automations/coven-automations-v1-consumer.test.ts",
     "src/lib/research-protocol/common.test.ts",
     "src/lib/research-protocol/digest.test.ts",
     "src/lib/research-protocol/context-pack.test.ts",

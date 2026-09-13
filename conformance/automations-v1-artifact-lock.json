@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "issue": "OpenCoven/sdk#80",
+  "parentIssue": "OpenCoven/coven#855",
+  "producer": {
+    "repository": "OpenCoven/coven",
+    "repositoryId": 1222160568,
+    "sourceCommit": "8a796807b37d4ad33eaeca37498debf1ca55dd49",
+    "sourceTree": "bf0261a187139773ce87d97c880669b4532e53c9",
+    "workflow": {
+      "id": 267192017,
+      "name": "CI",
+      "path": ".github/workflows/ci.yml",
+      "runId": 33798101313,
+      "runAttempt": 1,
+      "event": "push",
+      "headBranch": "main",
+      "size": 25064,
+      "sha256": "c8061bd914b31e0fd77cf73f1301ae8a04a127f68783fa7fbbc41c92f92bac14"
+    },
+    "job": {
+      "id": 100790644364,
+      "name": "Automations v1 protocol bundle",
+      "runnerLabels": [
+        "ubuntu-latest"
+      ]
+    }
+  },
+  "artifact": {
+    "id": 9909975069,
+    "name": "coven-automations-v1-contract-8a796807b37d4ad33eaeca37498debf1ca55dd49",
+    "archiveSize": 36232,
+    "archiveSha256": "6f2e239a4694a1f11223a9dc72f5f31971ead0a1b94ff3137fb39b75611a95ac",
+    "bundle": {
+      "path": "coven-automations-v1-contract-8a796807b37d4ad33eaeca37498debf1ca55dd49.tar.gz",
+      "size": 34712,
+      "sha256": "512460db71d4257d7a4d33ea306578e66d9ac499d9384eb9c2b8e2b4e2e32363"
+    },
+    "manifest": {
+      "path": "manifest.json",
+      "size": 2964,
+      "sha256": "449d79f0a47fd299d0c560bf4a5f63be383e9825067d3ac992cb97ce067c86d2"
+    }
+  },
+  "contract": {
+    "profile": "coven.automations.v1",
+    "contentSha256": "3c145eb92a93426ed64631f6487a8cd12903b0a49a6e752269f594ac50a779f5",
+    "manifestFiles": 17
+  }
+}

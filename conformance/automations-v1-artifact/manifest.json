@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "coven.automations.bundle.v1",
+  "contractProfile": "coven.automations.v1",
+  "sourceCommit": "8a796807b37d4ad33eaeca37498debf1ca55dd49",
+  "contractContentSha256": "3c145eb92a93426ed64631f6487a8cd12903b0a49a6e752269f594ac50a779f5",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "512db770d3fde17b88bf8e5e00d1feb25bdbdf603e753cabc46fe43a6a23cdc0",
+      "size": 4983
+    },
+    {
+      "path": "automation-attempt.schema.json",
+      "sha256": "9d52c0072850c5afbc8a4e01841ce1e0c3580cff3a14f5e3b6748504bf886727",
+      "size": 5789
+    },
+    {
+      "path": "automation-definition.schema.json",
+      "sha256": "53e79fca429bd74a32814536774ac6e446bbc5f11dffe05ca7e91cea40593ec9",
+      "size": 11996
+    },
+    {
+      "path": "automation-occurrence.schema.json",
+      "sha256": "671f51116fca9c005b39a34630e24a59d636ab830d2b88ba0414c292742a0717",
+      "size": 7030
+    },
+    {
+      "path": "automation-receipt.schema.json",
+      "sha256": "8c50cd955e43cef1649e384bd9aa48b3e4214db989e9ba4e3e704aad19cb1fc7",
+      "size": 5757
+    },
+    {
+      "path": "automation-run.schema.json",
+      "sha256": "35865bc20027cf46bfbc250fe612c4c46edfade4ac40aeacc44722fb1375fc75",
+      "size": 5468
+    },
+    {
+      "path": "capabilities.json",
+      "sha256": "425185e3741f0f834dbeb50e094a59e9c1d823de12ca174b4c0eb48ee1ed50b2",
+      "size": 2928
+    },
+    {
+      "path": "command-envelope.schema.json",
+      "sha256": "2d5cae53c6f6aa38bb5a779c2c9c48732bf8c0476047e658eba418277d65c685",
+      "size": 17477
+    },
+    {
+      "path": "common.schema.json",
+      "sha256": "891933e8d88110eb19336ef7b268554be05352d5150ae0f45a6a41b814ef75e6",
+      "size": 8191
+    },
+    {
+      "path": "compatibility-matrix.json",
+      "sha256": "987ce45cbc33812b8459ede6931e14edf1f71823e63bcfd8f1568df436c3d2bb",
+      "size": 9704
+    },
+    {
+      "path": "conformance-manifest.json",
+      "sha256": "7e9fa4856058c304f88dd2b57a813880545a0b4e33c33e0234a5a38ce4b7b171",
+      "size": 1607
+    },
+    {
+      "path": "coven.automations.v1.d.ts",
+      "sha256": "060da1641cbe4679ccc801aad3c5478ba8f5d676a0798d2d17c27d2d4c78ced3",
+      "size": 18960
+    },
+    {
+      "path": "error-envelope.schema.json",
+      "sha256": "4de25428c3e6eb909eeee04cd5feb4ffb3ad85066df66babf98a01ff05cbbd4f",
+      "size": 5218
+    },
+    {
+      "path": "event-envelope.schema.json",
+      "sha256": "9eb27e62d6133bb506bdf311a74208689e502397cc1d73a3cf8963f9d5610a30",
+      "size": 10942
+    },
+    {
+      "path": "protocol-version.json",
+      "sha256": "24f325cfb80a63b4ffdab301a37792a2926048f901fae2c826304e172b896da9",
+      "size": 1270
+    },
+    {
+      "path": "state-machines.json",
+      "sha256": "2cef95d98b945cd11fb362abd736c5fe6901bea8621083819d66fa61d849dc94",
+      "size": 14590
+    },
+    {
+      "path": "test-vectors.json",
+      "sha256": "bc581404bc7380d043ae89a2b53b0a28668fce720649d0bbf6e979dcd16ed4c7",
+      "size": 66031
+    }
+  ]
+}
