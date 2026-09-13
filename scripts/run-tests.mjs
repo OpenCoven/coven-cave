@@ -2508,6 +2508,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  // Renders the whole X Comms room through react-test-renderer (JSX).
+  "src/components/role-surfaces/x-comms-surface.behavior.test.tsx",
   "src/components/reminder-link-field.behavior.test.tsx",
   "src/components/flow-execution-link.test.tsx",
   "src/components/role-surfaces/researcher-surface-link.test.tsx",
