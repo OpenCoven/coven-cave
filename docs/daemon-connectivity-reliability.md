@@ -1,11 +1,14 @@
 # Daemon connectivity reliability
 
-Status: active reliability program (`cave-58eoq`)
+Status: implementation landed (`cave-58eoq`); release-host validation remains separate
 
-Last updated: 2026-08-10
+Last reconciled: 2026-09-09
 
 Implementation note: Windows supervision shipped in PR #4485 and authenticated
-native readiness shipped in PR #4495.
+native readiness shipped in PR #4495. Correlated diagnostics shipped in
+PR #4498, reliability measurement in PR #4509, and CLI process-boundary
+hardening in PR #4528. These merge commits are on `main`; they do not prove
+every hardware-only acceptance gate below.
 
 This document maps the current desktop connectivity stack, records verified
 failure modes, and defines the target lifecycle contract. It separates facts
@@ -43,7 +46,7 @@ configured remote hub and perform daemon health and API requests.
 | Boundary | Existing proof | Remaining requirement |
 | --- | --- | --- |
 | Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Extend the same correlation ID through later daemon and CLI work |
-| Webview -> Node sidecar | Per-launch token passed in startup URL and enforced by the sidecar bridge | Correlated handshake evidence and bounded recovery transcript |
+| Webview -> Node sidecar | Per-launch token passed in the native startup URL; ordinary app REST and PTY access also allow verified direct-loopback peers | Correlation and bounded diagnostics are shipped; direct loopback remains an explicit OS-user-isolation tradeoff |
 | Mobile/tailnet -> Node sidecar | Separate persisted access token and request classification | Continue validating forwarded-peer assumptions and token lifecycle |
 | Next routes -> local daemon | Socket/named-pipe request with bounded timeout; health document and compatibility checks in status/start paths | Endpoint ownership/permission evidence and one shared handshake contract |
 | Next routes -> remote hub | Normalized HTTP(S) URL and bearer token | Protocol negotiation, explicit certificate/trust diagnostics, replay-safe retry policy |
@@ -97,23 +100,24 @@ Steps 5 and 8 remain separate layers by design: step 5 now proves the owned
 Node sidecar and its application API are authentic, compatible, and initialized
 before navigation; step 8 proves the downstream Coven daemon or remote hub is
 healthy and compatible. The shell no longer navigates on listening-only
-evidence. Full cross-layer correlation remains `cave-58eoq.3`.
+evidence. PR #4498 added the shared correlation context and redacted diagnostic
+bundle described below.
 
 ## Ranked issue inventory
 
 | Rank | Severity | State | User impact | Root cause and evidence | Fix and coverage |
 | --- | --- | --- | --- | --- | --- |
-| 1 | High | Fixed in this branch | A slow probe for an old hub URL could overwrite a newer choice and auto-save the wrong connection | `settings-daemon.tsx` had no abort/generation guard and saved current React state rather than the probed snapshot | Abort superseded probes, reject stale generations, then persist the exact URL/executor snapshot without reusing the probe signal; source contract tests pin cancellation, generation, and snapshot binding |
-| 2 | High | Fixed in this branch | Any local process could open the packaged sidecar's PTY WebSocket without the per-launch token and spawn or adopt a shell as the app user | The upgrade gate treated direct loopback as identity; allowlisted-tailnet handling also trusted forgeable forwarding headers as a PTY credential | Require the sidecar token even on loopback whenever it is configured, permit only cryptographically authenticated credentials to relax the PTY source gate, preserve tokenless development explicitly, and pin the decision matrix plus generated-server parity |
-| 3 | High | Fixed in this branch | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
-| 4 | High | Fixed in this branch | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
+| 1 | High | Shipped in PR #4497 | A slow probe for an old hub URL could overwrite a newer choice and auto-save the wrong connection | `settings-daemon.tsx` had no abort/generation guard and saved current React state rather than the probed snapshot | Abort superseded probes, reject stale generations, then persist the exact URL/executor snapshot without reusing the probe signal; source contract tests pin cancellation, generation, and snapshot binding |
+| 2 | High | Shipped in PR #4497 | Any local process could open the packaged sidecar's PTY WebSocket without the per-launch token and spawn or adopt a shell as the app user | The upgrade gate treated direct loopback as identity; allowlisted-tailnet handling also trusted forgeable forwarding headers as a PTY credential | PR #4497 required the sidecar token on loopback; the later `cave-99eon` policy explicitly allows verified direct-loopback access without a token. Forwarded or remote ingress remains subject to its access checks; direct loopback does not establish OS-user identity |
+| 3 | High | Shipped in PR #4497 | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
+| 4 | High | Shipped in PR #4497 | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
 | 5 | High | Shipped in PR #4485: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup previously remained dead until a later UI/manual recovery path acted | Windows had startup ownership but no post-ready observer | Windows now launches the shared bounded supervisor beside `SidecarStartupControl`; automatic/manual startup share atomic ownership, budget resets only after a finished startup with an observed live child, shutdown stops supervision first, and failed/cancelled/navigation-failed workers synchronously release the owned process job |
 | 6 | High | Shipped in PR #4495: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
-| 7 | Medium | Fixed in this branch | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
-| 8 | Medium | Open: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs are component-local and no shared correlation/diagnostic-bundle contract was found | Add correlation IDs, structured lifecycle events, bounded retention, and a redacted export manifest |
+| 7 | Medium | Shipped in PR #4497 | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
+| 8 | Medium | Shipped in PR #4498: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | The original audit found component-local logs without a shared export contract | Shared correlation contexts, structured lifecycle events, bounded native retention, and a redacted export manifest now exist; verify coverage when adding an execution boundary |
 | 9 | Medium | Shipped in PR #4496: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | The bounded harness covers delayed readiness, crashes, hangs, stale ownership, permission ambiguity, version skew, duplicate starts, cancellation, sleep/wake, stale completions, unusual paths, and repeated lifecycle cleanup | Routine PR conformance runs these assertions on Ubuntu when path selection enables the conformance lane; full-validation and release platform validation run the same harness on Ubuntu, Windows, and macOS |
-| 10 | Medium | Implemented in this branch: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
-| 11 | Medium | Open: `cave-58eoq.6` | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
+| 10 | Medium | Shipped in PR #4509: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
+| 11 | Medium | Shipped in PR #4528: `cave-58eoq.6` | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | PR #4528 added process-tree ownership, bounded output, and timeout/termination contracts for the audited CLI paths; the current direct-loopback access policy is recorded separately in row 2 | Keep the execution inventory current; new spawn/socket boundaries require environment, quoting, timeout, size, cancellation, permission, and compatibility coverage |
 
 ## Lifecycle and connection state machine
 
@@ -156,7 +160,7 @@ Illegal transitions:
 | Child hangs before ready | Condition timeout | Fails after 60/90 seconds | Cancel or retry; preserve bounded output tail | Timeout budget is not yet measured by platform |
 | Child dies after ready, macOS/Linux | Native liveness poll | Bounded refillable revive and webview re-navigation | Automatic | Full end-to-end revive test is still missing |
 | Child dies after ready, Windows | Shared native liveness poll using `SidecarStartupControl` and the owned process job | Bounded refillable recovery without concurrent startup | Automatic | Windows release-host crash injection remains required |
-| Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Fixed in this branch |
+| Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Shipped in PR #4497 |
 | Hub unauthorized | Authenticated HTTP response 401/403 | Previously generic Offline | Show Authorization required and reason | One-click credential repair remains future work |
 | Hub unreachable | Transport failure, no HTTP answer | Configured target unavailable | Bounded GET retry; travel/replay policy | Network classification still needs correlated timing |
 | Sidecar readiness unauthorized/malformed | Authenticated native readiness returns non-200, malformed HTTP/chunks/JSON, or exceeds 64 KiB | Native startup refuses navigation and preserves a bounded output/error chain | Retry exact owned startup; do not adopt the endpoint | Shipped in PR #4495 |
@@ -170,7 +174,7 @@ Illegal transitions:
 
 ## Warning truthfulness audit
 
-| Diagnostic | Before | Contract after this branch |
+| Diagnostic | Before | Shipped contract |
 | --- | --- | --- |
 | Checking… | Accurate while a status request is pending | Unchanged |
 | Running | Derived from `running` only | Requires `running` plus `online` or a legacy payload with no availability field; contradictory payloads fail closed as Unhealthy |
@@ -185,6 +189,13 @@ Illegal transitions:
 | Fixed/repair succeeded | No new claim added here | Future repair actions must re-run the authenticated end-to-end health contract before success |
 
 ## Diagnostics and observability specification
+
+The shared implementation lives in `src/lib/server/daemon-diagnostics.ts`,
+`src-tauri/src/sidecar_diagnostics.rs`, and the
+`/api/daemon/diagnostics` export route behind the normal app access gate. It carries `x-coven-correlation-id`,
+retains at most 256 in-memory events and 256 KiB of native events, and builds a
+redacted bundle. The list below is the coverage contract for integrations, not a
+claim that every future operation automatically emits every field.
 
 Each startup, connection, request, recovery, and repair operation should emit a
 local structured event with:
@@ -223,7 +234,8 @@ Local diagnostics and opt-in telemetry remain separate systems.
 
 ## Validation and measurements
 
-Current branch:
+Historical implementation evidence (counts and timings describe those recorded
+runs, not current release validation):
 
 - `daemon-status-classification.test.ts`: complete availability-presentation
   taxonomy, legacy compatibility, and contradictory-evidence fail-closed cases.
@@ -233,18 +245,18 @@ Current branch:
   and ad-hoc probes cannot forward process-wide credentials.
 - The 85-file mobile contract suite passes. An isolated Swift typecheck covers
   secure transport and exact HTTPS/WSS origin matching; the focused Xcode test
-  remains blocked before compilation by the unresolved WebRTC package revision.
+  was blocked before compilation by the unresolved WebRTC package revision.
 - TypeScript typecheck passes.
 - Tauri lifecycle baseline: 24 targeted tests pass. A cold local compile took
   42.46 seconds; the tests themselves completed in 0.62 seconds.
 
-Completed follow-up subsets:
+Historical follow-up verification:
 
 - `cave-58eoq.1` Windows supervision: 95 native Rust library tests, 9 focused
   supervisor tests, and 24 release-runtime contracts pass. Independent review
   found and the implementation fixed premature recovery while startup still
   owned a live child and best-effort cleanup that could leave a failed process
-  job retaining the port. Local Windows cross-compilation remains blocked
+  job retaining the port. Local Windows cross-compilation was blocked
   before project Rust by missing Windows C headers/toolchains, so repository
   Windows CI remains mandatory.
 - `cave-58eoq.2` authenticated readiness: 94 native Rust library tests, all
@@ -259,11 +271,11 @@ Completed follow-up subsets:
 
 The attempted native startup measurement encountered an already-running GUI
 and active development origin. It is recorded as contention, not as startup
-success or failure, and no unrelated process was terminated. This branch adds
+success or failure, and no unrelated process was terminated. PR #4509 added
 the reproducible authenticated time-to-ready and recovery-rate measurement
 contract tracked by `cave-58eoq.5`.
 
-Behavioral delta in this branch:
+Behavioral delta shipped in PR #4497:
 
 - Before: any completed probe could publish; after: only the latest generation.
 - Before: auto-save mixed the probed URL with mutable current state; after: the
@@ -276,18 +288,18 @@ Behavioral delta in this branch:
   authorities; after: every Node/iOS sink requires secure transport and exact
   origin, while speculative iOS discovery probes remain credential-free.
 
-No claim is made yet that native startup time or cross-platform recovery rate
-improved; those require the open supervision, handshake, fault, and measurement
-work.
+The merged supervision, handshake, fault, and measurement work does not by
+itself establish a measured improvement in native startup time or cross-platform
+recovery rate. That conclusion requires representative release-host measurements.
 
 ## Residual risk register
 
 | Risk | Owner |
 | --- | --- |
 | Windows post-ready supervision and cross-platform fault injection are shipped; release-host validation remains a release gate | Release platform validation |
-| No cross-component correlation/export contract | `cave-58eoq.3` |
+| Correlation and redacted export are shipped; new execution boundaries can still omit their diagnostic context | Diagnostic integration tests and review of each new boundary |
 | Routine pull-request fault coverage is path-gated; documentation-only changes do not run the bounded harness | Explicit coverage boundary in `cave-5tpxy` |
-| Exhaustive remaining CLI spawn and socket/pipe security proof is incomplete after closing the PTY and remote tokenless-development authentication bypasses | `cave-58eoq.6` |
+| CLI boundary hardening is shipped for the audited paths; future spawn and socket/pipe paths must preserve its contracts | Process-boundary tests and an updated execution inventory |
 | Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
@@ -447,6 +459,38 @@ transport readiness remains eligible and therefore lowers the rate.
 
 An operation with no authenticated successes fails its latency check. Do not
 raise a budget from deterministic data alone. Collect representative,
-privacy-safe local records on each supported platform after authenticated
-native readiness lands, then compare the same benchmark output before and after
+privacy-safe local records on each supported platform using authenticated
+native readiness, then compare the same benchmark output before and after
 a change.
+
+## Historical baseline disposition
+
+The 2026-08-10 execution baseline, formerly
+`docs/daemon-connectivity-program-completion.md`, is retained at
+`archive/fix-cave-58eoq-daemon-connectivity-audit-2026-08-14`
+(commit `e999e4d4457dd89b3979c901f397e152a1b168d6`). Its pending PRs, active
+session ownership, and uncommitted-work instructions are historical and must
+not be replayed. This document is the maintained reliability reference.
+
+The baseline's twelve completion requirements remain evidence obligations.
+The references below identify their contracts, not proof that every release-host
+gate has passed.
+
+| Required outcome | Contract or remaining disposition |
+| --- | --- |
+| Normal startup reaches authenticated sidecar readiness without user action | Native startup sequence and lifecycle state machine |
+| Concurrent launches cannot create conflicting owned sidecars or daemons | Single-owner launch contract and fault matrix |
+| Post-ready crashes recover through bounded, cancelable, observable policy on macOS, Linux, and Windows | Lifecycle state machine, fault matrix, and supported-platform validation |
+| Credentials never travel over unsafe transport or to a different origin | Trust-boundary inventory and credential-origin contracts |
+| Armed authentication binds loopback access to the OS user | Not satisfied by the accepted prompt-free direct-loopback policy in `cave-99eon`; retain this explicit tradeoff |
+| Every CLI/socket boundary defines timeout, size, cancellation, compatibility, redaction, and process ownership | Execution-boundary inventory; verify each new boundary |
+| One correlation ID spans native startup/recovery, sidecar API work, daemon requests, and CLI execution | Diagnostics contract; shared context alone does not prove complete propagation |
+| Exported diagnostics are bounded and redact credentials, personal paths, conversation content, and unrelated environment values | Diagnostics and observability specification |
+| Fault injection covers refusal, timeout, reset, malformed/partial data, crashes, hangs, stale endpoints, cancellation, and repeated lifecycle stress on supported operating systems | Fault matrix and platform validation; deterministic fixtures do not replace release-host evidence |
+| Startup/recovery budgets define distributions, retention limits, and reproducible benchmark commands | Reliability measurement contract and baseline commands |
+| UI and diagnostics report connected, healthy, recovered, or fixed only after authenticated end-to-end success | Warning truthfulness audit |
+| Required PR checks pass on exact heads and final verification runs from clean current `main` | Delivery evidence; historical counts above are not current verification |
+
+Signing, quarantine, sleep/wake, and abrupt-power-loss validation still require
+supported release hosts. Archive retention preserves the historical baseline;
+this document carries its maintained requirements on `main` after landing.
