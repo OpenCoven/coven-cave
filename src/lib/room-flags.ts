@@ -36,6 +36,7 @@ import {
   REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
   // Relative + extensioned, like role-surfaces.ts's own imports, so the rules
   // stay runnable under bare `node --experimental-strip-types`.
 } from "../components/role-surfaces/ids.ts";
@@ -55,6 +56,9 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
   SENTINEL_SURFACE_ID,
   MESSENGER_SURFACE_ID,
   INDEXER_SURFACE_ID,
+  // Demo-backed: its approvals and slots are local and nothing reaches X, so
+  // it stays out of PRODUCTION_ROOM_IDS until it has a delivery half.
+  X_COMMS_SURFACE_ID,
 ];
 
 /**
