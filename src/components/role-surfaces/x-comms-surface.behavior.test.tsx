@@ -32,6 +32,28 @@ globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
 };
 globalThis.cancelAnimationFrame = () => {};
 
+// The room measures the viewport to decide whether the dispatch rail is a
+// column or a tab strip, so the window is part of its real environment rather
+// than something to guard away. `setViewport` re-runs the listeners the way a
+// resize would.
+const windowListeners: Record<string, Array<() => void>> = {};
+globalThis.window = {
+  innerWidth: 1600,
+  addEventListener: (type: string, handler: () => void) => {
+    (windowListeners[type] ??= []).push(handler);
+  },
+  removeEventListener: (type: string, handler: () => void) => {
+    windowListeners[type] = (windowListeners[type] ?? []).filter((entry) => entry !== handler);
+  },
+};
+
+async function setViewport(width: number) {
+  globalThis.window.innerWidth = width;
+  await act(async () => {
+    for (const handler of windowListeners.resize ?? []) handler();
+  });
+}
+
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { XCommsSurface } from "./x-comms-surface";
 
@@ -53,6 +75,8 @@ const CONTEXT = {
 
 beforeEach(() => {
   for (const key of Object.keys(listeners)) delete listeners[key];
+  for (const key of Object.keys(windowListeners)) delete windowListeners[key];
+  globalThis.window.innerWidth = 1600;
 });
 
 async function render() {
@@ -379,6 +403,31 @@ test("the state of each row is readable without relying on colour", async () => 
   expect(text).toContain("awaiting approval");
   expect(text).toContain("approved · scheduled");
   expect(text).toContain("posted");
+});
+
+test("below 1280 the dispatch rail becomes a tab strip that opens as an overlay", async () => {
+  const renderer = await render();
+  // Wide: the rail is a column and there is no strip.
+  expect(byClass(renderer, "x-comms-dispatch")).toHaveLength(1);
+  expect(byClass(renderer, "x-comms-rail-tabs")).toHaveLength(0);
+
+  await setViewport(1100);
+  // Narrow: the strip replaces it, and the rail is closed until asked for.
+  expect(byClass(renderer, "x-comms-rail-tabs")).toHaveLength(1);
+  expect(byClass(renderer, "x-comms-dispatch")).toHaveLength(0);
+  expect(byClass(renderer, "x-comms")[0].props["data-rail"]).toBe("collapsed");
+
+  // The strip carries the same amber badge the wide tablist does, so the one
+  // thing awaiting a decision is still visible when the rail is not.
+  const approvalTab = byClass(renderer, "x-comms-rail-tab")[0];
+  expect(approvalTab.props["aria-label"]).toBe("Approval");
+  expect(approvalTab.findAll((node) => node.props?.className === "x-comms-badge")).toHaveLength(1);
+
+  await act(async () => approvalTab.props.onClick());
+  expect(byClass(renderer, "x-comms-dispatch")).toHaveLength(1);
+  // Pressing the same tab again puts it away.
+  await act(async () => byClass(renderer, "x-comms-rail-tab")[0].props.onClick());
+  expect(byClass(renderer, "x-comms-dispatch")).toHaveLength(0);
 });
 
 test("the queue resizes from the keyboard, not only by dragging", async () => {

@@ -115,6 +115,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
   const [closedCards, setClosedCards] = useState<Partial<Record<DispatchTab, boolean>>>({});
   const [dispatchTab, setDispatchTab] = useState<DispatchTab>("approval");
   const [railOpen, setRailOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   // Collapsed by default: expanded it duplicated counts the queue already shows.
   const [agendaOpen, setAgendaOpen] = useState(false);
 
@@ -163,6 +164,18 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
 
   const nextSlotAt = useMemo(() => nextSlot(now), [now]);
   const blocker = approvalBlocker(selected, connection);
+
+  // The dispatch rail collapses to a tab strip below 1280px, which is the
+  // frame's own break. The room's three columns are not the room chrome's
+  // named rails (the queue is drag-resizable and the dispatch rail is a fixed
+  // 376px, neither of which the shared template expresses), so the collapse is
+  // this room's to implement rather than something it inherits.
+  useEffect(() => {
+    const measure = () => setRailCollapsed(window.innerWidth < 1280);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   // A minute is the finest granularity anything here displays, so a faster
   // tick would re-render the room for no visible change.
@@ -689,6 +702,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
     <div
       className="x-comms"
       data-density={density}
+      data-rail={railCollapsed ? "collapsed" : "expanded"}
       // The queue is drag-resizable, so its width is the one layout value that
       // cannot live in the sheet. Everything else is on the scale.
       style={{ "--x-queue-w": `${queueWidth}px` } as React.CSSProperties}
@@ -1160,6 +1174,34 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </section>
 
+          {railCollapsed && (
+            <nav className="x-comms-rail-tabs" aria-label="Dispatch tabs">
+              {DISPATCH_TABS.map((tab) => {
+                const active = railOpen && dispatchTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className="x-comms-rail-tab focus-ring"
+                    aria-label={tab.label}
+                    title={tab.title}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setRailOpen(!(railOpen && dispatchTab === tab.id));
+                      setDispatchTab(tab.id);
+                    }}
+                  >
+                    <Icon name={tab.icon} width={14} height={14} aria-hidden />
+                    {tab.id === "approval" && pending.length > 0 && (
+                      <span className="x-comms-badge" aria-hidden />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+
+          {(!railCollapsed || railOpen) && (
           <aside className="x-comms-dispatch" aria-label="Dispatch">
             <div role="tablist" aria-label="Dispatch sections" className="x-comms-tablist">
               {DISPATCH_TABS.map((tab) => (
@@ -1285,6 +1327,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
               />
             )}
           </aside>
+          )}
         </>
       </SurfaceRoom>
 

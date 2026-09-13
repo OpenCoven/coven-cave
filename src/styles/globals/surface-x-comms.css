@@ -2863,13 +2863,17 @@
   border: 1px solid var(--bg-panel);
 }
 
+/* Anchored to the columns box rather than the viewport: the room can carry one
+   banner or two, so a fixed top offset would be wrong half the time. */
 .x-comms[data-rail="collapsed"] .x-comms-dispatch {
-  position: fixed;
-  top: 40px;
-  right: 44px;
+  position: absolute;
+  top: 0;
   bottom: 0;
-  width: var(--x-dispatch-w);
+  right: 44px;
+  width: min(var(--x-dispatch-w), calc(100% - var(--x-queue-w) - 44px));
   z-index: 35;
+  border-left: 1px solid var(--border-strong, var(--border));
+  box-shadow: var(--shadow-popover);
 }
 
 /* ── Agenda ──────────────────────────────────────────────────────────────── */
