@@ -162,13 +162,13 @@ test("fresh PR-head evidence passes without comparing to the synthetic merge SHA
   );
 });
 
-test("the gate refuses when the run base differs from the live base ref", () => {
+test("base ref drift alone does not invalidate fresh same-attempt evidence", () => {
   assert.deepEqual(
     staleEvidence(
       [job("Select validation")],
       context({ liveBaseSha: LIVE_BASE }),
     ),
-    [`base main moved: run recorded ${RUN_BASE}, live ref is ${LIVE_BASE}`],
+    [],
   );
 });
 

@@ -91,12 +91,6 @@ export function staleEvidence(
   const attemptStartedAtMs = timestamp(attemptStartedAt);
   const evidence = sortedEvidenceJobs(jobs);
 
-  if (runBaseSha !== liveBaseSha) {
-    stale.push(
-      `base ${runBaseRef} moved: run recorded ${runBaseSha}, live ref is ${liveBaseSha}`,
-    );
-  }
-
   if (evidence.length === 0) {
     stale.push("no successful upstream evidence jobs were returned by the Actions API");
   }
