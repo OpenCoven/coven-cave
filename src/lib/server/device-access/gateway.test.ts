@@ -232,3 +232,62 @@ for (const external of [false, true]) {
     }
   });
 }
+
+test("an unreadable policy refuses remote traffic instead of falling into legacy mode", async () => {
+  // The defect this pins: `enabled: false` means "configured off", and the
+  // gateway answers that by adding the response to `legacy` and passing the
+  // request THROUGH to the app — un-paired, no tailnet check. A store that
+  // failed to open once reported exactly that, so a failed security check
+  // opened the door it exists to hold shut. `unavailable` must refuse.
+  const unreadable = {
+    policy: async () => ({ enabled: false, allowedTailnets: [], unavailable: true }),
+    snapshot: async () => { throw new Error("unavailable"); },
+    setAllowedTailnets: async () => { throw new Error("unavailable"); },
+    request: async () => { throw new Error("unavailable"); },
+    inspect: async () => { throw new Error("unavailable"); },
+    verify: async () => { throw new Error("unavailable"); },
+    decide: async () => { throw new Error("unavailable"); },
+    recordAccess: async () => { throw new Error("unavailable"); },
+    close: () => {},
+  } as unknown as Parameters<typeof createDeviceAccessGateway>[0]["store"];
+
+  const isDirectLoopback = (req: IncomingMessage) => !req.headers["x-forwarded-for"];
+  const gateway = createDeviceAccessGateway({
+    store: unreadable, inventory: async () => parseDevicePeerInventory({ BackendState: "Running" }),
+    isDirectLoopback, stampSecret: "stamp",
+  });
+  let reachedTheApp = false;
+  const server = createServer((req, res) => {
+    void gateway.handle(req, res).then((handled) => {
+      if (handled) return;
+      reachedTheApp = true;
+      res.end("{}");
+    }).catch(() => res.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    const remote = await fetch(`${base}/`, {
+      headers: remoteHeaders, signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(remote.status, 503, "the remote request is refused");
+    assert.equal(reachedTheApp, false, "and never reaches the app");
+
+    // Local traffic is unaffected: device access is not what gates loopback.
+    const local = await fetch(`${base}/`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(local.status, 200, "loopback still works");
+    assert.equal(reachedTheApp, true);
+
+    // A socket upgrade must be blocked for the same reason.
+    assert.equal(
+      await gateway.blocksUpgrade({ headers: remoteHeaders } as unknown as IncomingMessage),
+      true,
+      "an upgrade is not admitted by a check that never ran",
+    );
+  } finally {
+    await gateway.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

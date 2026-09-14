@@ -91,16 +91,34 @@ test("verify refuses rather than returning null when the store never opened", as
   await assert.rejects(() => store.verify("c", {} as never), /unavailable/);
 });
 
-test("the policy read answers 'off' instead of erroring", async () => {
-  // This one is deliberately not a throw: the UI asks policy() to decide
-  // whether to show device access at all, and "off" is the honest answer when
-  // the store never opened. Nothing is granted by saying so.
+test("the policy read reports UNAVAILABLE, not 'off'", async () => {
+  // The original version of this test asserted { enabled: false } and called it
+  // fail-closed. That was wrong, and the test is what made it look right: the
+  // gateway reads `enabled: false` as "configured off" and runs in LEGACY mode,
+  // which passes remote requests through without pairing
+  // (gateway.ts, the `if (!policy.enabled)` branch after `if (direct)`).
+  // So the old answer turned a failed security check into an open door.
   const { store, settled } = deferDeviceAccessStore(
     () => Promise.reject(new Error("ACL probe timed out")),
     { warn: () => {} },
   );
   await settled;
-  assert.deepEqual(await store.policy(), { enabled: false, allowedTailnets: [] });
+  assert.deepEqual(await store.policy(), {
+    enabled: false,
+    allowedTailnets: [],
+    unavailable: true,
+  });
+});
+
+test("a policy read does not wait forever on a stalled initialization", async () => {
+  // The gateway awaits policy() on EVERY request, before the direct-loopback
+  // bypass. An unbounded wait here is the same outage as blocking boot, moved
+  // one layer down: the server listens and answers nothing.
+  const { store } = deferDeviceAccessStore(() => never<DeviceAccessStore>(), { warn: () => {} });
+  const started = Date.now();
+  const policy = await store.policy();
+  assert.equal(policy.unavailable, true, "a pending store refuses rather than hanging");
+  assert.ok(Date.now() - started < 30_000, "and answers within the bound");
 });
 
 test("the failure is reported once, in full, and names the consequence", async () => {

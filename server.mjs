@@ -423,7 +423,10 @@ var ERROR_STATUS = {
   forbidden: 403,
   conflict: 409,
   not_found: 404,
-  rate_limited: 429
+  rate_limited: 429,
+  // The check could not be performed. Distinct from `forbidden`, which is a
+  // check that ran and said no.
+  unavailable: 503
 };
 var DeviceAccessError = class extends Error {
   constructor(code, message, status = ERROR_STATUS[code]) {
@@ -1982,6 +1985,14 @@ function createDeviceAccessGateway(options) {
         }
         const peer2 = await eligible(req);
         if (pathname === `${API}/requests` && req.method === "POST") {
+          if (policy.unavailable) {
+            json(res, 503, {
+              ok: false,
+              error: "unavailable",
+              message: "Device access could not be verified on this host."
+            });
+            return true;
+          }
           if (!policy.enabled) {
             json(res, 409, {
               ok: false,
@@ -2009,6 +2020,13 @@ function createDeviceAccessGateway(options) {
         throw new DeviceAccessError("not_found", "Unknown device pairing operation.", 404);
       }
       if (direct) return false;
+      if (policy.unavailable) {
+        throw new DeviceAccessError(
+          "unavailable",
+          "Device access could not be verified on this host.",
+          503
+        );
+      }
       if (!policy.enabled) {
         legacy.add(res);
         res.once("close", () => {
@@ -2080,7 +2098,9 @@ function createDeviceAccessGateway(options) {
   return {
     handle: handle2,
     async blocksUpgrade(req) {
-      return !options.isDirectLoopback(req) && (await currentPolicy()).enabled;
+      if (options.isDirectLoopback(req)) return false;
+      const policy = await currentPolicy();
+      return policy.enabled || policy.unavailable === true;
     },
     async close() {
       clearInterval(timer);
@@ -2098,6 +2118,11 @@ function createDeviceAccessGateway(options) {
 }
 
 // src/lib/server/device-access/deferred.ts
+var POLICY_WAIT_MS = 5e3;
+var sleep = (ms) => new Promise((resolve3) => {
+  const timer = setTimeout(resolve3, ms);
+  timer.unref?.();
+});
 function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
   let ready = null;
   let failed = null;
@@ -2121,8 +2146,8 @@ function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
   };
   const store = {
     async policy() {
-      await settled;
-      if (!ready) return { enabled: false, allowedTailnets: [] };
+      await Promise.race([settled, sleep(POLICY_WAIT_MS)]);
+      if (!ready) return { enabled: false, allowedTailnets: [], unavailable: true };
       return ready.policy();
     },
     async snapshot() {

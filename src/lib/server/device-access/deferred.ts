@@ -25,6 +25,19 @@
 
 import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
 
+/**
+ * How long a policy read waits on initialization before answering
+ * "unavailable". Long enough that an ordinary slow start is simply awaited,
+ * short enough that a stalled probe cannot hold the server's request path.
+ */
+const POLICY_WAIT_MS = 5_000;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+
 export type DeferredDeviceAccess = {
   store: DeviceAccessStore;
   /** Resolves when initialization has settled, successfully or not. */
@@ -78,12 +91,17 @@ export function deferDeviceAccessStore(
 
   const store: DeviceAccessStore = {
     async policy() {
-      await settled;
-      // Deliberately NOT a throw. The policy read is what the UI uses to ask
-      // "is device access on?", and the honest answer when the store never
-      // opened is "off", not an error dialog. Every method that could actually
-      // grant something still refuses below.
-      if (!ready) return { enabled: false, allowedTailnets: [] };
+      // Bounded, because the gateway awaits this on EVERY request — including
+      // direct loopback. An unbounded wait here means a stalled probe stops the
+      // server answering at all, which is the same outage as blocking boot,
+      // just moved one layer down.
+      await Promise.race([settled, sleep(POLICY_WAIT_MS)]);
+      // `enabled: false` is NOT a safe answer here: the gateway reads it as
+      // "configured off" and runs in legacy mode, which passes REMOTE requests
+      // through without pairing. Saying it when the store never opened would
+      // turn a failed security check into an open door. `unavailable` is the
+      // answer that refuses.
+      if (!ready) return { enabled: false, allowedTailnets: [], unavailable: true };
       return ready.policy();
     },
     async snapshot() {
