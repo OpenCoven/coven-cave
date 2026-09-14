@@ -234,7 +234,20 @@ BASELINES.offScaleSpacingPx = 1616;
 // fixed constants from the same frame deliberately did NOT come here — the
 // 376px dispatch rail, the 44px collapsed strip and the 40px header live in
 // surface-x-comms.css.
-BASELINES.inlineTsxStyles = 289;
+// +1: the Needs-you inbox ("Coven Cave Prototype.dc.html" frame 2c, cave-21rp)
+// binds ONE number no stylesheet can hold: the wait hairline under each row,
+// whose width is that item's own wait as a fraction of a week. It is a
+// per-item measurement that differs for every row and changes on every minute
+// tick, which is the same category the chat run-rail, Coding Desk, Research
+// Desk and Review Cockpit entries banked above; the track, the tint and the
+// opacity all live in needs-you-inbox.css, and only the fraction is inline.
+// `coven-design/no-static-inline-style` reports zero findings across the new
+// component. The frame's fixed numbers deliberately did NOT come here — the
+// 420px panel, the 560px cap, the 44px header/footer and the 54px row are
+// constants in that stylesheet — and the sheet's three off-scale spacing
+// literals were snapped to --space-1/-2 in this PR rather than banked, so
+// offScaleSpacingPx is unchanged rather than raised.
+BASELINES.inlineTsxStyles = 290;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

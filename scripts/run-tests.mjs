@@ -356,6 +356,8 @@ export const SUITES = {
     "src/lib/workspace-chat-attention-compat.test.ts",
     "src/lib/chat-attention.test.ts",
     "src/lib/session-lifecycle.test.ts",
+    "src/lib/needs-you-inbox.test.ts",
+    "src/lib/needs-you-seen.test.ts",
     "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
@@ -1392,7 +1394,7 @@ export const SUITES = {
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
-    "src/components/running-activity-popover.test.ts",
+    "src/components/needs-you-popover.test.ts",
     "src/components/top-bar-polish.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",
@@ -2137,10 +2139,9 @@ const ALIAS_LOADER = new Set([
   // presence.ts in turn resolves "@/lib/types".
   "src/lib/work-scheduler.test.ts",
   // running-activity resolves "@/lib/session-status" (runtime), "@/lib/types",
-  // "@/lib/cave-board-types", and the run-record types; the popover spec renders
-  // the real .tsx module, which resolves "@/lib/icon" and "@/lib/running-activity".
+  // "@/lib/cave-board-types", and the run-record types. The Needs-you inbox
+  // still reads this endpoint for its footer's cross-source running count.
   "src/lib/running-activity.test.ts",
-  "src/components/running-activity-popover.test.ts",
   "src/app/api/running-activity/route.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",

@@ -94,13 +94,21 @@ assert.doesNotMatch(
   /menu-bar__running-dot/,
   "the right cluster no longer uses the old running dot",
 );
-// Detailed waveform trigger, badge, zero-hide, popover, and accessibility
-// contracts live in running-activity-popover.test.ts. This suite keeps only
-// the shell-level wiring.
+// Detailed trigger, badge, ordering, and accessibility contracts live in
+// needs-you-popover.test.ts. This suite keeps only the shell-level wiring.
+// Two assertions rather than one spanning regex: the prose between these two
+// lines is explanatory and will grow, and a `[\s\S]{0,N}` gap that has to be
+// widened every time someone adds a comment is a test that fails for the wrong
+// reason.
 assert.match(
   workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}[\s\S]{0,400}?<RunningActivityPopover\s*\n\s*familiars=\{familiars\}/,
-  "the menu bar receives the active familiar id and the running-activity popover",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}/,
+  "the menu bar receives the active familiar id",
+);
+assert.match(
+  workspace,
+  /runningStatus=\{\s*<NeedsYouPopover\s*\n?\s*sessions=\{sessions\}/,
+  "the status slot hosts the Needs-you inbox, fed the live session list",
 );
 assert.match(
   workspace,

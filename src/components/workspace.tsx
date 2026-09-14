@@ -218,8 +218,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
-import { RunningActivityPopover } from "@/components/running-activity-popover";
-import type { RunningActivityItem } from "@/lib/running-activity";
+import { NeedsYouPopover } from "@/components/needs-you-popover";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -4897,33 +4896,25 @@ export function Workspace() {
             </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              // Running activity: the waveform trigger opens the live activity
-              // popover — chats, Board tasks, ritual runs, Flow and Workflow
-              // runs — with direct navigation per row (cave-21rp).
+              // Needs you: the bell opens the attention inbox — sessions that
+              // are blocked, failed or awaiting you, oldest wait first — with
+              // the running count demoted to footer text (cave-21rp; design
+              // handoff `Coven Cave Prototype.dc.html` frame 2c).
+              //
+              // This slot used to hold RunningActivityPopover, which listed
+              // everything in flight. The handoff's diagnosis was that such a
+              // list is never empty, so its badge stopped being a signal and
+              // the popover stopped being a popover. Running work is still
+              // counted here, in the footer, where it reads as context rather
+              // than as a demand.
               runningStatus={
-                <RunningActivityPopover
+                <NeedsYouPopover
+                  sessions={sessions}
                   familiars={familiars}
-                  onOpenItem={(item: RunningActivityItem) => {
-                    switch (item.kind) {
-                      case "session":
-                        openFamiliarSession(item.targetId, item.familiarId);
-                        return;
-                      case "board-task":
-                        onPaletteIntent({ kind: "focus-card", cardId: item.targetId });
-                        return;
-                      case "automation":
-                        setMode("inbox");
-                        return;
-                      case "flow":
-                      case "workflow":
-                        // Flow/Workflow surfaces are retired; a run backed by a
-                        // live chat jumps to that chat, otherwise to Rituals.
-                        if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                        else setMode("inbox");
-                        return;
-                    }
-                  }}
-                  onViewAll={() => setMode("inbox")}
+                  onOpenSession={(sessionId, familiarId) =>
+                    openFamiliarSession(sessionId, familiarId)
+                  }
+                  onOpenSessions={() => setMode("chat")}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile
