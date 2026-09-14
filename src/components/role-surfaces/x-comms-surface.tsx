@@ -80,6 +80,18 @@ import "@/styles/globals/surface-x-comms.css";
 
 const UNDO_SECONDS = 8;
 
+/**
+ * The account-state switch is a dev affordance, not a feature.
+ *
+ * `x-disconnected` and `rate-limited` are account-level, so with no connection
+ * to read they are otherwise unreachable — the switch exists so both stay
+ * inspectable rather than becoming dead code. In a production build that trade
+ * inverts: it would let someone flip their own room into a red "X disconnected"
+ * banner that says nothing true about their account. So it ships to dev and
+ * stops there, and production pins the room to `connected`.
+ */
+const SHOW_ACCOUNT_STATE_SWITCH = process.env.NODE_ENV !== "production";
+
 type DispatchTab = "approval" | "control" | "trends" | "analytics";
 
 const DISPATCH_TABS: ReadonlyArray<{
@@ -760,15 +772,21 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
               </span>
               <strong>Demo room.</strong>
               <span className="x-comms-banner-body">{X_DEMO_NOTICE}</span>
-              <span className="x-comms-banner-tail">
-                <span>account state</span>
-                <Segmented
-                  ariaLabel="Demo account state"
-                  value={connection}
-                  options={["connected", "disconnected", "rate-limited"] as const}
-                  onChange={setConnection}
-                />
-              </span>
+              {SHOW_ACCOUNT_STATE_SWITCH ? (
+                <span className="x-comms-banner-tail">
+                  <span>account state</span>
+                  <Segmented
+                    ariaLabel="Demo account state"
+                    value={connection}
+                    options={["connected", "disconnected", "rate-limited"] as const}
+                    onChange={setConnection}
+                  />
+                </span>
+              ) : (
+                <span className="x-comms-banner-tail">
+                  the real publish path is in Comms Operations
+                </span>
+              )}
             </div>
 
             {connection !== "connected" && (

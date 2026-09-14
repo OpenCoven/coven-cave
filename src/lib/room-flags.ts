@@ -56,8 +56,6 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
   SENTINEL_SURFACE_ID,
   MESSENGER_SURFACE_ID,
   INDEXER_SURFACE_ID,
-  // Demo-backed: its approvals and slots are local and nothing reaches X, so
-  // it stays out of PRODUCTION_ROOM_IDS until it has a delivery half.
   X_COMMS_SURFACE_ID,
 ];
 
@@ -69,6 +67,14 @@ export const KNOWN_ROOM_IDS: readonly string[] = [
 export const PRODUCTION_ROOM_IDS: readonly string[] = [
   RESEARCHER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
+  // Shipped demo-backed, at the owner's direction. Promotion widens the BUILD
+  // gate only: the room still renders solely for a familiar carrying
+  // `xPublishEnabled`, so it reaches the people who asked for X publishing and
+  // nobody else. What they get is seeded drafts and an Approve that moves a
+  // local record — the room's own banner says so above everything else, which
+  // is the condition this entry depends on. If that banner ever goes, this
+  // line goes with it.
+  X_COMMS_SURFACE_ID,
 ];
 
 /** The inputs that decide room visibility for a build. */
