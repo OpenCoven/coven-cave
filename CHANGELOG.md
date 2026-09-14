@@ -7,11 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-## [0.4.4] - 2026-09-14
+## [0.4.2] - 2026-09-14
 
-> X Comms — a room for drafting, approving and scheduling posts to X, where nothing posts itself.
+> X Comms, and the iOS conversations rework — everything since v0.4.1.
 
-Patch release on top of v0.4.3.
+The three version numbers between this release and v0.4.1 were stamped and
+tagged but never published: v0.4.2 and v0.4.3 had their release runs cancelled,
+and a later attempt failed its authorization gate. Their work was never
+withdrawn — it stayed on `main` and ships here, under the next number after the
+last release anyone actually received. `scripts/check-version-continuity.mjs`
+now refuses a stamp that skips a published version, so the gap cannot silently
+reopen.
 
 ### Added
 - **X Comms room.** A console for the one decision X publishing turns on: a
@@ -27,25 +33,6 @@ Patch release on top of v0.4.3.
   familiar you have granted the X publish capability.
 
 ### Changed
-- Desktop now persists tailnet device approvals it manages.
-- Native chat lands on the latest message instead of a blank scroll position.
-- Session rail corners are symmetric again.
-
-### Fixed
-- Bounded discovery readiness failures are classified rather than swallowed (#5377).
-- Client v1 keeps SDK v0.0.1 compatibility (#5376).
-- iOS accepts an empty optional TestFlight inverse linkage, and binds TestFlight
-  beta details through build linkage.
-
-## [0.4.3] - 2026-09-12
-
-> Makes familiar conversations the native iOS app's home.
-
-An iOS-focused release following v0.4.2. TestFlight-only delivery requires an
-explicit iOS dispatch after stopping the automatic stable-tag release before
-publication; a stable tag push alone still selects all platforms.
-
-### Changed
 - Replace native iOS workspace navigation with Conversations and Settings,
   chat search, and familiar selection inside each conversation (#5379).
 - Remove Tasks, Reminders, and global project navigation from the native app,
@@ -53,14 +40,29 @@ publication; a stable tag push alone still selects all platforms.
   explicit conversation-level binding.
 - Preserve cached history, conversation drafts and attachments, and per-thread
   read state across navigation and reconnects.
-- Advance release metadata to 0.4.3 and the iOS build to 2026091214.
+- Desktop now persists tailnet device approvals it manages.
+- Native chat lands on the latest message instead of a blank scroll position.
+- Session rail corners are symmetric again.
+- Deliver visual comparisons without depending on session-owned servers.
+- Update Next.js, Sharp, and Vitest patch dependencies.
 
 ### Fixed
+- Reduce ordinary iOS chat renderer startup JavaScript from 3.6 MB to about
+  160 KB by loading the bundled diagram engine only for completed diagrams
+  (#5350). This is a payload reduction, not a measured device-latency percentage.
+- Release detached iOS message renderers and ignore callbacks after teardown
+  while preserving streamed-response recovery (#5324).
 - Recheck exact conversation access before sends, retries, and queued replay;
   stop active voice when that authority is revoked, without auto-restarting it.
 - Keep cached conversations readable when live catalogs are unavailable.
 - Accept bounded App Store Connect key identifiers without assuming a fixed
   ten-character length in the read-only TestFlight availability receipt.
+- Restore reliable chat prompt enhancement and make protocol conformance probes
+  portable across supported platforms.
+- Bounded discovery readiness failures are classified rather than swallowed (#5377).
+- Client v1 keeps SDK v0.0.1 compatibility (#5376).
+- iOS accepts an empty optional TestFlight inverse linkage, and binds TestFlight
+  beta details through build linkage.
 
 ### Included source updates
 - Improve desktop Home and chat entry flows, title visibility, automatic
@@ -69,26 +71,6 @@ publication; a stable tag push alone still selects all platforms.
   image, and human-answer commands during chat enhancement.
 - Strengthen cross-thread continuity, standard-user discovery, research run
   projections, and isolated workflow/runtime fixtures.
-
-## [0.4.2] - 2026-09-09
-
-> Reduces native iOS chat startup work and releases detached message renderers.
-
-Patch release on top of v0.4.1, focused on the urgent iOS responsiveness repair.
-
-### Fixed
-- Reduce ordinary iOS chat renderer startup JavaScript from 3.6 MB to about
-  160 KB by loading the bundled diagram engine only for completed diagrams
-  (#5350). This is a payload reduction, not a measured device-latency percentage.
-- Release detached iOS message renderers and ignore callbacks after teardown
-  while preserving streamed-response recovery (#5324).
-- Restore reliable chat prompt enhancement and make protocol conformance
-  probes portable across supported platforms.
-
-### Changed
-- Deliver visual comparisons without depending on session-owned servers.
-- Update Next.js, Sharp, and Vitest patch dependencies.
-- Advance release metadata to 0.4.2 and the iOS build to 2026090912.
 
 ## [0.4.1] - 2026-09-09
 

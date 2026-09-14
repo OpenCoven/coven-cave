@@ -91,6 +91,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-helpers.test.mjs",
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
+    "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
     "scripts/fence-refusal-message.test.mjs",

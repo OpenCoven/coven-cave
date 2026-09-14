@@ -545,6 +545,11 @@ childProcess.execFileSync = (cmd, args) => {
   if (cmd === "git" && args[0] === "status" && args[1] === "--porcelain") return "";
   if (cmd === "gh" && args[0] === "api" && args.some((arg) => String(arg).includes("/pulls"))) return "[]";
   if (cmd === "git" && args[0] === "log") return "feat(release): polish dry run\\nfix(release): cover files\\n";
+  // The stamp anchors its next version to the latest PUBLISHED release, not to
+  // the stamped one (cave-9jt60): three versions were stamped and tagged while
+  // users stayed on the one before them.
+  if (cmd === "gh" && args[0] === "release" && args[1] === "list")
+    return JSON.stringify([{ tagName: "v0.0.159", isDraft: false, isPrerelease: false, publishedAt: "2026-07-08T00:00:00Z" }]);
   throw new Error(\`unexpected execFileSync: \${cmd} \${args.join(" ")}\`);
 };
 fs.readFileSync = (file, encoding) => {
@@ -812,6 +817,8 @@ childProcess.execFileSync = (cmd, args) => {
   if (cmd === "gh" && args[0] === "api" && args.includes("POST")) {
     return JSON.stringify({ html_url: "https://example.test/pull/1" });
   }
+  if (cmd === "gh" && args[0] === "release" && args[1] === "list")
+    return JSON.stringify([{ tagName: "v0.0.159", isDraft: false, isPrerelease: false, publishedAt: "2026-07-08T00:00:00Z" }]);
   throw new Error("unexpected execFileSync: " + cmd + " " + args.join(" "));
 };
 fs.readFileSync = (file, encoding) => {
@@ -1215,3 +1222,69 @@ assert.match(
 );
 
 console.log("stamp-release.test.mjs: ok");
+
+// The drift this check exists to stop (cave-9jt60): the stamp used to bump from
+// package.json, so a version that was tagged but never published poisoned every
+// stamp after it — 0.4.1 was the newest release while the source said 0.4.4.
+// Here the source says 0.0.159 and the newest PUBLISHED release is 0.0.157, so
+// the natural bump to 0.0.160 skips two nobody received, and must be refused.
+{
+  const fixtures = {
+    [path.join(REPO_ROOT, "package.json")]: '{"version":"0.0.159"}\n',
+    [path.join(REPO_ROOT, "src-tauri/tauri.conf.json")]:
+      '{"package":{"productVersion":"0.0.159"},"version":"0.0.159"}\n',
+    [path.join(REPO_ROOT, "src-tauri/Cargo.toml")]: '[package]\nversion = "0.0.159"\n',
+    [path.join(REPO_ROOT, "src-tauri/Cargo.lock")]:
+      '[[package]]\nname = "app"\nversion = "0.0.159"\n',
+    [path.join(REPO_ROOT, "apps/ios/CovenCave/project.yml")]:
+      'name: CovenCave\nsettings:\n  base:\n    MARKETING_VERSION: "0.0.159"\n    CURRENT_PROJECT_VERSION: "1"\n',
+    [path.join(REPO_ROOT, "CHANGELOG.md")]: "# Changelog\n\n## [Unreleased]\n\n## [0.0.159] - 2026-07-08\n",
+  };
+  const run = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+import { createRequire, syncBuiltinESMExports } from "node:module";
+import { pathToFileURL } from "node:url";
+const require = createRequire(import.meta.url);
+const childProcess = require("node:child_process");
+const fs = require("node:fs");
+const originalReadFileSync = fs.readFileSync.bind(fs);
+const fixtures = ${JSON.stringify(fixtures)};
+const script = ${JSON.stringify(STAMP_RELEASE)};
+childProcess.execFileSync = (cmd, args) => {
+  if (cmd === "git" && args[0] === "status" && args[1] === "--porcelain") return "";
+  if (cmd === "gh" && args[0] === "api" && args.some((arg) => String(arg).includes("/pulls"))) return "[]";
+  if (cmd === "git" && args[0] === "log") return "feat: something\\n";
+  if (cmd === "gh" && args[0] === "release" && args[1] === "list")
+    return JSON.stringify([{ tagName: "v0.0.157", isDraft: false, isPrerelease: false, publishedAt: "2026-07-01T00:00:00Z" }]);
+  throw new Error("unexpected execFileSync: " + cmd + " " + args.join(" "));
+};
+fs.readFileSync = (file, encoding) => {
+  if (encoding !== "utf8") return originalReadFileSync(file, encoding);
+  const key = String(file);
+  if (key in fixtures) return fixtures[key];
+  return originalReadFileSync(file, encoding);
+};
+fs.writeFileSync = () => {
+  throw new Error("a refused stamp must not write");
+};
+process.env.COVEN_CAVE_GIT_EXECUTABLE = "git";
+syncBuiltinESMExports();
+process.argv = [process.argv[0], script, "--dry-run"];
+await import(pathToFileURL(script));
+`,
+    ],
+    { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  assert.notEqual(run.status, 0, `a stamp that skips published versions must fail:\n${run.stdout}${run.stderr}`);
+  const output = `${run.stdout}${run.stderr}`;
+  assert.match(output, /version continuity/, "it names the check that refused");
+  assert.match(output, /0\.0\.158, 0\.1\.0, 1\.0\.0/, "it names the allowed next versions");
+  assert.match(output, /latest PUBLISHED release is 0\.0\.157/, "it contrasts stamped vs published");
+  assert.match(output, /--allow-version-gap/, "it names the escape hatch");
+}
+
+console.log("stamp-release.test.mjs OK");

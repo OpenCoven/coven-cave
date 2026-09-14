@@ -7,7 +7,7 @@ options:
   groupSortPosition: top
 settings:
   base:
-    MARKETING_VERSION: "0.4.4"
+    MARKETING_VERSION: "0.4.2"
     # Build number, YYYYMMDDHH in UTC. App Store Connect requires this to be
     # unique and increasing for the app, and a hand-kept "1" collides on every
     # upload after the first (it rejected the v0.2.3 upload on 2026-08-03).
