@@ -59,6 +59,13 @@ test("Board-only coverage cannot turn GitHub absence into execution clearance", 
   assert.equal(absent.expected.coverage, "scoped");
 });
 
+test("discovery examples include completed GitHub work before declaring absence", () => {
+  for (const guide of [workflow, read("docs/workflows/github-work-tracking.md")]) {
+    assert.match(guide, /gh issue list --repo OpenCoven\/coven-cave --state (?:all|closed)\b/);
+    assert.match(guide, /gh pr list --repo OpenCoven\/coven-cave --state all\b/);
+  }
+});
+
 test("continuity procedure preserves access, ownership, approvals, and receipt boundaries", () => {
   const normalized = `${skill}\n${workflow}`.replace(/\s+/g, " ");
   for (const boundary of [

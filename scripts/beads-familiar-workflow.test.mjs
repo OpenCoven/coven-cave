@@ -8,6 +8,7 @@ function read(path) {
 }
 
 const packageJson = JSON.parse(read("package.json"));
+const readme = read("README.md");
 const agents = read("AGENTS.md");
 const claude = read("CLAUDE.md");
 const workflow = read("docs/workflows/github-work-tracking.md");
@@ -27,11 +28,12 @@ assert.equal(packageJson.scripts["work:issues"], "gh issue list --repo OpenCoven
 assert.equal(packageJson.scripts["work:project"], "gh project view 9 --owner OpenCoven");
 assert.ok(Object.keys(packageJson.scripts).every((name) => !name.startsWith("beads:")),
   "routine package entrypoints must not restore the retired tracker");
-for (const guide of [agents, claude, workflow, legacyWorkflow]) {
+for (const guide of [readme, agents, claude, workflow, legacyWorkflow]) {
   assert.match(guide, /GitHub/);
   assert.doesNotMatch(guide, /bd prime|bd ready|bd update|bd close|pnpm beads:/,
     "current development guidance must not teach a Beads execution loop");
 }
+assert.match(readme, /docs\/workflows\/github-work-tracking\.md/);
 assert.match(workflow, /github\.com\/orgs\/OpenCoven\/projects\/9/);
 assert.match(workflow, /GitHub assignment and comments are[\s\S]*not atomic execution leases/);
 assert.match(workflow, /named primary blocker/i);

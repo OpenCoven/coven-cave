@@ -48,7 +48,7 @@ gh issue list --repo OpenCoven/coven-cave --state open \
   --search 'continuity in:title,body' --limit 20
 gh issue list --repo OpenCoven/coven-cave --state closed \
   --search 'continuity in:title,body' --limit 10
-gh pr list --repo OpenCoven/coven-cave --state open \
+gh pr list --repo OpenCoven/coven-cave --state all \
   --search 'continuity in:title,body' --limit 20
 ```
 

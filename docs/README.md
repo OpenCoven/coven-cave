@@ -26,7 +26,6 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff after retiring Beads
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
 - [`workflows/work-continuity.md`](workflows/work-continuity.md) — skill-driven discovery of existing work before planning or dispatch, with scoped evidence and honest handoff receipts
-- [`branch-cleanup-relaxation.md`](branch-cleanup-relaxation.md) — design for retiring clean landed branches/worktrees despite missing lifecycle metadata or stale bead paperwork: clean/dirty/active definitions, evidence, safety checks, review command shape, phased rollout (`cave-jcdgb`)
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
 - [`workflows/`](workflows) — branching, release, and PR mechanics
@@ -112,6 +111,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 
 Point-in-time records. Read for intent, not for current behavior.
 
+- [`branch-cleanup-relaxation.md`](branch-cleanup-relaxation.md) - legacy Beads cleanup proposal (`cave-jcdgb`); its package commands are retired, and current authority and preservation requirements live in [GitHub work tracking](workflows/github-work-tracking.md)
 - [`content-gen-flow-spec.md`](content-gen-flow-spec.md) and [`content-gen-flow-plan.md`](content-gen-flow-plan.md) — ⚠️ tombstoned 2026-08-28 (cave-a6zmc): both target `FLOW_TEMPLATES` in `src/lib/flow/flow-templates.ts`, which no longer exists; the symbol appears nowhere in the tree (removed in #3902). Content generation continues in the Research Desk surfaces.
 - [`ios-native-rebuild.md`](ios-native-rebuild.md) — the multi-phase rebuild plan; its tokenless tailnet-trust model was replaced by pair-once mobile access tokens (#3310)
 - [`ios-connection-cloud-plan.md`](ios-connection-cloud-plan.md) — draft planning anchor for onboarding, constant connection, and cloud persistence

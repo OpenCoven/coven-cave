@@ -24,15 +24,17 @@ Prefer an explicit issue, PR, or artifact reference. Otherwise, search
 distinctive outcome and target terms in this repository:
 
 ```bash
-gh issue list --repo OpenCoven/coven-cave --state open \
+gh issue list --repo OpenCoven/coven-cave --state all \
   --search 'work tracking in:title,body' --limit 20
-gh pr list --repo OpenCoven/coven-cave --state open \
+gh pr list --repo OpenCoven/coven-cave --state all \
   --search 'work tracking in:title,body' --limit 20
 ```
 
-Read candidate issues, owner comments, linked PRs, and completion evidence.
-A result at its limit is potentially truncated. An empty result is not proof
-that an inaccessible execution source has no matching work.
+Read candidate issues, owner comments, linked PRs, and completion evidence,
+including closed issues and PRs before declaring that no matching work exists.
+A result at its limit is potentially truncated; narrow or paginate the search.
+An empty result is not proof that an inaccessible execution source has no
+matching work.
 
 Reuse the canonical issue. Create a new issue only for a distinct authorized
 outcome. Preserve existing owners, dependencies, approval requirements, and
