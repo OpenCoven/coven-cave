@@ -728,6 +728,7 @@ jobs:
           RUN_BASE_REF: ${{ needs.paths.outputs.run_base_ref }}
           RUN_BASE_SHA: ${{ needs.paths.outputs.run_base_sha }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           # The jobs API reports the PR head SHA, not github.sha's synthetic
@@ -738,13 +739,15 @@ jobs:
           ATTEMPT_STARTED_AT="$(jq -er '.run_started_at | select(type == "string" and length > 0)' /tmp/cave-build-evidence-run.json)"
 
           # Select validation froze this pair before any validation lane ran.
-          # Resolve the branch tip again now; missing selector outputs fail
+          # Report the live branch tip for diagnostics; missing selector outputs fail
           # closed in check-build-evidence's argument validation.
           LIVE_BASE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RUN_BASE_REF" --jq .object.sha)"
 
           node scripts/check-build-evidence.mjs \
             --expected-head-sha "$EXPECTED_HEAD_SHA" \
             --attempt-started-at "$ATTEMPT_STARTED_AT" \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT" \
             --run-base-ref "$RUN_BASE_REF" \
             --run-base-sha "$RUN_BASE_SHA" \
             --live-base-sha "$LIVE_BASE_SHA" \

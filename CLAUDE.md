@@ -154,6 +154,22 @@ last green commit. Cancelled runs and unavailable associations are not proof
 of blame or health. Recovery never repairs or bypasses branch protection.
 Repeated cancelled runs can reflect concurrent pushes rather than a CI defect.
 
+### Base movement versus stale evidence
+
+The non-strict policy allows `main` to advance during a PR run. The selector
+records its base snapshot for path selection, and the final gate reports that
+snapshot and the live base without treating their difference as failure.
+This does not waive exact-head validation: successful evidence must belong to
+the same workflow run and attempt, with timestamps no earlier than that
+attempt's start. Every selected prerequisite must still succeed, including
+each matrix family; cancelled, skipped, or failed required work cannot pass.
+PR checkouts retain their content-based merge-tree freshness guards.
+
+Retry the whole workflow for stale head/attempt evidence, not only failed jobs:
+GitHub can relabel carried-forward successes with a new attempt number while
+retaining their original timestamps. A fresh pass on an earlier PR head is
+still not authority to merge the current head.
+
 ## Starting the Tauri desktop app
 
 Use `bash scripts/dev-app.sh` for native-only surfaces and keep its terminal

@@ -48,13 +48,12 @@ function write(seed, relPath, contents) {
 //                reopen with a new head) while the main checkout still sits on
 //                m1 — the exact stale state this guard exists to catch.
 // Either way checkoutBase is a shallow checkout of the pre-PR base commit.
-function makeFixture({ stale = false } = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), "merge-freshness-"));
+function makeFixture(root, { stale = false } = {}) {
   const origin = path.join(root, "origin.git");
   const seed = path.join(root, "seed");
 
   git(["init", "--bare", "-q", origin]);
-  git(["symbolic-ref", "HEAD", "refs/heads/main"], origin);
+  git(["--git-dir", origin, "symbolic-ref", "HEAD", "refs/heads/main"]);
   git(["clone", "-q", origin, seed]);
   git(["config", "user.email", "t@t"], seed);
   git(["config", "user.name", "T"], seed);
@@ -83,8 +82,8 @@ function makeFixture({ stale = false } = {}) {
   git(["merge", "-q", "--no-ff", "topic", "-m", "Merge pull request #7 from topic"], seed);
   const m1 = git(["rev-parse", "HEAD"], seed);
   git(["push", "-q", "origin", "main"], seed);
-  git(["update-ref", `refs/pull/${PR_NUMBER}/head`, h1], origin);
-  git(["update-ref", `refs/pull/${PR_NUMBER}/merge`, m1], origin);
+  git(["--git-dir", origin, "update-ref", `refs/pull/${PR_NUMBER}/head`, h1]);
+  git(["--git-dir", origin, "update-ref", `refs/pull/${PR_NUMBER}/merge`, m1]);
 
   // CI-style checkout: shallow, detached at the merge commit.
   const checkout = path.join(root, "checkout");
@@ -113,8 +112,8 @@ function makeFixture({ stale = false } = {}) {
     git(["merge", "-q", "--no-ff", "topic", "-m", "Merge pull request #7 again"], seed);
     result.m2 = git(["rev-parse", "HEAD"], seed);
     git(["push", "-q", "origin", "main"], seed);
-    git(["update-ref", `refs/pull/${PR_NUMBER}/head`, result.h2], origin);
-    git(["update-ref", `refs/pull/${PR_NUMBER}/merge`, result.m2], origin);
+    git(["--git-dir", origin, "update-ref", `refs/pull/${PR_NUMBER}/head`, result.h2]);
+    git(["--git-dir", origin, "update-ref", `refs/pull/${PR_NUMBER}/merge`, result.m2]);
   }
 
   return result;
@@ -125,11 +124,11 @@ function runGuard(args) {
 }
 
 function withFixture(options, fn) {
-  const fx = makeFixture(options);
+  const root = mkdtempSync(path.join(tmpdir(), "merge-freshness-"));
   try {
-    return fn(fx);
+    return fn(makeFixture(root, options));
   } finally {
-    rmSync(fx.root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 }
 

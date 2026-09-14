@@ -340,18 +340,42 @@ const aggregateEnvironment = {
   FRONTEND_VALIDATION_RESULT: "success",
   FRONTEND_BUNDLE_RESULT: "success",
   WINDOWS_CONFORMANCE_RESULT: "success",
-  E2E_ENABLED: "false",
-  IOS_ENABLED: "false",
+  E2E_ENABLED: "true",
+  FRONTEND_E2E_RESULT: "success",
+  FRONTEND_E2E_AGENTIC_RESULT: "success",
+  IOS_ENABLED: "true",
+  IOS_RESULT: "success",
 };
-for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
-  const run = spawnSync("bash", ["-c", prerequisite.run], {
-    env: { ...aggregateEnvironment, WINDOWS_CONFORMANCE_RESULT: result },
-  });
-  assert.equal(run.status === 0, result === "success", `Windows ${result} must not produce a false green aggregate`);
+for (const field of [
+  "PATHS_RESULT",
+  "FRONTEND_VALIDATION_RESULT",
+  "FRONTEND_BUNDLE_RESULT",
+  "WINDOWS_CONFORMANCE_RESULT",
+  "FRONTEND_E2E_RESULT",
+  "FRONTEND_E2E_AGENTIC_RESULT",
+  "IOS_RESULT",
+]) {
+  for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+    const run = spawnSync("bash", ["-c", prerequisite.run], {
+      env: { ...aggregateEnvironment, [field]: result },
+    });
+    assert.equal(run.status === 0, result === "success", `${field}=${result} must not produce a false green aggregate`);
+  }
 }
 assert.equal(spawnSync("bash", ["-c", prerequisite.run], {
-  env: { ...aggregateEnvironment, FRONTEND_ENABLED: "false", WINDOWS_CONFORMANCE_RESULT: "skipped" },
-}).status, 0, "a genuinely unselected Windows lane does not block documentation-only changes");
+  env: {
+    ...aggregateEnvironment,
+    FRONTEND_ENABLED: "false",
+    FRONTEND_VALIDATION_RESULT: "skipped",
+    FRONTEND_BUNDLE_RESULT: "skipped",
+    WINDOWS_CONFORMANCE_RESULT: "skipped",
+    E2E_ENABLED: "false",
+    FRONTEND_E2E_RESULT: "skipped",
+    FRONTEND_E2E_AGENTIC_RESULT: "skipped",
+    IOS_ENABLED: "false",
+    IOS_RESULT: "skipped",
+  },
+}).status, 0, "genuinely unselected lanes do not block documentation-only changes");
 assert.equal(
   ciWorkflow.jobs.build.steps.some((step) => step.run?.includes("playwright test")),
   false,
