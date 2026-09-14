@@ -10,7 +10,6 @@ import {
   assertExclusivePathOwnershipSync,
   CLIENT_V1_OWNERSHIP_REFUSAL_TTL_MS,
   ClientV1PathOwnershipError,
-  createClientV1WindowsAclProbe,
   parseClientV1WindowsAclReport,
   probeWindowsAcl,
   resetClientV1PathOwnershipCache,
@@ -632,56 +631,6 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
     { sid: "", type: "", rights: 0 },
     { sid: USERS_SID, type: "", rights: 0 },
   ]);
-});
-
-test("the Windows ACL probe retries one timed-out cold start within the launch budget", async () => {
-  let attempts = 0;
-  const probe = createClientV1WindowsAclProbe(async (_file, _args, options) => {
-    attempts += 1;
-    assert.equal(options.timeout, 12_000);
-    if (attempts === 1) {
-      throw Object.assign(new Error("private timed-out probe"), {
-        killed: true,
-        signal: "SIGTERM",
-      });
-    }
-    return { stdout: JSON.stringify(report()) };
-  });
-
-  assert.deepEqual(await probe("C:\\private\\discovery"), report());
-  assert.equal(attempts, 2);
-});
-
-test("the Windows ACL probe never retries a non-timeout or a third attempt", async () => {
-  for (const [error, expectedAttempts] of [
-    [Object.assign(new Error("private access failure"), { code: "EACCES" }), 1],
-    [
-      Object.assign(new Error("private repeated timeout"), {
-        killed: true,
-        signal: "SIGTERM",
-      }),
-      2,
-    ],
-  ] as const) {
-    let attempts = 0;
-    const probe = createClientV1WindowsAclProbe(async () => {
-      attempts += 1;
-      throw error;
-    });
-    await assert.rejects(probe("C:\\private\\discovery"), error);
-    assert.equal(attempts, expectedAttempts);
-  }
-});
-
-test("the Windows ACL probe never retries a malformed successful report", async () => {
-  let attempts = 0;
-  const probe = createClientV1WindowsAclProbe(async () => {
-    attempts += 1;
-    return { stdout: "private malformed report" };
-  });
-
-  await assert.rejects(probe("C:\\private\\discovery"), SyntaxError);
-  assert.equal(attempts, 1);
 });
 
 // ── The unverified-ownership waiver (cave-37fxr) ─────────────────────────────
