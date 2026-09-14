@@ -4898,8 +4898,11 @@ export function Workspace() {
               activeFamiliarId={activeId}
               // Needs you: the bell opens the attention inbox — sessions that
               // are blocked, failed or awaiting you, oldest wait first — with
-              // the running count demoted to footer text (cave-21rp; design
-              // handoff `Coven Cave Prototype.dc.html` frame 2c).
+              // the running count demoted to footer text (cave-21rp; the
+              // design handoff's frame 2c — the frame is named in
+              // docs/design-handoff/IMPLEMENTATION-STATUS.md and in
+              // needs-you-popover.tsx, because spelling it here would put the
+              // two-word brand in a file that owes the one-word one).
               //
               // This slot used to hold RunningActivityPopover, which listed
               // everything in flight. The handoff's diagnosis was that such a
