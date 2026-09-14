@@ -118,6 +118,7 @@ export function ReviewQueue({
   query,
   loading,
   error,
+  unreadSearchTitles,
   filtered,
   onQuery,
   onRetry,
@@ -145,6 +146,7 @@ export function ReviewQueue({
   query: string;
   loading: boolean;
   error: string | null;
+  unreadSearchTitles: number;
   filtered: boolean;
   onQuery: (value: string) => void;
   onRetry: () => void;
@@ -218,6 +220,14 @@ export function ReviewQueue({
         </div>
       ) : loading ? (
         <p className="rd-queue-notice" role="status">Reading GitHub state…</p>
+      ) : null}
+
+      {unreadSearchTitles > 0 ? (
+        <p className="rd-queue-notice" role="status">
+          Search covers loaded titles and session details. {unreadSearchTitles} PR{" "}
+          {unreadSearchTitles === 1 ? "title is" : "titles are"} unread.
+          {" "}Clear the search to browse unread reviews.
+        </p>
       ) : null}
 
       <div className="rd-queue-list rd-scroll">

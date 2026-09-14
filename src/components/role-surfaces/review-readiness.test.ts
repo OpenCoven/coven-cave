@@ -46,7 +46,7 @@ function facts(overrides: Partial<PrFacts> = {}): PrFacts {
     merged: false,
     headRef: "feat/x",
     baseRef: "main",
-    headSha: "abcdef1234567890",
+    headSha: "abcdef1234".repeat(4),
     commits: 2,
     additions: 10,
     deletions: 3,
@@ -188,6 +188,16 @@ test("missing checks/head and malformed threads fail explicitly rather than empt
   assert.throws(() => parseReadinessComments({ ok: true, reviews: [], reviewThreads: [] }), /incomplete/);
   assert.throws(() => parseReadinessComments({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [null] }), /incomplete/);
   assert.deepEqual(parseReadinessComments({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [] }).reviewThreads, []);
+});
+
+test("open PR item reads require the same exact head SHA as verdict mutations", () => {
+  for (const headSha of [undefined, null, "", "abcdef1234567890", "g".repeat(40), "a".repeat(41)]) {
+    assert.throws(() => parseReviewItem({ ...itemWire(), pull: { ...facts(), headSha } }), /head SHA/);
+  }
+  assert.equal(parseReviewItem({
+    ...itemWire(), pull: { ...facts(), headSha: ` ${"A".repeat(40)} ` },
+  }).headSha, "a".repeat(40));
+  assert.equal(isTerminalPr(parseReviewItem({ ...itemWire(), state: "closed", pull: null })), true);
 });
 
 test("queue reads cap unique PRs at twelve and run at most three concurrently", async () => {
@@ -342,6 +352,43 @@ test("queue hook derives unique actionable counts, filters, search, and selected
     assert.equal(model.all.some(({ session }) => session.id === "pr-10"), false);
     assert.equal(model.counts.queue, 3);
     assert.equal(model.all.some(({ session }) => session.id === "local"), true);
+  } finally {
+    if (root) await act(async () => { root.unmount(); });
+  }
+});
+
+test("title search exposes unread coverage without exceeding the bounded PR read budget", async (t) => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
+  t.after(() => { Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    reads += 1;
+    return Response.json(itemWire());
+  });
+  const sessions = Array.from({ length: BUCKET_READ_CAP + 1 }, (_, index) =>
+    queueSession(`pr-${String(index + 1).padStart(2, "0")}`, {
+      pullRequest: { repo: "o/r", number: index + 1 },
+    }));
+  let model!: ReviewDeckModel;
+  function Probe({ query = "", filter = "all" }: { query?: string; filter?: ReviewSourceFilter }) {
+    model = useReviewDeckModel({ sessions, sourceFilter: filter, query, bucketFilter: null, sort: "attention" });
+    return null;
+  }
+  let root!: ReturnType<typeof create>;
+  try {
+    await act(async () => { root = create(createElement(Probe)); });
+    assert.equal(model.unreadSearchTitles, 0);
+    await act(async () => { root.update(createElement(Probe, { query: "unread-title-needle" })); });
+    assert.equal(model.ordered.length, 0);
+    assert.equal(model.unreadSearchTitles, 1, "zero known matches is not a complete search result");
+    assert.equal(reads, BUCKET_READ_CAP);
+    await act(async () => { root.update(createElement(Probe, { query: "unread-title-needle", filter: "local" })); });
+    assert.equal(model.unreadSearchTitles, 0, "PR titles do not affect local-only search");
+    await act(async () => { root.update(createElement(Probe, { query: "unread-title-needle" })); });
+    await act(async () => { model.recordFacts(facts({ number: BUCKET_READ_CAP + 1, title: "unread-title-needle" })); });
+    assert.equal(model.unreadSearchTitles, 0);
+    assert.deepEqual(model.ordered.map(({ id }) => id), ["pr-13"]);
+    assert.equal(reads, BUCKET_READ_CAP);
   } finally {
     if (root) await act(async () => { root.unmount(); });
   }

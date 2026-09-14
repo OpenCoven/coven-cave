@@ -1,3 +1,4 @@
+import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
 import type { PrBucketFacts, ReviewTally } from "./review-readiness";
 
 export const REVIEW_READ_TIMEOUT_MS = 15_000;
@@ -30,6 +31,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
   const pull = record(item.pull);
   const reviews = record(pull?.reviews);
   const terminal = item.merged || item.state === "closed";
+  const headSha = sanitizeGithubObjectSha(typeof pull?.headSha === "string" ? pull.headSha : null);
   if (!terminal && (
     !pull || !reviews || !count(reviews.approved) ||
     !count(reviews.changesRequested) || !count(reviews.commented) ||
@@ -37,6 +39,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
     typeof pull.mergeableState !== "string" || !pull.mergeableState ||
     typeof pull.baseRef !== "string"
   )) throw new Error("GitHub pull request details are unavailable.");
+  if (!terminal && !headSha) throw new Error("GitHub pull request head SHA is unavailable or invalid.");
 
   const tally: ReviewTally = {
     approved: count(reviews?.approved) ? reviews.approved : 0,
@@ -50,7 +53,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
     title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : undefined,
     baseRef: typeof pull?.baseRef === "string" ? pull.baseRef : "",
     headRef: typeof pull?.headRef === "string" ? pull.headRef : "",
-    headSha: typeof pull?.headSha === "string" ? pull.headSha : "",
+    headSha: headSha ?? "",
     commits: count(pull?.commits) ? pull.commits : 0,
     statsKnown: count(pull?.additions) && count(pull?.deletions),
     additions: count(pull?.additions) ? pull.additions : undefined,

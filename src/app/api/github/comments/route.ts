@@ -170,7 +170,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
           reviewThreads(first:100){
             pageInfo{hasNextPage}
             nodes{
-              id isResolved isOutdated
+              id isResolved isOutdated line
               comments(first:50){
                 pageInfo{hasNextPage}
                 nodes{
@@ -238,7 +238,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
         const c0 = (t.comments as { nodes?: Array<{ path?: unknown }> } | undefined)?.nodes?.[0];
         return typeof c0?.path === "string" ? c0.path : null;
       })(),
-      line: null,
+      line: typeof t.line === "number" && Number.isSafeInteger(t.line) && t.line > 0 ? t.line : null,
       diffHunk: (() => {
         const c0 = (t.comments as { nodes?: Array<{ diffHunk?: unknown }> } | undefined)?.nodes?.[0];
         return typeof c0?.diffHunk === "string" ? c0.diffHunk : null;

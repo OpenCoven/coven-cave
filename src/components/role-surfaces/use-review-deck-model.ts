@@ -73,6 +73,7 @@ export type ReviewDeckModel = {
   caption: string;
   loading: boolean;
   error: string | null;
+  unreadSearchTitles: number;
   refresh: () => void;
   recordFacts: (facts: PrFacts) => void;
   bucketOf: (session: SessionRow) => ReviewBucket;
@@ -129,6 +130,11 @@ export function useReviewDeckModel({
     () => all.filter((item) => item.reasons.includes("pull-request") || item.reasons.includes("working-changes")),
     [all],
   );
+  const unreadSearchTitles = useMemo(() => {
+    if (!query.trim() || bucketFilter || sourceFilter === "local" || sourceFilter === "branches") return 0;
+    return all.filter((item) =>
+      item.session.pullRequest?.number != null && !factsFor(item.session)?.title).length;
+  }, [all, bucketFilter, factsFor, query, sourceFilter]);
 
   const summary = useMemo(
     () => deckSummary(actionable.map((item) => bucketOf(item.session))),
@@ -261,6 +267,7 @@ export function useReviewDeckModel({
     caption,
     loading: deckBuckets.loading,
     error: deckBuckets.error,
+    unreadSearchTitles,
     refresh: deckBuckets.refresh,
     recordFacts: deckBuckets.recordFacts,
     bucketOf,

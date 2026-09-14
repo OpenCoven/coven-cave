@@ -128,3 +128,24 @@ test("missing or malformed nested comment pagination cannot grant completeness",
     assert.throws(() => parseReadinessComments(body), /incomplete/);
   }
 });
+
+test("thread evidence preserves current line coordinates without inventing anchors for outdated comments", async (t) => {
+  let line: unknown = 42;
+  upstream(t, () => Response.json({
+    data: { repository: { pullRequest: { reviewThreads: {
+      pageInfo: { hasNextPage: false },
+      nodes: [{
+        id: "t1", isResolved: false, isOutdated: line === null, line, originalLine: 42,
+        comments: {
+          pageInfo: { hasNextPage: false },
+          nodes: [{ databaseId: 1, body: "Review this line", path: "src/example.ts" }],
+        },
+      }],
+    } } } },
+  }));
+  for (line of [42, null, "42", 0]) {
+    const body = await (await read()).json();
+    assert.equal(body.reviewEvidenceComplete, true);
+    assert.equal(body.reviewThreads[0].line, line === 42 ? 42 : null);
+  }
+});

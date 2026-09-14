@@ -96,6 +96,7 @@ type PullFixture = {
 
 const PULLS: Record<string, PullFixture> = {
   [BLOCKED]: {
+    title: "Roster group chat protocol",
     state: "open",
     draft: false,
     merged: false,
@@ -103,7 +104,7 @@ const PULLS: Record<string, PullFixture> = {
     pull: {
       headRef: "feat/roster",
       baseRef: "main",
-      headSha: "8f21c0412ab",
+      headSha: "8f21c0412ab".padEnd(40, "0"),
       commits: 6,
       additions: 214,
       deletions: 38,
@@ -114,6 +115,7 @@ const PULLS: Record<string, PullFixture> = {
     },
   },
   [READY]: {
+    title: "Session share links",
     state: "open",
     draft: false,
     merged: false,
@@ -121,7 +123,7 @@ const PULLS: Record<string, PullFixture> = {
     pull: {
       headRef: "feat/share-links",
       baseRef: "main",
-      headSha: "4c19aa2ff30",
+      headSha: "4c19aa2ff30".padEnd(40, "0"),
       commits: 6,
       additions: 410,
       deletions: 0,
@@ -402,8 +404,13 @@ test.describe("Review Deck cockpit", () => {
       await page.getByRole("searchbox", { name: "Search review items" }).fill("roster");
       await expect(page.locator(".rd-selection-notice")).toBeVisible();
       await expect(page.getByRole("textbox", { name: /Review note/ })).toHaveValue("Keep the signed-link expiry explicit.");
+      await page.setViewportSize({ width: 640, height: 850 });
+      await expect(page.locator(".rd-diff-card")).toBeVisible();
       await page.getByRole("button", { name: "Show in queue" }).click();
+      await expect(page.locator(".rd-queue")).toBeVisible();
+      await expect(page.getByRole("tab", { name: "Queue", exact: true })).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".rd-row")).toHaveCount(3);
+      await page.setViewportSize({ width: 1600, height: 980 });
 
       pulls[READY].state = "closed";
       pulls[READY].merged = true;
@@ -433,6 +440,10 @@ test.describe("Review Deck cockpit", () => {
       await expect(page.locator(".rd-read-error")).toBeVisible();
       await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
       await expect(page.locator(".rd-verdict-primary")).toHaveText("GitHub state unavailable");
+      await page.getByRole("searchbox", { name: "Search review items" }).fill("unread-title-needle");
+      await expect(page.locator(".rd-queue-empty strong")).toHaveText("No matches in loaded details");
+      await expect(page.locator(".rd-queue")).toContainText("1 PR title is unread");
+      await page.getByRole("searchbox", { name: "Search review items" }).fill("");
       itemErrors.clear();
       await page.getByRole("button", { name: "Retry GitHub read", exact: true }).click();
       await expect(page.locator(".rd-read-error")).toHaveCount(0);

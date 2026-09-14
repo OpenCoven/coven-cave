@@ -714,12 +714,15 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               query={query}
               loading={deck.loading}
               error={deck.error}
+              unreadSearchTitles={deck.unreadSearchTitles}
               filtered={filtered}
               onQuery={setQuery}
               onRetry={refreshReview}
               emptyTitle={
                 query.trim()
-                  ? "No matching review items"
+                  ? deck.unreadSearchTitles > 0
+                    ? "No matches in loaded details"
+                    : "No matching review items"
                   : bucketFilter
                   ? "Nothing in this attention group."
                   : sourceFilter === "all"
@@ -815,6 +818,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                   setBucketFilter(null);
                   setSourceFilter(selected.reasons.every((reason) => reason === "branch") ? "branches" : "all");
                   panes.setQueueOpen(true);
+                  setMobileView("queue");
                 }}
               >
                 Show in queue

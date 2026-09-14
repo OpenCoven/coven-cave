@@ -235,8 +235,11 @@ never fake production data.
   local working changes. Clean branch-only sessions remain explicitly browsable
   through Branches. Confirmed merged/closed PRs leave the queue, duplicate
   repository/PR links collapse, and drafts, unread PRs and local changes stay
-  outside the attention counts. Search matches titles, PR references,
-  repositories and branches.
+  outside the attention counts. Search matches loaded GitHub titles, session
+  details, PR references, repositories and branches. Unread PR titles are
+  explicitly counted during search, so zero known matches is not presented
+  as a complete result. Clear the search and select an unread PR to load its
+  title without expanding the automatic read budget.
 
   Queue enrichment reads at most 12 unique PRs with three concurrent workers.
   Each row's reason comes from the `item?pull=1` read, never a failing-check
