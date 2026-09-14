@@ -582,6 +582,15 @@ test("the standalone server enforces ownership on Windows with this module's scr
     ["the writable-rights mask", /const WINDOWS_WRITABLE_RIGHTS_MASK = ([^;]+);/],
     ["the ACL subprocess timeout", /const WINDOWS_ACL_PROBE_TIMEOUT_MS = ([^;]+);/],
     ["the ACL subprocess attempt bound", /const WINDOWS_ACL_PROBE_MAX_ATTEMPTS = ([^;]+);/],
+    ["the ACL diagnostic stages", /const WINDOWS_ACL_PROBE_STAGES = new Set\(\[[\s\S]*?\]\);/],
+    [
+      "the ACL timeout-stage registry",
+      /const windowsAclProbeTimeoutStages = new WeakMap<object, string>\(\);/,
+    ],
+    [
+      "the ACL timeout sanitizer",
+      /function sanitized(?:Standalone)?WindowsAclProbeTimeout\([\s\S]*?\n\}/,
+    ],
     ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
     [
       "the exclusivity findings",
@@ -984,6 +993,44 @@ test("standalone Windows discovery bounds all path probes to one publication bud
   assert.equal(now, 24_000);
   assert.equal(runtime.published(), false);
   assert.deepEqual(runtime.writes, []);
+});
+
+test("standalone Windows discovery attributes repeated timeouts without leaking probe details", async () => {
+  let attempts = 0;
+  const runtime = await standalonePublisher({
+    process: { pid: 4310, platform: "win32", env: {} },
+    execFileSync: () => {
+      attempts += 1;
+      throw Object.assign(new Error("private repeated timeout"), {
+        code: "ETIMEDOUT",
+        killed: true,
+        signal: "SIGTERM",
+        cmd: "private command",
+        stderr: "acl-probe:start\nacl-probe:read-state\nprivate stderr",
+      });
+    },
+  });
+
+  let failure: Error | undefined;
+  try {
+    runtime.publish("http://127.0.0.1:4310");
+  } catch (error) {
+    assert.ok(error instanceof Error);
+    failure = error;
+  }
+  assert.ok(failure);
+  assert.ok(failure.cause instanceof Error);
+  assert.equal(failure.cause.message, "Windows ACL probe timed out at read-state.");
+  assert.equal((failure.cause as NodeJS.ErrnoException).code, "ETIMEDOUT");
+  assert.equal("cmd" in failure.cause, false);
+  assert.equal("stderr" in failure.cause, false);
+  assert.doesNotMatch(failure.cause.stack ?? "", /private/u);
+  runtime.report(failure);
+  assert.equal(attempts, 2);
+  assert.equal(runtime.published(), false);
+  assert.deepEqual(runtime.writes, []);
+  assert.ok(runtime.messages.includes("[cave] Windows ACL probe timed out at stage: read-state"));
+  assert.doesNotMatch(runtime.messages.join("\n"), /private|command|stderr/u);
 });
 
 test("standalone Windows discovery never retries non-timeout or malformed probe failures", async () => {

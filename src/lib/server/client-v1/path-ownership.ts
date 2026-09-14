@@ -229,17 +229,22 @@ export interface ClientV1PathOwnershipOptions {
  */
 const WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('acl-probe:start')
 $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+[Console]::Error.WriteLine('acl-probe:item')
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
 $admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
 $ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID}')
 $writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
+[Console]::Error.WriteLine('acl-probe:identity')
 
 function Read-State {
   param($target)
+  [Console]::Error.WriteLine('acl-probe:read-state')
   $acl = $target.GetAccessControl('Access,Owner')
+  [Console]::Error.WriteLine('acl-probe:acl')
   # Keep account-name lookup out of the security boundary: orphaned or remote
   # principals can make IdentityReference.Translate block on Windows.
   $aces = @($acl.GetAccessRules(
@@ -253,6 +258,7 @@ function Read-State {
       rights = [uint32]$_.FileSystemRights
     }
   })
+  [Console]::Error.WriteLine('acl-probe:rules')
   [pscustomobject]@{
     owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     protected = [bool]$acl.AreAccessRulesProtected
@@ -275,9 +281,11 @@ function Test-Exclusive {
 }
 
 $state = Read-State $item
+[Console]::Error.WriteLine('acl-probe:initial-state')
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
+[Console]::Error.WriteLine('acl-probe:repair')
   $removed = @($state.aces | Where-Object {
     $trusted -notcontains $_.sid -and
       -not ($_.sid -eq $ownerRights.Value -and
@@ -310,10 +318,12 @@ if (-not (Test-Exclusive $state)) {
       $sid, 'FullControl', $inheritance, 'None', 'Allow')))
   }
   $item.SetAccessControl($acl)
+[Console]::Error.WriteLine('acl-probe:repair-written')
   $repaired = $true
   $state = Read-State $item
 }
 
+[Console]::Error.WriteLine('acl-probe:complete')
 [pscustomobject]@{
   self = $me.Value
   owner = $state.owner
@@ -343,6 +353,42 @@ function windowsAclProbeTimedOut(error: unknown): boolean {
   const failure = error as { code?: unknown; killed?: unknown; signal?: unknown };
   return failure.code === "ETIMEDOUT"
     || (failure.killed === true && failure.signal === "SIGTERM");
+}
+
+const WINDOWS_ACL_PROBE_STAGES = new Set([
+  "start",
+  "item",
+  "identity",
+  "read-state",
+  "acl",
+  "rules",
+  "initial-state",
+  "repair",
+  "repair-written",
+  "complete",
+]);
+const windowsAclProbeTimeoutStages = new WeakMap<object, string>();
+
+function sanitizedWindowsAclProbeTimeout(error: unknown): NodeJS.ErrnoException {
+  const stderr =
+    error && typeof error === "object" && "stderr" in error
+      ? Buffer.isBuffer(error.stderr)
+        ? error.stderr.toString("utf8")
+        : typeof error.stderr === "string"
+          ? error.stderr
+          : ""
+      : "";
+  let stage = "launch";
+  for (const match of stderr.matchAll(/^acl-probe:([a-z-]+)\r?$/gmu)) {
+    if (WINDOWS_ACL_PROBE_STAGES.has(match[1]!)) stage = match[1]!;
+  }
+  const sanitized = Object.assign(new Error(`Windows ACL probe timed out at ${stage}.`), {
+    code: "ETIMEDOUT",
+    killed: true,
+    signal: "SIGTERM",
+  });
+  windowsAclProbeTimeoutStages.set(sanitized, stage);
+  return sanitized;
 }
 
 /**
@@ -456,10 +502,9 @@ export function createClientV1WindowsAclProbe(
         );
         return parseClientV1WindowsAclReport(stdout);
       } catch (error) {
-        if (
-          attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS
-          || !windowsAclProbeTimedOut(error)
-        ) {
+        const timedOut = windowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
+          if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
           throw error;
         }
       }

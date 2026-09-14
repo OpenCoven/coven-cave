@@ -131,17 +131,22 @@ function sharedOwnershipRefusal(subject, path4, findings, waiver) {
 }
 var WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('acl-probe:start')
 $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+[Console]::Error.WriteLine('acl-probe:item')
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
 $admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
 $ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID}')
 $writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
+[Console]::Error.WriteLine('acl-probe:identity')
 
 function Read-State {
   param($target)
+  [Console]::Error.WriteLine('acl-probe:read-state')
   $acl = $target.GetAccessControl('Access,Owner')
+  [Console]::Error.WriteLine('acl-probe:acl')
   # Keep account-name lookup out of the security boundary: orphaned or remote
   # principals can make IdentityReference.Translate block on Windows.
   $aces = @($acl.GetAccessRules(
@@ -155,6 +160,7 @@ function Read-State {
       rights = [uint32]$_.FileSystemRights
     }
   })
+  [Console]::Error.WriteLine('acl-probe:rules')
   [pscustomobject]@{
     owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     protected = [bool]$acl.AreAccessRulesProtected
@@ -177,9 +183,11 @@ function Test-Exclusive {
 }
 
 $state = Read-State $item
+[Console]::Error.WriteLine('acl-probe:initial-state')
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
+[Console]::Error.WriteLine('acl-probe:repair')
   $removed = @($state.aces | Where-Object {
     $trusted -notcontains $_.sid -and
       -not ($_.sid -eq $ownerRights.Value -and
@@ -212,10 +220,12 @@ if (-not (Test-Exclusive $state)) {
       $sid, 'FullControl', $inheritance, 'None', 'Allow')))
   }
   $item.SetAccessControl($acl)
+[Console]::Error.WriteLine('acl-probe:repair-written')
   $repaired = $true
   $state = Read-State $item
 }
 
+[Console]::Error.WriteLine('acl-probe:complete')
 [pscustomobject]@{
   self = $me.Value
   owner = $state.owner
@@ -237,6 +247,33 @@ function windowsAclProbeTimedOut(error) {
   if (!error || typeof error !== "object") return false;
   const failure = error;
   return failure.code === "ETIMEDOUT" || failure.killed === true && failure.signal === "SIGTERM";
+}
+var WINDOWS_ACL_PROBE_STAGES = /* @__PURE__ */ new Set([
+  "start",
+  "item",
+  "identity",
+  "read-state",
+  "acl",
+  "rules",
+  "initial-state",
+  "repair",
+  "repair-written",
+  "complete"
+]);
+var windowsAclProbeTimeoutStages = /* @__PURE__ */ new WeakMap();
+function sanitizedWindowsAclProbeTimeout(error) {
+  const stderr = error && typeof error === "object" && "stderr" in error ? Buffer.isBuffer(error.stderr) ? error.stderr.toString("utf8") : typeof error.stderr === "string" ? error.stderr : "" : "";
+  let stage = "launch";
+  for (const match of stderr.matchAll(/^acl-probe:([a-z-]+)\r?$/gmu)) {
+    if (WINDOWS_ACL_PROBE_STAGES.has(match[1])) stage = match[1];
+  }
+  const sanitized = Object.assign(new Error(`Windows ACL probe timed out at ${stage}.`), {
+    code: "ETIMEDOUT",
+    killed: true,
+    signal: "SIGTERM"
+  });
+  windowsAclProbeTimeoutStages.set(sanitized, stage);
+  return sanitized;
 }
 function windowsProbeEnv(path4) {
   const systemRoot = windowsSystemRoot();
@@ -308,7 +345,9 @@ function createClientV1WindowsAclProbe(execute = execFileAsync) {
         );
         return parseClientV1WindowsAclReport(stdout);
       } catch (error) {
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !windowsAclProbeTimedOut(error)) {
+        const timedOut = windowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !timedOut) {
+          if (timedOut) throw sanitizedWindowsAclProbeTimeout(error);
           throw error;
         }
       }
@@ -2366,17 +2405,22 @@ function sharedOwnershipRefusal2(subject, path4, findings, waiver) {
 }
 var WINDOWS_ACL_SCRIPT2 = `
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('acl-probe:start')
 $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+[Console]::Error.WriteLine('acl-probe:item')
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID2}')
 $admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID2}')
 $ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID2}')
 $writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK2}
 $trusted = @($me.Value, $system.Value, $admins.Value)
+[Console]::Error.WriteLine('acl-probe:identity')
 
 function Read-State {
   param($target)
+  [Console]::Error.WriteLine('acl-probe:read-state')
   $acl = $target.GetAccessControl('Access,Owner')
+  [Console]::Error.WriteLine('acl-probe:acl')
   # Keep account-name lookup out of the security boundary: orphaned or remote
   # principals can make IdentityReference.Translate block on Windows.
   $aces = @($acl.GetAccessRules(
@@ -2390,6 +2434,7 @@ function Read-State {
       rights = [uint32]$_.FileSystemRights
     }
   })
+  [Console]::Error.WriteLine('acl-probe:rules')
   [pscustomobject]@{
     owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     protected = [bool]$acl.AreAccessRulesProtected
@@ -2412,9 +2457,11 @@ function Test-Exclusive {
 }
 
 $state = Read-State $item
+[Console]::Error.WriteLine('acl-probe:initial-state')
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
+[Console]::Error.WriteLine('acl-probe:repair')
   $removed = @($state.aces | Where-Object {
     $trusted -notcontains $_.sid -and
       -not ($_.sid -eq $ownerRights.Value -and
@@ -2447,10 +2494,12 @@ if (-not (Test-Exclusive $state)) {
       $sid, 'FullControl', $inheritance, 'None', 'Allow')))
   }
   $item.SetAccessControl($acl)
+[Console]::Error.WriteLine('acl-probe:repair-written')
   $repaired = $true
   $state = Read-State $item
 }
 
+[Console]::Error.WriteLine('acl-probe:complete')
 [pscustomobject]@{
   self = $me.Value
   owner = $state.owner
@@ -2463,14 +2512,45 @@ if (-not (Test-Exclusive $state)) {
 var standaloneVerifiedWindowsPaths = /* @__PURE__ */ new Set();
 var standaloneWaivedWindowsPaths = /* @__PURE__ */ new Set();
 var standaloneDiscoveryPublicationFailures = /* @__PURE__ */ new WeakMap();
+var standaloneDiscoveryAclProbeTimeoutStages = /* @__PURE__ */ new WeakMap();
 function discoveryPublicationFailure(category, error) {
   standaloneDiscoveryPublicationFailures.set(error, category);
+  const cause = error.cause;
+  const timeoutStage = cause && typeof cause === "object" ? windowsAclProbeTimeoutStages2.get(cause) : void 0;
+  if (timeoutStage) standaloneDiscoveryAclProbeTimeoutStages.set(error, timeoutStage);
   return error;
 }
 function standaloneWindowsAclProbeTimedOut(error) {
   if (!error || typeof error !== "object") return false;
   const failure = error;
   return failure.code === "ETIMEDOUT" || failure.killed === true && failure.signal === "SIGTERM";
+}
+var WINDOWS_ACL_PROBE_STAGES2 = /* @__PURE__ */ new Set([
+  "start",
+  "item",
+  "identity",
+  "read-state",
+  "acl",
+  "rules",
+  "initial-state",
+  "repair",
+  "repair-written",
+  "complete"
+]);
+var windowsAclProbeTimeoutStages2 = /* @__PURE__ */ new WeakMap();
+function sanitizedWindowsAclProbeTimeout2(error) {
+  const stderr = error && typeof error === "object" && "stderr" in error ? Buffer.isBuffer(error.stderr) ? error.stderr.toString("utf8") : typeof error.stderr === "string" ? error.stderr : "" : "";
+  let stage = "launch";
+  for (const match of stderr.matchAll(/^acl-probe:([a-z-]+)\r?$/gmu)) {
+    if (WINDOWS_ACL_PROBE_STAGES2.has(match[1])) stage = match[1];
+  }
+  const sanitized = Object.assign(new Error(`Windows ACL probe timed out at ${stage}.`), {
+    code: "ETIMEDOUT",
+    killed: true,
+    signal: "SIGTERM"
+  });
+  windowsAclProbeTimeoutStages2.set(sanitized, stage);
+  return sanitized;
 }
 function assertStandaloneWindowsExclusive(path4, label, deadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
   if (standaloneVerifiedWindowsPaths.has(path4)) return;
@@ -2523,7 +2603,9 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance.n
         );
         break;
       } catch (error) {
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !standaloneWindowsAclProbeTimedOut(error)) {
+        const timedOut = standaloneWindowsAclProbeTimedOut(error);
+        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !timedOut) {
+          if (timedOut) throw sanitizedWindowsAclProbeTimeout2(error);
           throw error;
         }
       }
@@ -3555,6 +3637,10 @@ function reportClientV1DiscoveryUnavailable(error) {
   const category = typeof error === "object" && error !== null ? standaloneDiscoveryPublicationFailures.get(error) ?? "disabled-other" : "disabled-other";
   console.error("[cave] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 CLIENT V1 DISABLED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
   console.error(`[cave] client-v1 discovery publication refused: ${category}`);
+  const timeoutStage = typeof error === "object" && error !== null ? standaloneDiscoveryAclProbeTimeoutStages.get(error) : void 0;
+  if (timeoutStage) {
+    console.error(`[cave] Windows ACL probe timed out at stage: ${timeoutStage}`);
+  }
   console.error(
     "[cave] The client v1 discovery record was NOT published, so paired clients cannot find this server and every client v1 request stays refused. Everything else on this server is running normally."
   );

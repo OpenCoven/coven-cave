@@ -665,24 +665,39 @@ test("the Windows ACL probe retries one timed-out cold start within the launch b
 });
 
 test("the Windows ACL probe never retries a non-timeout or a third attempt", async () => {
-  for (const [error, expectedAttempts] of [
-    [Object.assign(new Error("private access failure"), { code: "EACCES" }), 1],
-    [
-      Object.assign(new Error("private repeated timeout"), {
-        killed: true,
-        signal: "SIGTERM",
-      }),
-      2,
-    ],
-  ] as const) {
-    let attempts = 0;
-    const probe = createClientV1WindowsAclProbe(async () => {
-      attempts += 1;
-      throw error;
+  const accessFailure = Object.assign(new Error("private access failure"), { code: "EACCES" });
+  let attempts = 0;
+  let probe = createClientV1WindowsAclProbe(async () => {
+    attempts += 1;
+    throw accessFailure;
+  });
+  await assert.rejects(probe("C:\\private\\discovery"), accessFailure);
+  assert.equal(attempts, 1);
+
+  attempts = 0;
+  probe = createClientV1WindowsAclProbe(async () => {
+    attempts += 1;
+    throw Object.assign(new Error("private repeated timeout"), {
+      code: "ETIMEDOUT",
+      killed: true,
+      signal: "SIGTERM",
+      cmd: "private command",
+      stderr: "acl-probe:start\nacl-probe:read-state\nprivate stderr",
     });
-    await assert.rejects(probe("C:\\private\\discovery"), error);
-    assert.equal(attempts, expectedAttempts);
-  }
+  });
+  await assert.rejects(
+    probe("C:\\private\\discovery"),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, "Windows ACL probe timed out at read-state.");
+      assert.equal((error as NodeJS.ErrnoException).code, "ETIMEDOUT");
+      assert.equal("cmd" in error, false);
+      assert.equal("stderr" in error, false);
+      assert.doesNotMatch(error.stack ?? "", /private/u);
+      return true;
+    },
+  );
+  assert.equal(attempts, 2);
 });
 
 test("the Windows ACL probe never retries a malformed successful report", async () => {
