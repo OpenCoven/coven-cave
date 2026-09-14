@@ -553,7 +553,10 @@ test("the standalone server enforces ownership on Windows with this module's scr
     /if \(process\.platform !== "win32"\) \{[\s\S]{0,240}?ownership cannot be verified on/,
     "a platform with neither a uid nor a Windows ACL must be refused, not admitted",
   );
-  assert.match(source, /assertStandaloneWindowsExclusive\(path, label\)/);
+  assert.match(
+    source,
+    /assertStandaloneWindowsExclusive\(path, label, windowsAclProbeDeadline\)/,
+  );
 
   const moduleSource = await readFile(
     resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
@@ -577,7 +580,8 @@ test("the standalone server enforces ownership on Windows with this module's scr
     ["the trusted Administrators SID", /const WINDOWS_ADMINISTRATORS_SID = "([^"]+)";/],
     ["the OWNER RIGHTS SID", /const WINDOWS_OWNER_RIGHTS_SID = "([^"]+)";/],
     ["the writable-rights mask", /const WINDOWS_WRITABLE_RIGHTS_MASK = ([^;]+);/],
-    ["the ACL subprocess timeout", /timeout:\s*([\d_]+),/],
+    ["the ACL subprocess timeout", /const WINDOWS_ACL_PROBE_TIMEOUT_MS = ([^;]+);/],
+    ["the ACL subprocess attempt bound", /const WINDOWS_ACL_PROBE_MAX_ATTEMPTS = ([^;]+);/],
     ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
     [
       "the exclusivity findings",
@@ -629,9 +633,20 @@ test("the standalone server enforces ownership on Windows with this module's scr
     "OWNER RIGHTS is safe only when its access mask contains no writable right",
   );
   assert.equal(
-    Number(region(moduleSource, "path-ownership.ts", /timeout:\s*([\d_]+),/).replaceAll("_", "")),
-    60_000,
-    "the Windows ACL probe must tolerate a cold PowerShell start on hosted release runners",
+    Number(
+      region(
+        moduleSource,
+        "path-ownership.ts",
+        /const WINDOWS_ACL_PROBE_TIMEOUT_MS = ([^;]+);/,
+      ).replaceAll("_", ""),
+    ),
+    12_000,
+    "each Windows ACL probe attempt must fit twice inside the native launch deadline",
+  );
+  assert.match(
+    source,
+    /for \(let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt \+= 1\)/,
+    "standalone discovery must retry one timed-out cold PowerShell start",
   );
   assert.match(
     source,
@@ -726,6 +741,7 @@ async function standalonePublisher(overrides: Record<string, unknown> = {}) {
     });
   `), {
     Error, URL, Buffer, join,
+    performance: { now: () => Date.now() },
     process: { pid: 4310, getuid: () => 1001, platform: "linux", env: {} },
     console: {
       error: (...args: unknown[]) => messages.push(args.join(" ")),
@@ -752,6 +768,9 @@ async function standalonePublisher(overrides: Record<string, unknown> = {}) {
     unverifiableOwnershipRefusal: () => "private path, ACL and exception",
     sharedOwnershipRefusal: () => "private path, ACL and principal",
     WINDOWS_ACL_SCRIPT: "unused-test-probe",
+    WINDOWS_ACL_PROBE_TIMEOUT_MS: 12_000,
+    WINDOWS_ACL_PROBE_MAX_ATTEMPTS: 2,
+    WINDOWS_ACL_PUBLICATION_BUDGET_MS: 24_000,
     WINDOWS_SYSTEM_SID: "system",
     WINDOWS_ADMINISTRATORS_SID: "admins",
     UNVERIFIED_OWNERSHIP_ENV: "COVEN_CAVE_ALLOW_UNVERIFIED_CLIENT_V1_OWNERSHIP",
@@ -857,6 +876,94 @@ test("standalone Windows owner observations distinguish unreadable and shared wi
       ));
       assert.doesNotMatch(runtime.messages.join("\n"), /private|foreign/);
     }
+  }
+});
+
+test("standalone Windows discovery retries one timed-out ACL probe before publishing", async () => {
+  let attempts = 0;
+  const runtime = await standalonePublisher({
+    process: { pid: 4310, platform: "win32", env: {} },
+    execFileSync: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("private timed-out probe"), {
+          code: "ETIMEDOUT",
+        });
+      }
+      return JSON.stringify({
+        self: "self",
+        owner: "self",
+        protected: true,
+        repaired: false,
+        removed: [],
+        aces: [],
+      });
+    },
+  });
+
+  runtime.publish("http://127.0.0.1:4310");
+  assert.equal(attempts, 3);
+  assert.equal(runtime.published(), true);
+  assert.deepEqual(runtime.writes, ["open", "write", "rename"]);
+});
+
+test("standalone Windows discovery bounds all path probes to one publication budget", async () => {
+  let attempts = 0;
+  let now = 0;
+  const runtime = await standalonePublisher({
+    performance: { now: () => now },
+    process: { pid: 4310, platform: "win32", env: {} },
+    execFileSync: (
+      _file: string,
+      _args: string[],
+      options: { timeout: number },
+    ) => {
+      attempts += 1;
+      now += options.timeout;
+      if (attempts === 1) {
+        throw Object.assign(new Error("private timed-out probe"), { code: "ETIMEDOUT" });
+      }
+      return JSON.stringify({
+        self: "self",
+        owner: "self",
+        protected: true,
+        repaired: false,
+        removed: [],
+        aces: [],
+      });
+    },
+  });
+
+  assert.throws(() => runtime.publish("http://127.0.0.1:4310"), (error) => (
+    error instanceof Error
+    && error.cause instanceof Error
+    && (error.cause as NodeJS.ErrnoException).code === "ETIMEDOUT"
+  ));
+  assert.equal(attempts, 2);
+  assert.equal(now, 24_000);
+  assert.equal(runtime.published(), false);
+  assert.deepEqual(runtime.writes, []);
+});
+
+test("standalone Windows discovery never retries non-timeout or malformed probe failures", async () => {
+  for (const failure of [
+    () => {
+      throw Object.assign(new Error("private access failure"), { code: "EACCES" });
+    },
+    () => "private malformed report",
+  ]) {
+    let attempts = 0;
+    const runtime = await standalonePublisher({
+      process: { pid: 4310, platform: "win32", env: {} },
+      execFileSync: () => {
+        attempts += 1;
+        return failure();
+      },
+    });
+
+    assert.throws(() => runtime.publish("http://127.0.0.1:4310"));
+    assert.equal(attempts, 1);
+    assert.equal(runtime.published(), false);
   }
 });
 
