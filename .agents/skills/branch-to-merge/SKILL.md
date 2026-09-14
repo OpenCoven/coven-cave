@@ -223,6 +223,10 @@ gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 
 - `Frontend build`
 
+`PR checks` now reports in parallel during the CI migration. It does not replace
+the required `Frontend build` context. See
+[cross-environment validation](../../../docs/cross-environment.md) for the rollout.
+
 CodeQL can run through GitHub default setup but is advisory, not required.
 A neutral conclusion is not a failure. Confirm current protection in
 `CLAUDE.md` and the GitHub API; a proposed replacement context does not remove
