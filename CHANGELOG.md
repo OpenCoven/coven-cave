@@ -9,27 +9,34 @@ breaking config changes; patch releases stay additive.
 
 ## [0.4.4] - 2026-09-14
 
-> _One-line teaser — edit before merge._
+> X Comms — a room for drafting, approving and scheduling posts to X, where nothing posts itself.
 
 Patch release on top of v0.4.3.
 
-### Changes
-- Ship X Comms in production builds
-- X Comms room, from the v2 design handoff
-- fix(client-v1): accept read-only owner rights ACL
-- Persist desktop-managed tailnet device approvals
-- Fix native chat latest-message landing and blank scrolling
-- Restore symmetric session rail corners
-- fix(conformance): classify bounded discovery readiness failures (#5377)
-- fix(client-v1): support SDK v0.0.1 compatibility (#5376)
-- fix(ios): accept empty optional TestFlight inverse linkage
-- fix(ios): bind TestFlight beta details through build linkage
+### Added
+- **X Comms room.** A console for the one decision X publishing turns on: a
+  person releasing a single write, once, at a slot they chose. A work queue
+  grouped by what each draft needs, a composer for posts, threads, replies,
+  quotes, DMs and long-form Articles, a six-state approval card, a slot picker
+  drawn from follower activity, and an agenda of what is queued.
 
+  **It is demo-backed and says so.** Its drafts are seeded fixtures, and
+  Approve moves a local record and schedules a slot no dispatcher reads —
+  nothing reaches X. A banner above the room states this, and the live publish
+  path remains the X panel inside Comms Operations. The room appears only for a
+  familiar you have granted the X publish capability.
+
+### Changed
+- Desktop now persists tailnet device approvals it manages.
+- Native chat lands on the latest message instead of a blank scroll position.
+- Session rail corners are symmetric again.
 
 ### Fixed
-- Preserve a protected read-only Windows `OWNER RIGHTS` ACL entry when validating
-  client v1 discovery paths, while continuing to refuse any such entry that can
-  write data, delete content, or rewrite ownership or permissions.
+- Client v1 accepts a read-only Windows `OWNER RIGHTS` ACL entry.
+- Bounded discovery readiness failures are classified rather than swallowed (#5377).
+- Client v1 keeps SDK v0.0.1 compatibility (#5376).
+- iOS accepts an empty optional TestFlight inverse linkage, and binds TestFlight
+  beta details through build linkage.
 
 ## [0.4.3] - 2026-09-12
 
