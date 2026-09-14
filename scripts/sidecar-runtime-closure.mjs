@@ -71,6 +71,7 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
   "node-pty",
   "sharp",
   "ws",
+  "yaml",
 ]);
 
 // Next's server config loader resolves these files dynamically at startup.
