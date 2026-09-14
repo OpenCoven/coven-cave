@@ -17,13 +17,14 @@
  *
  * WHAT THIS DOES NOT DO. It does not grant access it could not verify. If
  * initialization fails, every method that could hand out or honour a device
- * credential refuses, permanently, with the reason. The feature fails CLOSED
- * while the server stays up — which is the opposite trade from the one that
- * was there before, where the feature's failure took everything down and, on
- * the way, took device access with it anyway.
+ * credential refuses, permanently, with the reason. Policy reads also refuse:
+ * an unavailable policy is not permission to use legacy remote credentials.
+ * Remote access fails CLOSED while local features stay up — the opposite trade
+ * from the one that was there before, where the feature's failure took
+ * everything down and, on the way, took device access with it anyway.
  */
 
-import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
+import { DeviceAccessInitializationError, type DeviceAccessStore } from "./store.ts";
 
 export type DeferredDeviceAccess = {
   store: DeviceAccessStore;
@@ -60,7 +61,7 @@ export function deferDeviceAccessStore(
       // the server being up is exactly what makes it easy to miss.
       warn(
         "[device-access] unavailable — the server is running and device access is refused. "
-          + `Pairing, approvals and device credentials will not work until this is fixed: ${failed.message}`,
+          + `Remote access, pairing, approvals and device credentials will not work until this is fixed: ${failed.message}`,
       );
     },
   );
@@ -68,8 +69,7 @@ export function deferDeviceAccessStore(
   /** The live store, or a refusal carrying why there isn't one. */
   const live = (): DeviceAccessStore => {
     if (ready) return ready;
-    throw new DeviceAccessError(
-      "forbidden",
+    throw new DeviceAccessInitializationError(
       failed
         ? `Device access is unavailable on this host: ${failed.message}`
         : "Device access is unavailable on this host.",
@@ -79,12 +79,7 @@ export function deferDeviceAccessStore(
   const store: DeviceAccessStore = {
     async policy() {
       await settled;
-      // Deliberately NOT a throw. The policy read is what the UI uses to ask
-      // "is device access on?", and the honest answer when the store never
-      // opened is "off", not an error dialog. Every method that could actually
-      // grant something still refuses below.
-      if (!ready) return { enabled: false, allowedTailnets: [] };
-      return ready.policy();
+      return live().policy();
     },
     async snapshot() {
       await settled;

@@ -59,9 +59,13 @@ test("review item movement wraps without losing the current queue", () => {
 });
 
 test("review actions fail closed until the selected PR is known open and ready", () => {
+  const revision = { repo: "o/r", number: 7, baseRef: "main", baseSha: "b".repeat(40), headSha: "a".repeat(40) };
   assert.equal(
     reviewActionsAvailable({
       sourceKind: "pull-request",
+      sourcePhase: "ready",
+      displayedRevision: revision,
+      currentRevision: revision,
       readinessPhase: "ready",
       state: "open",
       draft: false,
@@ -77,6 +81,9 @@ test("review actions fail closed until the selected PR is known open and ready",
     assert.equal(
       reviewActionsAvailable({
         sourceKind: "pull-request",
+        sourcePhase: "ready",
+        displayedRevision: revision,
+        currentRevision: revision,
         readinessPhase: "ready",
         state: "open",
         draft: false,

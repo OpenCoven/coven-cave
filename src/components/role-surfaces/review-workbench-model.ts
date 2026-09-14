@@ -1,4 +1,5 @@
 import type { DeckSummary, ReviewBucket } from "./review-readiness";
+import { sameGitHubPullRevision, type GitHubPullRevision } from "../../lib/github-review.ts";
 
 export const REVIEW_ATTENTION_GROUPS: readonly {
   id: keyof DeckSummary;
@@ -88,12 +89,17 @@ export function nextReviewItemId(
 
 export function reviewActionsAvailable(input: {
   sourceKind: "pull-request" | "local" | "none";
+  sourcePhase: "idle" | "loading" | "ready" | "error";
+  displayedRevision: GitHubPullRevision | null;
+  currentRevision: GitHubPullRevision | null;
   readinessPhase: "idle" | "loading" | "ready" | "error";
   state: string | null | undefined;
   draft: boolean | null | undefined;
 }): boolean {
   return (
     input.sourceKind === "pull-request" &&
+    input.sourcePhase === "ready" &&
+    sameGitHubPullRevision(input.displayedRevision, input.currentRevision) &&
     input.readinessPhase === "ready" &&
     input.state === "open" &&
     input.draft === false

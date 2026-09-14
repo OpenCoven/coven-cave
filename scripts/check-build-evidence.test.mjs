@@ -30,6 +30,7 @@ const EVIDENCE_JOB_NAMES = [
   "Frontend validation (API tests)",
   "Frontend validation (mobile tests)",
   "Frontend validation (protocol conformance)",
+  "Frontend validation (Windows startup controls)",
   ...Array.from({ length: 8 }, (_, index) => `Frontend E2E (${index + 1}/8)`),
   "Frontend E2E (agentic)",
 ];
@@ -93,10 +94,21 @@ test("each validation and E2E leg is retained by its exact job name", () => {
   }));
   const latest = latestEvidenceJobs(jobs);
 
-  assert.equal(latest.size, 19);
+  assert.equal(latest.size, 20);
   assert.deepEqual([...latest.keys()], EVIDENCE_JOB_NAMES);
   assert.deepEqual(staleEvidence(jobs, context()), [
     `Frontend E2E (agentic) reported head ${OTHER_HEAD}; expected workflow head ${EXPECTED_HEAD}`,
+  ]);
+});
+
+test("Windows startup controls remain subject to exact-head and current-attempt evidence checks", () => {
+  const name = "Frontend validation (Windows startup controls)";
+  assert.deepEqual(staleEvidence([job(name, { headSha: OTHER_HEAD })], context()), [
+    `${name} reported head ${OTHER_HEAD}; expected workflow head ${EXPECTED_HEAD}`,
+  ]);
+  const startedAt = "2026-08-29T09:00:00Z";
+  assert.deepEqual(staleEvidence([job(name, { startedAt })], context()), [
+    `${name} started ${startedAt} before the current attempt started ${ATTEMPT_STARTED_AT}`,
   ]);
 });
 

@@ -25,6 +25,8 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
+import { parseGitHubDiffRevision } from "@/lib/github-review";
+import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,7 +59,7 @@ function isSafeBranch(value: string): boolean {
 }
 
 export async function POST(req: Request) {
-  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown; headSha?: unknown };
+  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown; headSha?: unknown; reviewedRevision?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -71,6 +73,12 @@ export async function POST(req: Request) {
   const headSha = sanitizeGithubObjectSha(typeof body.headSha === "string" ? body.headSha : null);
   if (body.headSha !== undefined && !headSha) {
     return NextResponse.json({ ok: false, error: "invalid head SHA" }, { status: 400 });
+  }
+  const reviewedRevision = parseGitHubDiffRevision(body.reviewedRevision);
+  if (body.reviewedRevision !== undefined && (!reviewedRevision ||
+      reviewedRevision.repo.toLowerCase() !== repo.toLowerCase() ||
+      reviewedRevision.number !== number || reviewedRevision.headSha !== headSha)) {
+    return NextResponse.json({ ok: false, error: "invalid reviewed revision" }, { status: 400 });
   }
 
   if (!REPO_RE.test(repo)) {
@@ -89,6 +97,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
     const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/merge`, {
       method: "PUT",
@@ -180,7 +189,7 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to merge" },
-      { status: 502 },
+      { status: e instanceof GitHubRevisionError ? e.status : 502 },
     );
   }
 }

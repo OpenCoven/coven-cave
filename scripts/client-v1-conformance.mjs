@@ -818,6 +818,38 @@ const CAVE_DISCOVERY_PUBLICATION_FAILURES = new Set([
   "authority-init",
 ]);
 export const CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT = 32 * 1024;
+const CAVE_STARTUP_EXIT_CATEGORIES = new Set([
+  "zero", "nonzero", "signal", "windows-crash", "unknown",
+]);
+const CAVE_STARTUP_STDERR_CATEGORIES = new Set([
+  "not-observed", "output-limit", "address-in-use", "access-denied",
+  "out-of-memory", "module-not-found", "other",
+]);
+// Known NTSTATUS crash values only; an arbitrary high exit code is not evidence.
+const CAVE_WINDOWS_CRASH_CODES = new Set([
+  0xc0000005, 0xc000001d, 0xc00000fd, 0xc0000374, 0xc0000409,
+]);
+
+export function classifyCaveStartupExit(code, signal, platform) {
+  if (typeof signal === "string" && signal.length > 0) return "signal";
+  if (signal != null || !Number.isInteger(code) || code < -0x80000000 || code > 0xffffffff) {
+    return "unknown";
+  }
+  if (code === 0) return "zero";
+  if (platform === "win32" && CAVE_WINDOWS_CRASH_CODES.has(code >>> 0)) return "windows-crash";
+  return "nonzero";
+}
+
+export function caveStartupExitDiagnostic(failure, exitCategory, stderrCategory) {
+  if (
+    failure !== "Cave exited before readiness."
+    || !CAVE_STARTUP_EXIT_CATEGORIES.has(exitCategory)
+    || !CAVE_STARTUP_STDERR_CATEGORIES.has(stderrCategory)
+  ) {
+    return failure;
+  }
+  return `${failure} [exit=${exitCategory}; stderr=${stderrCategory}]`;
+}
 
 export async function readCaveDiscovery(discoveryPath, read = readFile) {
   let text;
@@ -846,25 +878,20 @@ export async function readCaveDiscovery(discoveryPath, read = readFile) {
   return { discovery, readFailure: null };
 }
 
-export function createCaveDiscoveryPublicationObserver() {
+function createBoundedCaveStderrObserver(classifyLine, unmatchedCategory = "not-observed") {
   let remaining = CAVE_DISCOVERY_PUBLICATION_OUTPUT_LIMIT;
   let pending = "";
   let category = "not-observed";
+  let sawOutput = false;
   const acceptLine = (line) => {
-    const match = /^\[cave\] client-v1 discovery publication refused: ([a-z-]+)\r?$/u.exec(line);
-    if (
-      match
-      && CAVE_DISCOVERY_PUBLICATION_FAILURES.has(match[1])
-      && match[1] !== "not-observed"
-      && match[1] !== "output-limit"
-    ) {
-      category = match[1];
-    }
+    const known = classifyLine(line);
+    if (known !== null) category = known;
   };
   return {
     observe(chunk) {
       if (category !== "not-observed") return;
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (bytes.length > 0) sawOutput = true;
       pending += bytes.subarray(0, remaining).toString("utf8");
       remaining -= Math.min(bytes.length, remaining);
       let newline;
@@ -886,9 +913,38 @@ export function createCaveDiscoveryPublicationObserver() {
       pending = "";
     },
     category() {
-      return category;
+      return category === "not-observed" && sawOutput ? unmatchedCategory : category;
     },
   };
+}
+
+export function createCaveDiscoveryPublicationObserver() {
+  return createBoundedCaveStderrObserver((line) => {
+    const match = /^\[cave\] client-v1 discovery publication refused: ([a-z-]+)\r?$/u.exec(line);
+    return match
+      && CAVE_DISCOVERY_PUBLICATION_FAILURES.has(match[1])
+      && match[1] !== "not-observed"
+      && match[1] !== "output-limit"
+      ? match[1] : null;
+  });
+}
+
+export function createCaveStartupStderrObserver() {
+  return createBoundedCaveStderrObserver((line) => {
+    if (/^Error: listen EADDRINUSE: address already in use(?: |$)/u.test(line)) {
+      return "address-in-use";
+    }
+    if (/^Error: (?:[a-z][a-z0-9]* )?(?:EACCES: permission denied|EPERM: operation not permitted)(?:,| |$)/u.test(line)) {
+      return "access-denied";
+    }
+    if (/^FATAL ERROR: (?:Reached heap limit|Ineffective mark-compacts near heap limit) Allocation failed - JavaScript heap out of memory\r?$/u.test(line)) {
+      return "out-of-memory";
+    }
+    if (/^(?:Error \[ERR_MODULE_NOT_FOUND\]: Cannot find (?:module|package) |Error: Cannot find module )/u.test(line)) {
+      return "module-not-found";
+    }
+    return null;
+  }, "other");
 }
 
 export function caveDiscoveryReadinessDiagnostic(failure, readFailure, publicationFailure) {
@@ -911,11 +967,18 @@ export async function startCave(input) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.resume();
+  let exitCategory = null;
+  child.once("exit", (code, signal) => {
+    exitCategory = classifyCaveStartupExit(code, signal, process.platform);
+  });
   const publication = createCaveDiscoveryPublicationObserver();
+  const startupStderr = createCaveStartupStderrObserver();
   child.stderr.on("data", publication.observe);
+  child.stderr.on("data", startupStderr.observe);
   const stderrDrained = new Promise((resolve) => {
     const finish = () => {
       publication.finish();
+      startupStderr.finish();
       child.stderr.off("end", finish);
       child.stderr.off("close", finish);
       resolve();
@@ -928,14 +991,10 @@ export async function startCave(input) {
   const origin = `http://127.0.0.1:${port}`;
   const discoveryPath = path.join(input.caveHomeDir, "client-v1-discovery.json");
   const deadline = Date.now() + 120_000;
-  let exited = false;
-  child.once("exit", () => {
-    exited = true;
-  });
   let failure = "Cave readiness timed out after 120 seconds.";
   let readFailure = null;
   while (Date.now() < deadline) {
-    if (exited) {
+    if (exitCategory !== null) {
       failure = "Cave exited before readiness.";
       break;
     }
@@ -961,16 +1020,19 @@ export async function startCave(input) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   // Exit can precede the last stderr data. Bound the drain alongside teardown,
-  // not after it, and never delay outcomes that do not use publication details.
+  // not after it, and never delay outcomes that do not use stderr details.
+  const originalExitCategory = exitCategory;
   let drainTimer = null;
   const drain = failure === "Client v1 discovery record is not published."
+    || failure === "Cave exited before readiness."
     ? Promise.race([
       stderrDrained,
       new Promise((resolve) => { drainTimer = setTimeout(resolve, 1_000); }),
     ]).finally(() => clearTimeout(drainTimer))
     : Promise.resolve();
   await Promise.all([stopCave({ child }, port).catch(() => {}), drain]);
-  throw new Error(caveDiscoveryReadinessDiagnostic(failure, readFailure, publication.category()));
+  const discoveryFailure = caveDiscoveryReadinessDiagnostic(failure, readFailure, publication.category());
+  throw new Error(caveStartupExitDiagnostic(discoveryFailure, originalExitCategory, startupStderr.category()));
 }
 
 export function caveReadinessFailure({

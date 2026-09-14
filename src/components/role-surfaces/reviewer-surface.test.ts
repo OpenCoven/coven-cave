@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import {
   buildDiffRows,
@@ -14,6 +15,30 @@ import {
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const surface = read("./reviewer-surface.tsx");
+
+test("review completion announces the displayed head, not its composite persistence key", () => {
+  const start = surface.indexOf("  const markCurrentReviewed = useCallback(");
+  const end = surface.indexOf("  const openUnread = useCallback(", start);
+  assert.ok(start >= 0 && end > start);
+  const callback = `${surface.slice(start, end)}\nmarkCurrentReviewed();`;
+  const headSha = "d".repeat(40);
+  for (const { revision, completed, reviewed, expected } of [
+    { revision: { headSha }, completed: true, reviewed: true, expected: "Reviewed file.ts. Every readable file on head ddddddd is reviewed." },
+    { revision: null, completed: true, reviewed: true, expected: "Reviewed file.ts. Every readable file in this working tree is reviewed." },
+    { revision: { headSha }, completed: false, reviewed: true, expected: "Marked file.ts reviewed." },
+    { revision: { headSha }, completed: false, reviewed: false, expected: "Marked file.ts unread." },
+  ]) {
+    const messages: string[] = [];
+    runInNewContext(callback, {
+      useCallback: (fn: () => void) => fn,
+      source: { openPath: "file.ts", revision },
+      workItem: { revision: revision ? `main:${"b".repeat(40)}:${"c".repeat(40)}:${headSha}` : "local:fixture" },
+      progress: { toggle: () => ({ completed, reviewed }) },
+      confirm: (message: string) => messages.push(message),
+    });
+    assert.deepEqual(messages, [expected]);
+  }
+});
 const sourceHook = read("./use-review-source.ts");
 const panes = read("./use-review-panes.ts");
 const deckModel = read("./use-review-deck-model.ts");
@@ -23,6 +48,20 @@ const header = read("./review-workbench-header.tsx");
 const tabs = read("./review-mobile-tabs.tsx");
 const rail = read("./review-file-rail.tsx");
 const diff = read("./review-diff-workbench.tsx");
+
+test("diff progress copy uses the displayed head while retaining the composite work identity", () => {
+  const start = diff.indexOf("  const revisionLabel = workItem");
+  const end = diff.indexOf("\n  return (", start);
+  assert.ok(start >= 0 && end > start);
+  const code = `${diff.slice(start, end)}\nrevisionLabel;`;
+  const base = { reviewedCount: 1, readableCount: 2, source: { revision: { headSha: "d".repeat(40) } } };
+  assert.equal(runInNewContext(code, {
+    ...base, workItem: { kind: "pull-request", revision: `main:${"b".repeat(40)}:${"d".repeat(40)}` },
+  }), "1 of 2 files read on head ddddddd");
+  assert.equal(runInNewContext(code, {
+    ...base, source: { revision: null }, workItem: { kind: "local", revision: "local:fixture" },
+  }), "1 of 2 files read on this revision");
+});
 const navigator = read("./review-file-navigator.tsx");
 const inspector = read("./review-inspector.tsx");
 const verdict = read("./review-verdict-dock.tsx");
@@ -160,7 +199,13 @@ test("readiness and actions fail closed without an exact GitHub state", () => {
   assert.match(surface, /readinessPhase: readiness\.phase/);
   assert.match(surface, /state: facts\?\.state/);
   assert.match(surface, /draft: facts\?\.draft/);
-  assert.match(surface, /if \(!canAct \|\| !facts\?\.headSha \|\| !selectedPullRequest \|\| busy\) return false/);
+  assert.match(surface, /if \(!canAct \|\| !source\.revision \|\| !selectedPullRequest \|\| busy\) return false/);
+  assert.match(surface, /displayedRevision: source\.revision/);
+  assert.match(surface, /currentRevision: facts/);
+  assert.equal((surface.match(/headSha: source\.revision\.headSha/g) ?? []).length, 3);
+  assert.equal((surface.match(/reviewedRevision: source\.revision/g) ?? []).length, 3);
+  assert.doesNotMatch(surface, /headSha: facts\.headSha/);
+  assert.match(surface, /key=\{`\$\{selectedScope\}:\$\{workItem\?\.revision \?\? "loading"\}`\}/);
   assert.match(verdict, /Actions are held until the pull request's state loads/);
 });
 

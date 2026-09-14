@@ -49,6 +49,7 @@ test.after(() => {
 test("the reviewed head is forwarded to GitHub's atomic merge guard", async () => {
   const calls: Array<{ url: string; body: unknown }> = [];
   globalThis.fetch = async (url, init) => {
+    if (!init?.method) return Response.json({ head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40), ref: "main" } });
     calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
     return Response.json({ merged: true, sha: "b".repeat(40) });
   };
@@ -84,11 +85,41 @@ test("a malformed explicit head never dispatches, while legacy callers can omit 
 });
 
 test("GitHub's changed-head refusal remains a failure with the actionable explanation", async () => {
-  globalThis.fetch = async () => Response.json({ message: "Head branch was modified. Review the new head before merging." }, { status: 409 });
+  globalThis.fetch = async (_url, init) => !init?.method
+    ? Response.json({ head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40), ref: "main" } })
+    : Response.json({ message: "Head branch was modified. Review the new head before merging." }, { status: 409 });
   const result = await POST(new Request("http://localhost/api/github/merge", {
     method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, headSha: "a".repeat(40) }),
   }));
   const body = await result.json();
   assert.equal(body.ok, false);
   assert.match(body.error, /Head branch was modified/);
+});
+
+test("merges correlate displayed base/head and reject a stale or invalid revision before writing", async () => {
+  const revision = { repo: "o/r", number: 7, headSha: "a".repeat(40), baseSha: "b".repeat(40), baseRef: "main", mergeBaseSha: "c".repeat(40) };
+  const writes: unknown[] = [];
+  let current = { head: { sha: revision.headSha }, base: { sha: revision.baseSha, ref: "main" } };
+  globalThis.fetch = async (_url, init) => {
+    if (!init?.method) return Response.json(current);
+    writes.push(JSON.parse(String(init.body)));
+    return Response.json({ merged: true });
+  };
+  const send = (reviewedRevision: unknown = revision) => POST(new Request("http://localhost/api/github/merge", {
+    method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, headSha: revision.headSha, reviewedRevision }),
+  }));
+  assert.equal((await send()).status, 200);
+  assert.deepEqual(writes, [{ merge_method: "squash", sha: revision.headSha }]);
+  for (const change of [
+    { head: { sha: "d".repeat(40) }, base: { sha: revision.baseSha, ref: "main" } },
+    { head: { sha: revision.headSha }, base: { sha: "d".repeat(40), ref: "main" } },
+    { head: { sha: revision.headSha }, base: { sha: revision.baseSha, ref: "release" } },
+  ]) {
+    current = change;
+    assert.equal((await send()).status, 409);
+  }
+  for (const invalid of [null, {}, { ...revision, repo: "other/repo" }, { ...revision, headSha: "e".repeat(40) }]) {
+    assert.equal((await send(invalid)).status, 400);
+  }
+  assert.equal(writes.length, 1);
 });

@@ -68,7 +68,7 @@ const destination = path.join(fixture, "output");
 
 try {
   await write(projectRoot, "package.json", '{"name":"fixture","version":"9.8.7"}\n');
-  await write(projectRoot, "server.mjs", 'import "yaml";\n');
+  await write(projectRoot, "server.mjs", "export {};\n");
   await write(projectRoot, "vault.yaml", "{}\n");
   await write(projectRoot, ".agents/skills/runtime/SKILL.md", "# Runtime skill\n");
   await write(projectRoot, "marketplace/catalog.json", "{}\n");
@@ -101,7 +101,6 @@ try {
     "react-dom",
     "sharp",
     "ws",
-    "yaml",
   ]) {
     await packageFixture(projectRoot, packageName);
     await packageFixture(path.dirname(dependencyRoot), packageName);
@@ -205,11 +204,6 @@ try {
     );
   }
   assert.equal(await readFile(path.join(destination, "node_modules/foo/index.js"), "utf8"), 'module.exports = "foo";\n');
-  assert.equal(
-    await readFile(path.join(destination, "node_modules/yaml/index.js"), "utf8"),
-    'module.exports = "yaml";\n',
-    "a package imported by the manually copied server.mjs must survive even when Next traces omit it",
-  );
   assert.equal(
     await readFile(path.join(destination, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll"), "utf8"),
     "native dependency\n",

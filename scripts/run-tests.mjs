@@ -355,6 +355,8 @@ export const SUITES = {
     "src/lib/chat-attention-projection.test.ts",
     "src/lib/workspace-chat-attention-compat.test.ts",
     "src/lib/chat-attention.test.ts",
+    "src/lib/session-lifecycle.test.ts",
+    "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/citations-directive.test.ts",

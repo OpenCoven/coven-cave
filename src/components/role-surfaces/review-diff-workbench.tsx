@@ -116,7 +116,7 @@ export function ReviewDiffWorkbench({
   const revisionLabel = workItem
     ? `${reviewedCount} of ${readableCount} files read on ${
         workItem.kind === "pull-request"
-          ? `head ${workItem.revision.slice(0, 7)}`
+          ? source.revision ? `head ${source.revision.headSha.slice(0, 7)}` : "an unavailable head"
           : "this revision"
       }`
     : "no revision open";

@@ -17,7 +17,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createReviewRequestGate } from "./review-deck";
+import { createReviewRequestGate, type ReviewRequest } from "./review-deck";
+import { parseGitHubDiffRevision, type GitHubDiffRevision } from "@/lib/github-review";
 
 export type ReviewSourceKind = "pull-request" | "local" | "none";
 
@@ -60,6 +61,7 @@ export type ReviewSource = {
   truncated: boolean;
   /** Branch the local working tree is on; null in pull-request mode. */
   localBranch: string | null;
+  revision: GitHubDiffRevision | null;
   openPath: string | null;
   openPatch: OpenPatch;
   open: (path: string) => void;
@@ -68,6 +70,8 @@ export type ReviewSource = {
 
 type DiffWire = {
   ok?: boolean;
+  revision?: unknown;
+  error?: string;
   truncated?: boolean;
   total?: number;
   files?: Array<{
@@ -125,7 +129,8 @@ export function useReviewSource(input: {
   /** Changes whenever the selected session changes, invalidating in-flight reads. */
   scope: string;
 }): ReviewSource {
-  const { pr, projectRoot, scope } = input;
+  const { pr, projectRoot } = input;
+  const scope = `${input.scope}:${pr?.repo ?? "none"}#${pr?.number ?? "none"}:${projectRoot ?? "none"}`;
   const kind: ReviewSourceKind = pr ? "pull-request" : projectRoot ? "local" : "none";
 
   const [phase, setPhase] = useState<SourcePhase>("idle");
@@ -136,6 +141,8 @@ export function useReviewSource(input: {
   const [localBranch, setLocalBranch] = useState<string | null>(null);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [openPatch, setOpenPatch] = useState<OpenPatch>(IDLE_PATCH);
+  const [revision, setRevision] = useState<GitHubDiffRevision | null>(null);
+  const [loadedRequest, setLoadedRequest] = useState<ReviewRequest | null>(null);
 
   const latestScope = useRef(scope);
   latestScope.current = scope;
@@ -148,6 +155,8 @@ export function useReviewSource(input: {
 
   const loadList = useCallback(async () => {
     const request = listGate.current.begin(scope);
+    setLoadedRequest(request);
+    setRevision(null);
     patchGate.current.invalidate();
     setFiles([]);
     setFilesTotal(0);
@@ -171,7 +180,14 @@ export function useReviewSource(input: {
         );
         const json = (await res.json().catch(() => null)) as DiffWire | null;
         if (!listGate.current.isCurrent(request, latestScope.current)) return;
-        if (!json?.ok || !Array.isArray(json.files)) throw new Error("bad response");
+        if (!res.ok || !json?.ok || !Array.isArray(json.files)) {
+          throw new Error(json?.error || "Couldn't read the pull request diff.");
+        }
+        const displayedRevision = parseGitHubDiffRevision(json.revision);
+        if (!displayedRevision || displayedRevision.repo.toLowerCase() !== repo.toLowerCase() ||
+            displayedRevision.number !== number) {
+          throw new Error("Pull request diff revision is unavailable or does not match this selection. Refresh to retry.");
+        }
         const parsed: ReviewFile[] = json.files.map((file) => ({
           path: typeof file.filename === "string" ? file.filename : "",
           status: fileStatus(file.status),
@@ -181,6 +197,7 @@ export function useReviewSource(input: {
           noPatchReason: file.noPatchReason ?? (typeof file.patch === "string" ? null : "github"),
         }));
         setFiles(parsed);
+        setRevision(displayedRevision);
         setFilesTotal(typeof json.total === "number" ? json.total : parsed.length);
         setTruncated(json.truncated === true);
         setPhase("ready");
@@ -211,11 +228,11 @@ export function useReviewSource(input: {
       setFilesTotal(parsed.length);
       setLocalBranch(json.branch);
       setPhase("ready");
-    } catch {
+    } catch (error) {
       if (!listGate.current.isCurrent(request, latestScope.current)) return;
       setPhase("error");
       setError(
-        repo
+        error instanceof Error && repo ? error.message : repo
           ? `Couldn't read the pull request diff for ${repo}#${number}.`
           : "Couldn't read this project's working tree.",
       );
@@ -232,15 +249,17 @@ export function useReviewSource(input: {
 
   const open = useCallback(
     (path: string) => {
+      // An effect or retained callback may belong to a previous list even
+      // when React batches its completion with a selection change/refresh.
+      if (!loadedRequest || phase !== "ready" ||
+          !listGate.current.isCurrent(loadedRequest, latestScope.current)) return;
       lastOpened.current = { scope, path };
       setOpenPath(path);
-      const file = files.find((candidate) => candidate.path === path) ?? null;
 
-      // Pull-request patches arrived with the list — nothing to fetch, and a
-      // file GitHub gave no patch for never will have one.
-      if (kind === "pull-request" || file?.noPatchReason != null) {
+      // PR patches are derived from the owned file list below, never copied
+      // into a second cache by an effect from a different revision.
+      if (kind === "pull-request") {
         patchGate.current.invalidate();
-        setOpenPatch({ phase: "ready", text: file?.patch ?? null, truncated: false, error: null });
         return;
       }
       if (!projectRoot) return;
@@ -265,16 +284,17 @@ export function useReviewSource(input: {
         }
       })();
     },
-    [files, kind, projectRoot, scope],
+    [loadedRequest, phase, kind, projectRoot, scope],
   );
 
   useEffect(() => {
-    if (openPath == null && phase === "ready" && files.length > 0) {
+    if (loadedRequest && listGate.current.isCurrent(loadedRequest, latestScope.current) &&
+        openPath == null && phase === "ready" && files.length > 0) {
       const previous = lastOpened.current;
       const retained = previous?.scope === scope && files.some((file) => file.path === previous.path);
       open(retained ? previous.path : files[0].path);
     }
-  }, [openPath, phase, files, open, scope]);
+  }, [loadedRequest, openPath, phase, files, open, scope]);
 
   const filesShown = files.length;
   const latestLoadList = useRef(loadList);
@@ -283,21 +303,30 @@ export function useReviewSource(input: {
     void latestLoadList.current();
   }, []);
 
+  // Effects run after rendering. Never expose the previous selection's ready
+  // state (or patch) during the render that switches the selected PR/session.
+  const current = loadedRequest != null && listGate.current.isCurrent(loadedRequest, scope);
+  const openFile = current && phase === "ready"
+    ? files.find((file) => file.path === openPath) : undefined;
   return useMemo(
     () => ({
       kind,
-      phase,
-      error,
-      files,
-      filesShown,
-      filesTotal: Math.max(filesTotal, filesShown),
-      truncated,
-      localBranch,
-      openPath,
-      openPatch,
+      phase: current ? phase : kind === "none" ? "idle" : "loading",
+      error: current ? error : null,
+      files: current ? files : [],
+      filesShown: current ? filesShown : 0,
+      filesTotal: current ? Math.max(filesTotal, filesShown) : 0,
+      truncated: current && truncated,
+      localBranch: current ? localBranch : null,
+      revision: current ? revision : null,
+      openPath: current ? openPath : null,
+      openPatch: !current || phase !== "ready" ? IDLE_PATCH
+        : kind === "pull-request"
+          ? { phase: openFile ? "ready" : "idle", text: openFile?.patch ?? null, truncated: false, error: null }
+          : openPatch,
       open,
       retry,
     }),
-    [kind, phase, error, files, filesShown, filesTotal, truncated, localBranch, openPath, openPatch, open, retry],
+    [current, kind, phase, error, files, filesShown, filesTotal, truncated, localBranch, revision, openPath, openFile, openPatch, open, retry],
   );
 }

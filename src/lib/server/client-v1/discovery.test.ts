@@ -633,7 +633,7 @@ test("the standalone server enforces ownership on Windows with this module's scr
   );
   assert.match(
     windowsAclScript,
-    /rights = \[uint32\]\$_\.FileSystemRights/,
+    /rights = \[uint32\]\$\w+\.FileSystemRights/,
     "the probe must retain each ACE access mask instead of trusting a SID alone",
   );
   assert.match(

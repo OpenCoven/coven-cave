@@ -12,6 +12,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const realFetch = globalThis.fetch;
+const headSha = "a".repeat(40);
+const baseSha = "b".repeat(40);
+const mergeBaseSha = "c".repeat(40);
+const revision = { repo: "o/r", number: 7, headSha, baseSha, baseRef: "main", mergeBaseSha };
 
 /** Stand in for GitHub's pull-request files endpoint. */
 function stubGitHub(payload: unknown, init: { status?: number } = {}) {
@@ -19,7 +23,11 @@ function stubGitHub(payload: unknown, init: { status?: number } = {}) {
   globalThis.fetch = async (input: unknown) => {
     calls.push(String(input));
     const status = init.status ?? 200;
-    return new Response(JSON.stringify(payload), {
+    const data = status !== 200 || !Array.isArray(payload) || String(input).includes("/files?") ? payload
+      : String(input).endsWith("/pulls/7")
+        ? { head: { sha: headSha }, base: { sha: baseSha, ref: "main" } }
+        : { base_commit: { sha: baseSha }, merge_base_commit: { sha: mergeBaseSha }, files: payload };
+    return new Response(JSON.stringify(data), {
       status,
       headers: { "content-type": "application/json" },
     });
@@ -66,7 +74,89 @@ test("a clean pull request reports every file, untruncated", async () => {
   assert.equal(body.total, 2);
   assert.equal(body.files.length, 2);
   for (const entry of body.files) assert.equal(entry.noPatchReason, null);
-  assert.match(calls[0], /\/repos\/o\/r\/pulls\/7\/files\?per_page=100$/);
+  assert.deepEqual(body.revision, revision);
+  assert.equal(calls[1], `https://api.github.com/repos/o/r/compare/${baseSha}...${headSha}?per_page=1`);
+  assert.equal(calls.some((url) => url.includes("/files?")), false);
+});
+
+test("an author push cannot relabel the immutable patch with a newer head", async () => {
+  const calls = stubGitHub([file({ patch: "+revision A" })]);
+  const body = await (await GET(request())).json();
+  assert.equal(body.revision?.headSha, headSha);
+  assert.equal(body.files[0].patch, "+revision A");
+  assert.ok(calls[1].includes(`${baseSha}...${headSha}`));
+});
+
+test("fork heads use network-wide immutable SHAs, independent of fork names and moving refs", async () => {
+  // Shape and OIDs from the read-only cli/cli#14373 public fork comparison.
+  const base = "0d121e8c31204cdbe02b4a4b1be5e88bdc3c4662";
+  const head = "682398a89f408d305fba87c2be1c25864aab4077";
+  const compareUrl = `https://api.github.com/repos/cli/cli/compare/${base}...${head}?per_page=1`;
+  for (const headRepo of [
+    { full_name: "acoulton/cli", name: "cli", owner: { login: "acoulton" } },
+    { full_name: "new-owner/renamed-cli", name: "renamed-cli", owner: { login: "new-owner" } },
+    null,
+  ]) {
+    const calls: string[] = [];
+    const pull = {
+      head: { sha: head, ref: "patch-1", repo: headRepo },
+      base: { sha: base, ref: "trunk", repo: { full_name: "cli/cli" } },
+    };
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === "https://api.github.com/repos/cli/cli/pulls/14373") return Response.json(pull);
+      assert.equal(url, compareUrl, "never resolve a mutable owner:branch or pulls/files target");
+      pull.head.sha = "d".repeat(40);
+      pull.head.ref = "renamed-and-pushed";
+      return Response.json({
+        base_commit: { sha: base }, merge_base_commit: { sha: base },
+        commits: [{ sha: head }], files: [file({ filename: "docs/install_linux.md", patch: "+synthetic fork patch" })],
+      });
+    };
+    const response = await GET(request("repo=cli%2Fcli&number=14373"));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.revision, { repo: "cli/cli", number: 14373, baseSha: base, baseRef: "trunk", headSha: head, mergeBaseSha: base });
+    assert.equal(body.files[0].patch, "+synthetic fork patch");
+    assert.equal(calls.length, 2);
+  }
+});
+
+test("an inaccessible comparison fails visibly without retrying mutable fork refs or PR files", async () => {
+  for (const status of [403, 404]) {
+    const calls: string[] = [];
+    globalThis.fetch = async (input) => {
+      calls.push(String(input));
+      return String(input).endsWith("/pulls/7")
+        ? Response.json({ head: { sha: headSha, ref: "feature", repo: { full_name: "fork/renamed" } }, base: { sha: baseSha, ref: "main" } })
+        : Response.json({ message: "Resource is not accessible" }, { status });
+    };
+    const response = await GET(request());
+    assert.equal(response.status, status);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.ok(body.error);
+    assert.equal(body.files, undefined);
+    assert.equal(body.revision, undefined);
+    assert.equal(calls.length, 2);
+    assert.ok(calls[1].endsWith(`/compare/${baseSha}...${headSha}?per_page=1`));
+  }
+});
+
+test("missing or inconsistent comparison identity fails closed", async () => {
+  for (const comparison of [
+    { files: [file()] },
+    { files: [file()], base_commit: { sha: headSha }, merge_base_commit: { sha: mergeBaseSha } },
+    { files: [file()], base_commit: { sha: baseSha }, merge_base_commit: { sha: "bad" } },
+  ]) {
+    globalThis.fetch = async (input) => Response.json(String(input).endsWith("/pulls/7")
+      ? { head: { sha: headSha }, base: { sha: baseSha, ref: "main" } }
+      : comparison);
+    const response = await GET(request());
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).ok, false);
+  }
 });
 
 test("a file GitHub sends no patch for is marked as GitHub's omission, not a truncation", async () => {

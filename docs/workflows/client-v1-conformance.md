@@ -255,14 +255,85 @@ the final missing-discovery outcome, the harness waits for stderr `end` or
 alongside teardown, not after it: child `exit` alone does not prove the last
 buffered stderr has arrived. An unclosed pipe cannot extend this drain budget;
 any category already observed is retained, otherwise it stays `not-observed`
-(or `output-limit` if the byte budget was exhausted). Other readiness outcomes
-do not wait for the diagnostic drain. Only the final missing-discovery outcome
-gains the suffix; there is no earlier generic missing line to mask it.
+(or `output-limit` if the byte budget was exhausted). Startup-exit diagnostics
+use this same bounded drain; other readiness outcomes do not wait for it.
+There is no earlier generic missing line to mask the final detailed failure.
 
 These observations are diagnostic evidence only. They do not establish a
 repair, change ownership checks or waivers, infer reader/publisher path
 equality, or authorize publication. Coordinated consumers must bind reviewed
 Cave and Chat sources before the next protected OpenCoven/sdk#38 run.
+
+### Bounded startup exit diagnostics
+
+An early process exit alone does not identify why the server stopped. When
+the existing readiness loop selects that failure, its single final line is:
+
+```text
+client-v1-conformance: Cave exited before readiness. [exit=<EXIT>; stderr=<STDERR>]
+```
+
+`EXIT` is `zero`, `nonzero`, `signal`, `windows-crash`, or `unknown`. The
+original child `exit` event is captured before cleanup; cleanup signals cannot
+replace it. A nonempty signal takes precedence over a code. Integer codes are
+accepted only within the signed/unsigned 32-bit range. On Windows only,
+`windows-crash` denotes one of five known NTSTATUS values (signed or unsigned):
+`0xC0000005` (access violation), `0xC000001D` (illegal instruction),
+`0xC00000FD` (stack overflow), `0xC0000374` (heap corruption), or `0xC0000409`
+(stack buffer overrun/fail-fast). See Microsoft's
+[NTSTATUS reference](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/596a1078-e883-4972-9bbc-49e60bebca55).
+Other integer nonzero codes remain `nonzero`; malformed or absent event
+values are `unknown`. These are observed code classes, not inferred causes.
+
+`STDERR` is `not-observed`, `output-limit`, `address-in-use`, `access-denied`,
+`out-of-memory`, `module-not-found`, or `other`. The classifier reuses the
+discovery observer's bounded line scanner. Each observer considers only the
+same first 32 KiB, across arbitrary chunk boundaries. Startup classification
+keeps the first known complete error line; unrelated earlier output does not
+mask a later known marker. It recognizes only these Node/V8 forms:
+
+- `Error: listen EADDRINUSE: address already in use ...`
+- `Error: [syscall ]EACCES: permission denied...` or `EPERM: operation not permitted...`
+- `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory` or the equivalent `Ineffective mark-compacts near heap limit` form
+- `Error [ERR_MODULE_NOT_FOUND]: Cannot find module/package ...` or `Error: Cannot find module ...`
+
+The optional syscall above is a lowercase operation name, not arbitrary
+leading text. Keywords embedded in unrelated output do not classify a cause.
+Unmatched bytes yield `other`; no bytes yield `not-observed`. Exhausting the
+byte budget before recognizing a complete marker yields `output-limit`.
+End/close can complete a final unterminated line; reaching the one-second
+drain timeout does not pretend a partial line is complete. Both streams
+continue draining, with no raw output forwarded or persisted in artifacts.
+
+The existing 120-second readiness deadline, selected-failure precedence,
+single discovery read per poll, termination, and port-release checks remain
+unchanged. Discovery-missing and startup-exit share the existing one-second
+drain concurrent with cleanup, never an unbounded EOF wait or a second serial
+timeout. Directory identity, ACLs, environment, and publication gates are
+unchanged. A coordinated consumer must review and bind this exact finite
+protocol before using it as protected-run evidence; it does not establish a
+Windows repair or release authorization.
+
+The existing `scripts/client-v1-conformance.test.mjs` suite also exercises the
+actual `startCave` function body with fixture executables, real Node child
+processes/pipes, the production environment builder, HTTP polling, and
+`stopCave`. These zero/nonzero/missing-module controls do not boot packaged
+Cave or reproduce the protected Windows user's environment. The file belongs
+to the app test suite, not `pnpm test:conformance`. Ordinary `.github/workflows/ci.yml`
+therefore runs it explicitly in `Frontend validation (Windows startup controls)`
+on `windows-latest`, under the existing frontend path selection and recovery
+SHA guards. The job has read-only contents permission, no protected environment,
+and a 20-minute bound. Its selected result must succeed for `Frontend build`;
+the existing exact-head/current-attempt evidence guard also covers it.
+
+This premerge job is distinct from the `runtime` Windows matrix in
+`.github/workflows/full-validation.yml`, which runs cross-environment suites
+and builds/tests the packaged sidecar, and from `windows-native`, which tests
+Rust/PowerShell behavior. Full validation remains a reusable `workflow_call`
+workflow gated by its normal release-candidate provenance; the diagnostic job
+does not change or bypass it. Neither a local control pass nor a Windows
+parser/control pass is evidence for the cause of a historical protected-server
+exit.
 
 ## Findings a green run still reports
 

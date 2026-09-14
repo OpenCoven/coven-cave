@@ -487,10 +487,24 @@ test("orders attention rows by urgency and oldest first within a tier", () => {
 });
 
 test("renders labels and detailed accessible descriptions with state label, reason, and elapsed time", () => {
+  // One vocabulary (session-lifecycle.ts). The three states that used to spell
+  // themselves "Left hanging" / "Awaiting you" / "Still waiting" are one thing
+  // to the reader — a session waiting on them — and now say so once. What the
+  // word distinguishes instead is whether the run is STOPPED on a gate.
   assert.equal(chatAttentionLabel("none"), null);
-  assert.equal(chatAttentionLabel("left-hanging"), "Left hanging");
+  assert.equal(chatAttentionLabel("left-hanging"), "Awaiting you");
   assert.equal(chatAttentionLabel("awaiting-human"), "Awaiting you");
-  assert.equal(chatAttentionLabel("overdue-human"), "Still waiting");
+  assert.equal(chatAttentionLabel("overdue-human"), "Awaiting you");
+
+  // The gate reasons read as Blocked at every elapsed time; an overdue wait is
+  // a longer wait, never a different state and never an error.
+  assert.equal(chatAttentionLabel("awaiting-human", "approval"), "Blocked");
+  assert.equal(chatAttentionLabel("awaiting-human", "credentials"), "Blocked");
+  assert.equal(chatAttentionLabel("overdue-human", "approval"), "Blocked");
+  assert.equal(chatAttentionLabel("overdue-human", "credentials"), "Blocked");
+  assert.equal(chatAttentionLabel("awaiting-human", "input"), "Awaiting you");
+  assert.equal(chatAttentionLabel("awaiting-human", "decision"), "Awaiting you");
+  assert.equal(chatAttentionLabel("none", "approval"), null, "a settled session is never blocked");
 
   const cases = [
     {
@@ -499,7 +513,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-03T20:00:00.000Z",
         reason: null,
       } as const,
-      expected: "Left hanging since 1 day ago.",
+      expected: "Awaiting you since 1 day ago.",
     },
     {
       attention: {
@@ -515,7 +529,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-04T19:00:00.000Z",
         reason: "approval",
       } as const,
-      expected: "Awaiting you for approval since 1 hour ago.",
+      expected: "Blocked for approval since 1 hour ago.",
     },
     {
       attention: {
@@ -523,7 +537,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-04T19:00:00.000Z",
         reason: "credentials",
       } as const,
-      expected: "Awaiting you for credentials since 1 hour ago.",
+      expected: "Blocked for credentials since 1 hour ago.",
     },
     {
       attention: {
@@ -539,7 +553,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-02T20:00:00.000Z",
         reason: "input",
       } as const,
-      expected: "Still waiting for input since 2 days ago.",
+      expected: "Awaiting you for input since 2 days ago.",
     },
     {
       attention: {
@@ -547,7 +561,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-02T20:00:00.000Z",
         reason: "approval",
       } as const,
-      expected: "Still waiting for approval since 2 days ago.",
+      expected: "Blocked for approval since 2 days ago.",
     },
     {
       attention: {
@@ -555,7 +569,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-02T20:00:00.000Z",
         reason: "credentials",
       } as const,
-      expected: "Still waiting for credentials since 2 days ago.",
+      expected: "Blocked for credentials since 2 days ago.",
     },
     {
       attention: {
@@ -563,7 +577,7 @@ test("renders labels and detailed accessible descriptions with state label, reas
         since: "2026-08-02T20:00:00.000Z",
         reason: "decision",
       } as const,
-      expected: "Still waiting for a decision since 2 days ago.",
+      expected: "Awaiting you for a decision since 2 days ago.",
     },
   ];
 

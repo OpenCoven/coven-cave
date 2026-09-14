@@ -16,6 +16,7 @@ function count(value: unknown): value is number {
 export type ReviewItemFacts = PrBucketFacts & {
   headRef: string;
   headSha: string;
+  baseSha: string;
   commits: number;
 };
 
@@ -32,6 +33,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
   const reviews = record(pull?.reviews);
   const terminal = item.merged || item.state === "closed";
   const headSha = sanitizeGithubObjectSha(typeof pull?.headSha === "string" ? pull.headSha : null);
+  const baseSha = sanitizeGithubObjectSha(typeof pull?.baseSha === "string" ? pull.baseSha : null);
   if (!terminal && (
     !pull || !reviews || !count(reviews.approved) ||
     !count(reviews.changesRequested) || !count(reviews.commented) ||
@@ -40,6 +42,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
     typeof pull.baseRef !== "string"
   )) throw new Error("GitHub pull request details are unavailable.");
   if (!terminal && !headSha) throw new Error("GitHub pull request head SHA is unavailable or invalid.");
+  if (!terminal && !baseSha) throw new Error("GitHub pull request base SHA is unavailable or invalid.");
 
   const tally: ReviewTally = {
     approved: count(reviews?.approved) ? reviews.approved : 0,
@@ -54,6 +57,7 @@ export function parseReviewItem(value: unknown): ReviewItemFacts {
     baseRef: typeof pull?.baseRef === "string" ? pull.baseRef : "",
     headRef: typeof pull?.headRef === "string" ? pull.headRef : "",
     headSha: headSha ?? "",
+    baseSha: baseSha ?? "",
     commits: count(pull?.commits) ? pull.commits : 0,
     statsKnown: count(pull?.additions) && count(pull?.deletions),
     additions: count(pull?.additions) ? pull.additions : undefined,

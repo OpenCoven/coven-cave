@@ -1011,10 +1011,73 @@ test("the ACL probe reads access rules as SIDs without account translation", asy
       /\$acl\.Access\b/u,
       `${file} must not enumerate the account-translating Access property`,
     );
+    assert.doesNotMatch(
+      script![1],
+      /\bGet-Item\b/u,
+      `${file} must not initialize the PowerShell filesystem provider to resolve the path`,
+    );
+    assert.match(
+      script![1],
+      /\[System\.IO\.Directory\]::Exists\(\$path\)[\s\S]*?\[System\.IO\.DirectoryInfo\]::new\(\$path\)[\s\S]*?\[System\.IO\.File\]::Exists\(\$path\)[\s\S]*?\[System\.IO\.FileInfo\]::new\(\$path\)/u,
+      `${file} must resolve the existing path through direct .NET filesystem APIs`,
+    );
     assert.match(
       script![1],
       /\$rule\.IdentityReference\.Value -eq \$ownerRights\.Value[\s\S]*?\$rule\.FileSystemRights -band \$writableRights\) -eq 0[\s\S]*?continue/u,
       `${file} must preserve a read-only OWNER RIGHTS rule while removing unsafe rules`,
+    );
+  }
+});
+
+test("the ACL probe invokes no PowerShell cmdlets at all", async () => {
+  // v0.4.2-rc.5 stalled on `Get-Item`; rc.6 moved the stall one statement on,
+  // to `New-Object`. The common factor is the first CMDLET: command discovery
+  // in the stripped probe environment never returns, while direct .NET member
+  // calls never wait on it. So the script may use language keywords, operators
+  // and .NET types only — every Verb-Noun token must be a function it defines.
+  const { readFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+
+  // PowerShell command names are case-insensitive, so `get-item` would stall
+  // exactly like `Get-Item`: compare every Verb-Noun token lower-cased, after
+  // dropping comments and string literals, which cannot invoke anything.
+  const undefinedCommands = (script: string) => {
+    const code = script
+      .replace(/'(?:[^']|'')*'/gu, "''")
+      .replace(/"(?:[^"\\]|\\.)*"/gu, '""')
+      .replace(/#.*$/gmu, "");
+    const defined = new Set(
+      [...code.matchAll(/^function ([A-Za-z]+-[A-Za-z]+)/gimu)].map((m) => m[1]!.toLowerCase()),
+    );
+    return [
+      ...new Set(
+        [...code.matchAll(/(?<![\w$'"-])([A-Za-z]+-[A-Za-z]+)\b/gu)]
+          .map((m) => m[1]!)
+          .filter((name) => !defined.has(name.toLowerCase())),
+      ),
+    ];
+  };
+  assert.deepEqual(
+    undefinedCommands("function Read-State { }\n$x = get-item foo # Get-Item\n'Set-Acl'"),
+    ["get-item"],
+    "the detector must catch lower-case cmdlet spellings and ignore comments and strings",
+  );
+
+  for (const file of [
+    "src/lib/server/client-v1/path-ownership.ts",
+    "server.ts",
+  ]) {
+    const source = await readFile(resolve(process.cwd(), file), "utf8");
+    const script = /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/u.exec(source)![1]!;
+    assert.deepEqual(
+      undefinedCommands(script),
+      [],
+      `${file} must not invoke cmdlets; each one triggers PowerShell command discovery`,
+    );
+    assert.doesNotMatch(
+      script,
+      /\|\s*(ForEach|Where|Select|ConvertTo|Sort)-/u,
+      `${file} must not pipe through cmdlets`,
     );
   }
 });

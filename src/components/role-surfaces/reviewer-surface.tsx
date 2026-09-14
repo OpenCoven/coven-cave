@@ -18,7 +18,7 @@
 import "@/styles/review-deck.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH, sameGitHubPullRevision } from "@/lib/github-review";
 import {
   localReviewRevision,
   localReviewWorkItem,
@@ -232,15 +232,13 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     if (!selected || source.phase !== "ready") return null;
     const title = facts?.title || selected.session.title || selected.session.id;
     if (isPr) {
-      if (!facts?.headSha) return null;
-      return pullRequestReviewWorkItem({
+      if (!source.revision) return null;
+      const item = pullRequestReviewWorkItem({
         title,
-        repo: facts.repo,
-        number: facts.number,
-        baseRef: facts.baseRef,
-        headRef: facts.headRef,
-        headSha: facts.headSha,
+        ...source.revision,
+        headRef: facts?.headRef ?? "",
       });
+      return { ...item, revision: `${source.revision.baseRef}:${source.revision.baseSha}:${source.revision.mergeBaseSha}:${source.revision.headSha}` };
     }
     return localReviewWorkItem({
       title,
@@ -248,7 +246,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       branch: source.localBranch ?? selected.session.git?.branch ?? null,
       revision: localReviewRevision(selected.session.updated_at, source.files),
     });
-  }, [facts, isPr, selected, source.files, source.localBranch, source.phase]);
+  }, [facts, isPr, selected, source.files, source.localBranch, source.phase, source.revision]);
 
   const readablePaths = useMemo(
     () =>
@@ -302,10 +300,19 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
 
   const canAct = Boolean(facts?.headSha) && reviewActionsAvailable({
     sourceKind: source.kind,
+    sourcePhase: source.files.length === 0 || source.openPatch.phase === "ready" ? source.phase : "loading",
+    displayedRevision: source.revision,
+    currentRevision: facts,
     readinessPhase: readiness.phase,
     state: facts?.state,
     draft: facts?.draft,
   });
+  const revisionError = !isPr ? null
+    : source.phase === "error" ? source.error
+    : source.phase !== "ready" ? "Loading the pull request diff. Actions are held until its revision is known."
+    : readiness.phase === "ready" && !sameGitHubPullRevision(source.revision, facts)
+      ? "The displayed diff and GitHub state refer to different revisions. Refresh and review the current diff before submitting."
+      : null;
 
   const decision = useMemo(
     () =>
@@ -383,7 +390,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   }, [checkpointsOpen, projectRoot]);
 
   const approve = useCallback(async () => {
-    if (!canAct || !facts?.headSha || !selectedPullRequest || busy) return false;
+    if (!canAct || !source.revision || !selectedPullRequest || busy) return false;
     setBusy("approve");
     setActionError(null);
     try {
@@ -394,7 +401,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           event: "APPROVE",
-          headSha: facts.headSha,
+          headSha: source.revision.headSha,
+          reviewedRevision: source.revision,
           body: note.trim(),
         }),
       });
@@ -414,10 +422,10 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, confirm, facts?.headSha, note, refreshReview, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, source.revision, note, refreshReview, selectedPullRequest]);
 
   const requestChanges = useCallback(async () => {
-    if (!canAct || !facts?.headSha || !selectedPullRequest || busy) return false;
+    if (!canAct || !source.revision || !selectedPullRequest || busy) return false;
     const body = note.trim();
     if (!body) {
       const message =
@@ -437,7 +445,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           event: "REQUEST_CHANGES",
-          headSha: facts.headSha,
+          headSha: source.revision.headSha,
+          reviewedRevision: source.revision,
           body,
         }),
       });
@@ -459,10 +468,10 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, confirm, facts?.headSha, note, refreshReview, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, source.revision, note, refreshReview, selectedPullRequest]);
 
   const merge = useCallback(async () => {
-    if (!canAct || !facts?.headSha || !ready || !selectedPullRequest || busy) return false;
+    if (!canAct || !source.revision || !ready || !selectedPullRequest || busy) return false;
     setBusy("merge");
     setActionError(null);
     try {
@@ -473,7 +482,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           method: "squash",
-          headSha: facts.headSha,
+          headSha: source.revision.headSha,
+          reviewedRevision: source.revision,
         }),
       });
       const json = (await response.json().catch(() => null)) as {
@@ -494,7 +504,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, confirm, facts?.headSha, refreshReview, ready, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, source.revision, refreshReview, ready, selectedPullRequest]);
 
   const toggleDisclosure = useCallback((id: InspectorDisclosure) => {
     setDisclosures((current) => {
@@ -554,12 +564,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     const result = progress.toggle(path);
     confirm(
       result.completed
-        ? `Reviewed ${path}. Every readable file on head ${workItem.revision.slice(0, 7)} is reviewed.`
+        ? source.revision
+          ? `Reviewed ${path}. Every readable file on head ${source.revision.headSha.slice(0, 7)} is reviewed.`
+          : `Reviewed ${path}. Every readable file in this working tree is reviewed.`
         : result.reviewed
           ? `Marked ${path} reviewed.`
           : `Marked ${path} unread.`,
     );
-  }, [confirm, progress, source.openPath, workItem]);
+  }, [confirm, progress, source.openPath, source.revision, workItem]);
 
   const openUnread = useCallback(
     (direction: 1 | -1) => {
@@ -911,6 +923,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               onRetry={refreshReview}
               verdictDock={
                 <ReviewVerdictDock
+                  key={`${selectedScope}:${workItem?.revision ?? "loading"}`}
                   selectionKey={selectedScope}
                   selected={Boolean(selected)}
                   isPr={isPr}
@@ -920,7 +933,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                   blockers={blockers}
                   checklist={checklist}
                   busy={busy}
-                  actionError={actionError}
+                  actionError={actionError ?? revisionError}
                   note={note}
                   noteError={noteError}
                   readinessPhase={readiness.phase}

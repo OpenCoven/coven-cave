@@ -259,6 +259,30 @@
      pastel-dreams to a pale rose. */
   --destructive: var(--color-danger);
   --destructive-foreground: var(--color-danger-foreground);
+  /* Session lifecycle — the six states src/lib/session-lifecycle.ts names, one
+     solid token each, so every tint derives from a single hue per the recipe in
+     docs/coven-design-language.md §3.
+
+     Declared here rather than per component because six modules were each
+     mapping a state key onto a colour of their own (chat-session-status.ts,
+     session-status.ts, chat-attention.ts, lifecycle-badge.tsx, code-surface.ts,
+     permissions-console.ts) and drifting apart doing it — which is how a row
+     that was merely WAITING ended up painted in --danger-text and reading as an
+     error.
+
+     Five are aliases, so they inherit the light-mode retune below and every
+     per-palette override in themes.css for free. Only --status-blocked is new,
+     and it is deliberately DERIVED rather than the literal oklch(0.80 0.12 55)
+     the handoff specifies: a fixed hue is right on the default dark palette and
+     unowned on the other 23 palette × mode combinations, whereas mixing the two
+     neighbours it sits between keeps it between them in all of them. The mix
+     lands at hue ~53.7 against the handoff's 55. */
+  --status-running: var(--accent-presence);
+  --status-awaiting: var(--color-warning);
+  --status-blocked: color-mix(in oklch, var(--color-warning) 55%, var(--color-danger));
+  --status-completed: var(--color-success);
+  --status-failed: var(--color-danger);
+  --status-idle: var(--text-muted);
   /* Fixed dark mixing endpoint for solid-state hover colors. Keeping the
      endpoint tokenized makes render code theme-safe without changing values. */
   --color-mix-dark: oklch(0 0 0);

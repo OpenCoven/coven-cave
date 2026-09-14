@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 
@@ -47,6 +48,7 @@ assert.deepEqual(
     "ios",
     "paths",
     "pr-checks",
+    "windows-conformance",
   ],
   "the required context aggregates bounded frontend validation lanes",
 );
@@ -67,6 +69,7 @@ assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "frontend-bundle",
   "frontend-e2e",
   "frontend-e2e-agentic",
+  "windows-conformance",
 ]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
 assert.equal(
@@ -118,6 +121,33 @@ assert.equal(
   "pnpm ${{ matrix.validation.command }}",
   "each frontend validation matrix lane runs its declared command",
 );
+const windowsConformance = ciWorkflow.jobs["windows-conformance"];
+assert.equal(windowsConformance.name, "Frontend validation (Windows startup controls)");
+assert.equal(windowsConformance["runs-on"], "windows-latest");
+assert.equal(windowsConformance["timeout-minutes"], 20);
+assert.deepEqual(windowsConformance.permissions, { contents: "read" });
+assert.deepEqual(windowsConformance.defaults, { run: { shell: "bash" } });
+assert.equal(windowsConformance.needs, "paths");
+assert.equal(windowsConformance.environment, undefined);
+assert.equal(windowsConformance["continue-on-error"], undefined);
+assert.equal(
+  windowsConformance.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with["persist-credentials"],
+  false,
+);
+assert.ok(windowsConformance.steps.some((step) => step.name === "Refuse a stale merge-tree checkout"));
+assert.deepEqual(
+  windowsConformance.steps.find((step) => step.uses?.startsWith("actions/setup-node@")).with,
+  { "node-version": 24, cache: "pnpm" },
+);
+assert.deepEqual(windowsConformance.steps.filter((step) => step.run?.startsWith("pnpm ")).map((step) => step.run),
+  ["pnpm install --frozen-lockfile"]);
+assert.equal(
+  windowsConformance.steps.at(-1).run,
+  "node --experimental-strip-types --test --test-concurrency=1 scripts/client-v1-conformance.test.mjs",
+  "the Windows lane directly executes the existing startup controls, not an unrelated suite or parser-only filter",
+);
+assert.equal(windowsConformance.steps.at(-1).if, undefined);
+assert.equal(windowsConformance.steps.at(-1)["continue-on-error"], undefined);
 const defaultE2e = ciWorkflow.jobs["frontend-e2e"].steps.find(
   (step) => step.name === "Validate end-to-end behavior",
 );
@@ -223,6 +253,8 @@ const expectedSubordinateJobGuards = {
     "needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   "frontend-e2e-agentic":
     "needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "windows-conformance":
+    "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
 };
 for (const [jobName, guard] of Object.entries(expectedSubordinateJobGuards)) {
   assert.equal(
@@ -299,6 +331,27 @@ assert.match(prerequisite.run, /test "\$FRONTEND_VALIDATION_RESULT" = "success"/
 assert.match(prerequisite.run, /test "\$FRONTEND_BUNDLE_RESULT" = "success"/);
 assert.match(prerequisite.run, /test "\$FRONTEND_E2E_RESULT" = "success"/);
 assert.match(prerequisite.run, /test "\$FRONTEND_E2E_AGENTIC_RESULT" = "success"/);
+assert.equal(prerequisite.env.WINDOWS_CONFORMANCE_RESULT, "${{ needs.windows-conformance.result }}");
+assert.match(prerequisite.run, /test "\$WINDOWS_CONFORMANCE_RESULT" = "success"/);
+const aggregateEnvironment = {
+  ...process.env,
+  PATHS_RESULT: "success",
+  FRONTEND_ENABLED: "true",
+  FRONTEND_VALIDATION_RESULT: "success",
+  FRONTEND_BUNDLE_RESULT: "success",
+  WINDOWS_CONFORMANCE_RESULT: "success",
+  E2E_ENABLED: "false",
+  IOS_ENABLED: "false",
+};
+for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+  const run = spawnSync("bash", ["-c", prerequisite.run], {
+    env: { ...aggregateEnvironment, WINDOWS_CONFORMANCE_RESULT: result },
+  });
+  assert.equal(run.status === 0, result === "success", `Windows ${result} must not produce a false green aggregate`);
+}
+assert.equal(spawnSync("bash", ["-c", prerequisite.run], {
+  env: { ...aggregateEnvironment, FRONTEND_ENABLED: "false", WINDOWS_CONFORMANCE_RESULT: "skipped" },
+}).status, 0, "a genuinely unselected Windows lane does not block documentation-only changes");
 assert.equal(
   ciWorkflow.jobs.build.steps.some((step) => step.run?.includes("playwright test")),
   false,

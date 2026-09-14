@@ -11,6 +11,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionStatusPill } from "@/components/ui/session-status-pill";
+import { truncateBranch } from "@/lib/truncate-middle";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { requestDebugOpen } from "@/lib/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -1631,7 +1632,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, onSele
                               {workBranch ? (
                                 <span className="chat-session-branch hidden sm:inline-flex" title={`Branch ${workBranch}`}>
                                   <Icon name="ph:git-branch" width={9} aria-hidden />
-                                  {workBranch}
+                                  {truncateBranch(workBranch)}
                                 </span>
                               ) : null}
                               {project ? (

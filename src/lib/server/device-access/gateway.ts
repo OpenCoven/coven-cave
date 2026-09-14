@@ -5,7 +5,7 @@ import {
   DEVICE_ACCESS_COOKIE, DEVICE_ACCESS_HEADER, DEVICE_CREDENTIAL_PREFIX,
   type DevicePeer, type DeviceRecord,
 } from "./contract.ts";
-import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
+import { DeviceAccessError, DeviceAccessInitializationError, type DeviceAccessStore } from "./store.ts";
 import {
   createDevicePeerResolver, resolveDevicePeer, type DevicePeerInventory,
 } from "./peers.ts";
@@ -160,6 +160,7 @@ export function createDeviceAccessGateway(options: {
       console.warn("[device-access] Policy revalidation failed:", error instanceof Error ? error.message : "unavailable");
       closeLegacy();
       for (const res of active.keys()) res.destroy();
+      if (error instanceof DeviceAccessInitializationError) clearInterval(timer);
     } finally {
       revalidating = false;
     }
@@ -175,6 +176,10 @@ export function createDeviceAccessGateway(options: {
     const direct = options.isDirectLoopback(req);
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     const isApi = pathname === API || pathname.startsWith(`${API}/`);
+    // Local app availability is independent of policy storage, but local
+    // pairing must still observe policy before issuing a legacy invite.
+    const isHandoff = pathname === "/api/mobile-handoff" || pathname.startsWith("/api/mobile-handoff/");
+    if (direct && !isApi && !isHandoff) return false;
     try {
       const policy = await currentPolicy();
       if (policy.enabled) req.headers[DEVICE_MANAGED_HEADER] = options.stampSecret;

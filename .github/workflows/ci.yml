@@ -425,6 +425,46 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm ${{ matrix.validation.command }}
 
+  windows-conformance:
+    name: Frontend validation (Windows startup controls)
+    needs: paths
+    if: needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Refuse a stale merge-tree checkout
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test -f scripts/check-merge-tree-freshness.mjs || {
+            echo "::error::Checked-out tree predates the merge-freshness guard; refusing stale Windows validation."
+            exit 1
+          }
+          node scripts/check-merge-tree-freshness.mjs --pr "$PR_NUMBER" --head "$HEAD_SHA"
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Validate Windows startup controls
+        run: node --experimental-strip-types --test --test-concurrency=1 scripts/client-v1-conformance.test.mjs
+
   frontend-bundle:
     name: Frontend bundle
     needs: paths
@@ -606,7 +646,7 @@ jobs:
 
   build:
     name: Frontend build
-    needs: [paths, ios, frontend-validation, frontend-bundle, frontend-e2e, frontend-e2e-agentic]
+    needs: [paths, ios, frontend-validation, frontend-bundle, frontend-e2e, frontend-e2e-agentic, windows-conformance]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -630,6 +670,7 @@ jobs:
           FRONTEND_ENABLED: ${{ needs.paths.outputs.frontend }}
           FRONTEND_VALIDATION_RESULT: ${{ needs.frontend-validation.result }}
           FRONTEND_BUNDLE_RESULT: ${{ needs.frontend-bundle.result }}
+          WINDOWS_CONFORMANCE_RESULT: ${{ needs.windows-conformance.result }}
           E2E_ENABLED: ${{ needs.paths.outputs.e2e }}
           FRONTEND_E2E_RESULT: ${{ needs.frontend-e2e.result }}
           FRONTEND_E2E_AGENTIC_RESULT: ${{ needs.frontend-e2e-agentic.result }}
@@ -641,6 +682,7 @@ jobs:
           if [ "$FRONTEND_ENABLED" = "true" ]; then
             test "$FRONTEND_VALIDATION_RESULT" = "success"
             test "$FRONTEND_BUNDLE_RESULT" = "success"
+            test "$WINDOWS_CONFORMANCE_RESULT" = "success"
           fi
           if [ "$E2E_ENABLED" = "true" ]; then
             test "$FRONTEND_E2E_RESULT" = "success"

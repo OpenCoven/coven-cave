@@ -223,6 +223,7 @@ test("every job that checks out the PR tree runs the freshness guard", () => {
     "frontend-bundle",
     "frontend-e2e",
     "frontend-e2e-agentic",
+    "windows-conformance",
     "build",
   ];
   assert.deepEqual(
@@ -245,4 +246,3 @@ test("every job that checks out the PR tree runs the freshness guard", () => {
     assert.ok(checkoutIdx >= 0 && guardIdx > checkoutIdx, `${jobName} guard must sit after its checkout`);
   }
 });
-

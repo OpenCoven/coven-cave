@@ -58,6 +58,7 @@ test.after(() => {
 test("a verdict is attached to the head that was actually reviewed", async () => {
   const payloads: unknown[] = [];
   globalThis.fetch = async (_url, init) => {
+    if (!init?.method) return Response.json({ head: { sha: "a".repeat(40) }, base: { sha: "b".repeat(40), ref: "main" } });
     payloads.push(JSON.parse(String(init?.body)));
     return Response.json({ id: 1, state: "APPROVED" });
   };
@@ -67,6 +68,30 @@ test("a verdict is attached to the head that was actually reviewed", async () =>
   }));
   assert.equal((await result.json()).ok, true);
   assert.deepEqual(payloads, [{ event: "APPROVE", body: "Reviewed this change.", commit_id: headSha }]);
+});
+
+test("matching displayed revisions dispatch approvals and change requests to exactly that commit", async () => {
+  const revision = { repo: "o/r", number: 7, headSha: "a".repeat(40), baseSha: "b".repeat(40), baseRef: "main", mergeBaseSha: "c".repeat(40) };
+  const payloads: unknown[] = [];
+  globalThis.fetch = async (_url, init) => {
+    if (!init?.method) return Response.json({ head: { sha: revision.headSha }, base: { sha: revision.baseSha, ref: revision.baseRef } });
+    payloads.push(JSON.parse(String(init.body)));
+    return Response.json({ id: 1 });
+  };
+  for (const event of ["APPROVE", "REQUEST_CHANGES"]) {
+    const response = await POST(new Request("http://localhost/api/github/review", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event, body: "Reviewed", headSha: revision.headSha, reviewedRevision: revision }),
+    }));
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(payloads, ["APPROVE", "REQUEST_CHANGES"].map((event) => ({ event, body: "Reviewed", commit_id: revision.headSha })));
+  for (const reviewedRevision of [null, {}, { ...revision, number: 8 }, { ...revision, headSha: "d".repeat(40) }]) {
+    const response = await POST(new Request("http://localhost/api/github/review", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event: "APPROVE", headSha: revision.headSha, reviewedRevision }),
+    }));
+    assert.equal(response.status, 400);
+  }
+  assert.equal(payloads.length, 2);
 });
 
 test("malformed explicit review heads fail before dispatch and omission remains compatible", async () => {
@@ -87,4 +112,24 @@ test("malformed explicit review heads fail before dispatch and omission remains 
   }));
   assert.equal((await legacy.json()).ok, true);
   assert.deepEqual(payloads, [{ event: "APPROVE" }]);
+});
+
+test("displayed revision must correlate with the verdict and fresh PR metadata before dispatch", async () => {
+  const revision = { repo: "o/r", number: 7, headSha: "a".repeat(40), baseSha: "b".repeat(40), baseRef: "main", mergeBaseSha: "c".repeat(40) };
+  for (const change of [
+    { head: { sha: "d".repeat(40) }, base: { sha: revision.baseSha, ref: "main" } },
+    { head: { sha: revision.headSha }, base: { sha: "d".repeat(40), ref: "main" } },
+    { head: { sha: revision.headSha }, base: { sha: revision.baseSha, ref: "release" } },
+  ]) {
+    const writes: string[] = [];
+    globalThis.fetch = async (_url, init) => {
+      if (init?.method === "POST") writes.push(String(init.body));
+      return Response.json(init?.method === "POST" ? { id: 1 } : change);
+    };
+    const response = await POST(new Request("http://localhost/api/github/review", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event: "APPROVE", headSha: revision.headSha, reviewedRevision: revision }),
+    }));
+    assert.equal(response.status, 409);
+    assert.deepEqual(writes, []);
+  }
 });

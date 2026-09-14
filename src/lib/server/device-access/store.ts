@@ -24,6 +24,7 @@ const ERROR_STATUS = {
   conflict: 409,
   not_found: 404,
   rate_limited: 429,
+  unavailable: 503,
 } as const;
 
 export class DeviceAccessError extends Error {
@@ -35,6 +36,14 @@ export class DeviceAccessError extends Error {
     this.name = "DeviceAccessError";
     this.code = code;
     this.status = status;
+  }
+}
+
+/** A store that never initialized cannot recover within this server instance. */
+export class DeviceAccessInitializationError extends DeviceAccessError {
+  constructor(message: string) {
+    super("unavailable", message);
+    this.name = "DeviceAccessInitializationError";
   }
 }
 

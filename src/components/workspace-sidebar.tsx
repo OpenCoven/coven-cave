@@ -9,6 +9,7 @@ import { ChatBroadcastComposer } from "@/components/chat-broadcast-composer";
 import { Icon, type IconName } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
+import { attentionLifecycle } from "@/lib/session-lifecycle";
 import { relativeTime } from "@/lib/relative-time";
 import { sessionPrStatus, type SessionPrStatus } from "@/lib/session-pr-status";
 import type { SessionRow } from "@/lib/types";
@@ -102,11 +103,24 @@ function resolveThreadAttention(
   session: SessionRow,
   archived: boolean,
   now: number,
-): { state: ChatAttentionState; label: string | null; description: string | null } {
+): {
+  state: ChatAttentionState;
+  /** The canonical lifecycle the cue is spelled with — `awaiting` or the
+   *  stronger `blocked`. Carried separately from `state` because the row needs
+   *  to TINT by it while `data-attention` still reports the underlying
+   *  evidence for the existing rules keyed on it. */
+  kind: "awaiting" | "blocked" | null;
+  label: string | null;
+  description: string | null;
+} {
   const state: ChatAttentionState = archived ? "none" : session.attention.state;
+  // The reason is what separates a session merely waiting on you from one
+  // STOPPED on you (approval/credentials), so it has to travel with the state.
+  const reason = archived ? null : session.attention.reason;
   return {
     state,
-    label: chatAttentionLabel(state),
+    kind: attentionLifecycle(state, reason),
+    label: chatAttentionLabel(state, reason),
     description: archived ? null : chatAttentionDescription(session.attention, now),
   };
 }
@@ -237,7 +251,7 @@ function ThreadRow({
   const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
   // Archived rows read muted, and the leading slot shows the archive glyph so
   // they can't pass for live threads.
-  const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
+  const { state: attentionState, kind: attentionKind, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
     now,
@@ -247,6 +261,7 @@ function ThreadRow({
     <div
       className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
       data-attention={attentionState}
+      data-attention-kind={attentionKind ?? undefined}
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
           edge — the session's state, readable down the whole rail without
@@ -421,7 +436,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
   const archived = Boolean(session.archived_at);
   const title = sidebarThreadTitle(session, archived);
   const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
-  const { state: attentionState, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
+  const { state: attentionState, kind: attentionKind, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
     session,
     archived,
     now,
@@ -431,6 +446,7 @@ function PinnedThreadRow({ session, active, now, onOpenUrl, onOpen, onTogglePin 
     <div
       className={`cnav__thread cnav__thread--flat${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
       data-attention={attentionState}
+      data-attention-kind={attentionKind ?? undefined}
     >
       {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
           edge — the session's runtime state, readable down the whole rail

@@ -6,6 +6,26 @@ policy, existing invite behavior is unchanged. Enabling device approval
 invalidates legacy remote authorization, including open remote connections.
 Local desktop access stays available.
 
+## Policy availability
+
+An unavailable policy is not disabled enforcement. Remote HTTP requests and
+WebSocket upgrades wait for device-store initialization; if it fails, HTTP
+requests return `503 unavailable` and upgrades are refused before dispatch.
+An unexpired legacy invite does not bypass this refusal. Initialization failure
+is logged with its cause and remains permanent for that server instance: fix the
+underlying storage or permissions problem and restart the server.
+After its first logged refusal and connection cleanup, background policy
+revalidation stops for this terminal initialization failure. Request-time
+refusals remain in force. Policy-read failures from an initialized store are
+still reported and retried, allowing recovery without treating them as legacy
+authorization.
+
+Unrelated direct-loopback application requests and upgrades remain available.
+Local device management and mobile invite issuance still require a loaded
+policy, so they cannot mistake unavailable managed state for legacy mode.
+Successful initialization preserves the saved policy, including legitimate
+legacy mode when enforcement has never been enabled.
+
 ## Pairing and revocation
 
 1. Enable mobile mode using the existing desktop availability consent.

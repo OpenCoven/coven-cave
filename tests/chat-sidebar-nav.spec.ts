@@ -469,11 +469,15 @@ test.describe("chat threads rail", () => {
     await expect(attentionRow.getByText("Approve release checklist", { exact: true })).toBeVisible();
     await expect(projectTile).toBeVisible();
     await expect(attentionCue).toBeVisible();
-    await expect(attentionLabel).toHaveText("Awaiting you");
+    // This session is seeded with reason "approval" — a gate the run cannot
+    // pass without the reader — so its visible state is Blocked. The SECTION
+    // above stays "Awaiting you": it groups what needs you, it does not name
+    // each row's state.
+    await expect(attentionLabel).toHaveText("Blocked");
     const timestamp = (await attentionRow.locator(".cnav__time").textContent())?.trim();
     expect(timestamp).toBeTruthy();
     await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Blocked$`),
     );
 
     await narrowChatRail(page);
@@ -496,7 +500,7 @@ test.describe("chat threads rail", () => {
     expect(labelState.width).toBeGreaterThan(0);
     expect(labelState.height).toBeGreaterThan(0);
     await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Awaiting you$`),
+      new RegExp(`^Project alpha\\s+Approve release checklist\\s+${timestamp}\\s+Blocked$`),
     );
   });
 

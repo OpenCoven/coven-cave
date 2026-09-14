@@ -84,6 +84,7 @@ type PullFixture = {
     headRef: string;
     baseRef: string;
     headSha: string;
+    baseSha: string;
     commits: number;
     additions: number;
     deletions: number;
@@ -105,6 +106,7 @@ const PULLS: Record<string, PullFixture> = {
       headRef: "feat/roster",
       baseRef: "main",
       headSha: "8f21c0412ab".padEnd(40, "0"),
+      baseSha: "b".repeat(40),
       commits: 6,
       additions: 214,
       deletions: 38,
@@ -124,6 +126,7 @@ const PULLS: Record<string, PullFixture> = {
       headRef: "feat/share-links",
       baseRef: "main",
       headSha: "4c19aa2ff30".padEnd(40, "0"),
+      baseSha: "b".repeat(40),
       commits: 6,
       additions: 410,
       deletions: 0,
@@ -175,6 +178,7 @@ const PATCH = [
 
 const DIFFS: Record<string, unknown> = {
   [BLOCKED]: {
+    revision: { repo: "OpenCoven/coven-agents", number: 3, baseRef: "main", baseSha: "b".repeat(40), headSha: PULLS[BLOCKED].pull.headSha, mergeBaseSha: "c".repeat(40) },
     total: 2,
     files: [
       { filename: "src/api/roster-route.ts", status: "modified", additions: 24, deletions: 8, patch: PATCH },
@@ -182,6 +186,7 @@ const DIFFS: Record<string, unknown> = {
     ],
   },
   [READY]: {
+    revision: { repo: "OpenCoven/coven-cave", number: 4788, baseRef: "main", baseSha: "b".repeat(40), headSha: PULLS[READY].pull.headSha, mergeBaseSha: "c".repeat(40) },
     total: 1,
     files: [{ filename: "src/lib/share-tokens.ts", status: "added", additions: 49, deletions: 0, patch: PATCH }],
   },
@@ -308,6 +313,73 @@ async function openReviewDeck(page: Page, fixture: DeckFixture = {}, expectedRow
 
 test.describe("Review Deck cockpit", () => {
   test.describe.configure({ timeout: 180_000 });
+
+  test("displayed revision A holds verdicts against metadata B and refresh binds the request", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    const headSha = "d".repeat(40);
+    const pulls = { ...PULLS, [READY]: { ...PULLS[READY], pull: { ...PULLS[READY].pull, headSha } } };
+    const handles = await openReviewDeck(page, { pulls });
+    await page.locator(".rd-row", { hasText: "Session share links" }).click();
+    await expect(page.locator(".rd-diff-card")).toContainText("resolveActor");
+    await expect(page.getByText("The displayed diff and GitHub state refer to different revisions. Refresh and review the current diff before submitting.")).toBeVisible();
+    await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
+    expect(handles.mutations).toEqual([]);
+
+    const revision = { repo: "OpenCoven/coven-cave", number: 4788, baseRef: "main", baseSha: "b".repeat(40), headSha, mergeBaseSha: "c".repeat(40) };
+    await page.route(/\/api\/github\/diff\?/, (route) => route.fulfill({
+      json: { ok: true, revision, total: 1, files: [{ filename: "new.ts", patch: "@@ -0,0 +1 @@\n+revisionB" }] },
+    }));
+    await page.getByRole("button", { name: "Refresh review queue" }).click();
+    await expect(page.locator(".rd-diff-card")).toContainText("revisionB");
+    await expect(page.locator(".rd-verdict-primary")).toBeEnabled();
+    await page.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+    await expect(page.locator(".rd-toast")).toHaveText("Reviewed new.ts. Every readable file on head ddddddd is reviewed.");
+    await page.locator(".rd-verdict-primary").click();
+    const request = page.waitForRequest((request) => request.url().includes("/api/github/merge") && request.method() === "POST");
+    await page.getByRole("dialog").getByRole("button", { name: /Squash.*merge/i }).click();
+    expect((await request).postDataJSON()).toMatchObject({ headSha, reviewedRevision: revision });
+  });
+
+  test("local review completion names the working tree rather than a fabricated head", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    await openReviewDeck(page);
+    await page.locator(".rd-row", { hasText: "Ensure new projects have a subject line" }).click();
+    await page.getByRole("button", { name: "Mark reviewed", exact: true }).click();
+    await expect(page.locator(".rd-toast")).toHaveText("Reviewed src/components/chat-view.tsx. Every readable file in this working tree is reviewed.");
+    await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
+  });
+
+  test("a pending shared-file diff cannot survive a switch to a different actionable PR", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    const handles = await openReviewDeck(page);
+    let releaseA: (() => Promise<void>) | null = null;
+    let releaseB: (() => Promise<void>) | null = null;
+    await page.route(/\/api\/github\/diff\?/, (route) => new Promise<void>((resolve) => {
+      const ref = refOf(route.request().url());
+      const release = async () => {
+        await route.fulfill({ json: {
+          ok: true, ...(DIFFS[ref] as object), total: 1,
+          files: [{ filename: "shared.ts", patch: `@@ -0,0 +1 @@\n+${ref === BLOCKED ? "PATCH_A" : "PATCH_B"}` }],
+        } });
+        resolve();
+      };
+      if (ref === BLOCKED) releaseA = release;
+      else releaseB = release;
+    }));
+    await page.locator(".rd-row", { hasText: "Roster group chat protocol" }).click();
+    await expect.poll(() => releaseA !== null).toBe(true);
+    const switchSelection = page.locator(".rd-row", { hasText: "Session share links" }).click();
+    await releaseA!();
+    await switchSelection;
+    await expect.poll(() => releaseB !== null).toBe(true);
+    await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
+    await expect(page.locator(".rd-diff-card")).not.toContainText("PATCH_A");
+    await releaseB!();
+    await expect(page.locator(".rd-diff-card")).toContainText("PATCH_B");
+    await expect(page.locator(".rd-diff-card")).not.toContainText("PATCH_A");
+    await expect(page.locator(".rd-verdict-primary")).toBeEnabled();
+    expect(handles.mutations).toEqual([]);
+  });
 
   test("three columns lay out side by side, and each collapses without stranding the diff", async ({
     page,
@@ -474,7 +546,7 @@ test.describe("Review Deck cockpit", () => {
         status: "modified", additions: 24, deletions: 8,
         patch: ["@@ -1,3 +1,4 @@", " export const enabled = true;", longLine, " export default enabled;"].join("\n"),
       }));
-      await openReviewDeck(page, { diffs: { ...DIFFS, [BLOCKED]: { total: files.length, files } } });
+      await openReviewDeck(page, { diffs: { ...DIFFS, [BLOCKED]: { ...(DIFFS[BLOCKED] as object), total: files.length, files } } });
       await page.locator(".rd-row", { hasText: "Roster group chat protocol" }).click();
       await expect(page.getByRole("tab", { name: files[0].filename, exact: true })).toBeVisible();
       const typography = await page.locator(".rd-stage").evaluate((stage) => ({

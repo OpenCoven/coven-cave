@@ -2,6 +2,7 @@ import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
 import type { ChatAttentionReason } from "./chat-attention-marker.ts";
 import { ACTIVE_SESSION_STATUSES } from "./chat-auto-archive.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
+import { attentionLifecycle, sessionLifecycleLabel } from "./session-lifecycle.ts";
 import type { SessionRow } from "./types.ts";
 
 const LEFT_HANGING_MS = 24 * 60 * 60 * 1000;
@@ -131,24 +132,38 @@ export function compareChatAttention(
   return aMs - bMs;
 }
 
-export function chatAttentionLabel(state: ChatAttentionState): string | null {
-  switch (state) {
-    case "left-hanging":
-      return "Left hanging";
-    case "awaiting-human":
-      return "Awaiting you";
-    case "overdue-human":
-      return "Still waiting";
-    default:
-      return null;
-  }
+/**
+ * The word a waiting session is spelled with.
+ *
+ * This used to return three different strings for what is, to the person
+ * reading the list, one state: "Left hanging" (the assistant spoke last and
+ * nobody came back), "Awaiting you" (something was explicitly asked) and
+ * "Still waiting" (the same, for longer). Three spellings meant a row could
+ * not be scanned — the same situation looked like three, and the reader had to
+ * learn which was which before the list meant anything.
+ *
+ * They collapse to the canonical vocabulary in session-lifecycle.ts. What
+ * separates a row now is whether the session is merely waiting on you or
+ * STOPPED on you: an `approval` or `credentials` request is a gate the run
+ * cannot pass without you, and reads as Blocked.
+ *
+ * The duration that "Still waiting" used to encode is not lost — it was never
+ * carried well by a word. It is on the row already, as relative time, and in
+ * chatAttentionDescription's "since 2 days ago" below.
+ */
+export function chatAttentionLabel(
+  state: ChatAttentionState,
+  reason: ChatAttentionReason | null = null,
+): string | null {
+  const lifecycle = attentionLifecycle(state, reason);
+  return lifecycle ? sessionLifecycleLabel(lifecycle) : null;
 }
 
 export function chatAttentionDescription(
   attention: ChatAttention,
   now: number,
 ): string | null {
-  const label = chatAttentionLabel(attention.state);
+  const label = chatAttentionLabel(attention.state, attention.reason);
   if (!label || !attention.since) return null;
   const sinceMs = parseFiniteIso(attention.since);
   const nowMs = normalizeTimestamp(now);

@@ -230,12 +230,25 @@ export interface ClientV1PathOwnershipOptions {
 const WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 [Console]::Error.WriteLine('acl-probe:start')
-$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+# Cmdlets are off limits in this script. Whichever cmdlet came first (the
+# provider item lookup in one release, the object constructor in the next)
+# never returned in the stripped probe environment: command discovery is what
+# stalls, not the work. Direct .NET member calls, language keywords and
+# operators do not wait on it.
+$path = $env:COVEN_CAVE_CLIENT_V1_ACL_PATH
+$isDirectory = [System.IO.Directory]::Exists($path)
+if ($isDirectory) {
+  $item = [System.IO.DirectoryInfo]::new($path)
+} elseif ([System.IO.File]::Exists($path)) {
+  $item = [System.IO.FileInfo]::new($path)
+} else {
+  throw 'ACL path does not exist.'
+}
 [Console]::Error.WriteLine('acl-probe:item')
 $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
-$admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
-$ownerRights = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_OWNER_RIGHTS_SID}')
+$system = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_SYSTEM_SID}')
+$admins = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_ADMINISTRATORS_SID}')
+$ownerRights = [System.Security.Principal.SecurityIdentifier]::new('${WINDOWS_OWNER_RIGHTS_SID}')
 $writableRights = [uint32]${WINDOWS_WRITABLE_RIGHTS_MASK}
 $trusted = @($me.Value, $system.Value, $admins.Value)
 [Console]::Error.WriteLine('acl-probe:identity')
@@ -247,19 +260,20 @@ function Read-State {
   [Console]::Error.WriteLine('acl-probe:acl')
   # Keep account-name lookup out of the security boundary: orphaned or remote
   # principals can make IdentityReference.Translate block on Windows.
-  $aces = @($acl.GetAccessRules(
+  $aces = @()
+  foreach ($entry in @($acl.GetAccessRules(
     $true,
     $true,
     [System.Security.Principal.SecurityIdentifier]
-  ) | ForEach-Object {
-    [pscustomobject]@{
-      sid = $_.IdentityReference.Value
-      type = [string]$_.AccessControlType
-      rights = [uint32]$_.FileSystemRights
+  ))) {
+    $aces += [pscustomobject]@{
+      sid = $entry.IdentityReference.Value
+      type = [string]$entry.AccessControlType
+      rights = [uint32]$entry.FileSystemRights
     }
-  })
+  }
   [Console]::Error.WriteLine('acl-probe:rules')
-  [pscustomobject]@{
+  return [pscustomobject]@{
     owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     protected = [bool]$acl.AreAccessRulesProtected
     aces = $aces
@@ -280,18 +294,38 @@ function Test-Exclusive {
   return $true
 }
 
+function Format-JsonString {
+  param([string]$value)
+  $builder = [System.Text.StringBuilder]::new()
+  [void]$builder.Append('"')
+  foreach ($char in $value.ToCharArray()) {
+    $code = [int]$char
+    if ($char -eq '"') { [void]$builder.Append('\\"') }
+    elseif ($char -eq '\\') { [void]$builder.Append('\\\\') }
+    elseif ($code -lt 32) { [void]$builder.Append(('\\u{0:x4}' -f $code)) }
+    else { [void]$builder.Append($char) }
+  }
+  [void]$builder.Append('"')
+  return $builder.ToString()
+}
+
+function Format-JsonBool {
+  param([bool]$value)
+  if ($value) { return 'true' } else { return 'false' }
+}
+
 $state = Read-State $item
 [Console]::Error.WriteLine('acl-probe:initial-state')
 $repaired = $false
 $removed = @()
 if (-not (Test-Exclusive $state)) {
 [Console]::Error.WriteLine('acl-probe:repair')
-  $removed = @($state.aces | Where-Object {
-    $trusted -notcontains $_.sid -and
-      -not ($_.sid -eq $ownerRights.Value -and
-        (([uint32]$_.rights -band $writableRights) -eq 0))
-  } |
-    ForEach-Object { $_.sid } | Select-Object -Unique)
+  foreach ($ace in $state.aces) {
+    if ($trusted -contains $ace.sid) { continue }
+    if ($ace.sid -eq $ownerRights.Value -and
+        (([uint32]$ace.rights -band $writableRights) -eq 0)) { continue }
+    if ($removed -notcontains $ace.sid) { $removed += $ace.sid }
+  }
   $acl = $item.GetAccessControl('Access')
   if ($state.owner -ne $me.Value) {
     $acl.SetOwner($me)
@@ -312,10 +346,10 @@ if (-not (Test-Exclusive $state)) {
     }
     [void]$acl.RemoveAccessRuleSpecific($rule)
   }
-  $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
+  $inheritance = if ($isDirectory) { 'ContainerInherit, ObjectInherit' } else { 'None' }
   foreach ($sid in @($me, $system, $admins)) {
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-      $sid, 'FullControl', $inheritance, 'None', 'Allow')))
+    $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new(
+      $sid, 'FullControl', $inheritance, 'None', 'Allow'))
   }
   $item.SetAccessControl($acl)
 [Console]::Error.WriteLine('acl-probe:repair-written')
@@ -324,14 +358,21 @@ if (-not (Test-Exclusive $state)) {
 }
 
 [Console]::Error.WriteLine('acl-probe:complete')
-[pscustomobject]@{
-  self = $me.Value
-  owner = $state.owner
-  protected = $state.protected
-  repaired = $repaired
-  removed = @($removed)
-  aces = $state.aces
-} | ConvertTo-Json -Compress -Depth 4
+$aceJson = @()
+foreach ($ace in $state.aces) {
+  $aceJson += ('{"sid":' + (Format-JsonString $ace.sid) +
+    ',"type":' + (Format-JsonString $ace.type) +
+    ',"rights":' + ([uint32]$ace.rights).ToString([System.Globalization.CultureInfo]::InvariantCulture) + '}')
+}
+$removedJson = @()
+foreach ($sid in $removed) { $removedJson += (Format-JsonString $sid) }
+# Written straight to stdout so nothing travels the output pipeline at all.
+[Console]::Out.WriteLine('{"self":' + (Format-JsonString $me.Value) +
+  ',"owner":' + (Format-JsonString $state.owner) +
+  ',"protected":' + (Format-JsonBool $state.protected) +
+  ',"repaired":' + (Format-JsonBool $repaired) +
+  ',"removed":[' + ($removedJson -join ',') + ']' +
+  ',"aces":[' + ($aceJson -join ',') + ']}')
 `;
 
 function windowsSystemRoot(): string {

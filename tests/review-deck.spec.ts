@@ -5,6 +5,11 @@ test.use({ serviceWorkers: "block" });
 const FAMILIAR_ID = "vera";
 const SESSION_ID = "review-session";
 const HEAD_SHA = "1234567890abcdef1234567890abcdef12345678";
+const BASE_SHA = "b".repeat(40);
+const DIFF_REVISION = {
+  repo: "OpenCoven/coven-cave", number: 4812,
+  baseRef: "main", baseSha: BASE_SHA, headSha: HEAD_SHA, mergeBaseSha: "c".repeat(40),
+};
 const SESSION = {
   id: SESSION_ID,
   title: "Focus the Review Deck",
@@ -43,6 +48,7 @@ const ITEM = {
     headRef: "feat/review-deck",
     baseRef: "main",
     headSha: HEAD_SHA,
+    baseSha: BASE_SHA,
     commits: 2,
     additions: 3,
     deletions: 1,
@@ -55,6 +61,7 @@ const ITEM = {
 
 const DIFF = {
   ok: true,
+  revision: DIFF_REVISION,
   truncated: false,
   total: 2,
   files: [
@@ -241,6 +248,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
       number: 4812,
       event: "REQUEST_CHANGES",
       headSha: HEAD_SHA,
+      reviewedRevision: DIFF_REVISION,
       body: "Please keep the reviewed-file identity tied to this head.",
     });
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -269,6 +277,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
     await expect.poll(handles.review).toMatchObject({
       repo: "OpenCoven/coven-cave", number: 4812, event: "APPROVE",
       headSha: HEAD_SHA,
+      reviewedRevision: DIFF_REVISION,
       body: "The review is complete for this change.",
     });
     await expect(deck.locator(".rd-topbar").getByRole("button", { name: "Ready 1", exact: true })).toBeVisible();
@@ -276,7 +285,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
     await deck.locator(".rd-verdict-primary").click();
     expect(handles.merge()).toBeNull();
     await page.getByRole("dialog").getByRole("button", { name: /Squash.*merge/ }).click();
-    await expect.poll(handles.merge).toMatchObject({ repo: "OpenCoven/coven-cave", number: 4812, method: "squash", headSha: HEAD_SHA });
+    await expect.poll(handles.merge).toMatchObject({ repo: "OpenCoven/coven-cave", number: 4812, method: "squash", headSha: HEAD_SHA, reviewedRevision: DIFF_REVISION });
     await expect(deck.locator(".rd-row")).toHaveCount(0);
     await expect(deck.locator(".rd-toast")).toContainText("Merged OpenCoven/coven-cave#4812");
     await expect(deck.locator(".rd-verdict-primary")).toBeDisabled();
@@ -312,7 +321,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
     };
     const behavior: ReviewBehavior = {
       sessions: [SESSION, second],
-      diffs: { 4813: { ...DIFF, files: [
+      diffs: { 4813: { ...DIFF, revision: { ...DIFF_REVISION, number: 4813 }, files: [
         { ...DIFF.files[0], filename: "src/second-review.ts" },
       ], total: 1 } },
       reviewGate: new Promise<void>((resolve) => { release = resolve; }),

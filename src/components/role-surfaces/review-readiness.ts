@@ -58,6 +58,7 @@ export type PrFacts = {
   headRef: string;
   baseRef: string;
   headSha: string;
+  baseSha: string;
   commits: number;
   additions: number;
   deletions: number;
