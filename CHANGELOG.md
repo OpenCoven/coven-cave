@@ -7,6 +7,25 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-09-14
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.4.3.
+
+### Changes
+- Ship X Comms in production builds
+- X Comms room, from the v2 design handoff
+- fix(client-v1): accept read-only owner rights ACL
+- Persist desktop-managed tailnet device approvals
+- Fix native chat latest-message landing and blank scrolling
+- Restore symmetric session rail corners
+- fix(conformance): classify bounded discovery readiness failures (#5377)
+- fix(client-v1): support SDK v0.0.1 compatibility (#5376)
+- fix(ios): accept empty optional TestFlight inverse linkage
+- fix(ios): bind TestFlight beta details through build linkage
+
+
 ### Fixed
 - Preserve a protected read-only Windows `OWNER RIGHTS` ACL entry when validating
   client v1 discovery paths, while continuing to refuse any such entry that can
