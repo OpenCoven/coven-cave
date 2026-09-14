@@ -165,6 +165,7 @@ export function NeedsYouPopover({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setCrossSourceRunning(null);
     void fetchRunningActivity().then((payload) => {
       // A partial or failed read leaves this null and the footer falls back to
       // the session-derived count, which is true but narrower — better than a
