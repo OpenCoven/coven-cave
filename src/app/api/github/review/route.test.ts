@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
 import {
   GITHUB_REVIEW_BODY_MAX_LENGTH,
   validateGitHubReviewBody,
@@ -39,3 +43,48 @@ assert.equal(
   oversizedBody.ok ? null : oversizedBody.error,
   `review body must be at most ${GITHUB_REVIEW_BODY_MAX_LENGTH} characters`,
 );
+
+const home = mkdtempSync(join(tmpdir(), "cave-review-head-"));
+process.env.COVEN_HOME = home;
+process.env.COVEN_CAVE_HOME = join(home, "cave");
+process.env.GITHUB_PAT = "test-only-never-dispatched";
+const realFetch = globalThis.fetch;
+const { POST } = await import("./route.ts");
+test.after(() => {
+  globalThis.fetch = realFetch;
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("a verdict is attached to the head that was actually reviewed", async () => {
+  const payloads: unknown[] = [];
+  globalThis.fetch = async (_url, init) => {
+    payloads.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: 1, state: "APPROVED" });
+  };
+  const headSha = "a".repeat(40);
+  const result = await POST(new Request("http://localhost/api/github/review", {
+    method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event: "APPROVE", body: "Reviewed this change.", headSha }),
+  }));
+  assert.equal((await result.json()).ok, true);
+  assert.deepEqual(payloads, [{ event: "APPROVE", body: "Reviewed this change.", commit_id: headSha }]);
+});
+
+test("malformed explicit review heads fail before dispatch and omission remains compatible", async () => {
+  const payloads: unknown[] = [];
+  globalThis.fetch = async (_url, init) => {
+    payloads.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: 1, state: "APPROVED" });
+  };
+  for (const headSha of [null, "", "not-a-sha", 123]) {
+    const result = await POST(new Request("http://localhost/api/github/review", {
+      method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event: "APPROVE", headSha }),
+    }));
+    assert.equal(result.status, 400);
+  }
+  assert.deepEqual(payloads, []);
+  const legacy = await POST(new Request("http://localhost/api/github/review", {
+    method: "POST", body: JSON.stringify({ repo: "o/r", number: 7, event: "APPROVE" }),
+  }));
+  assert.equal((await legacy.json()).ok, true);
+  assert.deepEqual(payloads, [{ event: "APPROVE" }]);
+});

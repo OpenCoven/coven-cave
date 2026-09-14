@@ -74,24 +74,54 @@ export type ReviewItem<T> = {
   reasons: ReviewReason[];
 };
 
+export function prKey(pr: { repo: string; number: number }): string {
+  return `${pr.repo.trim().toLowerCase()}#${pr.number}`;
+}
+
+export function hasWorkingChanges(session: Pick<SessionRow, "diff">): boolean {
+  return (session.diff?.additions ?? 0) > 0 || (session.diff?.deletions ?? 0) > 0;
+}
+
 /**
- * Sessions carrying review material — a PR, a nonzero working-tree diff, or a
- * named branch — newest first. Archived sessions have left the deck.
+ * One real session per PR, newest first. A stable id, rather than timestamps
+ * or input ordering, chooses its representative so polling cannot move notes
+ * or selection to another session. Clean branches require explicit browsing.
  */
-export function reviewQueue<T extends Pick<SessionRow, "archived_at" | "git" | "pullRequest" | "diff" | "updated_at">>(
+export function reviewQueue<T extends Pick<SessionRow, "id" | "archived_at" | "git" | "pullRequest" | "diff" | "updated_at" | "workBranch">>(
   sessions: readonly T[],
+  options: { includeBranches?: boolean } = {},
 ): ReviewItem<T>[] {
-  return sessions
+  const representatives = new Map<string, ReviewItem<T>>();
+  const candidates = sessions
     .filter((session) => session.archived_at == null)
     .map((session) => {
       const reasons: ReviewItem<T>["reasons"] = [];
-      if (session.pullRequest) reasons.push("pull-request");
-      if ((session.diff?.additions ?? 0) > 0 || (session.diff?.deletions ?? 0) > 0) reasons.push("working-changes");
-      if (session.git?.branch) reasons.push("branch");
+      if (session.pullRequest?.number != null) reasons.push("pull-request");
+      if (hasWorkingChanges(session)) reasons.push("working-changes");
+      if (session.workBranch || session.git?.branch) reasons.push("branch");
       return { session, reasons };
     })
-    .filter((item) => item.reasons.length > 0)
-    .sort((a, b) => b.session.updated_at.localeCompare(a.session.updated_at));
+    .filter((item) => item.reasons.some((reason) => reason !== "branch" || options.includeBranches));
+  for (const item of candidates) {
+    const pr = item.session.pullRequest;
+    const key = pr?.number != null ? `pr:${prKey({ repo: pr.repo, number: pr.number })}` : `session:${item.session.id}`;
+    const held = representatives.get(key);
+    if (!held || item.session.id.localeCompare(held.session.id) < 0) representatives.set(key, item);
+  }
+  return [...representatives.values()].sort((a, b) =>
+    b.session.updated_at.localeCompare(a.session.updated_at) || a.session.id.localeCompare(b.session.id));
+}
+
+export function matchesReviewQuery(
+  session: Pick<SessionRow, "id" | "title" | "pullRequest" | "git" | "workBranch" | "project_root">,
+  query: string,
+  title?: string,
+): boolean {
+  const haystack = [
+    title, session.title, prLabel(session.pullRequest), session.pullRequest?.repo,
+    session.workBranch, session.git?.branch, session.project_root, session.id,
+  ].filter(Boolean).join(" ").toLocaleLowerCase();
+  return query.trim().toLocaleLowerCase().split(/\s+/).every((term) => haystack.includes(term));
 }
 
 /** "+12 −3" (thin spaces spared; minus is U+2212 to read as a stat, not a flag). */

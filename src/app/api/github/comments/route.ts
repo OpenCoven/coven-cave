@@ -7,6 +7,8 @@
  *   - issueComments  — the conversation timeline (REST, works on the public API)
  *   - reviewThreads  — inline PR review threads with their resolve state
  *                      (GraphQL — requires a PAT; empty on the public API)
+ *   - reviewEvidenceComplete / reviewEvidenceError — whether both PR review
+ *     sources were fully read; an omitted or capped slice is not merge evidence
  *
  * Auth mirrors /api/github/item: a local-only PAT when present, otherwise the
  * unauthenticated public API. `canResolve` is true only when a PAT is present,
@@ -17,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { restSource } from "@/lib/github-assigned-meta";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -63,6 +66,8 @@ type ReviewThread = {
   diffHunk: string | null;
   comments: Comment[];
 };
+
+type ReviewRead<T> = { items: T[]; complete: boolean };
 
 function person(raw: unknown): Person | null {
   if (!raw || typeof raw !== "object") return null;
@@ -134,10 +139,15 @@ async function ghFetch(path: string, token: string | null) {
  * in `reviewThreads`, so it's dropped; APPROVED / CHANGES_REQUESTED / DISMISSED
  * always carry signal and are kept even when the body is empty.
  */
-async function fetchReviews(repo: string, number: number, token: string | null): Promise<Review[]> {
+async function fetchReviews(repo: string, number: number, token: string | null): Promise<ReviewRead<Review>> {
   const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}/reviews?per_page=100`, token);
-  if (!res.ok || !Array.isArray(data)) return [];
-  return (data as Array<Record<string, unknown>>)
+  if (!res.ok || !Array.isArray(data)) {
+    throw new Error(`GitHub review summaries are unavailable (HTTP ${res.status}).`);
+  }
+  if (!data.every((r) => r && typeof r === "object" && typeof r.state === "string")) {
+    throw new Error("GitHub review summaries are incomplete.");
+  }
+  const items = (data as Array<Record<string, unknown>>)
     .map((r): Review => ({
       id: String(r.id ?? ""),
       author: person(r.user),
@@ -148,15 +158,17 @@ async function fetchReviews(repo: string, number: number, token: string | null):
       authorAssociation: typeof r.author_association === "string" ? r.author_association : null,
     }))
     .filter((r) => r.state !== "PENDING" && (r.state !== "COMMENTED" || r.body.trim().length > 0));
+  return { items, complete: !restSource(data.length, 100, res.headers.get("link")).truncated };
 }
 
 /** Fetch PR inline review threads + resolve state via GraphQL (token required). */
-async function fetchReviewThreads(owner: string, name: string, number: number, token: string): Promise<ReviewThread[]> {
+async function fetchReviewThreads(owner: string, name: string, number: number, token: string): Promise<ReviewRead<ReviewThread>> {
   const query = `
     query($owner:String!,$name:String!,$number:Int!){
       repository(owner:$owner,name:$name){
         pullRequest(number:$number){
           reviewThreads(first:100){
+            pageInfo{hasNextPage}
             nodes{
               id isResolved isOutdated
               comments(first:50){
@@ -183,9 +195,20 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
     body: JSON.stringify({ query, variables: { owner, name, number } }),
   });
   const json = await res.json().catch(() => null);
-  const nodes = json?.data?.repository?.pullRequest?.reviewThreads?.nodes;
-  if (!Array.isArray(nodes)) return [];
-  return nodes.map((t: Record<string, unknown>): ReviewThread => {
+  const connection = json?.data?.repository?.pullRequest?.reviewThreads;
+  const nodes = connection?.nodes;
+  if (!res.ok || (json?.errors != null && (!Array.isArray(json.errors) || json.errors.length > 0))) {
+    throw new Error(`GitHub review threads are unavailable (HTTP ${res.status}).`);
+  }
+  if (!Array.isArray(nodes) || typeof connection?.pageInfo?.hasNextPage !== "boolean" ||
+      !nodes.every((t) => t && typeof t === "object" && typeof t.id === "string" && t.id.length > 0 &&
+        typeof t.isResolved === "boolean" && typeof t.isOutdated === "boolean" &&
+        Array.isArray(t.comments?.nodes) &&
+        t.comments.nodes.every((c: unknown) => c != null && typeof c === "object" &&
+          "body" in c && typeof c.body === "string"))) {
+    throw new Error("GitHub review thread evidence is incomplete.");
+  }
+  const items = nodes.map((t: Record<string, unknown>): ReviewThread => {
     const comments = Array.isArray((t.comments as Record<string, unknown> | undefined)?.nodes)
       ? ((t.comments as { nodes: unknown[] }).nodes).map((c): Comment => {
           const co = c as Record<string, unknown>;
@@ -221,6 +244,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
       comments: first ? comments : [],
     };
   });
+  return { items, complete: connection.pageInfo.hasNextPage === false };
 }
 
 export async function GET(req: Request) {
@@ -264,15 +288,29 @@ export async function GET(req: Request) {
     });
 
     // Inline review threads — GraphQL, PR-only, needs a token.
-    // Review summaries — REST, PR-only, work unauthenticated. Both are
-    // best-effort so a failure just omits that slice of the conversation.
+    // Keep readable slices available, but never label a missing slice as
+    // complete review evidence.
     let reviewThreads: ReviewThread[] = [];
     let reviews: Review[] = [];
+    const evidenceErrors: string[] = [];
     if (isPull) {
-      [reviewThreads, reviews] = await Promise.all([
-        token ? fetchReviewThreads(owner, name, number, token).catch(() => []) : Promise.resolve([]),
-        fetchReviews(repo, number, token).catch(() => []),
+      const [threadRead, reviewRead] = await Promise.allSettled([
+        token ? fetchReviewThreads(owner, name, number, token)
+          : Promise.reject(new Error("Review threads require GitHub authentication.")),
+        fetchReviews(repo, number, token),
       ]);
+      if (threadRead.status === "fulfilled") {
+        reviewThreads = threadRead.value.items;
+        if (!threadRead.value.complete) evidenceErrors.push("Review thread list is incomplete; open GitHub for the remaining threads.");
+      } else {
+        evidenceErrors.push(threadRead.reason instanceof Error ? threadRead.reason.message : "Review threads could not be read.");
+      }
+      if (reviewRead.status === "fulfilled") {
+        reviews = reviewRead.value.items;
+        if (!reviewRead.value.complete) evidenceErrors.push("Review summary list is incomplete; open GitHub for the remaining reviews.");
+      } else {
+        evidenceErrors.push(reviewRead.reason instanceof Error ? reviewRead.reason.message : "Review summaries could not be read.");
+      }
     }
 
     return NextResponse.json({
@@ -282,6 +320,8 @@ export async function GET(req: Request) {
       issueComments,
       reviewThreads,
       reviews,
+      reviewEvidenceComplete: evidenceErrors.length === 0,
+      reviewEvidenceError: evidenceErrors.join(" ") || null,
     });
   } catch (e) {
     return NextResponse.json(

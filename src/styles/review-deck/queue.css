@@ -32,6 +32,27 @@
   font-weight: 650;
 }
 
+.rd-queue-search {
+  padding: var(--space-1) var(--space-3) var(--space-2);
+}
+
+.rd-queue-notice {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.rd-queue-notice.rd-error {
+  flex-direction: column;
+  color: var(--danger-text);
+}
+
 /* ── Mix bar ─────────────────────────────────────────────────────────────── */
 
 .rd-mix {
@@ -371,9 +392,22 @@
   min-width: 0;
   min-height: var(--space-8);
   flex: none;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
   padding: 0 var(--space-3) var(--space-2);
+}
+
+.rd-queue-foot .rd-well {
+  overflow-x: auto;
+}
+
+:where(.rd-queue-foot) .rd-well-seg {
+  flex: none;
+  min-height: var(--space-6);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-normal);
 }
 
 .rd-queue-footnote {
@@ -382,6 +416,6 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
 }

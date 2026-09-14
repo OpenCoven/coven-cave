@@ -146,7 +146,7 @@ test("a row never counts failing checks — the queue has not read them", () => 
 test("an unread pull request says it is being read, not that it is fine", () => {
   assert.equal(
     queueRowReason(null, { hasPullRequest: true, hasLocalChanges: false }),
-    "reading GitHub state",
+    "GitHub state not confirmed",
   );
   assert.equal(
     queueRowReason(null, { hasPullRequest: false, hasLocalChanges: true }),
@@ -238,7 +238,7 @@ test("a local session says verdicts do not exist yet, and names the unlock", () 
   assert.match(decision.next, /Read 3 more files, then open a pull request/);
 });
 
-test("blockers report who owes what and route to request changes", () => {
+test("blockers report who owes what without prescribing an unsupported verdict", () => {
   const decision = reviewDecision(
     decisionInput({
       blockers: triageBlockers([blocker("checks"), blocker("threads")], {
@@ -248,7 +248,14 @@ test("blockers report who owes what and route to request changes", () => {
   );
   assert.equal(decision.headline, "Not safe to merge");
   assert.equal(decision.sub, "2 blockers · 1 needs you, 1 on the author.");
-  assert.match(decision.next, /Clear your 1 item, then request changes/);
+  assert.match(decision.next, /Clear your 1 item, then refresh GitHub state/);
+});
+
+test("shared blockers do not falsely assign all remaining work to the author", () => {
+  const decision = reviewDecision(decisionInput({ blockers: triageBlockers([blocker("behind")]) }));
+  assert.match(decision.sub, /1 need coordination/);
+  assert.doesNotMatch(decision.sub, /on the author/);
+  assert.doesNotMatch(decision.next, /request changes/i);
 });
 
 test("a ready pull request with files left offers finishing or merging as-is", () => {
@@ -282,6 +289,29 @@ test("no selection asks for one instead of describing an item", () => {
   const decision = reviewDecision(decisionInput({ selected: false }));
   assert.equal(decision.headline, "Nothing selected");
   assert.equal(decision.next, "Pick an item from the queue.");
+});
+
+test("terminal PRs and unread state never recommend requesting changes", () => {
+  const blockers = triageBlockers([blocker("checks")]);
+  const merged = reviewDecision(decisionInput({ state: "closed", merged: true, blockers }));
+  assert.equal(merged.headline, "Pull request merged");
+  assert.doesNotMatch(merged.next, /request changes|approve|merge/i);
+  assert.equal(reviewDecision(decisionInput({ state: "closed" })).headline, "Pull request closed");
+  for (const phase of ["idle", "loading", "error"] as const) {
+    const decision = reviewDecision(decisionInput({ readinessPhase: phase, ready: true, blockers }));
+    assert.doesNotMatch(decision.next, /request changes|approve|merge/i);
+    assert.notEqual(decision.tone, "success");
+  }
+});
+
+test("readinessPhase is the canonical decision input; the earlier phase alias remains compatible", () => {
+  assert.equal(reviewDecision(decisionInput({ phase: "error" })).headline, "GitHub state unavailable");
+  assert.equal(reviewDecision(decisionInput({ readinessPhase: "error", phase: "ready" })).headline, "GitHub state unavailable");
+});
+
+test("pending checks do not invent pending mergeability", () => {
+  const decision = reviewDecision(decisionInput({ checksPending: true, mergeableUnknown: false }));
+  assert.equal(decision.sub, "Checks are still running.");
 });
 
 function thread(id: string, where: string) {

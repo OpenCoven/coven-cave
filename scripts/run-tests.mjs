@@ -1879,6 +1879,7 @@ export const SUITES = {
     "src/app/api/github/diff/route.test.ts",
     "src/app/api/github/dispatch/route.test.ts",
     "src/app/api/github/merge/route.test.ts",
+    "src/app/api/github/comments/route.test.ts",
     "src/app/api/github/rerun/route.test.ts",
     "src/app/api/github/review/route.test.ts",
     "src/app/api/github/reply/route.test.ts",
@@ -2252,8 +2253,11 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/review-readiness.test.ts",
   // review-cockpit imports review-readiness types, which reach "@/lib/icon".
   "src/components/role-surfaces/review-cockpit.test.ts",
-  // the diff route resolves "@/lib/github-token".
+  // These runtime route tests resolve "@/lib/github-token".
   "src/app/api/github/diff/route.test.ts",
+  "src/app/api/github/merge/route.test.ts",
+  "src/app/api/github/comments/route.test.ts",
+  "src/app/api/github/review/route.test.ts",
   // imports the store, which resolves "@/lib/coven-paths" and "@/lib/server/…".
   "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.

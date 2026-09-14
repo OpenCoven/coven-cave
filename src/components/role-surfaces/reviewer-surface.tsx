@@ -127,6 +127,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   );
 
   const [sourceFilter, setSourceFilter] = useState<ReviewSourceFilter>("all");
+  const [query, setQuery] = useState("");
   const [bucketFilter, setBucketFilter] = useState<keyof DeckSummary | null>(null);
   const [sort, setSort] = useState<ReviewQueueSort>("attention");
   const [mobileView, setMobileView] = useState<ReviewMobileView>("files");
@@ -150,8 +151,11 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     sourceFilter,
     bucketFilter,
     sort,
+    query,
   });
   const { all: fullQueue, ordered, counts } = deck;
+  const refreshQueue = deck.refresh;
+  const recordFacts = deck.recordFacts;
 
   useEffect(() => {
     const previous = state.lastCounts;
@@ -170,6 +174,11 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     () => fullQueue.find((item) => item.session.id === state.selectedSessionId) ?? null,
     [fullQueue, state.selectedSessionId],
   );
+  useEffect(() => {
+    if (selected || !state.selectedSessionId || context.runtimeState.sessions.length === 0) return;
+    const next = ordered[0]?.id ?? null;
+    if (state.selectedSessionId !== next) patch({ selectedSessionId: next });
+  }, [context.runtimeState.sessions.length, ordered, patch, selected, state.selectedSessionId]);
   const sessionPullRequest = selected?.session.pullRequest ?? null;
   const selectedPullRequest = useMemo(
     () =>
@@ -187,6 +196,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   });
   const readiness = usePrReadiness(selectedPullRequest);
   const facts = readiness.facts;
+  useEffect(() => {
+    if (facts) recordFacts(facts);
+  }, [facts, recordFacts]);
+  const refreshReview = useCallback(() => {
+    refreshQueue();
+    readiness.refresh();
+    source.retry();
+  }, [readiness, refreshQueue, source]);
   const isPr = source.kind === "pull-request";
   const rawBlockers = useMemo(() => prBlockers(facts), [facts]);
   const blockers = useMemo(
@@ -213,7 +230,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
 
   const workItem = useMemo<ReviewWorkItem | null>(() => {
     if (!selected || source.phase !== "ready") return null;
-    const title = selected.session.title || selected.session.id;
+    const title = facts?.title || selected.session.title || selected.session.id;
     if (isPr) {
       if (!facts?.headSha) return null;
       return pullRequestReviewWorkItem({
@@ -283,7 +300,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     [facts, progress.readableCount, progress.reviewedCount, workItem],
   );
 
-  const canAct = reviewActionsAvailable({
+  const canAct = Boolean(facts?.headSha) && reviewActionsAvailable({
     sourceKind: source.kind,
     readinessPhase: readiness.phase,
     state: facts?.state,
@@ -295,6 +312,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       reviewDecision({
         selected: Boolean(selected),
         isPr,
+        state: facts?.state,
+        readinessPhase: readiness.phase,
         draft: facts?.draft ?? false,
         ready,
         blockers,
@@ -308,6 +327,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       checks.tone,
       facts?.draft,
       facts?.mergeable,
+      facts?.state,
       isPr,
       progress.readableCount,
       progress.reviewedCount,
@@ -317,22 +337,24 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     ],
   );
 
-  const note = selected ? (notes[selected.session.id] ?? "") : "";
+  const noteKey = `${familiarId}:${selectedPullRequest
+    ? `${selectedPullRequest.repo.toLowerCase()}#${selectedPullRequest.number}`
+    : selected?.session.id ?? "none"}`;
+  const note = selected ? (notes[noteKey] ?? "") : "";
   const setNote = useCallback(
     (value: string) => {
       if (!selected) return;
       const bounded = value.slice(0, GITHUB_REVIEW_BODY_MAX_LENGTH);
-      setNotes((current) => ({ ...current, [selected.session.id]: bounded }));
+      setNotes((current) => ({ ...current, [noteKey]: bounded }));
       if (bounded.trim()) setNoteError(null);
     },
-    [selected],
+    [noteKey, selected],
   );
 
   useEffect(() => {
     setNoteError(null);
     setActionError(null);
     setMobileView("files");
-    toast.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clear on selection change only
   }, [state.selectedSessionId]);
 
@@ -361,7 +383,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   }, [checkpointsOpen, projectRoot]);
 
   const approve = useCallback(async () => {
-    if (!canAct || !selectedPullRequest || busy) return false;
+    if (!canAct || !facts?.headSha || !selectedPullRequest || busy) return false;
     setBusy("approve");
     setActionError(null);
     try {
@@ -372,6 +394,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           event: "APPROVE",
+          headSha: facts.headSha,
           body: note.trim(),
         }),
       });
@@ -381,7 +404,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       } | null;
       if (!json?.ok) throw new Error(json?.error || "review failed");
       confirm(`Approved ${prLabel(selectedPullRequest)}. Re-reading GitHub state.`);
-      readiness.refresh();
+      refreshReview();
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't reach GitHub.";
@@ -391,10 +414,10 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, confirm, note, readiness, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, facts?.headSha, note, refreshReview, selectedPullRequest]);
 
   const requestChanges = useCallback(async () => {
-    if (!canAct || !selectedPullRequest || busy) return false;
+    if (!canAct || !facts?.headSha || !selectedPullRequest || busy) return false;
     const body = note.trim();
     if (!body) {
       const message =
@@ -414,6 +437,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           event: "REQUEST_CHANGES",
+          headSha: facts.headSha,
           body,
         }),
       });
@@ -425,7 +449,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       confirm(
         `Requested changes on ${prLabel(selectedPullRequest)}. Re-reading GitHub state.`,
       );
-      readiness.refresh();
+      refreshReview();
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't reach GitHub.";
@@ -435,10 +459,10 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, confirm, note, readiness, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, facts?.headSha, note, refreshReview, selectedPullRequest]);
 
   const merge = useCallback(async () => {
-    if (!ready || !selectedPullRequest || busy) return false;
+    if (!canAct || !facts?.headSha || !ready || !selectedPullRequest || busy) return false;
     setBusy("merge");
     setActionError(null);
     try {
@@ -449,6 +473,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           repo: selectedPullRequest.repo,
           number: selectedPullRequest.number,
           method: "squash",
+          headSha: facts.headSha,
         }),
       });
       const json = (await response.json().catch(() => null)) as {
@@ -459,7 +484,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       confirm(
         `Merged ${prLabel(selectedPullRequest)} (squash). It leaves the review queue on the next read.`,
       );
-      readiness.refresh();
+      refreshReview();
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't reach GitHub.";
@@ -469,7 +494,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, confirm, readiness, ready, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, facts?.headSha, refreshReview, ready, selectedPullRequest]);
 
   const toggleDisclosure = useCallback((id: InspectorDisclosure) => {
     setDisclosures((current) => {
@@ -505,6 +530,23 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     },
     [ordered, patch, state.selectedSessionId],
   );
+
+  const toggleQueue = useCallback(() => {
+    panes.toggleQueue();
+    setMobileView(panes.queueOpen ? "files" : "queue");
+    if (panes.queueOpen) requestAnimationFrame(() => {
+      panes.stageRef.current?.querySelector<HTMLButtonElement>('[aria-label="Show review queue"]')?.focus();
+    });
+  }, [panes]);
+  const toggleInspector = useCallback(() => {
+    panes.toggleInspector();
+    setMobileView(panes.inspectorOpen ? "files" : "evidence");
+    requestAnimationFrame(() => {
+      if (panes.inspectorOpen) {
+        panes.stageRef.current?.querySelector<HTMLButtonElement>('[aria-label="Show the review inspector"]')?.focus();
+      } else inspectorRef.current?.focus();
+    });
+  }, [panes]);
 
   const markCurrentReviewed = useCallback(() => {
     const path = source.openPath;
@@ -546,6 +588,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"]')) return;
       const action = resolveReviewShortcut({
         key: event.key,
         editable: isEditableTarget(event.target),
@@ -572,13 +615,18 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         return;
       }
       if (action === "toggle-files") {
-        panes.toggleQueue();
-        setMobileView("queue");
+        if (panes.narrow && mobileView !== "queue") {
+          panes.setQueueOpen(true);
+          setMobileView("queue");
+        } else toggleQueue();
         return;
       }
       if (action === "toggle-evidence") {
-        panes.toggleInspector();
-        setMobileView("evidence");
+        if (panes.narrow && mobileView !== "evidence") {
+          panes.setInspectorOpen(true);
+          setMobileView("evidence");
+          requestAnimationFrame(() => inspectorRef.current?.focus());
+        } else toggleInspector();
         return;
       }
       if (action === "mark-reviewed") {
@@ -589,7 +637,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [markCurrentReviewed, moveItem, panes, source]);
+  }, [markCurrentReviewed, mobileView, moveItem, panes, source, toggleInspector, toggleQueue]);
 
   const refreshLabel = readiness.refreshing
     ? "refreshing…"
@@ -598,12 +646,11 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
       : readiness.checkedAt
         ? `checked ${relativeTime(new Date(readiness.checkedAt).toISOString())}`
         : "not checked";
-  const position = Math.max(
-    1,
-    ordered.findIndex((entry) => entry.id === state.selectedSessionId) + 1,
-  );
-  const additions = facts?.additions ?? selected?.session.diff?.additions ?? 0;
-  const deletions = facts?.deletions ?? selected?.session.diff?.deletions ?? 0;
+  const position = ordered.findIndex((entry) => entry.id === state.selectedSessionId) + 1;
+  const filtered = bucketFilter != null || sourceFilter !== "all" || query.trim().length > 0;
+  const statsKnown = isPr ? facts?.statsKnown === true : source.phase === "ready";
+  const additions = isPr ? facts?.additions ?? 0 : source.files.reduce((sum, file) => sum + file.additions, 0);
+  const deletions = isPr ? facts?.deletions ?? 0 : source.files.reduce((sum, file) => sum + file.deletions, 0);
   const hasNextUnread = progress.nextUnread(source.openPath, 1) != null;
 
   return (
@@ -620,7 +667,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     >
       <ReviewCockpitTopBar
         scope={counts.scope}
-        total={fullQueue.length}
+        total={counts.queue}
         summary={deck.summary}
         bucketFilter={bucketFilter}
         position={ordered.length === 0 ? 0 : position}
@@ -640,7 +687,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         onNextItem={() => moveItem(1)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenCheckpoints={() => setCheckpointsOpen(true)}
-        onRefresh={readiness.refresh}
+        onRefresh={refreshReview}
       />
 
       <ReviewMobileTabs
@@ -662,39 +709,56 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               sourceFilter={sourceFilter}
               total={ordered.length}
               mix={deck.mix}
-              showEmptyGroups={bucketFilter == null && sourceFilter === "all"}
+              showEmptyGroups={false}
               footnote={deck.caption}
+              query={query}
+              loading={deck.loading}
+              error={deck.error}
+              filtered={filtered}
+              onQuery={setQuery}
+              onRetry={refreshReview}
               emptyTitle={
-                bucketFilter
+                query.trim()
+                  ? "No matching review items"
+                  : bucketFilter
                   ? "Nothing in this attention group."
                   : sourceFilter === "all"
                     ? "Queue clear"
                     : "Nothing matches this filter."
               }
               emptyHint={
-                bucketFilter || sourceFilter !== "all"
-                  ? "Verdicts move items between buckets live."
-                  : "Sessions appear here when they carry a pull request, working changes, or a branch."
+                filtered
+                  ? "Try another search or clear the filters."
+                  : "No active pull requests or working changes. Browse Branches for sessions without recorded changes."
               }
               onSort={setSort}
-              onSourceFilter={setSourceFilter}
+              onSourceFilter={(filter) => {
+                setSourceFilter(filter);
+                setBucketFilter(null);
+              }}
               onSelect={(id) => {
                 patch({ selectedSessionId: id });
                 setMobileView("files");
               }}
-              onCollapse={panes.toggleQueue}
+              onCollapse={toggleQueue}
               onClearFilters={() => {
                 setBucketFilter(null);
                 setSourceFilter("all");
+                setQuery("");
               }}
             />
             <div
-              className="rd-gutter"
+              className="rd-gutter focus-ring"
               role="separator"
+              tabIndex={0}
               aria-orientation="vertical"
               aria-label="Resize the queue"
               title="Drag to resize"
               onPointerDown={panes.dragQueue}
+              onKeyDown={panes.resizeQueue}
+              aria-valuenow={Math.round(panes.queueWidth)}
+              aria-valuemin={Math.round(panes.queueMin)}
+              aria-valuemax={Math.round(panes.queueMax)}
             />
           </>
         ) : null}
@@ -702,7 +766,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         <main className="rd-main">
           <ReviewWorkbenchHeader
             workItem={workItem}
-            title={selected?.session.title || selected?.session.id || null}
+            title={facts?.title || selected?.session.title || selected?.session.id || null}
             bucket={selectedBucket}
             reference={
               selectedPullRequest
@@ -720,7 +784,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             }
             agent={selected?.session.model ?? null}
             age={selected ? relativeTime(selected.session.updated_at) : null}
-            fileCount={source.filesTotal}
+            fileCount={source.phase === "ready" ? source.filesTotal : null}
+            statsKnown={statsKnown}
             additions={additions}
             deletions={deletions}
             sourceExplain={sourceExplain}
@@ -728,8 +793,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             queueCollapsed={!panes.queueOpen}
             inspectorOpen={panes.inspectorOpen}
             shortcutsOpen={shortcutsOpen}
-            onExpandQueue={panes.toggleQueue}
-            onToggleInspector={panes.toggleInspector}
+            onExpandQueue={toggleQueue}
+            onToggleInspector={toggleInspector}
             onOpenPullRequest={() => {
               if (selectedPullRequestUrl) context.openUrl(selectedPullRequestUrl);
             }}
@@ -738,6 +803,24 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             }}
             onCloseShortcuts={() => setShortcutsOpen(false)}
           />
+
+          {selected && position === 0 ? (
+            <p className="rd-selection-notice">
+              This review is outside the current filters.
+              <button
+                type="button"
+                className="rd-chip-btn focus-ring"
+                onClick={() => {
+                  setQuery("");
+                  setBucketFilter(null);
+                  setSourceFilter(selected.reasons.every((reason) => reason === "branch") ? "branches" : "all");
+                  panes.setQueueOpen(true);
+                }}
+              >
+                Show in queue
+              </button>
+            </p>
+          ) : null}
 
           {selected && source.phase === "ready" && source.files.length > 0 ? (
             <ReviewFileRail
@@ -778,12 +861,17 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         {panes.inspectorOpen ? (
           <>
             <div
-              className="rd-gutter"
+              className="rd-gutter focus-ring"
               role="separator"
+              tabIndex={0}
               aria-orientation="vertical"
               aria-label="Resize the inspector"
               title="Drag to resize"
               onPointerDown={panes.dragInspector}
+              onKeyDown={panes.resizeInspector}
+              aria-valuenow={Math.round(panes.inspectorWidth)}
+              aria-valuemin={Math.round(panes.inspectorMin)}
+              aria-valuemax={Math.round(panes.inspectorMax)}
             />
             <ReviewInspector
               selected={Boolean(selected)}
@@ -815,7 +903,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               onRevealBlocker={revealBlocker}
               onOpenBlockerUrl={context.openUrl}
               onNote={setNote}
-              onCollapse={panes.toggleInspector}
+              onCollapse={toggleInspector}
+              onRetry={refreshReview}
               verdictDock={
                 <ReviewVerdictDock
                   selectionKey={selectedScope}
@@ -830,6 +919,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                   actionError={actionError}
                   note={note}
                   noteError={noteError}
+                  readinessPhase={readiness.phase}
+                  readinessError={readiness.error}
                   checkpoints={checkpoints}
                   checkpointsOpen={checkpointsOpen}
                   checkpointsError={checkpointsError}

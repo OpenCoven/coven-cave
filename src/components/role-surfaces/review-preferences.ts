@@ -1,12 +1,14 @@
 export type ReviewDiffPreferences = {
   mode: "unified";
   hideWhitespace: boolean;
+  wrapLines: boolean;
   contextLines: 3 | 5 | 10;
 };
 
 export const DEFAULT_REVIEW_DIFF_PREFERENCES: ReviewDiffPreferences = {
   mode: "unified",
   hideWhitespace: false,
+  wrapLines: false,
   contextLines: 5,
 };
 
@@ -26,6 +28,7 @@ export function parseReviewDiffPreferences(
   return {
     mode: "unified",
     hideWhitespace: stored.hideWhitespace === true,
+    wrapLines: stored.wrapLines === true,
     contextLines,
   };
 }

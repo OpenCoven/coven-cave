@@ -21,7 +21,7 @@
 .rd-file-chips {
   display: flex;
   min-width: 0;
-  flex: 1 1 15rem;
+  flex: 1 1 10rem;
   align-items: center;
   gap: var(--space-1);
   overflow-x: auto;
@@ -188,7 +188,7 @@
   overflow: hidden;
   margin: 0 var(--space-3) var(--space-1);
   border-radius: var(--radius-card);
-  background: var(--code-surface);
+  background: var(--bg-sunken);
 }
 
 .rd-diff-head {
@@ -260,7 +260,6 @@
   letter-spacing: var(--tracking-wide);
 }
 
-.rd-diff-option,
 .rd-diff-link {
   display: inline-flex;
   flex: none;
@@ -269,6 +268,27 @@
   color: var(--text-secondary);
   font-size: var(--text-xs);
   white-space: nowrap;
+}
+
+.rd-reading-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+
+.rd-reading-setting {
+  display: flex;
+  min-height: var(--space-8);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rd-reading-setting input {
+  accent-color: var(--accent-presence);
 }
 
 .rd-context-select {
@@ -293,11 +313,24 @@
   background: var(--bg-sunken);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: 19px;
+  line-height: var(--leading-relaxed);
 }
 
 .rd-diff-table {
   min-width: max-content;
+}
+
+.rd-diff[data-wrap="true"] .rd-diff-table {
+  min-width: 0;
+}
+
+.rd-diff[data-wrap="true"] .rd-diff-line {
+  grid-template-columns: var(--space-8) var(--space-8) var(--space-4) minmax(0, 1fr);
+}
+
+.rd-diff[data-wrap="true"] .rd-diff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .rd-diff-line {
@@ -522,6 +555,7 @@
 
 .rd-file-list-popover {
   max-height: min(26rem, 60vh);
+  width: min(28rem, calc(100vw - var(--space-6)));
 }
 
 .rd-nav {
@@ -596,13 +630,11 @@
 }
 
 .rd-nav-group {
-  overflow: hidden;
   padding: var(--space-2) var(--space-1) var(--space-1);
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .rd-nav-dir,

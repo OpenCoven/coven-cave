@@ -15,10 +15,11 @@
  * worse than one shown out of position.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { ReviewWorkItem } from "@/lib/review-landing";
 import { StandardSelect } from "@/components/ui/select";
+import { Popover } from "@/components/ui/popover";
 import {
   buildDiffRows,
   hideWhitespaceOnlyDiff,
@@ -82,6 +83,8 @@ export function ReviewDiffWorkbench({
   const [expandedFolds, setExpandedFolds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     setExpandedFolds(new Set());
   }, [source.openPath, workItem?.revision]);
@@ -142,28 +145,57 @@ export function ReviewDiffWorkbench({
           <span className="rd-diff-path">Changed file</span>
         )}
         <span className="rd-spacer" />
-        <label className="rd-diff-option">
-          <input
-            type="checkbox"
-            checked={preferences.hideWhitespace}
-            onChange={(event) =>
-              onPreferences({ hideWhitespace: event.target.checked })
-            }
-          />
-          Hide whitespace pairs
-        </label>
-        <span className="rd-diff-option">
-          Context
-          <StandardSelect
-            label="Diff context lines"
-            className="rd-context-select"
-            value={String(preferences.contextLines) as "3" | "5" | "10"}
-            options={[...CONTEXT_OPTIONS]}
-            onChange={(value) =>
-              onPreferences({ contextLines: Number(value) as 3 | 5 | 10 })
-            }
-          />
-        </span>
+        <button
+          ref={optionsRef}
+          type="button"
+          className="rd-chip-btn focus-ring"
+          aria-label="Diff reading options"
+          aria-haspopup="dialog"
+          aria-expanded={optionsOpen}
+          onClick={() => setOptionsOpen((open) => !open)}
+        >
+          <Icon name="ph:sliders-horizontal" width={14} height={14} aria-hidden />
+          Reading
+        </button>
+        <Popover
+          open={optionsOpen}
+          onOpenChange={setOptionsOpen}
+          anchorRef={optionsRef}
+          placement="bottom-end"
+          minWidth={248}
+          ariaLabel="Diff reading options"
+        >
+          <div className="rd-reading-options">
+            <label className="rd-reading-setting">
+              <input
+                type="checkbox"
+                className="focus-ring"
+                checked={preferences.wrapLines}
+                onChange={(event) => onPreferences({ wrapLines: event.target.checked })}
+              />
+              Wrap long lines
+            </label>
+            <label className="rd-reading-setting">
+              <input
+                type="checkbox"
+                className="focus-ring"
+                checked={preferences.hideWhitespace}
+                onChange={(event) => onPreferences({ hideWhitespace: event.target.checked })}
+              />
+              Hide whitespace pairs
+            </label>
+            <span className="rd-reading-setting">
+              Context lines
+              <StandardSelect
+                label="Diff context lines"
+                className="rd-context-select"
+                value={String(preferences.contextLines) as "3" | "5" | "10"}
+                options={[...CONTEXT_OPTIONS]}
+                onChange={(value) => onPreferences({ contextLines: Number(value) as 3 | 5 | 10 })}
+              />
+            </span>
+          </div>
+        </Popover>
         {selectedPrUrl ? (
           <a
             className="rd-diff-link focus-ring"
@@ -179,7 +211,7 @@ export function ReviewDiffWorkbench({
         ) : null}
       </header>
 
-      <div className="rd-diff rd-scroll" tabIndex={0}>
+      <div className="rd-diff rd-scroll focus-ring-inset" data-wrap={preferences.wrapLines ? "true" : undefined} tabIndex={0} aria-label="Diff content">
         {!selected ? (
           <SurfaceEmpty
             iconName="ph:git-diff"

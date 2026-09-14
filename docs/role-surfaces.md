@@ -222,22 +222,36 @@ never fake production data.
   it acts on: the **queue** says what is waiting, the **centre** says what
   changed, the **inspector** says whether it can land and what to do about it.
   Deck-scoped chrome — attention filters, item navigation, help, refresh —
-  lives in the one top bar and nowhere else. Both rails drag to resize and
-  collapse with `f` / `e`; the diff keeps the centre column and every pixel of
-  height the rails do not need.
+  lives in the one top bar and nowhere else. Both rails resize by dragging or
+  keyboard and collapse with `f` / `e`. Above 78rem of available stage width
+  all three panes fit; between 48rem and 78rem the queue or inspector sits
+  beside the diff without covering it. Below 48rem, persistent pane tabs keep
+  all three views reachable.
 
   The queue leads with a proportional **mix bar** (what the queue is made of,
   before any row is read), orders blocked-first-then-oldest, and groups under
-  sticky headings that stay drawn while empty when nothing is filtered —
-  "Nothing blocked" is the answer a reviewer opens the pane hoping for. Each
-  row's reason is derived from the single `item?pull=1` read the queue can
-  afford, so it names GitHub's own `mergeable_state` and never a failing-check
-  count it has not fetched.
+  sticky headings. Empty groups stay out of the list; zero attention counts
+  remain in the top bar. All includes active or unverified PRs and actual
+  local working changes. Clean branch-only sessions remain explicitly browsable
+  through Branches. Confirmed merged/closed PRs leave the queue, duplicate
+  repository/PR links collapse, and drafts, unread PRs and local changes stay
+  outside the attention counts. Search matches titles, PR references,
+  repositories and branches.
+
+  Queue enrichment reads at most 12 unique PRs with three concurrent workers.
+  Each row's reason comes from the `item?pull=1` read, never a failing-check
+  count it has not fetched. GitHub titles and diff totals replace stale session
+  summaries; unavailable totals are not rendered as zero. Refresh reconciles
+  the queue, selected readiness and diff, with explicit read errors and retry.
+  Selection survives filtering, and review notes survive switching items
+  during the visit.
 
   A file rail replaces the file column: chips window around the open file, the
-  overflow chip opens the full navigator (search, tree, keyboard traversal),
+  Files opens the full navigator (search, tree, keyboard traversal),
   and the reviewed-file progress persists against the exact PR head SHA (or an
   honest local working-tree revision), resetting when that identity changes.
+  Same-item refresh retains the open file when it still exists. Reading options
+  expose whitespace filtering, context and persisted long-line wrapping.
   Unresolved review threads render inline at the line they were left on; one
   the deck cannot place — folded away, or past the route's per-file patch
   budget — is listed rather than dropped or pinned to the wrong line.
@@ -255,4 +269,18 @@ never fake production data.
   PR sessions always read GitHub; only sessions without a linked PR read the
   local working tree. Unknown readiness stays non-actionable, and approve /
   request-changes / squash-merge continue to dispatch through the real GitHub
-  routes. The deck never edits the working tree.
+  routes. Verdicts carry the reviewed head SHA: reviews use GitHub's
+  `commit_id`, and merges use its atomic `sha` guard. Failed submissions stay
+  visible inside the composer without discarding the note. The deck never edits
+  the working tree.
+  Missing or capped review evidence also blocks verdicts: the comments route
+  explicitly reports `reviewEvidenceComplete` and `reviewEvidenceError` rather
+  than treating a failed GraphQL read as zero unresolved threads. Its existing
+  100-thread/review windows remain bounded; use GitHub for evidence beyond them.
+  Late mutation completion refreshes the current selection, not the item that
+  happened to be selected when the request started.
+
+  Production browser runs must build with
+  `NEXT_PUBLIC_CAVE_ROOMS=reviewer-review-deck`; the release allowlist is
+  unchanged. The Review Deck specs block service workers so their isolated
+  GitHub route fixtures also cover production WebKit refreshes and mutations.

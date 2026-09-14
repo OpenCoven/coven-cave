@@ -43,6 +43,7 @@ export function ReviewWorkbenchHeader({
   agent,
   age,
   fileCount,
+  statsKnown,
   additions,
   deletions,
   sourceExplain,
@@ -63,7 +64,8 @@ export function ReviewWorkbenchHeader({
   branchLine: string | null;
   agent: string | null;
   age: string | null;
-  fileCount: number;
+  fileCount: number | null;
+  statsKnown: boolean;
   additions: number;
   deletions: number;
   sourceExplain: string;
@@ -103,7 +105,7 @@ export function ReviewWorkbenchHeader({
                 {state.label}
               </span>
             ) : null}
-            <h1 title={title ?? undefined}>{title ?? "No session selected"}</h1>
+            <h2 title={title ?? undefined}>{title ?? "Choose a review item"}</h2>
             {reference ? (
               <span className="rd-ref-chip" title={reference}>
                 {reference}
@@ -129,18 +131,22 @@ export function ReviewWorkbenchHeader({
                 {age}
               </span>
             ) : null}
-            <span className="rd-diffstat">
-              <span>
+            {title ? <span className="rd-diffstat">
+              {fileCount != null ? <span>
                 <Icon name="ph:file-code" width={12} height={12} aria-hidden />
                 {fileCount} {fileCount === 1 ? "file" : "files"}
-              </span>
-              <span className="rd-diffstat-bar" aria-hidden>
-                <i className="rd-add-bar" style={{ flexGrow: additions / total }} />
-                <i className="rd-del-bar" style={{ flexGrow: deletions / total }} />
-              </span>
-              <span className="rd-add">+{additions}</span>
-              <span className="rd-del">−{deletions}</span>
-            </span>
+              </span> : null}
+              {statsKnown ? (
+                <>
+                  <span className="rd-diffstat-bar" aria-hidden>
+                    <i className="rd-add-bar" style={{ flexGrow: additions / total }} />
+                    <i className="rd-del-bar" style={{ flexGrow: deletions / total }} />
+                  </span>
+                  <span className="rd-add">+{additions}</span>
+                  <span className="rd-del">−{deletions}</span>
+                </>
+              ) : <span>Diff totals unavailable</span>}
+            </span> : null}
           </div>
         </div>
 

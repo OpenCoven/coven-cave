@@ -23,6 +23,8 @@ import {
   deckSummary,
   reviewBucket,
   reviewStateMeta,
+  isTerminalPr,
+  type PrFacts,
   type DeckSummary,
   type ReviewBucket,
 } from "./review-readiness";
@@ -34,7 +36,7 @@ import {
   type QueueMixSegment,
   type ReviewQueueSort,
 } from "./review-cockpit";
-import { prLabel, reviewQueue, type ReviewItem } from "./review-deck";
+import { hasWorkingChanges, matchesReviewQuery, prLabel, reviewQueue, type ReviewItem } from "./review-deck";
 import type {
   ReviewQueueGroupView,
   ReviewQueueRowView,
@@ -48,12 +50,6 @@ export type ReviewDeckCounts = {
   scope: string | null;
   oldest: string | null;
 };
-
-/** The four counted buckets. Drafts and unread pull requests fold into
- *  "awaiting" for the *filter tabs* only — see `cockpitBucket` for grouping. */
-function attentionBucket(bucket: ReviewBucket): keyof DeckSummary {
-  return bucket === "draft" || bucket === "unread" ? "awaiting" : bucket;
-}
 
 /**
  * The bucket a queue *row* is grouped under. Drafts and not-yet-read pull
@@ -76,6 +72,9 @@ export type ReviewDeckModel = {
   counts: ReviewDeckCounts;
   caption: string;
   loading: boolean;
+  error: string | null;
+  refresh: () => void;
+  recordFacts: (facts: PrFacts) => void;
   bucketOf: (session: SessionRow) => ReviewBucket;
 };
 
@@ -84,22 +83,24 @@ export function useReviewDeckModel({
   sourceFilter,
   bucketFilter,
   sort,
+  query = "",
 }: {
   sessions: readonly SessionRow[];
   sourceFilter: ReviewSourceFilter;
   bucketFilter: keyof DeckSummary | null;
   sort: ReviewQueueSort;
+  query?: string;
 }): ReviewDeckModel {
-  const all = useMemo(() => reviewQueue(sessions), [sessions]);
+  const candidates = useMemo(() => reviewQueue(sessions, { includeBranches: true }), [sessions]);
   const pullRequests = useMemo(
     () =>
-      all.flatMap((item) => {
+      candidates.flatMap((item) => {
         const pullRequest = item.session.pullRequest;
         return pullRequest?.number == null
           ? []
           : [{ repo: pullRequest.repo, number: pullRequest.number }];
       }),
-    [all],
+    [candidates],
   );
   const deckBuckets = useDeckBuckets(pullRequests);
 
@@ -120,35 +121,46 @@ export function useReviewDeckModel({
       reviewBucket(factsFor(session), session.pullRequest?.number != null),
     [factsFor],
   );
+  const all = useMemo(
+    () => candidates.filter((item) => !isTerminalPr(factsFor(item.session))),
+    [candidates, factsFor],
+  );
+  const actionable = useMemo(
+    () => all.filter((item) => item.reasons.includes("pull-request") || item.reasons.includes("working-changes")),
+    [all],
+  );
 
-  const summary = useMemo<DeckSummary>(() => {
-    const out: DeckSummary = { awaiting: 0, changes: 0, blocked: 0, ready: 0 };
-    for (const item of all) out[attentionBucket(bucketOf(item.session))] += 1;
-    return out;
-  }, [all, bucketOf]);
+  const summary = useMemo(
+    () => deckSummary(actionable.map((item) => bucketOf(item.session))),
+    [actionable, bucketOf],
+  );
 
   const outside = useMemo(() => {
     let drafts = 0;
     let unread = 0;
     let local = 0;
-    for (const item of all) {
+    for (const item of actionable) {
       const bucket = bucketOf(item.session);
       if (bucket === "draft") drafts += 1;
-      if (bucket === "unread") unread += 1;
+      if (bucket === "unread" && item.session.pullRequest?.number != null) unread += 1;
       if (item.session.pullRequest?.number == null) local += 1;
     }
     return { drafts, unread, local };
-  }, [all, bucketOf]);
+  }, [actionable, bucketOf]);
 
   const ordered = useMemo(() => {
     const visible = all.filter((item) => {
       const hasPullRequest = item.session.pullRequest?.number != null;
+      const hasLocalChanges = hasWorkingChanges(item.session);
+      if (sourceFilter === "branches") {
+        if (hasPullRequest || hasLocalChanges) return false;
+      } else if (!hasPullRequest && !hasLocalChanges) return false;
       if (sourceFilter === "prs" && !hasPullRequest) return false;
       if (sourceFilter === "local" && hasPullRequest) return false;
-      if (bucketFilter && attentionBucket(bucketOf(item.session)) !== bucketFilter) {
+      if (bucketFilter && bucketOf(item.session) !== bucketFilter) {
         return false;
       }
-      return true;
+      return matchesReviewQuery(item.session, query, factsFor(item.session)?.title);
     });
     return orderReviewQueue(
       visible.map((item) => ({
@@ -160,7 +172,7 @@ export function useReviewDeckModel({
       })),
       sort,
     );
-  }, [all, bucketFilter, bucketOf, sort, sourceFilter]);
+  }, [all, bucketFilter, bucketOf, sort, sourceFilter, query, factsFor]);
 
   const groups = useMemo<ReviewQueueGroupView[]>(() => {
     const byBucket = new Map<CockpitBucket, ReviewQueueRowView[]>();
@@ -169,19 +181,21 @@ export function useReviewDeckModel({
       const pullRequest = session.pullRequest;
       const hasPullRequest = pullRequest?.number != null;
       const facts = factsFor(session);
-      const hasLocalChanges =
-        (session.diff?.additions ?? 0) + (session.diff?.deletions ?? 0) > 0;
+      const hasLocalChanges = hasWorkingChanges(session);
       const meta = reviewStateMeta(facts, { hasPullRequest, hasLocalChanges });
-      const row: ReviewQueueRowView = {
+      const row: ReviewQueueRowView & { statsKnown: boolean } = {
         id: session.id,
         bucket: entry.bucket,
-        title: session.title || session.id,
+        title: facts?.title || session.title?.split(/\r?\n/, 1)[0]?.trim() || session.id,
         reference: hasPullRequest
           ? (prLabel(pullRequest) ?? pullRequest.repo)
           : (session.workBranch ?? session.git?.branch ?? "local changes"),
         hasPullRequest,
-        additions: session.diff?.additions ?? 0,
-        deletions: session.diff?.deletions ?? 0,
+        statsKnown: hasPullRequest
+          ? facts?.statsKnown ?? (facts?.additions != null && facts?.deletions != null)
+          : session.diff != null,
+        additions: hasPullRequest ? facts?.additions ?? 0 : session.diff?.additions ?? 0,
+        deletions: hasPullRequest ? facts?.deletions ?? 0 : session.diff?.deletions ?? 0,
         age: relativeTime(session.updated_at),
         reason: queueRowReason(facts, { hasPullRequest, hasLocalChanges }),
         agent: session.model ?? null,
@@ -202,39 +216,38 @@ export function useReviewDeckModel({
   );
 
   const counts = useMemo<ReviewDeckCounts>(() => {
-    const repos = [...new Set(pullRequests.map((item) => item.repo))];
+    const activePrs = pullRequests.filter((pr) => !isTerminalPr(deckBuckets.facts.get(prKey(pr))));
+    const repos = [...new Set(activePrs.map((item) => item.repo.toLowerCase()))];
     const bases = [
       ...new Set(
-        pullRequests
+        activePrs
           .map((pullRequest) => deckBuckets.facts.get(prKey(pullRequest))?.baseRef)
           .filter((base): base is string => Boolean(base)),
       ),
     ];
     const repoScope =
       repos.length === 0
-        ? all.length > 0
+        ? actionable.length > 0
           ? "local sessions only"
           : null
         : repos.length === 1
           ? repos[0]
           : `${repos.length} repos`;
-    const oldest = all.at(-1)?.session ?? null;
+    const oldest = actionable.at(-1)?.session ?? null;
     return {
-      queue: all.length,
-      pullRequests: pullRequests.length,
+      queue: actionable.length,
+      pullRequests: activePrs.length,
       scope:
         repoScope && bases.length === 1 ? `${repoScope} → ${bases[0]}` : repoScope,
       oldest: oldest ? relativeTime(oldest.updated_at) : null,
     };
-  }, [all, deckBuckets.facts, pullRequests]);
+  }, [actionable, deckBuckets.facts, pullRequests]);
 
   const caption = deckCaption({
-    counted: countedTotal(
-      deckSummary(all.map((item) => bucketOf(item.session))),
-    ),
+    counted: countedTotal(summary),
     local: outside.local,
     drafts: outside.drafts,
-    unread: outside.unread,
+    unread: Math.max(0, outside.unread - deckBuckets.skipped),
     skipped: deckBuckets.skipped,
   });
 
@@ -247,6 +260,9 @@ export function useReviewDeckModel({
     counts,
     caption,
     loading: deckBuckets.loading,
+    error: deckBuckets.error,
+    refresh: deckBuckets.refresh,
+    recordFacts: deckBuckets.recordFacts,
     bucketOf,
   };
 }

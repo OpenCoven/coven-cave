@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.use({ serviceWorkers: "block" });
+
 const FAMILIAR_ID = "vera";
 const SESSION_ID = "review-session";
 const HEAD_SHA = "1234567890abcdef1234567890abcdef12345678";
@@ -83,8 +85,17 @@ const DIFF = {
   ],
 };
 
-async function mockReviewDeck(page: Page) {
+type ReviewBehavior = {
+  failReview?: boolean;
+  sessions?: typeof SESSION[];
+  diffs?: Record<number, typeof DIFF>;
+  reviewGate?: Promise<void>;
+};
+
+async function mockReviewDeck(page: Page, behavior: ReviewBehavior = {}) {
   let submittedReview: Record<string, unknown> | null = null;
+  let submittedMerge: Record<string, unknown> | null = null;
+  const item = structuredClone(ITEM);
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "vera");
@@ -106,21 +117,30 @@ async function mockReviewDeck(page: Page) {
     }),
   );
   await page.route("**/api/sessions/list**", (route) =>
-    route.fulfill({ json: { ok: true, sessions: [SESSION] } }),
+    route.fulfill({ json: { ok: true, sessions: behavior.sessions ?? [SESSION] } }),
+  );
+  await page.route(/\/api\/inbox(\?|$)/, (route) =>
+    route.fulfill({ json: { ok: true, items: [], unreadCount: 0 } }),
+  );
+  await page.route("**/api/inbox/stream**", (route) =>
+    route.fulfill({ status: 204, body: "" }),
   );
   await page.route(/\/api\/roles(\?|$)/, (route) =>
     route.fulfill({ json: { ok: true, roles: [] } }),
   );
   await page.route(/\/api\/github\/item\?/, (route) =>
-    route.fulfill({ json: ITEM }),
+    route.fulfill({ json: item }),
   );
   await page.route(/\/api\/github\/diff\?/, (route) =>
-    route.fulfill({ json: DIFF }),
+    route.fulfill({
+      json: behavior.diffs?.[Number(new URL(route.request().url()).searchParams.get("number"))] ?? DIFF,
+    }),
   );
   await page.route(/\/api\/github\/checks\?/, (route) =>
     route.fulfill({
       json: {
         ok: true,
+        sha: HEAD_SHA,
         runs: [
           {
             name: "Frontend build",
@@ -138,6 +158,7 @@ async function mockReviewDeck(page: Page) {
       json: {
         ok: true,
         canResolve: false,
+        reviewEvidenceComplete: true,
         reviews: [],
         reviewThreads: [],
       },
@@ -145,17 +166,31 @@ async function mockReviewDeck(page: Page) {
   );
   await page.route("**/api/github/review", async (route) => {
     submittedReview = route.request().postDataJSON();
+    await behavior.reviewGate;
+    if (behavior.failReview) {
+      await route.fulfill({ status: 403, json: { ok: false, error: "The GitHub token cannot submit this review." } });
+      return;
+    }
+    if (submittedReview?.event === "APPROVE") item.pull.reviews.approved = 1;
+    if (submittedReview?.event === "REQUEST_CHANGES") item.pull.reviews.changesRequested = 1;
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.route("**/api/github/merge", async (route) => {
+    submittedMerge = route.request().postDataJSON();
+    item.state = "closed";
+    item.merged = true;
     await route.fulfill({ json: { ok: true } });
   });
   return {
     review: () => submittedReview,
+    merge: () => submittedMerge,
   };
 }
 
 /** Deterministic entry: `?mode=` is applied once on mount, where a dispatched
  *  `cave:navigate-mode` races the shell's own mode restore. */
-async function openReviewDeck(page: Page) {
-  const handles = await mockReviewDeck(page);
+async function openReviewDeck(page: Page, behavior: ReviewBehavior = {}) {
+  const handles = await mockReviewDeck(page, behavior);
   await page.goto("/?mode=surface:reviewer-review-deck");
   await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 180_000 });
   return handles;
@@ -177,6 +212,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
   }) => {
     const handles = await openReviewDeck(page);
     const deck = page.locator(".rd-stage");
+    await page.setViewportSize({ width: 1600, height: 980 });
 
     await deck.locator(".rd-row", { hasText: "Focus the Review Deck" }).click();
     await expect(deck.getByText(`head ${HEAD_SHA.slice(0, 7)}`)).toBeVisible();
@@ -204,6 +240,7 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
       repo: "OpenCoven/coven-cave",
       number: 4812,
       event: "REQUEST_CHANGES",
+      headSha: HEAD_SHA,
       body: "Please keep the reviewed-file identity tied to this head.",
     });
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -216,6 +253,89 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
     // …and the toast is hidden from assistive tech, because the announcer
     // already speaks the same sentence.
     await expect(deck.locator(".rd-toast")).toHaveAttribute("aria-hidden", "true");
+    await expect(deck.locator(".rd-topbar").getByRole("button", { name: /Changes requested 1/ })).toBeVisible();
+  });
+
+  test("approval refreshes the queue and a confirmed merge retires the item without losing its receipt", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    const handles = await openReviewDeck(page);
+    const deck = page.locator(".rd-stage");
+    await deck.locator(".rd-row").click();
+    await expect(deck.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+    await deck.getByRole("button", { name: "Approve", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("#rd-review-body").fill("The review is complete for this change.");
+    await dialog.getByRole("button", { name: "Approve pull request" }).click();
+    await expect.poll(handles.review).toMatchObject({
+      repo: "OpenCoven/coven-cave", number: 4812, event: "APPROVE",
+      headSha: HEAD_SHA,
+      body: "The review is complete for this change.",
+    });
+    await expect(deck.locator(".rd-topbar").getByRole("button", { name: "Ready 1", exact: true })).toBeVisible();
+    await expect(deck.locator(".rd-verdict-primary")).toHaveText("Squash & merge");
+    await deck.locator(".rd-verdict-primary").click();
+    expect(handles.merge()).toBeNull();
+    await page.getByRole("dialog").getByRole("button", { name: /Squash.*merge/ }).click();
+    await expect.poll(handles.merge).toMatchObject({ repo: "OpenCoven/coven-cave", number: 4812, method: "squash", headSha: HEAD_SHA });
+    await expect(deck.locator(".rd-row")).toHaveCount(0);
+    await expect(deck.locator(".rd-toast")).toContainText("Merged OpenCoven/coven-cave#4812");
+    await expect(deck.locator(".rd-verdict-primary")).toBeDisabled();
+  });
+
+  test("a rejected verdict shows its error inside the open composer and keeps the note for retry", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    const behavior = { failReview: true };
+    const handles = await openReviewDeck(page, behavior);
+    const deck = page.locator(".rd-stage");
+    await deck.locator(".rd-row").click();
+    await deck.getByRole("button", { name: "Approve", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("#rd-review-body").fill("Do not discard this review note on failure.");
+    await dialog.getByRole("button", { name: "Approve pull request" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("The GitHub token cannot submit this review.");
+    await expect(dialog.locator("#rd-review-body")).toHaveValue("Do not discard this review note on failure.");
+    await dialog.getByRole("button", { name: "Cancel" }).focus();
+    await page.keyboard.press("j");
+    await expect(deck.getByRole("tab", { name: "src/review.ts", exact: true })).toHaveAttribute("aria-selected", "true");
+    behavior.failReview = false;
+    await dialog.getByRole("button", { name: "Approve pull request" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(handles.review).toMatchObject({ headSha: HEAD_SHA, body: "Do not discard this review note on failure." });
+  });
+
+  test("late verdict completion refreshes the replacement selection rather than stranding its diff", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 980 });
+    let release!: () => void;
+    const second = {
+      ...SESSION, id: "second-session", title: "Second review",
+      pullRequest: { ...SESSION.pullRequest, number: 4813 },
+    };
+    const behavior: ReviewBehavior = {
+      sessions: [SESSION, second],
+      diffs: { 4813: { ...DIFF, files: [
+        { ...DIFF.files[0], filename: "src/second-review.ts" },
+      ], total: 1 } },
+      reviewGate: new Promise<void>((resolve) => { release = resolve; }),
+    };
+    const handles = await openReviewDeck(page, behavior);
+    const deck = page.locator(".rd-stage");
+    try {
+      await deck.locator(".rd-row", { hasText: SESSION.title }).click();
+      await expect(deck.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+      await deck.getByRole("button", { name: "Approve", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Approve pull request" }).click();
+      await expect.poll(handles.review).toMatchObject({ number: 4812 });
+      behavior.sessions = [second];
+      await expect(deck.locator(".rd-workbench-line h2")).toHaveText(second.title, { timeout: 20_000 });
+      await expect(deck.locator('.rd-file-chip[aria-label="src/second-review.ts"]')).toHaveAttribute("aria-selected", "true");
+      release();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(deck.locator(".rd-diff-head .rd-diff-path")).toHaveText("src/second-review.ts");
+      await expect(deck.getByText("export const title = 'Focused';")).toBeVisible();
+      await expect(deck.locator(".rd-workbench-line h2")).toHaveText(second.title);
+    } finally {
+      release();
+    }
   });
 
   test("every narrow-width pane stays reachable, including the one you just left", async ({

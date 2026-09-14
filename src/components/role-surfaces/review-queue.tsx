@@ -5,13 +5,12 @@
  *
  * Three things distinguish it from a list of pull requests. The **mix bar**
  * answers "what is this queue made of?" before any row is read. The **sticky
- * group heads** keep the bucket you are inside named while you scroll. And an
- * **empty group is still drawn** when the whole deck is in view, because
- * "nothing blocked" is the answer a reviewer opens this pane hoping for, and a
- * silently absent heading cannot say it.
+ * group heads** keep the bucket you are inside named while you scroll.
+ * Deck-wide zero counts live in the top bar rather than empty queue groups.
  */
 
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import {
@@ -24,16 +23,17 @@ import {
 } from "./review-cockpit";
 import type { ReviewTone } from "./review-readiness";
 
-export type ReviewSourceFilter = "all" | "prs" | "local";
+export type ReviewSourceFilter = "all" | "prs" | "local" | "branches";
 
 const SOURCE_FILTERS: readonly {
   id: ReviewSourceFilter;
   label: string;
   title: string;
 }[] = [
-  { id: "all", label: "ALL", title: "Every session carrying review material" },
-  { id: "prs", label: "PR", title: "Only sessions with a linked pull request" },
-  { id: "local", label: "LOC", title: "Only sessions with local changes and no pull request" },
+  { id: "all", label: "All", title: "Active pull requests and local working changes" },
+  { id: "prs", label: "PRs", title: "Only sessions with an active linked pull request" },
+  { id: "local", label: "Local changes", title: "Working changes without a pull request" },
+  { id: "branches", label: "Branches", title: "Browse sessions with a branch but no recorded working changes" },
 ];
 
 const BUCKET_ICON: Record<CockpitBucket, IconName> = {
@@ -50,6 +50,7 @@ export type ReviewQueueRowView = {
   title: string;
   reference: string;
   hasPullRequest: boolean;
+  statsKnown?: boolean;
   additions: number;
   deletions: number;
   age: string;
@@ -114,6 +115,12 @@ export function ReviewQueue({
   footnote,
   emptyTitle,
   emptyHint,
+  query,
+  loading,
+  error,
+  filtered,
+  onQuery,
+  onRetry,
   onSort,
   onSourceFilter,
   onSelect,
@@ -135,6 +142,12 @@ export function ReviewQueue({
   footnote: string;
   emptyTitle: string;
   emptyHint: string;
+  query: string;
+  loading: boolean;
+  error: string | null;
+  filtered: boolean;
+  onQuery: (value: string) => void;
+  onRetry: () => void;
   onSort: (sort: ReviewQueueSort) => void;
   onSourceFilter: (filter: ReviewSourceFilter) => void;
   onSelect: (id: string) => void;
@@ -166,7 +179,7 @@ export function ReviewQueue({
             title={REVIEW_QUEUE_SORT_TITLES.attention}
             onClick={() => onSort("attention")}
           >
-            ATTN
+            Priority
           </button>
           <button
             type="button"
@@ -176,7 +189,7 @@ export function ReviewQueue({
             title={REVIEW_QUEUE_SORT_TITLES.repo}
             onClick={() => onSort("repo")}
           >
-            REPO
+            Repo
           </button>
         </span>
         <button
@@ -190,17 +203,36 @@ export function ReviewQueue({
         </button>
       </div>
 
+      <SearchInput
+        value={query}
+        onValueChange={onQuery}
+        onClear={() => onQuery("")}
+        placeholder="Search review items…"
+        aria-label="Search review items"
+        containerClassName="rd-queue-search"
+      />
+      {error ? (
+        <div className="rd-queue-notice rd-error" role="alert">
+          <span>{error}</span>
+          <Button size="xs" disabled={loading} onClick={onRetry}>Retry queue</Button>
+        </div>
+      ) : loading ? (
+        <p className="rd-queue-notice" role="status">Reading GitHub state…</p>
+      ) : null}
+
       <div className="rd-queue-list rd-scroll">
         {total === 0 ? (
           <div className="rd-queue-empty">
             <span className="rd-queue-empty-mark" aria-hidden>
               <Icon name="ph:check-circle-fill" width={19} height={19} />
             </span>
-            <strong>{emptyTitle}</strong>
-            <span>{emptyHint}</span>
-            <Button size="xs" onClick={onClearFilters}>
-              Clear filters
-            </Button>
+            <strong>{loading ? "Reading the queue…" : emptyTitle}</strong>
+            <span>{loading ? "Unverified pull requests stay outside the attention counts." : emptyHint}</span>
+            {filtered ? (
+              <Button size="xs" onClick={onClearFilters}>
+                Clear filters
+              </Button>
+            ) : null}
           </div>
         ) : (
           rendered.map(({ bucket, items, empty }) => {
@@ -238,6 +270,17 @@ export function ReviewQueue({
                             aria-current={active ? "true" : undefined}
                             title={`${item.title} — ${item.stateTitle}`}
                             onClick={() => onSelect(item.id)}
+                            onKeyDown={(event) => {
+                              if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                              const rows = Array.from(
+                                event.currentTarget.closest(".rd-queue-list")?.querySelectorAll<HTMLButtonElement>(".rd-row") ?? [],
+                              );
+                              const index = rows.indexOf(event.currentTarget);
+                              const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1
+                                : (index + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+                              event.preventDefault();
+                              rows[next]?.focus();
+                            }}
                           >
                             <span className="rd-row-line">
                               <i className="rd-row-dot" data-rd-tone={meta.tone} aria-hidden />
@@ -258,8 +301,14 @@ export function ReviewQueue({
                               ) : null}
                             </span>
                             <span className="rd-row-line rd-row-meta">
-                              <span className="rd-add">+{item.additions}</span>
-                              <span className="rd-del">−{item.deletions}</span>
+                              {item.statsKnown === false ? (
+                                <span>Diff totals unavailable</span>
+                              ) : (
+                                <>
+                                  <span className="rd-add">+{item.additions}</span>
+                                  <span className="rd-del">−{item.deletions}</span>
+                                </>
+                              )}
                               {item.agent ? <span>· {item.agent}</span> : null}
                               <span className="rd-spacer" />
                               <span className="rd-visually-hidden">{item.stateLabel}</span>

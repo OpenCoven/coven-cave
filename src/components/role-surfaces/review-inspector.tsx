@@ -15,6 +15,7 @@
  */
 
 import type { ReactNode, RefObject } from "react";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
 import type { IconName } from "@/lib/icon";
@@ -109,6 +110,7 @@ export function ReviewInspector({
   onOpenBlockerUrl,
   onNote,
   onCollapse,
+  onRetry,
 }: {
   selected: boolean;
   isPr: boolean;
@@ -137,6 +139,7 @@ export function ReviewInspector({
   onOpenBlockerUrl: (url: string) => void;
   onNote: (value: string) => void;
   onCollapse: () => void;
+  onRetry: () => void;
 }) {
   const state = bucket ? COCKPIT_BUCKETS[bucket] : null;
   const score = mergeChecklistScore(checklist);
@@ -168,6 +171,12 @@ export function ReviewInspector({
       </div>
 
       <div className="rd-inspector-body rd-scroll">
+        {selected && isPr && readinessPhase === "error" ? (
+          <div className="rd-read-error" role="alert">
+            <p className="rd-error">{readinessError ?? "GitHub state could not be read. No verdict is available."}</p>
+            <Button size="xs" onClick={onRetry}>Retry GitHub read</Button>
+          </div>
+        ) : null}
         <section className="rd-decision" data-rd-tone={decision.tone} role="status">
           <div className="rd-decision-head">
             <i className="rd-decision-dot" data-rd-tone={decision.tone} aria-hidden />
@@ -429,11 +438,11 @@ export function ReviewInspector({
           <label className="rd-note-label" htmlFor="rd-inspector-note">
             <Icon name="ph:pencil-simple" width={11} height={11} aria-hidden />
             <span className="rd-eyebrow">Review note</span>
-            <small>{isPr ? "· sent with your verdict" : "· kept with this session"}</small>
+            <small>{isPr ? "· sent with your verdict" : "· kept during this visit"}</small>
           </label>
           <textarea
             id="rd-inspector-note"
-            className="rd-note-input"
+            className="rd-note-input focus-ring"
             placeholder="Add a note…"
             value={note}
             maxLength={GITHUB_REVIEW_BODY_MAX_LENGTH}

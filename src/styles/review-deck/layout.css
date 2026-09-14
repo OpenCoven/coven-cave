@@ -21,32 +21,6 @@
   background: var(--bg-panel);
 }
 
-.rd-topbar-brand {
-  display: inline-flex;
-  min-width: 0;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--accent-presence);
-}
-
-.rd-topbar-brand strong {
-  color: var(--text-primary);
-  font-size: var(--text-base);
-  font-weight: 650;
-  letter-spacing: var(--tracking-tight);
-  white-space: nowrap;
-}
-
-.rd-topbar-scope {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .rd-segments {
   display: inline-flex;
   align-items: center;
@@ -163,6 +137,7 @@
 }
 
 .rd-gutter:hover,
+.rd-gutter:focus-visible,
 body[data-rd-resizing="true"] .rd-gutter {
   background: color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
@@ -200,7 +175,7 @@ body[data-rd-resizing="true"] .rd-gutter {
   white-space: nowrap;
 }
 
-.rd-workbench-line h1 {
+.rd-workbench-line h2 {
   overflow: hidden;
   min-width: 0;
   flex: 1 1 auto;
@@ -274,6 +249,24 @@ body[data-rd-resizing="true"] .rd-gutter {
   flex: none;
   align-items: center;
   gap: var(--space-2);
+}
+
+.rd-selection-notice {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.rd-read-error {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--danger-border);
+  background: var(--danger-bg);
 }
 
 /* ── Shortcuts overlay ───────────────────────────────────────────────────── */

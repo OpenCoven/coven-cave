@@ -43,12 +43,19 @@ export type ReviewPanes = {
   stageRef: React.RefObject<HTMLDivElement | null>;
   queueWidth: number;
   inspectorWidth: number;
+  queueMin: number;
+  queueMax: number;
+  inspectorMin: number;
+  inspectorMax: number;
   /** What the diff column actually gets, once both rails are subtracted. */
   centreWidth: number;
+  narrow: boolean;
   queueOpen: boolean;
   inspectorOpen: boolean;
   dragQueue: (event: React.PointerEvent) => void;
   dragInspector: (event: React.PointerEvent) => void;
+  resizeQueue: (event: React.KeyboardEvent) => void;
+  resizeInspector: (event: React.KeyboardEvent) => void;
   toggleQueue: () => void;
   toggleInspector: () => void;
   setQueueOpen: (open: boolean) => void;
@@ -59,7 +66,8 @@ export function useReviewPanes(): ReviewPanes {
   const [queueWidth, setQueueWidth] = useState<number>(QUEUE_PANE.initial);
   const [inspectorWidth, setInspectorWidth] = useState<number>(INSPECTOR_PANE.initial);
   const [queueOpen, setQueueOpen] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorPreference, setInspectorOpen] = useState<boolean | null>(null);
+  const [layout, setLayout] = useState<"wide" | "medium" | "narrow">("wide");
   const [available, setAvailable] = useState(ASSUMED_WIDTH);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragging = useRef<{ pane: "queue" | "inspector"; startX: number; startWidth: number } | null>(
@@ -74,7 +82,12 @@ export function useReviewPanes(): ReviewPanes {
     if (!node) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width && width > 0) setAvailable(width);
+      if (width && width > 0) {
+        setAvailable(width);
+        // Match responsive.css in the container's actual rem scale.
+        const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+        setLayout(width <= 48 * rem ? "narrow" : width <= 78 * rem ? "medium" : "wide");
+      }
     });
     observer.observe(node);
     return () => observer.disconnect();
@@ -87,6 +100,24 @@ export function useReviewPanes(): ReviewPanes {
     available,
     INSPECTOR_SHARE,
   );
+  const inspectorOpen = inspectorPreference ?? layout === "wide";
+  const visibleQueueOpen = queueOpen && !(layout === "medium" && inspectorOpen);
+  const queueMin = clampPaneWidth(0, QUEUE_PANE, available, QUEUE_SHARE);
+  const queueMax = clampPaneWidth(Number.MAX_SAFE_INTEGER, QUEUE_PANE, available, QUEUE_SHARE);
+  const inspectorMin = clampPaneWidth(0, INSPECTOR_PANE, available, INSPECTOR_SHARE);
+  const inspectorMax = clampPaneWidth(Number.MAX_SAFE_INTEGER, INSPECTOR_PANE, available, INSPECTOR_SHARE);
+
+  const resizeWithKey = (pane: "queue" | "inspector", event: React.KeyboardEvent) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const queue = pane === "queue";
+    const min = queue ? queueMin : inspectorMin;
+    const max = queue ? queueMax : inspectorMax;
+    const current = queue ? clampedQueue : clampedInspector;
+    const step = (event.key === "ArrowRight" ? 16 : -16) * (queue ? 1 : -1);
+    const next = event.key === "Home" ? min : event.key === "End" ? max : Math.min(max, Math.max(min, current + step));
+    (queue ? setQueueWidth : setInspectorWidth)(next);
+  };
 
   const onPointerMove = useCallback((event: PointerEvent) => {
     const drag = dragging.current;
@@ -132,19 +163,32 @@ export function useReviewPanes(): ReviewPanes {
     stageRef,
     queueWidth: clampedQueue,
     inspectorWidth: clampedInspector,
+    queueMin,
+    queueMax,
+    inspectorMin,
+    inspectorMax,
     centreWidth: Math.max(
       0,
-      available -
-        (queueOpen ? clampedQueue + GUTTER_PX : 0) -
+      layout === "narrow" ? available : available -
+        (visibleQueueOpen ? clampedQueue + GUTTER_PX : 0) -
         (inspectorOpen ? clampedInspector + GUTTER_PX : 0),
     ),
-    queueOpen,
+    queueOpen: visibleQueueOpen,
+    narrow: layout === "narrow",
     inspectorOpen,
     dragQueue: (event) => startDrag("queue", event),
     dragInspector: (event) => startDrag("inspector", event),
-    toggleQueue: () => setQueueOpen((open) => !open),
-    toggleInspector: () => setInspectorOpen((open) => !open),
-    setQueueOpen,
+    resizeQueue: (event) => resizeWithKey("queue", event),
+    resizeInspector: (event) => resizeWithKey("inspector", event),
+    toggleQueue: () => {
+      if (!visibleQueueOpen && layout === "medium") setInspectorOpen(false);
+      setQueueOpen(!visibleQueueOpen);
+    },
+    toggleInspector: () => setInspectorOpen(!inspectorOpen),
+    setQueueOpen: (open) => {
+      if (open && layout === "medium") setInspectorOpen(false);
+      setQueueOpen(open);
+    },
     setInspectorOpen,
   };
 }

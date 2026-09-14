@@ -54,6 +54,8 @@ export function ReviewVerdictDock({
   actionError,
   note,
   noteError,
+  readinessPhase,
+  readinessError,
   checkpoints,
   checkpointsOpen,
   checkpointsError,
@@ -76,6 +78,8 @@ export function ReviewVerdictDock({
   actionError: string | null;
   note: string;
   noteError: string | null;
+  readinessPhase: "idle" | "loading" | "ready" | "error";
+  readinessError: string | null;
   checkpoints: readonly ReviewCheckpoint[] | null;
   checkpointsOpen: boolean;
   checkpointsError: string | null;
@@ -198,6 +202,10 @@ export function ReviewVerdictDock({
         ? "Nothing selected"
         : !isPr
           ? "Verdicts need a pull request"
+          : facts?.state === "closed"
+            ? "Review finished"
+          : readinessPhase === "error"
+            ? "GitHub state unavailable"
           : facts?.draft
             ? "Waiting on the author"
             : "Reading GitHub state…",
@@ -205,6 +213,10 @@ export function ReviewVerdictDock({
       disabled: true,
       title: !isPr
         ? "This session is a local working tree; open a pull request to unlock verdicts."
+        : facts?.state === "closed"
+          ? "The pull request is closed. No verdict will be sent."
+        : readinessPhase === "error"
+          ? readinessError ?? "Refresh GitHub state to try again."
         : facts?.draft
           ? "Draft pull requests can't take a verdict."
           : "Actions are held until the pull request's state loads.",
@@ -238,7 +250,11 @@ export function ReviewVerdictDock({
       ? "The deck never applies patches or edits a working tree."
       : canAct && facts
         ? `Posts to ${facts.repo}#${facts.number} · merge re-reads GitHub first.`
-        : "Read-only until the author acts.";
+        : facts?.state === "closed"
+          ? "The pull request is closed. No verdict will be sent."
+          : facts?.draft
+            ? "Read-only until the author marks this pull request ready."
+            : "Read-only until GitHub state is available.";
 
   return (
     <>
@@ -281,7 +297,7 @@ export function ReviewVerdictDock({
 
       <Modal
         open={reviewMode != null}
-        onClose={() => setReviewMode(null)}
+        onClose={() => { if (busy == null) setReviewMode(null); }}
         dismissOnEscape={busy == null}
         breadcrumb={[
           "Review Deck",
@@ -302,14 +318,14 @@ export function ReviewVerdictDock({
         }
         footerActions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setReviewMode(null)}>
+            <Button variant="ghost" size="sm" disabled={busy != null} onClick={() => setReviewMode(null)}>
               Cancel
             </Button>
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
               data-rd-tone={reviewMode === "changes" ? "warning" : "accent"}
-              disabled={busy != null || (reviewMode === "changes" && !note.trim())}
+              disabled={!canAct || busy != null || (reviewMode === "changes" && !note.trim())}
               onClick={() => {
                 void (async () => {
                   const ok =
@@ -332,6 +348,7 @@ export function ReviewVerdictDock({
         }
       >
         <div className="rd-composer">
+          {actionError ? <p className="rd-error" role="alert">{actionError}</p> : null}
           {reviewMode === "changes" ? (
             <section className="rd-composer-evidence" aria-label="Cited evidence">
               <div className="rd-section-head">
@@ -406,7 +423,7 @@ export function ReviewVerdictDock({
             <textarea
               id="rd-review-body"
               ref={noteRef}
-              className="rd-composer-textarea"
+              className="rd-composer-textarea focus-ring"
               placeholder={
                 reviewMode === "changes"
                   ? "Describe what has to change…"
@@ -436,7 +453,7 @@ export function ReviewVerdictDock({
 
       <Modal
         open={mergeOpen}
-        onClose={() => setMergeOpen(false)}
+        onClose={() => { if (busy == null) setMergeOpen(false); }}
         dismissOnEscape={busy == null}
         breadcrumb={["Review Deck", "Squash & merge"]}
         footerPills={
@@ -450,14 +467,14 @@ export function ReviewVerdictDock({
         }
         footerActions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setMergeOpen(false)}>
+            <Button variant="ghost" size="sm" disabled={busy != null} onClick={() => setMergeOpen(false)}>
               Cancel
             </Button>
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
               data-rd-tone="success"
-              disabled={!ready || busy != null}
+              disabled={!canAct || !ready || busy != null}
               onClick={() => {
                 void (async () => {
                   if (await onMerge()) setMergeOpen(false);
@@ -471,6 +488,7 @@ export function ReviewVerdictDock({
         }
       >
         <div className="rd-merge-confirm">
+          {actionError ? <p className="rd-error" role="alert">{actionError}</p> : null}
           <div className="rd-merge-subject">
             <span className="rd-merge-mark" aria-hidden>
               <Icon name="ph:git-merge" width={17} height={17} />

@@ -24,6 +24,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,7 +57,7 @@ function isSafeBranch(value: string): boolean {
 }
 
 export async function POST(req: Request) {
-  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown };
+  let body: { repo?: unknown; number?: unknown; method?: unknown; deleteBranch?: unknown; headSha?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -67,6 +68,10 @@ export async function POST(req: Request) {
   const number = Number.parseInt(String(body.number ?? ""), 10);
   const method = typeof body.method === "string" ? body.method : "squash";
   const deleteBranch = body.deleteBranch === true;
+  const headSha = sanitizeGithubObjectSha(typeof body.headSha === "string" ? body.headSha : null);
+  if (body.headSha !== undefined && !headSha) {
+    return NextResponse.json({ ok: false, error: "invalid head SHA" }, { status: 400 });
+  }
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -89,7 +94,8 @@ export async function POST(req: Request) {
       method: "PUT",
       headers: ghHeaders(token),
       cache: "no-store",
-      body: JSON.stringify({ merge_method: method }),
+      // GitHub atomically refuses a head that changed after confirmation.
+      body: JSON.stringify({ merge_method: method, ...(headSha ? { sha: headSha } : {}) }),
     });
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || !data || data.merged !== true) {

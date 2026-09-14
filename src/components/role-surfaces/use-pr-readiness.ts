@@ -5,20 +5,17 @@
  *
  * Fans out to `/api/github/item?pull=1`, `/api/github/checks` and
  * `/api/github/comments?isPull=1` for the selected session's pull request, then
- * reduces them to the `PrFacts` the deck renders. The three reads land together
- * or not at all: a partial answer would let the rail claim "ready" off a stale
- * check list, so anything missing keeps the panel in its loading state.
- *
- * Checks and threads are fault-isolated the way the routes are — a failed
- * checks read degrades to "no CI signal", it never turns a working readiness
- * panel into an error. Only the item read failing is a real failure, because
- * without it there is no pull request to describe.
+ * reduces them to the `PrFacts` the deck renders. Missing evidence is an
+ * explicit error, not an empty success. Item facts remain available for queue
+ * reconciliation even when checks or comments fail.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { summarizeChecks } from "@/lib/github-checks";
 import { createReviewRequestGate, type ReviewRequest } from "./review-deck";
-import type { LatestReview, PrFacts, ReadinessCheckRun, ReadinessThread, ReviewTally } from "./review-readiness";
+import { parseReviewItem, readReviewJson, type ReviewItemFacts } from "./review-github-read";
+import { isTerminalPr } from "./review-readiness";
+import type { LatestReview, PrFacts, ReadinessCheckRun, ReadinessThread } from "./review-readiness";
 
 export type ReadinessPhase = "idle" | "loading" | "ready" | "error";
 
@@ -32,34 +29,16 @@ export type PrReadiness = {
   refresh: () => void;
 };
 
-type ItemWire = {
-  ok?: boolean;
-  state?: string;
-  draft?: boolean;
-  merged?: boolean;
-  isPull?: boolean;
-  pull?: {
-    headRef?: string;
-    baseRef?: string;
-    headSha?: string;
-    commits?: number;
-    additions?: number;
-    deletions?: number;
-    changedFiles?: number;
-    mergeable?: boolean | null;
-    mergeableState?: string;
-    reviews?: Partial<ReviewTally>;
-  } | null;
-};
-
 type ChecksWire = {
   ok?: boolean;
+  sha?: string;
   runs?: Array<{ name?: string; status?: string; conclusion?: string | null; detailsUrl?: string | null }>;
   statuses?: Array<{ context?: string; state?: string; targetUrl?: string | null }>;
 };
 
 type CommentsWire = {
   ok?: boolean;
+  reviewEvidenceComplete?: boolean;
   canResolve?: boolean;
   reviews?: Array<{ author?: { login?: string } | null; state?: string; submittedAt?: string | null }>;
   reviewThreads?: Array<{
@@ -72,12 +51,57 @@ type CommentsWire = {
   }>;
 };
 
+function object(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
+
+export function parseReadinessChecks(value: unknown): ChecksWire {
+  const wire = object(value);
+  if (wire?.ok !== true || typeof wire.sha !== "string" || !wire.sha ||
+      !Array.isArray(wire.runs) || !Array.isArray(wire.statuses) ||
+      !wire.runs.every((value) => {
+        const run = object(value);
+        return run && typeof run.name === "string" && typeof run.status === "string" &&
+          (run.conclusion === null || typeof run.conclusion === "string");
+      }) ||
+      !wire.statuses.every((value) => {
+        const status = object(value);
+        return status && typeof status.context === "string" && typeof status.state === "string";
+      })) throw new Error("Checks response is incomplete.");
+  return wire as ChecksWire;
+}
+
+export function parseReadinessComments(value: unknown): CommentsWire {
+  const wire = object(value);
+  if (wire?.reviewEvidenceComplete !== true) {
+    throw new Error(typeof wire?.reviewEvidenceError === "string" && wire.reviewEvidenceError
+      ? wire.reviewEvidenceError : "Review thread evidence is incomplete.");
+  }
+  const person = (value: unknown) => value == null || typeof object(value)?.login === "string";
+  if (wire?.ok !== true || !Array.isArray(wire.reviewThreads) || !Array.isArray(wire.reviews) ||
+      !wire.reviews.every((value) => {
+        const review = object(value);
+        return review && typeof review.state === "string" && person(review.author) &&
+          (review.submittedAt == null || typeof review.submittedAt === "string");
+      }) ||
+      !wire.reviewThreads.every((value) => {
+        const thread = object(value);
+        return thread && typeof thread.id === "string" && typeof thread.isResolved === "boolean" &&
+          typeof thread.isOutdated === "boolean" && (thread.path == null || typeof thread.path === "string") &&
+          (thread.line == null || typeof thread.line === "number") && Array.isArray(thread.comments) &&
+          thread.comments.every((value) => {
+            const comment = object(value);
+            return comment && typeof comment.body === "string" && person(comment.author);
+          });
+      })) throw new Error("Review threads response is incomplete.");
+  return wire as CommentsWire;
+}
+
 /** How many unresolved threads the composer quotes verbatim before summarizing. */
 const QUOTED_THREADS = 3;
 /** Longest thread excerpt kept — a whole review comment would swamp a chip. */
 const EXCERPT_CHARS = 160;
-
-const EMPTY_TALLY: ReviewTally = { approved: 0, changesRequested: 0, commented: 0 };
 
 /**
  * Only an author's LATEST submitted review counts on GitHub. PENDING (never
@@ -163,14 +187,16 @@ function checkRunsFrom(wire: ChecksWire | null): ReadinessCheckRun[] {
   return runs;
 }
 
-async function readJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    const json = (await res.json().catch(() => null)) as T | null;
-    return json;
-  } catch {
-    return null;
-  }
+function itemFacts(item: ReviewItemFacts, repo: string, number: number): PrFacts {
+  return {
+    ...item, repo, number,
+    additions: item.additions ?? 0,
+    deletions: item.deletions ?? 0,
+    changedFiles: item.changedFiles ?? 0,
+    latestReview: null,
+    checks: { rollup: null, runs: [] },
+    threads: { unresolved: 0, total: 0, canResolve: false, items: [] },
+  };
 }
 
 /**
@@ -189,76 +215,81 @@ export function usePrReadiness(pr: { repo: string; number: number } | null): PrR
   const latestScope = useRef(scope);
   latestScope.current = scope;
   const gate = useRef(createReviewRequestGate());
+  const controller = useRef<AbortController | null>(null);
 
   const repo = pr?.repo ?? null;
   const number = pr?.number ?? null;
 
   const load = useCallback(
     async (isRefresh: boolean) => {
+      controller.current?.abort();
+      const active = new AbortController();
+      controller.current = active;
       const request: ReviewRequest = gate.current.begin(repo && number ? `${repo}#${number}` : "none");
       if (!repo || number == null) {
         setPhase("idle");
         setFacts(null);
         setError(null);
+        setRefreshing(false);
+        setCheckedAt(null);
         return;
       }
-      if (isRefresh) setRefreshing(true);
-      else {
-        setPhase("loading");
-        setFacts(null);
-        setError(null);
-      }
+      setRefreshing(isRefresh);
+      setPhase("loading");
+      setFacts(null);
+      setError(null);
+      setCheckedAt(null);
 
       const query = `repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`;
-      const [item, checks, comments] = await Promise.all([
-        readJson<ItemWire>(`/api/github/item?${query}&pull=1`),
-        readJson<ChecksWire>(`/api/github/checks?${query}`),
-        readJson<CommentsWire>(`/api/github/comments?${query}&isPull=1`),
+      const [itemResult, checksResult, commentsResult] = await Promise.allSettled([
+        readReviewJson(`/api/github/item?${query}&pull=1`, active.signal).then(parseReviewItem).then((item) => {
+          // Terminal state alone is enough to retire a stale queue row; a slow
+          // checks/comments read must not keep a merged PR on the review desk.
+          if (isTerminalPr(item) && !active.signal.aborted && gate.current.isCurrent(request, latestScope.current)) {
+            setFacts(itemFacts(item, repo, number));
+          }
+          return item;
+        }),
+        readReviewJson(`/api/github/checks?${query}`, active.signal).then(parseReadinessChecks),
+        readReviewJson(`/api/github/comments?${query}&isPull=1`, active.signal).then(parseReadinessComments),
       ]);
 
-      if (!gate.current.isCurrent(request, latestScope.current)) return;
+      if (active.signal.aborted || !gate.current.isCurrent(request, latestScope.current)) return;
 
-      if (!item?.ok || !item.isPull) {
+      if (itemResult.status === "rejected") {
         setPhase("error");
         setFacts(null);
-        setError(`Couldn't read ${repo}#${number} from GitHub.`);
+        setError(`Couldn't read ${repo}#${number}: ${itemResult.reason instanceof Error ? itemResult.reason.message : "GitHub read failed."}`);
         setRefreshing(false);
         return;
       }
 
-      const pull = item.pull ?? null;
-      const runs = checkRunsFrom(checks?.ok ? checks : null);
-      const tally: ReviewTally = {
-        approved: pull?.reviews?.approved ?? EMPTY_TALLY.approved,
-        changesRequested: pull?.reviews?.changesRequested ?? EMPTY_TALLY.changesRequested,
-        commented: pull?.reviews?.commented ?? EMPTY_TALLY.commented,
-      };
+      const item = itemResult.value;
+      const checks = checksResult.status === "fulfilled" ? checksResult.value : null;
+      const comments = commentsResult.status === "fulfilled" ? commentsResult.value : null;
+      const failures: string[] = [];
+      if (!item.headSha) failures.push("Pull request head is unavailable.");
+      if (!checks || !Array.isArray(checks.runs) || !Array.isArray(checks.statuses)) {
+        failures.push(checksResult.status === "rejected" && checksResult.reason instanceof Error
+          ? `Checks: ${checksResult.reason.message}` : "Checks response is incomplete.");
+      } else if (checks.sha !== item.headSha) {
+        failures.push("Checks refer to a different or unknown pull request head; refresh to reconcile.");
+      }
+      if (!comments || !Array.isArray(comments.reviewThreads) || !Array.isArray(comments.reviews)) {
+        failures.push(commentsResult.status === "rejected" && commentsResult.reason instanceof Error
+          ? `Review threads: ${commentsResult.reason.message}` : "Review threads response is incomplete.");
+      }
+      const runs = checks?.sha === item.headSha ? checkRunsFrom(checks) : [];
 
       setFacts({
-        repo,
-        number,
-        state: item.state ?? "open",
-        draft: item.draft === true,
-        merged: item.merged === true,
-        headRef: pull?.headRef ?? "",
-        baseRef: pull?.baseRef ?? "",
-        headSha: pull?.headSha ?? "",
-        commits: pull?.commits ?? 0,
-        additions: pull?.additions ?? 0,
-        deletions: pull?.deletions ?? 0,
-        changedFiles: pull?.changedFiles ?? 0,
-        // `mergeable` is absent (not false) when the `pull=1` block degraded —
-        // unknown, which the banner reports rather than guessing.
-        mergeable: typeof pull?.mergeable === "boolean" ? pull.mergeable : null,
-        mergeableState: pull?.mergeableState ?? "unknown",
-        reviews: tally,
+        ...itemFacts(item, repo, number),
         latestReview: latestSubmittedReview(comments?.ok ? comments.reviews : []),
-        checks: { rollup: summarizeChecks(runs), runs },
+        checks: { rollup: failures.length ? null : summarizeChecks(runs), runs },
         threads: threadsFrom(comments?.ok ? comments : null),
       });
-      setPhase("ready");
-      setError(null);
-      setCheckedAt(Date.now());
+      setPhase(failures.length ? "error" : "ready");
+      setError(failures.length ? failures.join(" ") : null);
+      setCheckedAt(failures.length ? null : Date.now());
       setRefreshing(false);
     },
     [repo, number],
@@ -266,13 +297,21 @@ export function usePrReadiness(pr: { repo: string; number: number } | null): PrR
 
   useEffect(() => {
     void load(false);
-    return () => gate.current.invalidate();
+    return () => {
+      controller.current?.abort();
+      gate.current.invalidate();
+    };
   }, [load]);
 
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
   const refresh = useCallback(() => {
-    if (refreshing) return;
-    void load(true);
-  }, [load, refreshing]);
+    void latestLoad.current(true);
+  }, []);
 
-  return { phase, facts, error, checkedAt, refreshing, refresh };
+  const currentFacts = facts?.repo === repo && facts?.number === number ? facts : null;
+  return {
+    phase: pr && facts && !currentFacts ? "loading" : phase,
+    facts: currentFacts, error, checkedAt, refreshing, refresh,
+  };
 }

@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// Keep the production service worker from bypassing page.route fixtures.
+test.use({ serviceWorkers: "block" });
+
 // Review Deck cockpit (cave-8dj4q) — the three-column room where each column
 // answers exactly one question: queue / diff / inspector.
 //
@@ -71,7 +74,27 @@ const SESSIONS = [
   },
 ];
 
-const PULLS: Record<string, unknown> = {
+type PullFixture = {
+  state: string;
+  draft: boolean;
+  merged: boolean;
+  isPull: boolean;
+  title?: string;
+  pull: {
+    headRef: string;
+    baseRef: string;
+    headSha: string;
+    commits: number;
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    mergeable: boolean;
+    mergeableState: string;
+    reviews: { approved: number; changesRequested: number; commented: number };
+  };
+};
+
+const PULLS: Record<string, PullFixture> = {
   [BLOCKED]: {
     state: "open",
     draft: false,
@@ -167,7 +190,16 @@ function refOf(url: string): string {
   return `${params.get("repo")}#${params.get("number")}`;
 }
 
-async function mockDeck(page: Page) {
+type DeckFixture = {
+  sessions?: typeof SESSIONS;
+  pulls?: Record<string, PullFixture>;
+  diffs?: typeof DIFFS;
+  itemErrors?: Set<string>;
+  incompleteEvidence?: Set<string>;
+};
+
+async function mockDeck(page: Page, fixture: DeckFixture = {}) {
+  const mutations: string[] = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "reviewer");
@@ -183,19 +215,39 @@ async function mockDeck(page: Page) {
     }),
   );
   await page.route("**/api/sessions/list**", (route) =>
-    route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
+    route.fulfill({ json: { ok: true, sessions: fixture.sessions ?? SESSIONS } }),
+  );
+  await page.route(/\/api\/inbox(\?|$)/, (route) =>
+    route.fulfill({ json: { ok: true, items: [], unreadCount: 0 } }),
+  );
+  await page.route("**/api/inbox/stream**", (route) =>
+    route.fulfill({ status: 204, body: "" }),
   );
   await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
-  await page.route(/\/api\/github\/item\?/, (route) =>
-    route.fulfill({ json: { ok: true, ...((PULLS[refOf(route.request().url())] as object) ?? {}) } }),
-  );
-  await page.route(/\/api\/github\/checks\?/, (route) =>
-    route.fulfill({ json: { ok: true, ...((CHECKS[refOf(route.request().url())] as object) ?? { runs: [] }) } }),
-  );
+  await page.route(/\/api\/github\/item\?/, (route) => {
+    const ref = refOf(route.request().url());
+    return fixture.itemErrors?.has(ref)
+      ? route.fulfill({ status: 503, json: { ok: false, error: "GitHub is temporarily unavailable" } })
+      : route.fulfill({ json: { ok: true, ...((fixture.pulls ?? PULLS)[ref] ?? {}) } });
+  });
+  await page.route(/\/api\/github\/checks\?/, (route) => {
+    const ref = refOf(route.request().url());
+    return route.fulfill({
+      json: {
+        ok: true,
+        sha: (fixture.pulls ?? PULLS)[ref]?.pull.headSha,
+        statuses: [],
+        ...((CHECKS[ref] as object) ?? { runs: [] }),
+      },
+    });
+  });
   await page.route(/\/api\/github\/comments\?/, (route) =>
     route.fulfill({
       json: {
         ok: true,
+        reviewEvidenceComplete: !fixture.incompleteEvidence?.has(refOf(route.request().url())),
+        reviewEvidenceError: fixture.incompleteEvidence?.has(refOf(route.request().url()))
+          ? "GitHub review threads are unavailable." : null,
         ...((COMMENTS[refOf(route.request().url())] as object) ?? {
           canResolve: true,
           reviews: [],
@@ -209,7 +261,7 @@ async function mockDeck(page: Page) {
       json: {
         ok: true,
         truncated: false,
-        ...((DIFFS[refOf(route.request().url())] as object) ?? { total: 0, files: [] }),
+        ...(((fixture.diffs ?? DIFFS)[refOf(route.request().url())] as object) ?? { total: 0, files: [] }),
       },
     }),
   );
@@ -217,10 +269,19 @@ async function mockDeck(page: Page) {
     route.fulfill({
       json: {
         ok: true,
-        files: [{ path: "src/components/chat-view.tsx", status: "modified", additions: 27, deletions: 1 }],
+        repo: true,
+        repoRoot: "/tmp/coven",
+        branch: "main",
+        worktree: null,
+        files: [{ path: "src/components/chat-view.tsx", status: "modified", insertions: 27, deletions: 1 }],
       },
     }),
   );
+  await page.route(/\/api\/github\/(review|merge)(\?|$)/, (route) => {
+    mutations.push(route.request().url());
+    return route.fulfill({ status: 409, json: { ok: false, error: "Unexpected test mutation" } });
+  });
+  return { mutations };
 }
 
 /**
@@ -235,14 +296,17 @@ async function mockDeck(page: Page) {
  * compile of its chunk. CI absorbs that once in the `warmup` project; a local
  * `--no-deps` run pays it here, hence the budget.
  */
-async function openReviewDeck(page: Page) {
-  await mockDeck(page);
+async function openReviewDeck(page: Page, fixture: DeckFixture = {}, expectedRows = SESSIONS.length) {
+  const handles = await mockDeck(page, fixture);
   await page.goto("/?mode=surface:reviewer-review-deck");
   await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 180_000 });
-  await expect(page.locator(".rd-row")).toHaveCount(SESSIONS.length, { timeout: 60_000 });
+  await expect(page.locator(".rd-row")).toHaveCount(expectedRows, { timeout: 60_000 });
+  return handles;
 }
 
 test.describe("Review Deck cockpit", () => {
+  test.describe.configure({ timeout: 180_000 });
+
   test("three columns lay out side by side, and each collapses without stranding the diff", async ({
     page,
   }) => {
@@ -290,6 +354,194 @@ test.describe("Review Deck cockpit", () => {
     await page.getByRole("button", { name: "Collapse the review inspector" }).click();
     await expect(inspector).toBeHidden();
     expect((await box(diff)).width).toBeGreaterThan(wide.diff.width);
+  });
+
+  test.describe("Review Desk clarity", () => {
+    test("terminal PRs, duplicate links and 279 clean branches do not inflate actionable review", async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 980 });
+      const pulls = {
+        ...PULLS,
+        [READY]: { ...PULLS[READY], title: "Share sessions with signed links" },
+        "OpenCoven/coven-cave#5001": { ...PULLS[READY], state: "closed", merged: true },
+        "OpenCoven/coven-cave#5002": { ...PULLS[READY], state: "closed" },
+      };
+      const sessions = [
+        ...SESSIONS,
+        { ...SESSIONS[1], id: "duplicate-ready", title: "A raw duplicate session prompt" },
+        { ...SESSIONS[1], id: "merged", title: "Already merged", pullRequest: { repo: "OpenCoven/coven-cave", number: 5001 } },
+        { ...SESSIONS[1], id: "closed", title: "Already closed", pullRequest: { repo: "OpenCoven/coven-cave", number: 5002 } },
+        ...Array.from({ length: 279 }, (_, index) => ({
+          ...SESSIONS[2], id: `branch-${index}`, title: `Clean branch ${index}`,
+          git: { branch: `work/branch-${index}` }, diff: { additions: 0, deletions: 0 },
+        })),
+      ];
+      const handles = await openReviewDeck(page, { sessions, pulls });
+      await expect(page.locator(".rd-topbar").getByRole("button", { name: "All 3", exact: true })).toBeVisible();
+      await expect(page.locator(".rd-row", { hasText: "Share sessions with signed links" })).toHaveCount(1);
+      await expect(page.locator(".rd-row", { hasText: "Already" })).toHaveCount(0);
+      await expect(page.locator(".rd-topbar").getByRole("button", { name: /Needs review 0/ })).toBeVisible();
+      await expect(page.locator(".rd-row", { hasText: "Share sessions" }).locator(".rd-add")).toHaveText("+410");
+
+      await page.getByRole("button", { name: "Branches", exact: true }).click();
+      await expect(page.locator(".rd-row")).toHaveCount(279);
+      await page.getByRole("searchbox", { name: "Search review items" }).fill("work/branch-278");
+      await expect(page.locator(".rd-row")).toHaveCount(1);
+      await expect(page.locator(".rd-row-title")).toHaveText("Clean branch 278");
+      await page.getByRole("searchbox", { name: "Search review items" }).press("Escape");
+      await expect(page.locator(".rd-row")).toHaveCount(279);
+      expect(handles.mutations).toEqual([]);
+    });
+
+    test("refresh removes merged reviews, preserves notes and does not strand filtered selections", async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 980 });
+      const pulls = structuredClone(PULLS);
+      const handles = await openReviewDeck(page, { pulls });
+      await page.locator(".rd-row", { hasText: "Session share links" }).click();
+      await expect(page.locator(".rd-decision strong")).toHaveText("Ready to merge");
+      await page.getByRole("textbox", { name: /Review note/ }).fill("Keep the signed-link expiry explicit.");
+      await page.getByRole("searchbox", { name: "Search review items" }).fill("roster");
+      await expect(page.locator(".rd-selection-notice")).toBeVisible();
+      await expect(page.getByRole("textbox", { name: /Review note/ })).toHaveValue("Keep the signed-link expiry explicit.");
+      await page.getByRole("button", { name: "Show in queue" }).click();
+      await expect(page.locator(".rd-row")).toHaveCount(3);
+
+      pulls[READY].state = "closed";
+      pulls[READY].merged = true;
+      await page.getByRole("button", { name: "Refresh review queue" }).click();
+      await expect(page.locator(".rd-row")).toHaveCount(2);
+      await expect(page.locator(".rd-workbench-line h2")).not.toHaveText("Session share links");
+      await expect(page.locator(".rd-verdict-primary")).not.toHaveText("Squash & merge");
+
+      pulls[READY].state = "open";
+      pulls[READY].merged = false;
+      await expect(page.getByRole("button", { name: "Refresh review queue" })).toBeEnabled();
+      await page.getByRole("button", { name: "Refresh review queue" }).click();
+      await expect(page.locator(".rd-row")).toHaveCount(3);
+      await page.locator(".rd-row", { hasText: "Session share links" }).click();
+      await expect(page.getByRole("textbox", { name: /Review note/ })).toHaveValue("Keep the signed-link expiry explicit.");
+      expect(handles.mutations).toEqual([]);
+    });
+
+    test("GitHub failures remain visible and non-authorizing, with a working retry", async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 980 });
+      const itemErrors = new Set([BLOCKED]);
+      const handles = await openReviewDeck(page, { itemErrors });
+      await expect(page.locator(".rd-queue [role=alert]")).toBeVisible();
+      await expect(page.locator(".rd-row", { hasText: "Roster group chat protocol" }).locator(".rd-add")).toHaveCount(0);
+      await expect(page.locator(".rd-row", { hasText: "Roster group chat protocol" })).toContainText("Diff totals unavailable");
+      await page.locator(".rd-row", { hasText: "Roster group chat protocol" }).click();
+      await expect(page.locator(".rd-read-error")).toBeVisible();
+      await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
+      await expect(page.locator(".rd-verdict-primary")).toHaveText("GitHub state unavailable");
+      itemErrors.clear();
+      await page.getByRole("button", { name: "Retry GitHub read", exact: true }).click();
+      await expect(page.locator(".rd-read-error")).toHaveCount(0);
+      await expect(page.locator(".rd-queue [role=alert]")).toHaveCount(0);
+      await expect(page.locator(".rd-decision strong")).toHaveText("Not safe to merge");
+      expect(handles.mutations).toEqual([]);
+    });
+
+    test("an approved PR cannot merge when empty thread arrays represent missing evidence", async ({ page }) => {
+      await page.setViewportSize({ width: 1600, height: 980 });
+      const incompleteEvidence = new Set([READY]);
+      const handles = await openReviewDeck(page, { incompleteEvidence });
+      await page.locator(".rd-row", { hasText: "Session share links" }).click();
+      await expect(page.locator(".rd-read-error")).toContainText("GitHub review threads are unavailable.");
+      await expect(page.locator(".rd-verdict-primary")).toBeDisabled();
+      incompleteEvidence.clear();
+      await page.getByRole("button", { name: "Retry GitHub read", exact: true }).click();
+      await expect(page.locator(".rd-decision strong")).toHaveText("Ready to merge");
+      await expect(page.locator(".rd-verdict-primary")).toBeEnabled();
+      expect(handles.mutations).toEqual([]);
+    });
+
+    test("compact typography, adaptive panes, file search and reading options work across themes", async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: 1600, height: 980 });
+      const longLine = `+export const reviewDescription = "${"A long source line remains fully readable. ".repeat(12)}";`;
+      const files = Array.from({ length: 16 }, (_, index) => ({
+        filename: `src/features/conversations/${index === 0 ? "permissions" : `configuration-${index}`}/route.ts`,
+        status: "modified", additions: 24, deletions: 8,
+        patch: ["@@ -1,3 +1,4 @@", " export const enabled = true;", longLine, " export default enabled;"].join("\n"),
+      }));
+      await openReviewDeck(page, { diffs: { ...DIFFS, [BLOCKED]: { total: files.length, files } } });
+      await page.locator(".rd-row", { hasText: "Roster group chat protocol" }).click();
+      await expect(page.getByRole("tab", { name: files[0].filename, exact: true })).toBeVisible();
+      const typography = await page.locator(".rd-stage").evaluate((stage) => ({
+        body: parseFloat(getComputedStyle(stage).fontSize),
+        button: parseFloat(getComputedStyle(stage.querySelector(".rd-segment")!).fontSize),
+        chip: parseFloat(getComputedStyle(stage.querySelector(".rd-file-chip")!).fontSize),
+      }));
+      expect(typography.button).toBeLessThan(typography.body);
+      expect(typography.chip).toBeLessThan(typography.body);
+      await page.screenshot({ path: testInfo.outputPath("review-desk-wide-dark.png"), animations: "disabled" });
+
+      const queueGutter = page.getByRole("separator", { name: "Resize the queue" });
+      const before = Number(await queueGutter.getAttribute("aria-valuenow"));
+      await queueGutter.focus();
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(async () => Number(await queueGutter.getAttribute("aria-valuenow"))).toBeGreaterThan(before);
+
+      await page.setViewportSize({ width: 1120, height: 900 });
+      await expect(page.locator(".rd-queue")).toBeVisible();
+      await expect(page.locator(".rd-inspector")).toHaveCount(0);
+      await expect(page.locator(".rd-mobile-tabs")).toBeHidden();
+      const queue = await page.locator(".rd-queue").boundingBox();
+      const diff = await page.locator(".rd-diff-card").boundingBox();
+      expect(queue && diff && queue.x + queue.width <= diff.x).toBeTruthy();
+      expect(diff?.width).toBeGreaterThan(400);
+      await page.getByRole("button", { name: "Show the review inspector" }).click();
+      await expect(page.locator(".rd-queue")).toHaveCount(0);
+      await expect(page.locator(".rd-diff-card")).toBeVisible();
+      await page.getByRole("button", { name: "Collapse the review inspector" }).click();
+      await expect(page.getByRole("button", { name: "Show the review inspector" })).toBeFocused();
+
+      await page.getByRole("button", { name: "Browse changed files" }).click();
+      const navigator = page.getByRole("dialog", { name: "All changed files" });
+      await expect(navigator.getByRole("searchbox")).toBeFocused();
+      await navigator.getByRole("searchbox").fill("configuration-15");
+      await navigator.getByRole("option").click();
+      await expect(page.getByRole("tab", { name: files[15].filename })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("button", { name: "Browse changed files" })).toBeFocused();
+      const refreshedDiff = page.waitForResponse((response) =>
+        response.url().includes("/api/github/diff?") && refOf(response.url()) === BLOCKED,
+      );
+      await page.getByRole("button", { name: "Refresh review queue" }).click();
+      await refreshedDiff;
+      await expect(page.getByRole("tab", { name: files[15].filename })).toHaveAttribute("aria-selected", "true");
+      await page.getByRole("tab", { name: files[15].filename }).focus();
+      await page.keyboard.press("Home");
+      await expect(page.getByRole("tab", { name: files[0].filename })).toBeFocused();
+
+      await page.getByRole("button", { name: "Diff reading options" }).click();
+      await page.getByRole("checkbox", { name: "Wrap long lines" }).check();
+      await page.getByRole("checkbox", { name: "Hide whitespace pairs" }).check();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: "Diff reading options" })).toBeFocused();
+      await expect(page.locator(".rd-diff")).toHaveAttribute("data-wrap", "true");
+      expect(await page.locator(".rd-diff").evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:review-deck:diff-preferences")!).wrapLines)).toBe(true);
+      await page.evaluate(() => document.documentElement.setAttribute("data-mode", "light"));
+      await page.screenshot({ path: testInfo.outputPath("review-desk-medium-light.png"), animations: "disabled" });
+      expect(await page.locator(".rd-diff-card").evaluate((card) =>
+        getComputedStyle(card).backgroundColor === getComputedStyle(card.querySelector(".rd-diff")!).backgroundColor,
+      )).toBe(true);
+
+      await page.setViewportSize({ width: 640, height: 850 });
+      await expect(page.locator(".rd-mobile-tabs")).toBeVisible();
+      await page.getByRole("tab", { name: "Queue", exact: true }).click();
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByRole("tab", { name: "Diff", exact: true })).toBeFocused();
+      await expect(page.locator(".rd-diff-card")).toBeVisible();
+      await page.getByRole("tab", { name: "Inspector", exact: true }).click();
+      await page.getByRole("button", { name: "Collapse the review inspector" }).click();
+      await expect(page.locator(".rd-diff-card")).toBeVisible();
+      await page.evaluate(() => {
+        document.documentElement.setAttribute("data-theme", "tide");
+        document.documentElement.setAttribute("data-mode", "dark");
+      });
+      await page.screenshot({ path: testInfo.outputPath("review-desk-narrow-tide.png"), animations: "disabled" });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    });
   });
 
   test("the inspector's decision and blockers come from the mocked GitHub state", async ({ page }) => {
@@ -353,7 +605,7 @@ test.describe("Review Deck cockpit", () => {
     await page.setViewportSize({ width: 1600, height: 980 });
     await openReviewDeck(page);
 
-    await page.setViewportSize({ width: 820, height: 900 });
+    await page.setViewportSize({ width: 720, height: 900 });
     await expect(page.locator(".rd-mobile-tabs")).toBeVisible();
     // "files" is the default view, so the diff survives the narrowing.
     await expect(page.locator(".rd-diff-card")).toBeVisible();

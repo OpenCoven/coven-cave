@@ -32,6 +32,8 @@
   container: review-deck / inline-size;
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
 
 .rd-stage *,
@@ -40,14 +42,11 @@
   box-sizing: border-box;
 }
 
-.rd-stage button,
-.rd-stage input,
-.rd-stage select,
-.rd-stage textarea {
+:where(.rd-stage button, .rd-stage input, .rd-stage select, .rd-stage textarea) {
   font: inherit;
 }
 
-.rd-stage button {
+:where(.rd-stage button) {
   color: inherit;
 }
 

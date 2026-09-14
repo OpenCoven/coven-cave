@@ -141,6 +141,7 @@ export function useReviewSource(input: {
   latestScope.current = scope;
   const listGate = useRef(createReviewRequestGate());
   const patchGate = useRef(createReviewRequestGate());
+  const lastOpened = useRef<{ scope: string; path: string } | null>(null);
 
   const repo = pr?.repo ?? null;
   const number = pr?.number ?? null;
@@ -231,6 +232,7 @@ export function useReviewSource(input: {
 
   const open = useCallback(
     (path: string) => {
+      lastOpened.current = { scope, path };
       setOpenPath(path);
       const file = files.find((candidate) => candidate.path === path) ?? null;
 
@@ -266,13 +268,20 @@ export function useReviewSource(input: {
     [files, kind, projectRoot, scope],
   );
 
-  // Open the first changed file once a list lands, so the center pane is never
-  // blank while there is something to read.
   useEffect(() => {
-    if (openPath == null && phase === "ready" && files.length > 0) open(files[0].path);
-  }, [openPath, phase, files, open]);
+    if (openPath == null && phase === "ready" && files.length > 0) {
+      const previous = lastOpened.current;
+      const retained = previous?.scope === scope && files.some((file) => file.path === previous.path);
+      open(retained ? previous.path : files[0].path);
+    }
+  }, [openPath, phase, files, open, scope]);
 
   const filesShown = files.length;
+  const latestLoadList = useRef(loadList);
+  latestLoadList.current = loadList;
+  const retry = useCallback(() => {
+    void latestLoadList.current();
+  }, []);
 
   return useMemo(
     () => ({
@@ -287,8 +296,8 @@ export function useReviewSource(input: {
       openPath,
       openPatch,
       open,
-      retry: () => void loadList(),
+      retry,
     }),
-    [kind, phase, error, files, filesShown, filesTotal, truncated, localBranch, openPath, openPatch, open, loadList],
+    [kind, phase, error, files, filesShown, filesTotal, truncated, localBranch, openPath, openPatch, open, retry],
   );
 }

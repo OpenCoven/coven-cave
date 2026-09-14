@@ -46,14 +46,13 @@ export function ReviewFileNavigator({
 }) {
   const [mode, setMode] = useState<NavMode>("flat");
   const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [collapsedDirs, setCollapsedDirs] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [focused, setFocused] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (searchOpen) searchRef.current?.focus();
-  }, [searchOpen]);
+    searchRef.current?.focus();
+  }, []);
 
   const visible = useMemo(() => filterFiles(files, query), [files, query]);
   const rows = useMemo(() => buildNavRows(visible, { mode, collapsedDirs }), [visible, mode, collapsedDirs]);
@@ -136,22 +135,6 @@ export function ReviewFileNavigator({
           <button
             type="button"
             className="rd-nav-toggle focus-ring"
-            data-active={searchOpen || query ? "true" : undefined}
-            aria-expanded={searchOpen}
-            aria-label="Filter changed files"
-            title="Filter files"
-            onClick={() => {
-              setSearchOpen((open) => {
-                if (open) setQuery("");
-                return !open;
-              });
-            }}
-          >
-            <Icon name="ph:magnifying-glass" width={12} height={12} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="rd-nav-toggle focus-ring"
             data-active={mode === "tree" ? "true" : undefined}
             aria-pressed={mode === "tree"}
             aria-label="Group files as a directory tree"
@@ -181,7 +164,6 @@ export function ReviewFileNavigator({
             <Icon name="ph:sidebar-simple" width={12} height={12} aria-hidden />
           </button>
         </div>
-        {searchOpen ? (
           <SearchInput
             ref={searchRef}
             value={query}
@@ -191,7 +173,6 @@ export function ReviewFileNavigator({
             aria-label="Filter changed files"
             containerClassName="rd-nav-search"
           />
-        ) : null}
         {capped ? (
           <p
             className="rd-nav-trunc"

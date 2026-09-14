@@ -160,7 +160,7 @@ test("readiness and actions fail closed without an exact GitHub state", () => {
   assert.match(surface, /readinessPhase: readiness\.phase/);
   assert.match(surface, /state: facts\?\.state/);
   assert.match(surface, /draft: facts\?\.draft/);
-  assert.match(surface, /if \(!canAct \|\| !selectedPullRequest \|\| busy\) return false/);
+  assert.match(surface, /if \(!canAct \|\| !facts\?\.headSha \|\| !selectedPullRequest \|\| busy\) return false/);
   assert.match(verdict, /Actions are held until the pull request's state loads/);
 });
 
@@ -186,7 +186,10 @@ test("the reviewer surface is orchestration, not a monolithic renderer", () => {
   ]) {
     assert.match(surface, new RegExp(`<${component}`));
   }
-  assert.ok(surface.split("\n").length < 900, "orchestrator should stay bounded");
+  for (const hook of ["useReviewDeckModel", "useReviewSource", "useReviewPanes"]) {
+    assert.match(surface, new RegExp(`${hook}\\(`));
+  }
+  assert.doesNotMatch(surface, /<textarea|function parseDiffLines|new ResizeObserver/);
 });
 
 test("deck-scoped chrome lives in the top bar and item-scoped chrome does not", () => {
@@ -198,6 +201,11 @@ test("deck-scoped chrome lives in the top bar and item-scoped chrome does not", 
   assert.doesNotMatch(header, /onBucketFilter/);
   // …and the reverse: the verdict is not duplicated into the top bar.
   assert.doesNotMatch(topbar, /Squash & merge|Request changes/);
+  const refresh = topbar.indexOf('aria-label="Refresh review queue"');
+  const overflow = topbar.indexOf("<OverflowMenu");
+  assert.ok(refresh > 0 && overflow > refresh, "global refresh must be directly reachable outside overflow");
+  assert.match(topbar, /onClick=\{onRefresh\}/);
+  assert.match(surface, /const refreshReview = useCallback\(\(\) => \{\s*refreshQueue\(\);\s*readiness\.refresh\(\);\s*source\.retry\(\);/);
 });
 
 test("the queue names a reason it actually read, and never counts checks", () => {
@@ -353,7 +361,7 @@ test("tone is one custom property, never a second hue per state", () => {
 
 test("the narrow-width switcher is a sibling of the layout, never inside a pane", () => {
   // It used to render inside the workspace header, which lives in `.rd-main` —
-  // and the ≤58rem rules hide `.rd-main` in the queue and inspector views. So
+  // and the narrow rules hide `.rd-main` in the queue and inspector views. So
   // switching away from the diff hid the control that switches back. Nothing
   // in a source-text assertion could see that; driving the surface at 820px
   // could, and did.
@@ -377,8 +385,8 @@ test("a verdict confirms on BOTH channels, and is read aloud only once", () => {
   for (const verb of ["Approved", "Requested changes on", "Merged"]) {
     assert.match(surface, new RegExp(`confirm\\(\\s*\`${verb}`));
   }
-  // …and a stale confirmation never outlives the item it described.
-  assert.match(surface, /toast\.clear\(\);/);
+  // Automatic removal of a merged item must not erase its success receipt.
+  assert.doesNotMatch(surface, /toast\.clear\(\);/);
 });
 
 test("the toast anchors to the deck, and does not slide under reduced motion", () => {
@@ -394,8 +402,10 @@ test("the toast anchors to the deck, and does not slide under reduced motion", (
 
 test("responsive and accessibility contracts are explicit", () => {
   assert.match(css, /container: review-deck \/ inline-size/);
-  assert.match(css, /@container review-deck \(max-width: 78rem\)/);
-  assert.match(css, /@container review-deck \(max-width: 58rem\)/);
+  assert.match(css, /@container review-deck \(max-width: 48rem\)/);
+  assert.match(panes, /setLayout\(width <= 48 \* rem \? "narrow" : width <= 78 \* rem \? "medium" : "wide"\)/);
+  assert.match(panes, /queueOpen && !\(layout === "medium" && inspectorOpen\)/);
+  assert.doesNotMatch(css, /@container review-deck \(max-width: (?:58|78)rem\)/);
   assert.match(css, /min-height: var\(--touch-target\)/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.rd-stage\[data-mobile-view="queue"\] \.rd-queue/);
@@ -405,6 +415,7 @@ test("responsive and accessibility contracts are explicit", () => {
   assert.match(rail, /role="tablist" aria-label="Changed files"/);
   // The mix bar is decoration for a sighted reader and a sentence for everyone else.
   assert.match(queue, /aria-label=\{`Queue mix: \$\{summary\}`\}/);
+  assert.match(css, /:where\(\.rd-stage button, \.rd-stage input, \.rd-stage select, \.rd-stage textarea\) \{\s*font: inherit;/);
 });
 
 test("the Review Deck documentation names the focused review run", () => {

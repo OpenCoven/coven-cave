@@ -50,6 +50,8 @@ export type LatestReview = { state: string; author: string; submittedAt: string 
 export type PrFacts = {
   repo: string;
   number: number;
+  title?: string;
+  statsKnown?: boolean;
   state: string;
   draft: boolean;
   merged: boolean;
@@ -213,7 +215,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
  * threads. `mergeable: null` is not `true` — an unknown never reads as ready.
  */
 export function isReadyToMerge(pr: PrFacts | null): boolean {
-  if (!pr) return false;
+  if (!pr || pr.merged) return false;
   return deriveReviewLandingState({
     state: pr.state,
     draft: pr.draft,
@@ -242,7 +244,11 @@ export type ReviewBucket = "awaiting" | "changes" | "blocked" | "ready" | "draft
 export type PrBucketFacts = Pick<
   PrFacts,
   "state" | "draft" | "merged" | "mergeable" | "mergeableState" | "reviews" | "baseRef"
->;
+> & Partial<Pick<PrFacts, "title" | "statsKnown" | "headSha" | "additions" | "deletions" | "changedFiles">>;
+
+export function isTerminalPr(pr: Pick<PrBucketFacts, "state" | "merged"> | null | undefined): boolean {
+  return pr?.merged === true || pr?.state === "closed" || pr?.state === "merged";
+}
 
 /**
  * `mergeable_state` values that mean GitHub itself will refuse the merge.
@@ -254,19 +260,18 @@ const BLOCKING_MERGE_STATES = new Set(["blocked", "dirty", "behind", "draft"]);
 /**
  * The one bucket an item belongs to. Exclusive by construction, so the summary
  * strip's counts always add up to the deck and a reviewer's in-visit clicking
- * can never inflate one. A session with no pull request is review material
- * awaiting a reviewer's eyes, not a PR state; a pull request whose state hasn't
- * been read yet is "unread" rather than being guessed into a bucket.
+ * can never inflate one. Local and unknown items stay outside GitHub counts.
+ * Terminal PRs are removed upstream and never contribute a blocked count.
  */
 export function reviewBucket(pr: PrBucketFacts | null | undefined, hasPullRequest = false): ReviewBucket {
-  if (!pr) return hasPullRequest ? "unread" : "awaiting";
+  if (!hasPullRequest || !pr || isTerminalPr(pr) || pr.state !== "open") return "unread";
   if (pr.draft) return "draft";
-  if (pr.state !== "open") return "blocked";
   if (pr.reviews.changesRequested > 0) return "changes";
   if (pr.mergeable === false || BLOCKING_MERGE_STATES.has(pr.mergeableState)) return "blocked";
   // "clean" is GitHub's own all-clear: mergeable, required checks green,
   // required reviews satisfied. Anything short of it still needs someone.
   if (pr.mergeable === true && pr.mergeableState === "clean" && pr.reviews.approved > 0) return "ready";
+  if (pr.mergeable === null || pr.mergeableState === "unknown") return "unread";
   return "awaiting";
 }
 
@@ -277,9 +282,17 @@ export function reviewStateMeta(
   pr: PrBucketFacts | null | undefined,
   options: { hasPullRequest: boolean; hasLocalChanges: boolean },
 ): ReviewStateMeta {
+  if (!options.hasPullRequest) {
+    return options.hasLocalChanges
+      ? { label: "Local changes", tone: "muted", title: "Uncommitted work in the session's project — no pull request is linked." }
+      : { label: "No changes", tone: "muted", title: "Nothing to review in this session's working tree." };
+  }
+  if (isTerminalPr(pr)) {
+    return { label: pr?.merged ? "Merged" : "Closed", tone: "muted", title: `Pull request is ${pr?.merged ? "merged" : "closed"}.` };
+  }
   switch (reviewBucket(pr, options.hasPullRequest)) {
     case "unread":
-      return { label: "Reading…", tone: "muted", title: "Reading this pull request's state from GitHub." };
+      return { label: "Unknown", tone: "muted", title: "GitHub state is unavailable or incomplete; excluded from review counts." };
     case "draft":
       return { label: "Draft", tone: "muted", title: "Draft pull request — not open for review yet." };
     case "changes":
@@ -606,13 +619,11 @@ export function deckCaption(input: {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const outside: string[] = [];
   if (input.drafts > 0) outside.push(plural(input.drafts, "draft"));
-  if (input.unread > 0) outside.push(`${input.unread} still being read`);
+  if (input.local > 0) outside.push(`${plural(input.local, "local session")} with no GitHub state`);
+  if (input.unread > 0) outside.push(`${input.unread} with unconfirmed GitHub state`);
   if (input.skipped > 0) outside.push(`${input.skipped} past the read cap`);
 
-  const lead =
-    input.local > 0
-      ? `${input.counted} counted · ${plural(input.local, "local session")} with no GitHub state`
-      : `${input.counted} counted from live GitHub review state`;
+  const lead = `${input.counted} counted from live GitHub review state`;
 
   return outside.length > 0 ? `${lead} · outside the counts: ${outside.join(", ")}` : lead;
 }

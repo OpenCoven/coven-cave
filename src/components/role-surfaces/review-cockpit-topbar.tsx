@@ -59,13 +59,7 @@ export function ReviewCockpitTopBar({
   onRefresh: () => void;
 }) {
   return (
-    <header className="rd-topbar">
-      <span className="rd-topbar-brand">
-        <Icon name="ph:git-pull-request" width={15} height={15} aria-hidden />
-        <strong>Review Deck</strong>
-        {scope ? <span className="rd-topbar-scope">{scope}</span> : null}
-      </span>
-
+    <header className="rd-topbar" aria-label={scope ? `Review queue in ${scope}` : "Review queue controls"}>
       <span
         className="rd-segments"
         role="group"
@@ -76,7 +70,7 @@ export function ReviewCockpitTopBar({
           className="rd-segment focus-ring"
           data-active={bucketFilter == null ? "true" : undefined}
           aria-pressed={bucketFilter == null}
-          title="Everything on the deck"
+          title="Active pull requests and local working changes"
           onClick={() => onBucketFilter(null)}
         >
           All <b>{total}</b>
@@ -140,12 +134,14 @@ export function ReviewCockpitTopBar({
 
       <button
         type="button"
-        className="rd-well-btn rd-well-btn--solo rd-topbar-help focus-ring"
-        aria-label="Review Deck keyboard shortcuts"
-        title="Keyboard shortcuts (?)"
-        onClick={onOpenShortcuts}
+        className="rd-well-btn rd-well-btn--solo focus-ring"
+        aria-label="Refresh review queue"
+        title={`Refresh the queue and selected review · ${refreshLabel}`}
+        aria-busy={refreshing}
+        disabled={refreshing}
+        onClick={onRefresh}
       >
-        ?
+        <Icon name="ph:arrows-clockwise" width={14} height={14} aria-hidden />
       </button>
 
       <OverflowMenu ariaLabel="More Review Deck actions" size="xs">
@@ -160,14 +156,6 @@ export function ReviewCockpitTopBar({
           onSelect={onOpenCheckpoints}
         >
           Local checkpoints
-        </PopoverItem>
-        <PopoverItem
-          icon="ph:arrows-clockwise"
-          disabled={refreshing}
-          title={refreshLabel}
-          onSelect={onRefresh}
-        >
-          {refreshing ? "Re-reading GitHub state…" : "Refresh GitHub state"}
         </PopoverItem>
         <PopoverItem icon="ph:question" onSelect={onOpenShortcuts}>
           Keyboard shortcuts

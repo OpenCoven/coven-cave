@@ -10,47 +10,13 @@
  * the number that decides whether three columns fit.
  */
 
-@container review-deck (max-width: 78rem) {
-  /* The inspector floats over the diff rather than taking a third of it. */
-  .rd-stage[data-inspector-open="true"] .rd-layout,
-  .rd-stage[data-queue-open="true"][data-inspector-open="true"] .rd-layout {
-    grid-template-columns: var(--rd-queue-width) var(--rd-gutter) minmax(0, 1fr);
-  }
-
-  .rd-stage[data-inspector-open="true"]:not([data-queue-open="true"]) .rd-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .rd-inspector {
-    position: absolute;
-    z-index: 4;
-    inset-block: calc(var(--space-12) + var(--space-4)) var(--space-3);
-    inset-inline-end: var(--space-3);
-    width: min(var(--rd-inspector-width), calc(100% - var(--space-6)));
-    border-radius: var(--radius-card);
-    box-shadow: 0 var(--space-2) var(--space-8)
-      color-mix(in oklch, var(--shadow-color) 38%, transparent);
-  }
-
-  /* Its gutter would resize a pane that is no longer in the grid. */
-  .rd-stage[data-inspector-open="true"] .rd-layout > .rd-gutter:last-of-type {
-    display: none;
-  }
-
-  .rd-diff-option {
-    display: none;
-  }
-}
-
-@container review-deck (max-width: 58rem) {
+/* At 48–78rem the pane model shows queue OR inspector beside the diff.
+   Neither becomes an overlay that obscures the code or keyboard focus. */
+@container review-deck (max-width: 48rem) {
   .rd-topbar {
     height: auto;
     flex-wrap: wrap;
     padding: var(--space-2) var(--space-3);
-  }
-
-  .rd-topbar-scope {
-    display: none;
   }
 
   .rd-segments {
@@ -125,8 +91,18 @@
   }
 
   .rd-mark-btn,
-  .rd-verdict-secondary .rd-btn {
+  .rd-verdict-secondary .rd-btn,
+  .rd-file-chip,
+  .rd-well-seg,
+  .rd-well-btn,
+  .rd-pane-toggle,
+  .rd-chip-btn {
     min-height: var(--touch-target);
+  }
+
+  .rd-well-btn,
+  .rd-pane-toggle {
+    min-width: var(--touch-target);
   }
 
   .rd-workbench-head {
@@ -136,6 +112,20 @@
 
   .rd-workbench-actions {
     margin-inline-start: auto;
+  }
+
+  .rd-queue-head {
+    min-height: calc(var(--touch-target) + var(--space-2));
+  }
+}
+
+/* Popovers are portaled outside the surface's query container. */
+@media (pointer: coarse) {
+  .rd-reading-setting,
+  .rd-file-list-popover .rd-nav-file,
+  .rd-file-list-popover .rd-nav-dir,
+  .rd-file-list-popover button {
+    min-height: var(--touch-target);
   }
 }
 

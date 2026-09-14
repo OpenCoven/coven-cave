@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createRequire } from "node:module";
+import { createElement, type ReactElement } from "react";
+import type { SessionRow } from "@/lib/types";
 
 import {
   checksMeta,
@@ -11,6 +14,7 @@ import {
   evidenceItems,
   failingCheckNames,
   isReadyToMerge,
+  isTerminalPr,
   mergeChecklist,
   mergeChecklistScore,
   prBlockers,
@@ -19,6 +23,18 @@ import {
   reviewStateMeta,
   type PrFacts,
 } from "./review-readiness.ts";
+import { matchesReviewQuery, prKey, reviewQueue } from "./review-deck.ts";
+import { BUCKET_READ_CAP, createDeckBucketStore } from "./review-deck-store.ts";
+import { parseReviewItem, readReviewJson } from "./review-github-read.ts";
+import { parseReadinessChecks, parseReadinessComments, usePrReadiness, type PrReadiness } from "./use-pr-readiness.ts";
+import { useReviewDeckModel, type ReviewDeckModel } from "./use-review-deck-model.ts";
+import { useReviewSource, type ReviewSource } from "./use-review-source.ts";
+import type { ReviewSourceFilter } from "./review-queue";
+
+const { act, create }: {
+  act: (callback: () => void | Promise<void>) => Promise<void>;
+  create: (element: ReactElement) => { update: (element: ReactElement) => void; unmount: () => void };
+} = createRequire(import.meta.url)("react-test-renderer");
 
 /** A pull request GitHub reports as clean, approved, and safe to land. */
 function facts(overrides: Partial<PrFacts> = {}): PrFacts {
@@ -48,6 +64,362 @@ function facts(overrides: Partial<PrFacts> = {}): PrFacts {
 function run(name: string, conclusion: string | null, status = "completed") {
   return { name, status, conclusion, detailsUrl: null };
 }
+
+function queueSession(id: string, overrides: Partial<{
+  pullRequest: { repo: string; number: number } | null;
+  diff: { additions: number; deletions: number } | null;
+  updated_at: string;
+}> = {}) {
+  return {
+    id, title: "Raw session prompt", archived_at: null,
+    harness: "copilot", status: "completed", exit_code: 0,
+    created_at: "2026-09-13T10:00:00Z",
+    attention: { state: "none", since: null, reason: null },
+    git: { branch: "fix/queue" }, workBranch: null,
+    project_root: "/work/repository",
+    pullRequest: null, diff: null, updated_at: "2026-09-13T10:00:00Z",
+    ...overrides,
+  } satisfies SessionRow;
+}
+
+function itemWire() {
+  return {
+    ok: true, isPull: true, state: "open", merged: false, draft: false,
+    title: "Actual GitHub change title", pull: { ...facts() },
+  };
+}
+
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("a retained source retry refreshes the current selection after a late mutation", async (t) => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
+  t.after(() => { Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  const reads: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const number = new URL(String(input), "http://localhost").searchParams.get("number")!;
+    reads.push(number);
+    return Response.json({ ok: true, total: 1, files: [{
+      filename: `${number}.ts`, status: "modified", additions: 1, deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+export const ready = true;",
+    }] });
+  });
+  let source!: ReviewSource;
+  function Probe({ number }: { number: number }) {
+    source = useReviewSource({ pr: { repo: "o/r", number }, projectRoot: null, scope: `session-${number}` });
+    return null;
+  }
+  let root!: ReturnType<typeof create>;
+  try {
+    await act(async () => { root = create(createElement(Probe, { number: 7 })); });
+    const lateRetry = source.retry;
+    await act(async () => { root.update(createElement(Probe, { number: 8 })); });
+    assert.equal(source.phase, "ready");
+    await act(async () => { lateRetry(); });
+    assert.deepEqual(reads, ["7", "8", "8"]);
+    assert.equal(source.phase, "ready");
+    assert.equal(source.openPath, "8.ts");
+    assert.equal(source.retry, lateRetry);
+  } finally {
+    if (root) await act(async () => { root.unmount(); });
+  }
+});
+
+test("279 clean branch sessions never inflate the actionable queue; browsing preserves them", () => {
+  const branches = Array.from({ length: 279 }, (_, i) => queueSession(`branch-${i}`));
+  const prs = Array.from({ length: 6 }, (_, i) =>
+    queueSession(`pr-${i}`, { pullRequest: { repo: "o/r", number: i + 1 } }));
+  const sessions = [...branches, ...prs];
+  assert.equal(reviewQueue(sessions).length, 6);
+  assert.equal(reviewQueue(sessions, { includeBranches: true }).length, 285);
+  const terminal = new Map(prs.map((session) => [
+    prKey(session.pullRequest!), facts({ state: "closed", merged: true }),
+  ]));
+  const active = reviewQueue(sessions).filter((item) => {
+    const pr = item.session.pullRequest;
+    return !pr || !isTerminalPr(terminal.get(prKey(pr)));
+  });
+  assert.equal(active.length, 0);
+  assert.deepEqual(deckSummary(prs.map(() => reviewBucket(facts({ state: "closed" }), true))), {
+    awaiting: 0, changes: 0, blocked: 0, ready: 0,
+  });
+});
+
+test("PR identity deduplicates case-insensitively with stable session selection", () => {
+  const a = queueSession("a", { pullRequest: { repo: "O/R", number: 7 } });
+  const b = queueSession("b", { pullRequest: { repo: "o/r", number: 7 } });
+  const other = queueSession("c", { pullRequest: { repo: "else/r", number: 7 } });
+  assert.deepEqual(reviewQueue([b, other, a]).map(({ session }) => session.id), ["a", "c"]);
+  b.updated_at = "2026-09-14T10:00:00Z";
+  assert.deepEqual(reviewQueue([a, b, other]).map(({ session }) => session.id), ["a", "c"]);
+  assert.equal(reviewQueue([queueSession("local", { diff: { additions: 3, deletions: 0 } })]).length, 1);
+  assert.equal(reviewQueue([a])[0].session, a, "the representative is the real session, not a synthesized copy");
+});
+
+test("queue search matches GitHub title, PR reference, repository and branch", () => {
+  const session = queueSession("a", { pullRequest: { repo: "OpenCoven/coven-cave", number: 123 } });
+  for (const query of ["real change", "  #123  ", "OPENCOVEN", "fix/queue", "repository", "coven-cave change"]) {
+    assert.equal(matchesReviewQuery(session, query, "Real change title"), true, query);
+  }
+  assert.equal(matchesReviewQuery(session, "missing title", "Real change title"), false);
+  assert.equal(matchesReviewQuery(session, "", "Real change title"), true);
+});
+
+test("item reads use GitHub title and stats, never malformed-open or missing-zero facts", () => {
+  const parsed = parseReviewItem(itemWire());
+  assert.equal(parsed.title, "Actual GitHub change title");
+  assert.equal(parsed.additions, 10);
+  assert.equal(parsed.deletions, 3);
+  assert.equal(parsed.statsKnown, true);
+  for (const state of [undefined, null, "", "unknown", 42]) {
+    assert.throws(() => parseReviewItem({ ...itemWire(), state }), /incomplete/);
+  }
+  assert.throws(() => parseReviewItem({ ...itemWire(), pull: null }), /unavailable/);
+  assert.throws(() => parseReviewItem({ ...itemWire(), pull: { ...facts(), reviews: {} } }), /unavailable/);
+  assert.equal(isTerminalPr(parseReviewItem({ ...itemWire(), state: "closed", pull: null })), true);
+  const missingStats = parseReviewItem({ ...itemWire(), pull: { ...facts(), additions: undefined } });
+  assert.equal(missingStats.additions, undefined);
+  assert.equal(missingStats.statsKnown, false);
+});
+
+test("missing checks/head and malformed threads fail explicitly rather than empty-green", () => {
+  assert.throws(() => parseReadinessChecks({ ok: true, runs: [], statuses: [] }), /incomplete/);
+  assert.throws(() => parseReadinessChecks({ ok: true, sha: "head", runs: [null], statuses: [] }), /incomplete/);
+  assert.throws(() => parseReadinessComments({ ok: true }), /incomplete/);
+  assert.throws(() => parseReadinessComments({ ok: true, reviews: [], reviewThreads: [] }), /incomplete/);
+  assert.throws(() => parseReadinessComments({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [null] }), /incomplete/);
+  assert.deepEqual(parseReadinessComments({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [] }).reviewThreads, []);
+});
+
+test("queue reads cap unique PRs at twelve and run at most three concurrently", async () => {
+  let active = 0;
+  let peak = 0;
+  const reads: number[] = [];
+  const store = createDeckBucketStore(async (pr) => {
+    reads.push(pr.number);
+    peak = Math.max(peak, ++active);
+    await settle();
+    active -= 1;
+    return facts({ number: pr.number });
+  });
+  const prs = Array.from({ length: 14 }, (_, i) => ({ repo: "o/r", number: i + 1 }));
+  store.setPullRequests(prs.flatMap((pr) => [pr, { ...pr, repo: "O/R" }]));
+  while (store.getSnapshot().loading) await settle();
+  assert.equal(reads.length, BUCKET_READ_CAP);
+  assert.equal(new Set(reads).size, BUCKET_READ_CAP);
+  assert.equal(peak, 3);
+  assert.equal(store.getSnapshot().skipped, 2);
+  store.setPullRequests([...prs].reverse());
+  while (store.getSnapshot().loading) await settle();
+  assert.equal(reads.length, 14, "only newly admitted unread identities need a read");
+  store.cancel();
+});
+
+test("selected terminal facts supersede an older queue response without replacing other facts", async () => {
+  let resolve!: (value: ReturnType<typeof facts>) => void;
+  const store = createDeckBucketStore(async (pr) => pr.number === 7
+    ? new Promise<ReturnType<typeof facts>>((done) => { resolve = done; })
+    : facts({ number: pr.number }));
+  store.setPullRequests([{ repo: "o/r", number: 7 }, { repo: "o/r", number: 8 }]);
+  await settle();
+  store.recordFacts(facts({ state: "closed", merged: true }));
+  resolve(facts());
+  await settle();
+  assert.equal(isTerminalPr(store.getSnapshot().facts.get("o/r#7")), true);
+  assert.equal(store.getSnapshot().facts.has("o/r#8"), true);
+  assert.equal(store.getSnapshot().loading, false);
+  store.cancel();
+});
+
+test("refresh aborts the old generation, exposes errors, and does not resurrect terminal PRs", async () => {
+  let oldSignal!: AbortSignal;
+  let resolve!: (value: ReturnType<typeof facts>) => void;
+  let reads = 0;
+  const store = createDeckBucketStore(async (_pr, signal) => {
+    reads += 1;
+    if (reads === 1) {
+      oldSignal = signal;
+      return new Promise<ReturnType<typeof facts>>((done) => { resolve = done; });
+    }
+    throw new Error("offline");
+  });
+  store.setPullRequests([{ repo: "o/r", number: 7 }]);
+  store.recordFacts(facts({ state: "closed", merged: true }));
+  store.refresh();
+  assert.equal(oldSignal.aborted, true);
+  await settle();
+  resolve(facts());
+  await settle();
+  assert.equal(isTerminalPr(store.getSnapshot().facts.get("o/r#7")), true);
+  assert.match(store.getSnapshot().error!, /o\/r#7: offline/);
+  assert.equal(store.getSnapshot().loading, false);
+  store.cancel();
+});
+
+test("failed refresh removes stale green and can recover on an explicit retry", async () => {
+  let fail = false;
+  const store = createDeckBucketStore(async () => {
+    if (fail) throw new Error("denied");
+    return facts();
+  });
+  store.setPullRequests([{ repo: "o/r", number: 7 }]);
+  await settle();
+  fail = true;
+  store.refresh();
+  assert.equal(store.getSnapshot().facts.size, 0);
+  await settle();
+  assert.match(store.getSnapshot().error!, /denied/);
+  fail = false;
+  store.refresh();
+  await settle();
+  assert.equal(store.getSnapshot().facts.size, 1);
+  assert.equal(store.getSnapshot().error, null);
+  store.cancel();
+});
+
+test("GitHub reads bound hung transports and report HTTP/JSON failures", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => new Promise<Response>(() => {}));
+  await assert.rejects(readReviewJson("/item", controller.signal, 5), /timed out/);
+  t.mock.restoreAll();
+  t.mock.method(globalThis, "fetch", async () => Response.json({ ok: true }, { status: 403 }));
+  await assert.rejects(readReviewJson("/item", controller.signal), /HTTP 403/);
+  t.mock.restoreAll();
+  t.mock.method(globalThis, "fetch", async () => new Response("not JSON"));
+  await assert.rejects(readReviewJson("/item", controller.signal), SyntaxError);
+  controller.abort();
+  await assert.rejects(readReviewJson("/item", controller.signal), /abort/i);
+});
+
+test("queue hook derives unique actionable counts, filters, search, and selected reconciliation", async (t) => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
+  t.after(() => { Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const number = Number(new URL(String(input), "http://localhost").searchParams.get("number"));
+    if (number === 9) return Response.json({ ok: false }, { status: 403 });
+    return Response.json({
+      ...itemWire(), draft: number === 8, state: number === 7 ? "closed" : "open", merged: number === 7,
+    });
+  });
+  const sessions = [
+    ...[7, 8, 9, 10].map((number) => queueSession(`pr-${number}`, { pullRequest: { repo: "o/r", number } })),
+    queueSession("z-duplicate", { pullRequest: { repo: "O/R", number: 10 } }),
+    queueSession("local", { diff: { additions: 4, deletions: 2 } }),
+    queueSession("branch"),
+  ];
+  let model!: ReviewDeckModel;
+  function Probe({ filter = "all", query = "", bucket = null }: {
+    filter?: ReviewSourceFilter; query?: string; bucket?: "awaiting" | null;
+  }) {
+    model = useReviewDeckModel({ sessions, sourceFilter: filter, query, bucketFilter: bucket, sort: "attention" });
+    return null;
+  }
+  let root!: ReturnType<typeof create>;
+  try {
+    await act(async () => { root = create(createElement(Probe)); });
+    assert.equal(model.counts.queue, 4);
+    assert.equal(model.counts.pullRequests, 3);
+    assert.equal(model.all.length, 5);
+    assert.equal(model.ordered.length, 4);
+    assert.deepEqual(model.summary, { awaiting: 0, changes: 0, blocked: 0, ready: 1 });
+    assert.match(model.error!, /HTTP 403/);
+    const refresh = model.refresh;
+    const recordFacts = model.recordFacts;
+    await act(async () => { root.update(createElement(Probe, { query: "actual title #10" })); });
+    assert.deepEqual(model.ordered.map(({ id }) => id), ["pr-10"]);
+    const row = model.groups[0].items[0];
+    assert.equal(row.title, "Actual GitHub change title");
+    assert.equal(row.additions, 10);
+    assert.equal(row.deletions, 3);
+    await act(async () => { root.update(createElement(Probe, { filter: "local" })); });
+    assert.deepEqual(model.ordered.map(({ id }) => id), ["local"]);
+    await act(async () => { root.update(createElement(Probe, { filter: "branches" })); });
+    assert.deepEqual(model.ordered.map(({ id }) => id), ["branch"]);
+    await act(async () => { root.update(createElement(Probe, { bucket: "awaiting" })); });
+    assert.deepEqual(model.ordered, []);
+    assert.equal(model.refresh, refresh);
+    assert.equal(model.recordFacts, recordFacts);
+    await act(async () => { model.recordFacts(facts({ number: 10, state: "closed", merged: true })); });
+    assert.equal(model.all.some(({ session }) => session.id === "pr-10"), false);
+    assert.equal(model.counts.queue, 3);
+    assert.equal(model.all.some(({ session }) => session.id === "local"), true);
+  } finally {
+    if (root) await act(async () => { root.unmount(); });
+  }
+});
+
+test("selected readiness rejects mismatched check heads and refreshes without stale authority", async (t) => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
+  t.after(() => { Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  let sha = "old-head";
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/checks?")) return Response.json({
+      ok: true, sha, runs: [run("build", "success")], statuses: [],
+    });
+    if (url.includes("/comments?")) return Response.json({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [] });
+    return Response.json(itemWire());
+  });
+  let readiness!: PrReadiness;
+  function Probe() {
+    readiness = usePrReadiness({ repo: "o/r", number: 7 });
+    return null;
+  }
+  let root!: ReturnType<typeof create>;
+  try {
+    await act(async () => { root = create(createElement(Probe)); });
+    assert.equal(readiness.phase, "error");
+    assert.match(readiness.error!, /different or unknown.*head/);
+    assert.equal(isReadyToMerge(readiness.facts), false);
+    assert.equal(readiness.facts?.title, "Actual GitHub change title");
+    const refresh = readiness.refresh;
+    sha = facts().headSha;
+    await act(async () => { readiness.refresh(); });
+    assert.equal(readiness.phase, "ready");
+    assert.equal(readiness.error, null);
+    assert.equal(isReadyToMerge(readiness.facts), true);
+    assert.equal(readiness.refresh, refresh);
+  } finally {
+    if (root) await act(async () => { root.unmount(); });
+  }
+});
+
+test("terminal item facts reconcile promptly and old selection reads are aborted", async (t) => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
+  t.after(() => { Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT"); });
+  const oldSignals: AbortSignal[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.searchParams.get("number") === "7") {
+      if (init?.signal) oldSignals.push(init.signal);
+      if (url.pathname.endsWith("/item")) return Response.json({ ...itemWire(), state: "closed", merged: true });
+      return new Promise<Response>(() => {});
+    }
+    if (url.pathname.endsWith("/checks")) return Response.json({
+      ok: true, sha: facts().headSha, runs: [run("build", "success")], statuses: [],
+    });
+    if (url.pathname.endsWith("/comments")) return Response.json({ ok: true, reviewEvidenceComplete: true, reviews: [], reviewThreads: [] });
+    return Response.json(itemWire());
+  });
+  let readiness!: PrReadiness;
+  function Probe({ number }: { number: number }) {
+    readiness = usePrReadiness({ repo: "o/r", number });
+    return null;
+  }
+  let root!: ReturnType<typeof create>;
+  try {
+    await act(async () => { root = create(createElement(Probe, { number: 7 })); });
+    assert.equal(readiness.phase, "loading", "auxiliary reads are still pending");
+    assert.equal(isTerminalPr(readiness.facts), true, "terminal queue reconciliation need not wait for them");
+    await act(async () => { root.update(createElement(Probe, { number: 8 })); });
+    assert.equal(oldSignals.length, 3);
+    assert.equal(oldSignals.every((signal) => signal.aborted), true);
+    assert.equal(readiness.phase, "ready");
+    assert.equal(readiness.facts?.number, 8);
+    assert.equal(readiness.facts?.merged, false);
+  } finally {
+    if (root) await act(async () => { root.unmount(); });
+  }
+});
 
 // ── Blockers ─────────────────────────────────────────────────────────────────
 
@@ -208,8 +580,8 @@ test("a draft banner outranks its own blockers so the verdict copy stays honest"
 
 // ── Buckets ──────────────────────────────────────────────────────────────────
 
-test("a session with no pull request is awaiting, an unread one is unread", () => {
-  assert.equal(reviewBucket(null, false), "awaiting");
+test("local sessions and unread PRs are outside GitHub attention counts", () => {
+  assert.equal(reviewBucket(null, false), "unread");
   assert.equal(reviewBucket(null, true), "unread");
   assert.equal(reviewBucket(undefined, true), "unread");
 });
@@ -218,7 +590,7 @@ test("buckets are exclusive and follow GitHub's own verdict", () => {
   const base = facts();
   assert.equal(reviewBucket(base, true), "ready");
   assert.equal(reviewBucket({ ...base, draft: true }, true), "draft");
-  assert.equal(reviewBucket({ ...base, state: "closed" }, true), "blocked");
+  assert.equal(reviewBucket({ ...base, state: "closed" }, true), "unread");
   assert.equal(
     reviewBucket({ ...base, reviews: { approved: 1, changesRequested: 1, commented: 0 } }, true),
     "changes",
@@ -228,7 +600,7 @@ test("buckets are exclusive and follow GitHub's own verdict", () => {
   assert.equal(reviewBucket({ ...base, mergeableState: "behind" }, true), "blocked");
   // Mergeable but unapproved, or still computing: awaiting, never ready.
   assert.equal(reviewBucket({ ...base, reviews: { approved: 0, changesRequested: 0, commented: 0 } }, true), "awaiting");
-  assert.equal(reviewBucket({ ...base, mergeable: null, mergeableState: "unknown" }, true), "awaiting");
+  assert.equal(reviewBucket({ ...base, mergeable: null, mergeableState: "unknown" }, true), "unread");
 });
 
 test("changes-requested outranks blocked so a row lands in exactly one bucket", () => {
@@ -263,15 +635,15 @@ test("the caption never claims coverage the strip does not have", () => {
     deckCaption({ counted: 4, local: 0, drafts: 0, unread: 0, skipped: 0 }),
     "4 counted from live GitHub review state",
   );
-  // Local sessions are counted but are not GitHub state, so the lead drops the claim.
+  // Local sessions have review material but cannot count as GitHub readiness.
   assert.equal(
     deckCaption({ counted: 3, local: 1, drafts: 0, unread: 0, skipped: 0 }),
-    "3 counted · 1 local session with no GitHub state",
+    "3 counted from live GitHub review state · outside the counts: 1 local session with no GitHub state",
   );
   // Drafts, unread rows, and rows past the cap are named rather than hidden.
   assert.equal(
     deckCaption({ counted: 5, local: 0, drafts: 2, unread: 1, skipped: 3 }),
-    "5 counted from live GitHub review state · outside the counts: 2 drafts, 1 still being read, 3 past the read cap",
+    "5 counted from live GitHub review state · outside the counts: 2 drafts, 1 with unconfirmed GitHub state, 3 past the read cap",
   );
   assert.match(deckCaption({ counted: 1, local: 2, drafts: 1, unread: 0, skipped: 0 }), /2 local sessions/);
   assert.match(deckCaption({ counted: 1, local: 0, drafts: 1, unread: 0, skipped: 0 }), /outside the counts: 1 draft$/);
@@ -295,12 +667,12 @@ test("the summary counts add up to the deck, leaving drafts and unreads out", ()
 
 test("the queue row's pill reports GitHub's state, and says so while unread", () => {
   const options = { hasPullRequest: true, hasLocalChanges: false };
-  assert.equal(reviewStateMeta(null, options).label, "Reading…");
+  assert.equal(reviewStateMeta(null, options).label, "Unknown");
   assert.equal(reviewStateMeta(facts(), options).label, "Ready to merge");
   assert.equal(reviewStateMeta({ ...facts(), draft: true }, options).label, "Draft");
 
   const closed = reviewStateMeta({ ...facts(), state: "closed", merged: true }, options);
-  assert.equal(closed.label, "Blocked");
+  assert.equal(closed.label, "Merged");
   assert.match(closed.title, /merged/);
 
   const dirty = reviewStateMeta({ ...facts(), mergeable: false, mergeableState: "dirty" }, options);

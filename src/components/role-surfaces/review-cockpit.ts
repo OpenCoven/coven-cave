@@ -186,11 +186,11 @@ export function queueRowReason(
   options: { hasPullRequest: boolean; hasLocalChanges: boolean },
 ): string {
   if (!facts) {
-    if (options.hasPullRequest) return "reading GitHub state";
+    if (options.hasPullRequest) return "GitHub state not confirmed";
     return options.hasLocalChanges ? "uncommitted work" : "";
   }
+  if (facts.merged || facts.state !== "open") return facts.merged ? "merged" : facts.state;
   if (facts.draft) return "draft";
-  if (facts.state !== "open") return facts.merged ? "merged" : facts.state;
   if (facts.reviews.changesRequested > 0) return "changes requested";
   if (facts.mergeableState === "dirty") return `conflicts with ${facts.baseRef}`;
   if (facts.mergeableState === "behind") return `behind ${facts.baseRef}`;
@@ -311,6 +311,10 @@ export function reviewDecision(input: {
   mergeableUnknown: boolean;
   reviewedCount: number;
   readableCount: number;
+  state?: string;
+  merged?: boolean;
+  readinessPhase?: "idle" | "loading" | "ready" | "error";
+  phase?: "idle" | "loading" | "ready" | "error";
 }): ReviewDecision {
   if (!input.selected) {
     return {
@@ -336,6 +340,32 @@ export function reviewDecision(input: {
     };
   }
 
+  if (input.merged || input.state === "closed" || input.state === "merged") {
+    return {
+      headline: input.merged || input.state === "merged" ? "Pull request merged" : "Pull request closed",
+      sub: "This pull request is no longer awaiting review.",
+      next: "Choose another item from the queue.",
+      tone: "muted",
+    };
+  }
+  const phase = input.readinessPhase ?? input.phase;
+  if (phase === "error") {
+    return {
+      headline: "GitHub state unavailable",
+      sub: "The latest read did not establish the state needed for a verdict.",
+      next: "Refresh GitHub state before acting.",
+      tone: "warning",
+    };
+  }
+  if ((phase != null && phase !== "ready") ||
+      (input.state != null && input.state !== "open")) {
+    return {
+      headline: "Reading GitHub state",
+      sub: "Review recommendations wait for the current pull request state.",
+      next: "Wait for the read to finish before acting.",
+      tone: "muted",
+    };
+  }
   if (input.draft) {
     return {
       headline: "Draft — not open for review",
@@ -347,16 +377,20 @@ export function reviewDecision(input: {
 
   if (input.blockers.length > 0) {
     const mine = blockersOwnedByYou(input.blockers);
-    const theirs = input.blockers.length - mine;
+    const theirs = input.blockers.filter((blocker) => blocker.owner === "Author").length;
+    const shared = input.blockers.length - mine - theirs;
+    const ownership = [
+      mine > 0 ? `${mine} need${mine === 1 ? "s" : ""} you` : "",
+      theirs > 0 ? `${theirs} on the author` : "",
+      shared > 0 ? `${shared} need coordination` : "",
+    ].filter(Boolean).join(", ");
     return {
       headline: "Not safe to merge",
-      sub: `${plural(input.blockers.length, "blocker")} · ${
-        mine > 0 ? `${mine} need${mine === 1 ? "s" : ""} you, ` : ""
-      }${theirs} on the author.`,
+      sub: `${plural(input.blockers.length, "blocker")} · ${ownership}.`,
       next:
         mine > 0
-          ? `Clear your ${plural(mine, "item")}, then request changes citing the rest.`
-          : "Request changes citing these blockers.",
+          ? `Clear your ${plural(mine, "item")}, then refresh GitHub state.`
+          : "Review these blockers before choosing a verdict.",
       tone: "danger",
     };
   }
@@ -377,7 +411,9 @@ export function reviewDecision(input: {
     return {
       headline: "Waiting on GitHub",
       sub: input.checksPending
-        ? "Checks are still running; mergeability is still computing."
+        ? input.mergeableUnknown
+          ? "Checks are still running; mergeability is still computing."
+          : "Checks are still running."
         : "GitHub hasn't finished computing the merge commit.",
       next:
         left > 0
@@ -389,10 +425,10 @@ export function reviewDecision(input: {
 
   return {
     headline: "Awaiting your review",
-    sub: "No approving review yet — yours would be the first.",
+    sub: "Review the changes and GitHub evidence before choosing a verdict.",
     next:
       left > 0
-        ? `${readMore}, then approve.`
+        ? `${readMore}, then choose a verdict.`
         : "All files read — approve or request changes.",
     tone: "accent",
   };

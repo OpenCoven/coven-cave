@@ -13,7 +13,7 @@
  * different question ("how much is left?") than the chips ("which one?").
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover } from "@/components/ui/popover";
 import { fileChipState, fileChipWindow } from "./review-cockpit";
@@ -49,6 +49,14 @@ export function ReviewFileRail({
 }) {
   const [listOpen, setListOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement | null>(null);
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const focusPath = useRef<string | null>(null);
+  useEffect(() => {
+    if (openPath && focusPath.current === openPath) {
+      tabRefs.current.get(openPath)?.focus();
+      focusPath.current = null;
+    }
+  }, [openPath]);
 
   const currentIndex = openPath
     ? files.findIndex((file) => file.path === openPath)
@@ -76,16 +84,32 @@ export function ReviewFileRail({
               type="button"
               role="tab"
               aria-selected={current}
+              aria-label={file.path}
+              tabIndex={current ? 0 : -1}
+              ref={(node) => {
+                if (node) tabRefs.current.set(file.path, node);
+                else tabRefs.current.delete(file.path);
+              }}
               className="rd-file-chip focus-ring"
               data-state={state}
               title={`${file.path} · +${file.additions} −${file.deletions}${
                 reviewed.has(file.path) ? " · reviewed" : " · unread"
               }`}
               onClick={() => onOpen(file.path)}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                const index = files.findIndex((item) => item.path === file.path);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? files.length - 1
+                  : (index + (event.key === "ArrowRight" ? 1 : -1) + files.length) % files.length;
+                event.preventDefault();
+                focusPath.current = files[next].path;
+                onOpen(files[next].path);
+              }}
             >
               <i className="rd-file-chip-dot" data-state={state} aria-hidden />
               <span className="rd-file-chip-name">
-                {file.path.split("/").pop()}
+                {files.some((other) => other.path !== file.path && other.path.split("/").pop() === file.path.split("/").pop())
+                  ? file.path : file.path.split("/").pop()}
               </span>
               {comments > 0 ? (
                 <span className="rd-file-chip-badge">{comments}</span>
@@ -93,14 +117,14 @@ export function ReviewFileRail({
             </button>
           );
         })}
-        {window.hidden > 0 || filesShown < filesTotal ? (
-          <>
+      </div>
             <button
               ref={moreRef}
               type="button"
               className="rd-file-chip rd-file-chip--more focus-ring"
               aria-expanded={listOpen}
               aria-haspopup="dialog"
+              aria-label="Browse changed files"
               title={
                 window.hidden > 0
                   ? `${window.hidden} more ${window.hidden === 1 ? "file" : "files"} — open the full list`
@@ -108,15 +132,15 @@ export function ReviewFileRail({
               }
               onClick={() => setListOpen((open) => !open)}
             >
-              <Icon name="ph:dots-three-bold" width={12} height={12} aria-hidden />
-              {window.hidden > 0 ? `+${window.hidden}` : "All"}
+              <Icon name="ph:files" width={12} height={12} aria-hidden />
+              Files {filesTotal}
             </button>
             <Popover
               open={listOpen}
               onOpenChange={setListOpen}
               anchorRef={moreRef}
               placement="bottom-start"
-              minWidth={340}
+              minWidth={280}
               scrollStrategy="content"
               ariaLabel="All changed files"
               className="rd-file-list-popover"
@@ -133,9 +157,6 @@ export function ReviewFileRail({
                 onCollapse={() => setListOpen(false)}
               />
             </Popover>
-          </>
-        ) : null}
-      </div>
 
       <div className="rd-file-progress">
         <span
