@@ -4917,7 +4917,7 @@ export function Workspace() {
                   onOpenSession={(sessionId, familiarId) =>
                     openFamiliarSession(sessionId, familiarId)
                   }
-                  onOpenSessions={() => setMode("chat")}
+                   onOpenSessions={showFamiliarChatList}
                 />
               }
               // Desktop notifications: the same NotificationBell the mobile
