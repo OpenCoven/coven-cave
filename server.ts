@@ -25,7 +25,6 @@ import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
@@ -279,9 +278,6 @@ const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
 const WINDOWS_OWNER_RIGHTS_SID = "S-1-3-4";
 const WINDOWS_WRITABLE_RIGHTS_MASK = 0x500d_0156;
-const WINDOWS_ACL_PROBE_TIMEOUT_MS = 12_000;
-const WINDOWS_ACL_PROBE_MAX_ATTEMPTS = 2;
-const WINDOWS_ACL_PUBLICATION_BUDGET_MS = 24_000;
 
 // The unverified-ownership waiver, inlined from path-ownership.ts for the same
 // reason as the script below. See that module for why it is shaped this way;
@@ -481,18 +477,7 @@ function discoveryPublicationFailure(
   return error;
 }
 
-function standaloneWindowsAclProbeTimedOut(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const failure = error as { code?: unknown; killed?: unknown; signal?: unknown };
-  return failure.code === "ETIMEDOUT"
-    || (failure.killed === true && failure.signal === "SIGTERM");
-}
-
-function assertStandaloneWindowsExclusive(
-  path: string,
-  label: "root" | "target",
-  deadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS,
-): void {
+function assertStandaloneWindowsExclusive(path: string, label: "root" | "target"): void {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   if (standaloneWaivedWindowsPaths.has(path)) return;
   const subject = `Client v1 discovery ${label}`;
@@ -524,50 +509,27 @@ function assertStandaloneWindowsExclusive(
     aces: { sid: string; type: string; rights: number }[];
   };
   try {
-    let rawReport: string | undefined;
-    for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        const remaining = Math.floor(deadline - performance.now());
-        if (remaining <= 0) {
-          throw Object.assign(new Error("the ACL publication probe budget was exhausted"), {
-            code: "ETIMEDOUT",
-          });
-        }
-        rawReport = execFileSync(
-          join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-NoLogo",
-            "-InputFormat",
-            "None",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            WINDOWS_ACL_SCRIPT,
-          ],
-          {
-            env: probeEnv,
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: Math.min(WINDOWS_ACL_PROBE_TIMEOUT_MS, remaining),
-            maxBuffer: 1024 * 1024,
-          },
-        );
-        break;
-      } catch (error) {
-        if (
-          attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS
-          || !standaloneWindowsAclProbeTimedOut(error)
-        ) {
-          throw error;
-        }
-      }
-    }
-    if (rawReport === undefined) {
-      throw new Error("the ACL probe attempt bound was exhausted");
-    }
-    report = JSON.parse(rawReport);
+    report = JSON.parse(execFileSync(
+      join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        WINDOWS_ACL_SCRIPT,
+      ],
+      {
+        env: probeEnv,
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 60_000,
+        maxBuffer: 1024 * 1024,
+      },
+    ));
     // `aces` carries the whole access decision, so a shape this cannot read has
     // to be an error rather than a default: an absent or non-array `aces` reads
     // downstream as "no principal has access" and would therefore admit the
@@ -651,7 +613,6 @@ function requireStandaloneOwner(
   path: string,
   metadata: NonNullable<ReturnType<typeof lstatSync>>,
   label: "root" | "target",
-  windowsAclProbeDeadline?: number,
 ): void {
   // The uid comparison alone was inert on win32 — `process.getuid` is undefined
   // there and `lstat` reports uid 0 for every path — so the discovery record
@@ -672,10 +633,10 @@ function requireStandaloneOwner(
       + `this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`,
     ));
   }
-  assertStandaloneWindowsExclusive(path, label, windowsAclProbeDeadline);
+  assertStandaloneWindowsExclusive(path, label);
 }
 
-function assertStandaloneDiscoveryTarget(path: string, windowsAclProbeDeadline?: number): void {
+function assertStandaloneDiscoveryTarget(path: string): void {
   try {
     const metadata = lstatSync(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -684,7 +645,7 @@ function assertStandaloneDiscoveryTarget(path: string, windowsAclProbeDeadline?:
         new Error(`Client v1 discovery target must be a regular file: ${path}.`),
       );
     }
-    requireStandaloneOwner(path, metadata, "target", windowsAclProbeDeadline);
+    requireStandaloneOwner(path, metadata, "target");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
@@ -692,7 +653,6 @@ function assertStandaloneDiscoveryTarget(path: string, windowsAclProbeDeadline?:
 }
 
 function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
-  const windowsAclProbeDeadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const rootMetadata = lstatSync(root);
@@ -702,7 +662,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
       new Error("Client v1 discovery root must be a real directory."),
     );
   }
-  requireStandaloneOwner(root, rootMetadata, "root", windowsAclProbeDeadline);
+  requireStandaloneOwner(root, rootMetadata, "root");
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
     throw discoveryPublicationFailure(
@@ -742,7 +702,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
   }
 
   const path = clientV1DiscoveryFile();
-  assertStandaloneDiscoveryTarget(path, windowsAclProbeDeadline);
+  assertStandaloneDiscoveryTarget(path);
   let record:
     | {
       version: 1;
@@ -813,7 +773,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    assertStandaloneDiscoveryTarget(path, windowsAclProbeDeadline);
+    assertStandaloneDiscoveryTarget(path);
     renameSync(temporaryPath, path);
     ownsTemporaryPath = false;
     chmodSync(path, 0o600);

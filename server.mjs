@@ -26,7 +26,6 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir as homedir3 } from "node:os";
 import { join as join3, resolve as resolve2 } from "node:path";
-import { performance } from "node:perf_hooks";
 import { promisify as promisify4 } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
@@ -211,13 +210,6 @@ function windowsSystemRoot() {
 function windowsPowerShellPath() {
   return join(windowsSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
-var WINDOWS_ACL_PROBE_TIMEOUT_MS = 12e3;
-var WINDOWS_ACL_PROBE_MAX_ATTEMPTS = 2;
-function windowsAclProbeTimedOut(error) {
-  if (!error || typeof error !== "object") return false;
-  const failure = error;
-  return failure.code === "ETIMEDOUT" || failure.killed === true && failure.signal === "SIGTERM";
-}
 function windowsProbeEnv(path4) {
   const systemRoot = windowsSystemRoot();
   const system32 = join(systemRoot, "System32");
@@ -261,42 +253,30 @@ function parseClientV1WindowsAclReport(raw) {
     })
   };
 }
-function createClientV1WindowsAclProbe(execute = execFileAsync) {
-  return async (path4) => {
-    for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        const { stdout } = await execute(
-          windowsPowerShellPath(),
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-NoLogo",
-            "-InputFormat",
-            "None",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            WINDOWS_ACL_SCRIPT
-          ],
-          {
-            env: windowsProbeEnv(path4),
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: WINDOWS_ACL_PROBE_TIMEOUT_MS,
-            maxBuffer: 1024 * 1024
-          }
-        );
-        return parseClientV1WindowsAclReport(stdout);
-      } catch (error) {
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS || !windowsAclProbeTimedOut(error)) {
-          throw error;
-        }
-      }
+var probeWindowsAcl = async (path4) => {
+  const { stdout } = await execFileAsync(
+    windowsPowerShellPath(),
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-NoLogo",
+      "-InputFormat",
+      "None",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      WINDOWS_ACL_SCRIPT
+    ],
+    {
+      env: windowsProbeEnv(path4),
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 6e4,
+      maxBuffer: 1024 * 1024
     }
-    throw new Error("the ACL probe attempt bound was exhausted");
-  };
-}
-var probeWindowsAcl = createClientV1WindowsAclProbe();
+  );
+  return parseClientV1WindowsAclReport(stdout);
+};
 function exclusivityFindings(report) {
   const findings = [];
   const trusted = /* @__PURE__ */ new Set([report.self, WINDOWS_SYSTEM_SID, WINDOWS_ADMINISTRATORS_SID]);
@@ -2217,9 +2197,6 @@ var WINDOWS_SYSTEM_SID2 = "S-1-5-18";
 var WINDOWS_ADMINISTRATORS_SID2 = "S-1-5-32-544";
 var WINDOWS_OWNER_RIGHTS_SID2 = "S-1-3-4";
 var WINDOWS_WRITABLE_RIGHTS_MASK2 = 1343029590;
-var WINDOWS_ACL_PROBE_TIMEOUT_MS2 = 12e3;
-var WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 = 2;
-var WINDOWS_ACL_PUBLICATION_BUDGET_MS = 24e3;
 var UNVERIFIED_OWNERSHIP_ENV2 = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
 var UNVERIFIED_OWNERSHIP_REASON_ENV2 = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
 var UNVERIFIED_OWNERSHIP_TOKEN2 = "i-accept-unverified-path-ownership";
@@ -2339,12 +2316,7 @@ function discoveryPublicationFailure(category, error) {
   standaloneDiscoveryPublicationFailures.set(error, category);
   return error;
 }
-function standaloneWindowsAclProbeTimedOut(error) {
-  if (!error || typeof error !== "object") return false;
-  const failure = error;
-  return failure.code === "ETIMEDOUT" || failure.killed === true && failure.signal === "SIGTERM";
-}
-function assertStandaloneWindowsExclusive(path4, label, deadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS) {
+function assertStandaloneWindowsExclusive(path4, label) {
   if (standaloneVerifiedWindowsPaths.has(path4)) return;
   if (standaloneWaivedWindowsPaths.has(path4)) return;
   const subject = `Client v1 discovery ${label}`;
@@ -2363,47 +2335,27 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance.n
   };
   let report;
   try {
-    let rawReport;
-    for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS2; attempt += 1) {
-      try {
-        const remaining = Math.floor(deadline - performance.now());
-        if (remaining <= 0) {
-          throw Object.assign(new Error("the ACL publication probe budget was exhausted"), {
-            code: "ETIMEDOUT"
-          });
-        }
-        rawReport = execFileSync2(
-          join3(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-NoLogo",
-            "-InputFormat",
-            "None",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            WINDOWS_ACL_SCRIPT2
-          ],
-          {
-            env: probeEnv,
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: Math.min(WINDOWS_ACL_PROBE_TIMEOUT_MS2, remaining),
-            maxBuffer: 1024 * 1024
-          }
-        );
-        break;
-      } catch (error) {
-        if (attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS2 || !standaloneWindowsAclProbeTimedOut(error)) {
-          throw error;
-        }
+    report = JSON.parse(execFileSync2(
+      join3(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        WINDOWS_ACL_SCRIPT2
+      ],
+      {
+        env: probeEnv,
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 6e4,
+        maxBuffer: 1024 * 1024
       }
-    }
-    if (rawReport === void 0) {
-      throw new Error("the ACL probe attempt bound was exhausted");
-    }
-    report = JSON.parse(rawReport);
+    ));
     if (!report || typeof report !== "object" || typeof report.self !== "string" || !report.self || typeof report.owner !== "string" || !report.owner || typeof report.protected !== "boolean" || typeof report.repaired !== "boolean" || !Array.isArray(report.aces) || !Array.isArray(report.removed) || report.aces.some(
       (ace) => !ace || typeof ace !== "object" || !Number.isInteger(ace.rights) || ace.rights < 0 || ace.rights > 4294967295
     )) {
@@ -2447,7 +2399,7 @@ function assertStandaloneWindowsExclusive(path4, label, deadline = performance.n
   }
   standaloneVerifiedWindowsPaths.add(path4);
 }
-function requireStandaloneOwner(path4, metadata, label, windowsAclProbeDeadline) {
+function requireStandaloneOwner(path4, metadata, label) {
   if (typeof process.getuid === "function") {
     if (metadata.uid !== process.getuid()) {
       throw discoveryPublicationFailure(
@@ -2462,9 +2414,9 @@ function requireStandaloneOwner(path4, metadata, label, windowsAclProbeDeadline)
       `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path4} is refused.`
     ));
   }
-  assertStandaloneWindowsExclusive(path4, label, windowsAclProbeDeadline);
+  assertStandaloneWindowsExclusive(path4, label);
 }
-function assertStandaloneDiscoveryTarget(path4, windowsAclProbeDeadline) {
+function assertStandaloneDiscoveryTarget(path4) {
   try {
     const metadata = lstatSync(path4);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -2473,14 +2425,13 @@ function assertStandaloneDiscoveryTarget(path4, windowsAclProbeDeadline) {
         new Error(`Client v1 discovery target must be a regular file: ${path4}.`)
       );
     }
-    requireStandaloneOwner(path4, metadata, "target", windowsAclProbeDeadline);
+    requireStandaloneOwner(path4, metadata, "target");
   } catch (error) {
     if (error.code === "ENOENT") return;
     throw error;
   }
 }
 function publishStandaloneClientV1DiscoveryRecord(endpoint) {
-  const windowsAclProbeDeadline = performance.now() + WINDOWS_ACL_PUBLICATION_BUDGET_MS;
   const root = join3(clientV1DiscoveryFile(), "..");
   mkdirSync(root, { recursive: true, mode: 448 });
   const rootMetadata = lstatSync(root);
@@ -2490,7 +2441,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
       new Error("Client v1 discovery root must be a real directory.")
     );
   }
-  requireStandaloneOwner(root, rootMetadata, "root", windowsAclProbeDeadline);
+  requireStandaloneOwner(root, rootMetadata, "root");
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
     throw discoveryPublicationFailure(
@@ -2516,7 +2467,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
     );
   }
   const path4 = clientV1DiscoveryFile();
-  assertStandaloneDiscoveryTarget(path4, windowsAclProbeDeadline);
+  assertStandaloneDiscoveryTarget(path4);
   let record2;
   if (CLIENT_V1_AUTHORITY_MODE === "off") {
     record2 = {
@@ -2566,7 +2517,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    assertStandaloneDiscoveryTarget(path4, windowsAclProbeDeadline);
+    assertStandaloneDiscoveryTarget(path4);
     renameSync(temporaryPath, path4);
     ownsTemporaryPath = false;
     chmodSync(path4, 384);

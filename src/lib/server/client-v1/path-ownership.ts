@@ -174,17 +174,6 @@ export interface ClientV1WindowsAclReport {
 }
 
 export type ClientV1WindowsAclProbe = (path: string) => Promise<ClientV1WindowsAclReport>;
-export type ClientV1WindowsAclExecutor = (
-  file: string,
-  args: string[],
-  options: {
-    env: NodeJS.ProcessEnv;
-    encoding: "utf8";
-    windowsHide: true;
-    timeout: number;
-    maxBuffer: number;
-  },
-) => Promise<{ stdout: string }>;
 
 export interface ClientV1PathOwnershipOptions {
   /**
@@ -315,16 +304,6 @@ function windowsPowerShellPath(): string {
   return join(windowsSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-const WINDOWS_ACL_PROBE_TIMEOUT_MS = 12_000;
-const WINDOWS_ACL_PROBE_MAX_ATTEMPTS = 2;
-
-function windowsAclProbeTimedOut(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const failure = error as { code?: unknown; killed?: unknown; signal?: unknown };
-  return failure.code === "ETIMEDOUT"
-    || (failure.killed === true && failure.signal === "SIGTERM");
-}
-
 /**
  * The smallest environment PowerShell needs, never the server's own.
  *
@@ -407,48 +386,30 @@ export function parseClientV1WindowsAclReport(raw: string): ClientV1WindowsAclRe
   };
 }
 
-export function createClientV1WindowsAclProbe(
-  execute: ClientV1WindowsAclExecutor = execFileAsync as ClientV1WindowsAclExecutor,
-): ClientV1WindowsAclProbe {
-  return async (path) => {
-    for (let attempt = 0; attempt < WINDOWS_ACL_PROBE_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        const { stdout } = await execute(
-          windowsPowerShellPath(),
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-NoLogo",
-            "-InputFormat",
-            "None",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            WINDOWS_ACL_SCRIPT,
-          ],
-          {
-            env: windowsProbeEnv(path),
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: WINDOWS_ACL_PROBE_TIMEOUT_MS,
-            maxBuffer: 1024 * 1024,
-          },
-        );
-        return parseClientV1WindowsAclReport(stdout);
-      } catch (error) {
-        if (
-          attempt + 1 >= WINDOWS_ACL_PROBE_MAX_ATTEMPTS
-          || !windowsAclProbeTimedOut(error)
-        ) {
-          throw error;
-        }
-      }
-    }
-    throw new Error("the ACL probe attempt bound was exhausted");
-  };
-}
-
-export const probeWindowsAcl = createClientV1WindowsAclProbe();
+export const probeWindowsAcl: ClientV1WindowsAclProbe = async (path) => {
+  const { stdout } = await execFileAsync(
+    windowsPowerShellPath(),
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-NoLogo",
+      "-InputFormat",
+      "None",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      WINDOWS_ACL_SCRIPT,
+    ],
+    {
+      env: windowsProbeEnv(path),
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  return parseClientV1WindowsAclReport(stdout);
+};
 
 /**
  * Findings that make a path unusable, or an empty list when it is exclusive.
