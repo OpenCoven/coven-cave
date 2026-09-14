@@ -32,7 +32,6 @@ Patch release on top of v0.4.3.
 - Session rail corners are symmetric again.
 
 ### Fixed
-- Client v1 accepts a read-only Windows `OWNER RIGHTS` ACL entry.
 - Bounded discovery readiness failures are classified rather than swallowed (#5377).
 - Client v1 keeps SDK v0.0.1 compatibility (#5376).
 - iOS accepts an empty optional TestFlight inverse linkage, and binds TestFlight

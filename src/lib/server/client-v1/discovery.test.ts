@@ -575,8 +575,6 @@ test("the standalone server enforces ownership on Windows with this module's scr
     ["the inlined ACL script", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/],
     ["the trusted SYSTEM SID", /const WINDOWS_SYSTEM_SID = "([^"]+)";/],
     ["the trusted Administrators SID", /const WINDOWS_ADMINISTRATORS_SID = "([^"]+)";/],
-    ["the OWNER RIGHTS SID", /const WINDOWS_OWNER_RIGHTS_SID = "([^"]+)";/],
-    ["the writable-rights mask", /const WINDOWS_WRITABLE_RIGHTS_MASK = ([^;]+);/],
     ["the ACL subprocess timeout", /timeout:\s*([\d_]+),/],
     ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
     [
@@ -617,16 +615,6 @@ test("the standalone server enforces ownership on Windows with this module's scr
     windowsAclScript.match(/\$acl\.SetOwner\(\$me\)/g)?.length,
     1,
     "a foreign owner must still be taken exactly once before the DACL is repaired",
-  );
-  assert.match(
-    windowsAclScript,
-    /rights = \[uint32\]\$_\.FileSystemRights/,
-    "the probe must retain each ACE access mask instead of trusting a SID alone",
-  );
-  assert.match(
-    windowsAclScript,
-    /\$ace\.sid -eq \$ownerRights\.Value[\s\S]*?\$ace\.rights -band \$writableRights\) -eq 0/,
-    "OWNER RIGHTS is safe only when its access mask contains no writable right",
   );
   assert.equal(
     Number(region(moduleSource, "path-ownership.ts", /timeout:\s*([\d_]+),/).replaceAll("_", "")),
