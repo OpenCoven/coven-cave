@@ -1565,6 +1565,7 @@ export const SUITES = {
     "src/lib/server/client-v1/instance-id.test.ts",
     "src/lib/server/client-v1/pairing-store.test.ts",
     "src/lib/server/device-access/store.test.ts",
+    "src/lib/server/device-access/deferred.test.ts",
     "src/lib/server/device-access/peers.test.ts",
     "src/lib/server/device-access/gateway.test.ts",
     "src/lib/server/device-access/deferred.test.ts",
