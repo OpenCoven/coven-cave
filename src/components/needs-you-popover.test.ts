@@ -35,14 +35,14 @@ assert.doesNotMatch(
 assert.doesNotMatch(source, /glass-overlay/, "the panel never uses the glass treatment");
 assert.match(
   styles,
-  /\.ui-popover\.needs-you-panel \{[^}]*background: var\(--bg-elevated\)/s,
+  /\.ui-popover\.needs-you-panel \{[^}]*background: var\(--bg-elevated\)/,
   "the panel paints an opaque --bg-elevated",
 );
 // Overriding `background` alone is not enough: the base .ui-popover carries a
 // backdrop blur, which still composites whatever sits under the panel.
 assert.match(
   styles,
-  /\.ui-popover\.needs-you-panel \{[^}]*backdrop-filter: none/s,
+  /\.ui-popover\.needs-you-panel \{[^}]*backdrop-filter: none/,
   "the base popover's backdrop blur is cancelled explicitly",
 );
 // Qualified with .ui-popover so it beats the base rule whatever the sheet
