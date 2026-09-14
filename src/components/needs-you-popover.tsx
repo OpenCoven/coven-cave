@@ -87,8 +87,7 @@ function NeedsYouRow({ item, familiars, now, onOpen }: RowProps) {
         // The visible row is title + metadata + state + relative wait. The
         // accessible name says the same things in the same order, so a screen
         // reader gets the scan a sighted reader gets rather than a raw title.
-        aria-label={`${item.title} — ${presentation.label}, ${meta || "no project"}`}
-        title={item.title}
+title={item.title}
       >
         <span aria-hidden className="needs-you-row__edge" />
         <span className="needs-you-row__kind" aria-hidden>
