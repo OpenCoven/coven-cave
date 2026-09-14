@@ -172,6 +172,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
             nodes{
               id isResolved isOutdated
               comments(first:50){
+                pageInfo{hasNextPage}
                 nodes{
                   databaseId author{login avatarUrl url}
                   replyTo{databaseId}
@@ -203,6 +204,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
   if (!Array.isArray(nodes) || typeof connection?.pageInfo?.hasNextPage !== "boolean" ||
       !nodes.every((t) => t && typeof t === "object" && typeof t.id === "string" && t.id.length > 0 &&
         typeof t.isResolved === "boolean" && typeof t.isOutdated === "boolean" &&
+        typeof t.comments?.pageInfo?.hasNextPage === "boolean" &&
         Array.isArray(t.comments?.nodes) &&
         t.comments.nodes.every((c: unknown) => c != null && typeof c === "object" &&
           "body" in c && typeof c.body === "string"))) {
@@ -244,7 +246,11 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
       comments: first ? comments : [],
     };
   });
-  return { items, complete: connection.pageInfo.hasNextPage === false };
+  return {
+    items,
+    complete: connection.pageInfo.hasNextPage === false &&
+      nodes.every((thread) => thread.comments.pageInfo.hasNextPage === false),
+  };
 }
 
 export async function GET(req: Request) {
@@ -301,7 +307,7 @@ export async function GET(req: Request) {
       ]);
       if (threadRead.status === "fulfilled") {
         reviewThreads = threadRead.value.items;
-        if (!threadRead.value.complete) evidenceErrors.push("Review thread list is incomplete; open GitHub for the remaining threads.");
+        if (!threadRead.value.complete) evidenceErrors.push("Review thread evidence is incomplete; open GitHub for the remaining discussion.");
       } else {
         evidenceErrors.push(threadRead.reason instanceof Error ? threadRead.reason.message : "Review threads could not be read.");
       }

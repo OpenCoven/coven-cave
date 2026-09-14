@@ -63,11 +63,11 @@ export function ReviewFileNavigator({
   // navigator and pressing a key continues from what you are reading; it only
   // diverges once you move onto a directory.
   const [cursor, setCursor] = useState<string | null>(null);
-  const active = cursor ?? openPath;
-  const activeKind = useMemo(
-    () => targets.find((target) => target.path === active)?.kind ?? null,
-    [targets, active],
-  );
+  const activeTarget = targets.find((target) => target.path === cursor)
+    ?? targets.find((target) => target.path === openPath)
+    ?? targets[0];
+  const active = activeTarget?.path ?? null;
+  const activeKind = activeTarget?.kind ?? null;
 
   // A new change means a new list — don't strand the cursor on a path that is
   // no longer in it.

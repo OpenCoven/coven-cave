@@ -90,3 +90,41 @@ test("a failed review-summary read also blocks readiness without losing the time
   assert.equal(body.reviewEvidenceComplete, false);
   assert.throws(() => parseReadinessComments(body));
 });
+
+test("capped comments inside a fully read thread connection remain non-authorizing", async (t) => {
+  let hasNextPage = true;
+  upstream(t, () => Response.json({
+    data: { repository: { pullRequest: { reviewThreads: {
+      pageInfo: { hasNextPage: false },
+      nodes: [{
+        id: "t1", isResolved: true, isOutdated: false,
+        comments: { pageInfo: { hasNextPage }, nodes: [{ databaseId: 1, body: "Readable comment" }] },
+      }],
+    } } } },
+  }));
+  for (hasNextPage of [true, false]) {
+    const body = await (await read()).json();
+    assert.equal(body.reviewEvidenceComplete, !hasNextPage);
+    assert.equal(body.reviewThreads[0].comments[0].body, "Readable comment");
+    if (hasNextPage) assert.throws(() => parseReadinessComments(body), /incomplete/);
+    else assert.equal(parseReadinessComments(body).reviewThreads?.length, 1);
+  }
+});
+
+test("missing or malformed nested comment pagination cannot grant completeness", async (t) => {
+  let pageInfo: unknown;
+  upstream(t, () => Response.json({
+    data: { repository: { pullRequest: { reviewThreads: {
+      pageInfo: { hasNextPage: false },
+      nodes: [{
+        id: "t1", isResolved: true, isOutdated: false,
+        comments: { pageInfo, nodes: [{ databaseId: 1, body: "Readable comment" }] },
+      }],
+    } } } },
+  }));
+  for (pageInfo of [undefined, null, {}, { hasNextPage: "false" }]) {
+    const body = await (await read()).json();
+    assert.equal(body.reviewEvidenceComplete, false);
+    assert.throws(() => parseReadinessComments(body), /incomplete/);
+  }
+});

@@ -499,7 +499,19 @@ test.describe("Review Deck cockpit", () => {
       const navigator = page.getByRole("dialog", { name: "All changed files" });
       await expect(navigator.getByRole("searchbox")).toBeFocused();
       await navigator.getByRole("searchbox").fill("configuration-15");
-      await navigator.getByRole("option").click();
+      const fileList = navigator.getByRole("listbox", { name: "Changed files" });
+      await fileList.focus();
+      await expect.poll(() => fileList.evaluate((list) => {
+        const activeId = list.getAttribute("aria-activedescendant");
+        return activeId !== null && list.contains(document.getElementById(activeId));
+      })).toBe(true);
+      await navigator.getByRole("searchbox").fill("no-matching-file");
+      await expect(navigator.getByRole("option")).toHaveCount(0);
+      expect(await fileList.getAttribute("aria-activedescendant")).toBeNull();
+      await navigator.getByRole("searchbox").fill("configuration-15");
+      await expect(navigator.getByRole("option")).toHaveCount(1);
+      await fileList.focus();
+      await page.keyboard.press("Enter");
       await expect(page.getByRole("tab", { name: files[15].filename })).toHaveAttribute("aria-selected", "true");
       await expect(page.getByRole("button", { name: "Browse changed files" })).toBeFocused();
       const refreshedDiff = page.waitForResponse((response) =>
