@@ -1,54 +1,121 @@
 #!/usr/bin/env bash
-# Install this clone's local git configuration: the hook path and the
-# .beads/*.jsonl merge driver. Neither can be committed — both live in
-# .git/config, which is per-clone.
-#
-# Idempotent. Run once per fresh clone:
-#     scripts/install-git-hooks.sh
-#
-# cave-7g7py: this script used to set core.hooksPath unconditionally. Clones
-# point it at .beads/hooks (bd sets it there), and .beads/hooks holds strictly
-# more than scripts/git-hooks — beads' post-checkout/post-merge/pre-push/
-# prepare-commit-msg, plus the duplicate-id guard from #4231 that
-# scripts/git-hooks/pre-commit does not carry. Overwriting the path therefore
-# DISABLED all of those. The script advertised as the way to activate the
-# duplicate-prevention merge driver was removing the duplicate-detection hook
-# in the same breath.
+# Configure this clone's Git guards and frozen-JSONL merge driver.
+# A different hook directory is preserved unless --retire-beads explicitly
+# selects the unchanged legacy hooks shipped in this checkout's HEAD.
 set -euo pipefail
 
+retire_beads=false
+case "$#" in
+  0) ;;
+  1)
+    if [ "$1" != "--retire-beads" ]; then
+      echo "ERROR: unknown option: $1; usage: $0 [--retire-beads]" >&2
+      exit 2
+    fi
+    retire_beads=true
+    ;;
+  *)
+    echo "ERROR: usage: $0 [--retire-beads]" >&2
+    exit 2
+    ;;
+esac
+
 REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$(cd "$REPO_ROOT" && pwd -P)
 FALLBACK_HOOKS="scripts/git-hooks"
 
-if [ ! -d "$REPO_ROOT/$FALLBACK_HOOKS" ]; then
-  echo "$FALLBACK_HOOKS not found — run from a coven-cave clone" >&2
-  exit 1
+for hook in pre-commit commit-msg; do
+  if [ ! -f "$REPO_ROOT/$FALLBACK_HOOKS/$hook" ] || [ -L "$REPO_ROOT/$FALLBACK_HOOKS/$hook" ]; then
+    echo "ERROR: $FALLBACK_HOOKS/$hook must be a regular, non-symlink guard" >&2
+    exit 1
+  fi
+done
+
+if current=$(git -C "$REPO_ROOT" config --get core.hooksPath); then
+  :
+else
+  status=$?
+  if [ "$status" -ne 1 ]; then
+    echo "ERROR: cannot read core.hooksPath" >&2
+    exit "$status"
+  fi
 fi
 
-chmod +x "$REPO_ROOT/$FALLBACK_HOOKS"/* 2>/dev/null || true
-chmod +x "$REPO_ROOT/.beads/hooks"/* 2>/dev/null || true
-
-current=$(git -C "$REPO_ROOT" config --get core.hooksPath || true)
-
-# Compare resolved paths: bd writes an ABSOLUTE hooksPath, so a string compare
-# against ".beads/hooks" would miss it and clobber the very thing this guard
-# exists to protect.
 resolved_current=""
 if [ -n "$current" ]; then
   case "$current" in
-    /*) resolved_current="$current" ;;
-    *)  resolved_current="$REPO_ROOT/$current" ;;
+    /*|[A-Za-z]:[\\/]*) resolved_current="$current" ;;
+    *) resolved_current="$REPO_ROOT/$current" ;;
   esac
 fi
 
-if [ -n "$resolved_current" ] && [ -d "$resolved_current" ] \
+retiring=false
+if [ "$retire_beads" = true ] && [ -n "$resolved_current" ] \
    && [ "$resolved_current" != "$REPO_ROOT/$FALLBACK_HOOKS" ]; then
+  # Linked worktrees share config with the primary checkout, whose absolute
+  # .beads/hooks path may still be selected.
+  common_git=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir)
+  primary_root=$(cd "$common_git/.." && pwd -P)
+  if [ ! -d "$resolved_current" ] || [ -L "$resolved_current" ]; then
+    echo "ERROR: --retire-beads refuses a missing or symlink hook directory: $current" >&2
+    exit 2
+  fi
+  resolved_current=$(cd "$resolved_current" && pwd -P)
+  if [ "$resolved_current" != "$REPO_ROOT/.beads/hooks" ] \
+     && [ "$resolved_current" != "$primary_root/.beads/hooks" ]; then
+    echo "ERROR: --retire-beads refuses an unrecognized hook directory: $current" >&2
+    exit 2
+  fi
+  shopt -s nullglob dotglob
+  for file in "$resolved_current"/*; do
+    hook=$(basename "$file")
+    case "$hook" in
+      pre-commit|commit-msg|post-checkout|post-merge|pre-push|prepare-commit-msg) ;;
+      *)
+        echo "ERROR: custom hook entry would be disabled: $file; leaving hooks unchanged" >&2
+        exit 2
+        ;;
+    esac
+    if [ ! -f "$file" ] || [ -L "$file" ]; then
+      echo "ERROR: custom hook entry is not a regular file: $file" >&2
+      exit 2
+    fi
+    if ! expected=$(git -C "$REPO_ROOT" rev-parse --verify "HEAD:.beads/hooks/$hook"); then
+      echo "ERROR: no committed legacy hook to compare: $hook" >&2
+      exit 2
+    fi
+    actual=$(git -C "$REPO_ROOT" hash-object -- "$file")
+    if [ "$actual" != "$expected" ]; then
+      echo "ERROR: modified legacy hook would be disabled: $file; leaving hooks unchanged" >&2
+      exit 2
+    fi
+  done
+  retiring=true
+fi
+
+# Resolve a real executable before changing config. GitHub Desktop's minimal
+# PATH cannot reliably find a bare node; functions and aliases are not binaries.
+node_bin=$(command -v node || true)
+if [ -n "$node_bin" ] && [ ! -f "$node_bin" ]; then
+  node_bin=""
+fi
+if [ -n "$node_bin" ]; then
+  case "$node_bin" in
+    /*) ;;
+    *) node_bin=$(cd "$(dirname "$node_bin")" && pwd)/$(basename "$node_bin") ;;
+  esac
+fi
+if [ -z "$node_bin" ] || [ ! -x "$node_bin" ]; then
+  echo "ERROR: node not found as an executable file; cannot install a GUI-safe merge driver" >&2
+  exit 1
+fi
+
+chmod +x "$REPO_ROOT/$FALLBACK_HOOKS/pre-commit" "$REPO_ROOT/$FALLBACK_HOOKS/commit-msg"
+
+if [ "$retiring" = false ] && [ -n "$resolved_current" ] \
+   && [ -d "$resolved_current" ] && [ "$resolved_current" != "$REPO_ROOT/$FALLBACK_HOOKS" ]; then
   echo "KEEP core.hooksPath -> $current"
-  echo "  left alone: it already points at a hook directory, and replacing it"
-  echo "  would silently disable every hook living there (cave-7g7py)."
-  echo "  hooks present: $(ls "$resolved_current" 2>/dev/null | xargs)"
-  # -x, not -e: git only runs a hook that is EXECUTABLE. A present but
-  # non-executable file is exactly the silent no-op this script exists to
-  # surface, so treat it as a distinct, louder case rather than "fine".
+  echo "  replacing it would disable hooks this installer does not own."
   missing=""
   not_exec=""
   for hook in pre-commit commit-msg; do
@@ -59,63 +126,25 @@ if [ -n "$resolved_current" ] && [ -d "$resolved_current" ] \
     fi
   done
   if [ -n "$missing" ]; then
-    echo "  WARNING missing hook(s):$missing — those guards are NOT running." >&2
-    echo "  Add a shim in that directory that execs $FALLBACK_HOOKS/<hook>." >&2
+    echo "  WARNING missing hook(s):$missing; those guards are NOT running." >&2
+    echo "  Add a shim that execs $FALLBACK_HOOKS/<hook>." >&2
   fi
   if [ -n "$not_exec" ]; then
-    echo "  WARNING non-executable hook(s):$not_exec — present but git will NOT run them." >&2
+    echo "  WARNING non-executable hook(s):$not_exec; Git will NOT run them." >&2
     echo "  Fix with: chmod +x $resolved_current/<hook>" >&2
   fi
 else
   git -C "$REPO_ROOT" config core.hooksPath "$FALLBACK_HOOKS"
-  echo "OK core.hooksPath -> $FALLBACK_HOOKS"
-  echo "  installed hooks: $(ls "$REPO_ROOT/$FALLBACK_HOOKS" | xargs)"
+  if [ "$retiring" = true ]; then
+    echo "RETIRE recognized Beads hooks -> $FALLBACK_HOOKS (legacy files retained)"
+  else
+    echo "OK core.hooksPath -> $FALLBACK_HOOKS"
+  fi
 fi
 
-# cave-1poit: register the .beads/interactions.jsonl merge driver named in
-# .gitattributes. Runs unconditionally — it is independent of the hook path,
-# and the hook decision above must never determine whether the driver gets
-# installed. Until it is registered git falls back to the default text merge:
-# a divergent append conflicts loudly instead of silently duplicating records,
-# which is the correct direction to fail.
+# Preserve the pure merge driver for frozen data. It never invokes Beads or Dolt.
 git -C "$REPO_ROOT" config merge.beads-jsonl.name \
   "union .beads/interactions.jsonl by record id (cave-1poit)"
-# cave-f13bp: a bare "node" resolves fine in an interactive shell but NOT
-# under GitHub Desktop, which invokes git with a minimal PATH that excludes
-# nvm/homebrew/asdf install locations. That left a GUI-driven merge stash
-# conflicted with "node: command not found" instead of running the driver.
-# Resolve node's absolute path once, here, at install time — a git config
-# value is per-clone anyway, so baking in this machine's resolution costs
-# nothing and survives whatever PATH invokes git later. Fail loudly now
-# rather than writing a config we already know will fail silently later.
-#
-# `command -v` can report a shell function or alias name instead of a real
-# executable (neither is meaningful once baked into a git config run by a
-# different process), and can report a path that is relative if PATH itself
-# contains a relative entry. Require an executable regular file, and
-# normalize to an absolute path rather than trusting the string as-is.
-node_bin=$(command -v node || true)
-if [ -n "$node_bin" ] && [ ! -f "$node_bin" ]; then
-  node_bin=""
-fi
-if [ -n "$node_bin" ]; then
-  case "$node_bin" in
-    /*) : ;;
-    *) node_bin=$(cd "$(dirname "$node_bin")" && pwd)/$(basename "$node_bin") ;;
-  esac
-fi
-if [ -z "$node_bin" ] || [ ! -x "$node_bin" ]; then
-  echo "ERROR: node not found (as an executable file) on PATH; cannot" >&2
-  echo "  install a GUI-safe merge.beads-jsonl.driver (cave-f13bp)." >&2
-  echo "  Install Node, then re-run this script." >&2
-  exit 1
-fi
-
-# %O/%A/%B are quoted as defence in depth. Measured behaviour is that git
-# substitutes relative, space-free temp names, so this is not load-bearing —
-# see the note in scripts/beads-jsonl-merge-driver.mjs before "fixing" it.
-# node_bin is quoted for real: an absolute install path CAN contain spaces.
 git -C "$REPO_ROOT" config merge.beads-jsonl.driver \
   "\"$node_bin\" scripts/beads-jsonl-merge-driver.mjs \"%O\" \"%A\" \"%B\""
-
 echo "OK merge.beads-jsonl -> scripts/beads-jsonl-merge-driver.mjs ($node_bin)"

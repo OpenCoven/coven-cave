@@ -1,6 +1,6 @@
 ---
 name: branch-to-merge
-description: Use when finishing work on a Coven Cave branch and landing it on protected `main` — verification, pull request, required checks, review threads, squash merge, and lifecycle retirement. Trigger on "merge this", "finish the branch", "land this work", "open a PR", "branch to merge", "done with this branch", or "clean up after the merge".
+description: Use when finishing work on a Coven Cave branch and landing it on protected `main`; verification, pull request, required checks, review threads, squash merge, and evidence-backed retirement. Trigger on "merge this", "finish the branch", "land this work", "open a PR", "branch to merge", "done with this branch", or "clean up after the merge".
 ---
 
 # Branch To Merge
@@ -16,10 +16,15 @@ branch — that option does not exist here.
 
 ## Core rule
 
-Verify, push, open a PR, get the checks green, read the review, squash-merge
-through `gh`, then retire the local unit through the lifecycle patrol. Every
-destructive step needs evidence, and anything ambiguous is preserved rather
-than cleaned up.
+Follow [GitHub work tracking](../../../docs/workflows/github-work-tracking.md)
+for issue ownership, Cave Project 9, worktrees, and completion. Do not run
+Beads or maintain a parallel queue. Preserve its historical records and refs.
+
+With current authority, verify, push, reuse or open a PR, read checks and
+review, then squash-merge through `gh`. Record the local unit's disposition;
+retirement is a separate, evidence-backed decision. Preserve ambiguity.
+Do not commit, push, or merge without the current request's authority.
+A review-only request stays read-only.
 
 **Never** run any of these:
 
@@ -42,45 +47,45 @@ merge strategy, do not delete anything without the proof each phase names.
 
 ## Phase 0: Confirm the unit of work
 
-[HARD-GATE] Before touching the branch, know which Bead owns it.
+[HARD-GATE] Before touching the branch, establish its canonical GitHub issue,
+current owner, and authorized scope using the guide's continuity procedure.
 
 ```bash
-bd show <id>                 # the Bead this branch implements
-git fetch origin             # refresh origin/main before branching from it
+gh issue view <issue-number> --repo OpenCoven/coven-cave --comments
+git fetch origin main        # refresh origin/main before any new branch
 git rev-parse --abbrev-ref HEAD
 root=$(git rev-parse --show-toplevel) && \
   primary=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)") && \
   test "$root" != "$primary" || { printf '%s\n' 'refusing to commit from the primary checkout'; exit 1; }
 ```
 
-- The branch must be claimed: `bd update <id> --claim` if it is not.
+- Reuse the issue and its existing worktree. Read owner comments and linked
+  execution evidence; re-read ownership before acting. Missing evidence or a
+  legacy status does not authorize takeover. GitHub assignment and comments
+  are not atomic execution leases.
+- Record the acting familiar, scope, branch, worktree, and next step on the
+  issue when authorized. Preserve human-authored dependencies and approvals.
 - Work from the branch's own worktree. The primary checkout usually holds other
   sessions' uncommitted files; committing from there sweeps up their work.
-- Managed worktrees come from the command below (no `--` before the flags):
+- If a new worktree is authorized, complete the guide's ownership and
+  28-worktree budget review first, including any attributed, scoped exception:
 
   ```bash
-  pnpm beads:worktrees:create --bead <id> --branch <branch> \
-    --owner <you> --purpose "…"
+  git worktree add --no-track -b <branch> .worktrees/<slug> origin/main
   ```
 
-  A budget refusal is not a reason to bypass managed creation: rerun with
-  `--exception-owner`, `--exception-reason`, `--exception-expires-at` and
-  `--exception-path`. If the command cannot build its complete lifecycle
-  inventory (for example, the GitHub quota is exhausted), use the documented
-  fallback instead:
-
-  ```bash
-  git worktree add -b <branch> .worktrees/<branch> origin/main
-  ```
-
-  That fallback has no lifecycle metadata, so the patrol will keep it
-  `uncertain` and can never retire it automatically. Preserve it and later use
-  the archive-tag route; never hand-write lifecycle metadata onto the Bead.
+  Record the starting OID on the issue. Do not manufacture legacy lifecycle
+  metadata or create a Bead to satisfy a retired creator or patrol.
 
 ## Phase 1: Verify before anything else
 
 [HARD-GATE] Do not push, open, or merge a PR on unverified work. "It passed
-earlier" is not verification.
+earlier" is not verification. Use the smallest existing selectors that cover
+the scoped diff, grouped by runner. Documentation-only changes need their
+related contracts, not an unrelated application build or full suite.
+
+Select the relevant commands below for code changes; escalate to full suites
+only when targeted evidence requires them:
 
 ```bash
 pnpm typecheck
@@ -100,7 +105,7 @@ git status --porcelain
 git --no-pager diff origin/main...HEAD --stat
 ```
 
-Every path in the diff must belong to this Bead. Unrelated files mean you
+Every path in the diff must belong to this issue's scope. Unrelated files mean you
 committed someone else's work — split them out before continuing.
 
 If verification fails, **STOP** and fix it. A red PR wastes the reviewer and
@@ -146,7 +151,11 @@ How would you like to finish this branch?
   B) Leave as-is           -- keep the branch and worktree, decide later
 ```
 
-**STOP — wait for the choice.** Do not assume a default.
+Use only the option authorized by the current request. If authority is missing,
+ask in an interactive session; otherwise preserve the branch and report what
+is needed. Do not infer permission to commit, push, merge, or delete.
+An open-PR-only request stops after the PR is created or updated; it does not
+authorize the merge.
 
 A local merge into `main` and a squash-commit onto `main` are deliberately
 absent: branch protection rejects the push (`GH006`) for a non-admin, and the
@@ -158,8 +167,9 @@ no branch deletion. An unfinished branch is preserved by default.
 ## Phase 4: Create or bind the pull request
 
 Sign commits when you can, but `required_signatures: false` means an unsigned
-commit is not a merge blocker. Push after **every** commit — the remote is the
-only store a local actor cannot destroy.
+commit is not a merge blocker. When both commit and push are authorized, push
+after every commit so another local actor cannot destroy the only copy.
+A no-push instruction still wins; report local-only work honestly.
 
 ```bash
 branch=$(git branch --show-current)
@@ -180,8 +190,8 @@ pair, stop and ask the maintainer to resolve the ambiguity rather than guessing.
 **Title** — imperative, under ~70 characters, describes the change not the
 branch name.
 
-**Body** — what changed and why, the verification you actually ran, and the
-Bead id. Link the Bead rather than restating its contents.
+**Body**: what changed and why, the verification you actually ran, and the
+canonical GitHub issue link. Do not duplicate its task record.
 
 [HARD-GATE] **No AI attribution.** Never add `Co-Authored-By: <assistant>`,
 `Generated with …`, or any trailer or footer crediting a model, vendor, or
@@ -213,10 +223,10 @@ gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 
 - `Frontend build`
 
-CodeQL is retired, and code scanning is fully off — nothing scans in its place.
-`PR checks` now reports in parallel as the staged replacement. It is **not**
-required until an operator changes classic branch protection after confirming a
-successful post-merge report; continue to require `Frontend build` meanwhile.
+CodeQL can run through GitHub default setup but is advisory, not required.
+A neutral conclusion is not a failure. Confirm current protection in
+`CLAUDE.md` and the GitHub API; a proposed replacement context does not remove
+the required `Frontend build` check.
 
 If a required context never reports, the PR sits `BLOCKED` with nothing failing.
 Before and after the watch, require `headRefOid` to equal `$expected_head` and
@@ -254,7 +264,7 @@ gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t
 
 ## Phase 6: Merge
 
-**Confirmation required.** Then:
+**Current merge authority required.** Then:
 
 ```bash
 set -euo pipefail
@@ -284,7 +294,7 @@ trailer once and fails closed on ambiguous non-GitHub co-author identities.
 
 Do not pass `--delete-branch`. That flag asks `gh` to delete both local and
 remote branches immediately after merging. Local retirement belongs to the
-Phase 7 lifecycle patrol, and remote deletion remains proposal-only.
+Phase 7 evidence-backed process, and remote deletion remains proposal-only.
 
 The squash message summarizes the whole branch, not the last commit, and
 carries any human `Co-authored-by:` trailers.
@@ -292,60 +302,62 @@ carries any human `Co-authored-by:` trailers.
 `gh` will dangle `--admin` at you on a blocked PR. **Do not use it** — it
 bypasses the protection this skill exists to respect. Fix the actual blocker.
 
-## Phase 7: Close out and retire the local unit
+## Phase 7: Record completion and disposition
 
-Record the branch, worktree, session, owner, and verification evidence on the
-Bead, then run the lifecycle patrol before closing the PR-backed work — it is
-the only sanctioned retirement route:
+Follow the canonical guide before closing the PR-backed work. Record the
+merged PR and exact head, branch, worktree, session, owner, and verification
+evidence on the issue. Inspect local state without invoking a legacy patrol:
 
 ```bash
-pnpm beads:worktrees                 # report only; changes nothing
-pnpm beads:worktrees:apply           # only when it reports a complete maintenance transaction
+pnpm wt:status
+git worktree list --porcelain
 ```
 
-If the patrol reports the unit as `active`, `recovery`, `cooldown`,
-`uncertain`, or the gate as incomplete, **preserve it** and record the owner and
-reason. `retire-after-gate` is a classification, not deletion authority. A
-worktree created by bare `git worktree add` reports `uncertain` forever; retire
-it by hand through the archive-tag route and never hand-write the missing
-lifecycle metadata onto the Bead — that record is the evidence the gate checks.
+Record each worktree as removed and verified, or intentionally preserved with
+an owner and reason. Local status is not ownership or deletion authority.
+Legacy `retire-after-gate` and `uncertain` classifications do not grant it
+either. Missing maintenance planes remain missing after tracker migration;
+automatic retirement still requires the full maintenance gate.
 
-Only after the merge landed and that patrol evidence is recorded, close the
-Bead:
+Only after merge or the issue's explicit completion criteria, and after
+recording the disposition, close the issue and set Project `Done` when
+authorized. Local-only or unmerged implementation is not completion. Use the
+guide's status and blocker contract when handing off unfinished work.
+
+Use **branch-curator** for any removal, including this single unit. Its
+bounded manual profile requires current exact-candidate authority, a local
+maintenance lease, fresh owner/runtime evidence, and the complete deletion
+proof. Preserve dirty state, foreign locks, inaccessible paths, and unknown
+owners. Never bypass `scripts/worktree-guard.mjs` to finish.
+
+A squash merge does not retain the branch's own commits. When archiving is
+authorized, preserve the exact head with a pushed tag before local retirement:
 
 ```bash
-bd close <id> --reason="Merged in PR #<#>"
-```
-
-Destruction is guarded (`scripts/worktree-guard.mjs`, exit 2) for a dirty
-worktree, a HEAD on no remote ref, an unpushed branch tip, or a branch still
-heading an open PR. To retire a branch whose commits must survive, archive it —
-a pushed tag outlives the branch a merge deletes:
-
-```bash
-git tag -s archive/<branch-with-slashes-flattened>-<date> <oid>
+git tag -s archive/<branch-with-slashes-flattened>-<date> <oid> -m "Retain exact branch head before local retirement"
 git push origin archive/<branch-with-slashes-flattened>-<date>
 ```
 
-Flatten slashes: `fix/foo` → `archive/fix-foo-<date>`. Git cannot hold both a
-tag `archive/fix` and `archive/fix/foo`. A local-only tag does not count.
-
-For anything broader than this one branch — auditing, pruning, or deleting a
-set of branches or worktrees — hand off to **branch-curator**. Do not
-improvise cleanup here.
+Flatten slashes: `fix/foo` becomes `archive/fix-foo-<date>`. Git cannot hold
+both `archive/fix` and `archive/fix/foo`. Verify the exact remote ref and OID;
+a stale tracking ref or local-only tag does not count. Retention alone is not
+deletion authority. Do not improvise cleanup here.
 
 ## Confirmation requirements
 
-[HARD-GATE] Ask before each of these. Never proceed on assumption.
+[HARD-GATE] Require current authority for each operation. Never infer it from
+issue assignment, completion, a previous session, or permission for another step.
+Without authority, preserve and report the missing decision.
 
 | Operation | Why |
 |---|---|
 | Merging the PR | Lands on protected `main` |
-| `bd close` | Others rely on the Bead's status |
+| Closing the GitHub issue / setting Project `Done` | Requires completion evidence and authority |
 | Removing a worktree | May discard another session's uncommitted work |
 | Deleting a local or remote branch | Unrecoverable if nothing retains the commits |
 | Rebasing / force-pushing the PR branch | Rewrites history the review is anchored to |
-| Any `WT_GUARD_BYPASS=1` rerun | Overrides the guard protecting live work |
+
+Never bypass `worktree-guard`; authorization does not replace its safety proof.
 
 ## Anti-patterns
 
@@ -355,14 +367,14 @@ improvise cleanup here.
 | `gh pr merge --admin` | Defeats branch protection | Fix the blocker |
 | Committing from the primary checkout | Sweeps up other sessions' uncommitted work | Commit from the branch's worktree |
 | `git add -A` on a shared checkout | Same failure, at scale (see #585) | Stage explicit paths |
-| Removing the worktree at PR creation | Destroys live work; the PR is not merged yet | Retire only after merge, via the patrol |
-| Bare `git worktree add` to dodge a budget refusal | Produces a permanently unretirable unit | Rerun with the attributed `--exception-*` flags |
+| Removing the worktree at PR creation | Destroys live work; the PR is not merged yet | Preserve; require separate Branch Curator proof |
+| Creating a worktree without budget or ownership review | May collide with another owner or exceed capacity | Follow the canonical GitHub guide |
 | AI attribution trailers | Repository rule forbids them | Credit humans only |
 | Machine-email `Co-authored-by` | Credits nobody | Numeric-id no-reply form |
-| Committing only locally | A local actor can destroy it | Push after every commit |
+| Treating a local-only commit as retained remotely | A local actor can destroy it | Push when authorized; otherwise disclose the risk |
 | Treating a stale branch as dead | Age is not proof | Preserve; use branch-curator's evidence gates |
-| Leaving a merged Bead open | Sweeps have to re-derive state by hand | Close with evidence |
-| `in_progress` on work nobody is doing now | Four states wearing one status | `open`, `blocked`, or `deferred` |
+| Closing an issue for an unmerged implementation | Preparation is not completion | Record the remaining blocker and next step |
+| Project `Started` on idle work | Misstates current activity | Follow the guide's status contract |
 
 ## Error handling
 
@@ -372,16 +384,15 @@ improvise cleanup here.
 | PR `BLOCKED`, `MERGEABLE`, nothing failing | Suspect a required context that no longer reports; diff `gh api repos/OpenCoven/coven-cave/branches/main/protection --jq .required_status_checks.contexts` against the PR's checks. |
 | "the base branch policy prohibits the merge" | Generic. Check required contexts, then whether `required_conversation_resolution` was re-enabled. |
 | PR `BLOCKED`, every required check passes | Check whether `required_signatures` changed; it is currently off, so a missing signature is not the blocker. |
-| Worktree guard exits 2 | Live work. Investigate; bypass only with explicit maintainer authorization. |
-| `worktree-lifecycle-create` budget refusal | Rerun with the printed `--exception-*` flags. Do not fall back to `git worktree add` for a budget refusal. |
-| `unknown option: --` | Drop the `--` before the flags; pnpm forwards it. |
-| Patrol reports `uncertain` | Preserve the unit and record owner + reason. |
+| Worktree guard exits 2 | Preserve and record the refusal. Never bypass; use Branch Curator's separate guard-fix process. |
+| Worktree budget reached | Preserve existing units; obtain a scoped issue-recorded exception before creation. |
+| Legacy patrol reports `uncertain` or missing maintenance planes | Preserve and record owner + reason; do not fabricate metadata or run Beads to clear it. |
 | Merge conflict | Resolve in the worktree, re-verify, force-push your own branch only. |
 
 ## Integration points
 
 | Skill | Integration |
 |---|---|
-| `beads` | Claim in Phase 0, close in Phase 7 |
-| `branch-curator` | Owns multi-branch audit, pruning, and deletion proofs |
+| `work-continuity` | Establishes issue ownership and continuation scope in Phase 0 |
+| `branch-curator` | Owns every branch/worktree removal and its deletion proof |
 | `run-cave-app` | Verifying a native-only surface before Phase 1 passes |

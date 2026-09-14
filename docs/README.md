@@ -23,6 +23,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Working in this repo
 
+- [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff after retiring Beads
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
 - [`workflows/work-continuity.md`](workflows/work-continuity.md) — skill-driven discovery of existing work before planning or dispatch, with scoped evidence and honest handoff receipts
 - [`branch-cleanup-relaxation.md`](branch-cleanup-relaxation.md) — design for retiring clean landed branches/worktrees despite missing lifecycle metadata or stale bead paperwork: clean/dirty/active definitions, evidence, safety checks, review command shape, phased rollout (`cave-jcdgb`)
@@ -128,6 +129,8 @@ Point-in-time records. Read for intent, not for current behavior.
 
 ## Tombstone
 
+- [`workflows/beads-familiars.md`](workflows/beads-familiars.md): Beads retired from development tracking on 2026-09-14; legacy data and optional application compatibility remain
+- [`legacy/beads-remaining-2026-09-14.md`](legacy/beads-remaining-2026-09-14.md): frozen remaining-record inventory supporting that retirement, not a live queue
 - [`codeql.md`](codeql.md) — CodeQL retired 2026-07-31, in three ordered steps; nothing scans in its place
 
 ---

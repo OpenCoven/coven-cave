@@ -9,7 +9,10 @@ one signal: files, claims, tasks, PRs, and recovery snapshots can all make it li
 
 ## Core rule
 Inventory first, classify every local branch, then act. Use read-only commands
-against live or uncertain branches; make audit changes in a fresh worktree.
+against live or uncertain branches; edit only in the curation issue's
+authorized isolated worktree. Commits, pushes, PR creation, and deletion need
+current authority. Stay inside granted filesystem and evidence-access
+boundaries; preserve inaccessible paths.
 
 Never treat age, reachability, a missing worktree, or a missing PR as proof of
 staleness. Do not mutate a candidate worktree until ownership is clear.
@@ -19,7 +22,9 @@ Preserve a branch or worktree when any of these signals apply:
 - It is checked out in any worktree and the owner has not confirmed it is idle.
 - Its worktree has staged, unstaged, untracked, ignored, or dirty submodule state.
 - `coven claim status`, a live claim file, or an active session names it.
-- Any non-closed Bead names the branch, worktree, surface, or owner.
+- An unresolved GitHub issue or execution record owns the unit, including
+  blocked or deferred work.
+- A legacy ownership reference lacks a current, owner-backed disposition.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
 - Its tip or reflog changed in the last 3 hours. Recency is unconditional;
@@ -27,69 +32,109 @@ Preserve a branch or worktree when any of these signals apply:
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
 
-Treat `main`, the default branch, Beads/Dolt sync refs such as
-`__dolt_remote_info__`, and other tool-owned refs as protected infrastructure.
+Treat `main`, the default branch, preserved Beads/Dolt sync refs such as
+`__dolt_remote_info__` and `refs/dolt/data`, and other tool-owned refs as
+protected infrastructure. Tracker retirement does not authorize their deletion.
 
 ## Prevent accumulation
-Managed worktrees require one active Bead, structured
-owner/purpose/disposition metadata, and one registered worktree per Bead by
-default. Warn at 12 worktrees or 30 local branches. Exceeding a budget never
-authorizes deletion; new managed work requires safe retirement or a bounded
-owner/reason/expiry exception.
+Use [GitHub work tracking](../../../docs/workflows/github-work-tracking.md)
+for issue ownership, Cave Project 9, and worktree creation. Reuse an existing
+authorized unit. Review ownership and the 28-worktree budget, counting the
+primary checkout, before authorized `git worktree add --no-track`.
+Raw Git does not enforce that budget.
 
-For managed creation:
-
-```bash
-pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
-  --owner kitty --purpose "Repair example"
-```
-
-Raw `git worktree add` remains available but is not universally
-intercepted; it does not exempt the resulting worktree from lifecycle policy.
+Exceeding the budget never authorizes deletion. A scoped exception must name
+the owner, reason, exact path, and expiry on the issue before creation.
+Do not run the retired Beads-managed creator or manufacture lifecycle metadata.
 
 Recovery and archive dispositions require an owner, reason, and review date.
 An overdue review creates follow-up work and never changes the item into a
 deletion candidate.
 
-## Routine lifecycle patrol
-Use `pnpm beads:worktrees` for the read-only inventory. It covers registered
-worktrees and branch-only refs. Treat `retire-after-gate` as cleanup-ready, not
-as deletion authorization.
+## Routine evidence and legacy patrol
+Use `pnpm wt:status` and the inventory below for local evidence, not proof of
+ownership or deletion authority. Do not invoke the Beads patrol for routine
+work. Legacy `retire-after-gate` is a classification, not authorization;
+missing metadata or a retired probe means uncertainty, not an unowned unit.
 
-`pnpm beads:worktrees:apply` may retire local state only when its capability
-report proves the full Coven, Beads, GitHub, and local maintenance transaction
-is enforced. `gate-incomplete` is a successful safety decision: preserve every
-candidate. Automatic apply retires at most three units unless you pass an
-explicit `--max-retire` value from 1 through 10. Automatic mode never deletes
-remote refs; report proposals only.
+Changing trackers does not implement the missing maintenance planes.
+`gate-incomplete` remains a successful safety decision: preserve every
+candidate. The legacy automatic contract still requires the full Coven,
+Beads, GitHub, and local maintenance transaction. Its batch bound remains at
+most three units by default, or an explicit `--max-retire` from 1 through 10.
+This is not an instruction to run retired tooling. Automatic mode never
+deletes remote refs; report proposals only.
 
 ## Start with durable coordination
-In a Beads repository:
+Follow the canonical guide's bounded continuity check. Select one authorized
+GitHub issue for curation, preserve existing owners, and record scope, branch,
+worktree, session, and evidence there when authorized. Never reassign or close
+candidate-owning issues to ease cleanup. GitHub assignment and comments are not
+atomic execution leases.
+
+Bind every GitHub query to the audited origin, not `GH_REPO`. Establish access
+before retrieval. Use exact issue references first; bounded searches must
+include candidate branch/path references in titles, bodies, and comments.
+Read linked execution records separately. Truncated, inaccessible, or missing
+coverage is unknown, not proof that no owner exists.
+
+Read each selected issue and every comment page with one reusable producer:
+
 ```bash
-bd prime || { printf '%s\n' 'PRESERVE - Beads unavailable'; exit 1; }
-if ! ready_tasks_json=$(bd ready --json); then
-  printf '%s\n' 'PRESERVE - ready-task inventory failed'; exit 1
-fi
-printf '%s' "$ready_tasks_json" |
-  jq -e 'type == "array" and
-    all(.[]; (.id | type) == "string" and (.status | type) == "string")' \
-    >/dev/null ||
-  { printf '%s\n' 'PRESERVE - malformed ready-task inventory'; exit 1; }
-if ! all_tasks_json=$(
-  bd list --limit 0 --include-gates --include-infra --include-templates --json
-); then
-  printf '%s\n' 'PRESERVE - task inventory failed'; exit 1
-fi
-non_closed_tasks=$(printf '%s' "$all_tasks_json" | jq -e '
-  if type == "array" and
-     all(.[]; (.id | type) == "string" and (.status | type) == "string")
-  then [.[] | select(.status != "closed")]
-  else error("malformed task inventory") end
-') || { printf '%s\n' 'PRESERVE - malformed task inventory'; exit 1; }
+audited_origin_url=$(git remote get-url origin) ||
+  { printf '%s\n' 'PRESERVE - origin URL unavailable'; exit 1; }
+case "$audited_origin_url" in
+  https://github.com/*) audited_gh_repo=${audited_origin_url#https://github.com/} ;;
+  *) printf '%s\n' 'PRESERVE - unsupported GitHub origin'; exit 1 ;;
+esac
+audited_gh_repo=${audited_gh_repo%.git}
+printf '%s' "$audited_gh_repo" |
+  LC_ALL=C grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' ||
+  { printf '%s\n' 'PRESERVE - invalid GitHub repository'; exit 1; }
+
+read_issue_evidence() {
+  local issue_number=$1 issue_json comment_pages
+  case "$issue_number" in ''|0*|*[!0-9]*) return 1 ;; esac
+  issue_json=$(gh api --hostname github.com \
+    "repos/$audited_gh_repo/issues/$issue_number") || return 1
+  comment_pages=$(gh api --hostname github.com --paginate --slurp -X GET \
+    "repos/$audited_gh_repo/issues/$issue_number/comments" \
+    -f per_page=100) || return 1
+  jq -en --argjson number "$issue_number" \
+    --argjson issue "$issue_json" --argjson pages "$comment_pages" '
+    if ($issue | type) == "object" and
+       $issue.number == $number and $issue.pull_request == null and
+       ($issue.state == "open" or $issue.state == "closed") and
+       ($issue.title | type) == "string" and
+       ($issue.body == null or ($issue.body | type) == "string") and
+       ($issue.html_url | type) == "string" and
+       ($issue.updated_at | type) == "string" and
+       ($issue.assignees | type) == "array" and
+       all($issue.assignees[]; (.login | type) == "string" and
+         (.login | length) > 0) and
+       ($issue.comments | type) == "number" and $issue.comments >= 0 and
+       ($pages | type) == "array" and ($pages | length) > 0 and
+       all($pages[]; type == "array") and
+       ([$pages[][]] | length) == $issue.comments and
+       ([$pages[][].id] | unique | length) == $issue.comments and
+       all($pages[][]; (.id | type) == "number" and
+         .id > 0 and (.id | floor) == .id and
+         (.body | type) == "string" and
+         (.user.login | type) == "string" and (.user.login | length) > 0 and
+         (.updated_at | type) == "string")
+    then {issue: $issue, comments: [$pages[][]]}
+    else error("incomplete or malformed issue ownership evidence") end
+  '
+}
+curation_issue_evidence=$(read_issue_evidence "$curation_issue_number") ||
+  { printf '%s\n' 'PRESERVE - curation issue evidence unavailable'; exit 1; }
 ```
-Claim one curation task before editing; never claim or close candidate-owning
-tasks to ease cleanup. Record the curator branch, worktree, owner, and evidence.
-Inspect all non-closed tasks because default `bd list` limits can hide ownership.
+
+Retain and review these payloads; valid JSON is not owner clearance. A changed
+comment count or failed producer requires a fresh read, not an empty fallback.
+Include blocked/deferred issues and linked closed history in the ownership
+review. Preserve legacy records and original owners without querying or
+refreshing Beads. An old status or missing process does not authorize takeover.
 
 ## Build the read-only inventory
 Refresh remote-tracking refs, then collect all signals before deciding:
@@ -169,7 +214,11 @@ assume-unchanged, or skip-worktree state unless policy explicitly declares an
 ignored path disposable. Never let status, file-mode, or fsmonitor configuration
 suppress this check.
 
-Check runtime and task ownership:
+Check runtime and issue ownership. For each candidate, bind
+`candidate_issue_numbers` from the authorized references and bounded discovery,
+including an explicit owner-backed disposition on the curation issue when no
+current implementation issue is linked. An empty set or unresolved ownership
+requires preservation. These are per-candidate loop fragments:
 ```bash
 if ! coven_claims_json=$(coven claim status --json); then
   printf '%s\n' 'PRESERVE - Coven claims unavailable'; continue
@@ -240,36 +289,27 @@ elif test -f "$claims_file"; then
   test "$surface_claims" = none ||
     { printf '%s\n' 'PRESERVE - active surface claim'; continue; }
 fi
-if ! all_tasks_json=$(
-  bd list --limit 0 --include-gates --include-infra --include-templates --json
-); then
-  printf '%s\n' 'PRESERVE - task inventory failed'; continue
-fi
-non_closed_tasks=$(printf '%s' "$all_tasks_json" | jq -e '
-  if type == "array" and
-     all(.[]; (.id | type) == "string" and (.status | type) == "string")
-  then [.[] | select(.status != "closed")]
-  else error("malformed task inventory") end
-') || { printf '%s\n' 'PRESERVE - malformed task inventory'; continue; }
+test "${#candidate_issue_numbers[@]}" -gt 0 ||
+  { printf '%s\n' 'PRESERVE - candidate issue ownership unknown'; continue; }
+candidate_ownership_evidence=()
+for candidate_issue_number in "${candidate_issue_numbers[@]}"; do
+  issue_evidence=$(read_issue_evidence "$candidate_issue_number") ||
+    { printf '%s\n' 'PRESERVE - candidate issue evidence unavailable'; continue 2; }
+  candidate_ownership_evidence[${#candidate_ownership_evidence[@]}]="$issue_evidence"
+done
 ```
 Run the documented live harness process/CWD check and map roots to worktrees.
 Coven output supplements rather than replaces claims or process ownership.
 Absence of a claim means "no claim found", not "no owner exists."
+Re-read every candidate issue and its comments under the selected lease before
+each mutation. Require a current owner-backed idle/disposition receipt for the
+exact unit and resolve every conflicting ownership signal. Neither an empty
+assignee list nor issue closure proves runtime inactivity. Unknown coverage
+keeps the candidate preserved; a legacy record alone never authorizes takeover.
 
 Fetch every PR once. Filter the exhaustive result by audited head OID to find
 origin and fork PRs even when branch names differ:
 ```bash
-audited_origin_url=$(git remote get-url origin) ||
-  { printf '%s\n' 'PRESERVE - origin URL unavailable'; exit 1; }
-case "$audited_origin_url" in
-  https://github.com/*) audited_gh_repo=${audited_origin_url#https://github.com/} ;;
-  *) printf '%s\n' 'PRESERVE - unsupported GitHub origin'; exit 1 ;;
-esac
-audited_gh_repo=${audited_gh_repo%.git}
-case "$audited_gh_repo" in
-  ''|/*|*/|*/*/*|*[!A-Za-z0-9._/-]*)
-    printf '%s\n' 'PRESERVE - invalid GitHub repository'; exit 1 ;;
-esac
 pr_inventory_ok=1
 if ! all_prs_json=$(
   gh api --hostname github.com --paginate --slurp -X GET \
@@ -436,8 +476,8 @@ If every branch is live, recovery, or uncertain, delete nothing and say so.
 
 Read-only inventory and PR creation may run alongside other sessions. Before
 classifying anything as `DELETE`, choose exactly one profile and record it in
-the owning Bead. Never silently fall from the automatic profile into the manual
-profile.
+the curation issue. Never silently fall from the automatic profile into the
+manual profile.
 
 ### Automatic retirement
 
@@ -452,15 +492,16 @@ refs.
 
 A current maintainer may explicitly authorize a bounded manual cleanup in the
 current task. Record the instruction, repository, exact candidate set,
-local-only or local-and-remote scope, Bead, session, branch, worktree, and
+local-only or local-and-remote scope, issue, session, branch, worktree, and
 audited default-branch OID before mutation. Historical, standing, inferred, or
 unbounded permission is insufficient, and local cleanup authority does not
 imply remote deletion.
 
 The manual profile substitutes current authorization plus exact fail-closed
 proof for the unavailable cross-system transaction. It still must acquire and
-retain the local maintenance lease, rerun every Beads, GitHub, process,
-worktree, ref, recency, archive, and recovery check immediately before each
+retain the local maintenance lease, rerun every GitHub issue/comment ownership,
+legacy disposition, PR, workflow, process, worktree, ref, recency, archive, and
+recovery check immediately before each
 mutation, and stop on any query failure, new or changed candidate-owning owner
 or activity, drift, or uncertainty. It must run and never bypass
 `worktree-guard`.
@@ -486,7 +527,8 @@ A branch is PR-shaped only when all of these are true:
 
 Do not open speculative PRs for backup branches, unowned work, incomplete task
 branches, or branches that are still being edited. Link the PR in the owning
-Bead and include verification evidence in the PR body.
+GitHub issue and include verification evidence in the PR body. Issue comments
+do not replace the owner-held branch gate or authorize a commit or push.
 
 Bind the PR to the commit that passed verification. While holding the branch
 gate, capture `verified_oid` from the fully qualified local ref, query the exact
@@ -523,7 +565,8 @@ When unowned work needs a safety copy, leave the source worktree unchanged.
 Create the snapshot from the source HEAD in a separate worktree, reproduce only
 the observed diff, and verify file hashes before pushing a clearly named backup
 branch. Do not open a PR for that snapshot. Record its source branch, base OID,
-file list, verification, and intended owner or expiry in Beads.
+file list, verification, and intended owner or expiry in the curation issue.
+Creating a snapshot worktree or pushing it still requires current authority.
 
 Recovery branches are temporary safety artifacts, not a permanent coordination
 system. Keep them until the owner accepts, lands, archives, or explicitly
@@ -570,4 +613,6 @@ Report every local branch, including protected and preserved entries:
 | Branch | Live or recovery signals | Unique-work evidence | Decision | Action |
 | --- | --- | --- | --- | --- |
 State PR links, refs removed, exact preservation reasons, untouched worktrees,
-and curation Bead state. Call nothing stale or useless without the proof above.
+and curation issue/Project state. Follow the canonical guide for handoff and
+completion; do not close an issue for a proposal alone. Call nothing stale or
+useless without the proof above.

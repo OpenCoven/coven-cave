@@ -191,8 +191,7 @@ assert.doesNotMatch(
   "cite src/styles/globals/* files, not line offsets into the globals.css facade",
 );
 
-// 3. Palette count: the doc and AGENTS.md state the number that
-//    src/lib/theme-palettes.ts actually ships.
+// 3. Palette count belongs to the design contract, not another agent-guide copy.
 const themeIdsSource = readFileSync(new URL("src/lib/theme-palettes.ts", repoRoot), "utf8");
 const themeIdsBlock = themeIdsSource.match(/THEME_IDS = \[([\s\S]*?)\] as const/);
 assert.ok(themeIdsBlock, "theme-palettes.ts declares THEME_IDS");
@@ -214,8 +213,8 @@ assert.match(
   "doc §2 derives the combination count from the roster",
 );
 assert.ok(
-  agentsNotes.includes(`${paletteCount} palettes × 2 modes`),
-  `AGENTS.md design-system section states the shipped palette count (${paletteCount})`,
+  agentsNotes.includes("src/lib/theme-palettes.ts"),
+  "AGENTS.md points to the canonical palette roster instead of copying its count",
 );
 
 // 4. Quoted token values match the live token contract.

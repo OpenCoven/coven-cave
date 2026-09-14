@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 function read(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -8,7 +10,11 @@ function read(path) {
 const packageJson = JSON.parse(read("package.json"));
 const agents = read("AGENTS.md");
 const claude = read("CLAUDE.md");
-const workflow = read("docs/workflows/beads-familiars.md");
+const workflow = read("docs/workflows/github-work-tracking.md");
+const legacyWorkflow = read("docs/workflows/beads-familiars.md");
+const inventory = read("docs/legacy/beads-remaining-2026-09-14.md");
+const claudeHooks = JSON.parse(read(".claude/settings.json"));
+const codexHooks = JSON.parse(read(".codex/hooks.json"));
 const watchdogPlan = read("docs/superpowers/plans/2026-08-22-beads-dolt-sync-watchdog.md");
 const beadsConfig = read(".beads/config.yaml");
 const beadsMetadata = JSON.parse(read(".beads/metadata.json"));
@@ -17,144 +23,82 @@ const beadsPreCommitHook = read(".beads/hooks/pre-commit");
 const apiRoute = read("src/app/api/beads/route.ts");
 const apiContracts = read("src/app/api/api-contracts.test.ts");
 
-assert.deepEqual(
-  {
-    prime: packageJson.scripts["beads:prime"],
-    ready: packageJson.scripts["beads:ready"],
-    prs: packageJson.scripts["beads:prs"],
-    prsJson: packageJson.scripts["beads:prs:json"],
-    prsApply: packageJson.scripts["beads:prs:apply"],
-    worktrees: packageJson.scripts["beads:worktrees"],
-    worktreesJson: packageJson.scripts["beads:worktrees:json"],
-    patrol: packageJson.scripts["beads:patrol"],
-    patrolApply: packageJson.scripts["beads:patrol:apply"],
-    sync: packageJson.scripts["beads:sync"],
-    doctor: packageJson.scripts["beads:doctor"],
-  },
-  {
-    prime: "bd prime",
-    ready: "bd ready --json",
-    prs: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave",
-    prsJson: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --json",
-    prsApply: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --apply",
-    worktrees: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
-    worktreesJson: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
-    patrol: "pnpm beads:prs:patrol && pnpm beads:worktrees",
-    patrolApply: "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
-    sync: "node --experimental-strip-types scripts/beads-sync.ts",
-    doctor: "bd doctor && bd lint",
-  },
-  "package scripts should give familiars stable Beads and PR entrypoints",
-);
+assert.equal(packageJson.scripts["work:issues"], "gh issue list --repo OpenCoven/coven-cave --state open --limit 20");
+assert.equal(packageJson.scripts["work:project"], "gh project view 9 --owner OpenCoven");
+assert.ok(Object.keys(packageJson.scripts).every((name) => !name.startsWith("beads:")),
+  "routine package entrypoints must not restore the retired tracker");
+for (const guide of [agents, claude, workflow, legacyWorkflow]) {
+  assert.match(guide, /GitHub/);
+  assert.doesNotMatch(guide, /bd prime|bd ready|bd update|bd close|pnpm beads:/,
+    "current development guidance must not teach a Beads execution loop");
+}
+assert.match(workflow, /github\.com\/orgs\/OpenCoven\/projects\/9/);
+assert.match(workflow, /GitHub assignment and comments are[\s\S]*not atomic execution leases/);
+assert.match(workflow, /named primary blocker/i);
+assert.match(workflow, /Do not commit, push, or merge without/);
+assert.match(workflow, /Do not bulk-import every old row/);
+assert.match(agents, /remote deletion remains proposal-only/);
+assert.match(claude, /gate-incomplete, preserve the unit/);
+assert.match(legacyWorkflow, /Status: Tombstone/);
+assert.match(legacyWorkflow, /Familiar Work Queue is not the new development queue/);
+assert.match(legacyWorkflow, /public-scrubbed before committing/);
+assert.match(workflow, /legacy\/beads-remaining-2026-09-14\.md/);
+assert.match(inventory, /Status: Archive/);
+assert.match(inventory, /isolated filesystem copy/);
+assert.match(inventory, /source changed after capture/i);
+assert.match(inventory, /not another queue/);
+const durableRows = inventory.split("## Durable records")[1].split("## Ephemeral records")[0];
+const ephemeralRows = inventory.split("## Ephemeral records")[1];
+assert.equal((durableRows.match(/^\| cave-[\w.-]+ \|/gm) ?? []).length, 186);
+assert.equal((ephemeralRows.match(/^\| cave-[\w.-]+ \|/gm) ?? []).length, 1);
+assert.doesNotMatch(inventory, /\/Users\/|\/home\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+  "the frozen display inventory must omit personal paths and contact addresses");
 
-assert.match(agents, /Beads Issue Tracker/, "AGENTS.md should install Beads issue tracking guidance");
-assert.match(agents, /Coven Familiar Beads Protocol/, "AGENTS.md should add Coven-specific familiar workflow guidance");
-assert.match(agents, /bd prime[\s\S]*bd ready --json[\s\S]*bd update <id> --claim[\s\S]*bd close <id>/, "agents should learn the claim-and-close loop");
-assert.doesNotMatch(agents, /Do NOT use external issue trackers/, "Cave must bridge GitHub and Linear instead of banning them");
-assert.match(
-  claude,
-  /pnpm beads:sync[\s\S]*git push/,
-  "Claude session close guidance should use bounded Beads sync before git push",
-);
-assert.match(
-  agents,
-  /pnpm beads:sync[\s\S]*git push/,
-  "agent session close guidance should use bounded Beads sync before git push",
-);
+for (const hooks of [claudeHooks, codexHooks]) {
+  assert.doesNotMatch(JSON.stringify(hooks), /\bbd\s|dolt|beads:prime/,
+    "automatic context and permission entries must not run Beads");
+}
+for (const hook of ["surface-claim-guard", "worktree-guard", "worktree-autolock",
+  "worktree-retention-push", "worktree-session-exit-retirement"]) {
+  assert.ok(JSON.stringify(claudeHooks.hooks).includes(hook), `preserve the independent ${hook} hook`);
+}
+const sweep = spawnSync("bash", [fileURLToPath(new URL("./worktree-sweep.sh", import.meta.url))], {
+  encoding: "utf8",
+  timeout: 5_000,
+});
+assert.ifError(sweep.error);
+assert.equal(sweep.status, 2);
+assert.match(sweep.stderr, /retired[\s\S]*no tracker or Git operation was attempted/);
+assert.equal(sweep.stdout, "");
 
-assert.equal(beadsMetadata.dolt_database, "cave", "Cave Beads IDs should use the short cave- prefix");
-assert.match(beadsConfig, /sync\.remote:\s+"git\+https:\/\/github\.com\/OpenCoven\/coven-cave\.git"/, "Beads should be configured for Dolt sync through origin");
-assert.equal(beadsExport.length, 4, "the review export should include the dogfood epic, active task, and two follow-ups");
-assert.deepEqual(
-  beadsExport.map((issue) => issue.id).sort(),
-  ["cave-hlv", "cave-hlv.1", "cave-hlv.2", "cave-hlv.3"],
-  "the review export should preserve the dogfood bead IDs",
-);
-assert.doesNotMatch(
-  read(".beads/issues.jsonl"),
-  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
-  "the committed review export should not publish local git actor emails",
-);
-
-assert.match(workflow, /Familiar Work Queue/, "workflow doc should name the Cave-facing work queue");
-assert.match(workflow, /GitHub and Linear remain visibility layers/, "workflow doc should preserve external tracker visibility");
-assert.match(workflow, /bd ready --json[\s\S]*bd update <id> --claim[\s\S]*bd close <id>/, "workflow doc should explain the familiar loop");
-assert.match(workflow, /No secrets in bead text/, "workflow doc should include the privacy guardrail");
-assert.match(workflow, /\.beads\/issues\.jsonl is an export, not the sync protocol/, "workflow doc should prevent JSONL sync misuse");
-assert.match(workflow, /public-scrubbed before committing/, "workflow doc should require public-safe JSONL review exports");
-assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
-assert.match(
-  workflow,
-  /confirms the owned process tree was\s+terminated[\s\S]*retry `pnpm beads:sync` once/i,
-  "workflow docs should explain bounded retry and remote-ref verification",
-);
-assert.match(
-  workflow,
-  /cleanup could not be proven[\s\S]*stop the surviving process tree before retrying[\s\S]*refs\/dolt\/data/i,
-  "workflow docs should block retry while cleanup remains unproven",
-);
-assert.match(
-  workflow,
-  /Do not edit Git\s+configuration or credential\s+helpers/i,
-  "workflow docs should preserve transient credential guidance",
-);
-assert.match(
-  watchdogPlan,
-  /cleanup-unproven[\s\S]*cleanupUnprovenGuidance/,
-  "the executable plan must not recommend an ordinary retry after unproven cleanup",
-);
-assert.match(
-  watchdogPlan,
-  /confirms the owned process tree was[\s\S]*stop the surviving process tree before retrying[\s\S]*concurrent syncs/i,
-  "the executable plan must preserve conditional retry and concurrent-ref guidance",
-);
-assert.match(
-  watchdogPlan,
-  /resolveBdLaunchCommand\(\{[\s\S]*env: options\.env,[\s\S]*platform: options\.platform,/,
-  "the executable plan must resolve the Beads launcher from the injected environment and platform",
-);
-assert.match(
-  watchdogPlan,
-  /releaseUnprovenChildHandles[\s\S]*if \(!cleanupProven\) releaseUnprovenChildHandles\(\)[\s\S]*\.catch\(\(\) => \{[\s\S]*releaseUnprovenChildHandles\(\)/,
-  "the executable plan must release child pipes and references when cleanup is unproven",
-);
-assert.match(
-  watchdogPlan,
-  /child\.once\("error", \(error\) => \{[\s\S]*if \(terminating\) return;/,
-  "the executable plan must ignore delayed child errors after termination begins",
-);
-assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
-assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
-assert.match(
-  workflow,
-  /pnpm beads:patrol[\s\S]*pnpm beads:worktrees[\s\S]*retire-after-gate/,
-  "the routine patrol should keep local worktree disposition visible after merge",
-);
-assert.match(workflow, /draft PR[\s\S]*checks\/review loop[\s\S]*merge gate[\s\S]*post-merge cleanup/, "workflow doc should cover the full PR lifecycle");
-assert.match(workflow, /ready-to-merge[\s\S]*needs-review[\s\S]*checks-failing[\s\S]*changes-requested/, "workflow doc should name the PR control lanes");
-assert.match(workflow, /Do not close the bead before the merge or explicit completion/, "workflow doc should protect bead close evidence");
-assert.match(
-  workflow,
-  /Do not close the bead until the local worktree has a recorded disposition/,
-  "closing a bead must not hide an unresolved local worktree",
-);
-assert.doesNotMatch(
-  beadsPreCommitHook,
+// Frozen records and optional application support retain independent safeguards.
+assert.equal(beadsMetadata.dolt_database, "cave");
+assert.match(beadsConfig, /sync\.remote:\s+"git\+https:\/\/github\.com\/OpenCoven\/coven-cave\.git"/);
+assert.equal(beadsExport.length, 4, "preserve the historical dogfood export, not a current backlog count");
+assert.deepEqual(beadsExport.map((issue) => issue.id).sort(),
+  ["cave-hlv", "cave-hlv.1", "cave-hlv.2", "cave-hlv.3"]);
+assert.doesNotMatch(read(".beads/issues.jsonl"), /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+  "the committed legacy export must not publish local actor emails");
+assert.match(watchdogPlan, /cleanup-unproven[\s\S]*cleanupUnprovenGuidance/);
+assert.match(watchdogPlan, /confirms the owned process tree was[\s\S]*stop the surviving process tree before retrying[\s\S]*concurrent syncs/);
+assert.match(watchdogPlan, /resolveBdLaunchCommand\(\{[\s\S]*env: options\.env,[\s\S]*platform: options\.platform,/);
+assert.match(watchdogPlan, /releaseUnprovenChildHandles[\s\S]*if \(!cleanupProven\) releaseUnprovenChildHandles\(\)[\s\S]*\.catch\(\(\) => \{[\s\S]*releaseUnprovenChildHandles\(\)/);
+assert.match(watchdogPlan, /child\.once\("error", \(error\) => \{[\s\S]*if \(terminating\) return;/);
+assert.doesNotMatch(beadsPreCommitHook,
   /info "ok \(\$\{#STAGED_FILES\[@\]\} files scanned\)"\nexit 0[\s\S]*BEGIN BEADS INTEGRATION/,
-  "the repo pre-commit scan must not exit before the managed Beads hook runs",
-);
+  "preserved compatibility hook must not accidentally change its execution order");
 
-assert.match(apiContracts, /\{ route: "\/beads", methods: \["GET", "POST"\]/, "the Beads API route must be covered by route contracts");
-assert.match(apiRoute, /export async function GET/, "Beads route should expose GET for ready/show/prime reads");
-assert.match(apiRoute, /export async function POST/, "Beads route should expose POST for claim/comment/close mutations");
-assert.match(apiRoute, /export async function GET[\s\S]*rejectNonLocalRequest\(req\)/, "Beads reads must stay local-only");
-assert.match(apiRoute, /export async function POST[\s\S]*rejectNonLocalRequest\(req\)/, "Beads mutations must stay local-only");
-assert.match(apiRoute, /id required for mode=show/, "explicit show requests should fail clearly when id is missing");
-assert.match(apiRoute, /readJsonBody<[\s\S]*MAX_SESSION_JSON_BYTES/, "Beads mutations must use the bounded JSON body helper");
-assert.match(apiRoute, /runBdCommand\(/, "Beads route should use the cross-platform argv-safe CLI adapter");
-assert.match(apiRoute, /case "claim":[\s\S]*"--claim"/, "Beads POST should support atomic familiar claiming");
-assert.match(apiRoute, /case "comment":[\s\S]*"comments"[\s\S]*"add"/, "Beads POST should support session handoff comments");
-assert.match(apiRoute, /case "close":[\s\S]*"close"/, "Beads POST should support closing completed work");
-assert.doesNotMatch(apiRoute, /issues\.jsonl/, "Cave API must not read .beads/issues.jsonl as the source of truth");
+assert.match(apiContracts, /\{ route: "\/beads", methods: \["GET", "POST"\]/);
+assert.match(apiRoute, /export async function GET[\s\S]*rejectNonLocalRequest\(req\)/,
+  "optional legacy reads remain local-only");
+assert.match(apiRoute, /export async function POST[\s\S]*rejectNonLocalRequest\(req\)/,
+  "optional legacy mutations remain local-only");
+assert.match(apiRoute, /id required for mode=show/);
+assert.match(apiRoute, /readJsonBody<[\s\S]*MAX_SESSION_JSON_BYTES/);
+assert.match(apiRoute, /runBdCommand\(/, "preserve the argv-safe command adapter");
+assert.match(apiRoute, /case "claim":[\s\S]*"--claim"/);
+assert.match(apiRoute, /case "comment":[\s\S]*"comments"[\s\S]*"add"/);
+assert.match(apiRoute, /case "close":[\s\S]*"close"/);
+assert.doesNotMatch(apiRoute, /issues\.jsonl/, "the optional API must not mistake the export for live state");
 
-console.log("beads-familiar-workflow.test.mjs: ok");
+console.log("beads-familiar-workflow.test.mjs: GitHub workflow and preserved legacy contracts ok");

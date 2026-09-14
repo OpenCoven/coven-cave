@@ -35,13 +35,96 @@ function scaffold() {
   return dir;
 }
 
-function runInstaller(dir) {
-  return execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh")], {
+function runInstaller(dir, ...args) {
+  return execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh"), ...args], {
     cwd: dir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
+
+function trackLegacyHooks(dir) {
+  for (const hook of ["pre-commit", "commit-msg", "post-checkout", "post-merge", "pre-push", "prepare-commit-msg"]) {
+    cpSync(join(repoRoot, ".beads", "hooks", hook), join(dir, ".beads", "hooks", hook));
+  }
+  git(dir, "add", "scripts", ".beads/hooks");
+  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "-c", "commit.gpgsign=false",
+    "-c", "user.name=Hook Fixture", "-c", "user.email=fixture@example.invalid",
+    "commit", "-qm", "Fixture hooks");
+}
+
+test("explicit retirement switches recognized relative or absolute legacy hooks without deleting them", () => {
+  for (const absolute of [false, true]) {
+    const dir = scaffold();
+    try {
+      trackLegacyHooks(dir);
+      const legacy = absolute ? join(dir, ".beads", "hooks") : ".beads/hooks";
+      git(dir, "config", "core.hooksPath", legacy);
+      const before = readFileSync(join(dir, ".beads", "hooks", "post-checkout"), "utf8");
+      assert.match(runInstaller(dir, "--retire-beads"), /RETIRE recognized Beads hooks/);
+      assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+      assert.equal(readFileSync(join(dir, ".beads", "hooks", "post-checkout"), "utf8"), before);
+      assert.match(runInstaller(dir, "--retire-beads"), /OK core\.hooksPath/);
+      assert.match(git(dir, "config", "--get", "merge.beads-jsonl.driver"), /beads-jsonl-merge-driver/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a linked worktree can retire the primary checkout's absolute Beads hook path", () => {
+  const dir = scaffold();
+  try {
+    trackLegacyHooks(dir);
+    const linked = join(dir, ".worktrees", "linked");
+    git(dir, "-c", "core.hooksPath=scripts/git-hooks", "worktree", "add", "--no-track", "-b", "linked", linked);
+    git(dir, "config", "core.hooksPath", join(dir, ".beads", "hooks"));
+    assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
+    assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+    assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("retirement refuses extra or modified legacy hooks before changing config", () => {
+  for (const hook of ["post-rewrite", "pre-commit"]) {
+    const dir = scaffold();
+    try {
+      trackLegacyHooks(dir);
+      git(dir, "config", "core.hooksPath", ".beads/hooks");
+      writeFileSync(join(dir, ".beads", "hooks", hook), "#!/usr/bin/env bash\necho custom-guard\n", { mode: 0o755 });
+      assert.throws(() => runInstaller(dir, "--retire-beads"), /hook.*would be disabled/);
+      assert.equal(git(dir, "config", "--get", "core.hooksPath"), ".beads/hooks");
+      assert.throws(() => git(dir, "config", "--get", "merge.beads-jsonl.driver"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("retirement refuses custom directories, symlink hooks, and unknown arguments", () => {
+  for (const variant of ["custom-directory", "symlink-hook", "unknown-argument"]) {
+    const dir = scaffold();
+    try {
+      trackLegacyHooks(dir);
+      let preset = ".beads/hooks";
+      if (variant === "custom-directory") {
+        mkdirSync(join(dir, "custom-hooks"));
+        preset = "custom-hooks";
+      } else if (variant === "symlink-hook") {
+        rmSync(join(dir, ".beads", "hooks", "pre-commit"));
+        symlinkSync(join(dir, "scripts", "git-hooks", "pre-commit"), join(dir, ".beads", "hooks", "pre-commit"));
+      }
+      git(dir, "config", "core.hooksPath", preset);
+      const arg = variant === "unknown-argument" ? "--retire-everything" : "--retire-beads";
+      assert.throws(() => runInstaller(dir, arg), /ERROR:/);
+      assert.equal(git(dir, "config", "--get", "core.hooksPath"), preset);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
 
 test("an existing hooksPath is PRESERVED, not overwritten", () => {
   const dir = scaffold();
