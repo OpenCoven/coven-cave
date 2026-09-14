@@ -33,6 +33,7 @@ import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
+import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
@@ -1957,7 +1958,13 @@ const wss = new WebSocketServer({ noServer: true });
 const remotePtyClients = new Set<WebSocket>();
 const deviceAccessSecret = randomUUID();
 process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
-const deviceAccessStore = await createDeviceAccessStore();
+// NOT awaited. Hardening the device-access store spawns a PowerShell ACL probe
+// per file on Windows, and when those stall the server never reaches listen() —
+// the packaged-server probe then reports "did not answer within 90000 ms"
+// (cave-9jt60). Device pairing is one feature; it does not get to decide
+// whether the server exists. It fails closed on its own instead.
+const deferredDeviceAccess = deferDeviceAccessStore(() => createDeviceAccessStore());
+const deviceAccessStore = deferredDeviceAccess.store;
 const deviceAccess = createDeviceAccessGateway({
   store: deviceAccessStore,
   isDirectLoopback: isDirectLoopbackRequest,

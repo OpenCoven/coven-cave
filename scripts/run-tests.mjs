@@ -1567,6 +1567,7 @@ export const SUITES = {
     "src/lib/server/device-access/store.test.ts",
     "src/lib/server/device-access/peers.test.ts",
     "src/lib/server/device-access/gateway.test.ts",
+    "src/lib/server/device-access/deferred.test.ts",
     "src/lib/server/client-v1/credential-store.test.ts",
     "src/lib/server/client-v1/auth.test.ts",
     "src/lib/server/client-v1/rate-limit.test.ts",

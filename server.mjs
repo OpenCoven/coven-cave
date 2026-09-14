@@ -2097,6 +2097,69 @@ function createDeviceAccessGateway(options) {
   };
 }
 
+// src/lib/server/device-access/deferred.ts
+function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
+  let ready = null;
+  let failed = null;
+  const settled = initialize().then(
+    (store2) => {
+      ready = store2;
+    },
+    (error) => {
+      failed = error instanceof Error ? error : new Error(String(error));
+      warn(
+        `[device-access] unavailable \u2014 the server is running and device access is refused. Pairing, approvals and device credentials will not work until this is fixed: ${failed.message}`
+      );
+    }
+  );
+  const live = () => {
+    if (ready) return ready;
+    throw new DeviceAccessError(
+      "forbidden",
+      failed ? `Device access is unavailable on this host: ${failed.message}` : "Device access is unavailable on this host."
+    );
+  };
+  const store = {
+    async policy() {
+      await settled;
+      if (!ready) return { enabled: false, allowedTailnets: [] };
+      return ready.policy();
+    },
+    async snapshot() {
+      await settled;
+      return live().snapshot();
+    },
+    async setAllowedTailnets(tailnets, actor) {
+      await settled;
+      return live().setAllowedTailnets(tailnets, actor);
+    },
+    async request(peer, input) {
+      await settled;
+      return live().request(peer, input);
+    },
+    async inspect(credential, peer) {
+      await settled;
+      return live().inspect(credential, peer);
+    },
+    async verify(credential, peer) {
+      await settled;
+      return live().verify(credential, peer);
+    },
+    async decide(id, decision, actor) {
+      await settled;
+      return live().decide(id, decision, actor);
+    },
+    async recordAccess(deviceId, input) {
+      await settled;
+      return live().recordAccess(deviceId, input);
+    },
+    close() {
+      if (ready) ready.close();
+    }
+  };
+  return { store, settled, failure: () => failed };
+}
+
 // server.ts
 var require2 = createRequire(import.meta.url);
 var pty = require2("node-pty");
@@ -3339,7 +3402,8 @@ var wss = new WebSocketServer({ noServer: true });
 var remotePtyClients = /* @__PURE__ */ new Set();
 var deviceAccessSecret = randomUUID3();
 process.env.COVEN_CAVE_DEVICE_ACCESS_SECRET = deviceAccessSecret;
-var deviceAccessStore = await createDeviceAccessStore();
+var deferredDeviceAccess = deferDeviceAccessStore(() => createDeviceAccessStore());
+var deviceAccessStore = deferredDeviceAccess.store;
 var deviceAccess = createDeviceAccessGateway({
   store: deviceAccessStore,
   isDirectLoopback: isDirectLoopbackRequest,
