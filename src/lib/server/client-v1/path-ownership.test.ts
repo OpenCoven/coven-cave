@@ -470,7 +470,7 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
   }
 });
 
-test("the real Windows probe preserves a read-only OWNER RIGHTS boundary while removing unsafe grants", async (
+test("the real Windows probe preserves read-only OWNER RIGHTS while removing unsafe grants", async (
   t: TestContext,
 ) => {
   if (process.platform !== "win32") {
