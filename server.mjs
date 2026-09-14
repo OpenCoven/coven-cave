@@ -462,7 +462,10 @@ var ERROR_STATUS = {
   forbidden: 403,
   conflict: 409,
   not_found: 404,
-  rate_limited: 429
+  rate_limited: 429,
+  // The check could not be performed. Distinct from `forbidden`, which is a
+  // check that ran and said no.
+  unavailable: 503
 };
 var DeviceAccessError = class extends Error {
   constructor(code, message, status = ERROR_STATUS[code]) {
@@ -2021,6 +2024,14 @@ function createDeviceAccessGateway(options) {
         }
         const peer2 = await eligible(req);
         if (pathname === `${API}/requests` && req.method === "POST") {
+          if (policy.unavailable) {
+            json(res, 503, {
+              ok: false,
+              error: "unavailable",
+              message: "Device access could not be verified on this host."
+            });
+            return true;
+          }
           if (!policy.enabled) {
             json(res, 409, {
               ok: false,
@@ -2048,6 +2059,13 @@ function createDeviceAccessGateway(options) {
         throw new DeviceAccessError("not_found", "Unknown device pairing operation.", 404);
       }
       if (direct) return false;
+      if (policy.unavailable) {
+        throw new DeviceAccessError(
+          "unavailable",
+          "Device access could not be verified on this host.",
+          503
+        );
+      }
       if (!policy.enabled) {
         legacy.add(res);
         res.once("close", () => {
@@ -2119,7 +2137,9 @@ function createDeviceAccessGateway(options) {
   return {
     handle: handle2,
     async blocksUpgrade(req) {
-      return !options.isDirectLoopback(req) && (await currentPolicy()).enabled;
+      if (options.isDirectLoopback(req)) return false;
+      const policy = await currentPolicy();
+      return policy.enabled || policy.unavailable === true;
     },
     async close() {
       clearInterval(timer);
@@ -2137,6 +2157,7 @@ function createDeviceAccessGateway(options) {
 }
 
 // src/lib/server/device-access/deferred.ts
+var POLICY_WAIT_MS = 5e3;
 function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
   let ready = null;
   let failed = null;
@@ -2151,45 +2172,57 @@ function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
       );
     }
   );
+  let initializationWait;
+  const waitForInitialization = () => {
+    if (ready || failed) return settled;
+    return initializationWait ??= new Promise((resolve3) => {
+      const timer = setTimeout(resolve3, POLICY_WAIT_MS);
+      timer.unref?.();
+      void settled.then(() => {
+        clearTimeout(timer);
+        resolve3();
+      });
+    });
+  };
   const live = () => {
     if (ready) return ready;
     throw new DeviceAccessError(
-      "forbidden",
+      "unavailable",
       failed ? `Device access is unavailable on this host: ${failed.message}` : "Device access is unavailable on this host."
     );
   };
   const store = {
     async policy() {
-      await settled;
-      if (!ready) return { enabled: false, allowedTailnets: [] };
+      await waitForInitialization();
+      if (!ready) return { enabled: false, allowedTailnets: [], unavailable: true };
       return ready.policy();
     },
     async snapshot() {
-      await settled;
+      await waitForInitialization();
       return live().snapshot();
     },
     async setAllowedTailnets(tailnets, actor) {
-      await settled;
+      await waitForInitialization();
       return live().setAllowedTailnets(tailnets, actor);
     },
     async request(peer, input) {
-      await settled;
+      await waitForInitialization();
       return live().request(peer, input);
     },
     async inspect(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().inspect(credential, peer);
     },
     async verify(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().verify(credential, peer);
     },
     async decide(id, decision, actor) {
-      await settled;
+      await waitForInitialization();
       return live().decide(id, decision, actor);
     },
     async recordAccess(deviceId, input) {
-      await settled;
+      await waitForInitialization();
       return live().recordAccess(deviceId, input);
     },
     close() {

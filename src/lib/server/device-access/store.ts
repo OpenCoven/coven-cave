@@ -24,6 +24,9 @@ const ERROR_STATUS = {
   conflict: 409,
   not_found: 404,
   rate_limited: 429,
+  // The check could not be performed. Distinct from `forbidden`, which is a
+  // check that ran and said no.
+  unavailable: 503,
 } as const;
 
 export class DeviceAccessError extends Error {
@@ -38,8 +41,22 @@ export class DeviceAccessError extends Error {
   }
 }
 
+/**
+ * `enabled: false` means device access is CONFIGURED OFF, and the gateway
+ * treats that as legacy mode — remote requests pass through un-paired. It is
+ * therefore NOT a safe answer for "the store could not be opened", which is
+ * what `unavailable` is for: the question could not be answered, so no remote
+ * request may be admitted on the strength of it.
+ */
+export type DeviceAccessPolicy = {
+  enabled: boolean;
+  allowedTailnets: string[];
+  /** The policy could not be read. Refuse; do not fall back to legacy mode. */
+  unavailable?: boolean;
+};
+
 export interface DeviceAccessStore {
-  policy(): Promise<{ enabled: boolean; allowedTailnets: string[] }>;
+  policy(): Promise<DeviceAccessPolicy>;
   snapshot(): Promise<DeviceAccessSnapshot>;
   setAllowedTailnets(tailnets: string[], actor: string): Promise<void>;
   request(

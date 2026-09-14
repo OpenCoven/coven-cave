@@ -25,6 +25,13 @@
 
 import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
 
+/**
+ * How long a policy read waits on initialization before answering
+ * "unavailable". Long enough that an ordinary slow start is simply awaited,
+ * short enough that a stalled probe cannot hold the server's request path.
+ */
+const POLICY_WAIT_MS = 5_000;
+
 export type DeferredDeviceAccess = {
   store: DeviceAccessStore;
   /** Resolves when initialization has settled, successfully or not. */
@@ -36,7 +43,7 @@ export type DeferredDeviceAccess = {
 /**
  * Wrap a store initializer so the caller can start serving immediately.
  *
- * Every method awaits `settled` before delegating, so a request that arrives
+ * Every method awaits bounded initialization before delegating, so a request that arrives
  * mid-initialization waits for the real answer rather than being told "not
  * ready" and having to retry. `settled` never rejects — the failure is held and
  * turned into a refusal at the point of use, where it can be reported in the
@@ -65,11 +72,24 @@ export function deferDeviceAccessStore(
     },
   );
 
+  let initializationWait: Promise<void> | undefined;
+  const waitForInitialization = (): Promise<void> => {
+    if (ready || failed) return settled;
+    return initializationWait ??= new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, POLICY_WAIT_MS);
+      timer.unref?.();
+      void settled.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  };
+
   /** The live store, or a refusal carrying why there isn't one. */
   const live = (): DeviceAccessStore => {
     if (ready) return ready;
     throw new DeviceAccessError(
-      "forbidden",
+      "unavailable",
       failed
         ? `Device access is unavailable on this host: ${failed.message}`
         : "Device access is unavailable on this host.",
@@ -78,40 +98,45 @@ export function deferDeviceAccessStore(
 
   const store: DeviceAccessStore = {
     async policy() {
-      await settled;
-      // Deliberately NOT a throw. The policy read is what the UI uses to ask
-      // "is device access on?", and the honest answer when the store never
-      // opened is "off", not an error dialog. Every method that could actually
-      // grant something still refuses below.
-      if (!ready) return { enabled: false, allowedTailnets: [] };
+      // Bounded, because the gateway awaits this on EVERY request — including
+      // direct loopback. An unbounded wait here means a stalled probe stops the
+      // server answering at all, which is the same outage as blocking boot,
+      // just moved one layer down.
+      await waitForInitialization();
+      // `enabled: false` is NOT a safe answer here: the gateway reads it as
+      // "configured off" and runs in legacy mode, which passes REMOTE requests
+      // through without pairing. Saying it when the store never opened would
+      // turn a failed security check into an open door. `unavailable` is the
+      // answer that refuses.
+      if (!ready) return { enabled: false, allowedTailnets: [], unavailable: true };
       return ready.policy();
     },
     async snapshot() {
-      await settled;
+      await waitForInitialization();
       return live().snapshot();
     },
     async setAllowedTailnets(tailnets, actor) {
-      await settled;
+      await waitForInitialization();
       return live().setAllowedTailnets(tailnets, actor);
     },
     async request(peer, input) {
-      await settled;
+      await waitForInitialization();
       return live().request(peer, input);
     },
     async inspect(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().inspect(credential, peer);
     },
     async verify(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().verify(credential, peer);
     },
     async decide(id, decision, actor) {
-      await settled;
+      await waitForInitialization();
       return live().decide(id, decision, actor);
     },
     async recordAccess(deviceId, input) {
-      await settled;
+      await waitForInitialization();
       return live().recordAccess(deviceId, input);
     },
     close() {

@@ -224,6 +224,13 @@ export function createDeviceAccessGateway(options: {
         }
         const peer = await eligible(req);
         if (pathname === `${API}/requests` && req.method === "POST") {
+          if (policy.unavailable) {
+            json(res, 503, {
+              ok: false, error: "unavailable",
+              message: "Device access could not be verified on this host.",
+            });
+            return true;
+          }
           if (!policy.enabled) {
             json(res, 409, {
               ok: false, error: "disabled",
@@ -251,6 +258,17 @@ export function createDeviceAccessGateway(options: {
         throw new DeviceAccessError("not_found", "Unknown device pairing operation.", 404);
       }
       if (direct) return false;
+      if (policy.unavailable) {
+        // Legacy mode is for "device access is configured off", which is a
+        // decision someone made. An unreadable policy is not that decision, and
+        // passing a remote request through on the strength of it would admit
+        // exactly what pairing exists to stop.
+        throw new DeviceAccessError(
+          "unavailable",
+          "Device access could not be verified on this host.",
+          503,
+        );
+      }
       if (!policy.enabled) {
         legacy.add(res);
         res.once("close", () => { legacy.delete(res); });
@@ -321,7 +339,11 @@ export function createDeviceAccessGateway(options: {
   return {
     handle,
     async blocksUpgrade(req: IncomingMessage): Promise<boolean> {
-      return !options.isDirectLoopback(req) && (await currentPolicy()).enabled;
+      if (options.isDirectLoopback(req)) return false;
+      const policy = await currentPolicy();
+      // Unavailable blocks too: an upgrade admitted because the policy could
+      // not be read is a long-lived socket granted by a check that never ran.
+      return policy.enabled || policy.unavailable === true;
     },
     async close() {
       clearInterval(timer);

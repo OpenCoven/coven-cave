@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createDeviceAccessGateway } from "./gateway.ts";
 import { createDeviceAccessStore } from "./store.ts";
+import { deferDeviceAccessStore } from "./deferred.ts";
+import { DEVICE_ACCESS_HEADER } from "./contract.ts";
 import { parseDevicePeerInventory } from "./peers.ts";
 import { DEVICE_GRANT_HEADER } from "../../device-access-markers.ts";
 
@@ -232,3 +234,90 @@ for (const external of [false, true]) {
     }
   });
 }
+
+test("an unreadable policy refuses remote traffic instead of falling into legacy mode", async (t) => {
+  // The defect this pins: `enabled: false` means "configured off", and the
+  // gateway answers that by adding the response to `legacy` and passing the
+  // request THROUGH to the app — un-paired, no tailnet check. A store that
+  // failed to open once reported exactly that, so a failed security check
+  // opened the door it exists to hold shut. `unavailable` must refuse.
+  const { store: unreadable, settled } = deferDeviceAccessStore(
+    () => Promise.reject(new Error("ACL probe timed out")),
+    { warn: () => {} },
+  );
+  await settled;
+  const pairingRequests = t.mock.method(unreadable, "request");
+  const inventory = parseDevicePeerInventory({
+    BackendState: "Running",
+    Self: { DNSName: "desktop.example.ts.net." },
+    User: { "12": { LoginName: "operator@example.test" } },
+    Peer: {
+      one: { ID: "node-1", UserID: 12, HostName: "Phone", DNSName: "phone.example.ts.net.", TailscaleIPs: ["100.64.0.2"] },
+    },
+  });
+
+  const isDirectLoopback = (req: IncomingMessage) => !req.headers["x-forwarded-for"];
+  const gateway = createDeviceAccessGateway({
+    store: unreadable, inventory: async () => inventory,
+    isDirectLoopback, sidecarToken: "test-sidecar-secret", packaged: true, stampSecret: "stamp",
+  });
+  let reachedTheApp = false;
+  const server = createServer((req, res) => {
+    void gateway.handle(req, res).then((handled) => {
+      if (handled) return;
+      reachedTheApp = true;
+      res.end("{}");
+    }).catch(() => res.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    const remote = await fetch(`${base}/`, {
+      headers: remoteHeaders, signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(remote.status, 503, "the remote request is refused");
+    assert.equal(reachedTheApp, false, "and never reaches the app");
+
+    const pairing = await fetch(`${base}/api/device-access/requests`, {
+      method: "POST",
+      headers: { ...remoteHeaders, "content-type": "application/json" },
+      body: '{"installationId":"install-1","label":"Phone"}',
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(pairing.status, 503);
+    assert.equal((await pairing.json()).error, "unavailable");
+    assert.equal(pairingRequests.mock.callCount(), 0, "an unavailable policy never attempts pairing");
+
+    const status = await fetch(`${base}/api/device-access/status`, {
+      headers: { ...remoteHeaders, [DEVICE_ACCESS_HEADER]: "test-device-credential" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(status.status, 503);
+    assert.equal((await status.json()).error, "unavailable");
+
+    const admin = await fetch(`${base}/api/device-access/admin`, {
+      headers: { "x-coven-cave-token": "test-sidecar-secret" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(admin.status, 503);
+    assert.equal((await admin.json()).error, "unavailable");
+    assert.equal(reachedTheApp, false, "unavailable API requests never reach the app");
+
+    // Local traffic is unaffected: device access is not what gates loopback.
+    const local = await fetch(`${base}/`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(local.status, 200, "loopback still works");
+    assert.equal(reachedTheApp, true);
+
+    // A socket upgrade must be blocked for the same reason.
+    assert.equal(
+      await gateway.blocksUpgrade({ headers: remoteHeaders } as unknown as IncomingMessage),
+      true,
+      "an upgrade is not admitted by a check that never ran",
+    );
+  } finally {
+    await gateway.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

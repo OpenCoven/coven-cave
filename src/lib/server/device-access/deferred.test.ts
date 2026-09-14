@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
 import { deferDeviceAccessStore } from "./deferred.ts";
-import type { DeviceAccessStore } from "./store.ts";
+import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
 
 const never = <T,>(): Promise<T> => new Promise<T>(() => {});
 
@@ -72,7 +72,12 @@ test("when initialization fails, anything that could grant access refuses", asyn
     ["recordAccess", () => store.recordAccess("d", { requestId: "r", method: "GET", path: "/", status: 200 })],
   ];
   for (const [name, call] of granting) {
-    await assert.rejects(call, /Device access is unavailable/, `${name} refuses`);
+    await assert.rejects(call, {
+      name: "DeviceAccessError",
+      code: "unavailable",
+      status: 503,
+      message: /Device access is unavailable/,
+    }, `${name} refuses`);
   }
   // …and the reason travels with the refusal, so the log and the response agree.
   await assert.rejects(() => store.verify("c", peer), /ACL probe timed out/);
@@ -91,16 +96,97 @@ test("verify refuses rather than returning null when the store never opened", as
   await assert.rejects(() => store.verify("c", {} as never), /unavailable/);
 });
 
-test("the policy read answers 'off' instead of erroring", async () => {
-  // This one is deliberately not a throw: the UI asks policy() to decide
-  // whether to show device access at all, and "off" is the honest answer when
-  // the store never opened. Nothing is granted by saying so.
+test("the policy read reports UNAVAILABLE, not 'off'", async () => {
+  // The original version of this test asserted { enabled: false } and called it
+  // fail-closed. That was wrong, and the test is what made it look right: the
+  // gateway reads `enabled: false` as "configured off" and runs in LEGACY mode,
+  // which passes remote requests through without pairing
+  // (gateway.ts, the `if (!policy.enabled)` branch after `if (direct)`).
+  // So the old answer turned a failed security check into an open door.
   const { store, settled } = deferDeviceAccessStore(
     () => Promise.reject(new Error("ACL probe timed out")),
     { warn: () => {} },
   );
   await settled;
-  assert.deepEqual(await store.policy(), { enabled: false, allowedTailnets: [] });
+  assert.deepEqual(await store.policy(), {
+    enabled: false,
+    allowedTailnets: [],
+    unavailable: true,
+  });
+});
+
+test("a policy read does not wait forever on a stalled initialization", async (t) => {
+  // The gateway awaits policy() on EVERY request, before the direct-loopback
+  // bypass. An unbounded wait here is the same outage as blocking boot, moved
+  // one layer down: the server listens and answers nothing.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { store } = deferDeviceAccessStore(() => never<DeviceAccessStore>(), { warn: () => {} });
+  let answered = false;
+  const pending = store.policy().then((policy) => {
+    answered = true;
+    return policy;
+  });
+  t.mock.timers.tick(4_999);
+  await Promise.resolve();
+  assert.equal(answered, false, "initialization gets the full five-second window");
+  t.mock.timers.tick(1);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(answered, true, "answers at the five-second bound");
+  const policy = await pending;
+  assert.equal(policy.unavailable, true, "a pending store refuses rather than hanging");
+});
+
+for (const fails of [false, true]) {
+  test(`initialization ${fails ? "failure" : "success"} clears the shared policy timer`, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const timers = t.mock.method(globalThis, "setTimeout");
+    const clears = t.mock.method(globalThis, "clearTimeout");
+    let release!: (store: DeviceAccessStore) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<DeviceAccessStore>((resolve, fail) => {
+      release = resolve;
+      reject = fail;
+    });
+    const { store } = deferDeviceAccessStore(() => pending, { warn: () => {} });
+    const policies = Array.from({ length: 20 }, () => store.policy());
+    assert.equal(timers.mock.callCount(), 1, "concurrent reads share one timer");
+    if (fails) reject(new Error("no"));
+    else release(fakeStore());
+    await Promise.all(policies);
+    assert.equal(clears.mock.callCount(), 1);
+    assert.equal(clears.mock.calls[0].arguments[0], timers.mock.calls[0].result);
+    await store.policy();
+    assert.equal(timers.mock.callCount(), 1, "settled reads create no timers");
+  });
+}
+
+test("all deferred operations refuse at the shared bound and recover after initialization", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const timers = t.mock.method(globalThis, "setTimeout");
+  let release!: (store: DeviceAccessStore) => void;
+  const pending = new Promise<DeviceAccessStore>((resolve) => { release = resolve; });
+  const { store, settled } = deferDeviceAccessStore(() => pending, { warn: () => {} });
+  const calls = [
+    store.snapshot(),
+    store.setAllowedTailnets([], "actor"),
+    store.request({} as never, { installationId: "i", label: "l" }),
+    store.inspect("c", {} as never),
+    store.verify("c", {} as never),
+    store.decide("id", "allowed", "actor"),
+    store.recordAccess("d", { requestId: "r", method: "GET", path: "/", status: 200 }),
+  ];
+  const refusals = calls.map((call) => assert.rejects(call, (error: unknown) =>
+    error instanceof DeviceAccessError && error.code === "unavailable" && error.status === 503));
+  t.mock.timers.tick(5_000);
+  await Promise.all(refusals);
+  assert.equal((await store.policy()).unavailable, true);
+  await assert.rejects(store.snapshot(), { code: "unavailable", status: 503 });
+  assert.equal(timers.mock.callCount(), 1, "timed-out reads reuse the elapsed bound");
+  release(fakeStore());
+  await settled;
+  assert.deepEqual(await store.policy(), { enabled: true, allowedTailnets: ["tail"] });
+  assert.deepEqual(await store.snapshot(), {});
 });
 
 test("the failure is reported once, in full, and names the consequence", async () => {
