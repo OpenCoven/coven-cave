@@ -32,12 +32,6 @@ import { DeviceAccessError, type DeviceAccessStore } from "./store.ts";
  */
 const POLICY_WAIT_MS = 5_000;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-  });
-
 export type DeferredDeviceAccess = {
   store: DeviceAccessStore;
   /** Resolves when initialization has settled, successfully or not. */
@@ -49,7 +43,7 @@ export type DeferredDeviceAccess = {
 /**
  * Wrap a store initializer so the caller can start serving immediately.
  *
- * Every method awaits `settled` before delegating, so a request that arrives
+ * Every method awaits bounded initialization before delegating, so a request that arrives
  * mid-initialization waits for the real answer rather than being told "not
  * ready" and having to retry. `settled` never rejects — the failure is held and
  * turned into a refusal at the point of use, where it can be reported in the
@@ -78,11 +72,24 @@ export function deferDeviceAccessStore(
     },
   );
 
+  let initializationWait: Promise<void> | undefined;
+  const waitForInitialization = (): Promise<void> => {
+    if (ready || failed) return settled;
+    return initializationWait ??= new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, POLICY_WAIT_MS);
+      timer.unref?.();
+      void settled.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  };
+
   /** The live store, or a refusal carrying why there isn't one. */
   const live = (): DeviceAccessStore => {
     if (ready) return ready;
     throw new DeviceAccessError(
-      "forbidden",
+      "unavailable",
       failed
         ? `Device access is unavailable on this host: ${failed.message}`
         : "Device access is unavailable on this host.",
@@ -95,7 +102,7 @@ export function deferDeviceAccessStore(
       // direct loopback. An unbounded wait here means a stalled probe stops the
       // server answering at all, which is the same outage as blocking boot,
       // just moved one layer down.
-      await Promise.race([settled, sleep(POLICY_WAIT_MS)]);
+      await waitForInitialization();
       // `enabled: false` is NOT a safe answer here: the gateway reads it as
       // "configured off" and runs in legacy mode, which passes REMOTE requests
       // through without pairing. Saying it when the store never opened would
@@ -105,31 +112,31 @@ export function deferDeviceAccessStore(
       return ready.policy();
     },
     async snapshot() {
-      await settled;
+      await waitForInitialization();
       return live().snapshot();
     },
     async setAllowedTailnets(tailnets, actor) {
-      await settled;
+      await waitForInitialization();
       return live().setAllowedTailnets(tailnets, actor);
     },
     async request(peer, input) {
-      await settled;
+      await waitForInitialization();
       return live().request(peer, input);
     },
     async inspect(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().inspect(credential, peer);
     },
     async verify(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().verify(credential, peer);
     },
     async decide(id, decision, actor) {
-      await settled;
+      await waitForInitialization();
       return live().decide(id, decision, actor);
     },
     async recordAccess(deviceId, input) {
-      await settled;
+      await waitForInitialization();
       return live().recordAccess(deviceId, input);
     },
     close() {

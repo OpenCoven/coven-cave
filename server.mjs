@@ -2158,10 +2158,6 @@ function createDeviceAccessGateway(options) {
 
 // src/lib/server/device-access/deferred.ts
 var POLICY_WAIT_MS = 5e3;
-var sleep = (ms) => new Promise((resolve3) => {
-  const timer = setTimeout(resolve3, ms);
-  timer.unref?.();
-});
 function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
   let ready = null;
   let failed = null;
@@ -2176,45 +2172,57 @@ function deferDeviceAccessStore(initialize, { warn = console.warn } = {}) {
       );
     }
   );
+  let initializationWait;
+  const waitForInitialization = () => {
+    if (ready || failed) return settled;
+    return initializationWait ??= new Promise((resolve3) => {
+      const timer = setTimeout(resolve3, POLICY_WAIT_MS);
+      timer.unref?.();
+      void settled.then(() => {
+        clearTimeout(timer);
+        resolve3();
+      });
+    });
+  };
   const live = () => {
     if (ready) return ready;
     throw new DeviceAccessError(
-      "forbidden",
+      "unavailable",
       failed ? `Device access is unavailable on this host: ${failed.message}` : "Device access is unavailable on this host."
     );
   };
   const store = {
     async policy() {
-      await Promise.race([settled, sleep(POLICY_WAIT_MS)]);
+      await waitForInitialization();
       if (!ready) return { enabled: false, allowedTailnets: [], unavailable: true };
       return ready.policy();
     },
     async snapshot() {
-      await settled;
+      await waitForInitialization();
       return live().snapshot();
     },
     async setAllowedTailnets(tailnets, actor) {
-      await settled;
+      await waitForInitialization();
       return live().setAllowedTailnets(tailnets, actor);
     },
     async request(peer, input) {
-      await settled;
+      await waitForInitialization();
       return live().request(peer, input);
     },
     async inspect(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().inspect(credential, peer);
     },
     async verify(credential, peer) {
-      await settled;
+      await waitForInitialization();
       return live().verify(credential, peer);
     },
     async decide(id, decision, actor) {
-      await settled;
+      await waitForInitialization();
       return live().decide(id, decision, actor);
     },
     async recordAccess(deviceId, input) {
-      await settled;
+      await waitForInitialization();
       return live().recordAccess(deviceId, input);
     },
     close() {
