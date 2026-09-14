@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,14 +43,24 @@ function runInstaller(dir, ...args) {
   });
 }
 
+function commitFixture(dir, message) {
+  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "-c", "commit.gpgsign=false",
+    "-c", "user.name=Hook Fixture", "-c", "user.email=fixture@example.invalid",
+    "commit", "-qm", message);
+}
+
 function trackLegacyHooks(dir) {
   for (const hook of ["pre-commit", "commit-msg", "post-checkout", "post-merge", "pre-push", "prepare-commit-msg"]) {
     cpSync(join(repoRoot, ".beads", "hooks", hook), join(dir, ".beads", "hooks", hook));
   }
   git(dir, "add", "scripts", ".beads/hooks");
-  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "-c", "commit.gpgsign=false",
-    "-c", "user.name=Hook Fixture", "-c", "user.email=fixture@example.invalid",
-    "commit", "-qm", "Fixture hooks");
+  commitFixture(dir, "Fixture hooks");
+}
+
+function addLinkedWorktree(dir) {
+  const linked = join(dir, ".worktrees", "linked");
+  git(dir, "-c", "core.hooksPath=scripts/git-hooks", "worktree", "add", "--no-track", "-b", "linked", linked);
+  return linked;
 }
 
 test("explicit retirement switches recognized relative or absolute legacy hooks without deleting them", () => {
@@ -76,8 +86,7 @@ test("a linked worktree can retire the primary checkout's absolute Beads hook pa
   const dir = scaffold();
   try {
     trackLegacyHooks(dir);
-    const linked = join(dir, ".worktrees", "linked");
-    git(dir, "-c", "core.hooksPath=scripts/git-hooks", "worktree", "add", "--no-track", "-b", "linked", linked);
+    const linked = addLinkedWorktree(dir);
     git(dir, "config", "core.hooksPath", join(dir, ".beads", "hooks"));
     assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
     assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
@@ -86,6 +95,87 @@ test("a linked worktree can retire the primary checkout's absolute Beads hook pa
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+for (const variant of ["different", "missing"]) {
+  test(`divergent HEADs: unchanged primary hooks migrate with a ${variant} linked hook blob`, () => {
+    const dir = scaffold();
+    try {
+      trackLegacyHooks(dir);
+      const linked = addLinkedWorktree(dir);
+      const linkedHook = join(linked, ".beads", "hooks", "pre-commit");
+      if (variant === "different") {
+        writeFileSync(linkedHook, "#!/usr/bin/env bash\n# Linked checkout hook\nexit 0\n");
+      } else {
+        rmSync(linkedHook);
+      }
+      git(linked, "add", ".beads/hooks");
+      commitFixture(linked, `${variant} linked hook`);
+
+      const legacy = join(dir, ".beads", "hooks");
+      const before = readFileSync(join(legacy, "pre-commit"), "utf8");
+      git(dir, "config", "core.hooksPath", legacy);
+      assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
+      assert.equal(git(dir, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+      assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+      assert.equal(readFileSync(join(legacy, "pre-commit"), "utf8"), before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("divergent HEADs: modified primary hooks refuse even when they match the linked commit", () => {
+  const dir = scaffold();
+  try {
+    trackLegacyHooks(dir);
+    const linked = addLinkedWorktree(dir);
+    const modified = "#!/usr/bin/env bash\n# Linked checkout hook\nexit 0\n";
+    writeFileSync(join(linked, ".beads", "hooks", "pre-commit"), modified);
+    git(linked, "add", ".beads/hooks");
+    commitFixture(linked, "Different linked hook");
+
+    const legacy = join(dir, ".beads", "hooks");
+    writeFileSync(join(legacy, "pre-commit"), modified);
+    git(dir, "config", "core.hooksPath", legacy);
+    const config = readFileSync(join(dir, ".git", "config"), "utf8");
+    const guard = join(linked, "scripts", "git-hooks", "pre-commit");
+    chmodSync(guard, 0o644);
+    const mode = statSync(guard).mode;
+
+    assert.throws(
+      () => runInstaller(linked, "--retire-beads"),
+      (error) => error.status === 2 && /ERROR: modified legacy hook would be disabled:/.test(error.stderr),
+    );
+    assert.equal(readFileSync(join(dir, ".git", "config"), "utf8"), config);
+    assert.equal(statSync(guard).mode, mode, "refusal must precede chmod of the canonical guards");
+    assert.equal(readFileSync(join(legacy, "pre-commit"), "utf8"), modified);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const absolute of [false, true]) {
+  test(`divergent HEADs: current linked hooks use their own commit with a selected ${absolute ? "absolute" : "relative"} path`, () => {
+    const dir = scaffold();
+    try {
+      trackLegacyHooks(dir);
+      const linked = addLinkedWorktree(dir);
+      writeFileSync(join(dir, ".beads", "hooks", "pre-commit"), "#!/usr/bin/env bash\n# Primary checkout hook\nexit 0\n");
+      git(dir, "add", ".beads/hooks");
+      commitFixture(dir, "Different primary hook");
+
+      const legacy = absolute ? join(linked, ".beads", "hooks") : ".beads/hooks";
+      const hook = join(linked, ".beads", "hooks", "pre-commit");
+      const before = readFileSync(hook, "utf8");
+      git(linked, "config", "core.hooksPath", legacy);
+      assert.match(runInstaller(linked, "--retire-beads"), /RETIRE recognized Beads hooks/);
+      assert.equal(git(linked, "config", "--get", "core.hooksPath"), "scripts/git-hooks");
+      assert.equal(readFileSync(hook, "utf8"), before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("retirement refuses extra or modified legacy hooks before changing config", () => {
   for (const hook of ["post-rewrite", "pre-commit"]) {

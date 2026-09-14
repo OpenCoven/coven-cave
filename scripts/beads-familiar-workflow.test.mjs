@@ -59,7 +59,7 @@ for (const hooks of [claudeHooks, codexHooks]) {
     "automatic context and permission entries must not run Beads");
 }
 for (const hook of ["surface-claim-guard", "worktree-guard", "worktree-autolock",
-  "worktree-retention-push", "worktree-session-exit-retirement"]) {
+  "worktree-retention-push"]) {
   assert.ok(JSON.stringify(claudeHooks.hooks).includes(hook), `preserve the independent ${hook} hook`);
 }
 const sweep = spawnSync("bash", [fileURLToPath(new URL("./worktree-sweep.sh", import.meta.url))], {

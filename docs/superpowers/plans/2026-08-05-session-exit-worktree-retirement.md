@@ -1,5 +1,12 @@
 # Session-Exit Worktree Retirement Implementation Plan
 
+**Status: Retired by #5399.** Local `SAFE-RETIRE` classification does not prove
+ownership, runtime exclusion, or remote retention. The automatic hook and
+package shortcut are removed, and the script now refuses without side effects.
+Preserve this plan as history; use
+[GitHub work tracking](../../workflows/github-work-tracking.md) for the current
+authorized retirement procedure.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Retire clean local worktrees already merged into `main` when a Claude session ends.

@@ -100,6 +100,11 @@ does not uninstall tools from your machine or rewrite private global settings.
 Already-running sessions may retain older context; give them the current
 issue and this decision rather than changing their tasks or processes.
 
+The automatic `SessionEnd` cleanup hook and `wt:retire-on-exit` shortcut are
+removed. Stale calls to `scripts/worktree-session-exit-retirement.mjs` exit 2
+before any status probe or Git operation. A local `SAFE-RETIRE` verdict cannot
+authorize unlocking another session's checkout or deleting its worktree/branch.
+
 The old `worktree-sweep.sh` exits with an explicit retirement refusal before
 running any tracker or Git operation. Remove machine-specific schedules that
 still invoke it; repository changes do not uninstall external scheduler entries.

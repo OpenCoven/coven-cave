@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { devNull, tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +14,7 @@ function git(cwd, ...args) {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    env: { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_SYSTEM: devNull },
   }).trim();
 }
 
@@ -30,23 +30,44 @@ function scaffold() {
   return dir;
 }
 
-function run(dir) {
-  return execFileSync("node", [script], { cwd: dir, encoding: "utf8" });
+function run(dir, args = [], env = process.env) {
+  return spawnSync(process.execPath, [script, ...args], {
+    cwd: dir,
+    encoding: "utf8",
+    env,
+    timeout: 30_000,
+  });
 }
 
-test("retires a clean worktree already merged into main and its local branch", () => {
-  const dir = scaffold();
-  try {
-    const worktree = join(dir, "wt-safe");
-    git(dir, "worktree", "add", "-q", "-b", "feat/safe", worktree, "main");
+function assertRetired(result) {
+  assert.ifError(result.error);
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /retired[\s\S]*no status probe or Git operation was attempted/);
+  assert.match(result.stderr, /Branch Curator[\s\S]*authorization[\s\S]*deletion proof/);
+}
 
-    assert.match(run(dir), /Retired: 1/);
-    assert.equal(existsSync(worktree), false);
-    assert.throws(() => git(dir, "rev-parse", "--verify", "feat/safe"));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+for (const locked of [false, true]) {
+  test(`refuses automatic removal of a clean merged worktree, locked=${locked}`, () => {
+    const dir = scaffold();
+    try {
+      const worktree = join(dir, "wt-safe");
+      git(dir, "worktree", "add", "-q", "-b", "feat/safe", worktree, "main");
+      if (locked) {
+        git(dir, "worktree", "lock", "--reason", "another active session", worktree);
+      }
+      const beforeRegistration = git(dir, "worktree", "list", "--porcelain");
+      const beforeHead = git(dir, "rev-parse", "feat/safe");
+
+      assertRetired(run(dir));
+      assert.equal(existsSync(worktree), true);
+      assert.equal(git(dir, "rev-parse", "feat/safe"), beforeHead);
+      assert.equal(git(dir, "worktree", "list", "--porcelain"), beforeRegistration);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("retains dirty, unmerged, and primary worktrees", () => {
   const dir = scaffold();
@@ -57,89 +78,50 @@ test("retains dirty, unmerged, and primary worktrees", () => {
     writeFileSync(join(dirty, "draft.txt"), "keep\n");
     git(dir, "worktree", "add", "-q", "-b", "feat/live", live, "main");
     git(live, "commit", "-qm", "ahead", "--allow-empty");
+    const beforeRegistration = git(dir, "worktree", "list", "--porcelain");
+    const beforeRefs = git(dir, "show-ref", "--heads");
 
-    assert.match(run(dir), /Retired: 0/);
+    assertRetired(run(dir));
     assert.equal(existsSync(dir), true);
     assert.equal(existsSync(dirty), true);
     assert.equal(existsSync(live), true);
+    assert.equal(readFileSync(join(dirty, "draft.txt"), "utf8"), "keep\n");
     assert.equal(git(dir, "branch", "--show-current"), "main");
+    assert.equal(git(dir, "show-ref", "--heads"), beforeRefs);
+    assert.equal(git(dir, "worktree", "list", "--porcelain"), beforeRegistration);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("unlocks and retires a safe locked worktree", () => {
-  const dir = scaffold();
+test("stale invocations refuse before any status, tracker, or Git subprocess", () => {
+  const dir = mkdtempSync(join(tmpdir(), "wt-exit-refusal-"));
   try {
-    const worktree = join(dir, "wt-locked");
-    git(dir, "worktree", "add", "-q", "-b", "feat/locked", worktree, "main");
-    git(dir, "worktree", "lock", "--reason", "autolock", worktree);
-
-    assert.match(run(dir), /Retired: 1/);
-    assert.equal(existsSync(worktree), false);
+    const bin = join(dir, "bin");
+    const marker = join(dir, "subprocess-called");
+    mkdirSync(bin);
+    for (const name of ["node", "git", "bd"]) {
+      writeFileSync(join(bin, name),
+        `#!/bin/sh\nprintf called > ${JSON.stringify(marker)}\nexit 99\n`,
+        { mode: 0o755 });
+    }
+    const env = { ...process.env, PATH: [bin, process.env.PATH ?? ""].join(delimiter) };
+    for (const args of [[], ["--apply"], ["--json"]]) {
+      assertRetired(run(dir, args, env));
+      assert.equal(existsSync(marker), false, "even a read-only probe must not run");
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("keeps a candidate when removal fails and continues to later candidates", async () => {
-  const { main } = await import("./worktree-session-exit-retirement.mjs");
-  const calls = [];
-  const output = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (line) => output.push(line);
-  console.error = (line) => output.push(line);
-  try {
-    const status = {
-      rows: [
-        { path: "/first", branch: "feat/first", locked: false, verdict: "SAFE-RETIRE" },
-        { path: "/second", branch: "feat/second", locked: false, verdict: "SAFE-RETIRE" },
-      ],
-    };
-    const runCommand = (args) => {
-      calls.push(args);
-      if (args[0] === "node") return { ok: true, output: JSON.stringify(status) };
-      if (args[3] === "/first") return { ok: false, output: "simulated failure" };
-      return { ok: true, output: "" };
-    };
-
-    assert.equal(main({ run: runCommand }), 0);
-    assert.deepEqual(calls, [
-      ["node", join(root, "scripts", "worktree-status.mjs"), "--json"],
-      ["git", "worktree", "remove", "/first"],
-      ["git", "worktree", "remove", "/second"],
-      ["git", "branch", "-d", "feat/second"],
-    ]);
-    assert.match(output.join("\n"), /Retained \/first: could not remove: simulated failure/);
-    assert.match(output.join("\n"), /Retired: 1/);
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
-});
-
-test("fails safe when the status report has no rows", async () => {
-  const { main } = await import("./worktree-session-exit-retirement.mjs");
-  const output = [];
-  const originalError = console.error;
-  console.error = (line) => output.push(line);
-  try {
-    assert.equal(
-      main({ run: () => ({ ok: true, output: JSON.stringify({ ok: true }) }) }),
-      0,
-    );
-    assert.match(output.join("\n"), /status report has no rows/);
-  } finally {
-    console.error = originalError;
-  }
-});
-
-test("registers the retirement command as a SessionEnd hook", () => {
+test("automatic hooks and routine package commands cannot invoke retired cleanup", () => {
   const settings = JSON.parse(readFileSync(join(root, ".claude", "settings.json"), "utf8"));
-  assert.ok(settings.hooks.SessionEnd);
-  assert.match(
-    JSON.stringify(settings.hooks.SessionEnd),
-    /worktree-session-exit-retirement\.mjs/,
+  const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.doesNotMatch(
+    JSON.stringify(settings.hooks),
+    /worktree-session-exit-retirement|wt:retire-on-exit/,
   );
+  assert.equal(packageJson.scripts["wt:retire-on-exit"], undefined);
+  assert.doesNotMatch(JSON.stringify(packageJson.scripts), /worktree-session-exit-retirement\.mjs/);
 });

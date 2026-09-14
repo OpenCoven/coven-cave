@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Configure this clone's Git guards and frozen-JSONL merge driver.
 # A different hook directory is preserved unless --retire-beads explicitly
-# selects the unchanged legacy hooks shipped in this checkout's HEAD.
+# selects unchanged legacy hooks committed in their owning checkout's HEAD.
 set -euo pipefail
 
 retire_beads=false
@@ -61,8 +61,11 @@ if [ "$retire_beads" = true ] && [ -n "$resolved_current" ] \
     exit 2
   fi
   resolved_current=$(cd "$resolved_current" && pwd -P)
-  if [ "$resolved_current" != "$REPO_ROOT/.beads/hooks" ] \
-     && [ "$resolved_current" != "$primary_root/.beads/hooks" ]; then
+  if [ "$resolved_current" = "$REPO_ROOT/.beads/hooks" ]; then
+    legacy_root="$REPO_ROOT"
+  elif [ "$resolved_current" = "$primary_root/.beads/hooks" ]; then
+    legacy_root="$primary_root"
+  else
     echo "ERROR: --retire-beads refuses an unrecognized hook directory: $current" >&2
     exit 2
   fi
@@ -80,11 +83,11 @@ if [ "$retire_beads" = true ] && [ -n "$resolved_current" ] \
       echo "ERROR: custom hook entry is not a regular file: $file" >&2
       exit 2
     fi
-    if ! expected=$(git -C "$REPO_ROOT" rev-parse --verify "HEAD:.beads/hooks/$hook"); then
+    if ! expected=$(git -C "$legacy_root" rev-parse --verify "HEAD:.beads/hooks/$hook"); then
       echo "ERROR: no committed legacy hook to compare: $hook" >&2
       exit 2
     fi
-    actual=$(git -C "$REPO_ROOT" hash-object -- "$file")
+    actual=$(git -C "$legacy_root" hash-object -- "$file")
     if [ "$actual" != "$expected" ]; then
       echo "ERROR: modified legacy hook would be disabled: $file; leaving hooks unchanged" >&2
       exit 2

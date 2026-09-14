@@ -160,6 +160,11 @@ The workflow explicitly fails if scheduled-local tooling ever acquires `--apply`
 
 ## Retirement remains separate
 
+The old automatic `SessionEnd` retirement hook and `wt:retire-on-exit` shortcut
+are removed. `scripts/worktree-session-exit-retirement.mjs` is an exit-2
+tombstone for stale registrations: it does not probe status, unlock worktrees,
+or remove any checkout or branch, including clean locally merged candidates.
+
 Use [Branch Curator](.agents/skills/branch-curator/SKILL.md) and its complete
 [deletion proof](.agents/skills/branch-curator/references/deletion-proof.md).
 Require current bounded authorization, the local maintenance lease, clean
