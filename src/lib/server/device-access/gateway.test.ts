@@ -254,7 +254,7 @@ test("an unreadable policy refuses remote traffic instead of falling into legacy
   const isDirectLoopback = (req: IncomingMessage) => !req.headers["x-forwarded-for"];
   const gateway = createDeviceAccessGateway({
     store: unreadable, inventory: async () => parseDevicePeerInventory({ BackendState: "Running" }),
-    isDirectLoopback, stampSecret: "stamp",
+    isDirectLoopback, sidecarToken: "test-sidecar-secret", packaged: true, stampSecret: "stamp",
   });
   let reachedTheApp = false;
   const server = createServer((req, res) => {
