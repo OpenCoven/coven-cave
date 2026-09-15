@@ -3,16 +3,9 @@
 /**
  * X Comms — the account's own room.
  *
- * Comms Operations next door is channel-agnostic and keeps X in a panel; this
- * room is X and nothing else, so it can be shaped around the one decision that
- * matters here: a person releasing a single write, once, at a time they chose.
- *
- * **Nothing here reaches X.** Approving moves a local record and schedules a
- * slot no dispatcher reads; the real publish path is `/api/x/publish`, driven
- * by `XPublishPanel` inside Comms Operations, and this room deliberately does
- * not call it. The header says so rather than letting a faithful console imply
- * a queue that drains. Character counting and the 280 limit come from
- * `x-publish-composer.ts` so the two rooms cannot drift about what fits.
+ * Demo planning and live publishing share this room. Demo approvals only
+ * update local fixtures; Live publishing opens the existing confirmed,
+ * non-retrying `/api/x/publish` workflow with its durable history.
  *
  * Shape: a work queue grouped by what each draft needs, a composer, and a
  * dispatch rail whose first card is Approval — the only card with a decision
@@ -57,7 +50,8 @@ import {
   type XReplyPermission,
   type XTone,
 } from "@/lib/x-comms-model";
-import { SurfaceRoom } from "./surface-room";
+import { SurfaceCanvas, SurfaceRoom } from "./surface-room";
+import { XPublishPanel } from "./x-publish-panel";
 import { ApprovalCard, type XConfirmKind } from "./x-comms/approval-card";
 import { Composer } from "./x-comms/composer";
 import {
@@ -132,7 +126,15 @@ function mergeRefusal(post: XPostBody, following: XPostBody): string {
 }
 
 export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
+  const [livePublishing, setLivePublishing] = useState(false);
+
   const { announce } = useAnnouncer();
+  const viewSwitchRef = useRef<HTMLButtonElement>(null);
+  const previousView = useRef(livePublishing);
+  useEffect(() => {
+    if (previousView.current !== livePublishing) viewSwitchRef.current?.focus();
+    previousView.current = livePublishing;
+  }, [livePublishing]);
 
   // One clock for the whole room, so a countdown and the slot it counts to can
   // never be computed against two different "now"s in one render.
@@ -364,6 +366,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
   // Room-level keys. Escape unwinds the topmost thing rather than everything at
   // once, so closing a menu never also closes the dialog behind it.
   useEffect(() => {
+    if (livePublishing) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         if (renaming) {
@@ -393,7 +396,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [approve, blocker, closeOverlays, generate, jumpToNeedsYou, renaming, selected, toast, undo]);
+  }, [approve, blocker, closeOverlays, generate, jumpToNeedsYou, livePublishing, renaming, selected, toast, undo]);
 
   const startResize = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
@@ -750,6 +753,30 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
 
   const anyOverlay = quotaOpen || revisionsOpen || slotPickerOpen || railOpen;
 
+  if (livePublishing) {
+    return (
+      <SurfaceRoom
+        accentHue={38}
+        header={
+          <div className="x-comms-banner">
+            <button
+              ref={viewSwitchRef}
+              type="button"
+              className="role-surface-chip focus-ring"
+              onClick={() => setLivePublishing(false)}
+            >
+              Back to demo planning
+            </button>
+          </div>
+        }
+      >
+        <SurfaceCanvas label="Live X publishing">
+          <XPublishPanel key={context.activeFamiliar.id} familiarId={context.activeFamiliar.id} />
+        </SurfaceCanvas>
+      </SurfaceRoom>
+    );
+  }
+
   return (
     <div
       className="x-comms"
@@ -772,6 +799,14 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
               </span>
               <strong>Demo room.</strong>
               <span className="x-comms-banner-body">{X_DEMO_NOTICE}</span>
+              <button
+                type="button"
+                className="role-surface-chip focus-ring"
+                ref={viewSwitchRef}
+                onClick={() => setLivePublishing(true)}
+              >
+                Live publishing
+              </button>
               {SHOW_ACCOUNT_STATE_SWITCH ? (
                 <span className="x-comms-banner-tail">
                   <span>account state</span>
@@ -784,7 +819,7 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
                 </span>
               ) : (
                 <span className="x-comms-banner-tail">
-                  the real publish path is in Comms Operations
+                  Live publishing requires confirmation
                 </span>
               )}
             </div>

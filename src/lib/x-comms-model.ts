@@ -5,14 +5,12 @@
  * Two things this file deliberately does NOT own:
  *
  *  - **What 280 means.** `weightedPostLength` and `X_POST_WEIGHTED_LIMIT` come
- *    from `x-publish-composer.ts`, which already serves the Comms Operations
+ *    from `x-publish-composer.ts`, which also serves the live X publishing
  *    room. A second definition here would drift, and the first symptom would
  *    be two surfaces disagreeing about whether the same draft fits.
- *  - **Posting.** Nothing in this room reaches X. Approval moves a local
- *    record between states and schedules a slot that no dispatcher reads. That
- *    is the honest shape for a room whose delivery half does not exist yet —
- *    the same stance `messenger-surface.tsx` takes about its own drafts — and
- *    the copy in the room says so rather than implying a queue that drains.
+ *  - **Posting.** This demo model only updates local records and slots; no
+ *    dispatcher reads them. Live publishing has a separate confirmed workflow
+ *    in `XPublishPanel`, with durable records owned by `/api/x/publish`.
  *
  * `now` is threaded through every function that needs it instead of being read
  * from the clock. The room passes `Date.now()`; tests pass a fixed instant, so

@@ -234,7 +234,8 @@ BASELINES.offScaleSpacingPx = 1616;
 // fixed constants from the same frame deliberately did NOT come here — the
 // 376px dispatch rail, the 44px collapsed strip and the 40px header live in
 // surface-x-comms.css.
-BASELINES.inlineTsxStyles = 289;
+// -5: retiring Review Desk removes its exclusive dynamic pane styles (#5412).
+BASELINES.inlineTsxStyles = 284;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 
