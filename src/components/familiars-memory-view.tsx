@@ -4,11 +4,6 @@ import "@/styles/cave-md.css";
 import "@/styles/familiars-memory.css";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CanonicalMemoryOverviewPanel } from "@/components/canonical-memory-overview";
-import {
-  CanonicalMemoryReader,
-  canonicalMemoryErrorCopy,
-} from "@/components/canonical-memory-reader";
 import {
   MemoryFilesList,
   MemoryReaderModal,
@@ -34,23 +29,6 @@ import {
   PopoverBody,
   PopoverLabel,
 } from "@/components/ui/popover";
-import type {
-  CanonicalMemoryOverview,
-  CanonicalMemorySummary,
-  PendingCanonicalMemorySelection,
-} from "@/lib/canonical-memory";
-import {
-  canonicalMemorySelectionRowId,
-  isCanonicalMemorySelectionApplied,
-} from "@/lib/canonical-memory";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
-import {
-  loadCanonicalMemoryList,
-  loadCanonicalMemoryOverview,
-  refreshCanonicalMemory,
-  type CanonicalMemoryListLoad,
-  type CanonicalMemoryOverviewLoad,
-} from "@/lib/canonical-memory-resources";
 import {
   formatTimestamp,
   readDateTimePrefs,
@@ -64,12 +42,9 @@ import {
 } from "@/lib/memory-management";
 import {
   buildMemoryRows,
-  excludeMissingCanonicalMemory,
   groupMemoryRows,
   memoryListPresentation,
   reconcileMemorySelection,
-  reconcileMissingCanonicalRefresh,
-  type CanonicalMemoryRow,
   type FileMemoryRow,
   type MemoryRow,
 } from "@/lib/memory-rows";
@@ -106,32 +81,13 @@ type Props = {
   lockToFamiliar?: boolean;
   compact?: boolean;
   feed?: MemoryFeed;
-  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
-  onCanonicalMemorySelectionApplied?: (id: string) => void;
 };
 
 type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
 
-type CanonicalState = MemoryFeed["canonical"];
-type OverviewState = MemoryFeed["overview"];
 type FilesState = MemoryFeed["files"];
-
-function canonicalStateFrom(
-  load: CanonicalMemoryListLoad,
-  previousEntries: CanonicalMemorySummary[],
-): CanonicalState {
-  return load.state === "ready"
-    ? { state: "ready", entries: load.entries }
-    : { state: "error", entries: previousEntries, error: load.error };
-}
-
-function overviewStateFrom(load: CanonicalMemoryOverviewLoad): OverviewState {
-  return load.state === "ready"
-    ? { state: "ready", value: load.overview }
-    : { state: "error", value: null, error: load.error };
-}
 
 function withFileEntries(
   state: FilesState,
@@ -150,18 +106,8 @@ export function FamiliarsMemoryView({
   lockToFamiliar,
   compact,
   feed,
-  pendingCanonicalMemorySelection = null,
-  onCanonicalMemorySelectionApplied,
 }: Props) {
   useDateTimePrefs();
-  const [canonicalState, setCanonicalState] = useState<CanonicalState>({
-    state: "loading",
-    entries: [],
-  });
-  const [overviewState, setOverviewState] = useState<OverviewState>({
-    state: "loading",
-    value: null,
-  });
   const [filesState, setFilesState] = useState<FilesState>({
     state: "loading",
     entries: [],
@@ -174,12 +120,6 @@ export function FamiliarsMemoryView({
   const familiarFilter =
     storedFamiliarFilter || activeFamiliar?.id || familiars[0]?.id || "";
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [pinnedCanonicalSelection, setPinnedCanonicalSelection] = useState<{
-    selection: PendingCanonicalMemorySelection;
-    row: CanonicalMemoryRow;
-  } | null>(null);
-  const acknowledgedPendingSelectionRef =
-    useRef<PendingCanonicalMemorySelection | null>(null);
   const [sourceFilter, setSourceFilter] = useSurfacePreference(
     surfacePreferenceSpecs.familiarMemory.source,
   );
@@ -206,11 +146,6 @@ export function FamiliarsMemoryView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
   const sourceSummaryId = useId();
-  const overviewPanelId = useId();
-  const [missingCanonical, setMissingCanonical] = useState<{
-    memoryId: string | null;
-    notice: string | null;
-  }>({ memoryId: null, notice: null });
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
@@ -229,24 +164,6 @@ export function FamiliarsMemoryView({
       loadActiveForceEpochRef.current = null;
     };
   }, []);
-
-  const settleMissingCanonicalRefresh = useCallback(
-    (refresh: CanonicalMemoryListLoad) => {
-      setMissingCanonical((current) => {
-        const reconciled = reconcileMissingCanonicalRefresh({
-          missingMemoryId: current.memoryId,
-          notice: current.notice,
-          refreshState: refresh.state,
-          entries: refresh.state === "ready" ? refresh.entries : [],
-        });
-        return {
-          memoryId: reconciled.missingMemoryId,
-          notice: reconciled.notice,
-        };
-      });
-    },
-    [],
-  );
 
   const loadFiles = useCallback(
     async (force: boolean, isCurrent: () => boolean) => {
@@ -306,34 +223,13 @@ export function FamiliarsMemoryView({
       try {
         if (feed) {
           if (force) {
-            const canonical = await feed.reload();
+            await feed.reload();
             if (!isCurrent()) return;
-            settleMissingCanonicalRefresh(canonical);
           }
           return;
         }
 
-        const fileLoad = loadFiles(force, isCurrent);
-        if (force) {
-          const canonical = await refreshCanonicalMemory();
-          if (!isCurrent()) return;
-          setCanonicalState((current) =>
-            canonicalStateFrom(canonical.list, current.entries)
-          );
-          setOverviewState(overviewStateFrom(canonical.overview));
-          settleMissingCanonicalRefresh(canonical.list);
-        } else {
-          const [canonical, overview] = await Promise.all([
-            loadCanonicalMemoryList(),
-            loadCanonicalMemoryOverview(),
-          ]);
-          if (!isCurrent()) return;
-          setCanonicalState((current) =>
-            canonicalStateFrom(canonical, current.entries)
-          );
-          setOverviewState(overviewStateFrom(overview));
-        }
-        await fileLoad;
+        await loadFiles(force, isCurrent);
         if (!isCurrent()) return;
         setLastLoadedAt(new Date().toISOString());
       } finally {
@@ -345,14 +241,12 @@ export function FamiliarsMemoryView({
         }
       }
     },
-    [feed, loadFiles, settleMissingCanonicalRefresh],
+    [feed, loadFiles],
   );
 
   useEffect(() => {
     if (!feed) return;
     const pendingDelete = pendingDeletePathRef.current;
-    setCanonicalState(feed.canonical);
-    setOverviewState(feed.overview);
     setFilesState(
       withFileEntries(
         feed.files,
@@ -401,21 +295,6 @@ export function FamiliarsMemoryView({
     void load(true);
   }, [load, undoDelete]);
 
-  const handleMissingCanonicalMemory = useCallback((memoryId: string) => {
-    setCanonicalState((current) => ({
-      ...current,
-      entries: excludeMissingCanonicalMemory(current.entries, memoryId),
-    }));
-    setMissingCanonical({
-      memoryId,
-      notice: "Memory not found",
-    });
-    setPinnedCanonicalSelection((current) =>
-      current?.selection.id === memoryId ? null : current
-    );
-    setSelectedRowId(null);
-    setExpandRow(null);
-  }, []);
 
   const familiarById = useMemo(
     () => new Map(familiars.map((familiar) => [familiar.id, familiar])),
@@ -425,50 +304,7 @@ export function FamiliarsMemoryView({
     lockToFamiliar && activeFamiliar?.id
       ? activeFamiliar.id
       : familiarFilter;
-  const activePendingCanonicalRowId =
-    pendingCanonicalMemorySelection?.familiarId === effectiveFamiliarFilter
-      ? canonicalMemorySelectionRowId(pendingCanonicalMemorySelection)
-      : null;
   const normalizedQuery = query.trim().toLowerCase();
-  const availableCanonicalEntries = useMemo(
-    () =>
-      excludeMissingCanonicalMemory(
-        canonicalState.entries,
-        missingCanonical.memoryId,
-      ),
-    [canonicalState.entries, missingCanonical.memoryId],
-  );
-  const activePinnedCanonicalRow =
-    !pendingCanonicalMemorySelection &&
-    pinnedCanonicalSelection?.selection.familiarId ===
-      effectiveFamiliarFilter &&
-    (canonicalState.state !== "ready" ||
-      availableCanonicalEntries.some(
-        (entry) =>
-          entry.id === pinnedCanonicalSelection.selection.id &&
-          entry.familiarId ===
-            pinnedCanonicalSelection.selection.familiarId,
-      ))
-      ? pinnedCanonicalSelection.row
-      : null;
-  const activeCanonicalNavigationRowId =
-    activePendingCanonicalRowId ?? activePinnedCanonicalRow?.rowId ?? null;
-
-  const visibleCanonical = useMemo(() => {
-    if (staleOnly) return [];
-    return availableCanonicalEntries
-      .filter((entry) => entry.familiarId === effectiveFamiliarFilter)
-      .filter((entry) => memoryMatches(entry, normalizedQuery))
-      .sort((a, b) =>
-        a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0
-      );
-  }, [
-    availableCanonicalEntries,
-    effectiveFamiliarFilter,
-    normalizedQuery,
-    staleOnly,
-  ]);
-
   const familiarScopedFiles = useMemo(
     () =>
       filesState.entries.filter(
@@ -1066,17 +902,6 @@ export function FamiliarsMemoryView({
               headline="Couldn't load memory files"
               subtitle={filesState.error}
             />
-          </div>
-        ) : null}
-        {missingCanonical.notice ? (
-          <div
-            role="status"
-            className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
-          >
-            <span className="font-medium text-[var(--text-primary)]">
-              Memory not found.
-            </span>{" "}
-            The stale row was removed. Choose Refresh to reconcile the canonical list.
           </div>
         ) : null}
       </div>
