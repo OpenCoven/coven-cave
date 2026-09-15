@@ -120,7 +120,8 @@ test("the General control-sheet overview uses real summary sources and stable an
   );
   assert.match(overview, /settingsGroupId\("Workspace"\)/);
   assert.match(overview, /settingsGroupId\("Backup"\)/);
-  assert.match(overview, /settingsGroupId\("Startup"\)/);
+  assert.match(overview, /settingsGroupId\("Chat"\)/);
+  assert.doesNotMatch(overview, /settingsGroupId\("Startup"\)/);
   assert.match(overview, /scrollIntoView\(\{[\s\S]*prefersReducedMotion/);
   assert.match(
     overview,
@@ -145,19 +146,21 @@ test("the General control-sheet overview uses real summary sources and stable an
 // ── shell wiring (source-text) ───────────────────────────────────────────────
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const appearance = readFileSync(new URL("./settings-appearance.tsx", import.meta.url), "utf8");
+const sectionLayout = readFileSync(new URL("./settings-layout.tsx", import.meta.url), "utf8");
 const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
 const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("./settings-about.tsx", import.meta.url), "utf8");
 const phone = readFileSync(new URL("./settings-phone.tsx", import.meta.url), "utf8");
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
-  assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
+  assert.match(sectionLayout, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
   assert.match(shell, /SETTINGS_INDEX/);
   assert.match(shell, /SECTIONS/);
   assert.match(shell, /settingsSectionLabel/);
   assert.match(shell, /type Section/);
   // SettingsPage swaps the plain <h1> for the overview when a section is given.
-  assert.match(shell, /section \? \(\s*<SettingsOverview section=\{section\} \/>/);
+  assert.match(sectionLayout, /section \? \(\s*<SettingsOverview section=\{section\} \/>/);
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header. Profile,
@@ -166,7 +169,7 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.match(profile, />SETTINGS · PROFILE</, "profile hero preserves settings wayfinding");
   assert.doesNotMatch(profile, /<SettingsOverview/, "profile does not duplicate the generic overview");
   for (const id of ["general", "voice", "appearance"]) {
-    assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
+    assert.match(id === "appearance" ? appearance : shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
   assert.match(shell, /section === "voice" && <VoiceSection \/>/, "the shell renders the Voice destination");
   assert.match(daemon, /className="settings-daemon-hero"/, "daemon uses its approved control-sheet hero");
