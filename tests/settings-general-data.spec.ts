@@ -9,7 +9,7 @@ async function setup(page: import("@playwright/test").Page) {
   // next dev replays mount effects in Strict Mode. Observe cancellation so the
   // initial-read assertion stays exact in both development and production.
   await page.addInitScript(() => {
-    const target = window as ProbedWindow;
+    const target = window as unknown as ProbedWindow;
     target.generalReads = [];
     const originalFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
@@ -61,7 +61,7 @@ async function setup(page: import("@playwright/test").Page) {
 
 test("General shares initial reads and immediately reflects a saved sync setting", async ({ page }) => {
   const { counts } = await setup(page);
-  const liveReads = await page.evaluate(() => (window as ProbedWindow).generalReads
+  const liveReads = await page.evaluate(() => (window as unknown as ProbedWindow).generalReads
     .filter(read => read.completed || !read.signal?.aborted).map(read => read.path).sort());
   expect(liveReads).toEqual(["/api/backup/sync", "/api/config/workspace-path"]);
   expect(counts.config).toBe(0);
