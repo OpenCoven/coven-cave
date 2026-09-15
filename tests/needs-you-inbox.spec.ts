@@ -86,15 +86,28 @@ async function gotoCave(page: Page, { sessions = SESSIONS, running = 12 } = {}) 
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions } }));
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [] } }));
+  // `isRunningActivityPayload` enforces `total === items.length` — the total is
+  // the post-dedup item count, not an independent number — so the mock has to
+  // carry real items or the payload is rejected and the component (correctly)
+  // falls back to its session-derived count.
+  const runningItems = Array.from({ length: running }, (_, i) => ({
+    id: `session:run-${i}`,
+    kind: "session" as const,
+    title: `Running session ${i}`,
+    status: "running" as const,
+    startedAt: iso(0),
+    familiarId: "nova",
+    targetId: `run-${i}`,
+  }));
   await page.route(/\/api\/running-activity(?:\?.*)?$/, (route) =>
     route.fulfill({
       json: {
         ok: true,
         generatedAt: new Date(NOW).toISOString(),
-        total: running,
-        items: [],
+        total: runningItems.length,
+        items: runningItems,
         sources: {
-          sessions: { ok: true, count: running },
+          sessions: { ok: true, count: runningItems.length },
           board: { ok: true, count: 0 },
           automations: { ok: true, count: 0 },
           flows: { ok: true, count: 0 },
