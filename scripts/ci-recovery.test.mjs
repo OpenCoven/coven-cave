@@ -308,7 +308,11 @@ for (const [name, workflow] of [
 
       assert.deepEqual(result.recoveries, []);
       assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-      assert.equal(result.degraded, true);
+      // A partial guard contract is a stale BRANCH, not a broken repository:
+      // the skip is correct, nothing here needs repairing, and failing the run
+      // for it reds a check on `main`. Reported as attention instead.
+      assert.equal(result.degraded, false);
+      assert.deepEqual(result.attention, [pr.number]);
       assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
     },
   );
@@ -386,9 +390,52 @@ test("a partial guard contract is skipped without blocking the other candidates"
       },
     ],
   );
-  // A misconfigured contract still has to reach a human.
-  assert.equal(result.degraded, true);
-  assert.equal(messages.some((message) => message.includes("needs attention")), true);
+  // A partial contract still has to reach a human — but as a WARNING, not as a
+  // failed run. It is a stale branch, not a broken repository: skipping it is
+  // the correct outcome, and failing for it put a red check on `main` that
+  // nobody connected to anything (twelve consecutive failures, 2026-09-13 to
+  // 09-15, cleared only when the two PRs happened to close).
+  assert.equal(result.degraded, false, "a stale branch does not fail the run");
+  assert.deepEqual(result.attention, [partial.number]);
+  // The candidate is NAMED. The old summary said "needs attention" without
+  // saying which PR or why, so the one line a reader sees carried nothing
+  // actionable.
+  const summary = messages.find((message) => message.startsWith("CI recovery:"));
+  assert.ok(summary, "a summary line is emitted");
+  assert.match(summary, /awaiting a workflow-contract fix \(#1\)/);
+  assert.doesNotMatch(summary, /needs attention/, "no fault occurred, so none is claimed");
+  assert.equal(
+    messages.some((message) => message.startsWith("::warning::") && message.includes("#1")),
+    true,
+    "surfaced as a GitHub Actions warning annotation rather than a red check",
+  );
+});
+
+test("a REST fault still fails the run, and says which PR caused it", async () => {
+  // The other half of the split. A partial contract is a stale branch and only
+  // warns; something BREAKING is a repository or API problem that will not fix
+  // itself, so it keeps the non-zero exit — and now names the candidate, which
+  // is what the old bare "needs attention" never did.
+  const broken = pull({ number: 7, sha: "a".repeat(40), branch: "fix/broken" });
+  const fixture = githubFixture({ pulls: [broken] });
+  const failing = async (url, init) => {
+    // The run listing is /actions/workflows/<file>/runs, not /actions/runs.
+    if (/\/actions\/workflows\/[^/]+\/runs/.test(String(url))) {
+      throw new Error("boom: upstream read failed");
+    }
+    return fixture.fetchImpl(url, init);
+  };
+  const messages = [];
+
+  const result = await runCiRecovery(
+    options(failing, false, { log: (message) => messages.push(message) }),
+  );
+
+  assert.equal(result.degraded, true, "a broken read is a fault, not routine");
+  assert.deepEqual(result.faults, [broken.number]);
+  assert.deepEqual(result.attention, []);
+  const summary = messages.find((message) => message.startsWith("CI recovery:"));
+  assert.match(summary, /needs attention \(#7\)/, "the failing candidate is named");
 });
 
 test("an expected_pr_number-only contract is skipped and never dispatched", async () => {
@@ -415,7 +462,11 @@ test("an expected_pr_number-only contract is skipped and never dispatched", asyn
 
   assert.deepEqual(result.recoveries, []);
   assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-  assert.equal(result.degraded, true);
+  // A partial guard contract is a stale BRANCH, not a broken repository:
+  // the skip is correct, nothing here needs repairing, and failing the run
+  // for it reds a check on `main`. Reported as attention instead.
+  assert.equal(result.degraded, false);
+  assert.deepEqual(result.attention, [pr.number]);
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
@@ -435,7 +486,11 @@ test("a required job missing the expected SHA failure is skipped, never dispatch
 
   assert.deepEqual(result.recoveries, []);
   assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
-  assert.equal(result.degraded, true);
+  // A partial guard contract is a stale BRANCH, not a broken repository:
+  // the skip is correct, nothing here needs repairing, and failing the run
+  // for it reds a check on `main`. Reported as attention instead.
+  assert.equal(result.degraded, false);
+  assert.deepEqual(result.attention, [pr.number]);
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 

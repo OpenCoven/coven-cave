@@ -57,11 +57,22 @@ export async function runCiRecovery({
   const pulls = await listOpenPulls(context);
   const eligible = [];
   const skipped = [];
-  // Set when a candidate was dropped for a reason a human should look at — a
-  // misconfigured guard contract or a REST failure — rather than a routine
-  // "nothing to do". The scan still recovers everything else; this only decides
-  // whether the process exits non-zero at the end.
-  let degraded = false;
+  // Two different kinds of "not routine", deliberately kept apart.
+  //
+  // `faults` are candidates dropped because something BROKE — a REST read or a
+  // dispatch failed. That is a repository or API problem, it will not fix
+  // itself, and it is worth failing the run over.
+  //
+  // `attention` is a candidate whose workflow guard contract is PARTIAL. That
+  // is a property of a stale branch: its `ci.yml` predates the current guard
+  // and is not cleanly legacy either. Skipping it is correct and safe (the
+  // abort-before-mutation rule), but nothing in THIS repository is broken, and
+  // failing the run for it reds a check on `main` that has nothing to do with
+  // `main`. Observed: twelve consecutive failures from 2026-09-13 to 09-15,
+  // unread the whole time, cleared only when the two PRs happened to close.
+  // A signal nobody reads is not a signal.
+  const faults = [];
+  const attention = [];
 
   for (const rawPull of pulls) {
     const pull = parsePull(rawPull);
@@ -80,7 +91,7 @@ export async function runCiRecovery({
       // propagate ended the whole scan, so every OTHER open PR with missing CI
       // stayed missing until someone noticed by hand.
       skipped.push({ number: pull.number, reason: failureReason(cause) });
-      degraded = true;
+      faults.push(pull.number);
       continue;
     }
     if (!decision.recover) {
@@ -113,12 +124,12 @@ export async function runCiRecovery({
         contract = await inspectRecoveryDispatch(context, recovery.sha);
       } catch (cause) {
         skipped.push({ number: recovery.number, reason: failureReason(cause) });
-        degraded = true;
+        faults.push(recovery.number);
         continue;
       }
       if (!contract.dispatchable) {
         skipped.push({ number: recovery.number, reason: contract.reason });
-        if (contract.reason === CONTRACT_PARTIAL) degraded = true;
+        if (contract.reason === CONTRACT_PARTIAL) attention.push(recovery.number);
         continue;
       }
       dispatchable.push({ recovery, ...contract });
@@ -140,18 +151,21 @@ export async function runCiRecovery({
       // A refused dispatch is that PR's problem. Throwing here abandoned every
       // dispatch still queued behind it.
       skipped.push({ number: recovery.number, reason: failureReason(cause) });
-      degraded = true;
+      faults.push(recovery.number);
       continue;
     }
     recoveries.push({ ...recovery, dispatched: true });
   }
 
+  const degraded = faults.length > 0;
   const result = {
     mode: apply ? "apply" : "report-only",
     scanned: pulls.length,
     recoveries,
     skipped,
     degraded,
+    faults,
+    attention,
   };
   for (const recovery of recoveries) {
     log(
@@ -165,11 +179,25 @@ export async function runCiRecovery({
   for (const entry of skipped) {
     log(`#${entry.number} skipped ${entry.reason}`);
   }
+  // Name what needs a human. The old summary said "needs attention" without
+  // saying WHICH candidate or why, so the one line a reader actually sees
+  // carried none of the information needed to act on it — the per-PR verdicts
+  // were above it in the log, which is exactly where nobody looked.
+  const list = (numbers) => numbers.map((number) => `#${number}`).join(", ");
+  if (attention.length > 0) {
+    // A warning annotation rather than a failure: surfaced in the run's
+    // summary without reddening a check on `main`.
+    log(
+      `::warning::CI recovery skipped ${list(attention)} — partial workflow guard contract. ` +
+        `Recovery cannot dispatch these safely; rebase the branch onto a current ci.yml.`,
+    );
+  }
   log(
     `CI recovery: ${result.scanned} open PR${result.scanned === 1 ? "" : "s"} scanned; ` +
       `${recoveries.length} ${apply ? "dispatched" : "eligible"}` +
       `${skipped.length > 0 ? `; ${skipped.length} skipped` : ""}` +
-      `${degraded ? "; needs attention" : ""}.`,
+      `${attention.length > 0 ? `; ${attention.length} awaiting a workflow-contract fix (${list(attention)})` : ""}` +
+      `${degraded ? `; needs attention (${list(faults)})` : ""}.`,
   );
   return result;
 }
