@@ -10,7 +10,7 @@ assert.match(source, /export const MARKETPLACE_SEARCH_LABEL/, "section-specific 
 assert.match(source, /export const MARKETPLACE_KIND_TABS/, "catalog kind filters remain stable after the hub split");
 assert.doesNotMatch(source, /toSkillDetail/, "the skill-drawer adapter went with the drawer — nothing called it, and its only reference was this assertion");
 assert.match(source, /\{ id: "browse", label: "Yours"/, "owned inventory is the landing section");
-assert.match(source, /\{ id: "skills", label: "Skills"/, "curated Skills has its own section");
+assert.doesNotMatch(source, /\{ id: "skills", label: "Skills"/, "the retired Skills preview has no visible section");
 assert.match(source, /browse: "Search your items"/, "owned search is explicit");
 assert.doesNotMatch(source, /label: "Installed"/, "owned inventory has no redundant Installed filter");
 assert.doesNotMatch(source, /browse: "Everything your familiars can equip/, "discovery copy is retired");
