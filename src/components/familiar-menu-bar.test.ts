@@ -181,10 +181,14 @@ assert.match(
   /runningStatus=\{\s*<NeedsYouPopover\s+sessions=\{sessions\}\s+familiars=\{familiars\}/,
   "workspace mounts NeedsYouPopover in the menu bar's runningStatus slot with the session list and familiar roster",
 );
+// `showFamiliarChatList`, not a bare `setMode("chat")`: it also clears the
+// active session and dispatches a `list` action, so "All sessions" lands on
+// the LIST rather than on whichever session happened to be open. The spec
+// sends this control to the browse surface, and only the former is that.
 assert.match(
   workspace,
-  /onOpenSessions=\{\(\) => setMode\("chat"\)\}/,
-  "All sessions lands on the browse surface, which is where the spec sends it",
+  /onOpenSessions=\{showFamiliarChatList\}/,
+  "All sessions lands on the session list, not merely the chat mode",
 );
 assert.match(
   needsYouPopover,
