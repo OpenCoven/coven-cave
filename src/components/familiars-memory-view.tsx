@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Modal } from "@/components/ui/modal";
-import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -144,7 +143,6 @@ export function FamiliarsMemoryView({
   const FILE_PAGE = 80;
   const [fileLimit, setFileLimit] = useState(FILE_PAGE);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [overviewOpen, setOverviewOpen] = useState(false);
   const sourceSummaryId = useId();
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -350,9 +348,8 @@ export function FamiliarsMemoryView({
   ]);
 
   const unifiedRows = useMemo(
-    () => {
-      const rows = buildMemoryRows({
-        canonical: availableCanonicalEntries,
+    () =>
+      buildMemoryRows({
         files: filesState.entries,
         familiarFilter: effectiveFamiliarFilter,
         query: normalizedQuery,
@@ -360,47 +357,12 @@ export function FamiliarsMemoryView({
         sortMode,
         staleOnly,
         familiarLabel: (id) => familiarById.get(id)?.display_name ?? id,
-      });
-      if (
-        activePendingCanonicalRowId &&
-        !rows.some((row) => row.rowId === activePendingCanonicalRowId)
-      ) {
-        const pendingTarget = availableCanonicalEntries.find(
-          (entry) =>
-            entry.id === pendingCanonicalMemorySelection?.id &&
-            entry.familiarId === effectiveFamiliarFilter,
-        );
-        if (!pendingTarget) return rows;
-
-        const [pendingRow] = buildMemoryRows({
-          canonical: [pendingTarget],
-          files: [],
-          familiarFilter: effectiveFamiliarFilter,
-          query: "",
-          sourceFilter: "all",
-          sortMode,
-          staleOnly: false,
-          familiarLabel: (id) => familiarById.get(id)?.display_name ?? id,
-        });
-        return pendingRow ? [pendingRow, ...rows] : rows;
-      }
-      if (
-        activePinnedCanonicalRow &&
-        !rows.some((row) => row.rowId === activePinnedCanonicalRow.rowId)
-      ) {
-        return [activePinnedCanonicalRow, ...rows];
-      }
-      return rows;
-    },
+      }),
     [
-      activePendingCanonicalRowId,
-      activePinnedCanonicalRow,
-      availableCanonicalEntries,
       effectiveFamiliarFilter,
       familiarById,
       filesState.entries,
       normalizedQuery,
-      pendingCanonicalMemorySelection?.id,
       sortMode,
       sourceFilter,
       staleOnly,
@@ -412,102 +374,26 @@ export function FamiliarsMemoryView({
   );
 
   useEffect(() => {
-    const reconciled =
-      activeCanonicalNavigationRowId ??
-      reconcileMemorySelection({
-        selectedRowId,
-        rowIds: unifiedRows.map((row) => row.rowId),
-        canonicalState: canonicalState.state,
-        filesState: filesState.state,
-      });
+    const reconciled = reconcileMemorySelection({
+      selectedRowId,
+      rowIds: unifiedRows.map((row) => row.rowId),
+      filesState: filesState.state,
+    });
     if (reconciled === selectedRowId) return;
     setSelectedRowId(reconciled);
     if (expandRow?.rowId === selectedRowId) setExpandRow(null);
   }, [
-    activeCanonicalNavigationRowId,
-    canonicalState.state,
     expandRow?.rowId,
     filesState.state,
     selectedRowId,
     unifiedRows,
   ]);
 
-  useEffect(() => {
-    setPinnedCanonicalSelection((current) => {
-      if (!current) return current;
-      if (
-        pendingCanonicalMemorySelection &&
-        pendingCanonicalMemorySelection !== current.selection
-      ) {
-        return null;
-      }
-      if (current.selection.familiarId !== effectiveFamiliarFilter) {
-        return null;
-      }
-      if (
-        canonicalState.state === "ready" &&
-        !availableCanonicalEntries.some(
-          (entry) =>
-            entry.id === current.selection.id &&
-            entry.familiarId === current.selection.familiarId,
-        )
-      ) {
-        return null;
-      }
-      return current;
-    });
-  }, [
-    availableCanonicalEntries,
-    canonicalState.state,
-    effectiveFamiliarFilter,
-    pendingCanonicalMemorySelection,
-  ]);
-
-  useEffect(() => {
-    if (!pendingCanonicalMemorySelection) return;
-    if (
-      acknowledgedPendingSelectionRef.current ===
-      pendingCanonicalMemorySelection
-    ) {
-      return;
-    }
-    if (selectedRow?.kind !== "canonical") return;
-    if (
-      !isCanonicalMemorySelectionApplied({
-        pending: pendingCanonicalMemorySelection,
-        familiarId: effectiveFamiliarFilter,
-        selectedRowId,
-        selectedMemoryId: selectedRow.memoryId,
-      })
-    ) {
-      return;
-    }
-    acknowledgedPendingSelectionRef.current =
-      pendingCanonicalMemorySelection;
-    setPinnedCanonicalSelection({
-      selection: pendingCanonicalMemorySelection,
-      row: selectedRow,
-    });
-    onCanonicalMemorySelectionApplied?.(
-      pendingCanonicalMemorySelection.id,
-    );
-  }, [
-    effectiveFamiliarFilter,
-    onCanonicalMemorySelectionApplied,
-    pendingCanonicalMemorySelection,
-    selectedRow,
-    selectedRowId,
-  ]);
-
   const selectMemoryRow = useCallback((rowId: MemoryRow["rowId"]) => {
-    setPinnedCanonicalSelection((current) =>
-      current && current.row.rowId !== rowId ? null : current
-    );
     setSelectedRowId(rowId);
   }, []);
 
   const clearMemorySelection = useCallback(() => {
-    setPinnedCanonicalSelection(null);
     setSelectedRowId(null);
   }, []);
   const pagedRows = useMemo(
@@ -577,16 +463,20 @@ export function FamiliarsMemoryView({
 
   const familiarsWithMemory = useMemo(() => {
     const ids = new Set(
-      availableCanonicalEntries.map((entry) => entry.familiarId),
+      filesState.entries
+        .map((entry) => entry.familiarId)
+        .filter((id): id is string => Boolean(id)),
     );
     return familiars.filter((familiar) => ids.has(familiar.id));
-  }, [availableCanonicalEntries, familiars]);
+  }, [filesState.entries, familiars]);
 
   useEffect(() => {
     if (lockToFamiliar) return;
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
     const memoryFamiliarIds = new Set(
-      canonicalState.entries.map((entry) => entry.familiarId),
+      filesState.entries
+        .map((entry) => entry.familiarId)
+        .filter((id): id is string => Boolean(id)),
     );
     if (
       storedFamiliarFilter &&
@@ -605,7 +495,7 @@ export function FamiliarsMemoryView({
     if (next && next !== storedFamiliarFilter) setFamiliarFilter(next);
   }, [
     activeFamiliar?.id,
-    canonicalState.entries,
+    filesState.entries,
     familiars,
     lockToFamiliar,
     setFamiliarFilter,
@@ -645,17 +535,12 @@ export function FamiliarsMemoryView({
 
   const filesSettled = filesState.state !== "loading";
   const listPresentation = memoryListPresentation({
-    canonicalState: canonicalState.state,
     filesState: filesState.state,
     rowCount: unifiedRows.length,
   });
   const contentClass = compact
     ? "fm-content--compact flex flex-col overflow-y-auto"
     : "fm-content--split grid min-h-0";
-  const canonicalError =
-    canonicalState.state === "error"
-      ? canonicalMemoryErrorCopy(canonicalState.error.code)
-      : null;
 
   return (
     <div className="@container/memview fm-workspace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -683,25 +568,6 @@ export function FamiliarsMemoryView({
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[var(--text-muted)]">
               <span>{unifiedRows.length} shown</span>
-              <span aria-hidden>·</span>
-              <button
-                type="button"
-                aria-expanded={overviewOpen}
-                aria-controls={overviewPanelId}
-                onClick={() => setOverviewOpen((current) => !current)}
-                className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-control)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                {overviewState.state === "ready"
-                  ? `Canonical ${overviewState.value.verification.state}`
-                  : overviewState.state === "error"
-                    ? "Canonical status unavailable"
-                    : "Checking canonical status…"}
-                <Icon
-                  name={overviewOpen ? "ph:caret-up" : "ph:caret-down"}
-                  width={10}
-                  aria-hidden
-                />
-              </button>
               {lastLoadedAt ? (
                 <>
                   <span aria-hidden>·</span>
@@ -716,31 +582,6 @@ export function FamiliarsMemoryView({
                 </>
               ) : null}
             </div>
-          </div>
-        ) : null}
-
-        {!compact && overviewOpen ? (
-          <div id={overviewPanelId} className="mb-2">
-            {overviewState.state === "ready" ? (
-              <CanonicalMemoryOverviewPanel overview={overviewState.value} />
-            ) : overviewState.state === "loading" ? (
-              <div
-                className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3"
-                aria-label="Loading canonical overview"
-                aria-busy="true"
-              >
-                <SkeletonRows count={2} />
-              </div>
-            ) : overviewState.state === "error" ? (
-              <ErrorState
-                compact
-                live={false}
-                headline="Couldn't load canonical overview"
-                subtitle={
-                  canonicalMemoryErrorCopy(overviewState.error.code).subtitle
-                }
-              />
-            ) : null}
           </div>
         ) : null}
 
@@ -886,15 +727,6 @@ export function FamiliarsMemoryView({
           </Button>
         </div>
 
-        {canonicalError ? (
-          <div className="mt-2">
-            <ErrorState
-              compact
-              headline="Couldn't load familiar memories"
-              subtitle={canonicalError.subtitle}
-            />
-          </div>
-        ) : null}
         {filesState.state === "error" ? (
           <div className="mt-2">
             <ErrorState
@@ -921,76 +753,6 @@ export function FamiliarsMemoryView({
                 />
               </div>
             ) : null}
-            <section className="min-h-0">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                  Familiar memory
-                </h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                    {visibleCanonical.length} visible
-                  </span>
-                </div>
-              </div>
-              {canonicalState.state === "loading" ? (
-                <SkeletonRows count={4} className="p-2" />
-              ) : canonicalState.state === "ready" &&
-                visibleCanonical.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon="ph:brain"
-                  headline="No familiar memories match this view."
-                />
-              ) : (
-                <div className="flex flex-col divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
-                  {visibleCanonical.slice(0, effectiveLimit).map((entry) => {
-                    const familiar = familiarById.get(entry.familiarId);
-                    return (
-                      <button
-                        type="button"
-                        key={entry.id}
-                        onClick={() => {
-                          selectMemoryRow(`coven:${entry.id}`);
-                          const row = unifiedRows.find(
-                            (candidate) =>
-                              candidate.kind === "canonical" &&
-                              candidate.memoryId === entry.id,
-                          );
-                          if (row) setExpandRow(row);
-                        }}
-                        className="focus-ring-inset px-1 py-3 text-left transition-colors hover:bg-[var(--bg-raised)]/30"
-                      >
-                        <span className="flex items-start justify-between gap-2">
-                          <span className="min-w-0">
-                            <span className="flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                              <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-                                {familiar?.display_name ?? entry.familiarId}
-                              </span>
-                              <RelativeTime iso={entry.updatedAt} />
-                            </span>
-                            <span className="mt-2 block line-clamp-2 text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">
-                              {entry.title}
-                            </span>
-                            <span className="mt-2 block line-clamp-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">
-                              {entry.excerpt}
-                            </span>
-                            <span className="mt-2 block text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                              {entry.verification.state} ·{" "}
-                              {entry.privacy.classification ?? "unclassified"}
-                            </span>
-                          </span>
-                          <Icon
-                            name="ph:brain"
-                            width={14}
-                            className="mt-0.5 shrink-0 text-[var(--text-muted)]"
-                          />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
             <section className="min-h-0">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
@@ -1104,29 +866,14 @@ export function FamiliarsMemoryView({
                   : "hidden @min-[1024px]/memview:flex"
               }`}
             >
-              {selectedRow?.kind === "canonical" ? (
-                <CanonicalMemoryReader
-                  memoryId={selectedRow.memoryId}
-                  localDaemonReady={localDaemonReady}
-                  onMissing={() => handleMissingCanonicalMemory(selectedRow.memoryId)}
-                  onRefresh={() => load(true)}
-                  onBack={clearMemorySelection}
-                  onExpand={() => setExpandRow(selectedRow)}
-                />
-              ) : (
-                <MemoryReaderPane
-                  row={selectedRow?.kind === "file" ? selectedRow : null}
-                  age={selectedRow ? age(selectedRow.sortTime) : ""}
-                  sizeLabel={
-                    selectedRow?.kind === "file"
-                      ? formatBytes(selectedRow.size)
-                      : ""
-                  }
-                  onOpenFile={(path) => onOpenMemoryFile?.(path)}
-                  onExpand={(row) => setExpandRow(row)}
-                  onBack={clearMemorySelection}
-                />
-              )}
+              <MemoryReaderPane
+                row={selectedRow ?? null}
+                age={selectedRow ? age(selectedRow.sortTime) : ""}
+                sizeLabel={selectedRow ? formatBytes(selectedRow.size) : ""}
+                onOpenFile={(path) => onOpenMemoryFile?.(path)}
+                onExpand={(row) => setExpandRow(row)}
+                onBack={clearMemorySelection}
+              />
             </div>
           </>
         )}
@@ -1152,22 +899,6 @@ export function FamiliarsMemoryView({
           title={expandRow.title}
           onClose={() => setExpandRow(null)}
         />
-      ) : expandRow?.kind === "canonical" ? (
-        <Modal
-          open
-          wide
-          breadcrumb={["Familiar memory", expandRow.title]}
-          onClose={() => setExpandRow(null)}
-        >
-          <div className="h-[75vh] min-h-0">
-            <CanonicalMemoryReader
-              memoryId={expandRow.memoryId}
-              localDaemonReady={localDaemonReady}
-              onMissing={() => handleMissingCanonicalMemory(expandRow.memoryId)}
-              onRefresh={() => load(true)}
-            />
-          </div>
-        </Modal>
       ) : null}
     </div>
   );
