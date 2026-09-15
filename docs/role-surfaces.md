@@ -47,11 +47,10 @@ A production build ships `PRODUCTION_ROOM_IDS`:
 | --- | --- |
 | Research Desk (`researcher-desk`) | ✅ |
 | Chart Room (`navigator-chart-room`) | ✅ |
+| X Comms (`x-comms`) | ✅ — requires X publishing capability; planning is demo-backed |
 | Coding Desk (`code`) | dev only — under construction |
-| Review Deck (`reviewer-review-deck`) | dev only — under construction |
 | Writing Desk (`scribe-writing-desk`) | dev only — under construction |
 | Watchtower (`sentinel-watchtower`) | dev only — under construction |
-| Comms Operations (`messenger-ops`) | dev only — under construction |
 | The Archive (`indexer-archive`) | dev only — under construction |
 
 A **dev build shows every room**, so an unfinished room is fully workable; it
@@ -96,14 +95,15 @@ Analyst"` → `research-analyst` + `research` + `analyst`):
 
 A surface may also declare `aliases` — synonym roles matched exactly like its
 primary `role`. The Chart Room serves `navigator` + `planner`/`planning`; the
-Writing Desk serves `scribe` + `editor`/`writer`/`writing`; the Review Deck
-serves `reviewer` + `review`; The Archive serves `indexer` +
+Writing Desk serves `scribe` + `editor`/`writer`/`writing`; The Archive serves `indexer` +
 `archivist`/`indexing`; the Watchtower serves `sentinel` + `watch`/`guardian`.
 
 Familiars can also carry an explicit **Type** (Familiar Studio → Identity;
 `FAMILIAR_TYPES` in `src/lib/familiar-types.ts`) that grants its room's role
 token on top of the role label. The Type vocabulary is a deliberately small
-core — General, Coding, Research, Review, Comms. Four earlier types (`watch`,
+core — General, Coding, Research, X Comms. The stored `comms` type now opens
+X Comms for familiars with X publishing enabled. The retired `review` type
+resolves to General. Four earlier types (`watch`,
 `planning`, `writing`, `indexing`) were retired in the 2026-07-24 vocabulary
 reduction (cave-lgcb): stored values still resolve safely through
 `RETIRED_FAMILIAR_TYPE_SUCCESSORS`, and their rooms stay reachable because
@@ -158,10 +158,11 @@ never fake production data.
   expose full Article bodies; keep `SORSA_API_KEY` in Cave Vault, never a
   client environment. It retains durable normalized snapshots and
   mission-local provenance Markdown copies.
-- **Comms Operations** (`messenger-ops`, role `messenger`) — channel-aware
-  drafting (email/Discord/Slack/SMS/Teams/social), approval-required states,
-  real inbox items, delivery queue drawer. Nothing sends externally — no
-  delivery integration exists, and the surface says so.
+- **X Comms** (`x-comms`, role `messenger`) — demo planning plus a **Live
+  publishing** action that opens the confirmed X publisher and durable history.
+  Demo approvals and slots stay local; they do not dispatch posts. The live
+  publisher requires confirmation of the server-returned wording and holds
+  unresolved attempts without retrying. Visibility requires `xPublishEnabled`.
 - **The Archive** (`indexer-archive`, role `indexer`) — real memory inventory
   grouped into collections, semantic tags/clusters, provenance details,
   redacted content preview, indexing-activity drawer.
@@ -216,94 +217,10 @@ never fake production data.
   closed for Reviewable only, and the rail and header picker read from the same
   queue model so their eligibility, ordering, and repository headings stay in
   sync.
-- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a three-column
-  cockpit built from sessions carrying PRs, working changes, or branches. Each
-  column answers exactly one question, so a control's position tells you what
-  it acts on: the **queue** says what is waiting, the **centre** says what
-  changed, the **inspector** says whether it can land and what to do about it.
-  Deck-scoped chrome — attention filters, item navigation, help, refresh —
-  lives in the one top bar and nowhere else. Both rails resize by dragging or
-  keyboard and collapse with `f` / `e`. Above 78rem of available stage width
-  all three panes fit; between 48rem and 78rem the queue or inspector sits
-  beside the diff without covering it. Below 48rem, persistent pane tabs keep
-  all three views reachable.
+## Retired rooms
 
-  The queue leads with a proportional **mix bar** (what the queue is made of,
-  before any row is read), orders blocked-first-then-oldest, and groups under
-  sticky headings. Empty groups stay out of the list; zero attention counts
-  remain in the top bar. All includes active or unverified PRs and actual
-  local working changes. Clean branch-only sessions remain explicitly browsable
-  through Branches. Confirmed merged/closed PRs leave the queue, duplicate
-  repository/PR links collapse, and drafts, unread PRs and local changes stay
-  outside the attention counts. Search matches loaded GitHub titles, session
-  details, PR references, repositories and branches. Unread PR titles are
-  explicitly counted during search, so zero known matches is not presented
-  as a complete result. Clear the search and select an unread PR to load its
-  title without expanding the automatic read budget.
-
-  Queue enrichment reads at most 12 unique PRs with three concurrent workers.
-  Each row's reason comes from the `item?pull=1` read, never a failing-check
-  count it has not fetched. GitHub titles and diff totals replace stale session
-  summaries; unavailable totals are not rendered as zero. Refresh reconciles
-  the queue, selected readiness and diff, with explicit read errors and retry.
-  Selection survives filtering, and review notes survive switching items
-  during the visit.
-
-  A file rail replaces the file column: chips window around the open file, the
-  Files opens the full navigator (search, tree, keyboard traversal),
-  and the reviewed-file progress persists against the displayed PR base/head revision (or an
-  honest local working-tree revision), resetting when that identity changes.
-  Same-item refresh retains the open file when it still exists. Reading options
-  expose whitespace filtering, context and persisted long-line wrapping.
-  Unresolved review threads render inline at the line they were left on; one
-  the deck cannot place — folded away, or past the route's per-file patch
-  budget — is listed rather than dropped or pinned to the wrong line.
-
-  The inspector leads with **one decision sentence** (headline, sub, and the
-  single next action) and the blockers behind it, each carrying a derived
-  severity and owner: an unresolved thread is only ever "yours" when the token
-  can actually resolve it. Checks, threads, the merge checklist and session
-  context sit behind disclosures underneath, and a blocker's own reveal control
-  opens the one holding its evidence. The review note is always reachable
-  there, and again inside the approve / request-changes composer. A sticky
-  verdict dock carries one primary action chosen by state; an unavailable Merge
-  keeps its place and names its blockers rather than disappearing.
-
-  PR sessions always read GitHub; only sessions without a linked PR read the
-  local working tree. Unknown readiness stays non-actionable, and approve /
-  request-changes / squash-merge continue to dispatch through the real GitHub
-  routes. PR diffs use GitHub's immutable `baseSha...headSha` comparison,
-  retaining the merge-base SHA for the PR's three-dot patch semantics.
-  GitHub's [comparison contract](https://docs.github.com/en/rest/commits/commits#compare-two-commits)
-  supports commit SHAs across the same repository network, including forks.
-  The request therefore does not depend on a fork's current owner, repository
-  name or branch ref. If GitHub cannot expose those commits to the current
-  caller, the error stays visible; there is no mutable-ref or PR-files fallback.
-  Verdicts require the displayed repository, PR number, base ref, base SHA and
-  head SHA to match readiness. Missing identity, a stale diff or an in-flight
-  read holds actions with an explicit error/loading state; refresh reads both
-  again. Review progress and confirmation dialogs are scoped to that displayed
-  revision, not independently fetched readiness.
-  The displayed PR patch is derived directly from the current revision's file
-  list, not a separate effect-populated patch cache. File-opening effects and
-  retained callbacks must still own the current list request generation, so a
-  response batched with selection or refresh cannot open stale files under a
-  new PR or local project.
-  Verdict requests carry the displayed revision; the server correlates it with
-  a fresh PR read before dispatch. Reviews use GitHub's `commit_id`, and merges
-  retain its atomic head `sha` guard. GitHub provides no atomic base-SHA merge
-  precondition, so the base check is a pre-dispatch check, not a transaction.
-  Failed submissions stay
-  visible inside the composer without discarding the note. The deck never edits
-  the working tree.
-  Missing or capped review evidence also blocks verdicts: the comments route
-  explicitly reports `reviewEvidenceComplete` and `reviewEvidenceError` rather
-  than treating a failed GraphQL read as zero unresolved threads. Its existing
-  100-thread/review windows remain bounded; use GitHub for evidence beyond them.
-  Late mutation completion refreshes the current selection, not the item that
-  happened to be selected when the request started.
-
-  Production browser runs must build with
-  `NEXT_PUBLIC_CAVE_ROOMS=reviewer-review-deck`; the release allowlist is
-  unchanged. The Review Deck specs block service workers so their isolated
-  GitHub route fixtures also cover production WebKit refreshes and mutations.
+Review Desk (`reviewer-review-deck`) and generic Comms Operations
+(`messenger-ops`) were removed in issue #5412. They cannot be enabled with a
+build override. Shared Coding Desk/GitHub review tools and the X APIs remain.
+Existing local room data is left untouched; neither retired room reads it.
+Historical handoffs are retained as design history, not implementation plans.

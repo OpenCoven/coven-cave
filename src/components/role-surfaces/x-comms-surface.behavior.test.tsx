@@ -158,7 +158,7 @@ test("the room says up front that nothing reaches X", async () => {
   expect(text).toContain("nothing reaches X");
   // And it points at where the real path lives, so the disclaimer is a
   // redirection rather than a dead end.
-  expect(text).toContain("Comms Operations");
+  expect(text).toContain("Live publishing");
 });
 
 test("no request leaves the room", async () => {
@@ -467,4 +467,34 @@ test("the queue resizes from the keyboard, not only by dragging", async () => {
     handle.props.onKeyDown({ key: "ArrowRight", shiftKey: false, preventDefault: () => {} }),
   );
   expect(byClass(renderer, "x-comms")[0].props.style["--x-queue-w"]).not.toBe(before);
+});
+
+
+test("Live publishing opens the real familiar-scoped panel without dispatching a write", async () => {
+  const fetchSpy = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ ok: true, publications: [] }),
+  }));
+  globalThis.fetch = fetchSpy as typeof fetch;
+  const renderer = await render();
+  expect(fetchSpy).not.toHaveBeenCalled();
+  const approve = byClass(renderer, "x-comms-inline-action").find(
+    (node) => node.props["data-variant"] === "approve",
+  );
+  await act(async () => approve.props.onClick());
+  const approvalsAfter = byClass(renderer, "x-comms-inline-action").filter(
+    (node) => node.props["data-variant"] === "approve",
+  ).length;
+  await act(async () => buttonByText(renderer, "Live publishing")[0].props.onClick());
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  expect(fetchSpy.mock.calls[0][0]).toBe("/api/x/publish?familiarId=echo");
+  expect(fetchSpy.mock.calls[0][1]?.method ?? "GET").toBe("GET");
+  expect(renderer.root.findAllByProps({ "aria-label": "Live X publishing" })).toHaveLength(1);
+  await act(async () => buttonByText(renderer, "Back to demo planning")[0].props.onClick());
+  expect(roomText(renderer)).toContain("Demo room.");
+  expect(byClass(renderer, "x-comms-inline-action").filter(
+    (node) => node.props["data-variant"] === "approve",
+  )).toHaveLength(approvalsAfter);
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
 });

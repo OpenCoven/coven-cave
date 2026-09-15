@@ -36,7 +36,6 @@ test("every non-General type grants its room's role token", () => {
   assert.deepEqual(tokens, {
     coding: "coder",
     research: "researcher",
-    review: "reviewer",
     comms: "messenger",
   });
 });
@@ -66,6 +65,7 @@ test("every retired type id maps to a documented, still-valid successor", () => 
   assert.deepEqual(Object.keys(RETIRED_FAMILIAR_TYPE_SUCCESSORS).sort(), [
     "indexing",
     "planning",
+    "review",
     "watch",
     "writing",
   ]);
@@ -224,4 +224,12 @@ test("role labels using retired words still reach the room via aliases", () => {
       `role label "${label}" must still reach the ${room} room`,
     );
   }
+});
+
+
+test("retired Review resolves safely and Comms grants the retained X room", () => {
+  assert.deepEqual(parseFamiliarTypeIds("review,coding"), ["coding"]);
+  const comms = resolveFamiliarType("comms");
+  assert.equal(comms.roomId, "x-comms");
+  assert.equal(comms.label, "X Comms");
 });

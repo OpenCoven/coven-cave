@@ -17,35 +17,34 @@
  *
  * The vocabulary is deliberately small (cave-lgcb): usage evidence trimmed
  * it from nine types to this core set. Retired ids stay resolvable through
- * RETIRED_FAMILIAR_TYPE_SUCCESSORS, and their rooms remain reachable via
+ * RETIRED_FAMILIAR_TYPE_SUCCESSORS, and surviving rooms remain reachable via
  * free-text Role labels and registry aliases.
  */
 
 import type { IconName } from "./icon.tsx";
 import {
   CODE_SURFACE_ID,
-  MESSENGER_SURFACE_ID,
+  X_COMMS_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
-  REVIEWER_SURFACE_ID,
 } from "../components/role-surfaces/ids.ts";
 
 export type FamiliarTypeId =
   | "general"
   | "coding"
   | "research"
-  | "review"
   | "comms";
 
 /**
  * Retired type ids → successor type (familiar-type vocabulary reduction,
  * cave-lgcb, 2026-07-24). Usage evidence showed these four types carried
- * ~2% of sessions combined, so they left the picker. Every retired id maps
+ * ~2% of sessions combined, so they left the picker. Review also retires to General after its room removal. Every retired id maps
  * to a documented successor so stale stored configs resolve safely — the
- * picker never hides and matching never crashes. Their rooms stay
+ * picker never hides and matching never crashes. Surviving rooms stay
  * registered and reachable through free-text Role labels (the registry
  * carries watch/planning/writing/indexing aliases for exactly this).
  */
 export const RETIRED_FAMILIAR_TYPE_SUCCESSORS: Readonly<Record<string, FamiliarTypeId>> = {
+  review: "general",
   watch: "general",
   planning: "general",
   writing: "general",
@@ -71,8 +70,7 @@ export const FAMILIAR_TYPES: readonly FamiliarTypeSpec[] = [
   { id: "general", label: "General", roleToken: null, roomId: null, description: "No dedicated room — every shared surface, nothing extra.", iconName: "ph:sparkle" },
   { id: "coding", label: "Coding", roleToken: "coder", roomId: CODE_SURFACE_ID, description: "Unlocks the Coding Desk — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
   { id: "research", label: "Research", roleToken: "researcher", roomId: RESEARCHER_SURFACE_ID, description: "Unlocks the Research Desk — bounded missions, evidence, and durable knowledge artifacts.", iconName: "ph:detective" },
-  { id: "review", label: "Review", roleToken: "reviewer", roomId: REVIEWER_SURFACE_ID, description: "Unlocks the Review Deck — queued change reviews with verdicts and notes.", iconName: "ph:git-branch" },
-  { id: "comms", label: "Comms", roleToken: "messenger", roomId: MESSENGER_SURFACE_ID, description: "Unlocks Comms Operations — outbound and inbound communication across channels.", iconName: "ph:paper-plane-tilt" },
+  { id: "comms", label: "X Comms", roleToken: "messenger", roomId: X_COMMS_SURFACE_ID, description: "Opens X Comms when X publishing is enabled for this familiar.", iconName: "ph:paper-plane-tilt" },
 ];
 
 /** The explicit default: a familiar with no stored type is General. */

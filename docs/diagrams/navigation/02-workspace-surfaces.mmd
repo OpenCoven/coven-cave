@@ -138,11 +138,10 @@ flowchart TB
     direction LR
     PRIMARY -. "active familiar role" .-> RROOMS["Rooms cluster"]:::conditional
     RROOMS --> RESEARCH["Research Desk"]:::room
-    RROOMS --> COMMS["Comms Operations<br/>delivery queue drawer"]:::room
+    RROOMS --> COMMS["X Comms<br/>demo planning and live publishing"]:::room
     RROOMS --> WATCH["Watchtower<br/>Open · Snoozed · Closed · All"]:::room
     RROOMS --> WRITING["Writing Desk<br/>published works drawer"]:::room
     RROOMS --> CHART["Chart Room<br/>voyage log drawer"]:::room
-    RROOMS --> REVIEW["Review Deck<br/>checkpoints drawer"]:::room
     RROOMS --> ARCHIVE["The Archive<br/>indexing activity drawer"]:::room
     PRIMARY -. "hidden workspace mode" .-> SUBMISSIONS["OpenCoven Submissions"]:::hidden
   end

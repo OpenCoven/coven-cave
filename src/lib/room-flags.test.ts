@@ -225,3 +225,15 @@ test("a room this build doesn't ship reads as under construction, not as a role 
     "the build gate answers first — a role manifest can't change its verdict",
   );
 });
+
+
+test("retired desks are absent from the registry and every build's room inventory", () => {
+  const register = repoFile("src/components/role-surfaces/register.tsx");
+  assert.doesNotMatch(register, /MessengerSurface|ReviewerSurface|MESSENGER_SURFACE_ID|REVIEWER_SURFACE_ID/);
+  for (const env of [dev, prod, { production: true, rooms: "all" }]) {
+    const rooms = filterEnabledRoomIds(env, KNOWN_ROOM_IDS);
+    assert.ok(!rooms.includes("messenger-ops"));
+    assert.ok(!rooms.includes("reviewer-review-deck"));
+    assert.ok(rooms.includes(X_COMMS));
+  }
+});

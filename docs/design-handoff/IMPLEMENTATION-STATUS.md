@@ -1,5 +1,9 @@
 # Claude Design — implementation ledger
 
+> Retirement (#5412): Review Desk and generic Comms Operations are removed.
+> Their handoffs below are historical. X Comms remains, including the confirmed
+> live X publishing panel; do not recreate either retired room from a snapshot.
+
 Every surface in this app that came from a [Claude Design](https://claude.ai/design)
 handoff, what landed it, and what is still outstanding.
 

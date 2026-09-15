@@ -473,16 +473,10 @@ export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
  * the one a fresh profile gets — these resolve to nothing exactly like an
  * undefined token.
  *
- * --destructive is the live one worth naming: 12 definitions in themes.css,
- * all inside six palettes' blocks (ghosty, claymorphism, claude, codex,
- * pastel-dreams, snow). Referenced unconditionally across the four Research
- * surfaces, so every failed/error colour there is unpainted on the default
- * palette and on tide / ember / slate / contrast / solstice.
+ * No theme-scoped-only references remain. Keep the empty bank so new
+ * references still fail the gate instead of silently inheriting old allowance.
  */
-export const BANKED_THEME_SCOPED_ONLY = new Map([
-  ["--destructive", 19],
-  ["--shadow-popover", 9],
-]);
+export const BANKED_THEME_SCOPED_ONLY = new Map();
 
 /**
  * Sites where the token name itself is computed. Counted per file so a new one
