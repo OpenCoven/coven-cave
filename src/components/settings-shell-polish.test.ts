@@ -8,7 +8,9 @@ const shellSource = readFileSync(
 );
 const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
 const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
-const source = `${shellSource}\n${daemonSource}`;
+const appearanceSource = readFileSync(new URL("./settings-appearance.tsx", import.meta.url), "utf8");
+const layoutSource = readFileSync(new URL("./settings-layout.tsx", import.meta.url), "utf8");
+const source = `${shellSource}\n${daemonSource}\n${appearanceSource}\n${layoutSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -119,7 +121,7 @@ assert.match(
 );
 assert.match(
   shellSource,
-  /import \{ SettingsClientAccess \} from "\.\/settings-client-access"/,
+  /const SettingsClientAccess = dynamic\(\(\) => import\("\.\/settings-client-access"\)/,
   "SettingsShell imports the focused Client access section",
 );
 assert.match(
@@ -593,16 +595,6 @@ assert.match(
 );
 assert.match(
   dashboardCss,
-  /\.settings-startup-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*150px\),\s*1fr\)\)[\s\S]*?gap:\s*var\(--space-2\)/,
-  "startup cells preserve the source's responsive two-cell grid and compact gap",
-);
-assert.equal(
-  dashboardCss.match(/\.settings-startup-grid\s*\{/g)?.length,
-  1,
-  "startup auto-fit behavior is not replaced by a premature one-column breakpoint",
-);
-assert.match(
-  dashboardCss,
   /@container settings-general \(max-width:/,
   "narrow General layout uses a container query",
 );
@@ -621,16 +613,9 @@ assert.match(
   /SettingsGroup label="Progression" variant="ruled"[\s\S]*settings-progression-card/,
   "Progression uses the ruled full-width composition",
 );
-assert.match(
-  source,
-  /SettingsGroup label="Startup" variant="ruled"[\s\S]*settings-startup-grid/,
-  "Startup uses the ruled two-cell composition",
-);
-assert.match(
-  dashboardCss,
-  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-hairline\)/,
-  "Soon cells use the quiet dashed affordance language",
-);
+assert.doesNotMatch(source, /SettingsGroup label="Startup"/, "unavailable Startup controls are not advertised");
+assert.doesNotMatch(sections, /group: "Startup"/, "search does not offer unavailable Startup controls");
+assert.doesNotMatch(dashboardCss, /\.settings-startup-/, "removed placeholder styles are retired");
 assert.match(
   source,
   /<SettingsGroup label="Backup" variant="ruled"[\s\S]*settings-backup-grid/,

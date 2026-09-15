@@ -89,7 +89,7 @@ export function SettingsOverview({
     const anchors = [
       { label: "Workspace", id: settingsGroupId("Workspace") },
       { label: "Backup", id: settingsGroupId("Backup") },
-      { label: "Startup", id: settingsGroupId("Startup") },
+      { label: "Chat", id: settingsGroupId("Chat") },
     ] as const;
     const summaryParts = [
       summary?.workspacePath,
