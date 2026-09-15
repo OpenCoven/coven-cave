@@ -52,14 +52,12 @@ export function FamiliarSettingsSection({
   familiar,
   familiars,
   allFamiliars,
-  localDaemonReady,
   initialTab,
   onRosterChanged,
 }: {
   familiar: ResolvedFamiliar;
   familiars: Familiar[];
   allFamiliars: ResolvedFamiliar[];
-  localDaemonReady: boolean;
   initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
 }) {

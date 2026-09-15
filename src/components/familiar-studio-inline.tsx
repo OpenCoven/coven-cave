@@ -78,7 +78,6 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
 export function FamiliarStudioInlinePanel({
   familiars,
   resolved,
-  localDaemonReady,
   onSummon,
   onRosterChanged,
 }: Props) {

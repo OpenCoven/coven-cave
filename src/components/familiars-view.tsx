@@ -46,8 +46,6 @@ type AgentsViewProps = {
   sessions: SessionRow[];
   activeFamiliar?: Familiar | null;
   daemonRunning: boolean;
-  localDaemonReady: boolean;
-  pendingRosterSettledSuccessfully: boolean;
   responseNeeded: Set<string>;
   onStartChat: (familiarId: string) => void;
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
@@ -80,7 +78,6 @@ export function FamiliarsView({
   sessions,
   activeFamiliar,
   daemonRunning,
-  localDaemonReady,
   responseNeeded,
   onStartChat,
   onOpenSession,

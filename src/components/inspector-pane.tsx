@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -11,7 +10,6 @@ import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
-import { Tabs } from "@/components/ui/tabs";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
@@ -511,11 +509,9 @@ function MemoryTab({
 
 export function RailInspector({
   familiar,
-  localDaemonReady,
   onOpenFullView,
 }: {
   familiar: Familiar | null;
-  localDaemonReady: boolean;
   onOpenFullView?: () => void;
 }) {
   if (!familiar) {
@@ -529,7 +525,6 @@ export function RailInspector({
     <div className="rail-inspector">
       <InspectorPane
         familiar={familiar}
-        localDaemonReady={localDaemonReady}
         compact={true}
         onOpenFullView={onOpenFullView}
       />

@@ -478,7 +478,6 @@ function FamiliarCapabilityPanel({
   familiars,
   allFamiliars,
   daemonRunning,
-  localDaemonReady,
   onRosterChanged,
   onStartChat,
 }: {
@@ -486,7 +485,6 @@ function FamiliarCapabilityPanel({
   familiars: Familiar[];
   allFamiliars: ResolvedFamiliar[];
   daemonRunning?: boolean;
-  localDaemonReady: boolean;
   onRosterChanged?: () => void;
   onStartChat?: (familiarId: string) => void;
 }) {
@@ -587,7 +585,6 @@ function FamiliarCapabilityPanel({
             familiar={familiar}
             familiars={familiars}
             allFamiliars={allFamiliars}
-            localDaemonReady={localDaemonReady}
             initialTab={settingsTab}
             onRosterChanged={onRosterChanged}
           />
@@ -608,7 +605,6 @@ export function ChatFamiliarCapabilities({
   familiar,
   familiars,
   selectedFamiliarIds,
-  localDaemonReady,
   familiarsLoaded = true,
   familiarsError,
   daemonRunning,
@@ -622,7 +618,6 @@ export function ChatFamiliarCapabilities({
   familiar: Familiar | null;
   familiars: Familiar[];
   selectedFamiliarIds: ReadonlySet<string>;
-  localDaemonReady: boolean;
   familiarsLoaded?: boolean;
   familiarsError?: string | null;
   daemonRunning?: boolean;
@@ -755,7 +750,6 @@ export function ChatFamiliarCapabilities({
           familiars={familiars}
           allFamiliars={resolvedFamiliars}
           daemonRunning={daemonRunning}
-          localDaemonReady={localDaemonReady}
           onRosterChanged={onRosterChanged}
           onStartChat={onStartChat}
         />
