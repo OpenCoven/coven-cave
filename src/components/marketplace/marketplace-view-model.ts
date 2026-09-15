@@ -14,7 +14,6 @@ export const MARKETPLACE_SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label
         icon: IconName;
       }]
     : []),
-  { id: "skills", label: "Skills", icon: "ph:sparkle" },
   { id: "build", label: "Build", icon: "ph:flow-arrow" },
 ];
 
@@ -22,7 +21,7 @@ export const MARKETPLACE_SECTION_HINT: Record<MarketplaceSection, string> = {
   browse: "Things you already installed or authored, kept together in one local inventory.",
   crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  skills: "A smaller, reviewed OpenCoven Skills marketplace is being curated.",
+  skills: "Installed and authored skills in Yours.",
   build: "Author a new skill directly in a local skill root.",
   capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Yours.",
 };

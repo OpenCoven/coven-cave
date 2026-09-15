@@ -607,7 +607,6 @@ export const SUITES = {
     "src/components/marketplace/craft-create-drawer.test.ts",
     "src/lib/craft-agent-prompt.test.ts",
     "src/components/marketplace/skill-builder.test.ts",
-    "src/components/marketplace/skills-coming-soon.test.ts",
     "src/components/marketplace/skill-explore.test.ts",
     "src/lib/skill-templates.test.ts",
     "src/lib/skill-draft.test.ts",
