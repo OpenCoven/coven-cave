@@ -121,6 +121,34 @@ test.describe("sessions list", () => {
     await expect(rows(page)).toHaveCount(SEEDS.length);
   });
 
+  test("grouping labels remain readable across desktop widths and text scales", async ({ page }, testInfo) => {
+    const grouping = page.getByRole("group", { name: "Group sessions by" });
+    for (const width of [1280, 900]) {
+      await page.setViewportSize({ width, height: 850 });
+      for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+        for (const scale of [100, 125]) {
+          await page.evaluate(({ theme, mode, scale }) => {
+            const root = document.documentElement;
+            root.dataset.theme = theme;
+            root.dataset.mode = mode;
+            root.dataset.screenScale = String(scale);
+          }, { theme, mode, scale });
+          await expect(page.locator("html")).toHaveCSS("font-size", scale === 125 ? "20px" : "16px");
+          await expect.poll(() => grouping.locator("button > span").evaluateAll((labels) =>
+            labels.filter((label) => label.scrollWidth > label.clientWidth).map((label) => label.textContent),
+          ), { message: `Full grouping labels at ${width}px / ${theme} ${mode} / ${scale}%` }).toEqual([]);
+          for (const label of ["Flat", "Project", "Date"]) {
+            await expect(grouping.getByRole("button", { name: label, exact: true })).toBeInViewport({ ratio: 1 });
+          }
+          const project = grouping.getByRole("button", { name: "Project", exact: true });
+          await project.focus();
+          await expect(project).toBeFocused();
+          await page.screenshot({ path: testInfo.outputPath(`grouping-${width}-${theme}-${mode}-${scale}.png`) });
+        }
+      }
+    }
+  });
+
   test("the reference toolbar keeps search, status, and sort on one compact line", async ({ page }) => {
     const search = page.getByPlaceholder("Filter sessions…");
     const all = chip(page, "All");
