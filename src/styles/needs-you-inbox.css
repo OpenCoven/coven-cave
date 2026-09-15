@@ -1,34 +1,14 @@
-/* Needs-you inbox — design handoff `Coven Cave Prototype.dc.html` frame 2c.
+/* Needs-you PANEL — design handoff frame 2c.
  *
- * Its own sheet, component-imported by `needs-you-popover.tsx`, because the
- * root CSS bundle every route downloads runs at essentially zero headroom
- * against BUNDLE_MAX_HOME_CSS_KB (see CLAUDE.md, "New surface CSS goes in its
- * own sheet"). Only routes that mount the desktop menu bar pay for it.
+ * Loaded on demand: needs-you-panel.tsx imports this, and that module is
+ * dynamically imported by the trigger, so these bytes land in their own chunk
+ * rather than in first-load CSS. The trigger's own rules live in
+ * needs-you-trigger.css.
  *
  * Every colour derives from one solid token through the tint recipe
  * (docs/coven-design-language.md §3), so the panel survives all 24
  * theme × mode combinations with no hardcoded value.
  */
-
-/* ── Trigger ─────────────────────────────────────────────────────────────────
- * The bell badges ACTIONABLE work only, so amber rather than the bar's default
- * accent: this count means "stopped on you", not "in flight". */
-.needs-you-trigger[data-attention="true"] {
-  color: var(--status-awaiting);
-}
-
-/* Same treatment as the notification bell's count beside it, for the same
-   reason: unread work is attention, not danger, and the one-token tint recipe
-   (solid text, 14% fill, ~40% border) has no `--status-awaiting-foreground` to
-   need. Both mixes end on --bg-raised rather than transparent because the chip
-   overlaps the glyph — a transparent fill lets the bell bleed through the
-   count. */
-.needs-you-trigger__badge {
-  color: var(--status-awaiting);
-  background: color-mix(in oklch, var(--status-awaiting) 14%, var(--bg-raised));
-  border: 1px solid color-mix(in oklch, var(--status-awaiting) 40%, var(--bg-raised));
-  font-weight: 700;
-}
 
 /* ── Panel ───────────────────────────────────────────────────────────────────
  * 100% opaque, deliberately NOT the glass treatment. The handoff's third P0
