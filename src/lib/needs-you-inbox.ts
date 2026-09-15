@@ -102,6 +102,16 @@ function branchOf(session: SessionRow): string | null {
   return branch ? truncateBranch(branch) : null;
 }
 
+/**
+ * Window event that opens the Needs-you inbox (⇧⌘A).
+ *
+ * The popover owns its own open state, so the global shortcut asks for it by
+ * event rather than forcing that state up into the workspace. Same shape as
+ * the other cross-component asks in this app, and it keeps the trigger a
+ * self-contained control.
+ */
+export const NEEDS_YOU_OPEN_EVENT = "cave:needs-you:open";
+
 export function needsYouSeenKey(sessionId: string, since: string | null): string {
   return `${sessionId}@${since ?? "-"}`;
 }

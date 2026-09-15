@@ -212,6 +212,31 @@ test.describe("Needs-you inbox", () => {
     await expect(page.locator(`${TRIGGER} .needs-you-trigger__badge`)).toHaveCount(0);
   });
 
+  test("\u21e7\u2318A opens the inbox, because the tooltip says it does", async ({ page }) => {
+    await gotoCave(page);
+    await expect(page.locator(PANEL)).toHaveCount(0);
+
+    // The trigger advertises this. A hint that performs no action is the
+    // defect the review caught on the first pass.
+    await page.keyboard.press("Meta+Shift+KeyA");
+
+    await expect(page.locator(PANEL)).toBeVisible();
+    await expect(page.locator(`${PANEL} ${ROW}`)).toHaveCount(4);
+  });
+
+  test("a row announces its wait, not just its title", async ({ page }) => {
+    await gotoCave(page);
+    await page.locator(TRIGGER).click();
+    await expect(page.locator(PANEL)).toBeVisible();
+
+    // No explicit aria-label: an aria-label REPLACES the descendant name, which
+    // is how the wait — the thing this list is ordered by — went unannounced.
+    const row = page.locator(`${PANEL} ${ROW}`).first();
+    await expect(row).not.toHaveAttribute("aria-label", /./);
+    await expect(row).toContainText("waiting");
+    await expect(row).toContainText("Blocked");
+  });
+
   test("nothing waiting renders a quiet bell with no badge", async ({ page }) => {
     await gotoCave(page, {
       sessions: SESSIONS.filter((s) => s.id === "running-one" || s.id === "done-one"),

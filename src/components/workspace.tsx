@@ -219,6 +219,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import { NeedsYouPopover } from "@/components/needs-you-popover";
+import { NEEDS_YOU_OPEN_EVENT } from "@/lib/needs-you-inbox";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
 import {
@@ -3517,6 +3518,15 @@ export function Workspace() {
         const step = e.key === "ArrowUp" ? -1 : 1;
         const next = (idx === -1 ? 0 : (idx + step + familiars.length) % familiars.length);
         selectFamiliar(familiars[next].id);
+        return;
+      }
+
+      // ⇧⌘A → Needs you. The trigger's tooltip advertises this, and an
+      // advertised shortcut that does nothing is the same defect ⌘, above was
+      // wired to fix. The popover owns its open state and listens for the ask.
+      if (meta && e.shiftKey && !alt && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        window.dispatchEvent(new Event(NEEDS_YOU_OPEN_EVENT));
         return;
       }
 

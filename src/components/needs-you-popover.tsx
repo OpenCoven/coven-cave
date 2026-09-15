@@ -29,6 +29,7 @@ import {
   needsYouElsewhere,
   needsYouItems,
   unseenNeedsYouItems,
+  NEEDS_YOU_OPEN_EVENT,
   type NeedsYouItem,
 } from "@/lib/needs-you-inbox";
 import { markNeedsYouSeen, readNeedsYouSeen } from "@/lib/needs-you-seen";
@@ -117,6 +118,15 @@ export function NeedsYouPopover({
   }, [open]);
 
   const runningCount = crossSourceRunning ?? elsewhere.running;
+
+  // ⇧⌘A opens the inbox. The binding lives in the workspace's global keydown
+  // handler (a shortcut has to work from anywhere, including surfaces this
+  // component is not on); it asks by event so the open state stays here.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(NEEDS_YOU_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(NEEDS_YOU_OPEN_EVENT, onOpen);
+  }, []);
 
   const markAllSeen = useCallback(() => {
     const keys = rows.map((item) => item.seenKey);

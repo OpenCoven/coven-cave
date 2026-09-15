@@ -174,10 +174,20 @@ assert.match(
   /\{presentation\.label\}/,
   "the row writes the state's one canonical word",
 );
+// The row carries NO explicit aria-label, and that is the fix rather than an
+// omission. An aria-label REPLACES a button's descendant name, so labelling
+// the row suppressed the wait — the very thing the list is ordered by — from
+// assistive tech while leaving it on screen. Composed from visible content the
+// name reads title · metadata · state · "4d waiting".
+assert.doesNotMatch(
+  panel,
+  /aria-label=\{`\$\{item\.title\}/,
+  "the row name composes from visible content, so the wait is announced too",
+);
 assert.match(
   panel,
-  /aria-label=\{`\$\{item\.title\} — \$\{presentation\.label\}/,
-  "the row's accessible name leads with the title and the state",
+  /<RelativeTime iso=\{item\.since\}[\s\S]{0,80}?waiting/,
+  "the wait is real text inside the button, which is what makes it nameable",
 );
 assert.match(source, /focus-ring/, "the trigger carries a focus ring");
 assert.match(panel, /focus-ring/, "the panel's interactive elements carry a focus ring");
@@ -186,6 +196,33 @@ assert.match(
   /announce\(/,
   "marking items seen is announced — it mutates the list without moving focus",
 );
+
+// ── An advertised shortcut must actually do something ────────────────────────
+// The trigger's tooltip names ⇧⌘A. A hint that performs no action is the same
+// defect ⌘, was wired to fix in workspace.tsx.
+{
+  const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+  const catalog = readFileSync(
+    new URL("../lib/keyboard-shortcuts.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /⇧⌘A/, "the trigger advertises the shortcut");
+  assert.match(
+    source,
+    /window\.addEventListener\(NEEDS_YOU_OPEN_EVENT/,
+    "the popover listens for the open request",
+  );
+  assert.match(
+    workspace,
+    /e\.shiftKey && !alt && e\.key\.toLowerCase\(\) === "a"[\s\S]{0,200}?NEEDS_YOU_OPEN_EVENT/,
+    "the workspace binds ⇧⌘A and dispatches the open request",
+  );
+  assert.match(
+    catalog,
+    /keys: "⇧⌘A"/,
+    "the shortcut is catalogued, per that file's own truthfulness rule",
+  );
+}
 
 // ── Reduced motion and reduced transparency both change output ───────────────
 assert.match(

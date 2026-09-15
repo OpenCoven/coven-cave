@@ -70,10 +70,13 @@ function NeedsYouRow({ item, familiars, now, onOpen }: RowProps) {
         className="needs-you-row focus-ring-inset"
         data-lifecycle={item.lifecycle}
         onClick={() => onOpen(item)}
-        // The visible row is title + metadata + state + relative wait. The
-        // accessible name says the same things in the same order, so a screen
-        // reader gets the scan a sighted reader gets rather than a raw title.
-        aria-label={`${item.title} — ${presentation.label}, ${meta || "no project"}`}
+        // NO explicit aria-label, deliberately. An aria-label REPLACES the
+        // button's descendant name, so labelling this row suppressed the one
+        // thing the list is ordered by — the wait — from assistive tech while
+        // leaving it visible on screen. Composed from the visible descendants
+        // instead, the name reads title · metadata · state · "4d waiting",
+        // which is the scan a sighted reader gets. The decorative parts (edge,
+        // glyph, wait hairline) are aria-hidden, so they contribute nothing.
         title={item.title}
       >
         <span aria-hidden className="needs-you-row__edge" />
