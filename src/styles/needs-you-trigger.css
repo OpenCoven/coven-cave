@@ -1,0 +1,34 @@
+/* Needs-you TRIGGER — the always-visible bell in the desktop menu bar.
+ *
+ * Deliberately a separate sheet from needs-you-inbox.css, which styles the
+ * panel. The trigger is mounted on every route, so whatever it imports is paid
+ * for on first load; the panel is loaded on demand by needs-you-panel.tsx.
+ * Measured: keeping the panel's rules eager cost 6.1 KB of first-load CSS
+ * against 20.2 KB of headroom, and `bundle-budget` warns THIN below ~15 KB.
+ *
+ * Keep this file small. A rule that only matters once the panel is open
+ * belongs in the other sheet.
+ *
+ * Every colour derives from one solid token through the tint recipe
+ * (docs/coven-design-language.md §3).
+ */
+
+/* ── Trigger ─────────────────────────────────────────────────────────────────
+ * The bell badges ACTIONABLE work only, so amber rather than the bar's default
+ * accent: this count means "stopped on you", not "in flight". */
+.needs-you-trigger[data-attention="true"] {
+  color: var(--status-awaiting);
+}
+
+/* Same treatment as the notification bell's count beside it, for the same
+   reason: unread work is attention, not danger, and the one-token tint recipe
+   (solid text, 14% fill, ~40% border) has no `--status-awaiting-foreground` to
+   need. Both mixes end on --bg-raised rather than transparent because the chip
+   overlaps the glyph — a transparent fill lets the bell bleed through the
+   count. */
+.needs-you-trigger__badge {
+  color: var(--status-awaiting);
+  background: color-mix(in oklch, var(--status-awaiting) 14%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--status-awaiting) 40%, var(--bg-raised));
+  font-weight: 700;
+}

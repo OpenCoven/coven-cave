@@ -10,10 +10,46 @@ import { readFileSync } from "node:fs";
 // that live in the markup, where a regression would be silent: the rules a
 // future edit is most likely to undo without noticing.
 
+// The surface is split in two on purpose: the trigger is always-mounted menu
+// bar chrome, the panel loads on first open. Each half is asserted against its
+// own file so a rule cannot quietly migrate into the eager half.
 const source = readFileSync(new URL("./needs-you-popover.tsx", import.meta.url), "utf8");
+const panel = readFileSync(new URL("./needs-you-panel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(
   new URL("../styles/needs-you-inbox.css", import.meta.url),
   "utf8",
+);
+const triggerStyles = readFileSync(
+  new URL("../styles/needs-you-trigger.css", import.meta.url),
+  "utf8",
+);
+
+// ── The panel is loaded on demand ────────────────────────────────────────────
+// Measured: importing the panel's sheet eagerly cost 6.1 KB of first-load CSS
+// against 20.2 KB of headroom, on a budget that warns THIN below ~15 KB.
+assert.match(
+  source,
+  /dynamic\(\(\) => import\("@\/components\/needs-you-panel"\)/,
+  "the panel is dynamically imported, so its CSS is not paid for on first paint",
+);
+assert.doesNotMatch(
+  source,
+  /needs-you-inbox\.css/,
+  "the trigger must not import the panel sheet — that is what puts it in first-load CSS",
+);
+assert.match(
+  panel,
+  /import "@\/styles\/needs-you-inbox\.css"/,
+  "the panel owns the heavy sheet",
+);
+assert.match(
+  source,
+  /import "@\/styles\/needs-you-trigger\.css"/,
+  "the trigger keeps only its own small sheet",
+);
+assert.ok(
+  triggerStyles.length < styles.length,
+  "the eagerly-loaded sheet stays the smaller of the two",
 );
 
 // ── Derivation stays in the model ────────────────────────────────────────────
@@ -23,16 +59,18 @@ assert.match(
   /from "@\/lib\/needs-you-inbox"/,
   "rows come from the pure model, not from a filter written here",
 );
-assert.doesNotMatch(
-  source,
-  /\.sort\(/,
-  "ordering belongs to needsYouItems — a second sort here could silently disagree with it",
-);
+for (const [name, text] of [["trigger", source], ["panel", panel]] as const) {
+  assert.doesNotMatch(
+    text,
+    /\.sort\(/,
+    `ordering belongs to needsYouItems — a second sort in the ${name} could silently disagree with it`,
+  );
+}
 
 // ── The panel is opaque ──────────────────────────────────────────────────────
 // The handoff's third P0 finding is drawer transcript text reading THROUGH this
 // popover. Glass here would reintroduce exactly that.
-assert.doesNotMatch(source, /glass-overlay/, "the panel never uses the glass treatment");
+assert.doesNotMatch(panel, /glass-overlay/, "the panel never uses the glass treatment");
 assert.match(
   styles,
   /\.ui-popover\.needs-you-panel \{[^}]*background: var\(--bg-elevated\)/,
@@ -84,7 +122,13 @@ assert.doesNotMatch(
   /#[0-9a-fA-F]{3,8}\b/,
   "no hardcoded colour in the stylesheet",
 );
-assert.doesNotMatch(source, /#[0-9a-fA-F]{6}\b/, "no hardcoded colour in the component");
+assert.doesNotMatch(source, /#[0-9a-fA-F]{6}\b/, "no hardcoded colour in the trigger");
+assert.doesNotMatch(panel, /#[0-9a-fA-F]{6}\b/, "no hardcoded colour in the panel");
+assert.doesNotMatch(
+  triggerStyles.replace(/rgb\(0 0 0 \/ [^)]*\)/g, ""),
+  /#[0-9a-fA-F]{3,8}\b/,
+  "no hardcoded colour in the trigger sheet",
+);
 
 // ── The badge counts actionable work only ────────────────────────────────────
 assert.match(
@@ -108,7 +152,7 @@ assert.equal(
 
 // ── Running is text in the footer, never a badge ─────────────────────────────
 assert.match(
-  source,
+  panel,
   /needs-you-foot__stat"\s+data-tone="running"\s*>\s*\n?\s*\{runningCount\} running/,
   "the running count is footer text",
 );
@@ -121,21 +165,22 @@ assert.doesNotMatch(
 // ── Accessibility ────────────────────────────────────────────────────────────
 // Colour is never the only channel: every state ships a glyph AND the word.
 assert.match(
-  source,
+  panel,
   /const STATE_ICON: Record<NeedsYouLifecycle, IconName> = \{[\s\S]*?blocked:[\s\S]*?failed:[\s\S]*?awaiting:[\s\S]*?\}/,
   "each state has its own glyph",
 );
 assert.match(
-  source,
+  panel,
   /\{presentation\.label\}/,
   "the row writes the state's one canonical word",
 );
 assert.match(
-  source,
+  panel,
   /aria-label=\{`\$\{item\.title\} — \$\{presentation\.label\}/,
   "the row's accessible name leads with the title and the state",
 );
-assert.match(source, /focus-ring/, "interactive elements carry a focus ring");
+assert.match(source, /focus-ring/, "the trigger carries a focus ring");
+assert.match(panel, /focus-ring/, "the panel's interactive elements carry a focus ring");
 assert.match(
   source,
   /announce\(/,
@@ -156,16 +201,13 @@ assert.match(
 
 // ── Its own sheet, component-imported ────────────────────────────────────────
 // The root CSS bundle runs at zero headroom; only routes that mount this pay.
-assert.match(
-  source,
-  /import "@\/styles\/needs-you-inbox\.css"/,
-  "the component imports its own stylesheet",
-);
+
 {
   const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-  assert.doesNotMatch(
-    globals,
-    /needs-you-inbox\.css/,
-    "the sheet stays off the globals facade (see CLAUDE.md, new surface CSS)",
-  );
+  for (const sheet of ["needs-you-inbox.css", "needs-you-trigger.css"]) {
+    assert.ok(
+      !globals.includes(sheet),
+      `${sheet} stays off the globals facade (see the design contract, new surface CSS)`,
+    );
+  }
 }

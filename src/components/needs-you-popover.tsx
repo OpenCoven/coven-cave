@@ -20,103 +20,42 @@
  * All derivation is in `lib/needs-you-inbox.ts`; this file only draws it.
  */
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Popover } from "@/components/ui/popover";
-import { RelativeTime } from "@/components/ui/relative-time";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { fetchRunningActivity } from "@/lib/running-activity";
 import {
   needsYouElsewhere,
   needsYouItems,
-  needsYouWaitFraction,
   unseenNeedsYouItems,
   type NeedsYouItem,
-  type NeedsYouLifecycle,
 } from "@/lib/needs-you-inbox";
 import { markNeedsYouSeen, readNeedsYouSeen } from "@/lib/needs-you-seen";
-import { SESSION_LIFECYCLE } from "@/lib/session-lifecycle";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { Familiar, SessionRow } from "@/lib/types";
-import "@/styles/needs-you-inbox.css";
+import "@/styles/needs-you-trigger.css";
 
-/** One glyph per state. Colour is never the only channel (design language §8),
- *  so the icon and the word both carry the distinction. */
-const STATE_ICON: Record<NeedsYouLifecycle, IconName> = {
-  blocked: "ph:warning",
-  failed: "ph:x-circle",
-  awaiting: "ph:hourglass",
-};
-
-/** What kind of work this is, drawn from the session's own git context rather
- *  than invented: a reported PR, a branch, or plain conversation. */
-function kindIcon(item: NeedsYouItem): IconName {
-  if (item.project.includes("/")) return "ph:git-pull-request";
-  if (item.branch) return "ph:git-branch";
-  return "ph:chat-circle-dots";
-}
+/**
+ * The panel loads on first open, never on first paint.
+ *
+ * This trigger is always-mounted menu-bar chrome, so anything it imports
+ * statically lands in first-load CSS for every route. The panel's stylesheet
+ * measured 6.1 KB against a budget that had 20.2 KB of headroom, so eager
+ * import spent nearly a third of what was left on markup nobody sees until
+ * they click the bell.
+ *
+ * `ssr: false` because the panel is only ever reachable by a click: there is
+ * no first paint of it to match, and the seen-set it renders against lives in
+ * localStorage, which the server cannot read anyway.
+ */
+const NeedsYouPanel = dynamic(() => import("@/components/needs-you-panel"), {
+  ssr: false,
+});
 
 function badgeText(count: number): string {
   // Capped at 99 per spec §6; the trigger's aria-label carries the exact count.
   return count > 99 ? "99+" : String(count);
-}
-
-type RowProps = {
-  item: NeedsYouItem;
-  familiars: Familiar[];
-  now: number;
-  onOpen: (item: NeedsYouItem) => void;
-};
-
-function NeedsYouRow({ item, familiars, now, onOpen }: RowProps) {
-  const presentation = SESSION_LIFECYCLE[item.lifecycle];
-  const familiar = item.familiarId
-    ? (familiars.find((f) => f.id === item.familiarId)?.display_name ?? null)
-    : null;
-  const meta = [familiar, item.project, item.branch].filter(Boolean).join(" · ");
-  const wait = needsYouWaitFraction(item.since, now);
-
-  return (
-    <li>
-      <button
-        type="button"
-        className="needs-you-row focus-ring-inset"
-        data-lifecycle={item.lifecycle}
-        onClick={() => onOpen(item)}
-        // The visible row is title + metadata + state + relative wait. The
-        // accessible name says the same things in the same order, so a screen
-        // reader gets the scan a sighted reader gets rather than a raw title.
-title={item.title}
-      >
-        <span aria-hidden className="needs-you-row__edge" />
-        <span className="needs-you-row__kind" aria-hidden>
-          <Icon name={kindIcon(item)} width={14} height={14} />
-        </span>
-        <span className="needs-you-row__body">
-          <span className="needs-you-row__title">{item.title}</span>
-          <span className="needs-you-row__meta">{meta}</span>
-        </span>
-        <span className="needs-you-row__state">
-          <span className="needs-you-row__badge">
-            <Icon name={STATE_ICON[item.lifecycle]} width={11} height={11} aria-hidden />
-            {presentation.label}
-          </span>
-          <span className="needs-you-row__wait">
-            <RelativeTime iso={item.since} now={now} fallback="—" /> waiting
-          </span>
-        </span>
-        {/* A comparative cue across this one list, never a measurement — the
-            exact wait is written out above it. Saturates at a week. */}
-        <span aria-hidden className="needs-you-row__age">
-          <span
-            className="needs-you-row__age-fill"
-            style={{ inlineSize: `${Math.round(wait * 100)}%` }}
-          />
-        </span>
-      </button>
-    </li>
-  );
 }
 
 type Props = {
@@ -236,85 +175,22 @@ export function NeedsYouPopover({
         ) : null}
       </button>
 
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
-        anchorRef={anchorRef}
-        placement="bottom-end"
-        offset={8}
-        // The header and footer stay put while the list scrolls under them —
-        // the spec's sticky-chrome contract for this panel.
-        scrollStrategy="content"
-        ariaLabel="Needs you"
-        className="needs-you-panel"
-      >
-        <div className="needs-you-head">
-          <span className="needs-you-head__mark" aria-hidden>
-            <Icon name="ph:bell" width={13} height={13} />
-          </span>
-          <strong className="needs-you-head__title">Needs you</strong>
-          <span className="needs-you-head__count">{count}</span>
-          <span className="needs-you-head__order">oldest first</span>
-          <button
-            type="button"
-            className="needs-you-head__seen focus-ring"
-            onClick={markAllSeen}
-            disabled={count === 0}
-            aria-label={`Mark all ${count} seen`}
-            title="Mark all seen"
-          >
-            <Icon name="ph:check" width={12} height={12} aria-hidden />
-          </button>
-        </div>
-
-        <div className="needs-you-body">
-          {count === 0 ? (
-            <EmptyState
-              compact
-              icon="ph:moon"
-              headline="Nothing needs you"
-              subtitle={
-                runningCount > 0
-                  ? `${runningCount} ${runningCount === 1 ? "session" : "sessions"} running quietly.`
-                  : "The coven is quiet."
-              }
-            />
-          ) : (
-            <ul className="needs-you-list">
-              {rows.map((item) => (
-                <NeedsYouRow
-                  key={item.seenKey}
-                  item={item}
-                  familiars={familiars}
-                  now={now}
-                  onOpen={openItem}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="needs-you-foot">
-          <span className="needs-you-foot__label">Elsewhere</span>
-          {/* Running is text, never a badge (spec §6): a permanent count is a
-              badge that has stopped meaning anything. */}
-          <span className="needs-you-foot__stat" data-tone="running">
-            {runningCount} running
-          </span>
-          <span className="needs-you-foot__stat">{elsewhere.idle} idle</span>
-          <button
-            type="button"
-            className="needs-you-foot__all focus-ring"
-            onClick={() => {
-              setOpen(false);
-              onOpenSessions();
-            }}
-          >
-            All sessions
-            <Icon name="ph:arrow-right" width={12} height={12} aria-hidden />
-          </button>
-        </div>
-      </Popover>
+      {open ? (
+        <NeedsYouPanel
+          open={open}
+          setOpen={setOpen}
+          anchorRef={anchorRef}
+          rows={rows}
+          count={count}
+          familiars={familiars}
+          now={now}
+          runningCount={runningCount}
+          idleCount={elsewhere.idle}
+          markAllSeen={markAllSeen}
+          openItem={openItem}
+          onOpenSessions={onOpenSessions}
+        />
+      ) : null}
     </>
   );
 }
