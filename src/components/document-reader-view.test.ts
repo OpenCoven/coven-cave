@@ -9,7 +9,7 @@ import {
   DocumentReader,
   type DocumentReaderDocument,
 } from "./document-reader.tsx";
-import { MarkdownReaderBlock } from "./canonical-memory-markdown.tsx";
+import { MarkdownReaderBlock } from "./document-reader-markdown.tsx";
 
 function documentWith(headings: string[]): DocumentReaderDocument<Block, Block> {
   return {
