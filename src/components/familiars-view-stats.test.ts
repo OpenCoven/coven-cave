@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { ACTIVITY_DAYS, buildFamiliarCardStats } from "./familiars-view-stats.ts";
 import { NO_CHAT_ATTENTION } from "../lib/chat-attention.ts";
-import type { CanonicalMemorySummary } from "../lib/canonical-memory.ts";
+import type { FamiliarFileMemoryStat } from "./familiars-view-stats.ts";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -22,26 +22,24 @@ const sessions = [
   { id: "s4", familiarId: "f2", updated_at: daysAgo(3), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(3), attention: NO_CHAT_ATTENTION },
 ];
 
+// Memory is MEMORY.md files now; the canonical vault moved to the dedicated
+// memory application. A file's relPath is its title on the card, which is why
+// the latest-memory assertions below read a path rather than a summary title.
 function memory(
   id: string,
   familiarId: string,
   title: string,
-  updatedAt: string,
-): CanonicalMemorySummary {
+  modified: string,
+): FamiliarFileMemoryStat {
   return {
-    id,
     familiarId,
-    title,
-    updatedAt,
-    relativeUpdatedAt: "recently",
-    excerpt: `${title} excerpt`,
-    source: { kind: "familiar-memory", label: "Familiar memory" },
-    privacy: { classification: null, revealRequired: null },
-    verification: { state: "verified" },
+    relPath: title,
+    fullPath: `/Users/x/.coven/${familiarId}/memory/${id}.md`,
+    modified,
   };
 }
 
-const covenEntries = [
+const fileEntries = [
   memory("m1", "f1", "Older f1 memory", minutesAgo(60)),
   memory("m2", "f1", "Latest f1 memory", minutesAgo(5)),
   memory("m3", "f2", "Only f2 memory", minutesAgo(120)),
@@ -50,7 +48,7 @@ const covenEntries = [
 const stats = buildFamiliarCardStats({
   familiars,
   sessions,
-  covenEntries,
+  fileEntries,
   memoryAvailability: "ready",
   now: NOW,
 });
@@ -100,7 +98,7 @@ assert.equal(f3?.streakDays, 0, "zero-session familiar has no streak");
 const edge7d = buildFamiliarCardStats({
   familiars: [{ id: "x", display_name: "X", role: "" }],
   sessions: [{ id: "z", familiarId: "x", updated_at: daysAgo(7), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: daysAgo(7), attention: NO_CHAT_ATTENTION }],
-  covenEntries: [],
+  fileEntries: [],
   memoryAvailability: "ready",
   now: NOW,
 });
@@ -110,7 +108,7 @@ assert.equal(edge7d.get("x")?.sessionsLast7d, 0, "session at exactly 7d ago is e
 const edge5m = buildFamiliarCardStats({
   familiars: [{ id: "y", display_name: "Y", role: "" }],
   sessions: [{ id: "z", familiarId: "y", updated_at: minutesAgo(5), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(5), attention: NO_CHAT_ATTENTION }],
-  covenEntries: [],
+  fileEntries: [],
   memoryAvailability: "ready",
   now: NOW,
 });
@@ -119,7 +117,7 @@ assert.equal(edge5m.get("y")?.hasActiveSession, false, "session at exactly 5min 
 const activeCreated = buildFamiliarCardStats({
   familiars: [{ id: "a", display_name: "A", role: "" }],
   sessions: [{ id: "recent", familiarId: "a", updated_at: minutesAgo(1), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(1), attention: NO_CHAT_ATTENTION }],
-  covenEntries: [],
+  fileEntries: [],
   memoryAvailability: "ready",
   now: NOW,
 });
@@ -128,7 +126,7 @@ assert.equal(activeCreated.get("a")?.hasActiveSession, true, "recent non-archive
 const unavailable = buildFamiliarCardStats({
   familiars: [{ id: "u", display_name: "Unavailable", role: "" }],
   sessions: [],
-  covenEntries: [],
+  fileEntries: [],
   memoryAvailability: "unavailable",
   now: NOW,
 }).get("u");
@@ -142,42 +140,42 @@ assert.equal(
 const workspaceBacked = buildFamiliarCardStats({
   familiars: [{ id: "w", display_name: "Workspace backed", role: "" }],
   sessions: [],
-  covenEntries: [],
-  memoryAvailability: "unavailable",
   fileEntries: [{
     familiarId: "w",
     relPath: "MEMORY.md",
     fullPath: "/tmp/w/MEMORY.md",
     modified: minutesAgo(2),
   }],
-  fileMemoryAvailability: "ready",
+  memoryAvailability: "ready",
   now: NOW,
 }).get("w");
 assert.equal(workspaceBacked?.memoryCount, 1, "workspace memory contributes to the durable count");
 assert.equal(workspaceBacked?.memoryAvailability, "ready");
 assert.equal(workspaceBacked?.latestMemory?.title, "MEMORY.md");
 
+// There was a second feed here — the canonical vault — and this case proved
+// that an empty read from ONE settled source could not claim a confirmed zero
+// while the other was unavailable. With one feed left the property is simpler
+// but unchanged in spirit: an unavailable read is not a zero.
 const partiallyUnavailable = buildFamiliarCardStats({
   familiars: [{ id: "p", display_name: "Partial", role: "" }],
   sessions: [],
-  covenEntries: [],
-  memoryAvailability: "ready",
   fileEntries: [],
-  fileMemoryAvailability: "unavailable",
+  memoryAvailability: "unavailable",
   now: NOW,
 }).get("p");
 assert.equal(partiallyUnavailable?.memoryCount, 0);
 assert.equal(
   partiallyUnavailable?.memoryAvailability,
   "unavailable",
-  "an empty partial read cannot assert that no durable memory exists",
+  "an unavailable read cannot assert that no durable memory exists",
 );
 
 // Empty inputs
 const empty = buildFamiliarCardStats({
   familiars: [],
   sessions: [],
-  covenEntries: [],
+  fileEntries: [],
   memoryAvailability: "ready",
   now: NOW,
 });

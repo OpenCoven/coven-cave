@@ -9,7 +9,6 @@ import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-wind
 import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
 import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
 import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
-import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 import type { SessionRow } from "../lib/types.ts";
 
 // The workbench is three files: the view owns loading, the content composes
@@ -29,7 +28,6 @@ const source = [
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  clearCanonicalMemoryResources();
 });
 
 const originalFetch = globalThis.fetch;
@@ -512,20 +510,14 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.contractReport, null);
   });
 
-  it("keeps an unavailable canonical list distinct from a confirmed zero", async () => {
+  it("counts workspace memory so a familiar with files never reads as no-memory", async () => {
+    // This case carried two feeds — the canonical vault and the MEMORY.md scan
+    // — and proved a vault outage could not produce a false "no memory" signal
+    // while files existed. The vault is gone; the surviving property is that
+    // the file scan alone drives both availability and the growth signal.
     mockFetchFor("trusted");
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (url: RequestInfo | URL) => {
-      if (String(url) === "/api/coven-memory") {
-        return {
-          ok: false,
-          status: 503,
-          json: async () => ({
-            ok: false,
-            code: "canonical_memory_unavailable",
-          }),
-        } as unknown as Response;
-      }
       if (String(url) === "/api/memory?familiarId=cody") {
         return {
           ok: true,
@@ -547,14 +539,11 @@ describe("FamiliarAnalyticsView", () => {
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
-    assert.equal(data.covenEntries.length, 0);
-    assert.equal(data.memoryAvailability, "unavailable");
-    assert.equal(data.fileMemoryAvailability, "ready");
-    assert.ok(model.errors.some((message) => message.includes("canonical memory unavailable")));
+    assert.equal(data.memoryAvailability, "ready");
     assert.equal(model.progression?.memoryAvailability, "ready");
     assert.ok(
       !model.growthReport?.signals.some((signal) => signal.kind === "no-memory"),
-      "workspace memory prevents a false no-memory signal when canonical memory is unavailable",
+      "workspace memory prevents a false no-memory signal",
     );
   });
 
