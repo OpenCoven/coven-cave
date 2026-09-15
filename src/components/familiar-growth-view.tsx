@@ -17,8 +17,6 @@ import {
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
-import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiar-growth-signals";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
@@ -44,10 +42,8 @@ type FileMemoryResponse =
 export type FamiliarGrowthInitialData = {
   familiars: Familiar[];
   sessions: SessionRow[];
-  covenEntries: CanonicalMemorySummary[];
   memoryAvailability: MemoryAvailability;
   fileEntries: FamiliarFileMemoryStat[];
-  fileMemoryAvailability: MemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
 };
 
@@ -69,10 +65,8 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
 const EMPTY_DATA: FamiliarGrowthInitialData = {
   familiars: [],
   sessions: [],
-  covenEntries: [],
   memoryAvailability: "unavailable",
   fileEntries: [],
-  fileMemoryAvailability: "unavailable",
   retroSnapshot: EMPTY_SNAPSHOT,
 };
 
@@ -176,10 +170,9 @@ export function FamiliarGrowthView({
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
-      const [familiarsJson, sessionsJson, memoryJson, fileMemoryJson, retroJson] = await Promise.all([
+      const [familiarsJson, sessionsJson, fileMemoryJson, retroJson] = await Promise.all([
         getJson<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
         getJson<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
-        loadCanonicalMemoryList(),
         getJson<FileMemoryResponse>("/api/memory", { ok: false, entries: [] }),
         getJson<RetroApiResponse>("/api/retro-runs", { ok: false }),
       ]);
@@ -192,19 +185,13 @@ export function FamiliarGrowthView({
       const nextData: FamiliarGrowthInitialData = {
         familiars: familiarsJson.familiars ?? [],
         sessions: sessionsJson.sessions ?? [],
-        covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
-        memoryAvailability:
-          memoryJson.state === "ready" ? "ready" : "unavailable",
         fileEntries,
-        fileMemoryAvailability: fileMemoryReady ? "ready" : "unavailable",
+        memoryAvailability: fileMemoryReady ? "ready" : "unavailable",
         retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
       };
       const errors = [
         familiarsJson.ok ? null : familiarsJson.error ?? "familiars unavailable",
         sessionsJson.ok ? null : sessionsJson.error ?? "sessions unavailable",
-        memoryJson.state === "error"
-          ? `canonical memory unavailable (${memoryJson.error.code})`
-          : null,
         fileMemoryJson.ok
           ? fileMemoryReady ? null : "workspace memory returned invalid payload"
           : fileMemoryJson.error ?? "workspace memory unavailable",
@@ -242,17 +229,13 @@ export function FamiliarGrowthView({
     () => buildFamiliarCardStats({
       familiars: data.familiars,
       sessions: data.sessions,
-      covenEntries: data.covenEntries,
       memoryAvailability: data.memoryAvailability,
       fileEntries: data.fileEntries,
-      fileMemoryAvailability: data.fileMemoryAvailability,
       now,
     }),
     [
-      data.covenEntries,
       data.familiars,
       data.fileEntries,
-      data.fileMemoryAvailability,
       data.memoryAvailability,
       data.sessions,
       now,

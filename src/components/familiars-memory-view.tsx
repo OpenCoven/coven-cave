@@ -85,21 +85,16 @@ import { UndoToast } from "@/components/ui/undo-toast";
 
 export type { FileMemoryEntry } from "@/components/familiars-memory-utils";
 
+/** One local-file memory snapshot shared by every embedded memory surface.
+ *  The canonical list and overview went with the vault, which now lives in the
+ *  dedicated memory application. */
 export type MemoryFeed = {
-  canonical:
-    | { state: "loading"; entries: CanonicalMemorySummary[] }
-    | { state: "ready"; entries: CanonicalMemorySummary[] }
-    | { state: "error"; entries: CanonicalMemorySummary[]; error: CanonicalMemoryRequestError };
-  overview:
-    | { state: "loading"; value: null }
-    | { state: "ready"; value: CanonicalMemoryOverview }
-    | { state: "error"; value: null; error: CanonicalMemoryRequestError };
   files:
     | { state: "loading"; entries: FileMemoryEntry[] }
     | { state: "ready"; entries: FileMemoryEntry[] }
     | { state: "error"; entries: FileMemoryEntry[]; error: string };
   lastLoadedAt: string | null;
-  reload: () => Promise<CanonicalMemoryListLoad>;
+  reload: () => Promise<void>;
 };
 
 type Props = {
