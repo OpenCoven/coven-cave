@@ -47,10 +47,7 @@ test("getSectionMeta / settingsSectionLabel resolve, with a safe fallback", () =
 // ── SettingsOverview header (source-text) ────────────────────────────────────
 
 const overview = readFileSync(new URL("./settings-overview.tsx", import.meta.url), "utf8");
-const generalSummary = readFileSync(
-  new URL("../lib/settings-general-summary.ts", import.meta.url),
-  "utf8",
-);
+
 
 test("the overview header renders mark, kicker, title, description, and the strip", () => {
   assert.match(overview, /getSectionMeta\(section\)/, "pulls section metadata");
@@ -87,26 +84,13 @@ test("General can opt into the control-sheet overview without changing other sec
 });
 
 test("the General control-sheet overview uses real summary sources and stable anchors", () => {
-  assert.match(overview, /createGeneralSummaryLoader/, "the overview should reuse the dedicated summary loader");
-  assert.match(
-    overview,
-    /summaryLoaderRef\.current\?\.dispose\(\)[\s\S]*summaryLoaderRef\.current = null/,
-    "the overview should dispose active summary work when the control-sheet view unmounts",
-  );
-  assert.match(generalSummary, /fetchImpl\("\/api\/config", \{ cache: "no-store", signal \}\)/);
-  assert.doesNotMatch(generalSummary, /fetchImpl\("\/api\/daemon\/status"/);
-  assert.doesNotMatch(generalSummary, /\/api\/voice\/engines/);
-  assert.match(generalSummary, /fetchImpl\("\/api\/backup\/sync", \{ cache: "no-store", signal \}\)/);
-  assert.match(
-    overview,
-    /usePausablePoll\([\s\S]*loadSummary[\s\S]*30_000[\s\S]*enabled:\s*active/,
-    "the live summary refreshes while General remains open",
-  );
-  assert.match(
-    overview,
-    /addEventListener\("cave:backup-sync-refresh", refreshSummary\)/,
-    "backup mutations refresh the live summary immediately",
-  );
+  const data = readFileSync(new URL("./settings-general-data.tsx", import.meta.url), "utf8");
+  assert.match(overview, /useGeneralSettingsData/, "summary and controls share the General data owner");
+  assert.match(data, /\/api\/config\/workspace-path/);
+  assert.match(data, /\/api\/backup\/sync/);
+  assert.doesNotMatch(data, /"\/api\/config"/);
+  assert.match(data, /usePausablePoll\(refresh, 30_000, \{ pauseWhileInputActive: true \}\)/);
+  assert.match(data, /active\.current = false;[\s\S]*request\.current\?\.abort\(\)/);
   assert.doesNotMatch(overview, /cave:voice-engines-refresh/);
   assert.match(
     overview,

@@ -409,23 +409,9 @@ assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reac
 assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
 assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
 assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remain discoverable");
-assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
-assert.match(
-  workspacePathField,
-  /fetch\("\/api\/config\/workspace-path", \{ cache: "no-store", signal: ctl\.signal \}\)/,
-  "the workspace path field should read the narrow workspace-path route",
-);
-assert.doesNotMatch(
-  workspacePathField,
-  /\/api\/daemon\/status/,
-  "the workspace path field should not mount a full daemon-status read just to render workspacePath",
-);
-assert.match(
-  workspacePathField,
-  /if \(ctl\.signal\.aborted\) return;/,
-  "the workspace path field should stay silent after unmount while applying workspacePath",
-);
-assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
+assert.match(workspacePathField, /useGeneralSettingsData/, "workspace data is shared with the summary");
+assert.doesNotMatch(workspacePathField, /new AbortController|\/api\/daemon\/status/, "the field does not start a second read");
+assert.match(workspacePathField, /workspace\.publish/, "saved paths publish to the shared state");
 
 // Browse used to mean "hand the path to the OS file manager": a no-op on the
 // web build, and never a way to CHANGE the root. It now opens the in-app
@@ -653,12 +639,12 @@ assert.match(
 );
 assert.match(
   source,
-  /syncLoadState === "error"[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
+  /!overview[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
   "scheduled sync does not disguise request failures as an empty panel",
 );
 assert.match(
   source,
-  /syncLoadState === "error"[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
+  /!overview[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
   "scheduled sync retains an accessible section name when loading fails",
 );
 assert.match(
@@ -668,7 +654,7 @@ assert.match(
 );
 assert.match(
   source,
-  /setOverview\(json as BackupSyncOverview\)[\s\S]{0,160}dispatchEvent\(new Event\("cave:backup-sync-refresh"\)\)/,
+  /publish: setOverview[\s\S]*setOverview\(json as BackupSyncOverview\)/,
   "successful scheduled-sync mutations refresh the General summary",
 );
 assert.match(

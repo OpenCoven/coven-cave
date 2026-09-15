@@ -2,7 +2,7 @@
 
 import "@/styles/dashboard.css";
 import "@/styles/settings-familiars.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { observeSettingsTarget } from "@/lib/settings-search-target";
 import { useRouter } from "next/navigation";
@@ -30,6 +30,7 @@ import { formatHostWorkspaceText, parseHostWorkspaceText } from "./settings-mult
 import { showSettingsSavedAfterPreferencesFlush, showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 import { SettingsPage, SettingsRow } from "./settings-layout";
+import { GeneralSettingsDataProvider, useGeneralSettingsData, type BackupSyncOverview } from "./settings-general-data";
 const AppearanceSection = dynamic(() => import("./settings-appearance").then((m) => m.AppearanceSection), { loading: SettingsSectionFallback });
 
 function SettingsSectionFallback() {
@@ -346,6 +347,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
 
 function GeneralSection() {
   return (
+    <GeneralSettingsDataProvider>
     <SettingsPage section="general" title="General" description="App-wide preferences." variant="control-sheet">
       <SettingsGroup label="Workspace" variant="ruled" panel={false}>
         <SettingsRow
@@ -366,6 +368,7 @@ function GeneralSection() {
       </SettingsGroup>
       <BackupSettingsGroup />
     </SettingsPage>
+    </GeneralSettingsDataProvider>
   );
 }
 
@@ -667,27 +670,7 @@ function BackupSettingsGroup() {
   );
 }
 
-type BackupSyncOverview = {
-  config: {
-    enabled: boolean;
-    directory: string | null;
-    retainCount: number;
-    intervalHours: number;
-    onQuitPush: boolean;
-  };
-  status: {
-    lastAttemptAt: string | null;
-    lastSuccessAt: string | null;
-    lastSuccessFile: string | null;
-    lastError: string | null;
-    lastReason: string | null;
-    retainedCount: number | null;
-  };
-  defaultDirectory: string;
-  effectiveDirectory: string;
-  passphraseSet: boolean;
-  due: boolean;
-};
+
 
 // Scheduled encrypted sync (Persistence P2): a daily snapshot pushed into a
 // user-owned folder (iCloud Drive by default) plus an on-quit push, so machine
@@ -695,41 +678,13 @@ type BackupSyncOverview = {
 // vault for unattended runs; restoring still asks for it manually above.
 function ScheduledSyncSettings() {
   const { announce } = useAnnouncer();
-  const [overview, setOverview] = useState<BackupSyncOverview | null>(null);
+  const { sync: syncResource } = useGeneralSettingsData()!;
+  const { value: overview, status: syncLoadState, refresh: loadOverview, publish: setOverview } = syncResource;
   const [directoryDraft, setDirectoryDraft] = useState<string | null>(null);
   const [retainDraft, setRetainDraft] = useState<string | null>(null);
   const [passphraseDraft, setPassphraseDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [syncLoadState, setSyncLoadState] =
-    useState<"loading" | "ready" | "error">("loading");
-
-  const loadOverview = useCallback(async (signal?: AbortSignal) => {
-    setSyncLoadState("loading");
-    try {
-      const response = await fetch("/api/backup/sync", {
-        cache: "no-store",
-        signal,
-      });
-      const json = await response.json().catch(() => null) as
-        | (BackupSyncOverview & { ok?: boolean })
-        | null;
-      if (!response.ok || !json?.ok) throw new Error("invalid sync response");
-      if (signal?.aborted) return;
-      setOverview(json);
-      setSyncLoadState("ready");
-    } catch {
-      if (signal?.aborted) return;
-      setSyncLoadState("error");
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadOverview(controller.signal);
-    return () => controller.abort();
-  }, [loadOverview]);
-
   const update = async (patch: Record<string, unknown>, announcement: string) => {
     setBusy(true);
     setMessage("");
@@ -742,7 +697,6 @@ function ScheduledSyncSettings() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) throw new Error(json?.error || `sync update failed (${res.status})`);
       setOverview(json as BackupSyncOverview);
-      window.dispatchEvent(new Event("cave:backup-sync-refresh"));
       announce(announcement);
       showSettingsSavedToast();
     } catch (err) {
@@ -761,8 +715,7 @@ function ScheduledSyncSettings() {
       const res = await fetch("/api/backup/sync/run", { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) throw new Error(json?.error || `backup failed (${res.status})`);
-      const refreshed = await fetch("/api/backup/sync", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
-      if (refreshed?.ok) setOverview(refreshed as BackupSyncOverview);
+      await loadOverview();
       setMessage("Snapshot saved.");
       announce("Backup snapshot saved.");
     } catch (err) {
@@ -774,7 +727,7 @@ function ScheduledSyncSettings() {
     }
   };
 
-  if (syncLoadState === "loading") {
+  if (syncLoadState === "loading" && !overview) {
     return (
       <section
         className="settings-backup-card settings-backup-sync"
@@ -788,7 +741,7 @@ function ScheduledSyncSettings() {
     );
   }
 
-  if (syncLoadState === "error" || !overview) {
+  if (!overview) {
     return (
       <section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">
         <ErrorState
@@ -812,6 +765,10 @@ function ScheduledSyncSettings() {
       className="settings-backup-card settings-backup-sync"
       aria-labelledby="settings-backup-sync-title"
     >
+      {syncLoadState === "error" ? (
+        <ErrorState compact headline="Scheduled sync details couldn't refresh" subtitle="Showing the last loaded settings."
+          actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>} />
+      ) : null}
       <div className="settings-backup-sync__header">
         <button
           type="button"
@@ -960,8 +917,9 @@ function ScheduledSyncSettings() {
  * as its own control rather than as the meaning of "Browse".
  */
 function WorkspacePathField() {
-  const [path, setPath] = useState("");
-  const [envPin, setEnvPin] = useState<string | null>(null);
+  const { workspace } = useGeneralSettingsData()!;
+  const path = workspace.value?.workspacePath ?? "";
+  const envPin = workspace.value?.envPin ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const desktop = useIsTauriDesktop();
@@ -970,19 +928,6 @@ function WorkspacePathField() {
   // the folder natively) — they are mutually exclusive in practice and share
   // the same alert line.
   const [fieldError, setFieldError] = useState("");
-
-  useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/config/workspace-path", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j: { workspacePath?: string; envPin?: string | null }) => {
-        if (ctl.signal.aborted) return;
-        if (j.workspacePath) setPath(j.workspacePath);
-        setEnvPin(j.envPin ?? null);
-      })
-      .catch(() => {});
-    return () => ctl.abort();
-  }, []);
 
   const choose = async (dir: string) => {
     setPickerOpen(false);
@@ -1002,7 +947,7 @@ function WorkspacePathField() {
         announce(message, "assertive");
         return;
       }
-      setPath(body.workspacePath);
+      workspace.publish({ ...workspace.value, workspacePath: body.workspacePath });
       announce("Workspace path saved.");
       showSettingsSavedToast("Workspace path saved.");
     } catch {

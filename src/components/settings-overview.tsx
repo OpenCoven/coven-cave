@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,59 +7,30 @@ import {
 } from "@/components/settings-sections";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useGeneralSettingsData } from "./settings-general-data";
 import {
-  createGeneralSummaryLoader,
   resolveGeneralSummaryState,
-  type GeneralSummaryState,
 } from "@/lib/settings-general-summary";
 
-function useGeneralSummary(active: boolean) {
-  const [state, setState] = useState<GeneralSummaryState>({
-    status: "loading",
-    summary: {},
+function useGeneralSummary() {
+  const data = useGeneralSettingsData();
+  if (!data) return { summary: {}, status: "loading" as const, retry: () => {} };
+  const { workspace, sync } = data;
+  const current = {
+    status: "loading" as const,
+    summary: {
+      workspacePath: workspace.value?.workspacePath,
+      syncEnabled: sync.value?.config.enabled,
+    },
+  };
+  const state = resolveGeneralSummaryState(current, {
+    config: { ok: workspace.status === "ready", value: workspace.value },
+    sync: { ok: sync.status === "ready", value: sync.value },
   });
-  const summaryLoaderRef = useRef<ReturnType<typeof createGeneralSummaryLoader> | null>(null);
-
-  const loadSummary = useCallback(async (showLoading = false) => {
-    if (!active) return;
-    if (showLoading) {
-      setState((current) => ({ ...current, status: "loading" }));
-    }
-    if (!summaryLoaderRef.current) {
-      summaryLoaderRef.current = createGeneralSummaryLoader();
-    }
-    const sources = await summaryLoaderRef.current.load();
-    if (!sources) return;
-    setState((current) => resolveGeneralSummaryState(current, sources));
-  }, [active]);
-
-  useEffect(() => {
-    if (!active) {
-      summaryLoaderRef.current?.dispose();
-      summaryLoaderRef.current = null;
-      return;
-    }
-    void loadSummary(true);
-    const refreshSummary = () => { void loadSummary(); };
-    window.addEventListener("cave:backup-sync-refresh", refreshSummary);
-    return () => {
-      window.removeEventListener("cave:backup-sync-refresh", refreshSummary);
-      summaryLoaderRef.current?.dispose();
-      summaryLoaderRef.current = null;
-    };
-  }, [active, loadSummary]);
-
-  usePausablePoll(() => {
-    void loadSummary();
-  }, 30_000, {
-    enabled: active,
-    pauseWhileInputActive: true,
-  });
-
   return {
     ...state,
-    retry: () => { void loadSummary(true); },
+    status: workspace.status === "loading" || sync.status === "loading" ? "loading" as const : state.status,
+    retry: data.refresh,
   };
 }
 
@@ -83,7 +53,7 @@ export function SettingsOverview({
     summary,
     status: summaryStatus,
     retry: retrySummary,
-  } = useGeneralSummary(variant === "control-sheet");
+  } = useGeneralSummary();
 
   if (variant === "control-sheet") {
     const anchors = [
