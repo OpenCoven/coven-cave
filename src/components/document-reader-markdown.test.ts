@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CanonicalMemoryMarkdown } from "./canonical-memory-markdown.tsx";
+import { DocumentReaderMarkdown } from "./document-reader-markdown.tsx";
 import { LiveRegionProvider } from "./ui/live-region.tsx";
 
 function render(content: string, mode: "rendered" | "raw" = "rendered"): string {
@@ -10,7 +10,7 @@ function render(content: string, mode: "rendered" | "raw" = "rendered"): string 
     createElement(
       LiveRegionProvider,
       null,
-      createElement(CanonicalMemoryMarkdown, { content, mode }),
+      createElement(DocumentReaderMarkdown, { content, mode }),
     ),
   );
 }

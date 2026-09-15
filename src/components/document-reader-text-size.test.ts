@@ -11,7 +11,7 @@ import {
   DocumentReader,
   type DocumentReaderDocument,
 } from "./document-reader.tsx";
-import { MarkdownReaderBlock } from "./canonical-memory-markdown.tsx";
+import { MarkdownReaderBlock } from "./document-reader-markdown.tsx";
 import {
   READER_TEXT_SCALE_DEFAULT_INDEX,
   READER_TEXT_SCALE_STEPS,

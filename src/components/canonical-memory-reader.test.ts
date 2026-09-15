@@ -519,7 +519,7 @@ test("revealed canonical memories compose the shared presentation-safe reader", 
   );
   assert.doesNotMatch(
     source,
-    /<CanonicalMemoryMarkdown[\s\S]*?mode=\{mode\}/,
+    /<DocumentReaderMarkdown[\s\S]*?mode=\{mode\}/,
     "rendered canonical content is delegated to DocumentReader instead of reparsed",
   );
 });
