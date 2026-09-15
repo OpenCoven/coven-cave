@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./settings-fonts.tsx", import.meta.url), "utf8");
-const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const shell = readFileSync(new URL("./settings-appearance.tsx", import.meta.url), "utf8");
 
 assert.match(src, /FONT_PAIRS/, "FontSettings reads curated FONT_PAIRS");
 assert.doesNotMatch(src, /SANS_OPTIONS/, "does not expose an independent sans picker");

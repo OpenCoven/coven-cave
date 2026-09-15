@@ -495,7 +495,7 @@ export const BANKED_DYNAMIC_SITES = new Map([
   ["src/components/grimoire-graph-view.tsx", 1],
   // Appearance settings write the user's chosen palette, font and radius onto
   // <html> by name; the names are the settings keys.
-  ["src/components/settings-shell.tsx", 5],
+  ["src/components/settings-appearance.tsx", 5],
   // Clears the appearance overrides above, by the same key list.
   ["src/lib/appearance-restore.ts", 1],
   // Canvas inspector applies a user-edited property to the selected element.

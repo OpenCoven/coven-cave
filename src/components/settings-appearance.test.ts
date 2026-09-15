@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const settings = await readFile(
-  new URL("./settings-shell.tsx", import.meta.url),
+  new URL("./settings-appearance.tsx", import.meta.url),
   "utf8",
 );
 const about = await readFile(

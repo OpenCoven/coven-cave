@@ -766,7 +766,7 @@ export function DaemonSection({
         </div>
       </header>
 
-      <section className="settings-daemon-section" aria-labelledby="settings-daemon-status-heading">
+      <section id="settings-group-status" className="settings-daemon-section" aria-labelledby="settings-daemon-status-heading">
         <SectionRule
           id="settings-daemon-status-heading"
           label="STATUS"
@@ -850,7 +850,7 @@ export function DaemonSection({
         ) : null}
       </section>
 
-      <section className="settings-daemon-section" aria-labelledby="settings-daemon-connection-heading">
+      <section id="settings-group-connection" className="settings-daemon-section" aria-labelledby="settings-daemon-connection-heading">
         <SectionRule
           id="settings-daemon-connection-heading"
           label="CONNECTION"
@@ -1063,7 +1063,7 @@ export function DaemonSection({
 
       <AutomationSection />
 
-      <section className="settings-daemon-section settings-daemon-info-section" aria-labelledby="settings-daemon-info-heading">
+      <section id="settings-group-info" className="settings-daemon-section settings-daemon-info-section" aria-labelledby="settings-daemon-info-heading">
         <SectionRule id="settings-daemon-info-heading" label="INFO" />
         <div className="settings-daemon-info">
           {infoRows.map((row) => (
