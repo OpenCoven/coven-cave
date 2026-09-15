@@ -34,7 +34,6 @@ import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trac
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
 export function emptyStats(
   memoryAvailability: MemoryAvailability = "unavailable",
@@ -273,9 +272,6 @@ type AgentMemoryOverlayProps = {
   familiars: ResolvedFamiliar[];
   familiar: ResolvedFamiliar;
   memoryFeed: MemoryFeed;
-  localDaemonReady: boolean;
-  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
-  onCanonicalMemorySelectionApplied?: (id: string) => void;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
@@ -284,9 +280,6 @@ export function FamiliarMemoryOverlay({
   familiars,
   familiar,
   memoryFeed,
-  localDaemonReady,
-  pendingCanonicalMemorySelection,
-  onCanonicalMemorySelectionApplied,
   onClose,
   onOpenMemoryFile,
 }: AgentMemoryOverlayProps) {
@@ -322,9 +315,6 @@ export function FamiliarMemoryOverlay({
           activeFamiliar={familiar}
           lockToFamiliar
           feed={memoryFeed}
-          localDaemonReady={localDaemonReady}
-          pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
-          onCanonicalMemorySelectionApplied={onCanonicalMemorySelectionApplied}
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>
@@ -409,7 +399,6 @@ type AgentDetailPanelProps = {
   memoryError: string | null;
   memoryLoaded: boolean;
   memoryFeed: MemoryFeed;
-  localDaemonReady: boolean;
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
@@ -486,7 +475,6 @@ export function FamiliarDetailPanel({
   memoryError,
   memoryLoaded,
   memoryFeed,
-  localDaemonReady,
   onClose,
   onPreview,
   onStartChat,
@@ -609,7 +597,6 @@ export function FamiliarDetailPanel({
             activeFamiliar={familiar}
             lockToFamiliar
             feed={memoryFeed}
-            localDaemonReady={localDaemonReady}
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "daily-notes" ? (

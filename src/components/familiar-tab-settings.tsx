@@ -143,7 +143,6 @@ export function FamiliarSettingsSection({
             key={`${familiar.id}:memory`}
             familiar={familiar}
             allFamiliars={familiars}
-            localDaemonReady={localDaemonReady}
           />
         ) : null}
         {tab === "vault" ? <VaultPanel key={`${familiar.id}:vault`} familiarId={familiar.id} /> : null}

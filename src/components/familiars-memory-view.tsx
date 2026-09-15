@@ -19,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Modal } from "@/components/ui/modal";
 import { SearchInput } from "@/components/ui/search-input";
 import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -74,7 +73,6 @@ export type MemoryFeed = {
 type Props = {
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
-  localDaemonReady?: boolean;
   onOpenMemoryFile?: (path: string) => void;
   limit?: number;
   lockToFamiliar?: boolean;
@@ -99,7 +97,6 @@ function withFileEntries(
 export function FamiliarsMemoryView({
   familiars,
   activeFamiliar,
-  localDaemonReady = false,
   onOpenMemoryFile,
   limit,
   lockToFamiliar,

@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
-  type MemoryAvailability,
 } from "@/components/familiars-view-stats";
 import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -82,7 +81,6 @@ export function FamiliarsView({
   activeFamiliar,
   daemonRunning,
   localDaemonReady,
-  pendingRosterSettledSuccessfully,
   responseNeeded,
   onStartChat,
   onOpenSession,
@@ -468,7 +466,6 @@ export function FamiliarsView({
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
               memoryFeed={memoryFeed}
-              localDaemonReady={localDaemonReady}
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
@@ -525,7 +522,6 @@ export function FamiliarsView({
           familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
           memoryFeed={memoryFeed}
-          localDaemonReady={localDaemonReady}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />

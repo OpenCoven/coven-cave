@@ -233,7 +233,6 @@ export function FamiliarStudioInlinePanel({
                 <FamiliarStudioMemoryTab
                   familiar={familiar}
                   allFamiliars={familiars}
-                  localDaemonReady={localDaemonReady}
                 />
               ) : null}
               {activeTab === "vault" ? (
