@@ -61,14 +61,14 @@ const chip = (page: Page, name: string) =>
   page.locator(".chat-status-chip").filter({ hasText: new RegExp(`^${name}`) }).first();
 const bands = (page: Page) => page.locator(".chat-activity-header__label");
 
-async function openSessionsList(page: Page) {
+async function openSessionsList(page: Page, seededSessions = sessions) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:chat:project-selected", JSON.stringify("root:/other"));
   });
   await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [FAMILIAR] } }));
-  await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions } }));
+  await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: seededSessions } }));
   await page.goto("/");
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
   await page.waitForFunction(
@@ -267,4 +267,83 @@ test.describe("sessions list", () => {
     await expect(bands(page).first()).toHaveText(/oldest first/i);
     await expect(rows(page).first()).toContainText("Optimize the image pipeline");
   });
+});
+
+
+test("200 sessions skip off-screen rendering while retaining focus, search and grouping", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "desktop Sessions acceptance");
+  const largeList = Array.from({ length: 200 }, (_, index) => ({
+    ...sessions[1],
+    id: `large-${index}`,
+    title: `Session ${String(index + 1).padStart(3, "0")}`,
+    project_root: index % 2 ? "/other" : "/repo",
+    updated_at: iso(index + 1),
+  }));
+  await openSessionsList(page, largeList);
+  await expect(rows(page)).toHaveCount(200);
+
+  // checkVisibility observes actual browser skipping through the containing
+  // row; a CSS declaration alone cannot prove the optimisation is effective.
+  const skippedRows = () => rows(page).evaluateAll((elements) =>
+    elements.filter((element) => !element.checkVisibility({ contentVisibilityAuto: true })).length,
+  );
+  await expect.poll(skippedRows).toBeGreaterThan(100);
+  await testInfo.attach("render-skipping", {
+    body: JSON.stringify({ totalRows: 200, skippedRows: await skippedRows() }),
+    contentType: "application/json",
+  });
+  const last = rows(page).filter({ hasText: "Session 200" });
+  await last.focus();
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport();
+  await expect.poll(() => last.evaluate((element) =>
+    element.checkVisibility({ contentVisibilityAuto: true }),
+  )).toBe(true);
+
+  // Containment must not trap the portaled row menu or its keyboard focus.
+  const menuTrigger = last.getByRole("button", { name: "Archive controls for chat Session 200" });
+  await menuTrigger.click();
+  const keep = page.getByRole("menuitemcheckbox", { name: "Keep chat" });
+  await expect(keep).toBeVisible();
+  await expect(keep).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(menuTrigger).toBeFocused();
+
+  const handle = last.getByRole("button", { name: "Reorder chat Session 200" });
+  await handle.focus();
+  await page.keyboard.press("Space");
+  await expect(last.locator("..")).toHaveAttribute("data-dragging", "true");
+  await expect(last.locator("..")).toHaveCSS("content-visibility", "visible");
+  await page.keyboard.press("Escape");
+  await expect(last.locator("..")).not.toHaveAttribute("data-dragging", "true");
+  await expect(rows(page)).toHaveCount(200);
+
+  const search = page.getByPlaceholder("Filter sessions…");
+  await search.fill("Session 200");
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page)).toContainText("Session 200");
+  await search.clear();
+  await expect(rows(page)).toHaveCount(200);
+  const grouping = page.getByRole("group", { name: "Group sessions by" });
+  await grouping.getByRole("button", { name: "Project", exact: true }).click();
+  await expect(grouping.getByRole("button", { name: "Project", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".chat-list-group-header")).toHaveCount(2);
+  for (const name of ["repo", "other"]) {
+    const group = page.locator(".chat-list-group-header").filter({ hasText: name });
+    await expect(group.locator("span").nth(1)).toHaveText("100");
+    await expect(group.locator("..").locator(".chat-session-card")).toHaveCount(100);
+  }
+  await grouping.getByRole("button", { name: "Date", exact: true }).click();
+  await expect(grouping.getByRole("button", { name: "Date", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".chat-list-group-header")).toHaveCount(0);
+  await expect(page.locator(".chat-list-date-header").first()).toBeVisible();
+  await expect(rows(page)).toHaveCount(200);
+  await grouping.getByRole("button", { name: "Flat", exact: true }).click();
+  await expect(grouping.getByRole("button", { name: "Flat", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".chat-list-date-header")).toHaveCount(0);
+  await expect(page.locator(".chat-list-group-header")).toHaveCount(0);
+  await expect(bands(page).first()).toBeVisible();
+  await expect(rows(page)).toHaveCount(200);
+  await expect.poll(skippedRows).toBeGreaterThan(100);
+  await page.screenshot({ path: testInfo.outputPath("sessions-200.png") });
 });
