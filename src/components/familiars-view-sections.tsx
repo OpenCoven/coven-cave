@@ -22,7 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   ACTIVITY_DAYS,
-  type CanonicalMemoryAvailability,
+  type MemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { deriveRenown } from "@/lib/familiar-renown";
@@ -37,7 +37,7 @@ import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
 export function emptyStats(
-  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+  memoryAvailability: MemoryAvailability = "unavailable",
 ): FamiliarCardStats {
   return {
     memoryCount: 0,

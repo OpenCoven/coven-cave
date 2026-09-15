@@ -1,9 +1,6 @@
 "use client";
 import { Icon } from "@/lib/icon";
-import type {
-  CanonicalMemoryRow,
-  FileMemoryRow,
-} from "@/lib/memory-rows";
+import type { FileMemoryRow } from "@/lib/memory-rows";
 
 function formatBytes(n: number | undefined): string {
   if (!n || n < 0 || !Number.isFinite(n)) return "";
@@ -24,10 +21,9 @@ type MemoryRowItemProps = {
   selected: boolean;
   onSelect: () => void;
   onExpand: () => void;
-} & (
-  | { row: CanonicalMemoryRow; onDelete?: never }
-  | { row: FileMemoryRow; onDelete?: () => void }
-);
+  row: FileMemoryRow;
+  onDelete?: () => void;
+};
 
 export function MemoryRowItem({
   row,
@@ -37,7 +33,7 @@ export function MemoryRowItem({
   onExpand,
   onDelete,
 }: MemoryRowItemProps) {
-  const size = row.kind === "file" ? formatBytes(row.size) : "";
+  const size = formatBytes(row.size);
   return (
     <li
       className={`fm-memory-row group/row relative flex min-w-0 items-stretch gap-1 transition-colors ${
@@ -54,7 +50,7 @@ export function MemoryRowItem({
       >
         <span className="fm-memory-row__provenance" data-kind={row.kind}>
           <Icon
-            name={row.kind === "canonical" ? "ph:brain" : "ph:file-text"}
+            name="ph:file-text"
             width={13}
             aria-hidden
           />
@@ -67,18 +63,10 @@ export function MemoryRowItem({
             <span className="fm-memory-row__age shrink-0">{age}</span>
           </span>
           <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-            {row.kind === "canonical" ? row.excerpt : compactRowPath(row.path)}
+            {compactRowPath(row.path)}
           </span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="truncate">{row.sourceLabel}</span>
-            {row.kind === "canonical" ? (
-              <>
-                <span aria-hidden>·</span>
-                <span>{row.verification.state}</span>
-                <span aria-hidden>·</span>
-                <span>{row.privacy.classification ?? "unclassified"}</span>
-              </>
-            ) : null}
             {size ? <><span aria-hidden>·</span><span>{size}</span></> : null}
             {row.stale ? (
               <span className="inline-flex items-center gap-1 text-[var(--color-warning)]" title="Stale — suggested for cleanup">

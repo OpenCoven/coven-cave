@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { canonicalMemoryCountsForMilestones } from "@/lib/canonical-memory-milestones";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { covenStreak, deriveRenown } from "@/lib/familiar-renown";
 import {
   dueCovenMilestones,
@@ -22,7 +20,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
  *
  * Self-contained on purpose: the workspace's session list is scoped to the
  * active familiar, so this hook fetches its own unscoped roster + sessions
- * (plus memory counts) once per check — coven-wide milestones must see the
+ * once per check — coven-wide milestones must see the
  * whole coven. When the daemon is down a check proceeds with whatever
  * loaded; scores only ever read lower, so a milestone can fire late but
  * never early.
@@ -51,16 +49,21 @@ export function useMilestoneWatch(enabled = true) {
       if (!ledger?.ok || !Array.isArray(ledger.awarded)) return;
       const awarded = new Set(ledger.awarded);
 
-      const [familiarsRes, sessionsRes, memoryRes] = await Promise.all([
+      const [familiarsRes, sessionsRes] = await Promise.all([
         getJson<{ ok?: boolean; familiars?: Familiar[] }>("/api/familiars"),
         getJson<{ ok?: boolean; sessions?: SessionRow[] }>("/api/sessions/list"),
-        loadCanonicalMemoryList(),
       ]);
       const familiars = familiarsRes?.ok ? (familiarsRes.familiars ?? []) : [];
       const sessions = sessionsRes?.ok ? (sessionsRes.sessions ?? []) : [];
       if (familiars.length === 0) return;
 
-      const memoryCounts = canonicalMemoryCountsForMilestones(memoryRes);
+      // The canonical vault supplied these; it now lives in the dedicated
+      // memory application. An EMPTY map rather than null on purpose: null
+      // meant "unknown", which suppressed tier milestones entirely, so
+      // carrying it forward would have silently killed tiers for good. Zero is
+      // the honest count, and it keeps the hook's own rule intact — a memory
+      // milestone can pay out late, never early.
+      const memoryCounts = new Map<string, number>();
       const live = sessions.filter((s) => !s.archived_at);
       const bySessions = new Map<string, number>();
       for (const s of live) {
@@ -70,7 +73,7 @@ export function useMilestoneWatch(enabled = true) {
       const tierRows: TierAscension[] = familiars.map((f) => {
         const renown = deriveRenown({
           sessionsTotal: bySessions.get(f.id) ?? 0,
-          memoryCount: memoryCounts?.get(f.id) ?? 0,
+          memoryCount: memoryCounts.get(f.id) ?? 0,
         });
         return {
           familiarId: f.id,
@@ -89,9 +92,10 @@ export function useMilestoneWatch(enabled = true) {
           },
           awarded,
         ),
-        ...(memoryCounts === null ? [] : dueTierMilestones(tierRows, awarded)),
-        // Missions ride the same ledger. When memory is unavailable its counts
-        // read 0, so a memory mission can pay out late but never early.
+        ...dueTierMilestones(tierRows, awarded),
+        // Missions ride the same ledger. Memory counts read 0 now that the
+        // vault is gone, so a memory-category mission simply never pays —
+        // see #5418 for whether that category should survive at all.
         ...dueMissionAwards(
           missionSignals(
             familiars.map((f) => f.id),

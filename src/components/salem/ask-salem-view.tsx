@@ -22,7 +22,6 @@ import {
   useRuntimeModelInventory,
   type RuntimeModelInventoryResult,
 } from "@/lib/use-runtime-model-options";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
   clearThread,
@@ -70,10 +69,9 @@ async function fetchJson(url: string): Promise<unknown | null> {
 
 /** Gather the local Cave index corpora for a question (best-effort). */
 async function gatherLocalCorpora(query: string) {
-  const [search, board, canonical, fs] = await Promise.all([
+  const [search, board, fs] = await Promise.all([
     fetchJson(`/api/chat/search?q=${encodeURIComponent(query)}`),
     fetchJson("/api/board"),
-    loadCanonicalMemoryList(),
     fetchJson("/api/memory"),
   ]);
   const hits = (search as { ok?: boolean; hits?: unknown })?.ok
@@ -88,13 +86,6 @@ async function gatherLocalCorpora(query: string) {
   return {
     conversationHits: Array.isArray(hits) ? hits : [],
     cards: Array.isArray(cards) ? cards : [],
-    covenMemory: canonical.state === "ready" ? canonical.entries.map((entry) => ({
-      title: entry.title,
-      familiarId: entry.familiarId,
-      excerpt: entry.excerpt,
-      sourceLabel: entry.source.label,
-      verificationState: entry.verification.state,
-    })) : [],
     fsMemory: Array.isArray(fsEntries) ? fsEntries : [],
   };
 }

@@ -14,7 +14,7 @@ import { canonicalMemoryErrorHeadline } from "@/lib/canonical-memory";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import type { UserProfile } from "@/lib/user-profile-shared";
-import type { CanonicalMemoryAvailability } from "@/components/familiars-view-stats";
+import type { MemoryAvailability } from "@/components/familiars-view-stats";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -35,7 +35,7 @@ export type ProfileCardData = {
   familiars: Familiar[];
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   /** Why canonical memory is missing, in the reader's own words — a NOTICE,
    *  not an error. See the note on `errors` below. */
   memoryNotice: string | null;

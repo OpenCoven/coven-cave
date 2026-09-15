@@ -21,7 +21,7 @@ import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profi
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import {
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type MemoryAvailability,
 } from "@/components/familiars-view-stats";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
@@ -59,7 +59,7 @@ type BentoData = {
   inbox: InboxItem[];
   sessions: SessionRow[];
   memory: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   projects: number | null;
 };
 

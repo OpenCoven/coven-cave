@@ -35,7 +35,6 @@ import { streamFamiliarText } from "@/lib/familiar-stream";
 import { runtimeDisplayLabel } from "@/lib/harness-adapters";
 import { Icon, type IconName } from "@/lib/icon";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import type { Familiar } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 
@@ -619,26 +618,17 @@ function useFamiliarMemoryCount(
         return { ok: false, entries: [] };
       }
     };
-    void Promise.all([
-      loadCanonicalMemoryList(),
-      loadFileEntries(),
-    ])
-      .then(([canonical, files]) => {
+    void loadFileEntries()
+      .then((files) => {
         if (cancelled) return;
-        if (canonical.state !== "ready" || !files.ok) {
+        if (!files.ok) {
           setCount({ state: "unavailable" });
           return;
         }
-        const canonicalCount = canonical.entries.filter(
-          (entry) => entry.familiarId === familiarId,
-        ).length;
         const fileCount = files.entries.filter(
           (entry: { familiarId?: string }) => entry.familiarId === familiarId,
         ).length;
-        setCount({
-          state: "ready",
-          count: canonicalCount + fileCount,
-        });
+        setCount({ state: "ready", count: fileCount });
       });
     return () => {
       cancelled = true;

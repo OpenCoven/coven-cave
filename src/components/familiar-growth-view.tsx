@@ -12,7 +12,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type MemoryAvailability,
   type FamiliarFileMemoryStat,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
@@ -45,9 +45,9 @@ export type FamiliarGrowthInitialData = {
   familiars: Familiar[];
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
-  memoryAvailability: CanonicalMemoryAvailability;
+  memoryAvailability: MemoryAvailability;
   fileEntries: FamiliarFileMemoryStat[];
-  fileMemoryAvailability: CanonicalMemoryAvailability;
+  fileMemoryAvailability: MemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
 };
 
@@ -102,7 +102,7 @@ type RosterRow = {
 };
 
 function emptyStats(
-  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+  memoryAvailability: MemoryAvailability = "unavailable",
 ): FamiliarCardStats {
   return {
     memoryCount: 0,

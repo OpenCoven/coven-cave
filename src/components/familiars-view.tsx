@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
-  type CanonicalMemoryAvailability,
+  type MemoryAvailability,
 } from "@/components/familiars-view-stats";
 import {
   loadCanonicalMemoryList,
@@ -354,7 +354,7 @@ export function FamiliarsView({
     canonicalMemoryState.state === "ready"
       ? canonicalMemoryState.entries
       : [];
-  const canonicalMemoryAvailability: CanonicalMemoryAvailability =
+  const canonicalMemoryAvailability: MemoryAvailability =
     canonicalMemoryState.state === "ready" ? "ready" : "unavailable";
   const canonicalMemoryLoaded = canonicalMemoryState.state !== "loading";
   const fileEntries = fileMemoryState.entries;
