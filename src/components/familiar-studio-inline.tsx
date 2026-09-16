@@ -43,8 +43,6 @@ type Props = {
   familiars: Familiar[];
   /** Resolved roster (Cave overrides applied) — drives the roster and Studio. */
   resolved: ResolvedFamiliar[];
-  /** Accepted healthy local daemon plus local host/platform eligibility. */
-  localDaemonReady: boolean;
   /** Opens the production summoning circle. */
   onSummon?: () => void;
   /** Re-fetch after lifecycle controls remove or restore a familiar. */
