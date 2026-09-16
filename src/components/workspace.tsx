@@ -168,7 +168,7 @@ import {
   SettingsShell,
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
@@ -3705,10 +3705,15 @@ export function Workspace() {
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
+      const root = intent.root;
       markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
+      // Same discipline for the destination WITHIN the tab. Set before the mode
+      // flips, so a lazily-mounted ProjectsView can consume it once its rows
+      // exist; the event below still covers the already-mounted, already-loaded
+      // case and fires first when it wins.
+      markProjectFocusPending(root);
       setMode("chat");
       shellRef.current?.dismissNavMobile();
-      const root = intent.root;
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
         window.setTimeout(
