@@ -13,7 +13,7 @@ import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-type
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_FOCUS_PROJECT_EVENT, consumeProjectFocusPending } from "@/lib/chat-tab-events";
 import { gitHubRepoSlug } from "@/lib/github-repo-link";
 import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
@@ -504,13 +504,11 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   // Command palette "Open project" → scroll the row into view and flash it.
   const [flashId, setFlashId] = useState<string | null>(null);
-  useEffect(() => {
-    const onFocus = (e: Event) => {
-      const detail = (e as CustomEvent<{ root?: string }>).detail;
-      if (!detail?.root) return;
-      const rootKey = normalizeProjectRoot(detail.root);
+  const [pendingFocusRoot, setPendingFocusRoot] = useState<string | null>(() => consumeProjectFocusPending());
+  const focusProject = useCallback((root: string): boolean => {
+      const rootKey = normalizeProjectRoot(root);
       const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
-      if (!match) return;
+      if (!match) return false;
       setQuery("");
       setFlashId(match.id);
       window.requestAnimationFrame(() => {
@@ -518,10 +516,22 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           .getElementById(`project-access-row:${match.id}`)
           ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
       });
+      return true;
+  }, [projects]);
+  useEffect(() => {
+    if (pendingFocusRoot && focusProject(pendingFocusRoot)) setPendingFocusRoot(null);
+  }, [focusProject, pendingFocusRoot]);
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const root = (e as CustomEvent<{ root?: string }>).detail?.root;
+      if (!root) return;
+      // Clear a latch created while this view was already mounted.
+      consumeProjectFocusPending();
+      setPendingFocusRoot(root);
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
     return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
-  }, [projects]);
+  }, []);
   useEffect(() => {
     if (!flashId) return;
     const timer = window.setTimeout(() => setFlashId(null), 1600);

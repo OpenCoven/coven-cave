@@ -134,6 +134,8 @@ assert.match(
   /if \(!familiarsLoaded \|\| familiarsError \|\| !sessionsLoaded \|\| sessionsError \|\| !routerReady\) return;\s*\n\s*if \(!sessionsScopeCurrent\) return;/,
   "the resolve/reconcile is additionally gated on the applied-session-scope contract, checked immediately after readiness/errors",
 );
+assert.match(source, /className="right-chat__thread-switcher"[\s\S]{0,500}disabled=\{!routerReady\}/, "the first-open thread switcher cannot drop an action before ChatRouter is ready");
+assert.match(source, /aria-label="New Chat panel chat"[\s\S]{0,300}disabled=\{!routerReady\}/, "the first-open New Chat action cannot drop an action before ChatRouter is ready");
 
 // Every familiar-identity transition invalidates retained resolution and
 // selection ownership regardless of `open` (cave-rl980 Task 4 spec review),
