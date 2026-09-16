@@ -173,7 +173,6 @@ const RESULT_LIMITS = {
   familiar: 6,
   session: 6,
   card: 6,
-  covenMemory: 5,
   fsMemory: 8,
   command: 6,
   conversation: 6,

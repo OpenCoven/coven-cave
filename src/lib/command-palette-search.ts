@@ -36,7 +36,6 @@ export function paletteCategoryForKind(kind: string): Exclude<PaletteCategory, "
       return "chats";
     case "card":
       return "tasks";
-    case "coven-memory":
     case "fs-memory":
       return "memory";
     case "setting":

@@ -49,21 +49,33 @@ export function useMilestoneWatch(enabled = true) {
       if (!ledger?.ok || !Array.isArray(ledger.awarded)) return;
       const awarded = new Set(ledger.awarded);
 
-      const [familiarsRes, sessionsRes] = await Promise.all([
+      const [familiarsRes, sessionsRes, memoryRes] = await Promise.all([
         getJson<{ ok?: boolean; familiars?: Familiar[] }>("/api/familiars"),
         getJson<{ ok?: boolean; sessions?: SessionRow[] }>("/api/sessions/list"),
+        getJson<{ ok?: boolean; entries?: { familiarId?: string }[] }>("/api/memory"),
       ]);
       const familiars = familiarsRes?.ok ? (familiarsRes.familiars ?? []) : [];
       const sessions = sessionsRes?.ok ? (sessionsRes.sessions ?? []) : [];
       if (familiars.length === 0) return;
 
-      // The canonical vault supplied these; it now lives in the dedicated
-      // memory application. An EMPTY map rather than null on purpose: null
-      // meant "unknown", which suppressed tier milestones entirely, so
-      // carrying it forward would have silently killed tiers for good. Zero is
-      // the honest count, and it keeps the hook's own rule intact — a memory
-      // milestone can pay out late, never early.
+      // The canonical vault supplied these until it moved to the dedicated
+      // memory application. The surviving store is the workspace memory files,
+      // which is what `buildFamiliarCardStats` already counts — so this hook
+      // reads the same inventory rather than a second, lower number. Getting
+      // that wrong is not cosmetic: renown weighs a memory 3x a session, so a
+      // watcher counting zero would compute a lower tier than the familiar's
+      // own analytics view displays, and tier milestones would fire late or
+      // not at all.
+      //
+      // An EMPTY map, never null, when /api/memory does not answer: null meant
+      // "unknown" and suppressed tier milestones entirely. Zero is the honest
+      // floor and preserves the hook's rule — a milestone pays out late, never
+      // early.
       const memoryCounts = new Map<string, number>();
+      for (const entry of memoryRes?.ok ? (memoryRes.entries ?? []) : []) {
+        if (!entry.familiarId) continue;
+        memoryCounts.set(entry.familiarId, (memoryCounts.get(entry.familiarId) ?? 0) + 1);
+      }
       const live = sessions.filter((s) => !s.archived_at);
       const bySessions = new Map<string, number>();
       for (const s of live) {
@@ -93,9 +105,8 @@ export function useMilestoneWatch(enabled = true) {
           awarded,
         ),
         ...dueTierMilestones(tierRows, awarded),
-        // Missions ride the same ledger. Memory counts read 0 now that the
-        // vault is gone, so a memory-category mission simply never pays —
-        // see #5418 for whether that category should survive at all.
+        // Missions ride the same ledger, and the memory category now measures
+        // workspace memory files instead of curated vault entries.
         ...dueMissionAwards(
           missionSignals(
             familiars.map((f) => f.id),
