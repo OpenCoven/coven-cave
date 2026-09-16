@@ -7,6 +7,58 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-16
+
+> The Needs-you inbox, and a pass that removes what the app could not back.
+
+A minor release, not a patch: three surfaces are gone and the desktop menu
+bar's running-activity popover is replaced. The Needs-you inbox merged minutes
+after v0.4.2 was published and missed that cut — it has been on `main`,
+unreleased, since 2026-09-14.
+
+### Added
+- **The Needs-you inbox** (#5411). Replaces the running-activity popover in the
+  desktop menu bar. It drops `running` entirely and shows only what cannot
+  advance without you, ordered oldest-wait-first. Rows compose through the same
+  `sessionLifecycle()` the rail uses, so the inbox and the rail cannot disagree
+  about a session's state. The badge counts actionable work only and is absent
+  at zero. The panel is opaque and loads on demand — built eagerly it cost
+  6.1 KB of first-load CSS on a 945 KB budget, which is markup nobody sees
+  until they click the bell.
+
+### Changed
+- Settings loads its sections on demand, and the summary and controls now read
+  one source instead of two (#5421, #5424).
+- The Dashboard's loading path is simpler and its attention states stay
+  truthful while data is in flight (#5433).
+- Canonical memory moves out of the Cave to the dedicated memory app
+  (#5418, #5419).
+
+### Removed
+- Review Desk and generic Comms Operations (#5415). The live X publishing panel
+  is unaffected; X Comms remains.
+- The empty Marketplace Skills preview (#5426).
+- Settings controls that were present but did nothing (#5421).
+
+### Fixed
+- Sessions grouping labels are fully readable again (#5437).
+- The command palette stops its conversation search when dismissed, instead of
+  leaving it running (#5428).
+- The process intent bakery gains Lamport's choosing phase, closing a lock race
+  (#5443).
+- `ci:recovery` warns on a stale branch rather than failing, and fails only on
+  a real fault (#5416).
+
+### Internal
+- Beads is retired from development tracking in favor of GitHub Issues and the
+  Cave Project (#5399).
+- Signed registry guard validation is consolidated (#5444); the theme
+  initializer carries a note against a plausible but wrong "fix" (#5441); the
+  markdown reader is named for what it is (#5418).
+- The 200-session list's rendering behavior is verified and the implementation
+  ledger now distinguishes browser render skipping from DOM windowing (#5435).
+
+
 ## [0.4.2] - 2026-09-14
 
 > X Comms, and the iOS conversations rework — everything since v0.4.1.
