@@ -221,7 +221,7 @@ import type {
   OpenClawRegistryKeyring,
 } from "@/lib/openclaw-compatibility";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
-import { resolveRuntimeHandoff } from "@/lib/chat-runtime-handoff";
+import { resolveRuntimeHandoff, runtimeHandoffEpoch } from "@/lib/chat-runtime-handoff";
 import {
   type ChatTurn,
   type ConversationFile,
@@ -792,9 +792,15 @@ async function maybeQueueOfflineChat(args: {
 function finalizeRuntimeHandoff(
   conversation: ConversationFile,
   succeeded: boolean,
+  epoch: string | null,
 ): void {
   const handoff = conversation.pendingRuntimeHandoff;
   if (!handoff || !succeeded) return;
+  // Finalize only the marker that selected this turn. A runtime picked while
+  // the turn was still in flight owns its own boundary: consuming it here
+  // would move the conversation to a target that never ran and clear the
+  // fresh-start that target is still waiting for.
+  if (runtimeHandoffEpoch(handoff) !== epoch) return;
   conversation.harness = canonicalHarnessId(handoff.toHarness);
   delete conversation.pendingRuntimeHandoff;
 }
@@ -811,6 +817,8 @@ function openClawChatResponse(args: {
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
   gatewaySessionKey?: string;
+  /** Marker that selected this turn; only it may be finalized on success. */
+  runtimeHandoffEpoch?: string | null;
   openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
   openClawBridgeDiscovery?: unknown;
   openClawRegistryBundle?: unknown;
@@ -1328,7 +1336,7 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
-          finalizeRuntimeHandoff(conv, !isError && !cancelledByUser);
+          finalizeRuntimeHandoff(conv, !isError && !cancelledByUser, args.runtimeHandoffEpoch ?? null);
           if (!isError && !cancelledByUser) {
             conv.harnessSessionId = gatewaySessionKey;
           }
@@ -1727,7 +1735,7 @@ function openClawChatResponse(args: {
               };
               conv.model = responseMetadata.model;
               conv.runtime = responseMetadata.runtime;
-              finalizeRuntimeHandoff(conv, !isError && !cancelledByUser);
+              finalizeRuntimeHandoff(conv, !isError && !cancelledByUser, args.runtimeHandoffEpoch ?? null);
               if (!isError && !cancelledByUser) {
                 conv.harnessSessionId = gatewaySessionKey;
               }
@@ -2191,6 +2199,11 @@ async function postChat(
     binding.harness === "codex" &&
     body.sessionId &&
     !flowDiscussionStartsFresh &&
+    // A handoff never resumes the previous runtime's native session. Without
+    // this, a conversation moved Codex -> elsewhere -> Codex resumes the
+    // original Codex session id instead of opening the fresh one the boundary
+    // promised.
+    !runtimeHandoff?.startsFresh &&
     !(body.startNewConversation && !existingConversation)
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
@@ -3098,6 +3111,7 @@ async function postChat(
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
       ownsFirstExchangeTitle,
+      runtimeHandoffEpoch: runtimeHandoff?.handoffEpoch ?? null,
       gatewaySessionKey: runtimeHandoff?.startsFresh
         ? openClawSessionKey(`${body.sessionId ?? crypto.randomUUID()}:handoff:${crypto.randomUUID()}`)
         : existingConversation?.harness === "openclaw"
@@ -6230,7 +6244,7 @@ async function postChat(
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
-          finalizeRuntimeHandoff(conv, !result.is_error && !cancelledByUser);
+          finalizeRuntimeHandoff(conv, !result.is_error && !cancelledByUser, runtimeHandoff?.handoffEpoch ?? null);
           persistSendModelIntent(
             conv,
             body,
