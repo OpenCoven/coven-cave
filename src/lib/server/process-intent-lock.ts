@@ -262,14 +262,19 @@ export async function acquireProcessIntentLock(
     "wx",
     0o600,
   );
-  try {
-    await choosingHandle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
-  } finally {
-    await choosingHandle.close();
-  }
-
   let ownPath: string;
   try {
+    // Inside the removal guard, not before it: a rejecting close() would
+    // otherwise escape with the marker still on disk, and because the marker
+    // names a process that is still running, the liveness check below would
+    // read it as an active chooser and stall every other contender until they
+    // timed out. The guard this change adds is exactly what would make that
+    // stall total, so its cleanup cannot depend on close() succeeding.
+    try {
+      await choosingHandle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
+    } finally {
+      await choosingHandle.close();
+    }
     const order = process.hrtime.bigint().toString().padStart(24, "0");
     const ownName =
       `${order}-${process.pid}-${ownIdentityHash}-` +

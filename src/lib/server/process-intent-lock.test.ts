@@ -124,6 +124,43 @@ test("a live chooser blocks ticket comparison until its intent is published", as
   await release();
 });
 
+test("a failed acquire leaves no choosing marker behind", async () => {
+  const intentsDirectory = path.join(temporary, "choosing-cleanup");
+  await mkdir(intentsDirectory, { recursive: true });
+  // Hold the lock, then force a contender to fail by timing out. Whatever the
+  // failure, its marker must not survive: the marker names a live process, so
+  // the liveness check would read it as an active chooser and stall every
+  // later contender — an outage caused by the very guard meant to prevent a
+  // lost update. Copilot caught this on PR #5452; cleanup used to sit outside
+  // the guard, so a rejecting close() escaped with the marker still on disk.
+  const release = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-cleanup-holder",
+  });
+  try {
+    await assert.rejects(
+      () =>
+        acquireProcessIntentLock({
+          intentsDirectory,
+          timeoutMs: 60,
+          label: "test-cleanup-loser",
+        }),
+      /timed out/,
+    );
+    const leftovers = (await readdir(intentsDirectory))
+      .filter((name) => name.endsWith(".choosing"));
+    assert.deepEqual(leftovers, [], "a failed acquire must not strand its choosing marker");
+  } finally {
+    await release();
+  }
+  // And the directory is still usable afterwards.
+  const next = await acquireProcessIntentLock({
+    intentsDirectory,
+    label: "test-cleanup-successor",
+  });
+  await next();
+});
+
 test("a chooser from a dead incarnation is reclaimed rather than blocking forever", async () => {
   const intentsDirectory = path.join(temporary, "choosing-stale");
   await mkdir(intentsDirectory, { recursive: true });
