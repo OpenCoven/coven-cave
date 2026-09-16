@@ -2,7 +2,7 @@
  * The room's seed content.
  *
  * These are demo drafts, not a fetch. The X write path exists elsewhere
- * (`/api/x/publish`, driven by `XPublishPanel` inside Comms Operations) and
+ * (`/api/x/publish`, driven by `XPublishPanel` in the Live publishing view) and
  * this room deliberately does not call it: approving here moves a local record
  * and schedules a slot no dispatcher reads. The room says so in its own copy
  * rather than implying a queue that drains.
@@ -99,7 +99,7 @@ export const X_ACCOUNT = {
 
 /** Where the room's own copy admits what it is. */
 export const X_DEMO_NOTICE =
-  "Approvals and slots are local to this room and nothing reaches X — the live publish path is in Comms Operations.";
+  "Demo approvals and slots stay local and nothing reaches X. Open Live publishing to publish to X with confirmation.";
 
 export function seedDrafts(now: number): XDraft[] {
   const reply: XPostDraft = {

@@ -35,10 +35,10 @@ const SHELL_FILES = [
 ];
 
 // Any *code* reference to a specific initial role: a quoted role/surface id
-// ("researcher", 'messenger-ops'…) or an imported surface identifier.
+// ("researcher", 'x-comms'…) or an imported surface identifier.
 const ROLE_LITERALS = /["'`](researcher|messenger|indexer)[a-z-]*["'`]/i;
 const ROLE_IDENTIFIERS =
-  /\b(ResearcherSurface|MessengerSurface|IndexerSurface|RESEARCHER_SURFACE_ID|MESSENGER_SURFACE_ID|INDEXER_SURFACE_ID)\b/;
+  /\b(ResearcherSurface|XCommsSurface|IndexerSurface|RESEARCHER_SURFACE_ID|X_COMMS_SURFACE_ID|INDEXER_SURFACE_ID)\b/;
 
 for (const rel of SHELL_FILES) {
   const code = stripComments(read(rel));
@@ -48,7 +48,7 @@ for (const rel of SHELL_FILES) {
 
 // The registration manifest is the ONE place the initial rooms are named…
 const manifest = read("src/components/role-surfaces/register.tsx");
-for (const name of ["RESEARCHER_SURFACE_ID", "MESSENGER_SURFACE_ID", "INDEXER_SURFACE_ID"]) {
+for (const name of ["RESEARCHER_SURFACE_ID", "X_COMMS_SURFACE_ID", "INDEXER_SURFACE_ID"]) {
   assert.match(manifest, new RegExp(`\\b${name}\\b`), `manifest registers ${name}`);
 }
 

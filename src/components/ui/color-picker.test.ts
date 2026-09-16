@@ -16,7 +16,7 @@ assert.match(picker, /export function ColorPicker/, "exports ColorPicker");
 
 // Editor integration: the Theme tokens editor (settings-shell) uses ColorPicker
 // in a Popover in place of the native input, with recent-color wiring.
-const settings = readFileSync(new URL("../settings-shell.tsx", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../settings-appearance.tsx", import.meta.url), "utf8");
 assert.match(settings, /import \{ ColorPicker, type ColorSwatch \} from "@\/components\/ui\/color-picker"/, "tokens editor imports ColorPicker");
 assert.match(settings, /<ColorPicker/, "tokens editor renders ColorPicker");
 assert.match(settings, /<Popover/, "tokens editor opens the picker in a Popover");

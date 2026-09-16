@@ -6,20 +6,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import {
   clearRoleSurfaceStateForTest,
-  writeRoleSurfaceState,
 } from "@/lib/role-surface-state";
 import type { Card } from "@/lib/cave-board-types";
 import type { Escalation } from "@/lib/escalations-types";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { IndexerSurface } from "./indexer-surface";
-import {
-  MESSENGER_INITIAL_STATE,
-  MessengerSurface,
-} from "./messenger-surface";
 import { NavigatorSurface } from "./navigator-surface";
 import { ScribeSurface } from "./scribe-surface";
 import { SentinelSurface } from "./sentinel-surface";
-import { MESSENGER_SURFACE_ID } from "./ids";
 import { SurfaceLoading, SurfaceRail } from "./surface-room";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -155,7 +149,6 @@ function memoryEntry(path: string): SurfaceMemoryEntry {
 async function renderSurface(
   component:
     | typeof IndexerSurface
-    | typeof MessengerSurface
     | typeof NavigatorSurface
     | typeof ScribeSurface
     | typeof SentinelSurface,
@@ -236,18 +229,6 @@ function liveLoadingCount(renderer: ReactTestRenderer): number {
  * independent request owns one live status" from "one request grew a second
  * live copy" — which is the whole distinction this describe block exists for.
  */
-function liveLoadingLabels(renderer: ReactTestRenderer): string[] {
-  return renderer.root
-    .findAll(
-      (node) =>
-        node.type === "div" &&
-        node.props["aria-busy"] === "true" &&
-        node.props.role === "status",
-    )
-    .map((node) => String(node.props["aria-label"]))
-    .sort();
-}
-
 describe("SurfaceLoading live ownership", () => {
   test("passive dependent copies keep busy semantics without becoming live regions", async () => {
     let renderer!: ReactTestRenderer;
@@ -283,24 +264,6 @@ describe("SurfaceLoading live ownership", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Messenger gives each independent request one live loading owner", async () => {
-    const familiarId = "messenger-loading";
-    writeRoleSurfaceState(familiarId, MESSENGER_SURFACE_ID, {
-      ...MESSENGER_INITIAL_STATE,
-      drawerOpen: true,
-    });
-    globalThis.fetch = vi.fn(() => pending());
-    const renderer = await renderSurface(MessengerSurface, context(familiarId));
-    // Two independent requests: the shared inbox, and the X publish panel's
-    // own list. Asserted by label rather than by count, because the property
-    // that matters is that the INBOX still owns exactly one — it is fetched
-    // once and rendered in two places, and its "Scheduled" copy stays passive.
-    expect(liveLoadingLabels(renderer)).toEqual([
-      "Loading X publishing…",
-      "Loading inbox…",
-    ]);
-    await act(async () => renderer.unmount());
-  });
 });
 
 describe("active selections control compact inspectors", () => {
@@ -362,33 +325,6 @@ describe("active selections control compact inspectors", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Messenger opens Dispatch when a new draft becomes active", async () => {
-    globalThis.fetch = vi.fn(async (input) => {
-      if (String(input) === "/api/inbox") return response({ items: [] });
-      throw new Error(`unexpected fetch ${String(input)}`);
-    });
-    const renderer = await renderSurface(MessengerSurface, context("messenger-selection"));
-
-    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
-    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
-    expect(leftRail(renderer, "Traffic").props.expanded).toBe(true);
-    await act(async () => buttonContaining(renderer, "New").props.onClick());
-    expect(leftRail(renderer, "Traffic").props.expanded).toBe(false);
-    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
-
-    await act(async () => rightRail(renderer, "Dispatch").props.onExpandedChange(false));
-    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
-
-    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
-    await act(async () => buttonContaining(renderer, "New").props.onClick());
-    expect(leftRail(renderer, "Traffic").props.expanded).toBe(false);
-    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
-
-    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
-    expect(leftRail(renderer, "Traffic").props.expanded).toBe(true);
-    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
-    await act(async () => renderer.unmount());
-  });
 
   test("Scribe opens Publishing when a new draft becomes active", async () => {
     globalThis.fetch = vi.fn(async (input) => {

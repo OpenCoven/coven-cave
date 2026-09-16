@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  CanonicalMemoryMarkdown,
+  DocumentReaderMarkdown,
   MarkdownReaderBlock,
-} from "@/components/canonical-memory-markdown";
+} from "@/components/document-reader-markdown";
 import { DocumentReader } from "@/components/document-reader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -413,7 +413,7 @@ export function CanonicalMemoryReader({
               )}
             />
           ) : (
-            <CanonicalMemoryMarkdown
+            <DocumentReaderMarkdown
               content={detail.content}
               mode="raw"
               className="h-full overflow-y-auto whitespace-pre-wrap break-words p-4 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)]"

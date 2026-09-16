@@ -1,8 +1,8 @@
 "use client";
 
-// Marketplace hub — owned inventory, a curated Skills preview, and local
+// Marketplace hub — owned inventory and local
 // authoring in one surface. Crafts remains an explicitly flag-gated section.
-// Legacy roles/capabilities deep links land on Yours.
+// Legacy roles/capabilities deep links land on Yours; Skills opens its Skills filter.
 
 // The surface sheet rides with this mode-gated component instead of the root
 // globals.css so the home first-load stays inside the CSS bundle budget
@@ -32,7 +32,6 @@ import {
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
-import { SkillsComingSoon } from "@/components/marketplace/skills-coming-soon";
 import { type SkillBrowserEntry } from "@/lib/skill-directory";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";
@@ -102,9 +101,10 @@ export function MarketplaceViewSurface({
       ? "browse"
       : initialDestination === "browse" ? null : initialDestination,
   );
-  const section = !craftsEnabled && (deepLinkSection ?? storedSection) === "crafts"
+  const requestedSection = deepLinkSection ?? storedSection;
+  const section = requestedSection === "skills" || (!craftsEnabled && requestedSection === "crafts")
     ? "browse"
-    : deepLinkSection ?? storedSection;
+    : requestedSection;
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -306,6 +306,18 @@ export function MarketplaceViewSurface({
     setCategory("All");
     setQuery("");
   }, [setCategory, setKind, setStatus, setStoredSection]);
+
+  // Retired Skills preview links reach the actual owned inventory. Migrate a
+  // saved preview destination, but preserve another saved section for alias visits.
+  useEffect(() => {
+    if (requestedSection !== "skills") return;
+    setDeepLinkSection("browse");
+    if (storedSection === "skills") setStoredSection("browse");
+    setKind("skill");
+    setStatus("all");
+    setCategory("All");
+    setQuery("");
+  }, [requestedSection, storedSection, setStoredSection, setKind, setStatus, setCategory]);
 
   const visiblePlugins = useMemo(
     () => visibleMarketplacePlugins(plugins, craftsEnabled),
@@ -828,11 +840,7 @@ export function MarketplaceViewSurface({
             )}
           </div>
         </div>
-      ) : section === "skills" ? (
-        <SkillsComingSoon
-          onViewOwnedSkills={viewOwnedSkills}
-          onBuildSkill={() => selectSection("build")}
-        />
+
       ) : craftsEnabled && section === "crafts" ? (
         <div
           role="tabpanel"

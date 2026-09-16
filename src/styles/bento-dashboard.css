@@ -794,3 +794,8 @@
   color: var(--muted-foreground);
   padding: var(--space-2) 0;
 }
+
+/* Recovery actions remain recognizable inside the dashboard link reset. */
+.bento-dash .bd-empty a {
+  text-decoration: underline;
+}

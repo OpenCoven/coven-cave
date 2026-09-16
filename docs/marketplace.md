@@ -16,6 +16,13 @@ Coven Cave is the canonical user-facing marketplace surface for first-party Open
 - `marketplace/exports/mcp/mcp.json`
 - `marketplace/exports/roles/role-affinity.json`
 
+## In-app navigation
+
+**Yours** contains installed items and authored skills. Use its **Skills** type
+filter to manage local skills, or **Build** to author one. Crafts remains
+available only when its existing feature flag is enabled. The empty Skills
+preview tab is retired; older Skills destinations open Yours filtered to Skills.
+
 ## Design
 
 The Cave catalog is the canonical package metadata because Cave is where familiars, roles, skills, and setup state meet. Generated package directories keep Coven Code, Codex, MCP-only clients, and role-affinity views from drifting away from that Cave-owned source.
@@ -198,13 +205,7 @@ The check command fails if generated packages or exports are missing or stale.
 
 Cave records local marketplace installs in `~/.coven/cave/config.json` under `marketplace.installed`. This records which package the user chose so Cave can layer configuration, export application, and harness setup on top. It never stores raw secrets — see Configuration & Validation below.
 
-## Curated Skills preview
-
-The Skills section is a Coming Soon space for a deliberately small OpenCoven
-catalog. A skill reaches that shelf only after its source is reviewed, its
-behavior is verified in Cave, and it is explicitly published for familiars.
-Until Val curates the first collection, the section contains no synthetic
-listings or borrowed registry metrics.
+## Owned skills
 
 Locally installed and authored skills remain operational under **Yours** and
 new skills can still be authored under **Build**. Marketplace uses the
@@ -213,8 +214,7 @@ part of its mount or search flow.
 
 ## Configuration & Validation
 
-The Marketplace surface lives as a **Marketplace** tab on the Roles page.
-**Yours** manages packages already present in the local inventory, including
+Marketplace’s **Yours** section manages packages already present in the local inventory, including
 configuration, validation, and removal:
 
 - **Credential collection.** Each required `userConfig` field declares the env var its MCP server resolves (`env` key in `catalog.json`). The Configure modal collects values, split by `sensitive`:

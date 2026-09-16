@@ -41,22 +41,24 @@ test("uses idOf to compare (so it works on derived DOM ids, not raw labels)", ()
 // Typography · Interface) so common controls are reachable without a long
 // scroll, while search/deep-link still switches to the owning tab.
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const appearance = readFileSync(new URL("./settings-appearance.tsx", import.meta.url), "utf8");
+const source = `${shell}\n${appearance}`;
 
 test("Appearance groups are tabbed through SettingsTabbed", () => {
-  assert.match(shell, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
-  assert.match(shell, /tabs=\{APPEARANCE_TABS\}/, "Appearance routes through the shared tabbed wrapper");
-  assert.match(shell, /groupsByTab=\{APPEARANCE_TAB_GROUPS\}/, "tab ownership map is wired for search/deep-link");
+  assert.match(source, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
+  assert.match(source, /tabs=\{APPEARANCE_TABS\}/, "Appearance routes through the shared tabbed wrapper");
+  assert.match(source, /groupsByTab=\{APPEARANCE_TAB_GROUPS\}/, "tab ownership map is wired for search/deep-link");
   assert.match(
-    shell,
-    /<AppearanceSection scrollTarget=\{scrollTarget\} \/>/,
+    source,
+    /<AppearanceSection scrollTarget=\{scrollTarget\} searchJump=\{searchJump\} \/>/,
     "the shell forwards its scroll target so search can switch tabs",
   );
   assert.match(
-    shell,
+    source,
     /typography: \["Typography", "Reading text", "Date & time"\]/,
     "the Typography tab owns every FontSettings group",
   );
-  assert.doesNotMatch(shell, /ADDONS_TABS|AddonsSection/, "Add-ons section is removed");
+  assert.doesNotMatch(source, /ADDONS_TABS|AddonsSection/, "Add-ons section is removed");
 });
 
 test("every tab-map group label still has a matching SettingsGroup in the shell", () => {
@@ -67,8 +69,14 @@ test("every tab-map group label still has a matching SettingsGroup in the shell"
     "Corners",
   ];
   for (const label of labels) {
-    assert.match(shell, new RegExp(`<SettingsGroup label="${label}"`), `${label} group still rendered`);
+    assert.match(source, new RegExp(`<SettingsGroup label="${label}"`), `${label} group still rendered`);
   }
 });
 
 console.log("settings-section-tabs.test.ts: ok");
+
+// Opening General should not fetch the theme editor or its color/font controls.
+test("Appearance is loaded on demand rather than inside the Settings shell", () => {
+  assert.match(shell, /const AppearanceSection = dynamic\(/);
+  assert.doesNotMatch(shell, /function AppearanceSection|function ThemeTokenOverrides|function applyPreset/);
+});

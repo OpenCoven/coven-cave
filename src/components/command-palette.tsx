@@ -282,7 +282,7 @@ export function CommandPalette({
   useEffect(() => {
     const { token, rest } = parseFamiliarToken(query);
     const text = rest.trim();
-    if (token !== null || text.startsWith("/") || text.length < 2) {
+    if (!open || token !== null || text.startsWith("/") || text.length < 2) {
       setContentHits([]);
       return;
     }
@@ -304,7 +304,7 @@ export function CommandPalette({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query]);
+  }, [open, query]);
 
   const updateQuery = (next: string) => {
     setQuery(next);
