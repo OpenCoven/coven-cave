@@ -1455,7 +1455,7 @@ function openClawChatResponse(args: {
       let localRecoveryAttempted = false;
       let stopChildOnLaunch = false;
       const spawnChild = (mode: "gateway" | "local") => {
-        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
+        const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
           cwd: args.cwd,

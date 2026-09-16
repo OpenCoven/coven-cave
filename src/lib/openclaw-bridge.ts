@@ -919,6 +919,7 @@ export function openClawAgentArgs(
   agentId: string,
   conversationId: string,
   executionMode: OpenClawCliExecutionMode = "gateway",
+  sessionKey = openClawSessionKey(conversationId),
 ): string[] {
   return [
     "agent",
@@ -929,7 +930,7 @@ export function openClawAgentArgs(
     harnessPrompt,
     "--json",
     "--session-id",
-    openClawSessionKey(conversationId),
+    sessionKey,
   ];
 }
 

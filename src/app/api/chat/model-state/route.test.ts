@@ -77,8 +77,8 @@ assert.equal(
 );
 assert.match(
   route,
-  /const modelValidationHarness = scope === "session"[\s\S]*?canonicalHarnessId\(sessionConversation\?\.harness \?\? binding\.harness\)[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
-  "model-state writes enforce the active conversation runtime custom-id policy rather than trusting picker validation",
+  /const modelValidationHarness = scope === "session"[\s\S]*?sessionConversation\?\.pendingRuntimeHandoff\?\.toHarness[\s\S]*?sessionConversation\?\.harness[\s\S]*?binding\.harness[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
+  "model-state writes validate pending handoffs against their target runtime rather than trusting picker validation",
 );
 assert.match(
   route,

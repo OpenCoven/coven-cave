@@ -234,7 +234,11 @@ export async function PATCH(req: Request) {
     return jsonError("not found", 404);
   }
   const modelValidationHarness = scope === "session"
-    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    ? canonicalHarnessId(
+      sessionConversation?.pendingRuntimeHandoff?.toHarness ??
+        sessionConversation?.harness ??
+        binding.harness,
+    )
     : canonicalHarnessId(binding.harness);
   if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
     return jsonError("model is not allowed by this runtime", 400);
