@@ -760,6 +760,7 @@ export const SUITES = {
     "src/components/workflows-view.test.ts",
     "src/components/projects-view.test.ts",
     "src/components/projects-view-repair-behavior.test.tsx",
+  "src/components/projects-view-focus-latch.behavior.test.tsx",
     "src/components/project-settings-modal.test.ts",
     "src/lib/projects/access-page.test.ts",
     "src/lib/projects/access-views.test.ts",
